@@ -1,8 +1,12 @@
 [package]
-name = "kernel-lib"
+name = "preloaded"
 version = "0.1.0"
 authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
 edition = "2018"
 
+[workspace]
+
 [dependencies]
-wasmi = "0.5.1"
+
+[profile.release]
+panic = "abort"

@@ -5,5 +5,5 @@ authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-async-std = "0.99"
-kernel-lib = { path = "../kernel-lib" }
+core = { path = "../core" }
+futures-preview = "0.3.0-alpha.18"
