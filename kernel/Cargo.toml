@@ -1,0 +1,9 @@
+[package]
+name = "kernel"
+version = "0.1.0"
+authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+async-std = "0.99"
+kernel-lib = { path = "../kernel-lib" }
