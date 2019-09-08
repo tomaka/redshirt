@@ -1,3 +1,6 @@
+// Copyright(c) 2019 Pierre Krieger
+
+use crate::interface::InterfaceHash;
 use crate::module::Module;
 
 use alloc::collections::VecDeque;
@@ -12,6 +15,8 @@ mod pid;
 pub struct Core {
     next_pid: PidPool,
     loaded: HashMap<Pid, Program>,
+
+    /// For each interface, which program is fulfilling it.
     interfaces: HashMap<InterfaceHash, Pid>,
 
     /// Holds a bijection between arbitrary values (the `usize` on the left side) that we pass
@@ -21,11 +26,9 @@ pub struct Core {
     /// back that `usize` to us, and we can look which function it is.
     externals_indices: BiHashMap<usize, ([u32; 8], String)>,
 
+    /// Queue of tasks to execute.
     scheduled: VecDeque<Scheduled>,
 }
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub struct InterfaceHash([u8; 32]);
 
 struct Program {
     module: wasmi::ModuleRef,       // TODO: ask serguey or someone whether that's a weak ref
@@ -33,6 +36,7 @@ struct Program {
     depended_on: HashSet<Pid>,
 }
 
+/// Tasks scheduled for execution.
 struct Scheduled {
     pid: Pid,
 }
@@ -56,13 +60,14 @@ impl Core {
     /// Returns a `Future` that runs the core.
     ///
     /// This returns a `Future` so that it is possible to interrupt the process.
+    // TODO: make multithreaded
     pub async fn run(&mut self) {
         // TODO: wasi doesn't allow interrupting executions
         while let Some(scheduled_pid) = self.scheduled.pop_front() {
             let program = self.loaded.get(&scheduled_pid.pid).unwrap();
             match program.module.export_by_name("main") {
                 Some(wasmi::ExternVal::Func(f)) => {
-                    let mut invokation = wasmi::FuncInstance::invoke_resumable(&f, &[wasmi::RuntimeValue::I32(0), wasmi::RuntimeValue::I32(0)]).unwrap();
+                    let mut invokation = wasmi::FuncInstance::invoke_resumable(&f, &[wasmi::RuntimeValue::I32(0), wasmi::RuntimeValue::I32(0)][..]).unwrap();
                     let ret = invokation.start_execution(&mut DummyExternals {});
                     println!("{:?}", ret);
                     println!("{:?}", invokation.resumable_value_type());
@@ -77,13 +82,12 @@ impl Core {
         // TODO: sleep or something instead of terminating the future
     }
 
-    // TODO: shouldn't be pub
+    /// Start executing the module passed as parameter.
     pub fn execute(&mut self, module: &Module) -> Result<Pid, ()> {
         let import_builder = EnvironmentDefinitionBuilder {};
 
         let not_started = wasmi::ModuleInstance::new(module.as_ref(), &import_builder).unwrap();      // TODO: don't unwrap
-        let module = not_started.assert_no_start();
-        println!("{:?}", module.globals());
+        let module = not_started.assert_no_start();     // TODO: true in practice, bad to do in theory
 
         let pid = self.next_pid.assign();
         self.loaded.insert(pid, Program {

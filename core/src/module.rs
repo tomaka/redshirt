@@ -9,13 +9,13 @@ pub struct Module {
 }
 
 /// Hash of a module.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct ModuleHash([u8; 32]);
 
 impl Module {
     /// Parses a module from WASM bytes.
     pub fn from_bytes(buffer: impl AsRef<[u8]>) -> Self {
-        let inner = wasmi::Module::from_buffer(buffer.as_ref()).unwrap();
+        let inner = wasmi::Module::from_buffer(buffer.as_ref()).unwrap();       // TODO: don't unwrap
         let hash = ModuleHash::from_bytes(buffer);
 
         Module {

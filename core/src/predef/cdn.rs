@@ -1,3 +1,5 @@
+// Copyright(c) 2019 Pierre Krieger
+
 //! Pre-defined interface for grabbing content off the network.
 
 use crate::interface::Interface;

@@ -1,3 +1,4 @@
+// Copyright(c) 2019 Pierre Krieger
 
 /// Externals that are always available, wherever we are.
 pub struct GlobalExternals {

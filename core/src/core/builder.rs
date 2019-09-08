@@ -1,3 +1,4 @@
+// Copyright(c) 2019 Pierre Krieger
 
 pub struct CoreBuilder<TNet> {
     network_access: Option<TNet>,
