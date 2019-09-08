@@ -39,6 +39,13 @@ struct Program {
 /// Tasks scheduled for execution.
 struct Scheduled {
     pid: Pid,
+
+    /// Context of a function being executed.
+    execution: wasmi::FuncInvocation<'static>,
+
+    /// If `Some`, then `execution` is in the middle of executing a function, and we need to
+    /// provide back a value in order to continue. That value is an `Option<RuntimeValue>`.
+    resume_value: Option<Option<wasmi::RuntimeValue>>,
 }
 
 impl Core {
@@ -63,19 +70,29 @@ impl Core {
     // TODO: make multithreaded
     pub async fn run(&mut self) {
         // TODO: wasi doesn't allow interrupting executions
-        while let Some(scheduled_pid) = self.scheduled.pop_front() {
-            let program = self.loaded.get(&scheduled_pid.pid).unwrap();
-            match program.module.export_by_name("main") {
-                Some(wasmi::ExternVal::Func(f)) => {
-                    let mut invokation = wasmi::FuncInstance::invoke_resumable(&f, &[wasmi::RuntimeValue::I32(0), wasmi::RuntimeValue::I32(0)][..]).unwrap();
-                    let ret = invokation.start_execution(&mut DummyExternals {});
-                    println!("{:?}", ret);
-                    println!("{:?}", invokation.resumable_value_type());
-                    let ret = invokation.resume_execution(Some(wasmi::RuntimeValue::I32(12)), &mut DummyExternals {}).unwrap();
-                    println!("ret = {:?}", ret);
-                },
-                None => continue,
-                _ => panic!()       // TODO:
+        while let Some(mut scheduled) = self.scheduled.pop_front() {
+            let result = if let Some(resume_value) = scheduled.resume_value {
+                scheduled.execution.resume_execution(resume_value, &mut DummyExternals {})
+            } else {
+                scheduled.execution.start_execution(&mut DummyExternals {})
+            };
+
+            match result {
+                Ok(Some(val)) => println!("status code: {:?}", val),
+                Ok(None) => {},
+                Err(wasmi::ResumableError::AlreadyStarted) => unreachable!(),
+                Err(wasmi::ResumableError::NotResumable) => unreachable!(),
+                Err(wasmi::ResumableError::Trap(trap)) => {
+                    match trap.kind() {
+                        wasmi::TrapKind::Host(host) => {
+                            println!("{:?}", host);
+                            // TODO: prototype hack
+                            scheduled.resume_value = Some(Some(wasmi::RuntimeValue::I32(7)));
+                            self.scheduled.push_back(scheduled);
+                        },
+                        _ => println!("oops, actual error!")
+                    }
+                }
             }
         }
 
@@ -90,13 +107,22 @@ impl Core {
         let module = not_started.assert_no_start();     // TODO: true in practice, bad to do in theory
 
         let pid = self.next_pid.assign();
+        match module.export_by_name("main") {
+            Some(wasmi::ExternVal::Func(f)) => {
+                let execution = wasmi::FuncInstance::invoke_resumable(&f, &[wasmi::RuntimeValue::I32(0), wasmi::RuntimeValue::I32(0)][..]).unwrap();
+                self.scheduled.push_back(Scheduled {
+                    pid,
+                    execution,
+                    resume_value: None,
+                });
+            },
+            None => {},
+            _ => panic!()       // TODO:
+        }
         self.loaded.insert(pid, Program {
             module,
             depends_on: Vec::new(),
             depended_on: HashSet::new(),
-        });
-        self.scheduled.push_back(Scheduled {
-            pid
         });
         Ok(pid)
     }
