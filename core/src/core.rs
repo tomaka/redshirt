@@ -70,7 +70,8 @@ impl Core {
     ///
     /// This returns a `Future` so that it is possible to interrupt the process.
     // TODO: make multithreaded
-    pub async fn run(&mut self) {
+    // TODO: shouldn't return an Option but a plain value
+    pub async fn run(&mut self) -> Option<RunOutcome> {
         // TODO: wasi doesn't allow interrupting executions
         while let Some(mut scheduled) = self.scheduled.pop_front() {
             let program = self.loaded.get_mut(&scheduled.pid).unwrap();
@@ -82,7 +83,10 @@ impl Core {
                             resume_value: val,
                         });
                     } else {
-                        println!("finished exec => {:?}", val);
+                        return Some(RunOutcome::ProgramFinished {
+                            pid: scheduled.pid,
+                            return_value: val,
+                        });
                     }
                 }
                 process::ExecOutcome::Interrupted(index, arguments) => {
@@ -99,6 +103,7 @@ impl Core {
         }
 
         // TODO: sleep or something instead of terminating the future
+        None
     }
 
     /// Start executing the module passed as parameter.
@@ -137,5 +142,39 @@ impl Core {
 impl Default for Core {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+pub enum RunOutcome {
+    ProgramFinished {
+        pid: Pid,
+        return_value: Option<wasmi::RuntimeValue>,      // TODO: force to i32?
+    },
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::module::Module;
+    use super::{Core, RunOutcome};
+
+    #[test]
+    fn basic_module() {
+        let module = Module::from_wat(r#"(module
+            (func $main (param $p0 i32) (param $p1 i32) (result i32)
+                i32.const 5)
+            (export "main" (func $main)))
+        "#).unwrap();
+
+        let mut core = Core::new();
+        let expected_pid = core.execute(&module).unwrap();
+
+        let outcome = futures::executor::block_on(core.run());
+        match outcome {
+            Some(RunOutcome::ProgramFinished { pid, return_value }) => {
+                assert_eq!(pid, expected_pid);
+                assert_eq!(return_value, Some(wasmi::RuntimeValue::I32(5)));
+            }
+            None => panic!()
+        }
     }
 }

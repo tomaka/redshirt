@@ -25,6 +25,12 @@ impl Module {
         }
     }
 
+    /// Turns some WASM text source into a `Module`.
+    pub fn from_wat(source: impl AsRef<[u8]>) -> Result<Self, wabt::Error> {
+        let wasm = wabt::wat2wasm(source)?;
+        Ok(Self::from_bytes(wasm))
+    }
+
     /// Returns a reference to the internal module.
     pub(crate) fn as_ref(&self) -> &wasmi::Module {
         &self.inner
@@ -60,5 +66,27 @@ impl ModuleHash {
 impl fmt::Debug for ModuleHash {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "ModuleHash({})", bs58::encode(&self.0).into_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Module;
+
+    #[test]
+    fn empty_wat_works() {
+        let _ = Module::from_wat("(module)").unwrap();
+    }
+
+    #[test]
+    fn simple_wat_works() {
+        let _ = Module::from_wat(r#"
+            (module
+                (func $add (param i32 i32) (result i32)
+                    get_local 0
+                    get_local 1
+                    i32.add)
+                (export "add" (func $add)))
+            "#).unwrap();
     }
 }

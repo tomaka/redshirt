@@ -30,6 +30,6 @@ fn main(_: isize, _: *const *const u8) -> isize {
 
 #[start]
 fn main(_: isize, _: *const *const u8) -> isize {
-    (unsafe { test() }) as isize
-    //5
+    //(unsafe { test() }) as isize
+    5
 }
