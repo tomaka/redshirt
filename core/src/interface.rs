@@ -26,6 +26,18 @@ impl Interface {
     }
 }
 
+impl From<[u8; 32]> for InterfaceHash {
+    fn from(hash: [u8; 32]) -> InterfaceHash {
+        InterfaceHash(hash)
+    }
+}
+
+impl fmt::Display for InterfaceHash {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Display::fmt(&bs58::encode(&self.0).into_string(), f)
+    }
+}
+
 impl fmt::Debug for InterfaceHash {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "InterfaceHash({})", bs58::encode(&self.0).into_string())

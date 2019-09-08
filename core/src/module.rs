@@ -14,6 +14,7 @@ pub struct ModuleHash([u8; 32]);
 
 impl Module {
     /// Parses a module from WASM bytes.
+    // TODO: rename
     pub fn from_bytes(buffer: impl AsRef<[u8]>) -> Self {
         let inner = wasmi::Module::from_buffer(buffer.as_ref()).unwrap();       // TODO: don't unwrap
         let hash = ModuleHash::from_bytes(buffer);
@@ -34,6 +35,12 @@ impl Module {
     /// This gives the same result as calling `ModuleHash::from_bytes` on the original input.
     pub fn hash(&self) -> &ModuleHash {
         &self.hash
+    }
+}
+
+impl From<[u8; 32]> for ModuleHash {
+    fn from(hash: [u8; 32]) -> ModuleHash {
+        ModuleHash(hash)
     }
 }
 
