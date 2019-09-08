@@ -109,7 +109,7 @@ dependencies = [
  "hashbrown 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "sha2 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "wabt 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "wasmi 0.5.1",
+ "wasmi 0.5.1 (git+https://github.com/tomaka/wasmi?branch=moo)",
 ]
 
 [[package]]
@@ -483,6 +483,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "wasmi"
 version = "0.5.1"
+source = "git+https://github.com/tomaka/wasmi?branch=moo#171ce9daa655592c0a2bbad2e4df330366af6a1f"
 dependencies = [
  "libc 0.2.62 (registry+https://github.com/rust-lang/crates.io-index)",
  "libm 0.1.4 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -490,12 +491,13 @@ dependencies = [
  "num-rational 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "num-traits 0.2.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "parity-wasm 0.40.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "wasmi-validation 0.2.0",
+ "wasmi-validation 0.2.0 (git+https://github.com/tomaka/wasmi?branch=moo)",
 ]
 
 [[package]]
 name = "wasmi-validation"
 version = "0.2.0"
+source = "git+https://github.com/tomaka/wasmi?branch=moo#171ce9daa655592c0a2bbad2e4df330366af6a1f"
 dependencies = [
  "parity-wasm 0.40.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
@@ -562,3 +564,5 @@ dependencies = [
 "checksum wabt 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)" = "94b5f5d6984ca42df66280baa8a15ac188a173ddaf4580b574a98931c01920e7"
 "checksum wabt-sys 0.6.1 (registry+https://github.com/rust-lang/crates.io-index)" = "b064c81821100adb4b71923cecfc67fef083db21c3bbd454b0162c7ffe63eeaa"
 "checksum wasi 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)" = "b89c3ce4ce14bdc6fb6beaf9ec7928ca331de5df7e5ea278375642a2f478570d"
+"checksum wasmi 0.5.1 (git+https://github.com/tomaka/wasmi?branch=moo)" = "<none>"
+"checksum wasmi-validation 0.2.0 (git+https://github.com/tomaka/wasmi?branch=moo)" = "<none>"
