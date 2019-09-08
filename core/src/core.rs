@@ -85,8 +85,10 @@ impl Core {
                         println!("finished exec => {:?}", val);
                     }
                 }
-                process::ExecOutcome::Interrupted(_, _) => {
+                process::ExecOutcome::Interrupted(index, arguments) => {
+                    let (interface, function) = self.externals_indices.get_by_left(&index).unwrap();
                     // TODO: prototype hack
+                    println!("{:?} {:?} {:?}", interface, function, arguments);
                     scheduled.resume_value = Some(wasmi::RuntimeValue::I32(7));
                     self.scheduled.push_back(scheduled);
                 }
@@ -101,9 +103,19 @@ impl Core {
 
     /// Start executing the module passed as parameter.
     pub fn execute(&mut self, module: &Module) -> Result<Pid, ()> {
-        let state_machine = process::ProcessStateMachine::new(module, |_, _| Err(())).unwrap();     // TODO: don't unwrap
+        let state_machine = process::ProcessStateMachine::new(module, |interface, function, signature| {
+            // TODO: check signature validity
+            if let Some(index) = self.externals_indices.get_by_right(&(interface.clone(), function.into())) {
+                Ok(*index)
+            } else {
+                // TODO: first check whether the interface is fufilled by a module
+                let index = self.externals_indices.len();
+                self.externals_indices.insert(index, (interface.clone(), function.to_owned().into()));
+                Ok(index)
+            }
+        })?;
 
-        // We don't modify `self` until the very end.
+        // We don't modify `self` until after we started the state machine.
         let pid = self.pid_pool.assign();
         let schedule_me = state_machine.is_executing();
         self.loaded.insert(pid, Program {

@@ -22,8 +22,8 @@ impl ProcessStateMachine {
     /// If a start function exists in the module, we start executing it and the returned object is
     /// in the executing state. If that is the case, one must call `resume` with a `None` pass-back
     /// value in order to resume execution of `main`.
-    pub fn new(module: &Module, mut symbols: impl FnMut(&InterfaceHash, &str) -> Result<usize, ()>) -> Result<Self, ()> {
-        struct ImportResolve<'a>(RefCell<&'a mut dyn FnMut(&InterfaceHash, &str) -> Result<usize, ()>>);
+    pub fn new(module: &Module, mut symbols: impl FnMut(&InterfaceHash, &str, &wasmi::Signature) -> Result<usize, ()>) -> Result<Self, ()> {
+        struct ImportResolve<'a>(RefCell<&'a mut dyn FnMut(&InterfaceHash, &str, &wasmi::Signature) -> Result<usize, ()>>);
         impl<'a> wasmi::ImportResolver for ImportResolve<'a> {
             fn resolve_func(&self, module_name: &str, field_name: &str, signature: &wasmi::Signature)
                 -> Result<wasmi::FuncRef, wasmi::Error>
@@ -39,10 +39,8 @@ impl ProcessStateMachine {
                     InterfaceHash::from(buf_out)
                 };
 
-                println!("{:?}", interface_hash);
-
                 let closure = &mut **self.0.borrow_mut();
-                let index = match closure(&interface_hash, field_name) {
+                let index = match closure(&interface_hash, field_name, signature) {
                     Ok(i) => i,
                     Err(_) => return Err(wasmi::Error::Instantiation(format!("Couldn't resolve `{}`:`{}`", interface_hash, field_name))),
                 };
