@@ -3,7 +3,7 @@
 
 #[link(wasm_import_module = "")]
 extern {
-    fn test() -> i32;
+    fn get_random() -> i32;
 }
 
 #[panic_handler]
@@ -30,6 +30,6 @@ fn main(_: isize, _: *const *const u8) -> isize {
 
 #[start]
 fn main(_: isize, _: *const *const u8) -> isize {
-    (unsafe { test() }) as isize
+    (unsafe { get_random() }) as isize
     //5
 }

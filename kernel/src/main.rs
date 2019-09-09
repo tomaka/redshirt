@@ -3,20 +3,13 @@
 #![feature(never_type)]
 
 fn main() {
-    let mut core = core::core::Core::<()>::new()
-        .with_extrinsic([0; 32], "test", ())
-        .build();
     let module = core::module::Module::from_bytes(&include_bytes!("../../modules/preloaded/target/wasm32-unknown-unknown/release/preloaded.wasm")[..]);
-    core.execute(&module).unwrap();
+    let mut system = core::system::System::new()
+        .with_main_program(module)
+        .build();
 
     loop {
-        let result = futures::executor::block_on(core.run());
+        let result = futures::executor::block_on(system.run());
         println!("{:?}", result);
-        match result {
-            core::core::RunOutcome::ProgramWaitExtrinsic { pid, extrinsic } => {
-                core.resolve_extrinsic_call(pid, Some(wasmi::RuntimeValue::I32(12)));
-            }
-            _ => break,
-        }
     }
 }

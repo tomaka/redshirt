@@ -3,6 +3,10 @@
 use sha2::Digest as _;
 use std::fmt;
 
+/// Represents a successfully-parsed binary.
+///
+/// This is the equivalent of an [ELF](https://en.wikipedia.org/wiki/Executable_and_Linkable_Format)
+/// or a [PE](https://en.wikipedia.org/wiki/Portable_Executable).
 pub struct Module {
     inner: wasmi::Module,
     hash: ModuleHash,

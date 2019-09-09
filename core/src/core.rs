@@ -6,12 +6,15 @@ use crate::module::Module;
 use alloc::{borrow::Cow, collections::VecDeque};
 use bimap::BiHashMap;
 use hashbrown::{HashMap, HashSet};
-use self::pid::{Pid, PidPool};
+use self::pid::PidPool;
 use std::fmt;
 
 mod builder;
 mod pid;
 mod process;
+
+// TODO: move definition?
+pub use self::pid::Pid;
 
 pub struct Core<T> {
     pid_pool: PidPool,
@@ -41,7 +44,7 @@ pub struct CoreBuilder<T> {
 }
 
 #[derive(Debug)]
-pub enum RunOutcome<'a, T> {
+pub enum CoreRunOutcome<'a, T> {
     ProgramFinished {
         pid: Pid,
         return_value: Option<wasmi::RuntimeValue>,      // TODO: force to i32?
@@ -96,7 +99,7 @@ impl<T> Core<T> {
     // TODO: make multithreaded
     // TODO: shouldn't return an Option but a plain value
     #[allow(clippy::needless_lifetimes)]        // TODO: necessary because of async/await
-    pub async fn run<'a>(&'a mut self) -> RunOutcome<'a, T> {
+    pub async fn run<'a>(&'a mut self) -> CoreRunOutcome<'a, T> {
         // TODO: wasi doesn't allow interrupting executions
         while let Some(scheduled) = self.scheduled.pop_front() {
             let program = self.loaded.get_mut(&scheduled.pid).unwrap();
@@ -108,7 +111,7 @@ impl<T> Core<T> {
                             resume_value: val,
                         });
                     } else {
-                        return RunOutcome::ProgramFinished {
+                        return CoreRunOutcome::ProgramFinished {
                             pid: scheduled.pid,
                             return_value: val,
                         };
@@ -117,7 +120,7 @@ impl<T> Core<T> {
                 process::ExecOutcome::Interrupted(index, arguments) => {
                     let (interface, function) = self.externals_indices.get_by_left(&index).unwrap();
                     if let Some(extrinsic) = self.extrinsics.get(&(interface.clone(), function.clone())) {
-                        return RunOutcome::ProgramWaitExtrinsic {
+                        return CoreRunOutcome::ProgramWaitExtrinsic {
                             pid: scheduled.pid,
                             extrinsic,
                         };
@@ -131,7 +134,7 @@ impl<T> Core<T> {
         }
 
         // TODO: sleep or something instead of terminating the future
-        RunOutcome::Nothing
+        CoreRunOutcome::Nothing
     }
 
     /// After `ProgramWaitExtrinsic` has been called, you have to call this method in order to
@@ -213,7 +216,7 @@ impl<T> CoreBuilder<T> {
 #[cfg(test)]
 mod tests {
     use crate::module::Module;
-    use super::{Core, RunOutcome};
+    use super::{Core, CoreRunOutcome};
 
     #[test]
     fn basic_module() {
@@ -228,7 +231,7 @@ mod tests {
 
         let outcome = futures::executor::block_on(core.run());
         match outcome {
-            RunOutcome::ProgramFinished { pid, return_value } => {
+            CoreRunOutcome::ProgramFinished { pid, return_value } => {
                 assert_eq!(pid, expected_pid);
                 assert_eq!(return_value, Some(wasmi::RuntimeValue::I32(5)));
             }
@@ -250,7 +253,7 @@ mod tests {
 
         /*let outcome = futures::executor::block_on(core.run());
         match outcome {
-            RunOutcome::ProgramCrashed { pid, .. } => {
+            CoreRunOutcome::ProgramCrashed { pid, .. } => {
                 assert_eq!(pid, expected_pid);
             }
             _ => panic!()
@@ -274,7 +277,7 @@ mod tests {
 
         let outcome = futures::executor::block_on(core.run());
         match outcome {
-            RunOutcome::ProgramWaitExtrinsic { pid, extrinsic } => {
+            CoreRunOutcome::ProgramWaitExtrinsic { pid, extrinsic } => {
                 assert_eq!(pid, expected_pid);
                 assert_eq!(*extrinsic, 639);
             }
@@ -285,7 +288,7 @@ mod tests {
 
         let outcome = futures::executor::block_on(core.run());
         match outcome {
-            RunOutcome::ProgramFinished { pid, return_value } => {
+            CoreRunOutcome::ProgramFinished { pid, return_value } => {
                 assert_eq!(pid, expected_pid);
                 assert_eq!(return_value, Some(wasmi::RuntimeValue::I32(713)));
             }
