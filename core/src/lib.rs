@@ -7,11 +7,12 @@
 // TODO: futures don't work in #![no_std] :-/
 // #![no_std]
 
-extern crate alloc;
+extern crate alloc;     // TODO: is that needed?
+extern crate core;      // TODO: is that needed?
 
-pub mod core;
 pub mod interface;
 pub mod module;
+pub mod scheduler;
 pub mod system;
 
 mod predef;

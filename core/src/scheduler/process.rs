@@ -1,9 +1,42 @@
 use crate::interface::InterfaceHash;
 use crate::module::Module;
+use alloc::borrow::Cow;
 use core::{cell::RefCell, fmt};
 
+/// WASMI state machine dedicated to a process.
+///
+/// # Initialization
+///
+/// Initializing a state machine is done by passing a [`Module`](crate::module::Module) object,
+/// which holds a successfully-parsed WASM binary.
+///
+/// The module might contain a list of elements to import (such a functions) and that the
+/// initialization process must resolve. When such an import is encountered, the closure passed
+/// to the [`new`](ProcessStateMachine::new) function is invoked and must return a meaning-less
+/// integer decided by the user. This integer is later passed back to the user of this struct in
+/// situations when the state machine invokes that external function.
+///
+/// # Paused vs stopped
+///
+/// This struct can be in two different states: either paused, or stopped. At initialization,
+/// if the WASM module has a startup function, it will immediately start running it and pause.
+///
+/// When the state machine is stopped, you can call [`start`](ProcessStateMachine::start) in order
+/// to switch the state machine to a paused state at the start of that function.
+///
+/// When the state machine is paused, you can call [`resume`](ProcessStateMachine::running) in
+/// order to execute code until the next pause.
+///
+/// The state machine immediately pauses itself if it encounters an external function call (as in,
+/// a function that's been imported), in which case you must execute that call and feed back the
+/// outcome of that call into the state machine to resume it.
+///
+/// # Shared memory
+///
+/// TO BE DESIGNED // TODO:
 pub struct ProcessStateMachine {
-    module: wasmi::ModuleRef,       // TODO: ask serguey or someone whether that's a weak ref
+    /// Original module, with resolved imports.
+    module: wasmi::ModuleRef,
 
     /// Each program can only run once at a time. It only has one "thread".
     /// If `Some`, we are currently executing something in `Program`. If `None`, we aren't.
@@ -20,7 +53,7 @@ impl ProcessStateMachine {
     /// The closure is called for each import that the module has.
     ///
     /// If a start function exists in the module, we start executing it and the returned object is
-    /// in the executing state. If that is the case, one must call `resume` with a `None` pass-back
+    /// in the paused state. If that is the case, one must call `resume` with a `None` pass-back
     /// value in order to resume execution of `main`.
     pub fn new(module: &Module, mut symbols: impl FnMut(&InterfaceHash, &str, &wasmi::Signature) -> Result<usize, ()>) -> Result<Self, ()> {
         struct ImportResolve<'a>(RefCell<&'a mut dyn FnMut(&InterfaceHash, &str, &wasmi::Signature) -> Result<usize, ()>>);
@@ -70,23 +103,19 @@ impl ProcessStateMachine {
         let not_started = wasmi::ModuleInstance::new(module.as_ref(), &ImportResolve(RefCell::new(&mut symbols))).unwrap();      // TODO: don't unwrap
         let module = not_started.assert_no_start();     // TODO: true in practice, bad to do in theory
 
-        let main_execution = match module.export_by_name("main") {
-            Some(wasmi::ExternVal::Func(f)) => {
-                let execution = wasmi::FuncInstance::invoke_resumable(&f, &[wasmi::RuntimeValue::I32(0), wasmi::RuntimeValue::I32(0)][..]).unwrap();
-                Some(execution)
-            },
-            None => None,
-            _ => panic!()       // TODO:
-        };
-
-        Ok(ProcessStateMachine {
+        let mut state_machine = ProcessStateMachine {
             module,
-            execution: main_execution,
+            execution: None,
             interrupted: false,
-        })
+        };
+        // Try to start executing `main`.
+        let _ = state_machine.start_inner("main", &[wasmi::RuntimeValue::I32(0), wasmi::RuntimeValue::I32(0)][..]);
+        Ok(state_machine)
     }
 
-    /// Returns true if we are executing something.
+    /// Returns true if we are executing something and are in the paused state.
+    ///
+    /// If false, we are stopped.
     pub fn is_executing(&self) -> bool {
         self.execution.is_some()
     }
@@ -94,14 +123,32 @@ impl ProcessStateMachine {
     /// Starts executing a function. Immediately pauses the execution and puts it in an
     /// interrupted state.
     ///
-    /// Only valid to call if `is_executing` is false.
+    /// Only valid to call if [`is_executing`](ProcessStateMachine::is_executing) returns false.
     ///
-    /// Call `resume` afterwards with a value of `None`.
-    pub fn start(&mut self, interface: &InterfaceHash, function: &str) {
+    /// You should call [`resume`](ProcessStateMachine::resume) afterwards with a value of `None`.
+    pub fn start(&mut self, interface: &InterfaceHash, function: &str, params: impl Into<Cow<'static, [wasmi::RuntimeValue]>>) {
+
         unimplemented!()
     }
 
-    /// Only valid to call if `is_executing` is true.
+    /// Same as `start`, but executes a symbol by name.
+    fn start_inner(&mut self, symbol_name: &str, params: impl Into<Cow<'static, [wasmi::RuntimeValue]>>) {
+        if self.execution.is_some() {
+            panic!()        // TODO: return error
+        }
+
+        match self.module.export_by_name(symbol_name) {
+            Some(wasmi::ExternVal::Func(f)) => {
+                let execution = wasmi::FuncInstance::invoke_resumable(&f, params).unwrap();
+                self.execution = Some(execution);
+                self.interrupted = false;
+            },
+            None => panic!(),   // TODO: error
+            _ => panic!()       // TODO:
+        }
+    }
+
+    /// Only valid to call if [`is_executing`](ProcessStateMachine::is_executing) returns true.
     pub fn resume(&mut self, value: Option<wasmi::RuntimeValue>) -> ExecOutcome {
         let mut execution = self.execution.take().unwrap();
         let result = if self.interrupted {
@@ -126,7 +173,10 @@ impl ProcessStateMachine {
                     _ => unreachable!()
                 };
                 self.execution = Some(execution);
-                ExecOutcome::Interrupted(interrupt.index, interrupt.args.clone())
+                ExecOutcome::Interrupted {
+                    id: interrupt.index,
+                    params: interrupt.args.clone(),
+                }
             }
             Err(wasmi::ResumableError::Trap(trap)) => {
                 println!("oops, actual error!");
@@ -137,9 +187,39 @@ impl ProcessStateMachine {
     }
 }
 
+/// Outcome of the [`resume`](ProcessStateMachine::resume) function.
 pub enum ExecOutcome {
+    /// The currently-executed function has finished. The state machine is now in a stopped state.
+    ///
+    /// Calling [`is_executing`](ProcessStateMachine::is_executing) will return false.
     Finished(Option<wasmi::RuntimeValue>),
-    Interrupted(usize, Vec<wasmi::RuntimeValue>),
+
+    /// The currently-executed function has been paused due to a call to an external function.
+    /// The state machine is now in a paused state.
+    ///
+    /// Calling [`is_executing`](ProcessStateMachine::is_executing) will return true.
+    ///
+    /// This variant contains the identifier of the external function that is expected to be
+    /// called, and its parameters. When you call [`resume`](ProcessStateMachine::resume) again,
+    /// you must pass back the outcome of calling that function.
+    ///
+    /// > **Note**: The type of the return value of the function is called is not specified, as the
+    /// >           user is supposed to know it based on the identifier. It is an error tp call
+    /// >           [`resume`](ProcessStateMachine::resume) with a value of the wrong type.
+    Interrupted {
+        /// Identifier of the function to call. Corresponds to the value provided at
+        /// initialization when resolving imports.
+        id: usize,
+
+        /// Parameters of the function call.
+        params: Vec<wasmi::RuntimeValue>,
+    },
+
+    /// The currently-executed function has finished with an error. The state machine is now in a
+    /// stopped state.
+    ///
+    /// Calling [`is_executing`](ProcessStateMachine::is_executing) will return false.
+    // TODO: it might change a bit here
     Errored(wasmi::Trap),
 }
 

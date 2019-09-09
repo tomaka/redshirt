@@ -1,6 +1,6 @@
 // Copyright(c) 2019 Pierre Krieger
 
-use crate::core::{Core, CoreRunOutcome, Pid};
+use crate::scheduler::{Core, CoreRunOutcome, Pid};
 use crate::module::Module;
 use smallvec::SmallVec;
 
@@ -30,7 +30,7 @@ pub enum SystemRunOutcome {
 impl System {
     pub fn new() -> SystemBuilder {
         let mut core = Core::new()
-            .with_extrinsic([0; 32], "get_random", Extrinsic::GetRandom)
+            .with_extrinsic([0; 32], "get_random", &wasmi::Signature::new(&[][..], Some(wasmi::ValueType::I32)), Extrinsic::GetRandom)
             .build();
 
         SystemBuilder {

@@ -5,7 +5,7 @@ use crate::module::Module;
 
 use alloc::{borrow::Cow, collections::VecDeque};
 use bimap::BiHashMap;
-use hashbrown::{HashMap, HashSet};
+use hashbrown::{HashMap, HashSet, hash_map::Entry};
 use self::pid::PidPool;
 use std::fmt;
 
@@ -117,8 +117,8 @@ impl<T> Core<T> {
                         };
                     }
                 }
-                process::ExecOutcome::Interrupted(index, arguments) => {
-                    let (interface, function) = self.externals_indices.get_by_left(&index).unwrap();
+                process::ExecOutcome::Interrupted { id, params } => {
+                    let (interface, function) = self.externals_indices.get_by_left(&id).unwrap();
                     if let Some(extrinsic) = self.extrinsics.get(&(interface.clone(), function.clone())) {
                         return CoreRunOutcome::ProgramWaitExtrinsic {
                             pid: scheduled.pid,
@@ -147,7 +147,26 @@ impl<T> Core<T> {
         });
     }
 
+    /// Sets the process that fulfills the given interface.
+    ///
+    /// Returns an error if there is already a process fulfilling the given interface.
+    pub fn set_interface_provider(&mut self, interface: InterfaceHash, pid: Pid) -> Result<(), ()> {
+        if self.extrinsics.keys().any(|(i, _)| i == &interface) {       // TODO: more efficient way?
+            return Err(())
+        }
+
+        match self.interfaces.entry(interface) {
+            Entry::Occupied(_) => Err(()),
+            Entry::Vacant(e) => {
+                e.insert(pid);
+                Ok(())
+            }
+        }
+    }
+
     /// Start executing the module passed as parameter.
+    ///
+    /// Each import of the [`Module`](crate::module::Module) is resolved.
     pub fn execute(&mut self, module: &Module) -> Result<Pid, ()> {
         let state_machine = process::ProcessStateMachine::new(module, |interface, function, signature| {
             // TODO: check signature validity
@@ -185,8 +204,7 @@ impl<T> Core<T> {
 }
 
 impl<T> CoreBuilder<T> {
-    // TODO: pass a Signature parameter
-    pub fn with_extrinsic(mut self, interface: impl Into<InterfaceHash>, f_name: impl Into<Cow<'static, str>>, token: impl Into<T>) -> Self {
+    pub fn with_extrinsic(mut self, interface: impl Into<InterfaceHash>, f_name: impl Into<Cow<'static, str>>, signature: &wasmi::Signature, token: impl Into<T>) -> Self {
         // TODO: panic if we already have it
         let interface = interface.into();
         let f_name = f_name.into();
@@ -270,7 +288,7 @@ mod tests {
         "#).unwrap();
 
         let mut core = Core::<u32>::new()
-            .with_extrinsic([0; 32], "test", 639u32)
+            .with_extrinsic([0; 32], "test", &wasmi::Signature::new(&[][..], None), 639u32)
             .build();
 
         let expected_pid = core.execute(&module).unwrap();
