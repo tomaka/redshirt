@@ -148,19 +148,51 @@ impl ProcessStateMachine {
         }
     }
 
+    /// Resumes execution when in a paused state.
+    ///
+    /// If this is the first call you call [`resume`](ProcessStateMachine::resume) after a call to
+    /// [`start`](ProcessStateMachine::start) or to [`new`](ProcessStateMachine::new), then you
+    /// must pass a value of `None`.
+    ///
+    /// If you call this function after a previous call to [`resume`](ProcessStateMachine::resume)
+    /// that was interrupted by an external function call, then you must pass back the outcome of
+    /// that call.
+    ///
     /// Only valid to call if [`is_executing`](ProcessStateMachine::is_executing) returns true.
     pub fn resume(&mut self, value: Option<wasmi::RuntimeValue>) -> ExecOutcome {
+        struct DummyExternals;
+        impl wasmi::Externals for DummyExternals {
+            fn invoke_index(&mut self, index: usize, args: wasmi::RuntimeArgs)
+                -> Result<Option<wasmi::RuntimeValue>, wasmi::Trap>
+            {
+                Err(wasmi::TrapKind::Host(Box::new(Interrupt { index, args: args.as_ref().to_vec() })).into())
+            }
+        }
+
+        #[derive(Debug)]
+        struct Interrupt {
+            index: usize,
+            args: Vec<wasmi::RuntimeValue>,
+        }
+        impl fmt::Display for Interrupt {
+            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                write!(f, "Interrupt")
+            }
+        }
+        impl wasmi::HostError for Interrupt {
+        }
+
         let mut execution = self.execution.take().unwrap();
         let result = if self.interrupted {
             debug_assert_eq!(
                 execution.resumable_value_type(),
                 value.as_ref().map(|v| v.value_type())
             );
-            execution.resume_execution(value, &mut DummyExternals {})
+            execution.resume_execution(value, &mut DummyExternals)
         } else {
             assert!(value.is_none());       // TODO: turn into an error
             self.interrupted = true;
-            execution.start_execution(&mut DummyExternals {})
+            execution.start_execution(&mut DummyExternals)
         };
 
         match result {
@@ -223,29 +255,69 @@ pub enum ExecOutcome {
     Errored(wasmi::Trap),
 }
 
-struct DummyExternals {
+#[cfg(test)]
+mod tests {
+    use crate::module::Module;
+    use super::{ProcessStateMachine, ExecOutcome};
 
-}
+    #[test]
+    fn start_in_paused_if_main() {
+        let module = Module::from_wat(r#"(module
+            (func $main (param $p0 i32) (param $p1 i32) (result i32)
+                i32.const 5)
+            (export "main" (func $main)))
+        "#).unwrap();
 
-impl wasmi::Externals for DummyExternals {
-    fn invoke_index(&mut self, index: usize, args: wasmi::RuntimeArgs)
-        -> Result<Option<wasmi::RuntimeValue>, wasmi::Trap>
-    {
-        Err(wasmi::TrapKind::Host(Box::new(Interrupt { index, args: args.as_ref().to_vec() })).into())
+        let state_machine = ProcessStateMachine::new(&module, |_, _, _| unreachable!()).unwrap();
+        assert!(state_machine.is_executing());  // there is "main" function
     }
-}
 
-#[derive(Debug)]
-struct Interrupt {
-    index: usize,
-    args: Vec<wasmi::RuntimeValue>,
-}
+    #[test]
+    #[ignore]       // TODO: panics as not implemented
+    fn start_stopped_if_no_main() {
+        let module = Module::from_wat(r#"(module
+            (func $main (param $p0 i32) (param $p1 i32) (result i32)
+                i32.const 5)
+            (export "foo" (func $main)))
+        "#).unwrap();
 
-impl fmt::Display for Interrupt {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Interrupt")
+        let state_machine = ProcessStateMachine::new(&module, |_, _, _| unreachable!()).unwrap();
+        assert!(!state_machine.is_executing());
     }
-}
 
-impl wasmi::HostError for Interrupt {
+    #[test]
+    fn main_executes() {
+        let module = Module::from_wat(r#"(module
+            (func $main (param $p0 i32) (param $p1 i32) (result i32)
+                i32.const 5)
+            (export "main" (func $main)))
+        "#).unwrap();
+
+        let mut state_machine = ProcessStateMachine::new(&module, |_, _, _| unreachable!()).unwrap();
+        match state_machine.resume(None) {
+            ExecOutcome::Finished(Some(wasmi::RuntimeValue::I32(5))) => {}
+            _ => panic!()
+        }
+    }
+
+    #[test]
+    fn external_call_then_resume() {
+        let module = Module::from_wat(r#"(module
+            (import "" "test" (func $test (result i32)))
+            (func $main (param $p0 i32) (param $p1 i32) (result i32)
+                call $test)
+            (export "main" (func $main)))
+        "#).unwrap();
+
+        let mut state_machine = ProcessStateMachine::new(&module, |_, _, _| Ok(9876)).unwrap();
+        match state_machine.resume(None) {
+            ExecOutcome::Interrupted { id: 9876, ref params } if params.is_empty() => {}
+            _ => panic!()
+        }
+
+        match state_machine.resume(Some(wasmi::RuntimeValue::I32(2227))) {
+            ExecOutcome::Finished(Some(wasmi::RuntimeValue::I32(2227))) => {}
+            _ => panic!()
+        }
+    }
 }
