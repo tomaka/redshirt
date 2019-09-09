@@ -298,6 +298,7 @@ mod tests {
             ExecOutcome::Finished(Some(wasmi::RuntimeValue::I32(5))) => {}
             _ => panic!()
         }
+        assert!(!state_machine.is_executing());
     }
 
     #[test]
@@ -314,10 +315,12 @@ mod tests {
             ExecOutcome::Interrupted { id: 9876, ref params } if params.is_empty() => {}
             _ => panic!()
         }
+        assert!(state_machine.is_executing());
 
         match state_machine.resume(Some(wasmi::RuntimeValue::I32(2227))) {
             ExecOutcome::Finished(Some(wasmi::RuntimeValue::I32(2227))) => {}
             _ => panic!()
         }
+        assert!(!state_machine.is_executing());
     }
 }

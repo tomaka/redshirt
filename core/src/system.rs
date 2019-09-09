@@ -48,7 +48,7 @@ impl System {
                 CoreRunOutcome::ProgramCrashed { pid, error } => {
                     return SystemRunOutcome::ProgramCrashed { pid, error }
                 },
-                CoreRunOutcome::ProgramWaitExtrinsic { pid, extrinsic: &Extrinsic::GetRandom } => {
+                CoreRunOutcome::ProgramWaitExtrinsic { pid, extrinsic: &Extrinsic::GetRandom, params } => {
                     self.core.resolve_extrinsic_call(pid, Some(wasmi::RuntimeValue::I32(4 /* randomly chosen value */)));     // TODO: 
                 },
                 CoreRunOutcome::Nothing => {},

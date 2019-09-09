@@ -7,9 +7,7 @@ use alloc::{borrow::Cow, collections::VecDeque};
 use bimap::BiHashMap;
 use hashbrown::{HashMap, HashSet, hash_map::Entry};
 use self::pid::PidPool;
-use std::fmt;
 
-mod builder;
 mod pid;
 mod process;
 
@@ -56,6 +54,7 @@ pub enum CoreRunOutcome<'a, T> {
     ProgramWaitExtrinsic {
         pid: Pid,
         extrinsic: &'a T,
+        params: Vec<wasmi::RuntimeValue>,
     },
     // TODO: temporary; remove
     Nothing,
@@ -97,8 +96,7 @@ impl<T> Core<T> {
     ///
     /// This returns a `Future` so that it is possible to interrupt the process.
     // TODO: make multithreaded
-    // TODO: shouldn't return an Option but a plain value
-    #[allow(clippy::needless_lifetimes)]        // TODO: necessary because of async/await
+    #[allow(clippy::needless_lifetimes)]        // TODO: lifetime necessary because of async/await
     pub async fn run<'a>(&'a mut self) -> CoreRunOutcome<'a, T> {
         // TODO: wasi doesn't allow interrupting executions
         while let Some(scheduled) = self.scheduled.pop_front() {
@@ -123,6 +121,7 @@ impl<T> Core<T> {
                         return CoreRunOutcome::ProgramWaitExtrinsic {
                             pid: scheduled.pid,
                             extrinsic,
+                            params,
                         };
                     }
                 }
@@ -295,9 +294,10 @@ mod tests {
 
         let outcome = futures::executor::block_on(core.run());
         match outcome {
-            CoreRunOutcome::ProgramWaitExtrinsic { pid, extrinsic } => {
+            CoreRunOutcome::ProgramWaitExtrinsic { pid, extrinsic, params } => {
                 assert_eq!(pid, expected_pid);
                 assert_eq!(*extrinsic, 639);
+                assert!(params.is_empty());
             }
             _ => panic!()
         }
