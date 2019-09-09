@@ -13,9 +13,11 @@ mod builder;
 mod pid;
 mod process;
 
-pub struct Core {
+pub struct Core<T> {
     pid_pool: PidPool,
     loaded: HashMap<Pid, Program>,
+
+    extrinsics: HashMap<((InterfaceHash, Cow<'static, str>)), T>,
 
     /// For each interface, which program is fulfilling it.
     interfaces: HashMap<InterfaceHash, Pid>,
@@ -50,16 +52,22 @@ struct Scheduled {
     resume_value: Option<wasmi::RuntimeValue>,
 }
 
-impl Core {
+impl<T> Core<T> {
     /// Initialies a new `Core`.
-    pub fn new() -> Core {
+    pub fn new() -> Core<T> {
         Core {
             pid_pool: PidPool::new(),
             loaded: HashMap::with_capacity(128),
+            extrinsics: HashMap::with_capacity(16),
             interfaces: HashMap::with_capacity(32),
             externals_indices: BiHashMap::with_capacity(128),
             scheduled: VecDeque::with_capacity(32),
         }
+    }
+
+    // TODO: consider passing this in a builder instead of adding them afterwards
+    pub fn register_extrinsic(&mut self, interface: impl Into<InterfaceHash>, f_name: impl Into<Cow<'static, str>>, token: impl Into<T>) {
+        self.extrinsics.insert((interface.into(), f_name.into()), token.into());
     }
 
     pub fn has_interface(&self, interface: InterfaceHash) -> bool {
@@ -71,9 +79,10 @@ impl Core {
     /// This returns a `Future` so that it is possible to interrupt the process.
     // TODO: make multithreaded
     // TODO: shouldn't return an Option but a plain value
-    pub async fn run(&mut self) -> RunOutcome {
+    #[allow(clippy::needless_lifetimes)]        // TODO: necessary because of async/await
+    pub async fn run<'a>(&'a mut self) -> RunOutcome<'a, T> {
         // TODO: wasi doesn't allow interrupting executions
-        while let Some(mut scheduled) = self.scheduled.pop_front() {
+        while let Some(scheduled) = self.scheduled.pop_front() {
             let program = self.loaded.get_mut(&scheduled.pid).unwrap();
             match program.state_machine.resume(scheduled.resume_value) {
                 process::ExecOutcome::Finished(val) => {
@@ -91,10 +100,12 @@ impl Core {
                 }
                 process::ExecOutcome::Interrupted(index, arguments) => {
                     let (interface, function) = self.externals_indices.get_by_left(&index).unwrap();
-                    // TODO: prototype hack
-                    println!("{:?} {:?} {:?}", interface, function, arguments);
-                    scheduled.resume_value = Some(wasmi::RuntimeValue::I32(7));
-                    self.scheduled.push_back(scheduled);
+                    if let Some(extrinsic) = self.extrinsics.get(&(interface.clone(), function.clone())) {
+                        return RunOutcome::ProgramWaitExtrinsic {
+                            pid: scheduled.pid,
+                            extrinsic,
+                        };
+                    }
                 }
                 process::ExecOutcome::Errored(trap) => {
                     println!("oops, actual error!");
@@ -107,6 +118,16 @@ impl Core {
         RunOutcome::Nothing
     }
 
+    /// After `ProgramWaitExtrinsic` has been called, you have to call this method in order to
+    /// inject back the result of the extrinsic call.
+    pub fn resolve_extrinsic_call(&mut self, pid: Pid, return_value: Option<wasmi::RuntimeValue>) {
+        // TODO: check if that's correct
+        self.scheduled.push_back(Scheduled {
+            pid,
+            resume_value: return_value,
+        });
+    }
+
     /// Start executing the module passed as parameter.
     pub fn execute(&mut self, module: &Module) -> Result<Pid, ()> {
         let state_machine = process::ProcessStateMachine::new(module, |interface, function, signature| {
@@ -114,10 +135,14 @@ impl Core {
             if let Some(index) = self.externals_indices.get_by_right(&(interface.clone(), function.into())) {
                 Ok(*index)
             } else {
-                // TODO: first check whether the interface is fufilled by a module
-                let index = self.externals_indices.len();
-                self.externals_indices.insert(index, (interface.clone(), function.to_owned().into()));
-                Ok(index)
+                // TODO: also check interfaces dependencies
+                if self.extrinsics.contains_key(&(interface.clone(), function.into())) {
+                    let index = self.externals_indices.len();
+                    self.externals_indices.insert(index, (interface.clone(), function.to_owned().into()));
+                    Ok(index)
+                } else {
+                    Err(())
+                }
             }
         })?;
 
@@ -140,13 +165,14 @@ impl Core {
     }
 }
 
-impl Default for Core {
+impl<T> Default for Core<T> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-pub enum RunOutcome {
+#[derive(Debug)]
+pub enum RunOutcome<'a, T> {
     ProgramFinished {
         pid: Pid,
         return_value: Option<wasmi::RuntimeValue>,      // TODO: force to i32?
@@ -154,6 +180,10 @@ pub enum RunOutcome {
     ProgramCrashed {
         pid: Pid,
         error: wasmi::Error,
+    },
+    ProgramWaitExtrinsic {
+        pid: Pid,
+        extrinsic: &'a T,
     },
     // TODO: temporary; remove
     Nothing,
@@ -172,7 +202,7 @@ mod tests {
             (export "main" (func $main)))
         "#).unwrap();
 
-        let mut core = Core::new();
+        let mut core = Core::<!>::new();
         let expected_pid = core.execute(&module).unwrap();
 
         let outcome = futures::executor::block_on(core.run());
@@ -194,7 +224,7 @@ mod tests {
             (export "main" (func $main)))
         "#).unwrap();
 
-        let mut core = Core::new();
+        let mut core = Core::<!>::new();
         let expected_pid = core.execute(&module).unwrap();
 
         /*let outcome = futures::executor::block_on(core.run());

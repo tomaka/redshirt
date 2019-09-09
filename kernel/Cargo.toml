@@ -7,3 +7,6 @@ edition = "2018"
 [dependencies]
 core = { path = "../core" }
 futures-preview = "0.3.0-alpha.18"
+
+# TODO: remove
+wasmi = { git = "https://github.com/tomaka/wasmi", branch = "moo", default-features = false, features = ["core"] }

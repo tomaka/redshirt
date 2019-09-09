@@ -10,7 +10,7 @@
 extern crate alloc;
 
 pub mod core;
+pub mod interface;
 pub mod module;
 
-mod interface;
 mod predef;
