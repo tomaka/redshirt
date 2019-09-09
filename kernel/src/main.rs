@@ -3,8 +3,9 @@
 #![feature(never_type)]
 
 fn main() {
-    let mut core = core::core::Core::<()>::new();
-    core.register_extrinsic([0; 32], "test", ());
+    let mut core = core::core::Core::<()>::new()
+        .with_extrinsic([0; 32], "test", ())
+        .build();
     let module = core::module::Module::from_bytes(&include_bytes!("../../modules/preloaded/target/wasm32-unknown-unknown/release/preloaded.wasm")[..]);
     core.execute(&module).unwrap();
 

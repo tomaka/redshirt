@@ -33,6 +33,31 @@ pub struct Core<T> {
     scheduled: VecDeque<Scheduled>,
 }
 
+pub struct CoreBuilder<T> {
+    /// See the corresponding field in `Core`.
+    extrinsics: HashMap<((InterfaceHash, Cow<'static, str>)), T>,
+    /// See the corresponding field in `Core`.
+    externals_indices: BiHashMap<usize, (InterfaceHash, Cow<'static, str>)>,
+}
+
+#[derive(Debug)]
+pub enum RunOutcome<'a, T> {
+    ProgramFinished {
+        pid: Pid,
+        return_value: Option<wasmi::RuntimeValue>,      // TODO: force to i32?
+    },
+    ProgramCrashed {
+        pid: Pid,
+        error: wasmi::Error,
+    },
+    ProgramWaitExtrinsic {
+        pid: Pid,
+        extrinsic: &'a T,
+    },
+    // TODO: temporary; remove
+    Nothing,
+}
+
 struct Program {
     state_machine: process::ProcessStateMachine,
     depends_on: Vec<Pid>,
@@ -54,20 +79,11 @@ struct Scheduled {
 
 impl<T> Core<T> {
     /// Initialies a new `Core`.
-    pub fn new() -> Core<T> {
-        Core {
-            pid_pool: PidPool::new(),
-            loaded: HashMap::with_capacity(128),
-            extrinsics: HashMap::with_capacity(16),
-            interfaces: HashMap::with_capacity(32),
-            externals_indices: BiHashMap::with_capacity(128),
-            scheduled: VecDeque::with_capacity(32),
+    pub fn new() -> CoreBuilder<T> {
+        CoreBuilder {
+            extrinsics: HashMap::new(),
+            externals_indices: BiHashMap::new(),
         }
-    }
-
-    // TODO: consider passing this in a builder instead of adding them afterwards
-    pub fn register_extrinsic(&mut self, interface: impl Into<InterfaceHash>, f_name: impl Into<Cow<'static, str>>, token: impl Into<T>) {
-        self.extrinsics.insert((interface.into(), f_name.into()), token.into());
     }
 
     pub fn has_interface(&self, interface: InterfaceHash) -> bool {
@@ -165,28 +181,33 @@ impl<T> Core<T> {
     }
 }
 
-impl<T> Default for Core<T> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+impl<T> CoreBuilder<T> {
+    // TODO: pass a Signature parameter
+    pub fn with_extrinsic(mut self, interface: impl Into<InterfaceHash>, f_name: impl Into<Cow<'static, str>>, token: impl Into<T>) -> Self {
+        // TODO: panic if we already have it
+        let interface = interface.into();
+        let f_name = f_name.into();
 
-#[derive(Debug)]
-pub enum RunOutcome<'a, T> {
-    ProgramFinished {
-        pid: Pid,
-        return_value: Option<wasmi::RuntimeValue>,      // TODO: force to i32?
-    },
-    ProgramCrashed {
-        pid: Pid,
-        error: wasmi::Error,
-    },
-    ProgramWaitExtrinsic {
-        pid: Pid,
-        extrinsic: &'a T,
-    },
-    // TODO: temporary; remove
-    Nothing,
+        self.extrinsics.insert((interface.clone(), f_name.clone()), token.into());
+        let index = self.externals_indices.len();
+        debug_assert!(!self.externals_indices.contains_left(&index));
+        self.externals_indices.insert(index, (interface, f_name));
+        self
+    }
+
+    pub fn build(mut self) -> Core<T> {
+        // We're not going to modify `extrinsics` ever again, so let's free some memory.
+        self.extrinsics.shrink_to_fit();
+
+        Core {
+            pid_pool: PidPool::new(),
+            loaded: HashMap::with_capacity(128),
+            extrinsics: self.extrinsics,
+            interfaces: HashMap::with_capacity(32),
+            externals_indices: self.externals_indices,
+            scheduled: VecDeque::with_capacity(32),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -202,7 +223,7 @@ mod tests {
             (export "main" (func $main)))
         "#).unwrap();
 
-        let mut core = Core::<!>::new();
+        let mut core = Core::<!>::new().build();
         let expected_pid = core.execute(&module).unwrap();
 
         let outcome = futures::executor::block_on(core.run());
@@ -224,7 +245,7 @@ mod tests {
             (export "main" (func $main)))
         "#).unwrap();
 
-        let mut core = Core::<!>::new();
+        let mut core = Core::<!>::new().build();
         let expected_pid = core.execute(&module).unwrap();
 
         /*let outcome = futures::executor::block_on(core.run());
@@ -245,8 +266,9 @@ mod tests {
             (export "main" (func $main)))
         "#).unwrap();
 
-        let mut core = Core::<u32>::new();
-        core.register_extrinsic([0; 32], "test", 639u32);
+        let mut core = Core::<u32>::new()
+            .with_extrinsic([0; 32], "test", 639u32)
+            .build();
 
         let expected_pid = core.execute(&module).unwrap();
 
