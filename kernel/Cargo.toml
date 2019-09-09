@@ -3,6 +3,7 @@ name = "kernel"
 version = "0.1.0"
 authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
 edition = "2018"
+publish = false
 
 [dependencies]
 core = { path = "../core" }
