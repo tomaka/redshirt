@@ -235,4 +235,39 @@ mod tests {
             _ => panic!()
         }*/
     }
+
+    #[test]
+    fn module_wait_extrinsic() {
+        let module = Module::from_wat(r#"(module
+            (import "" "test" (func $test (result i32)))
+            (func $main (param $p0 i32) (param $p1 i32) (result i32)
+                call $test)
+            (export "main" (func $main)))
+        "#).unwrap();
+
+        let mut core = Core::<u32>::new();
+        core.register_extrinsic([0; 32], "test", 639u32);
+
+        let expected_pid = core.execute(&module).unwrap();
+
+        let outcome = futures::executor::block_on(core.run());
+        match outcome {
+            RunOutcome::ProgramWaitExtrinsic { pid, extrinsic } => {
+                assert_eq!(pid, expected_pid);
+                assert_eq!(*extrinsic, 639);
+            }
+            _ => panic!()
+        }
+
+        core.resolve_extrinsic_call(expected_pid, Some(wasmi::RuntimeValue::I32(713)));
+
+        let outcome = futures::executor::block_on(core.run());
+        match outcome {
+            RunOutcome::ProgramFinished { pid, return_value } => {
+                assert_eq!(pid, expected_pid);
+                assert_eq!(return_value, Some(wasmi::RuntimeValue::I32(713)));
+            }
+            _ => panic!()
+        }
+    }
 }
