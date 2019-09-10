@@ -18,10 +18,10 @@ pub struct Core<T> {
     pid_pool: PidPool,
     loaded: HashMap<Pid, Program>,
 
-    extrinsics: HashMap<((InterfaceHash, Cow<'static, str>)), T>,
+    extrinsics: HashMap<((InterfaceHash, Cow<'static, str>)), (T, wasmi::Signature)>,
 
-    /// For each interface, which program is fulfilling it.
-    interfaces: HashMap<InterfaceHash, Pid>,
+    /// For each interface, its definition and which program is fulfilling it.
+    interfaces: HashMap<InterfaceHash, (Pid, Interface)>,
 
     /// Holds a bijection between arbitrary values (the `usize` on the left side) that we pass
     /// to the WASM interpreter, and the function that corresponds to it.
@@ -36,7 +36,7 @@ pub struct Core<T> {
 
 pub struct CoreBuilder<T> {
     /// See the corresponding field in `Core`.
-    extrinsics: HashMap<((InterfaceHash, Cow<'static, str>)), T>,
+    extrinsics: HashMap<((InterfaceHash, Cow<'static, str>)), (T, wasmi::Signature)>,
     /// See the corresponding field in `Core`.
     externals_indices: BiHashMap<usize, (InterfaceHash, Cow<'static, str>)>,
 }
@@ -117,7 +117,8 @@ impl<T> Core<T> {
                 }
                 process::ExecOutcome::Interrupted { id, params } => {
                     let (interface, function) = self.externals_indices.get_by_left(&id).unwrap();
-                    if let Some(extrinsic) = self.extrinsics.get(&(interface.clone(), function.clone())) {
+                    // TODO: check params against signature? is that necessary? maybe a debug_assert!
+                    if let Some((extrinsic, _)) = self.extrinsics.get(&(interface.clone(), function.clone())) {
                         return CoreRunOutcome::ProgramWaitExtrinsic {
                             pid: scheduled.pid,
                             extrinsic,
@@ -157,7 +158,7 @@ impl<T> Core<T> {
         match self.interfaces.entry(interface.hash().clone()) {
             Entry::Occupied(_) => Err(()),
             Entry::Vacant(e) => {
-                e.insert(pid);
+                e.insert((pid, interface));
                 Ok(())
             }
         }
@@ -168,19 +169,30 @@ impl<T> Core<T> {
     /// Each import of the [`Module`](crate::module::Module) is resolved.
     pub fn execute(&mut self, module: &Module) -> Result<Pid, ()> {
         let state_machine = process::ProcessStateMachine::new(module, |interface, function, signature| {
-            // TODO: check signature validity
             if let Some(index) = self.externals_indices.get_by_right(&(interface.clone(), function.into())) {
-                Ok(*index)
-            } else {
-                // TODO: also check interfaces dependencies
-                if self.extrinsics.contains_key(&(interface.clone(), function.into())) {
-                    let index = self.externals_indices.len();
-                    self.externals_indices.insert(index, (interface.clone(), function.to_owned().into()));
-                    Ok(index)
-                } else {
-                    Err(())
-                }
+                // TODO: check signature validity
+                return Ok(*index);
             }
+            
+            // TODO: also check interfaces dependencies
+            if let Some((_, expected_sig)) = self.extrinsics.get(&(interface.clone(), function.into())) {
+                if expected_sig != signature {
+                    return Err(());
+                }
+
+                let index = self.externals_indices.len();
+                self.externals_indices.insert(index, (interface.clone(), function.to_owned().into()));
+                return Ok(index);
+            }
+
+            if let Some((provider_pid, interface_def)) = self.interfaces.get(&interface) {
+                // TODO: check function existance and signature validity against interface_def
+                let index = self.externals_indices.len();
+                self.externals_indices.insert(index, (interface.clone(), function.to_owned().into()));
+                return Ok(index);
+            }
+
+            Err(())
         })?;
 
         // We don't modify `self` until after we started the state machine.
@@ -208,7 +220,7 @@ impl<T> CoreBuilder<T> {
         let interface = interface.into();
         let f_name = f_name.into();
 
-        self.extrinsics.insert((interface.clone(), f_name.clone()), token.into());
+        self.extrinsics.insert((interface.clone(), f_name.clone()), (token.into(), signature.clone()));
         let index = self.externals_indices.len();
         debug_assert!(!self.externals_indices.contains_left(&index));
         self.externals_indices.insert(index, (interface, f_name));

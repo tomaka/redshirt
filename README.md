@@ -6,14 +6,15 @@ WASM and are loaded from some IPFS-like decentralized network.
 - This is an operating-system-like environment, but it could be seen as similar to a web browser
   or something similar.
 
-- If it ever becomes a real OS, everything would be run in ring 0.
+- If it ever becomes a real OS, everything would be run in ring 0. Isolation is guaranteed by the
+  WASM interpreter, and no hardware capability is required.
 
 - Programs are referred to by their hash, not by a file name. For example you don't tell the OS
   "execute /usr/bin/foo". Instead you say "execute A45d9a21c3a7". The WASM binary, if it doesn't
   exist locally, is fetched from IPFS or something similar.
 
 - A program can register itself as a provider of an interface. Interfaces are referred by hash as
-  well. Only one program can only ever be a provider of an interface.
+  well. Only one process can be a provider of an interface at any given point in time.
 
 - The import table of a WASM module can contain functions from interfaces. The "kernel" will link
   them to the process that provides that interface.
