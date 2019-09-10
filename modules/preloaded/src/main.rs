@@ -1,32 +1,5 @@
-#![feature(alloc_error_handler, start)]
-#![no_std]
 
-extern crate alloc;
-use alloc::vec::Vec;
-use core::sync::atomic::AtomicUsize;
-
-#[link(wasm_import_module = "")]
-extern {
-    fn get_random() -> i32;
-    fn abort() -> !;
-}
-
-#[panic_handler]
-fn panic(_: &core::panic::PanicInfo) -> ! { unsafe { abort() } }
-
-#[global_allocator]
-static ALLOCATOR: dlmalloc::GlobalDlmalloc = dlmalloc::GlobalDlmalloc;
-
-#[alloc_error_handler]
-pub extern fn oom(_: core::alloc::Layout) -> ! {
-    unsafe { abort() }
-}
-
-#[start]
-fn main(_: isize, _: *const *const u8) -> isize {
-    //(unsafe { get_random() }) as isize
-    //5
-
+fn main() {
     let mut sha3 = tiny_keccak::Keccak::new_sha3_256();
     let data: Vec<u8> = From::from("hello");
     let data2: Vec<u8> = From::from("world");
@@ -45,5 +18,4 @@ fn main(_: isize, _: *const *const u8) -> isize {
     ];
 
     assert_eq!(&res, expected);
-    0
 }

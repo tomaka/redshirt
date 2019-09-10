@@ -136,7 +136,7 @@ impl<T> Core<T> {
                     }
                 }
                 process::ExecOutcome::Errored(trap) => {
-                    println!("oops, actual error!");
+                    println!("oops, actual error! {:?}", trap);
                     // TODO: remove program from list and return `ProgramCrashed` event
                 }
             }
