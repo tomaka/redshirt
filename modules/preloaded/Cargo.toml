@@ -8,6 +8,7 @@ publish = false
 [workspace]
 
 [dependencies]
+tiny-keccak = "1.5"
 
 [profile.release]
 panic = "abort"

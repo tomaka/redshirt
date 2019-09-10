@@ -1,7 +1,9 @@
 // Copyright(c) 2019 Pierre Krieger
 
-use crate::scheduler::{Core, CoreRunOutcome, Pid};
+use crate::interface::InterfaceHash;
 use crate::module::Module;
+use crate::scheduler::{Core, CoreRunOutcome, Pid};
+use alloc::borrow::Cow;
 use smallvec::SmallVec;
 
 pub struct System {
@@ -30,6 +32,10 @@ pub enum SystemRunOutcome {
 impl System {
     pub fn new() -> SystemBuilder {
         let mut core = Core::new()
+            .with_extrinsic([0; 32], "register_interface", &wasmi::Signature::new(&[][..], Some(wasmi::ValueType::I32)), Extrinsic::RegisterInterface)
+            .with_extrinsic([0; 32], "sbrk", &wasmi::Signature::new(&[][..], Some(wasmi::ValueType::I32)), Extrinsic::Sbrk)
+            .with_extrinsic([0; 32], "abort", &wasmi::Signature::new(&[][..], Some(wasmi::ValueType::I32)), Extrinsic::Abort)
+            // TODO: remove randomess; that should be provided from outside of the core
             .with_extrinsic([0; 32], "get_random", &wasmi::Signature::new(&[][..], Some(wasmi::ValueType::I32)), Extrinsic::GetRandom)
             .build();
 
@@ -49,7 +55,20 @@ impl System {
                     return SystemRunOutcome::ProgramCrashed { pid, error }
                 },
                 CoreRunOutcome::ProgramWaitExtrinsic { pid, extrinsic: &Extrinsic::GetRandom, params } => {
+                    debug_assert!(params.is_empty());
                     self.core.resolve_extrinsic_call(pid, Some(wasmi::RuntimeValue::I32(4 /* randomly chosen value */)));     // TODO: 
+                },
+                CoreRunOutcome::ProgramWaitExtrinsic { pid, extrinsic: &Extrinsic::RegisterInterface, params } => {
+                    // TODO: implement
+                    // self.core.set_interface_provider();
+                    self.core.resolve_extrinsic_call(pid, None);
+                },
+                CoreRunOutcome::ProgramWaitExtrinsic { pid, extrinsic: &Extrinsic::Sbrk, params } => {
+                    panic!()
+                },
+                CoreRunOutcome::ProgramWaitExtrinsic { pid, extrinsic: &Extrinsic::Abort, params } => {
+                    debug_assert!(params.is_empty());
+                    panic!();
                 },
                 CoreRunOutcome::Nothing => {},
             }
@@ -58,6 +77,11 @@ impl System {
 }
 
 impl SystemBuilder {
+    pub fn with_extrinsic(mut self, interface: impl Into<InterfaceHash>, f_name: impl Into<Cow<'static, str>>, signature: &wasmi::Signature) -> Self {
+        // TODO: implement
+        self
+    }
+
     /// Adds a program that the [`System`] must execute on startup. Can be called multiple times
     /// to add multiple programs.
     pub fn with_main_program(mut self, module: Module) -> Self {
@@ -79,5 +103,8 @@ impl SystemBuilder {
 
 #[derive(Debug)]
 enum Extrinsic {
+    RegisterInterface,
+    Sbrk,
+    Abort,
     GetRandom,
 }
