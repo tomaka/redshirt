@@ -2,16 +2,16 @@
 
 use crate::interface::InterfaceHash;
 use crate::module::Module;
-use crate::scheduler::{Core, CoreRunOutcome, Pid};
+use crate::scheduler::{Core, CoreBuilder, CoreRunOutcome, Pid};
 use alloc::borrow::Cow;
 use smallvec::SmallVec;
 
-pub struct System {
-    core: Core<Extrinsic>,
+pub struct System<TExtEx> {
+    core: Core<Extrinsic<TExtEx>>,
 }
 
-pub struct SystemBuilder {
-    core: Core<Extrinsic>,
+pub struct SystemBuilder<TExtEx> {
+    core: CoreBuilder<Extrinsic<TExtEx>>,
     main_programs: SmallVec<[Module; 1]>,
 }
 
@@ -29,14 +29,10 @@ pub enum SystemRunOutcome {
     Nothing,
 }
 
-impl System {
-    pub fn new() -> SystemBuilder {
+impl<TExtEx> System<TExtEx> {
+    pub fn new() -> SystemBuilder<TExtEx> {
         let mut core = Core::new()
-            .with_extrinsic([0; 32], "register_interface", &wasmi::Signature::new(&[][..], Some(wasmi::ValueType::I32)), Extrinsic::RegisterInterface)
-            .with_extrinsic([0; 32], "abort", &wasmi::Signature::new(&[][..], Some(wasmi::ValueType::I32)), Extrinsic::Abort)
-            // TODO: remove randomess; that should be provided from outside of the core
-            .with_extrinsic([0; 32], "get_random", &wasmi::Signature::new(&[][..], Some(wasmi::ValueType::I32)), Extrinsic::GetRandom)
-            .build();
+            .with_extrinsic([0; 32], "register_interface", &wasmi::Signature::new(&[][..], Some(wasmi::ValueType::I32)), Extrinsic::RegisterInterface);
 
         SystemBuilder {
             core,
@@ -53,18 +49,14 @@ impl System {
                 CoreRunOutcome::ProgramCrashed { pid, error } => {
                     return SystemRunOutcome::ProgramCrashed { pid, error }
                 },
-                CoreRunOutcome::ProgramWaitExtrinsic { pid, extrinsic: &Extrinsic::GetRandom, params } => {
-                    debug_assert!(params.is_empty());
-                    self.core.resolve_extrinsic_call(pid, Some(wasmi::RuntimeValue::I32(4 /* randomly chosen value */)));     // TODO: 
-                },
                 CoreRunOutcome::ProgramWaitExtrinsic { pid, extrinsic: &Extrinsic::RegisterInterface, params } => {
                     // TODO: implement
                     // self.core.set_interface_provider();
                     self.core.resolve_extrinsic_call(pid, None);
                 },
-                CoreRunOutcome::ProgramWaitExtrinsic { pid, extrinsic: &Extrinsic::Abort, params } => {
-                    debug_assert!(params.is_empty());
-                    self.core.abort_process(pid).unwrap();
+                CoreRunOutcome::ProgramWaitExtrinsic { pid, extrinsic: &Extrinsic::External(ref external_token), ref params } => {
+                    // TODO: implement
+                    unimplemented!()
                 },
                 CoreRunOutcome::Nothing => {},
             }
@@ -72,9 +64,10 @@ impl System {
     }
 }
 
-impl SystemBuilder {
-    pub fn with_extrinsic(mut self, interface: impl Into<InterfaceHash>, f_name: impl Into<Cow<'static, str>>, signature: &wasmi::Signature) -> Self {
-        // TODO: implement
+impl<TExtEx> SystemBuilder<TExtEx> {
+    pub fn with_extrinsic(mut self, interface: impl Into<InterfaceHash>, f_name: impl Into<Cow<'static, str>>, signature: &wasmi::Signature, token: TExtEx) -> Self {
+        self.core = self.core
+            .with_extrinsic(interface, f_name, signature, Extrinsic::External(token));
         self
     }
 
@@ -86,20 +79,21 @@ impl SystemBuilder {
     }
 
     /// Builds the [`System`].
-    pub fn build(mut self) -> System {
+    pub fn build(mut self) -> System<TExtEx> {
+        let mut core = self.core.build();
+
         for program in self.main_programs.drain() {
-            self.core.execute(&program).unwrap();       // TODO:
+            core.execute(&program).unwrap();       // TODO:
         }
 
         System {
-            core: self.core,
+            core,
         }
     }
 }
 
 #[derive(Debug)]
-enum Extrinsic {
+enum Extrinsic<TExtEx> {
     RegisterInterface,
-    Abort,
-    GetRandom,
+    External(TExtEx),
 }

@@ -4,7 +4,7 @@
 
 fn main() {
     let module = core::module::Module::from_bytes(&include_bytes!("../../modules/preloaded/target/wasm32-unknown-unknown/release/preloaded.wasm")[..]);
-    let mut system = core::system::System::new()
+    let mut system = core::system::System::<!>::new()
         .with_main_program(module)
         .build();
 
