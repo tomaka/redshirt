@@ -1,6 +1,6 @@
 // Copyright(c) 2019 Pierre Krieger
 
-use crate::interface::InterfaceHash;
+use crate::interface::{Interface, InterfaceHash};
 use crate::module::Module;
 
 use alloc::{borrow::Cow, collections::VecDeque};
@@ -149,12 +149,12 @@ impl<T> Core<T> {
     /// Sets the process that fulfills the given interface.
     ///
     /// Returns an error if there is already a process fulfilling the given interface.
-    pub fn set_interface_provider(&mut self, interface: InterfaceHash, pid: Pid) -> Result<(), ()> {
-        if self.extrinsics.keys().any(|(i, _)| i == &interface) {       // TODO: more efficient way?
+    pub fn set_interface_provider(&mut self, interface: Interface, pid: Pid) -> Result<(), ()> {
+        if self.extrinsics.keys().any(|(i, _)| i == interface.hash()) {       // TODO: more efficient way?
             return Err(())
         }
 
-        match self.interfaces.entry(interface) {
+        match self.interfaces.entry(interface.hash().clone()) {
             Entry::Occupied(_) => Err(()),
             Entry::Vacant(e) => {
                 e.insert(pid);
