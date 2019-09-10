@@ -92,6 +92,15 @@ impl<T> Core<T> {
         self.interfaces.contains_key(&interface)
     }
 
+    /// Kills the given process immediately.
+    ///
+    /// Returns an error if the given `pid` isn't valid or isn't valid anymore.
+    pub fn abort_process(&mut self, pid: Pid) -> Result<(), ()> {
+        // TODO: implement
+        panic!("aborting {:?}", pid);
+        Ok(())
+    }
+
     /// Returns a `Future` that runs the core.
     ///
     /// This returns a `Future` so that it is possible to interrupt the process.

@@ -33,7 +33,6 @@ impl System {
     pub fn new() -> SystemBuilder {
         let mut core = Core::new()
             .with_extrinsic([0; 32], "register_interface", &wasmi::Signature::new(&[][..], Some(wasmi::ValueType::I32)), Extrinsic::RegisterInterface)
-            .with_extrinsic([0; 32], "sbrk", &wasmi::Signature::new(&[][..], Some(wasmi::ValueType::I32)), Extrinsic::Sbrk)
             .with_extrinsic([0; 32], "abort", &wasmi::Signature::new(&[][..], Some(wasmi::ValueType::I32)), Extrinsic::Abort)
             // TODO: remove randomess; that should be provided from outside of the core
             .with_extrinsic([0; 32], "get_random", &wasmi::Signature::new(&[][..], Some(wasmi::ValueType::I32)), Extrinsic::GetRandom)
@@ -63,12 +62,9 @@ impl System {
                     // self.core.set_interface_provider();
                     self.core.resolve_extrinsic_call(pid, None);
                 },
-                CoreRunOutcome::ProgramWaitExtrinsic { pid, extrinsic: &Extrinsic::Sbrk, params } => {
-                    panic!()
-                },
                 CoreRunOutcome::ProgramWaitExtrinsic { pid, extrinsic: &Extrinsic::Abort, params } => {
                     debug_assert!(params.is_empty());
-                    panic!();
+                    self.core.abort_process(pid).unwrap();
                 },
                 CoreRunOutcome::Nothing => {},
             }
@@ -104,7 +100,6 @@ impl SystemBuilder {
 #[derive(Debug)]
 enum Extrinsic {
     RegisterInterface,
-    Sbrk,
     Abort,
     GetRandom,
 }
