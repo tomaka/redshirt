@@ -8,6 +8,20 @@ pub struct Signature {
     ret_ty: Option<ValueType>,
 }
 
+#[macro_export]
+macro_rules! sig {
+    (($($p:ident),*)) => {{
+        let params = core::iter::empty();
+        $(let params = params.chain(core::iter::once($crate::signature::ValueType::$p));)*
+        $crate::signature::Signature::new(params, None)
+    }};
+    (($($p:ident),*) -> $ret:ident) => {{
+        let params = core::iter::empty();
+        $(let params = params.chain(core::iter::once($crate::signature::ValueType::$p));)*
+        $crate::signature::Signature::new(params, Some($crate::signature::ValueType::$ret))
+    }};
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum ValueType {
     Pointer,

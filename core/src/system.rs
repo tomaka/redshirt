@@ -49,6 +49,7 @@ impl<TExtEx: Clone> System<TExtEx> {
 
     /// After `ProgramWaitExtrinsic` has been returned, you have to call this method in order to
     /// inject back the result of the extrinsic call.
+    // TODO: don't expose wasmi::RuntimeValue
     pub fn resolve_extrinsic_call(&mut self, pid: Pid, return_value: Option<wasmi::RuntimeValue>) {
         // TODO: can the user badly misuse that API?
         self.core.resolve_extrinsic_call(pid, return_value);
