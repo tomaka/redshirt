@@ -1,4 +1,4 @@
-use crate::interface::InterfaceHash;
+use crate::interface::{InterfaceHash, InterfaceId};
 use crate::module::Module;
 use alloc::borrow::Cow;
 use core::{cell::RefCell, fmt};
@@ -55,8 +55,8 @@ impl ProcessStateMachine {
     /// If a start function exists in the module, we start executing it and the returned object is
     /// in the paused state. If that is the case, one must call `resume` with a `None` pass-back
     /// value in order to resume execution of `main`.
-    pub fn new(module: &Module, mut symbols: impl FnMut(&InterfaceHash, &str, &wasmi::Signature) -> Result<usize, ()>) -> Result<Self, ()> {
-        struct ImportResolve<'a>(RefCell<&'a mut dyn FnMut(&InterfaceHash, &str, &wasmi::Signature) -> Result<usize, ()>>);
+    pub fn new(module: &Module, mut symbols: impl FnMut(&InterfaceId, &str, &wasmi::Signature) -> Result<usize, ()>) -> Result<Self, ()> {
+        struct ImportResolve<'a>(RefCell<&'a mut dyn FnMut(&InterfaceId, &str, &wasmi::Signature) -> Result<usize, ()>>);
         impl<'a> wasmi::ImportResolver for ImportResolve<'a> {
             fn resolve_func(&self, module_name: &str, field_name: &str, signature: &wasmi::Signature)
                 -> Result<wasmi::FuncRef, wasmi::Error>
@@ -68,9 +68,9 @@ impl ProcessStateMachine {
                     match bs58::decode(module_name).into(&mut buf_interm[..]) {
                         Ok(n) => {
                             buf_out[(32 - n)..].copy_from_slice(&buf_interm[..n]);
-                            InterfaceHash::from(buf_out)
+                            InterfaceId::Hash(InterfaceHash::from(buf_out))
                         },
-                        Err(_) => InterfaceHash::Bytes(module_name.to_owned()),
+                        Err(_) => InterfaceId::Bytes(module_name.to_owned()),
                     }
                 };
 

@@ -1,6 +1,6 @@
 // Copyright(c) 2019 Pierre Krieger
 
-use crate::interface::{Interface, InterfaceHash};
+use crate::interface::{Interface, InterfaceId, InterfaceHash};
 use crate::module::Module;
 use crate::signature::Signature;
 
@@ -19,17 +19,17 @@ pub struct Core<T> {
     pid_pool: PidPool,
     loaded: HashMap<Pid, Program>,
 
-    extrinsics: HashMap<((InterfaceHash, Cow<'static, str>)), (T, Signature)>,
+    extrinsics: HashMap<((InterfaceId, Cow<'static, str>)), (T, Signature)>,
 
     /// For each interface, its definition and which program is fulfilling it.
-    interfaces: HashMap<InterfaceHash, (Pid, Interface)>,
+    interfaces: HashMap<InterfaceId, (Pid, Interface)>,
 
     /// Holds a bijection between arbitrary values (the `usize` on the left side) that we pass
     /// to the WASM interpreter, and the function that corresponds to it.
     /// Whenever the interpreter wants to link to a function, we look for the `usize` corresponding
     /// to the requested function. When the interpreter wants to execute that function, it passes
     /// back that `usize` to us, and we can look which function it is.
-    externals_indices: BiHashMap<usize, (InterfaceHash, Cow<'static, str>)>,
+    externals_indices: BiHashMap<usize, (InterfaceId, Cow<'static, str>)>,
 
     /// Queue of tasks to execute.
     scheduled: VecDeque<Scheduled>,
@@ -37,9 +37,9 @@ pub struct Core<T> {
 
 pub struct CoreBuilder<T> {
     /// See the corresponding field in `Core`.
-    extrinsics: HashMap<((InterfaceHash, Cow<'static, str>)), (T, Signature)>,
+    extrinsics: HashMap<((InterfaceId, Cow<'static, str>)), (T, Signature)>,
     /// See the corresponding field in `Core`.
-    externals_indices: BiHashMap<usize, (InterfaceHash, Cow<'static, str>)>,
+    externals_indices: BiHashMap<usize, (InterfaceId, Cow<'static, str>)>,
 }
 
 #[derive(Debug)]
@@ -89,7 +89,7 @@ impl<T> Core<T> {
         }
     }
 
-    pub fn has_interface(&self, interface: InterfaceHash) -> bool {
+    pub fn has_interface(&self, interface: InterfaceId) -> bool {
         self.interfaces.contains_key(&interface)
     }
 
@@ -162,11 +162,11 @@ impl<T> Core<T> {
     ///
     /// Returns an error if there is already a process fulfilling the given interface.
     pub fn set_interface_provider(&mut self, interface: Interface, pid: Pid) -> Result<(), ()> {
-        if self.extrinsics.keys().any(|(i, _)| i == interface.hash()) {       // TODO: more efficient way?
+        if self.extrinsics.keys().any(|(i, _)| i == &InterfaceId::Hash(interface.hash().clone())) {       // TODO: more efficient way?
             return Err(())
         }
 
-        match self.interfaces.entry(interface.hash().clone()) {
+        match self.interfaces.entry(InterfaceId::Hash(interface.hash().clone())) {
             Entry::Occupied(_) => Err(()),
             Entry::Vacant(e) => {
                 e.insert((pid, interface));
@@ -226,7 +226,7 @@ impl<T> Core<T> {
 }
 
 impl<T> CoreBuilder<T> {
-    pub fn with_extrinsic(mut self, interface: impl Into<InterfaceHash>, f_name: impl Into<Cow<'static, str>>, signature: &Signature, token: impl Into<T>) -> Self {
+    pub fn with_extrinsic(mut self, interface: impl Into<InterfaceId>, f_name: impl Into<Cow<'static, str>>, signature: &Signature, token: impl Into<T>) -> Self {
         // TODO: panic if we already have it
         let interface = interface.into();
         let f_name = f_name.into();

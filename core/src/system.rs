@@ -1,6 +1,6 @@
 // Copyright(c) 2019 Pierre Krieger
 
-use crate::interface::InterfaceHash;
+use crate::interface::InterfaceId;
 use crate::module::Module;
 use crate::scheduler::{Core, CoreBuilder, CoreRunOutcome, Pid};
 use crate::signature::{Signature, ValueType};
@@ -84,7 +84,7 @@ impl<TExtEx: Clone> System<TExtEx> {
 }
 
 impl<TExtEx> SystemBuilder<TExtEx> {
-    pub fn with_extrinsic(mut self, interface: impl Into<InterfaceHash>, f_name: impl Into<Cow<'static, str>>, signature: &Signature, token: TExtEx) -> Self {
+    pub fn with_extrinsic(mut self, interface: impl Into<InterfaceId>, f_name: impl Into<Cow<'static, str>>, signature: &Signature, token: TExtEx) -> Self {
         self.core = self.core
             .with_extrinsic(interface, f_name, signature, Extrinsic::External(token));
         self

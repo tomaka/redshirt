@@ -17,13 +17,16 @@ pub struct InterfaceBuilder {
     functions: Vec<Function>,
 }
 
-/// Hash of an interface definition.
-// TODO: update docs,
-#[derive(Clone, PartialEq, Eq, Hash)]
-pub enum InterfaceHash {
-    Hash([u8; 32]),
+/// Identifier of an interface. Can be either a hash or a string.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum InterfaceId {
+    Hash(InterfaceHash),
     Bytes(String),
 }
+
+/// Hash of an interface definition.
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub struct InterfaceHash([u8; 32]);
 
 struct Function {
     name: String,
@@ -76,31 +79,43 @@ impl InterfaceBuilder {
         Interface {
             name: self.name,
             functions: self.functions,
-            hash: InterfaceHash::Hash(hash_state.fixed_result().into()),
+            hash: InterfaceHash(hash_state.fixed_result().into()),
         }
+    }
+}
+
+impl From<[u8; 32]> for InterfaceId {
+    fn from(hash: [u8; 32]) -> InterfaceId {
+        InterfaceId::Hash(hash.into())
+    }
+}
+
+impl From<String> for InterfaceId {
+    fn from(name: String) -> InterfaceId {
+        InterfaceId::Bytes(name)
+    }
+}
+
+impl<'a> From<&'a str> for InterfaceId {
+    fn from(name: &'a str) -> InterfaceId {
+        InterfaceId::Bytes(name.to_owned())
     }
 }
 
 impl From<[u8; 32]> for InterfaceHash {
     fn from(hash: [u8; 32]) -> InterfaceHash {
-        InterfaceHash::Hash(hash)
+        InterfaceHash(hash)
     }
 }
 
 impl fmt::Display for InterfaceHash {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            InterfaceHash::Hash(hash) => fmt::Display::fmt(&bs58::encode(hash).into_string(), f),
-            InterfaceHash::Bytes(s) => fmt::Display::fmt(s, f),
-        }
+        fmt::Display::fmt(&bs58::encode(&self.0).into_string(), f)
     }
 }
 
 impl fmt::Debug for InterfaceHash {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            InterfaceHash::Hash(hash) => write!(f, "InterfaceHash({})", bs58::encode(hash).into_string()),
-            InterfaceHash::Bytes(s) => write!(f, "InterfaceHash({})", s),
-        }
+        write!(f, "InterfaceHash({})", bs58::encode(&self.0).into_string())
     }
 }
