@@ -36,6 +36,7 @@ pub enum SystemRunOutcome<TExtEx> {
     Nothing,
 }
 
+// TODO: we require Clone because of stupid borrowing issues; remove
 impl<TExtEx: Clone> System<TExtEx> {
     pub fn new() -> SystemBuilder<TExtEx> {
         let mut core = Core::new()

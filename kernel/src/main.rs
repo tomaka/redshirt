@@ -2,10 +2,47 @@
 
 #![feature(never_type)]
 
+use std::sync::Arc;
+
 fn main() {
-    let module = kernel_core::module::Module::from_bytes(&include_bytes!("../../modules/preloaded/target/wasm32-unknown-unknown/release/preloaded.wasm")[..]);
-    let mut system = kernel_core::system::System::<()>::new()
-        .with_extrinsic([0; 32], "get_random", &kernel_core::sig!(() -> I32), ())
+    let module = kernel_core::module::Module::from_bytes(&include_bytes!("../../modules/preloaded/target/wasm32-wasi/release/preloaded.wasm")[..]);
+
+    // TODO: signatures don't seem to be enforced
+    let mut system = kernel_core::system::System::<Arc<dyn Fn(Vec<wasmi::RuntimeValue>) -> _>>::new()
+        .with_extrinsic(kernel_core::interface::InterfaceHash::Bytes("wasi_unstable".to_owned()), "args_get", &kernel_core::sig!((Pointer, Pointer)), Arc::new(|params| {
+            unimplemented!()
+        }))
+        .with_extrinsic(kernel_core::interface::InterfaceHash::Bytes("wasi_unstable".to_owned()), "args_sizes_get", &kernel_core::sig!(() -> I32), Arc::new(|params| {       // TODO: wrong output ype
+            unimplemented!()
+        }))
+        .with_extrinsic(kernel_core::interface::InterfaceHash::Bytes("wasi_unstable".to_owned()), "clock_time_get", &kernel_core::sig!((I32, I64) -> I64), Arc::new(|params| {
+            // TODO: do correctly
+            Some(wasmi::RuntimeValue::I64(0x37))
+        }))
+        .with_extrinsic(kernel_core::interface::InterfaceHash::Bytes("wasi_unstable".to_owned()), "environ_get", &kernel_core::sig!((Pointer, Pointer)), Arc::new(|params| {
+            unimplemented!()
+        }))
+        .with_extrinsic(kernel_core::interface::InterfaceHash::Bytes("wasi_unstable".to_owned()), "environ_sizes_get", &kernel_core::sig!(() -> I32), Arc::new(|params| {       // TODO: wrong output ype
+            unimplemented!()
+        }))
+        .with_extrinsic(kernel_core::interface::InterfaceHash::Bytes("wasi_unstable".to_owned()), "fd_prestat_get", &kernel_core::sig!((I32, Pointer)), Arc::new(|params| {
+            unimplemented!()
+        }))
+        .with_extrinsic(kernel_core::interface::InterfaceHash::Bytes("wasi_unstable".to_owned()), "fd_prestat_dir_name", &kernel_core::sig!((I32, Pointer, I32)), Arc::new(|params| {
+            unimplemented!()
+        }))
+        .with_extrinsic(kernel_core::interface::InterfaceHash::Bytes("wasi_unstable".to_owned()), "fd_fdstat_get", &kernel_core::sig!((I32, Pointer)), Arc::new(|params| {
+            unimplemented!()
+        }))
+        .with_extrinsic(kernel_core::interface::InterfaceHash::Bytes("wasi_unstable".to_owned()), "fd_write", &kernel_core::sig!((I32, Pointer, I32) -> I32), Arc::new(|params| {       // TODO: wrong params
+            println!("{:?}", params);
+            assert_eq!(params.len(), 3);
+            assert!(params[0] == wasmi::RuntimeValue::I32(0) || params[0] == wasmi::RuntimeValue::I32(1));      // either stdout or stderr
+            unimplemented!()
+        }))
+        .with_extrinsic(kernel_core::interface::InterfaceHash::Bytes("wasi_unstable".to_owned()), "proc_exit", &kernel_core::sig!((I32)), Arc::new(|params| {
+            unimplemented!()
+        }))
         .with_main_program(module)
         .build();
 
@@ -13,15 +50,23 @@ fn main() {
         let result = futures::executor::block_on(async {
             loop {
                 match system.run().await {
-                    kernel_core::system::SystemRunOutcome::ProgramWaitExtrinsic { pid, extrinsic: (), params } => {
-                        debug_assert!(params.is_empty());
-                        system.resolve_extrinsic_call(pid, Some(wasmi::RuntimeValue::I32(rand::random())));
+                    kernel_core::system::SystemRunOutcome::ProgramWaitExtrinsic { pid, extrinsic, params } => {
+                        let ret = extrinsic(params);
+                        system.resolve_extrinsic_call(pid, ret);
                     },
                     other => break other,
                 }
             }
         });
 
-        println!("{:?}", result);
+        match result {
+            kernel_core::system::SystemRunOutcome::ProgramFinished { pid, return_value } => {
+                println!("Program finished {:?} => {:?}", pid, return_value)
+            },
+            kernel_core::system::SystemRunOutcome::ProgramCrashed { pid, error } => {
+                println!("Program crashed {:?} => {:?}", pid, error);
+            },
+            _ => panic!()
+        }
     }
 }

@@ -18,8 +18,12 @@ pub struct InterfaceBuilder {
 }
 
 /// Hash of an interface definition.
+// TODO: update docs,
 #[derive(Clone, PartialEq, Eq, Hash)]
-pub struct InterfaceHash([u8; 32]);
+pub enum InterfaceHash {
+    Hash([u8; 32]),
+    Bytes(String),
+}
 
 struct Function {
     name: String,
@@ -72,25 +76,31 @@ impl InterfaceBuilder {
         Interface {
             name: self.name,
             functions: self.functions,
-            hash: InterfaceHash(hash_state.fixed_result().into()),
+            hash: InterfaceHash::Hash(hash_state.fixed_result().into()),
         }
     }
 }
 
 impl From<[u8; 32]> for InterfaceHash {
     fn from(hash: [u8; 32]) -> InterfaceHash {
-        InterfaceHash(hash)
+        InterfaceHash::Hash(hash)
     }
 }
 
 impl fmt::Display for InterfaceHash {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Display::fmt(&bs58::encode(&self.0).into_string(), f)
+        match self {
+            InterfaceHash::Hash(hash) => fmt::Display::fmt(&bs58::encode(hash).into_string(), f),
+            InterfaceHash::Bytes(s) => fmt::Display::fmt(s, f),
+        }
     }
 }
 
 impl fmt::Debug for InterfaceHash {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "InterfaceHash({})", bs58::encode(&self.0).into_string())
+        match self {
+            InterfaceHash::Hash(hash) => write!(f, "InterfaceHash({})", bs58::encode(hash).into_string()),
+            InterfaceHash::Bytes(s) => write!(f, "InterfaceHash({})", s),
+        }
     }
 }

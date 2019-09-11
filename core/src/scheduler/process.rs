@@ -66,16 +66,18 @@ impl ProcessStateMachine {
                     let mut buf_out = [0; 32];
                     let mut buf_interm = [0; 32];
                     match bs58::decode(module_name).into(&mut buf_interm[..]) {
-                        Ok(n) => buf_out[(32 - n)..].copy_from_slice(&buf_interm[..n]),
-                        Err(err) => return Err(wasmi::Error::Instantiation(format!("Error while decoding module name `{}`: {}", module_name, err))),
+                        Ok(n) => {
+                            buf_out[(32 - n)..].copy_from_slice(&buf_interm[..n]);
+                            InterfaceHash::from(buf_out)
+                        },
+                        Err(_) => InterfaceHash::Bytes(module_name.to_owned()),
                     }
-                    InterfaceHash::from(buf_out)
                 };
 
                 let closure = &mut **self.0.borrow_mut();
                 let index = match closure(&interface_hash, field_name, signature) {
                     Ok(i) => i,
-                    Err(_) => return Err(wasmi::Error::Instantiation(format!("Couldn't resolve `{}`:`{}`", interface_hash, field_name))),
+                    Err(_) => return Err(wasmi::Error::Instantiation(format!("Couldn't resolve `{:?}`:`{}`", interface_hash, field_name))),
                 };
 
                 Ok(wasmi::FuncInstance::alloc_host(signature.clone(), index))

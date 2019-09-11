@@ -18,4 +18,5 @@ fn main() {
     ];
 
     assert_eq!(&res, expected);
+    println!("hello world!");
 }
