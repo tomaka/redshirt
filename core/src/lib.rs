@@ -13,6 +13,7 @@ extern crate core;      // TODO: is that needed?
 pub mod interface;
 pub mod module;
 pub mod scheduler;
+pub mod signature;
 pub mod system;
 
 mod predef;

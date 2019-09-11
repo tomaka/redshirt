@@ -3,7 +3,9 @@
 use crate::interface::InterfaceHash;
 use crate::module::Module;
 use crate::scheduler::{Core, CoreBuilder, CoreRunOutcome, Pid};
+use crate::signature::{Signature, ValueType};
 use alloc::borrow::Cow;
+use core::iter;
 use smallvec::SmallVec;
 
 pub struct System<TExtEx> {
@@ -32,7 +34,7 @@ pub enum SystemRunOutcome {
 impl<TExtEx> System<TExtEx> {
     pub fn new() -> SystemBuilder<TExtEx> {
         let mut core = Core::new()
-            .with_extrinsic([0; 32], "register_interface", &wasmi::Signature::new(&[][..], Some(wasmi::ValueType::I32)), Extrinsic::RegisterInterface);
+            .with_extrinsic([0; 32], "register_interface", &Signature::new(iter::empty(), Some(ValueType::I32)), Extrinsic::RegisterInterface);
 
         SystemBuilder {
             core,
@@ -65,7 +67,7 @@ impl<TExtEx> System<TExtEx> {
 }
 
 impl<TExtEx> SystemBuilder<TExtEx> {
-    pub fn with_extrinsic(mut self, interface: impl Into<InterfaceHash>, f_name: impl Into<Cow<'static, str>>, signature: &wasmi::Signature, token: TExtEx) -> Self {
+    pub fn with_extrinsic(mut self, interface: impl Into<InterfaceHash>, f_name: impl Into<Cow<'static, str>>, signature: &Signature, token: TExtEx) -> Self {
         self.core = self.core
             .with_extrinsic(interface, f_name, signature, Extrinsic::External(token));
         self

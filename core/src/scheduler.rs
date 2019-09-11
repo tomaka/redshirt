@@ -2,6 +2,7 @@
 
 use crate::interface::{Interface, InterfaceHash};
 use crate::module::Module;
+use crate::signature::Signature;
 
 use alloc::{borrow::Cow, collections::VecDeque};
 use bimap::BiHashMap;
@@ -18,7 +19,7 @@ pub struct Core<T> {
     pid_pool: PidPool,
     loaded: HashMap<Pid, Program>,
 
-    extrinsics: HashMap<((InterfaceHash, Cow<'static, str>)), (T, wasmi::Signature)>,
+    extrinsics: HashMap<((InterfaceHash, Cow<'static, str>)), (T, Signature)>,
 
     /// For each interface, its definition and which program is fulfilling it.
     interfaces: HashMap<InterfaceHash, (Pid, Interface)>,
@@ -36,7 +37,7 @@ pub struct Core<T> {
 
 pub struct CoreBuilder<T> {
     /// See the corresponding field in `Core`.
-    extrinsics: HashMap<((InterfaceHash, Cow<'static, str>)), (T, wasmi::Signature)>,
+    extrinsics: HashMap<((InterfaceHash, Cow<'static, str>)), (T, Signature)>,
     /// See the corresponding field in `Core`.
     externals_indices: BiHashMap<usize, (InterfaceHash, Cow<'static, str>)>,
 }
@@ -185,7 +186,7 @@ impl<T> Core<T> {
             
             // TODO: also check interfaces dependencies
             if let Some((_, expected_sig)) = self.extrinsics.get(&(interface.clone(), function.into())) {
-                if expected_sig != signature {
+                if !expected_sig.matches_wasmi(signature) {
                     return Err(());
                 }
 
@@ -224,7 +225,7 @@ impl<T> Core<T> {
 }
 
 impl<T> CoreBuilder<T> {
-    pub fn with_extrinsic(mut self, interface: impl Into<InterfaceHash>, f_name: impl Into<Cow<'static, str>>, signature: &wasmi::Signature, token: impl Into<T>) -> Self {
+    pub fn with_extrinsic(mut self, interface: impl Into<InterfaceHash>, f_name: impl Into<Cow<'static, str>>, signature: &Signature, token: impl Into<T>) -> Self {
         // TODO: panic if we already have it
         let interface = interface.into();
         let f_name = f_name.into();
@@ -253,8 +254,9 @@ impl<T> CoreBuilder<T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::module::Module;
+    use crate::{module::Module, signature::Signature};
     use super::{Core, CoreRunOutcome};
+    use core::iter;
 
     #[test]
     fn basic_module() {
@@ -308,7 +310,7 @@ mod tests {
         "#).unwrap();
 
         let mut core = Core::<u32>::new()
-            .with_extrinsic([0; 32], "test", &wasmi::Signature::new(&[][..], None), 639u32)
+            .with_extrinsic([0; 32], "test", &Signature::new(iter::empty(), None), 639u32)
             .build();
 
         let expected_pid = core.execute(&module).unwrap();

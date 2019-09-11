@@ -1,5 +1,6 @@
 // Copyright(c) 2019 Pierre Krieger
 
+use crate::signature::Signature;
 use sha2::{Digest as _, digest::FixedOutput as _};
 use std::fmt;
 
@@ -22,7 +23,7 @@ pub struct InterfaceHash([u8; 32]);
 
 struct Function {
     name: String,
-    signature: wasmi::Signature,
+    signature: Signature,
 }
 
 impl Interface {
@@ -49,7 +50,7 @@ impl InterfaceBuilder {
 
     /// Adds a function to the prototype interface.
     // TODO: don't expose wasmi types in the API
-    pub fn with_function(mut self, name: impl Into<String>, signature: impl Into<wasmi::Signature>) -> Self {
+    pub fn with_function(mut self, name: impl Into<String>, signature: impl Into<Signature>) -> Self {
         self.functions.push(Function {
             name: name.into(),
             signature: signature.into(),
