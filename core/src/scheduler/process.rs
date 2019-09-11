@@ -1,7 +1,7 @@
 use crate::interface::{InterfaceHash, InterfaceId};
 use crate::module::Module;
 use alloc::borrow::Cow;
-use core::{cell::RefCell, fmt};
+use core::{cell::RefCell, fmt, ops::RangeBounds};
 
 /// WASMI state machine dedicated to a process.
 ///
@@ -37,6 +37,11 @@ use core::{cell::RefCell, fmt};
 pub struct ProcessStateMachine {
     /// Original module, with resolved imports.
     module: wasmi::ModuleRef,
+
+    /// Memory of the module instantiation.
+    ///
+    /// Right now we only support one unique `Memory` object per process. This is it.
+    memory: wasmi::MemoryRef,
 
     /// Each program can only run once at a time. It only has one "thread".
     /// If `Some`, we are currently executing something in `Program`. If `None`, we aren't.
@@ -104,9 +109,11 @@ impl ProcessStateMachine {
 
         let not_started = wasmi::ModuleInstance::new(module.as_ref(), &ImportResolve(RefCell::new(&mut symbols))).unwrap();      // TODO: don't unwrap
         let module = not_started.assert_no_start();     // TODO: true in practice, bad to do in theory
+        let memory = module.export_by_name("memory").unwrap().as_memory().unwrap().clone();
 
         let mut state_machine = ProcessStateMachine {
             module,
+            memory,
             execution: None,
             interrupted: false,
         };
@@ -218,6 +225,13 @@ impl ProcessStateMachine {
                 ExecOutcome::Errored(trap)
             }
         }
+    }
+
+    /// Copies the given memory range into a `Vec<u8>`.
+    // TODO: should really return &mut [u8] I think
+    // TODO: use RangeBounds trait instead of Range
+    pub fn read_memory(&self, range: core::ops::Range<usize>) -> Vec<u8> {
+        self.memory.with_direct_access(|mem| mem[range].to_vec())
     }
 }
 
