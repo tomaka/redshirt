@@ -18,7 +18,7 @@ pub struct SystemBuilder<TExtEx> {
 }
 
 #[derive(Debug)]
-pub enum SystemRunOutcome {
+pub enum SystemRunOutcome<TExtEx> {
     ProgramFinished {
         pid: Pid,
         return_value: Option<wasmi::RuntimeValue>,      // TODO: force to i32?
@@ -27,11 +27,16 @@ pub enum SystemRunOutcome {
         pid: Pid,
         error: wasmi::Error,
     },
+    ProgramWaitExtrinsic {
+        pid: Pid,
+        extrinsic: TExtEx,
+        params: Vec<wasmi::RuntimeValue>,
+    },
     // TODO: temporary; remove
     Nothing,
 }
 
-impl<TExtEx> System<TExtEx> {
+impl<TExtEx: Clone> System<TExtEx> {
     pub fn new() -> SystemBuilder<TExtEx> {
         let mut core = Core::new()
             .with_extrinsic([0; 32], "register_interface", &Signature::new(iter::empty(), Some(ValueType::I32)), Extrinsic::RegisterInterface);
@@ -42,7 +47,14 @@ impl<TExtEx> System<TExtEx> {
         }
     }
 
-    pub async fn run(&mut self) -> SystemRunOutcome {
+    /// After `ProgramWaitExtrinsic` has been returned, you have to call this method in order to
+    /// inject back the result of the extrinsic call.
+    pub fn resolve_extrinsic_call(&mut self, pid: Pid, return_value: Option<wasmi::RuntimeValue>) {
+        // TODO: can the user badly misuse that API?
+        self.core.resolve_extrinsic_call(pid, return_value);
+    }
+
+    pub async fn run(&mut self) -> SystemRunOutcome<TExtEx> {
         loop {
             match self.core.run().await {
                 CoreRunOutcome::ProgramFinished { pid, return_value } => {
@@ -57,8 +69,11 @@ impl<TExtEx> System<TExtEx> {
                     self.core.resolve_extrinsic_call(pid, None);
                 },
                 CoreRunOutcome::ProgramWaitExtrinsic { pid, extrinsic: &Extrinsic::External(ref external_token), ref params } => {
-                    // TODO: implement
-                    unimplemented!()
+                    return SystemRunOutcome::ProgramWaitExtrinsic {
+                        pid,
+                        extrinsic: external_token.clone(),
+                        params: params.clone(),
+                    };
                 },
                 CoreRunOutcome::Nothing => {},
             }

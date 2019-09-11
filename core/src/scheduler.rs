@@ -147,7 +147,7 @@ impl<T> Core<T> {
         CoreRunOutcome::Nothing
     }
 
-    /// After `ProgramWaitExtrinsic` has been called, you have to call this method in order to
+    /// After `ProgramWaitExtrinsic` has been returned, you have to call this method in order to
     /// inject back the result of the extrinsic call.
     pub fn resolve_extrinsic_call(&mut self, pid: Pid, return_value: Option<wasmi::RuntimeValue>) {
         // TODO: check if that's correct
