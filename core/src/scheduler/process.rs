@@ -230,6 +230,7 @@ impl ProcessStateMachine {
         impl wasmi::HostError for Interrupt {
         }
 
+        debug_assert!(!self.is_poisoned);
         let mut execution = self.execution.take().unwrap();
         let result = if self.interrupted {
             let expected_ty = execution.resumable_value_type();
@@ -278,6 +279,7 @@ impl ProcessStateMachine {
 }
 
 /// Outcome of the [`resume`](ProcessStateMachine::resume) function.
+#[derive(Debug)]
 pub enum ExecOutcome {
     /// The currently-executed function has finished. The state machine is now in a stopped state.
     ///
@@ -300,7 +302,6 @@ pub enum ExecOutcome {
         /// Identifier of the function to call. Corresponds to the value provided at
         /// initialization when resolving imports.
         id: usize,
-
         /// Parameters of the function call.
         params: Vec<wasmi::RuntimeValue>,
     },
@@ -358,7 +359,7 @@ mod tests {
         "#).unwrap();
 
         let state_machine = ProcessStateMachine::new(&module, |_, _, _| unreachable!()).unwrap();
-        assert!(state_machine.is_executing());  // there is "main" function
+        assert!(state_machine.is_executing());
     }
 
     #[test]
