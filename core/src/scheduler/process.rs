@@ -2,6 +2,7 @@ use crate::interface::{InterfaceHash, InterfaceId};
 use crate::module::Module;
 use alloc::borrow::Cow;
 use core::{cell::RefCell, fmt, ops::RangeBounds};
+use err_derive::*;
 
 /// WASMI state machine dedicated to a process.
 ///
@@ -107,7 +108,8 @@ impl ProcessStateMachine {
             }
         }
 
-        let not_started = wasmi::ModuleInstance::new(module.as_ref(), &ImportResolve(RefCell::new(&mut symbols))).unwrap();      // TODO: don't unwrap
+        let not_started = wasmi::ModuleInstance::new(module.as_ref(), &ImportResolve(RefCell::new(&mut symbols)))
+            .map_err(|_| ())?;
         let module = not_started.assert_no_start();     // TODO: true in practice, bad to do in theory
         let memory = module.export_by_name("memory").unwrap().as_memory().unwrap().clone();
 
@@ -117,8 +119,14 @@ impl ProcessStateMachine {
             execution: None,
             interrupted: false,
         };
+
         // Try to start executing `main`.
-        let _ = state_machine.start_inner("main", &[wasmi::RuntimeValue::I32(0), wasmi::RuntimeValue::I32(0)][..]);
+        match state_machine.start_inner("main", &[wasmi::RuntimeValue::I32(0), wasmi::RuntimeValue::I32(0)][..]) {
+            Ok(()) | Err(StartErr::SymbolNotFound) => {},
+            Err(StartErr::AlreadyRunning) => unreachable!(),
+            Err(StartErr::NotAFunction) => return Err(()),
+        };
+
         Ok(state_machine)
     }
 
@@ -132,18 +140,20 @@ impl ProcessStateMachine {
     /// Starts executing a function. Immediately pauses the execution and puts it in an
     /// interrupted state.
     ///
-    /// Only valid to call if [`is_executing`](ProcessStateMachine::is_executing) returns false.
+    /// Returns an error if [`is_executing`](ProcessStateMachine::is_executing) returns true.
     ///
     /// You should call [`resume`](ProcessStateMachine::resume) afterwards with a value of `None`.
-    pub fn start(&mut self, interface: &InterfaceHash, function: &str, params: impl Into<Cow<'static, [wasmi::RuntimeValue]>>) {
+    pub fn start(&mut self, interface: &InterfaceHash, function: &str, params: impl Into<Cow<'static, [wasmi::RuntimeValue]>>) -> Result<(), StartErr> {
 
         unimplemented!()
     }
 
     /// Same as `start`, but executes a symbol by name.
-    fn start_inner(&mut self, symbol_name: &str, params: impl Into<Cow<'static, [wasmi::RuntimeValue]>>) {
+    fn start_inner(&mut self, symbol_name: &str, params: impl Into<Cow<'static, [wasmi::RuntimeValue]>>)
+        -> Result<(), StartErr>
+    {
         if self.execution.is_some() {
-            panic!()        // TODO: return error
+            return Err(StartErr::AlreadyRunning);
         }
 
         match self.module.export_by_name(symbol_name) {
@@ -152,9 +162,11 @@ impl ProcessStateMachine {
                 self.execution = Some(execution);
                 self.interrupted = false;
             },
-            None => panic!(),   // TODO: error
-            _ => panic!()       // TODO:
+            None => return Err(StartErr::SymbolNotFound),
+            _ => return Err(StartErr::NotAFunction),
         }
+
+        Ok(())
     }
 
     /// Resumes execution when in a paused state.
@@ -168,7 +180,7 @@ impl ProcessStateMachine {
     /// that call.
     ///
     /// Only valid to call if [`is_executing`](ProcessStateMachine::is_executing) returns true.
-    pub fn resume(&mut self, value: Option<wasmi::RuntimeValue>) -> ExecOutcome {
+    pub fn resume(&mut self, value: Option<wasmi::RuntimeValue>) -> Result<ExecOutcome, ResumeErr> {
         struct DummyExternals;
         impl wasmi::Externals for DummyExternals {
             fn invoke_index(&mut self, index: usize, args: wasmi::RuntimeArgs)
@@ -193,19 +205,22 @@ impl ProcessStateMachine {
 
         let mut execution = self.execution.take().unwrap();
         let result = if self.interrupted {
-            debug_assert_eq!(
-                execution.resumable_value_type(),
-                value.as_ref().map(|v| v.value_type())
-            );
+            let expected_ty = execution.resumable_value_type();
+            let obtained_ty = value.as_ref().map(|v| v.value_type());
+            if expected_ty != obtained_ty {
+                return Err(ResumeErr::BadValueTy { expected: expected_ty, obtained: obtained_ty });
+            }
             execution.resume_execution(value, &mut DummyExternals)
         } else {
-            assert!(value.is_none());       // TODO: turn into an error
+            if value.is_some() {
+                return Err(ResumeErr::BadValueTy { expected: None, obtained: value.as_ref().map(|v| v.value_type()) });
+            }
             self.interrupted = true;
             execution.start_execution(&mut DummyExternals)
         };
 
         match result {
-            Ok(val) => ExecOutcome::Finished(val),
+            Ok(val) => Ok(ExecOutcome::Finished(val)),
             Err(wasmi::ResumableError::AlreadyStarted) => unreachable!(),
             Err(wasmi::ResumableError::NotResumable) => unreachable!(),
             Err(wasmi::ResumableError::Trap(ref trap)) if trap.kind().is_host() => {
@@ -214,15 +229,15 @@ impl ProcessStateMachine {
                     _ => unreachable!()
                 };
                 self.execution = Some(execution);
-                ExecOutcome::Interrupted {
+                Ok(ExecOutcome::Interrupted {
                     id: interrupt.index,
                     params: interrupt.args.clone(),
-                }
+                })
             }
             Err(wasmi::ResumableError::Trap(trap)) => {
                 println!("oops, actual error!");
                 // TODO: put in corrupted state?
-                ExecOutcome::Errored(trap)
+                Ok(ExecOutcome::Errored(trap))
             }
         }
     }
@@ -271,6 +286,33 @@ pub enum ExecOutcome {
     Errored(wasmi::Trap),
 }
 
+/// Error that can happen when starting the execution of a function.
+#[derive(Debug, Error)]
+pub enum StartErr {
+    /// The state machine is already busy executing another function.
+    #[error(display = "State machine is already executing a function")]
+    AlreadyRunning,
+    /// Couldn't find the requested function.
+    #[error(display = "Function to start was not found")]
+    SymbolNotFound,
+    /// The requested function has been found in the list of exports, but it is not a function.
+    #[error(display = "Symbol to start is not a function")]
+    NotAFunction,
+}
+
+/// Error that can happen when resuming the execution of a function.
+#[derive(Debug, Error)]
+pub enum ResumeErr {
+    /// Passed a wrong value back.
+    #[error(display = "Expected value of type {:?} but got {:?} instead", expected, obtained)]
+    BadValueTy {
+        /// Type of the value that was expected.
+        expected: Option<wasmi::ValueType>,
+        /// Type of the value that was actually passed.
+        obtained: Option<wasmi::ValueType>,
+    },
+}
+
 #[cfg(test)]
 mod tests {
     use crate::module::Module;
@@ -311,7 +353,7 @@ mod tests {
 
         let mut state_machine = ProcessStateMachine::new(&module, |_, _, _| unreachable!()).unwrap();
         match state_machine.resume(None) {
-            ExecOutcome::Finished(Some(wasmi::RuntimeValue::I32(5))) => {}
+            Ok(ExecOutcome::Finished(Some(wasmi::RuntimeValue::I32(5)))) => {}
             _ => panic!()
         }
         assert!(!state_machine.is_executing());
@@ -328,13 +370,13 @@ mod tests {
 
         let mut state_machine = ProcessStateMachine::new(&module, |_, _, _| Ok(9876)).unwrap();
         match state_machine.resume(None) {
-            ExecOutcome::Interrupted { id: 9876, ref params } if params.is_empty() => {}
+            Ok(ExecOutcome::Interrupted { id: 9876, ref params }) if params.is_empty() => {}
             _ => panic!()
         }
         assert!(state_machine.is_executing());
 
         match state_machine.resume(Some(wasmi::RuntimeValue::I32(2227))) {
-            ExecOutcome::Finished(Some(wasmi::RuntimeValue::I32(2227))) => {}
+            Ok(ExecOutcome::Finished(Some(wasmi::RuntimeValue::I32(2227)))) => {}
             _ => panic!()
         }
         assert!(!state_machine.is_executing());

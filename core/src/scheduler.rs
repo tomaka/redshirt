@@ -111,7 +111,7 @@ impl<T> Core<T> {
         // TODO: wasi doesn't allow interrupting executions
         while let Some(scheduled) = self.scheduled.pop_front() {
             let program = self.loaded.get_mut(&scheduled.pid).unwrap();
-            match program.state_machine.resume(scheduled.resume_value) {
+            match program.state_machine.resume(scheduled.resume_value).unwrap() {       // TODO: don't unwrap
                 process::ExecOutcome::Finished(val) => {
                     if let Some(feed_value_to) = program.feed_value_to.take() {
                         self.scheduled.push_back(Scheduled {

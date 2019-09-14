@@ -8,6 +8,13 @@ pub struct Signature {
     ret_ty: Option<ValueType>,
 }
 
+/// Easy way to generate a [`Signature`](crate::signature::Signature).
+///
+/// # Example
+///
+/// ```
+/// let _sig: kernel_core::signature::Signature = kernel_core::sig!((I32, I64) -> Pointer);
+/// ```
 #[macro_export]
 macro_rules! sig {
     (($($p:ident),*)) => {{
