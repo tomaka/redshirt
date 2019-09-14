@@ -17,9 +17,9 @@ use err_derive::*;
 /// integer decided by the user. This integer is later passed back to the user of this struct in
 /// situations when the state machine invokes that external function.
 ///
-/// # Paused vs stopped
+/// # Paused vs stopped vs poisoned
 ///
-/// This struct can be in two different states: either paused, or stopped. At initialization,
+/// This struct can be in three different states: paused, stopped, or poisoned. At initialization,
 /// if the WASM module has a startup function, it will immediately start running it and pause.
 ///
 /// When the state machine is stopped, you can call [`start`](ProcessStateMachine::start) in order
@@ -32,6 +32,10 @@ use err_derive::*;
 /// a function that's been imported), in which case you must execute that call and feed back the
 /// outcome of that call into the state machine to resume it.
 ///
+/// If something bad happens, such as an invalid memory access or an `unreachable` WASM opcode,
+/// then the state machine switches to "poisoned" mode. In this state, it can no longer run any
+/// further WASM code and must be destroyed.
+///
 /// # Shared memory
 ///
 /// TO BE DESIGNED // TODO:
@@ -42,7 +46,9 @@ pub struct ProcessStateMachine {
     /// Memory of the module instantiation.
     ///
     /// Right now we only support one unique `Memory` object per process. This is it.
-    memory: wasmi::MemoryRef,
+    /// Contains `None` if the process doesn't export any memory object, which means it doesn't use
+    /// any memory.
+    memory: Option<wasmi::MemoryRef>,
 
     /// Each program can only run once at a time. It only has one "thread".
     /// If `Some`, we are currently executing something in `Program`. If `None`, we aren't.
@@ -51,6 +57,9 @@ pub struct ProcessStateMachine {
     /// If false, then one must call `execution.start_execution()` instead of `resume_execution()`.
     /// This is a special situation that is required after we put a value in `execution`.
     interrupted: bool,
+
+    /// If true, the state machine is in a poisoned state and cannot run any code anymore.
+    is_poisoned: bool,
 }
 
 impl ProcessStateMachine {
@@ -111,19 +120,28 @@ impl ProcessStateMachine {
         let not_started = wasmi::ModuleInstance::new(module.as_ref(), &ImportResolve(RefCell::new(&mut symbols)))
             .map_err(|_| ())?;
         let module = not_started.assert_no_start();     // TODO: true in practice, bad to do in theory
-        let memory = module.export_by_name("memory").unwrap().as_memory().unwrap().clone();
+        let memory = if let Some(mem) = module.export_by_name("memory") {
+            if let Some(mem) = mem.as_memory() {
+                Some(mem.clone())
+            } else {
+                return Err(());
+            }
+        } else {
+            None
+        };
 
         let mut state_machine = ProcessStateMachine {
             module,
             memory,
             execution: None,
             interrupted: false,
+            is_poisoned: false,
         };
 
         // Try to start executing `main`.
         match state_machine.start_inner("main", &[wasmi::RuntimeValue::I32(0), wasmi::RuntimeValue::I32(0)][..]) {
             Ok(()) | Err(StartErr::SymbolNotFound) => {},
-            Err(StartErr::AlreadyRunning) => unreachable!(),
+            Err(StartErr::Poisoned) | Err(StartErr::AlreadyRunning) => unreachable!(),
             Err(StartErr::NotAFunction) => return Err(()),
         };
 
@@ -135,6 +153,11 @@ impl ProcessStateMachine {
     /// If false, we are stopped.
     pub fn is_executing(&self) -> bool {
         self.execution.is_some()
+    }
+
+    /// Returns true if the state machine is in a poisoned state and cannot run anymore. 
+    pub fn is_poisoned(&self) -> bool {
+        self.is_poisoned
     }
 
     /// Starts executing a function. Immediately pauses the execution and puts it in an
@@ -152,6 +175,10 @@ impl ProcessStateMachine {
     fn start_inner(&mut self, symbol_name: &str, params: impl Into<Cow<'static, [wasmi::RuntimeValue]>>)
         -> Result<(), StartErr>
     {
+        if self.is_poisoned {
+            return Err(StartErr::Poisoned);
+        }
+
         if self.execution.is_some() {
             return Err(StartErr::AlreadyRunning);
         }
@@ -235,8 +262,7 @@ impl ProcessStateMachine {
                 })
             }
             Err(wasmi::ResumableError::Trap(trap)) => {
-                println!("oops, actual error!");
-                // TODO: put in corrupted state?
+                self.is_poisoned = true;
                 Ok(ExecOutcome::Errored(trap))
             }
         }
@@ -245,8 +271,9 @@ impl ProcessStateMachine {
     /// Copies the given memory range into a `Vec<u8>`.
     // TODO: should really return &mut [u8] I think
     // TODO: use RangeBounds trait instead of Range
+    // TODO: error
     pub fn read_memory(&self, range: core::ops::Range<usize>) -> Vec<u8> {
-        self.memory.with_direct_access(|mem| mem[range].to_vec())
+        self.memory.as_ref().unwrap().with_direct_access(|mem| mem[range].to_vec())
     }
 }
 
@@ -279,10 +306,11 @@ pub enum ExecOutcome {
     },
 
     /// The currently-executed function has finished with an error. The state machine is now in a
-    /// stopped state.
+    /// poisoned state.
     ///
-    /// Calling [`is_executing`](ProcessStateMachine::is_executing) will return false.
-    // TODO: it might change a bit here
+    /// Calling [`is_executing`](ProcessStateMachine::is_executing) will return false and calling
+    /// [`is_poisoned`](ProcessStateMachine::is_poisoned) will return true.
+    // TODO: error type should change here
     Errored(wasmi::Trap),
 }
 
@@ -292,6 +320,9 @@ pub enum StartErr {
     /// The state machine is already busy executing another function.
     #[error(display = "State machine is already executing a function")]
     AlreadyRunning,
+    /// The state machine is poisoned and cannot run anymore.
+    #[error(display = "State machine is in a poisoned state")]
+    Poisoned,
     /// Couldn't find the requested function.
     #[error(display = "Function to start was not found")]
     SymbolNotFound,
@@ -331,7 +362,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]       // TODO: panics as not implemented
     fn start_stopped_if_no_main() {
         let module = Module::from_wat(r#"(module
             (func $main (param $p0 i32) (param $p1 i32) (result i32)
@@ -381,4 +411,25 @@ mod tests {
         }
         assert!(!state_machine.is_executing());
     }
+
+    #[test]
+    fn poisoning_works() {
+        let module = Module::from_wat(r#"(module
+            (func $main (param $p0 i32) (param $p1 i32) (result i32)
+                unreachable)
+            (export "main" (func $main)))
+        "#).unwrap();
+
+        let mut state_machine = ProcessStateMachine::new(&module, |_, _, _| unreachable!()).unwrap();
+        match state_machine.resume(None) {
+            Ok(ExecOutcome::Errored(_)) => {}
+            _ => panic!()
+        }
+
+        assert!(state_machine.is_poisoned());
+        assert!(!state_machine.is_executing());
+
+        // TODO: start running another function and check that `Poisoned` error is returned
+    }
+
 }
