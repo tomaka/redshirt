@@ -35,6 +35,12 @@ pub enum SystemRunOutcome<TExtEx> {
     Idle,
 }
 
+#[derive(Debug)]
+enum Extrinsic<TExtEx> {
+    RegisterInterface,
+    External(TExtEx),
+}
+
 // TODO: we require Clone because of stupid borrowing issues; remove
 impl<TExtEx: Clone> System<TExtEx> {
     pub fn new() -> SystemBuilder<TExtEx> {
@@ -74,6 +80,7 @@ impl<TExtEx: Clone> System<TExtEx> {
                     params,
                 } => {
                     // TODO: implement
+                    parse_register_interface(params);
                     // self.core.set_interface_provider();
                     self.core
                         .resolve_extrinsic_call(pid, Some(wasmi::RuntimeValue::I32(5)));
@@ -136,8 +143,6 @@ impl<TExtEx> SystemBuilder<TExtEx> {
     }
 }
 
-#[derive(Debug)]
-enum Extrinsic<TExtEx> {
-    RegisterInterface,
-    External(TExtEx),
+fn parse_register_interface(params: Vec<wasmi::RuntimeValue>) {
+    assert_eq!(params.len(), 1);
 }

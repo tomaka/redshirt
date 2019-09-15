@@ -21,6 +21,12 @@ pub struct InterfaceBuilder {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum InterfaceId {
     Hash(InterfaceHash),
+
+    /// TODO: docs
+    ///
+    /// > **Note**: The original design doesn't allow specifying an interface by a name. However
+    /// >           this mechanism has been added in order to enable support for programs compiled
+    /// >           for WASI for example.
     Bytes(String),
 }
 

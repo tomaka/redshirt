@@ -99,7 +99,7 @@ impl<T> Core<T> {
             processes::RunOneOutcome::Finished { mut process, value } => {
                 if let Some(feed_value_to) = process.user_data().feed_value_to.take() {
                     self.processes
-                        .process_by_id(&feed_value_to)
+                        .process_by_id(feed_value_to)
                         .unwrap()
                         .resume(value);
                 } else {
@@ -146,7 +146,7 @@ impl<T> Core<T> {
     pub fn resolve_extrinsic_call(&mut self, pid: Pid, return_value: Option<wasmi::RuntimeValue>) {
         // TODO: check if the value type is correct
         self.processes
-            .process_by_id(&pid)
+            .process_by_id(pid)
             .unwrap()
             .resume(return_value);
     }
@@ -234,7 +234,7 @@ impl<T> Core<T> {
     // TODO: should really return &mut [u8] I think
     pub fn read_memory(&mut self, pid: Pid, range: impl RangeBounds<usize>) -> Result<Vec<u8>, ()> {
         self.processes
-            .process_by_id(&pid)
+            .process_by_id(pid)
             .unwrap()
             .read_memory(range)
     }

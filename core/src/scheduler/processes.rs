@@ -7,7 +7,7 @@ use crate::scheduler::{
     process,
 };
 use core::ops::RangeBounds;
-use hashbrown::HashMap;
+use hashbrown::{HashMap, hash_map::{DefaultHashBuilder, Entry, OccupiedEntry}};
 
 /// Collection of multiple [`ProcessStateMachine`]s grouped together in a smart way.
 ///
@@ -23,15 +23,21 @@ pub struct ProcessesCollection<T> {
     processes: HashMap<Pid, Process<T>>,
 }
 
+/// Single running process in the list.
 struct Process<T> {
+    /// State of a single process.
     state_machine: process::ProcessStateMachine,
+    /// User-chosen data (opaque to us) that describes the process.
     user_data: T,
+    /// Value to use when resuming. If `Some`, the process is ready for a round of running. If
+    /// `None`, then we're waiting for the user to call `resume`.
     value_back: Option<Option<wasmi::RuntimeValue>>,
 }
 
+/// Access to a process within the collection.
 pub struct ProcessesCollectionProc<'a, T> {
-    pid: Pid,
-    process: &'a mut Process<T>,
+    /// Pointer within the hashmap.
+    process: OccupiedEntry<'a, Pid, Process<T>, DefaultHashBuilder>,
 }
 
 /// Outcome of the [`run`](ProcessesCollection::run) function.
@@ -52,7 +58,6 @@ pub enum RunOneOutcome<'a, T> {
     /// This variant contains the identifier of the external function that is expected to be
     /// called, and its parameters. When you call [`resume`](ProcessesCollectionProc::resume) again,
     /// you must pass back the outcome of calling that function.
-    // TODO: more docs
     Interrupted {
         /// Process that has been interrupted.
         process: ProcessesCollectionProc<'a, T>,
@@ -117,47 +122,53 @@ impl<T> ProcessesCollection<T> {
         if u64::from(new_pid) % 256 == 0 {
             self.processes.shrink_to(PROCESSES_MIN_CAPACITY);
         }
-        Ok(self.process_by_id(&new_pid).unwrap())
+        Ok(self.process_by_id(new_pid).unwrap())
     }
 
     pub fn run(&mut self) -> RunOneOutcome<T> {
         // We start by finding an element in `self.processes`.
-        let (pid, process) = {
-            let entry = self.processes.iter_mut().find(|(_, p)| p.is_ready_to_run());
+        let mut process: OccupiedEntry<_, _, _> = {
+            let entry = self.processes.iter_mut().find(|(_, p)| p.is_ready_to_run()).map(|(k, _)| k.clone());
             match entry {
-                Some(e) => e,
+                Some(pid) => match self.processes.entry(pid) {
+                    Entry::Occupied(p) => p,
+                    Entry::Vacant(_) => unreachable!()
+                },
                 None => return RunOneOutcome::Idle,
             }
         };
 
-        let value_back = process.value_back.take().unwrap();
-        match process.state_machine.resume(value_back) {
+        let value_back = process.get_mut().value_back.take().unwrap();
+        match process.get_mut().state_machine.resume(value_back) {
             Err(process::ResumeErr::BadValueTy { .. }) => panic!(), // TODO:
             Ok(process::ExecOutcome::Finished(value)) => RunOneOutcome::Finished {
-                process: ProcessesCollectionProc { pid: *pid, process },
+                process: ProcessesCollectionProc { process },
                 value,
             },
             Ok(process::ExecOutcome::Interrupted { id, params }) => RunOneOutcome::Interrupted {
-                process: ProcessesCollectionProc { pid: *pid, process },
+                process: ProcessesCollectionProc { process },
                 id,
                 params,
             },
             Ok(process::ExecOutcome::Errored(error)) => {
-                let pid_val = *pid;
-                drop((pid, process));
-                // FIXME: remove process from list
-                unimplemented!()
+                let (pid, Process { user_data, .. }) = process.remove_entry();
+                RunOneOutcome::Errored {
+                    pid,
+                    user_data,
+                    error,
+                }
             }
         }
     }
 
-    pub fn process_by_id(&mut self, pid: &Pid) -> Option<ProcessesCollectionProc<T>> {
-        self.processes
-            .get_mut(pid)
-            .map(|p| ProcessesCollectionProc {
-                pid: *pid,
-                process: p,
-            })
+    /// Returns a process by its [`Pid`], if it exists.
+    pub fn process_by_id(&mut self, pid: Pid) -> Option<ProcessesCollectionProc<T>> {
+        match self.processes.entry(pid) {
+            Entry::Occupied(e) => Some(ProcessesCollectionProc {
+                process: e,
+            }),
+            Entry::Vacant(_) => None,
+        }
     }
 }
 
@@ -183,28 +194,28 @@ impl<'a, T> ProcessesCollectionProc<'a, T> {
     /// Returns the [`Pid`] of the process. Allows later retrieval by calling
     /// [`process_by_id`](ProcessesCollection::process_by_id).
     pub fn pid(&self) -> &Pid {
-        &self.pid
+        self.process.key()
     }
 
     pub fn into_user_data(self) -> &'a mut T {
-        &mut self.process.user_data
+        &mut self.process.into_mut().user_data
     }
 
     pub fn user_data(&mut self) -> &mut T {
-        &mut self.process.user_data
+        &mut self.process.get_mut().user_data
     }
 
     pub fn resume(&mut self, value: Option<wasmi::RuntimeValue>) {
         // TODO: check type of the value?
-        if self.process.value_back.is_some() {
+        if self.process.get_mut().value_back.is_some() {
             panic!()
         }
 
-        self.process.value_back = Some(value);
+        self.process.get_mut().value_back = Some(value);
     }
 
     // TODO: adjust to final API
-    pub fn read_memory(&self, range: impl RangeBounds<usize>) -> Result<Vec<u8>, ()> {
-        self.process.state_machine.read_memory(range)
+    pub fn read_memory(&mut self, range: impl RangeBounds<usize>) -> Result<Vec<u8>, ()> {
+        self.process.get_mut().state_machine.read_memory(range)
     }
 }
