@@ -11,8 +11,8 @@ use core::ops::RangeBounds;
 use hashbrown::{hash_map::Entry, HashMap, HashSet};
 
 mod pid;
-mod process;
 mod processes;
+mod vm;
 
 // TODO: move definition?
 pub use self::pid::Pid;

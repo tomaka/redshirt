@@ -4,7 +4,7 @@ use crate::interface::InterfaceId;
 use crate::module::Module;
 use crate::scheduler::{
     pid::{Pid, PidPool},
-    process,
+    vm,
 };
 use core::ops::RangeBounds;
 use hashbrown::{
@@ -29,7 +29,7 @@ pub struct ProcessesCollection<T> {
 /// Single running process in the list.
 struct Process<T> {
     /// State of a single process.
-    state_machine: process::ProcessStateMachine,
+    state_machine: vm::ProcessStateMachine,
     /// User-chosen data (opaque to us) that describes the process.
     user_data: T,
     /// Value to use when resuming. If `Some`, the process is ready for a round of running. If
@@ -108,7 +108,7 @@ impl<T> ProcessesCollection<T> {
         user_data: T,
         mut symbols: impl FnMut(&InterfaceId, &str, &wasmi::Signature) -> Result<usize, ()>,
     ) -> Result<ProcessesCollectionProc<T>, ()> {
-        let state_machine = process::ProcessStateMachine::new(module, symbols)?;
+        let state_machine = vm::ProcessStateMachine::new(module, symbols)?;
         let has_main = state_machine.is_executing();
 
         // We only modify `self` at the very end.
@@ -147,17 +147,17 @@ impl<T> ProcessesCollection<T> {
 
         let value_back = process.get_mut().value_back.take().unwrap();
         match process.get_mut().state_machine.resume(value_back) {
-            Err(process::ResumeErr::BadValueTy { .. }) => panic!(), // TODO:
-            Ok(process::ExecOutcome::Finished(value)) => RunOneOutcome::Finished {
+            Err(vm::ResumeErr::BadValueTy { .. }) => panic!(), // TODO:
+            Ok(vm::ExecOutcome::Finished(value)) => RunOneOutcome::Finished {
                 process: ProcessesCollectionProc { process },
                 value,
             },
-            Ok(process::ExecOutcome::Interrupted { id, params }) => RunOneOutcome::Interrupted {
+            Ok(vm::ExecOutcome::Interrupted { id, params }) => RunOneOutcome::Interrupted {
                 process: ProcessesCollectionProc { process },
                 id,
                 params,
             },
-            Ok(process::ExecOutcome::Errored(error)) => {
+            Ok(vm::ExecOutcome::Errored(error)) => {
                 let (pid, Process { user_data, .. }) = process.remove_entry();
                 RunOneOutcome::Errored {
                     pid,
