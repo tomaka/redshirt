@@ -1,11 +1,10 @@
 // Copyright(c) 2019 Pierre Krieger
 
-use crate::interface::{Interface, InterfaceHash, InterfaceId};
+use crate::interface::{Interface, InterfaceId};
 use crate::module::Module;
 use crate::signature::Signature;
 
-use self::pid::PidPool;
-use alloc::{borrow::Cow, collections::VecDeque};
+use alloc::borrow::Cow;
 use bimap::BiHashMap;
 use core::ops::RangeBounds;
 use hashbrown::{hash_map::Entry, HashMap, HashSet};
@@ -22,7 +21,7 @@ pub struct Core<T> {
     processes: processes::ProcessesCollection<Process>,
 
     /// List of functions available to processes that are handled by the user of this struct.
-    extrinsics: HashMap<((InterfaceId, Cow<'static, str>)), (T, Signature)>,
+    extrinsics: HashMap<(InterfaceId, Cow<'static, str>), (T, Signature)>,
 
     /// For each interface, its definition and which program is fulfilling it.
     interfaces: HashMap<InterfaceId, (Pid, Interface)>,
@@ -38,15 +37,15 @@ pub struct Core<T> {
 /// Prototype for a `Core` under construction.
 pub struct CoreBuilder<T> {
     /// See the corresponding field in `Core`.
-    extrinsics: HashMap<((InterfaceId, Cow<'static, str>)), (T, Signature)>,
+    extrinsics: HashMap<(InterfaceId, Cow<'static, str>), (T, Signature)>,
     /// See the corresponding field in `Core`.
     externals_indices: BiHashMap<usize, (InterfaceId, Cow<'static, str>)>,
 }
 
-#[derive(Debug)]
+// TODO: #[derive(Debug)]
 pub enum CoreRunOutcome<'a, T> {
     ProgramFinished {
-        pid: Pid,
+        process: CoreProcess<'a, T>,
         return_value: Option<wasmi::RuntimeValue>, // TODO: force to i32?
     },
     ProgramCrashed {
@@ -54,8 +53,27 @@ pub enum CoreRunOutcome<'a, T> {
         error: wasmi::Error,
     },
     ProgramWaitExtrinsic {
-        pid: Pid,
+        process: CoreProcess<'a, T>,
         extrinsic: &'a T,
+        params: Vec<wasmi::RuntimeValue>,
+    },
+    Idle,
+}
+
+/// Because of lifetime issues, this is a temporary enum that holds `Pid`s instead of
+/// `CoreProcess`es.
+enum CoreRunOutcomeInner {
+    ProgramFinished {
+        process: Pid,
+        return_value: Option<wasmi::RuntimeValue>, // TODO: force to i32?
+    },
+    ProgramCrashed {
+        pid: Pid,
+        error: wasmi::Error,
+    },
+    ProgramWaitExtrinsic {
+        process: Pid,
+        extrinsic: (InterfaceId, Cow<'static, str>),
         params: Vec<wasmi::RuntimeValue>,
     },
     Idle,
@@ -68,6 +86,15 @@ struct Process {
     /// If `Some`, then after this execution finishes we must schedule `Pid` and feed the value
     /// back to it.
     feed_value_to: Option<Pid>,
+}
+
+/// Access to a process within the core.
+pub struct CoreProcess<'a, T> {
+    process: processes::ProcessesCollectionProc<'a, Process>,
+    /// Reference to the same field in `Core`.
+    extrinsics: &'a HashMap<((InterfaceId, Cow<'static, str>)), (T, Signature)>,
+    /// Reference to the same field in `Core`.
+    interfaces: &'a mut HashMap<InterfaceId, (Pid, Interface)>,
 }
 
 impl<T> Core<T> {
@@ -83,28 +110,40 @@ impl<T> Core<T> {
         self.interfaces.contains_key(&interface)
     }
 
-    /// Kills the given process immediately.
-    ///
-    /// Returns an error if the given `pid` isn't valid or isn't valid anymore.
-    pub fn abort_process(&mut self, pid: Pid) -> Result<(), ()> {
-        // TODO: implement
-        panic!("aborting {:?}", pid);
-        Ok(())
-    }
-
     /// Run the core once.
     // TODO: make multithreaded
     pub fn run(&mut self) -> CoreRunOutcome<T> {
+        match self.run_inner() {
+            CoreRunOutcomeInner::Idle => CoreRunOutcome::Idle,
+            CoreRunOutcomeInner::ProgramFinished { process, return_value } => {
+                CoreRunOutcome::ProgramFinished { process: self.process_by_id(process).unwrap(), return_value }
+            },
+            CoreRunOutcomeInner::ProgramCrashed { pid, error } => CoreRunOutcome::ProgramCrashed { pid, error },
+            CoreRunOutcomeInner::ProgramWaitExtrinsic { process, extrinsic, params } => {
+                CoreRunOutcome::ProgramWaitExtrinsic {
+                    process: CoreProcess { process: self.processes.process_by_id(process).unwrap(), extrinsics: &self.extrinsics, interfaces: &mut self.interfaces },
+                    extrinsic: &self.extrinsics.get(&extrinsic).unwrap().0,
+                    params,
+                }
+            },
+        }
+    }
+
+    /// Because of lifetime issues, we return an enum that holds `Pid`s instead of `CoreProcess`es.
+    /// Then `run` does the conversion in order to have a good API.
+    // TODO: make multithreaded
+    fn run_inner(&mut self) -> CoreRunOutcomeInner {
         match self.processes.run() {
             processes::RunOneOutcome::Finished { mut process, value } => {
                 if let Some(feed_value_to) = process.user_data().feed_value_to.take() {
+                    drop(process);
                     self.processes
                         .process_by_id(feed_value_to)
                         .unwrap()
                         .resume(value);
                 } else {
-                    return CoreRunOutcome::ProgramFinished {
-                        pid: *process.pid(),
+                    return CoreRunOutcomeInner::ProgramFinished {
+                        process: process.pid(),
                         return_value: value,
                     };
                 }
@@ -116,12 +155,11 @@ impl<T> Core<T> {
             } => {
                 let (interface, function) = self.externals_indices.get_by_left(&id).unwrap();
                 // TODO: check params against signature? is that necessary? maybe a debug_assert!
-                if let Some((extrinsic, _)) =
-                    self.extrinsics.get(&(interface.clone(), function.clone()))
-                {
-                    return CoreRunOutcome::ProgramWaitExtrinsic {
-                        pid: *process.pid(),
-                        extrinsic,
+                let key = (interface.clone(), function.clone());
+                if self.extrinsics.contains_key(&key) {
+                    return CoreRunOutcomeInner::ProgramWaitExtrinsic {
+                        process: process.pid(),
+                        extrinsic: key,
                         params,
                     };
                 }
@@ -137,43 +175,13 @@ impl<T> Core<T> {
             processes::RunOneOutcome::Idle => {}
         }
 
-        CoreRunOutcome::Idle
+        CoreRunOutcomeInner::Idle
     }
 
-    /// After `ProgramWaitExtrinsic` has been returned, you have to call this method in order to
-    /// inject back the result of the extrinsic call.
-    // TODO: don't expose wasmi::RuntimeValue
-    pub fn resolve_extrinsic_call(&mut self, pid: Pid, return_value: Option<wasmi::RuntimeValue>) {
-        // TODO: check if the value type is correct
-        self.processes
-            .process_by_id(pid)
-            .unwrap()
-            .resume(return_value);
-    }
-
-    /// Sets the process that fulfills the given interface.
-    ///
-    /// Returns an error if there is already a process fulfilling the given interface.
-    pub fn set_interface_provider(&mut self, interface: Interface, pid: Pid) -> Result<(), ()> {
-        if self
-            .extrinsics
-            .keys()
-            .any(|(i, _)| i == &InterfaceId::Hash(interface.hash().clone()))
-        {
-            // TODO: more efficient way?
-            return Err(());
-        }
-
-        match self
-            .interfaces
-            .entry(InterfaceId::Hash(interface.hash().clone()))
-        {
-            Entry::Occupied(_) => Err(()),
-            Entry::Vacant(e) => {
-                e.insert((pid, interface));
-                Ok(())
-            }
-        }
+    /// Returns an object granting access to a process, if it exists.
+    pub fn process_by_id(&mut self, pid: Pid) -> Option<CoreProcess<T>> {
+        let p = self.processes.process_by_id(pid)?;
+        Some(CoreProcess { process: p, extrinsics: &self.extrinsics, interfaces: &mut self.interfaces })
     }
 
     /// Start executing the module passed as parameter.
@@ -225,18 +233,60 @@ impl<T> Core<T> {
                     Err(())
                 })?;
 
-        Ok(*process.pid())
+        Ok(process.pid())
+    }
+}
+
+impl<'a, T> CoreProcess<'a, T> {
+    /// Returns the [`Pid`] of the process.
+    pub fn pid(&self) -> Pid {
+        self.process.pid()
+    }
+
+    /// After `ProgramWaitExtrinsic` has been returned, you have to call this method in order to
+    /// inject back the result of the extrinsic call.
+    // TODO: don't expose wasmi::RuntimeValue
+    pub fn resolve_extrinsic_call(&mut self, return_value: Option<wasmi::RuntimeValue>) {
+        // TODO: check if the value type is correct
+        self.process.resume(return_value);
+    }
+
+    /// Sets the process that fulfills the given interface.
+    ///
+    /// Returns an error if there is already a process fulfilling the given interface.
+    pub fn set_interface_provider(&mut self, interface: Interface) -> Result<(), ()> {
+        if self
+            .extrinsics
+            .keys()
+            .any(|(i, _)| i == &InterfaceId::Hash(interface.hash().clone()))
+        {
+            // TODO: more efficient way?
+            return Err(());
+        }
+
+        match self
+            .interfaces
+            .entry(InterfaceId::Hash(interface.hash().clone()))
+        {
+            Entry::Occupied(_) => Err(()),
+            Entry::Vacant(e) => {
+                e.insert((self.process.pid(), interface));
+                Ok(())
+            }
+        }
     }
 
     /// Copies the given memory range of the given process into a `Vec<u8>`.
     ///
     /// Returns an error if the range is invalid.
     // TODO: should really return &mut [u8] I think
-    pub fn read_memory(&mut self, pid: Pid, range: impl RangeBounds<usize>) -> Result<Vec<u8>, ()> {
-        self.processes
-            .process_by_id(pid)
-            .unwrap()
-            .read_memory(range)
+    pub fn read_memory(&mut self, range: impl RangeBounds<usize>) -> Result<Vec<u8>, ()> {
+        self.process.read_memory(range)
+    }
+
+    /// Kills the process immediately.
+    pub fn abort(self) {
+        self.process.abort();
     }
 }
 
@@ -364,7 +414,7 @@ mod tests {
             _ => panic!(),
         }
 
-        core.resolve_extrinsic_call(expected_pid, Some(wasmi::RuntimeValue::I32(713)));
+        core.process_by_id(expected_pid).unwrap().resolve_extrinsic_call(Some(wasmi::RuntimeValue::I32(713)));
 
         match core.run() {
             CoreRunOutcome::ProgramFinished { pid, return_value } => {

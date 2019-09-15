@@ -106,7 +106,7 @@ impl<T> ProcessesCollection<T> {
         &mut self,
         module: &Module,
         user_data: T,
-        mut symbols: impl FnMut(&InterfaceId, &str, &wasmi::Signature) -> Result<usize, ()>,
+        symbols: impl FnMut(&InterfaceId, &str, &wasmi::Signature) -> Result<usize, ()>,
     ) -> Result<ProcessesCollectionProc<T>, ()> {
         let state_machine = vm::ProcessStateMachine::new(module, symbols)?;
         let has_main = state_machine.is_executing();
@@ -198,8 +198,8 @@ impl<T> Process<T> {
 impl<'a, T> ProcessesCollectionProc<'a, T> {
     /// Returns the [`Pid`] of the process. Allows later retrieval by calling
     /// [`process_by_id`](ProcessesCollection::process_by_id).
-    pub fn pid(&self) -> &Pid {
-        self.process.key()
+    pub fn pid(&self) -> Pid {
+        *self.process.key()
     }
 
     /// Returns the user data that is associated to the process.

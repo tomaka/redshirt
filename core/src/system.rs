@@ -62,36 +62,35 @@ impl<TExtEx: Clone> System<TExtEx> {
     // TODO: don't expose wasmi::RuntimeValue
     pub fn resolve_extrinsic_call(&mut self, pid: Pid, return_value: Option<wasmi::RuntimeValue>) {
         // TODO: can the user badly misuse that API?
-        self.core.resolve_extrinsic_call(pid, return_value);
+        self.core.process_by_id(pid).unwrap().resolve_extrinsic_call(return_value);
     }
 
     pub fn run(&mut self) -> SystemRunOutcome<TExtEx> {
         loop {
             match self.core.run() {
-                CoreRunOutcome::ProgramFinished { pid, return_value } => {
-                    return SystemRunOutcome::ProgramFinished { pid, return_value }
+                CoreRunOutcome::ProgramFinished { process, return_value } => {
+                    return SystemRunOutcome::ProgramFinished { pid: process.pid(), return_value }
                 }
                 CoreRunOutcome::ProgramCrashed { pid, error } => {
                     return SystemRunOutcome::ProgramCrashed { pid, error }
                 }
                 CoreRunOutcome::ProgramWaitExtrinsic {
-                    pid,
+                    mut process,
                     extrinsic: &Extrinsic::RegisterInterface,
                     params,
                 } => {
                     // TODO: implement
                     parse_register_interface(params);
                     // self.core.set_interface_provider();
-                    self.core
-                        .resolve_extrinsic_call(pid, Some(wasmi::RuntimeValue::I32(5)));
+                    process.resolve_extrinsic_call(Some(wasmi::RuntimeValue::I32(5)));
                 }
                 CoreRunOutcome::ProgramWaitExtrinsic {
-                    pid,
+                    ref mut process,
                     extrinsic: &Extrinsic::External(ref external_token),
                     ref params,
                 } => {
                     return SystemRunOutcome::ProgramWaitExtrinsic {
-                        pid,
+                        pid: process.pid(),
                         extrinsic: external_token.clone(),
                         params: params.clone(),
                     };
@@ -106,7 +105,7 @@ impl<TExtEx: Clone> System<TExtEx> {
     /// Returns an error if the range is invalid.
     // TODO: should really return &mut [u8] I think
     pub fn read_memory(&mut self, pid: Pid, range: impl RangeBounds<usize>) -> Result<Vec<u8>, ()> {
-        self.core.read_memory(pid, range)
+        self.core.process_by_id(pid).ok_or(())?.read_memory(range)
     }
 }
 
