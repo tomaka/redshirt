@@ -16,6 +16,7 @@ mod vm;
 // TODO: move definition?
 pub use self::pid::Pid;
 
+/// Handles scheduling processes and inter-process communications.
 pub struct Core<T> {
     /// List of running processes.
     processes: processes::ProcessesCollection<Process>,
@@ -24,6 +25,8 @@ pub struct Core<T> {
     extrinsics: HashMap<(InterfaceId, Cow<'static, str>), (T, Signature)>,
 
     /// For each interface, its definition and which program is fulfilling it.
+    ///
+    /// Must never collide with `extrinsics`.
     interfaces: HashMap<InterfaceId, (Pid, Interface)>,
 
     /// Holds a bijection between arbitrary values (the `usize` on the left side) that we pass
@@ -42,6 +45,7 @@ pub struct CoreBuilder<T> {
     externals_indices: BiHashMap<usize, (InterfaceId, Cow<'static, str>)>,
 }
 
+/// Outcome of calling [`run`](Core::run).
 // TODO: #[derive(Debug)]
 pub enum CoreRunOutcome<'a, T> {
     ProgramFinished {
@@ -57,11 +61,12 @@ pub enum CoreRunOutcome<'a, T> {
         extrinsic: &'a T,
         params: Vec<wasmi::RuntimeValue>,
     },
+    /// Nothing to do. No process is ready to run.
     Idle,
 }
 
-/// Because of lifetime issues, this is a temporary enum that holds `Pid`s instead of
-/// `CoreProcess`es.
+/// Because of lifetime issues, this is the same as `CoreRunOutcome` but that holds `Pid`s instead
+/// of `CoreProcess`es.
 enum CoreRunOutcomeInner {
     ProgramFinished {
         process: Pid,
@@ -210,7 +215,7 @@ impl<T> Core<T> {
             feed_value_to: None,
         };
 
-        let mut externals_indices = &mut self.externals_indices;
+        let externals_indices = &mut self.externals_indices;
         let interfaces = &mut self.interfaces;
         let extrinsics = &mut self.extrinsics;
 
@@ -378,7 +383,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // TODO:
+    #[ignore]       // TODO: test fails
     fn trapping_module() {
         let module = Module::from_wat(
             r#"(module
@@ -390,15 +395,14 @@ mod tests {
         .unwrap();
 
         let mut core = Core::<!>::new().build();
-        let expected_pid = core.execute(&module).unwrap();
+        let expected_pid = core.execute(&module).unwrap().pid();
 
-        /*let outcome = futures::executor::block_on(core.run());
-        match outcome {
+        match core.run() {
             CoreRunOutcome::ProgramCrashed { pid, .. } => {
                 assert_eq!(pid, expected_pid);
             }
             _ => panic!()
-        }*/
+        }
     }
 
     #[test]
