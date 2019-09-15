@@ -6,6 +6,7 @@ use crate::signature::Signature;
 
 use alloc::{borrow::Cow, collections::VecDeque};
 use bimap::BiHashMap;
+use core::ops::RangeBounds;
 use hashbrown::{HashMap, HashSet, hash_map::Entry};
 use self::pid::PidPool;
 
@@ -196,9 +197,10 @@ impl<T> Core<T> {
     }
 
     /// Copies the given memory range of the given process into a `Vec<u8>`.
+    ///
+    /// Returns an error if the range is invalid.
     // TODO: should really return &mut [u8] I think
-    // TODO: use RangeBounds trait instead of Range
-    pub fn read_memory(&mut self, pid: Pid, range: core::ops::Range<usize>) -> Vec<u8> {
+    pub fn read_memory(&mut self, pid: Pid, range: impl RangeBounds<usize>) -> Result<Vec<u8>, ()> {
         self.processes.process_by_id(&pid).unwrap().read_memory(range)
     }
 }

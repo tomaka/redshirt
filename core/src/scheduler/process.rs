@@ -3,7 +3,7 @@
 use crate::interface::{InterfaceHash, InterfaceId};
 use crate::module::Module;
 use alloc::borrow::Cow;
-use core::{cell::RefCell, fmt, ops::RangeBounds};
+use core::{cell::RefCell, fmt, ops::Bound, ops::RangeBounds};
 use err_derive::*;
 
 /// WASMI state machine dedicated to a process.
@@ -272,11 +272,34 @@ impl ProcessStateMachine {
     }
 
     /// Copies the given memory range into a `Vec<u8>`.
+    ///
+    /// Returns an error if the range is invalid or out of range.
     // TODO: should really return &mut [u8] I think
-    // TODO: use RangeBounds trait instead of Range
-    // TODO: error
-    pub fn read_memory(&self, range: core::ops::Range<usize>) -> Vec<u8> {
-        self.memory.as_ref().unwrap().with_direct_access(|mem| mem[range].to_vec())
+    pub fn read_memory(&self, range: impl RangeBounds<usize>) -> Result<Vec<u8>, ()> {
+        self.dma(range, |mem| mem.to_vec())
+    }
+
+    fn dma<T>(&self, range: impl RangeBounds<usize>, f: impl FnOnce(&mut [u8]) -> T) -> Result<T, ()> {
+        let mem = self.memory.as_ref().unwrap();
+        let mem_sz = mem.current_size().0 * 65536;
+
+        let start = match range.start_bound() {
+            Bound::Included(b) => *b,
+            Bound::Excluded(b) => b.checked_add(1).ok_or(())?,
+            Bound::Unbounded => 0,
+        };
+
+        let end = match range.end_bound() {
+            Bound::Included(b) => b.checked_add(1).ok_or(())?,
+            Bound::Excluded(b) => *b,
+            Bound::Unbounded => mem_sz,
+        };
+
+        if start > end || end > mem_sz {
+            return Err(());
+        }
+
+        Ok(mem.with_direct_access_mut(move |mem| f(&mut mem[start..=end])))
     }
 }
 

@@ -5,7 +5,7 @@ use crate::module::Module;
 use crate::scheduler::{Core, CoreBuilder, CoreRunOutcome, Pid};
 use crate::signature::{Signature, ValueType};
 use alloc::borrow::Cow;
-use core::iter;
+use core::{iter, ops::RangeBounds};
 use smallvec::SmallVec;
 
 pub struct System<TExtEx> {
@@ -82,9 +82,10 @@ impl<TExtEx: Clone> System<TExtEx> {
     }
 
     /// Copies the given memory range of the given process into a `Vec<u8>`.
+    ///
+    /// Returns an error if the range is invalid.
     // TODO: should really return &mut [u8] I think
-    // TODO: use RangeBounds trait instead of Range
-    pub fn read_memory(&mut self, pid: Pid, range: core::ops::Range<usize>) -> Vec<u8> {
+    pub fn read_memory(&mut self, pid: Pid, range: impl RangeBounds<usize>) -> Result<Vec<u8>, ()> {
         self.core.read_memory(pid, range)
     }
 }

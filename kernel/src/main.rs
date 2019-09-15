@@ -69,11 +69,11 @@ fn main() {
                         assert_eq!(params.len(), 4);
                         //assert!(params[0] == wasmi::RuntimeValue::I32(0) || params[0] == wasmi::RuntimeValue::I32(1));      // either stdout or stderr
                         let addr = params[1].try_into::<i32>().unwrap() as usize;
-                        let mem = system.read_memory(pid, addr .. addr + 4);
+                        let mem = system.read_memory(pid, addr .. addr + 4).unwrap();
                         let mem = ((mem[0] as u32) | ((mem[1] as u32) << 8) | ((mem[2] as u32) << 16) | ((mem[3] as u32) << 24)) as usize;
-                        let buf_size = system.read_memory(pid, addr + 4 .. addr + 8);
+                        let buf_size = system.read_memory(pid, addr + 4 .. addr + 8).unwrap();
                         let buf_size = ((buf_size[0] as u32) | ((buf_size[1] as u32) << 8) | ((buf_size[2] as u32) << 16) | ((buf_size[3] as u32) << 24)) as usize;
-                        let buf = system.read_memory(pid, mem .. mem + buf_size);
+                        let buf = system.read_memory(pid, mem .. mem + buf_size).unwrap();
                         std::io::stdout().write_all(&buf).unwrap();
                         system.resolve_extrinsic_call(pid, Some(wasmi::RuntimeValue::I32(buf.len() as i32)));
                     },

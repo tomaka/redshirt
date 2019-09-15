@@ -3,6 +3,7 @@
 use crate::interface::InterfaceId;
 use crate::module::Module;
 use crate::scheduler::{pid::{PidPool, Pid}, process};
+use core::ops::RangeBounds;
 use hashbrown::HashMap;
 
 /// Collection of multiple [`ProcessStateMachine`]s grouped together in a smart way.
@@ -190,7 +191,7 @@ impl<'a, T> ProcessesCollectionProc<'a, T> {
     }
 
     // TODO: adjust to final API
-    pub fn read_memory(&self, range: core::ops::Range<usize>) -> Vec<u8> {
+    pub fn read_memory(&self, range: impl RangeBounds<usize>) -> Result<Vec<u8>, ()> {
         self.process.state_machine.read_memory(range)
     }
 }
