@@ -40,7 +40,7 @@ fn main() {
     loop {
         let result = futures::executor::block_on(async {
             loop {
-                match system.run().await {
+                match system.run() {
                     kernel_core::system::SystemRunOutcome::ProgramWaitExtrinsic { pid, extrinsic: Extrinsic::ArgsGet, params } => {
                         unimplemented!()
                     },

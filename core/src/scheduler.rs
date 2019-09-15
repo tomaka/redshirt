@@ -57,8 +57,7 @@ pub enum CoreRunOutcome<'a, T> {
         extrinsic: &'a T,
         params: Vec<wasmi::RuntimeValue>,
     },
-    // TODO: temporary; remove
-    Nothing,
+    Idle,
 }
 
 struct Process {
@@ -92,12 +91,9 @@ impl<T> Core<T> {
         Ok(())
     }
 
-    /// Returns a `Future` that runs the core.
-    ///
-    /// This returns a `Future` so that it is possible to interrupt the process.
+    /// Run the core once.
     // TODO: make multithreaded
-    #[allow(clippy::needless_lifetimes)]        // TODO: lifetime necessary because of async/await
-    pub async fn run<'a>(&'a mut self) -> CoreRunOutcome<'a, T> {
+    pub fn run(&mut self) -> CoreRunOutcome<T> {
         match self.processes.run() {
             processes::RunOneOutcome::Finished { mut process, value } => {
                 if let Some(feed_value_to) = process.user_data().feed_value_to.take() {
@@ -110,15 +106,15 @@ impl<T> Core<T> {
                 }
             }
             processes::RunOneOutcome::Interrupted { process, id, params } => {
-                /*let (interface, function) = self.externals_indices.get_by_left(&id).unwrap();
+                let (interface, function) = self.externals_indices.get_by_left(&id).unwrap();
                 // TODO: check params against signature? is that necessary? maybe a debug_assert!
                 if let Some((extrinsic, _)) = self.extrinsics.get(&(interface.clone(), function.clone())) {
                     return CoreRunOutcome::ProgramWaitExtrinsic {
-                        pid: scheduled.pid,
+                        pid: *process.pid(),
                         extrinsic,
                         params,
                     };
-                }*/
+                }
             }
             processes::RunOneOutcome::Errored { pid, user_data, error } => {
                 println!("oops, actual error! {:?}", error);
@@ -127,8 +123,7 @@ impl<T> Core<T> {
             processes::RunOneOutcome::Idle => {}
         }
 
-        // TODO: sleep or something instead of terminating the future
-        CoreRunOutcome::Nothing
+        CoreRunOutcome::Idle
     }
 
     /// After `ProgramWaitExtrinsic` has been returned, you have to call this method in order to
@@ -251,8 +246,7 @@ mod tests {
         let mut core = Core::<!>::new().build();
         let expected_pid = core.execute(&module).unwrap();
 
-        let outcome = futures::executor::block_on(core.run());
-        match outcome {
+        match core.run() {
             CoreRunOutcome::ProgramFinished { pid, return_value } => {
                 assert_eq!(pid, expected_pid);
                 assert_eq!(return_value, Some(wasmi::RuntimeValue::I32(5)));
@@ -297,8 +291,7 @@ mod tests {
 
         let expected_pid = core.execute(&module).unwrap();
 
-        let outcome = futures::executor::block_on(core.run());
-        match outcome {
+        match core.run() {
             CoreRunOutcome::ProgramWaitExtrinsic { pid, extrinsic, params } => {
                 assert_eq!(pid, expected_pid);
                 assert_eq!(*extrinsic, 639);
@@ -309,8 +302,7 @@ mod tests {
 
         core.resolve_extrinsic_call(expected_pid, Some(wasmi::RuntimeValue::I32(713)));
 
-        let outcome = futures::executor::block_on(core.run());
-        match outcome {
+        match core.run() {
             CoreRunOutcome::ProgramFinished { pid, return_value } => {
                 assert_eq!(pid, expected_pid);
                 assert_eq!(return_value, Some(wasmi::RuntimeValue::I32(713)));

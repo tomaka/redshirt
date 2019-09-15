@@ -32,8 +32,7 @@ pub enum SystemRunOutcome<TExtEx> {
         extrinsic: TExtEx,
         params: Vec<wasmi::RuntimeValue>,
     },
-    // TODO: temporary; remove
-    Nothing,
+    Idle,
 }
 
 // TODO: we require Clone because of stupid borrowing issues; remove
@@ -56,9 +55,9 @@ impl<TExtEx: Clone> System<TExtEx> {
         self.core.resolve_extrinsic_call(pid, return_value);
     }
 
-    pub async fn run(&mut self) -> SystemRunOutcome<TExtEx> {
+    pub fn run(&mut self) -> SystemRunOutcome<TExtEx> {
         loop {
-            match self.core.run().await {
+            match self.core.run() {
                 CoreRunOutcome::ProgramFinished { pid, return_value } => {
                     return SystemRunOutcome::ProgramFinished { pid, return_value }
                 },
@@ -77,7 +76,7 @@ impl<TExtEx: Clone> System<TExtEx> {
                         params: params.clone(),
                     };
                 },
-                CoreRunOutcome::Nothing => {},
+                CoreRunOutcome::Idle => {},
             }
         }
     }
