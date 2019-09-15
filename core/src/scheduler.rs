@@ -115,16 +115,28 @@ impl<T> Core<T> {
     pub fn run(&mut self) -> CoreRunOutcome<T> {
         match self.run_inner() {
             CoreRunOutcomeInner::Idle => CoreRunOutcome::Idle,
-            CoreRunOutcomeInner::ProgramFinished { process, return_value } => {
-                CoreRunOutcome::ProgramFinished { process: self.process_by_id(process).unwrap(), return_value }
+            CoreRunOutcomeInner::ProgramFinished {
+                process,
+                return_value,
+            } => CoreRunOutcome::ProgramFinished {
+                process: self.process_by_id(process).unwrap(),
+                return_value,
             },
-            CoreRunOutcomeInner::ProgramCrashed { pid, error } => CoreRunOutcome::ProgramCrashed { pid, error },
-            CoreRunOutcomeInner::ProgramWaitExtrinsic { process, extrinsic, params } => {
-                CoreRunOutcome::ProgramWaitExtrinsic {
-                    process: CoreProcess { process: self.processes.process_by_id(process).unwrap(), extrinsics: &self.extrinsics, interfaces: &mut self.interfaces },
-                    extrinsic: &self.extrinsics.get(&extrinsic).unwrap().0,
-                    params,
-                }
+            CoreRunOutcomeInner::ProgramCrashed { pid, error } => {
+                CoreRunOutcome::ProgramCrashed { pid, error }
+            }
+            CoreRunOutcomeInner::ProgramWaitExtrinsic {
+                process,
+                extrinsic,
+                params,
+            } => CoreRunOutcome::ProgramWaitExtrinsic {
+                process: CoreProcess {
+                    process: self.processes.process_by_id(process).unwrap(),
+                    extrinsics: &self.extrinsics,
+                    interfaces: &mut self.interfaces,
+                },
+                extrinsic: &self.extrinsics.get(&extrinsic).unwrap().0,
+                params,
             },
         }
     }
@@ -181,13 +193,17 @@ impl<T> Core<T> {
     /// Returns an object granting access to a process, if it exists.
     pub fn process_by_id(&mut self, pid: Pid) -> Option<CoreProcess<T>> {
         let p = self.processes.process_by_id(pid)?;
-        Some(CoreProcess { process: p, extrinsics: &self.extrinsics, interfaces: &mut self.interfaces })
+        Some(CoreProcess {
+            process: p,
+            extrinsics: &self.extrinsics,
+            interfaces: &mut self.interfaces,
+        })
     }
 
     /// Start executing the module passed as parameter.
     ///
     /// Each import of the [`Module`](crate::module::Module) is resolved.
-    pub fn execute(&mut self, module: &Module) -> Result<Pid, ()> {
+    pub fn execute(&mut self, module: &Module) -> Result<CoreProcess<T>, ()> {
         let metadata = Process {
             depends_on: Vec::new(),
             depended_on: HashSet::default(),
@@ -233,7 +249,11 @@ impl<T> Core<T> {
                     Err(())
                 })?;
 
-        Ok(process.pid())
+        Ok(CoreProcess {
+            process,
+            extrinsics: &self.extrinsics,
+            interfaces: &mut self.interfaces,
+        })
     }
 }
 
@@ -343,11 +363,14 @@ mod tests {
         .unwrap();
 
         let mut core = Core::<!>::new().build();
-        let expected_pid = core.execute(&module).unwrap();
+        let expected_pid = core.execute(&module).unwrap().pid();
 
         match core.run() {
-            CoreRunOutcome::ProgramFinished { pid, return_value } => {
-                assert_eq!(pid, expected_pid);
+            CoreRunOutcome::ProgramFinished {
+                process,
+                return_value,
+            } => {
+                assert_eq!(process.pid(), expected_pid);
                 assert_eq!(return_value, Some(wasmi::RuntimeValue::I32(5)));
             }
             _ => panic!(),
@@ -399,26 +422,31 @@ mod tests {
             )
             .build();
 
-        let expected_pid = core.execute(&module).unwrap();
+        let expected_pid = core.execute(&module).unwrap().pid();
 
         match core.run() {
             CoreRunOutcome::ProgramWaitExtrinsic {
-                pid,
+                process,
                 extrinsic,
                 params,
             } => {
-                assert_eq!(pid, expected_pid);
+                assert_eq!(process.pid(), expected_pid);
                 assert_eq!(*extrinsic, 639);
                 assert!(params.is_empty());
             }
             _ => panic!(),
         }
 
-        core.process_by_id(expected_pid).unwrap().resolve_extrinsic_call(Some(wasmi::RuntimeValue::I32(713)));
+        core.process_by_id(expected_pid)
+            .unwrap()
+            .resolve_extrinsic_call(Some(wasmi::RuntimeValue::I32(713)));
 
         match core.run() {
-            CoreRunOutcome::ProgramFinished { pid, return_value } => {
-                assert_eq!(pid, expected_pid);
+            CoreRunOutcome::ProgramFinished {
+                process,
+                return_value,
+            } => {
+                assert_eq!(process.pid(), expected_pid);
                 assert_eq!(return_value, Some(wasmi::RuntimeValue::I32(713)));
             }
             _ => panic!(),

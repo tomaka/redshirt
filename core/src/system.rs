@@ -62,14 +62,23 @@ impl<TExtEx: Clone> System<TExtEx> {
     // TODO: don't expose wasmi::RuntimeValue
     pub fn resolve_extrinsic_call(&mut self, pid: Pid, return_value: Option<wasmi::RuntimeValue>) {
         // TODO: can the user badly misuse that API?
-        self.core.process_by_id(pid).unwrap().resolve_extrinsic_call(return_value);
+        self.core
+            .process_by_id(pid)
+            .unwrap()
+            .resolve_extrinsic_call(return_value);
     }
 
     pub fn run(&mut self) -> SystemRunOutcome<TExtEx> {
         loop {
             match self.core.run() {
-                CoreRunOutcome::ProgramFinished { process, return_value } => {
-                    return SystemRunOutcome::ProgramFinished { pid: process.pid(), return_value }
+                CoreRunOutcome::ProgramFinished {
+                    process,
+                    return_value,
+                } => {
+                    return SystemRunOutcome::ProgramFinished {
+                        pid: process.pid(),
+                        return_value,
+                    }
                 }
                 CoreRunOutcome::ProgramCrashed { pid, error } => {
                     return SystemRunOutcome::ProgramCrashed { pid, error }
