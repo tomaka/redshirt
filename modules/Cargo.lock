@@ -74,6 +74,7 @@ name = "ipfs"
 version = "0.1.0"
 dependencies = [
  "futures-preview 0.3.0-alpha.18 (registry+https://github.com/rust-lang/crates.io-index)",
+ "stdlib 0.1.0",
 ]
 
 [[package]]
@@ -110,6 +111,10 @@ dependencies = [
 name = "slab"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "stdlib"
+version = "0.1.0"
 
 [[package]]
 name = "tiny-keccak"

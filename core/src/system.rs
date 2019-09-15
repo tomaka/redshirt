@@ -67,7 +67,7 @@ impl<TExtEx: Clone> System<TExtEx> {
                 CoreRunOutcome::ProgramWaitExtrinsic { pid, extrinsic: &Extrinsic::RegisterInterface, params } => {
                     // TODO: implement
                     // self.core.set_interface_provider();
-                    self.core.resolve_extrinsic_call(pid, None);
+                    self.core.resolve_extrinsic_call(pid, Some(wasmi::RuntimeValue::I32(5)));
                 },
                 CoreRunOutcome::ProgramWaitExtrinsic { pid, extrinsic: &Extrinsic::External(ref external_token), ref params } => {
                     return SystemRunOutcome::ProgramWaitExtrinsic {
