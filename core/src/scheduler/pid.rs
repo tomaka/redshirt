@@ -31,7 +31,7 @@ impl PidPool {
     pub fn assign(&self) -> Pid {
         let id = self.next.fetch_add(1, Ordering::Relaxed);
         if id == u64::max_value() {
-            panic!()        // TODO: ?
+            panic!() // TODO: ?
         }
         Pid(id)
     }
@@ -49,7 +49,7 @@ mod tests {
     fn ids_different() {
         let mut ids = hashbrown::HashSet::new();
         let pool = super::PidPool::new();
-        for _ in 0 .. 5000 {
+        for _ in 0..5000 {
             assert!(ids.insert(pool.assign()));
         }
     }

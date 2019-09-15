@@ -72,12 +72,20 @@ impl ProcessStateMachine {
     /// If a start function exists in the module, we start executing it and the returned object is
     /// in the paused state. If that is the case, one must call `resume` with a `None` pass-back
     /// value in order to resume execution of `main`.
-    pub fn new(module: &Module, mut symbols: impl FnMut(&InterfaceId, &str, &wasmi::Signature) -> Result<usize, ()>) -> Result<Self, ()> {
-        struct ImportResolve<'a>(RefCell<&'a mut dyn FnMut(&InterfaceId, &str, &wasmi::Signature) -> Result<usize, ()>>);
+    pub fn new(
+        module: &Module,
+        mut symbols: impl FnMut(&InterfaceId, &str, &wasmi::Signature) -> Result<usize, ()>,
+    ) -> Result<Self, ()> {
+        struct ImportResolve<'a>(
+            RefCell<&'a mut dyn FnMut(&InterfaceId, &str, &wasmi::Signature) -> Result<usize, ()>>,
+        );
         impl<'a> wasmi::ImportResolver for ImportResolve<'a> {
-            fn resolve_func(&self, module_name: &str, field_name: &str, signature: &wasmi::Signature)
-                -> Result<wasmi::FuncRef, wasmi::Error>
-            {
+            fn resolve_func(
+                &self,
+                module_name: &str,
+                field_name: &str,
+                signature: &wasmi::Signature,
+            ) -> Result<wasmi::FuncRef, wasmi::Error> {
                 // Parse `module_name` as if it is a base58 representation of an interface hash.
                 let interface_hash = {
                     let mut buf_out = [0; 32];
@@ -86,7 +94,7 @@ impl ProcessStateMachine {
                         Ok(n) => {
                             buf_out[(32 - n)..].copy_from_slice(&buf_interm[..n]);
                             InterfaceId::Hash(InterfaceHash::from(buf_out))
-                        },
+                        }
                         Err(_) => InterfaceId::Bytes(module_name.to_owned()),
                     }
                 };
@@ -94,34 +102,55 @@ impl ProcessStateMachine {
                 let closure = &mut **self.0.borrow_mut();
                 let index = match closure(&interface_hash, field_name, signature) {
                     Ok(i) => i,
-                    Err(_) => return Err(wasmi::Error::Instantiation(format!("Couldn't resolve `{:?}`:`{}`", interface_hash, field_name))),
+                    Err(_) => {
+                        return Err(wasmi::Error::Instantiation(format!(
+                            "Couldn't resolve `{:?}`:`{}`",
+                            interface_hash, field_name
+                        )))
+                    }
                 };
 
                 Ok(wasmi::FuncInstance::alloc_host(signature.clone(), index))
             }
 
-            fn resolve_global(&self, _module_name: &str, _field_name: &str, _global_type: &wasmi::GlobalDescriptor)
-                -> Result<wasmi::GlobalRef, wasmi::Error>
-            {
-                Err(wasmi::Error::Instantiation("Importing globals is not supported yet".to_owned()))
+            fn resolve_global(
+                &self,
+                _module_name: &str,
+                _field_name: &str,
+                _global_type: &wasmi::GlobalDescriptor,
+            ) -> Result<wasmi::GlobalRef, wasmi::Error> {
+                Err(wasmi::Error::Instantiation(
+                    "Importing globals is not supported yet".to_owned(),
+                ))
             }
 
-            fn resolve_memory(&self, _module_name: &str, _field_name: &str, _memory_type: &wasmi::MemoryDescriptor)
-                -> Result<wasmi::MemoryRef, wasmi::Error>
-            {
-                Err(wasmi::Error::Instantiation("Importing memory is not supported yet".to_owned()))
+            fn resolve_memory(
+                &self,
+                _module_name: &str,
+                _field_name: &str,
+                _memory_type: &wasmi::MemoryDescriptor,
+            ) -> Result<wasmi::MemoryRef, wasmi::Error> {
+                Err(wasmi::Error::Instantiation(
+                    "Importing memory is not supported yet".to_owned(),
+                ))
             }
 
-            fn resolve_table(&self, _module_name: &str, _field_name: &str, _table_type: &wasmi::TableDescriptor)
-                -> Result<wasmi::TableRef, wasmi::Error>
-            {
-                Err(wasmi::Error::Instantiation("Importing tables is not supported yet".to_owned()))
+            fn resolve_table(
+                &self,
+                _module_name: &str,
+                _field_name: &str,
+                _table_type: &wasmi::TableDescriptor,
+            ) -> Result<wasmi::TableRef, wasmi::Error> {
+                Err(wasmi::Error::Instantiation(
+                    "Importing tables is not supported yet".to_owned(),
+                ))
             }
         }
 
-        let not_started = wasmi::ModuleInstance::new(module.as_ref(), &ImportResolve(RefCell::new(&mut symbols)))
-            .map_err(|_| ())?;
-        let module = not_started.assert_no_start();     // TODO: true in practice, bad to do in theory
+        let not_started =
+            wasmi::ModuleInstance::new(module.as_ref(), &ImportResolve(RefCell::new(&mut symbols)))
+                .map_err(|_| ())?;
+        let module = not_started.assert_no_start(); // TODO: true in practice, bad to do in theory
         let memory = if let Some(mem) = module.export_by_name("memory") {
             if let Some(mem) = mem.as_memory() {
                 Some(mem.clone())
@@ -141,8 +170,11 @@ impl ProcessStateMachine {
         };
 
         // Try to start executing `main`.
-        match state_machine.start_inner("main", &[wasmi::RuntimeValue::I32(0), wasmi::RuntimeValue::I32(0)][..]) {
-            Ok(()) | Err(StartErr::SymbolNotFound) => {},
+        match state_machine.start_inner(
+            "main",
+            &[wasmi::RuntimeValue::I32(0), wasmi::RuntimeValue::I32(0)][..],
+        ) {
+            Ok(()) | Err(StartErr::SymbolNotFound) => {}
             Err(StartErr::Poisoned) | Err(StartErr::AlreadyRunning) => unreachable!(),
             Err(StartErr::NotAFunction) => return Err(()),
         };
@@ -157,7 +189,7 @@ impl ProcessStateMachine {
         self.execution.is_some()
     }
 
-    /// Returns true if the state machine is in a poisoned state and cannot run anymore. 
+    /// Returns true if the state machine is in a poisoned state and cannot run anymore.
     pub fn is_poisoned(&self) -> bool {
         self.is_poisoned
     }
@@ -168,15 +200,21 @@ impl ProcessStateMachine {
     /// Returns an error if [`is_executing`](ProcessStateMachine::is_executing) returns true.
     ///
     /// You should call [`resume`](ProcessStateMachine::resume) afterwards with a value of `None`.
-    pub fn start(&mut self, interface: &InterfaceHash, function: &str, params: impl Into<Cow<'static, [wasmi::RuntimeValue]>>) -> Result<(), StartErr> {
-
+    pub fn start(
+        &mut self,
+        interface: &InterfaceHash,
+        function: &str,
+        params: impl Into<Cow<'static, [wasmi::RuntimeValue]>>,
+    ) -> Result<(), StartErr> {
         unimplemented!()
     }
 
     /// Same as `start`, but executes a symbol by name.
-    fn start_inner(&mut self, symbol_name: &str, params: impl Into<Cow<'static, [wasmi::RuntimeValue]>>)
-        -> Result<(), StartErr>
-    {
+    fn start_inner(
+        &mut self,
+        symbol_name: &str,
+        params: impl Into<Cow<'static, [wasmi::RuntimeValue]>>,
+    ) -> Result<(), StartErr> {
         if self.is_poisoned {
             return Err(StartErr::Poisoned);
         }
@@ -190,7 +228,7 @@ impl ProcessStateMachine {
                 let execution = wasmi::FuncInstance::invoke_resumable(&f, params).unwrap();
                 self.execution = Some(execution);
                 self.interrupted = false;
-            },
+            }
             None => return Err(StartErr::SymbolNotFound),
             _ => return Err(StartErr::NotAFunction),
         }
@@ -212,10 +250,16 @@ impl ProcessStateMachine {
     pub fn resume(&mut self, value: Option<wasmi::RuntimeValue>) -> Result<ExecOutcome, ResumeErr> {
         struct DummyExternals;
         impl wasmi::Externals for DummyExternals {
-            fn invoke_index(&mut self, index: usize, args: wasmi::RuntimeArgs)
-                -> Result<Option<wasmi::RuntimeValue>, wasmi::Trap>
-            {
-                Err(wasmi::TrapKind::Host(Box::new(Interrupt { index, args: args.as_ref().to_vec() })).into())
+            fn invoke_index(
+                &mut self,
+                index: usize,
+                args: wasmi::RuntimeArgs,
+            ) -> Result<Option<wasmi::RuntimeValue>, wasmi::Trap> {
+                Err(wasmi::TrapKind::Host(Box::new(Interrupt {
+                    index,
+                    args: args.as_ref().to_vec(),
+                }))
+                .into())
             }
         }
 
@@ -229,8 +273,7 @@ impl ProcessStateMachine {
                 write!(f, "Interrupt")
             }
         }
-        impl wasmi::HostError for Interrupt {
-        }
+        impl wasmi::HostError for Interrupt {}
 
         debug_assert!(!self.is_poisoned);
         let mut execution = self.execution.take().unwrap();
@@ -238,12 +281,18 @@ impl ProcessStateMachine {
             let expected_ty = execution.resumable_value_type();
             let obtained_ty = value.as_ref().map(|v| v.value_type());
             if expected_ty != obtained_ty {
-                return Err(ResumeErr::BadValueTy { expected: expected_ty, obtained: obtained_ty });
+                return Err(ResumeErr::BadValueTy {
+                    expected: expected_ty,
+                    obtained: obtained_ty,
+                });
             }
             execution.resume_execution(value, &mut DummyExternals)
         } else {
             if value.is_some() {
-                return Err(ResumeErr::BadValueTy { expected: None, obtained: value.as_ref().map(|v| v.value_type()) });
+                return Err(ResumeErr::BadValueTy {
+                    expected: None,
+                    obtained: value.as_ref().map(|v| v.value_type()),
+                });
             }
             self.interrupted = true;
             execution.start_execution(&mut DummyExternals)
@@ -256,7 +305,7 @@ impl ProcessStateMachine {
             Err(wasmi::ResumableError::Trap(ref trap)) if trap.kind().is_host() => {
                 let interrupt: &Interrupt = match trap.kind() {
                     wasmi::TrapKind::Host(err) => err.downcast_ref().unwrap(),
-                    _ => unreachable!()
+                    _ => unreachable!(),
                 };
                 self.execution = Some(execution);
                 Ok(ExecOutcome::Interrupted {
@@ -279,7 +328,11 @@ impl ProcessStateMachine {
         self.dma(range, |mem| mem.to_vec())
     }
 
-    fn dma<T>(&self, range: impl RangeBounds<usize>, f: impl FnOnce(&mut [u8]) -> T) -> Result<T, ()> {
+    fn dma<T>(
+        &self,
+        range: impl RangeBounds<usize>,
+        f: impl FnOnce(&mut [u8]) -> T,
+    ) -> Result<T, ()> {
         let mem = self.memory.as_ref().unwrap();
         let mem_sz = mem.current_size().0 * 65536;
 
@@ -361,7 +414,11 @@ pub enum StartErr {
 #[derive(Debug, Error)]
 pub enum ResumeErr {
     /// Passed a wrong value back.
-    #[error(display = "Expected value of type {:?} but got {:?} instead", expected, obtained)]
+    #[error(
+        display = "Expected value of type {:?} but got {:?} instead",
+        expected,
+        obtained
+    )]
     BadValueTy {
         /// Type of the value that was expected.
         expected: Option<wasmi::ValueType>,
@@ -372,16 +429,19 @@ pub enum ResumeErr {
 
 #[cfg(test)]
 mod tests {
+    use super::{ExecOutcome, ProcessStateMachine};
     use crate::module::Module;
-    use super::{ProcessStateMachine, ExecOutcome};
 
     #[test]
     fn start_in_paused_if_main() {
-        let module = Module::from_wat(r#"(module
+        let module = Module::from_wat(
+            r#"(module
             (func $main (param $p0 i32) (param $p1 i32) (result i32)
                 i32.const 5)
             (export "main" (func $main)))
-        "#).unwrap();
+        "#,
+        )
+        .unwrap();
 
         let state_machine = ProcessStateMachine::new(&module, |_, _, _| unreachable!()).unwrap();
         assert!(state_machine.is_executing());
@@ -389,11 +449,14 @@ mod tests {
 
     #[test]
     fn start_stopped_if_no_main() {
-        let module = Module::from_wat(r#"(module
+        let module = Module::from_wat(
+            r#"(module
             (func $main (param $p0 i32) (param $p1 i32) (result i32)
                 i32.const 5)
             (export "foo" (func $main)))
-        "#).unwrap();
+        "#,
+        )
+        .unwrap();
 
         let state_machine = ProcessStateMachine::new(&module, |_, _, _| unreachable!()).unwrap();
         assert!(!state_machine.is_executing());
@@ -401,55 +464,69 @@ mod tests {
 
     #[test]
     fn main_executes() {
-        let module = Module::from_wat(r#"(module
+        let module = Module::from_wat(
+            r#"(module
             (func $main (param $p0 i32) (param $p1 i32) (result i32)
                 i32.const 5)
             (export "main" (func $main)))
-        "#).unwrap();
+        "#,
+        )
+        .unwrap();
 
-        let mut state_machine = ProcessStateMachine::new(&module, |_, _, _| unreachable!()).unwrap();
+        let mut state_machine =
+            ProcessStateMachine::new(&module, |_, _, _| unreachable!()).unwrap();
         match state_machine.resume(None) {
             Ok(ExecOutcome::Finished(Some(wasmi::RuntimeValue::I32(5)))) => {}
-            _ => panic!()
+            _ => panic!(),
         }
         assert!(!state_machine.is_executing());
     }
 
     #[test]
     fn external_call_then_resume() {
-        let module = Module::from_wat(r#"(module
+        let module = Module::from_wat(
+            r#"(module
             (import "" "test" (func $test (result i32)))
             (func $main (param $p0 i32) (param $p1 i32) (result i32)
                 call $test)
             (export "main" (func $main)))
-        "#).unwrap();
+        "#,
+        )
+        .unwrap();
 
         let mut state_machine = ProcessStateMachine::new(&module, |_, _, _| Ok(9876)).unwrap();
         match state_machine.resume(None) {
-            Ok(ExecOutcome::Interrupted { id: 9876, ref params }) if params.is_empty() => {}
-            _ => panic!()
+            Ok(ExecOutcome::Interrupted {
+                id: 9876,
+                ref params,
+            }) if params.is_empty() => {}
+            _ => panic!(),
         }
         assert!(state_machine.is_executing());
 
         match state_machine.resume(Some(wasmi::RuntimeValue::I32(2227))) {
             Ok(ExecOutcome::Finished(Some(wasmi::RuntimeValue::I32(2227)))) => {}
-            _ => panic!()
+            _ => panic!(),
         }
         assert!(!state_machine.is_executing());
     }
 
     #[test]
     fn poisoning_works() {
-        let module = Module::from_wat(r#"(module
+        let module = Module::from_wat(
+            r#"(module
             (func $main (param $p0 i32) (param $p1 i32) (result i32)
                 unreachable)
             (export "main" (func $main)))
-        "#).unwrap();
+        "#,
+        )
+        .unwrap();
 
-        let mut state_machine = ProcessStateMachine::new(&module, |_, _, _| unreachable!()).unwrap();
+        let mut state_machine =
+            ProcessStateMachine::new(&module, |_, _, _| unreachable!()).unwrap();
         match state_machine.resume(None) {
             Ok(ExecOutcome::Errored(_)) => {}
-            _ => panic!()
+            _ => panic!(),
         }
 
         assert!(state_machine.is_poisoned());

@@ -2,7 +2,10 @@
 
 use crate::interface::InterfaceId;
 use crate::module::Module;
-use crate::scheduler::{pid::{PidPool, Pid}, process};
+use crate::scheduler::{
+    pid::{Pid, PidPool},
+    process,
+};
 use core::ops::RangeBounds;
 use hashbrown::HashMap;
 
@@ -63,7 +66,7 @@ pub enum RunOneOutcome<'a, T> {
     },
 
     /// The currently-executed function has finished with an error. The process has been destroyed.
-    Errored {   
+    Errored {
         /// Pid of the process that has been destroyed.
         pid: Pid,
         /// User data that belonged to the process.
@@ -91,17 +94,25 @@ impl<T> ProcessesCollection<T> {
         }
     }
 
-    pub fn execute(&mut self, module: &Module, user_data: T, mut symbols: impl FnMut(&InterfaceId, &str, &wasmi::Signature) -> Result<usize, ()>) -> Result<ProcessesCollectionProc<T>, ()> {
+    pub fn execute(
+        &mut self,
+        module: &Module,
+        user_data: T,
+        mut symbols: impl FnMut(&InterfaceId, &str, &wasmi::Signature) -> Result<usize, ()>,
+    ) -> Result<ProcessesCollectionProc<T>, ()> {
         let state_machine = process::ProcessStateMachine::new(module, symbols)?;
         let has_main = state_machine.is_executing();
 
         // We only modify `self` at the very end.
         let new_pid = self.pid_pool.assign();
-        self.processes.insert(new_pid, Process {
-            state_machine,
-            user_data,
-            value_back: if has_main { Some(None) } else { None },
-        });
+        self.processes.insert(
+            new_pid,
+            Process {
+                state_machine,
+                user_data,
+                value_back: if has_main { Some(None) } else { None },
+            },
+        );
         // Shrink the list from time to time so that it doesn't grow too much.
         if u64::from(new_pid) % 256 == 0 {
             self.processes.shrink_to(PROCESSES_MIN_CAPACITY);
@@ -112,9 +123,7 @@ impl<T> ProcessesCollection<T> {
     pub fn run(&mut self) -> RunOneOutcome<T> {
         // We start by finding an element in `self.processes`.
         let (pid, process) = {
-            let entry = self.processes
-                .iter_mut()
-                .find(|(_, p)| p.is_ready_to_run());
+            let entry = self.processes.iter_mut().find(|(_, p)| p.is_ready_to_run());
             match entry {
                 Some(e) => e,
                 None => return RunOneOutcome::Idle,
@@ -123,31 +132,32 @@ impl<T> ProcessesCollection<T> {
 
         let value_back = process.value_back.take().unwrap();
         match process.state_machine.resume(value_back) {
-            Err(process::ResumeErr::BadValueTy { .. }) => panic!(),     // TODO:
-            Ok(process::ExecOutcome::Finished(value)) => {
-                RunOneOutcome::Finished {
-                    process: ProcessesCollectionProc { pid: *pid, process },
-                    value,
-                }
+            Err(process::ResumeErr::BadValueTy { .. }) => panic!(), // TODO:
+            Ok(process::ExecOutcome::Finished(value)) => RunOneOutcome::Finished {
+                process: ProcessesCollectionProc { pid: *pid, process },
+                value,
             },
-            Ok(process::ExecOutcome::Interrupted { id, params }) => {
-                RunOneOutcome::Interrupted {
-                    process: ProcessesCollectionProc { pid: *pid, process },
-                    id,
-                    params,
-                }
+            Ok(process::ExecOutcome::Interrupted { id, params }) => RunOneOutcome::Interrupted {
+                process: ProcessesCollectionProc { pid: *pid, process },
+                id,
+                params,
             },
             Ok(process::ExecOutcome::Errored(error)) => {
                 let pid_val = *pid;
                 drop((pid, process));
                 // FIXME: remove process from list
                 unimplemented!()
-            },
+            }
         }
     }
 
     pub fn process_by_id(&mut self, pid: &Pid) -> Option<ProcessesCollectionProc<T>> {
-        self.processes.get_mut(pid).map(|p| ProcessesCollectionProc { pid: *pid, process: p })
+        self.processes
+            .get_mut(pid)
+            .map(|p| ProcessesCollectionProc {
+                pid: *pid,
+                process: p,
+            })
     }
 }
 
@@ -160,7 +170,10 @@ impl<T> Default for ProcessesCollection<T> {
 impl<T> Process<T> {
     fn is_ready_to_run(&self) -> bool {
         match self {
-            Process { value_back: Some(_), .. } => true,
+            Process {
+                value_back: Some(_),
+                ..
+            } => true,
             _ => false,
         }
     }

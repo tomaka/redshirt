@@ -5,5 +5,7 @@
 mod ffi;
 
 pub fn register_interface() {
-    unsafe { ffi::register_interface(); }
+    unsafe {
+        ffi::register_interface();
+    }
 }

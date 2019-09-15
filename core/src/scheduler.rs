@@ -1,14 +1,14 @@
 // Copyright(c) 2019 Pierre Krieger
 
-use crate::interface::{Interface, InterfaceId, InterfaceHash};
+use crate::interface::{Interface, InterfaceHash, InterfaceId};
 use crate::module::Module;
 use crate::signature::Signature;
 
+use self::pid::PidPool;
 use alloc::{borrow::Cow, collections::VecDeque};
 use bimap::BiHashMap;
 use core::ops::RangeBounds;
-use hashbrown::{HashMap, HashSet, hash_map::Entry};
-use self::pid::PidPool;
+use hashbrown::{hash_map::Entry, HashMap, HashSet};
 
 mod pid;
 mod process;
@@ -47,7 +47,7 @@ pub struct CoreBuilder<T> {
 pub enum CoreRunOutcome<'a, T> {
     ProgramFinished {
         pid: Pid,
-        return_value: Option<wasmi::RuntimeValue>,      // TODO: force to i32?
+        return_value: Option<wasmi::RuntimeValue>, // TODO: force to i32?
     },
     ProgramCrashed {
         pid: Pid,
@@ -98,7 +98,10 @@ impl<T> Core<T> {
         match self.processes.run() {
             processes::RunOneOutcome::Finished { mut process, value } => {
                 if let Some(feed_value_to) = process.user_data().feed_value_to.take() {
-                    self.processes.process_by_id(&feed_value_to).unwrap().resume(value);
+                    self.processes
+                        .process_by_id(&feed_value_to)
+                        .unwrap()
+                        .resume(value);
                 } else {
                     return CoreRunOutcome::ProgramFinished {
                         pid: *process.pid(),
@@ -106,10 +109,16 @@ impl<T> Core<T> {
                     };
                 }
             }
-            processes::RunOneOutcome::Interrupted { process, id, params } => {
+            processes::RunOneOutcome::Interrupted {
+                process,
+                id,
+                params,
+            } => {
                 let (interface, function) = self.externals_indices.get_by_left(&id).unwrap();
                 // TODO: check params against signature? is that necessary? maybe a debug_assert!
-                if let Some((extrinsic, _)) = self.extrinsics.get(&(interface.clone(), function.clone())) {
+                if let Some((extrinsic, _)) =
+                    self.extrinsics.get(&(interface.clone(), function.clone()))
+                {
                     return CoreRunOutcome::ProgramWaitExtrinsic {
                         pid: *process.pid(),
                         extrinsic,
@@ -117,7 +126,11 @@ impl<T> Core<T> {
                     };
                 }
             }
-            processes::RunOneOutcome::Errored { pid, user_data, error } => {
+            processes::RunOneOutcome::Errored {
+                pid,
+                user_data,
+                error,
+            } => {
                 println!("oops, actual error! {:?}", error);
                 // TODO: remove program from list and return `ProgramCrashed` event
             }
@@ -132,18 +145,29 @@ impl<T> Core<T> {
     // TODO: don't expose wasmi::RuntimeValue
     pub fn resolve_extrinsic_call(&mut self, pid: Pid, return_value: Option<wasmi::RuntimeValue>) {
         // TODO: check if the value type is correct
-        self.processes.process_by_id(&pid).unwrap().resume(return_value);
+        self.processes
+            .process_by_id(&pid)
+            .unwrap()
+            .resume(return_value);
     }
 
     /// Sets the process that fulfills the given interface.
     ///
     /// Returns an error if there is already a process fulfilling the given interface.
     pub fn set_interface_provider(&mut self, interface: Interface, pid: Pid) -> Result<(), ()> {
-        if self.extrinsics.keys().any(|(i, _)| i == &InterfaceId::Hash(interface.hash().clone())) {       // TODO: more efficient way?
-            return Err(())
+        if self
+            .extrinsics
+            .keys()
+            .any(|(i, _)| i == &InterfaceId::Hash(interface.hash().clone()))
+        {
+            // TODO: more efficient way?
+            return Err(());
         }
 
-        match self.interfaces.entry(InterfaceId::Hash(interface.hash().clone())) {
+        match self
+            .interfaces
+            .entry(InterfaceId::Hash(interface.hash().clone()))
+        {
             Entry::Occupied(_) => Err(()),
             Entry::Vacant(e) => {
                 e.insert((pid, interface));
@@ -166,32 +190,40 @@ impl<T> Core<T> {
         let interfaces = &mut self.interfaces;
         let extrinsics = &mut self.extrinsics;
 
-        let process = self.processes.execute(module, metadata, move |interface, function, signature| {
-            if let Some(index) = externals_indices.get_by_right(&(interface.clone(), function.into())) {
-                // TODO: check signature validity
-                return Ok(*index);
-            }
+        let process =
+            self.processes
+                .execute(module, metadata, move |interface, function, signature| {
+                    if let Some(index) =
+                        externals_indices.get_by_right(&(interface.clone(), function.into()))
+                    {
+                        // TODO: check signature validity
+                        return Ok(*index);
+                    }
 
-            // TODO: also check interfaces dependencies
-            if let Some((_, expected_sig)) = extrinsics.get(&(interface.clone(), function.into())) {
-                if !expected_sig.matches_wasmi(signature) {
-                    return Err(());
-                }
+                    // TODO: also check interfaces dependencies
+                    if let Some((_, expected_sig)) =
+                        extrinsics.get(&(interface.clone(), function.into()))
+                    {
+                        if !expected_sig.matches_wasmi(signature) {
+                            return Err(());
+                        }
 
-                let index = externals_indices.len();
-                externals_indices.insert(index, (interface.clone(), function.to_owned().into()));
-                return Ok(index);
-            }
+                        let index = externals_indices.len();
+                        externals_indices
+                            .insert(index, (interface.clone(), function.to_owned().into()));
+                        return Ok(index);
+                    }
 
-            if let Some((provider_pid, interface_def)) = interfaces.get(&interface) {
-                // TODO: check function existance and signature validity against interface_def
-                let index = externals_indices.len();
-                externals_indices.insert(index, (interface.clone(), function.to_owned().into()));
-                return Ok(index);
-            }
+                    if let Some((provider_pid, interface_def)) = interfaces.get(&interface) {
+                        // TODO: check function existance and signature validity against interface_def
+                        let index = externals_indices.len();
+                        externals_indices
+                            .insert(index, (interface.clone(), function.to_owned().into()));
+                        return Ok(index);
+                    }
 
-            Err(())
-        })?;
+                    Err(())
+                })?;
 
         Ok(*process.pid())
     }
@@ -201,17 +233,29 @@ impl<T> Core<T> {
     /// Returns an error if the range is invalid.
     // TODO: should really return &mut [u8] I think
     pub fn read_memory(&mut self, pid: Pid, range: impl RangeBounds<usize>) -> Result<Vec<u8>, ()> {
-        self.processes.process_by_id(&pid).unwrap().read_memory(range)
+        self.processes
+            .process_by_id(&pid)
+            .unwrap()
+            .read_memory(range)
     }
 }
 
 impl<T> CoreBuilder<T> {
-    pub fn with_extrinsic(mut self, interface: impl Into<InterfaceId>, f_name: impl Into<Cow<'static, str>>, signature: &Signature, token: impl Into<T>) -> Self {
+    pub fn with_extrinsic(
+        mut self,
+        interface: impl Into<InterfaceId>,
+        f_name: impl Into<Cow<'static, str>>,
+        signature: &Signature,
+        token: impl Into<T>,
+    ) -> Self {
         // TODO: panic if we already have it
         let interface = interface.into();
         let f_name = f_name.into();
 
-        self.extrinsics.insert((interface.clone(), f_name.clone()), (token.into(), signature.clone()));
+        self.extrinsics.insert(
+            (interface.clone(), f_name.clone()),
+            (token.into(), signature.clone()),
+        );
         let index = self.externals_indices.len();
         debug_assert!(!self.externals_indices.contains_left(&index));
         self.externals_indices.insert(index, (interface, f_name));
@@ -233,17 +277,20 @@ impl<T> CoreBuilder<T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{module::Module, signature::Signature};
     use super::{Core, CoreRunOutcome};
+    use crate::{module::Module, signature::Signature};
     use core::iter;
 
     #[test]
     fn basic_module() {
-        let module = Module::from_wat(r#"(module
+        let module = Module::from_wat(
+            r#"(module
             (func $main (param $p0 i32) (param $p1 i32) (result i32)
                 i32.const 5)
             (export "main" (func $main)))
-        "#).unwrap();
+        "#,
+        )
+        .unwrap();
 
         let mut core = Core::<!>::new().build();
         let expected_pid = core.execute(&module).unwrap();
@@ -253,18 +300,21 @@ mod tests {
                 assert_eq!(pid, expected_pid);
                 assert_eq!(return_value, Some(wasmi::RuntimeValue::I32(5)));
             }
-            _ => panic!()
+            _ => panic!(),
         }
     }
 
     #[test]
-    #[ignore]       // TODO:
+    #[ignore] // TODO:
     fn trapping_module() {
-        let module = Module::from_wat(r#"(module
+        let module = Module::from_wat(
+            r#"(module
             (func $main (param $p0 i32) (param $p1 i32) (result i32)
                 unreachable)
             (export "main" (func $main)))
-        "#).unwrap();
+        "#,
+        )
+        .unwrap();
 
         let mut core = Core::<!>::new().build();
         let expected_pid = core.execute(&module).unwrap();
@@ -280,26 +330,38 @@ mod tests {
 
     #[test]
     fn module_wait_extrinsic() {
-        let module = Module::from_wat(r#"(module
+        let module = Module::from_wat(
+            r#"(module
             (import "" "test" (func $test (result i32)))
             (func $main (param $p0 i32) (param $p1 i32) (result i32)
                 call $test)
             (export "main" (func $main)))
-        "#).unwrap();
+        "#,
+        )
+        .unwrap();
 
         let mut core = Core::<u32>::new()
-            .with_extrinsic([0; 32], "test", &Signature::new(iter::empty(), None), 639u32)
+            .with_extrinsic(
+                [0; 32],
+                "test",
+                &Signature::new(iter::empty(), None),
+                639u32,
+            )
             .build();
 
         let expected_pid = core.execute(&module).unwrap();
 
         match core.run() {
-            CoreRunOutcome::ProgramWaitExtrinsic { pid, extrinsic, params } => {
+            CoreRunOutcome::ProgramWaitExtrinsic {
+                pid,
+                extrinsic,
+                params,
+            } => {
                 assert_eq!(pid, expected_pid);
                 assert_eq!(*extrinsic, 639);
                 assert!(params.is_empty());
             }
-            _ => panic!()
+            _ => panic!(),
         }
 
         core.resolve_extrinsic_call(expected_pid, Some(wasmi::RuntimeValue::I32(713)));
@@ -309,7 +371,7 @@ mod tests {
                 assert_eq!(pid, expected_pid);
                 assert_eq!(return_value, Some(wasmi::RuntimeValue::I32(713)));
             }
-            _ => panic!()
+            _ => panic!(),
         }
     }
 }

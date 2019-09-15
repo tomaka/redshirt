@@ -39,7 +39,10 @@ pub enum ValueType {
 }
 
 impl Signature {
-    pub fn new(params: impl Iterator<Item = ValueType>, ret_ty: impl Into<Option<ValueType>>) -> Signature {
+    pub fn new(
+        params: impl Iterator<Item = ValueType>,
+        ret_ty: impl Into<Option<ValueType>>,
+    ) -> Signature {
         Signature {
             params: params.collect(),
             ret_ty: ret_ty.into(),
@@ -54,8 +57,12 @@ impl Signature {
 impl<'a> From<&'a Signature> for wasmi::Signature {
     fn from(sig: &'a Signature) -> wasmi::Signature {
         wasmi::Signature::new(
-            sig.params.iter().cloned().map(wasmi::ValueType::from).collect::<Vec<_>>(), 
-            sig.ret_ty.map(wasmi::ValueType::from)
+            sig.params
+                .iter()
+                .cloned()
+                .map(wasmi::ValueType::from)
+                .collect::<Vec<_>>(),
+            sig.ret_ty.map(wasmi::ValueType::from),
         )
     }
 }

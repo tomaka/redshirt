@@ -1,4 +1,3 @@
-
 fn main() {
     let mut sha3 = tiny_keccak::Keccak::new_sha3_256();
     let data: Vec<u8> = From::from("hello");

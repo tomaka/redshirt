@@ -20,13 +20,10 @@ impl Module {
     /// Parses a module from WASM bytes.
     // TODO: rename
     pub fn from_bytes(buffer: impl AsRef<[u8]>) -> Self {
-        let inner = wasmi::Module::from_buffer(buffer.as_ref()).unwrap();       // TODO: don't unwrap
+        let inner = wasmi::Module::from_buffer(buffer.as_ref()).unwrap(); // TODO: don't unwrap
         let hash = ModuleHash::from_bytes(buffer);
 
-        Module {
-            inner,
-            hash,
-        }
+        Module { inner, hash }
     }
 
     /// Turns some WASM text source into a `Module`.
@@ -84,13 +81,16 @@ mod tests {
 
     #[test]
     fn simple_wat_works() {
-        let _ = Module::from_wat(r#"
+        let _ = Module::from_wat(
+            r#"
             (module
                 (func $add (param i32 i32) (result i32)
                     get_local 0
                     get_local 1
                     i32.add)
                 (export "add" (func $add)))
-            "#).unwrap();
+            "#,
+        )
+        .unwrap();
     }
 }
