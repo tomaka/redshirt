@@ -7,7 +7,10 @@ use crate::scheduler::{
     process,
 };
 use core::ops::RangeBounds;
-use hashbrown::{HashMap, hash_map::{DefaultHashBuilder, Entry, OccupiedEntry}};
+use hashbrown::{
+    hash_map::{DefaultHashBuilder, Entry, OccupiedEntry},
+    HashMap,
+};
 
 /// Collection of multiple [`ProcessStateMachine`]s grouped together in a smart way.
 ///
@@ -128,11 +131,15 @@ impl<T> ProcessesCollection<T> {
     pub fn run(&mut self) -> RunOneOutcome<T> {
         // We start by finding an element in `self.processes`.
         let mut process: OccupiedEntry<_, _, _> = {
-            let entry = self.processes.iter_mut().find(|(_, p)| p.is_ready_to_run()).map(|(k, _)| k.clone());
+            let entry = self
+                .processes
+                .iter_mut()
+                .find(|(_, p)| p.is_ready_to_run())
+                .map(|(k, _)| *k);
             match entry {
                 Some(pid) => match self.processes.entry(pid) {
                     Entry::Occupied(p) => p,
-                    Entry::Vacant(_) => unreachable!()
+                    Entry::Vacant(_) => unreachable!(),
                 },
                 None => return RunOneOutcome::Idle,
             }
@@ -164,9 +171,7 @@ impl<T> ProcessesCollection<T> {
     /// Returns a process by its [`Pid`], if it exists.
     pub fn process_by_id(&mut self, pid: Pid) -> Option<ProcessesCollectionProc<T>> {
         match self.processes.entry(pid) {
-            Entry::Occupied(e) => Some(ProcessesCollectionProc {
-                process: e,
-            }),
+            Entry::Occupied(e) => Some(ProcessesCollectionProc { process: e }),
             Entry::Vacant(_) => None,
         }
     }
@@ -197,14 +202,13 @@ impl<'a, T> ProcessesCollectionProc<'a, T> {
         self.process.key()
     }
 
-    pub fn into_user_data(self) -> &'a mut T {
-        &mut self.process.into_mut().user_data
-    }
-
+    /// Returns the user data that is associated to the process.
     pub fn user_data(&mut self) -> &mut T {
         &mut self.process.get_mut().user_data
     }
 
+    /// After [`RunOneOutcome::Interrupted`] is returned, use this function to feed back the value
+    /// to use as the return type of the function that has been called.
     pub fn resume(&mut self, value: Option<wasmi::RuntimeValue>) {
         // TODO: check type of the value?
         if self.process.get_mut().value_back.is_some() {
@@ -217,5 +221,11 @@ impl<'a, T> ProcessesCollectionProc<'a, T> {
     // TODO: adjust to final API
     pub fn read_memory(&mut self, range: impl RangeBounds<usize>) -> Result<Vec<u8>, ()> {
         self.process.get_mut().state_machine.read_memory(range)
+    }
+
+    /// Aborts the process and returns the associated user data.
+    pub fn abort(self) -> T {
+        let (_, Process { user_data, .. }) = self.process.remove_entry();
+        user_data
     }
 }
