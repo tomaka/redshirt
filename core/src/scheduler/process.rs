@@ -1,3 +1,5 @@
+// Copyright(c) 2019 Pierre Krieger
+
 use crate::interface::{InterfaceHash, InterfaceId};
 use crate::module::Module;
 use alloc::borrow::Cow;

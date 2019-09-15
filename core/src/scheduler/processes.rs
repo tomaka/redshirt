@@ -1,3 +1,5 @@
+// Copyright(c) 2019 Pierre Krieger
+
 use crate::interface::InterfaceId;
 use crate::module::Module;
 use crate::scheduler::{pid::{PidPool, Pid}, process};
