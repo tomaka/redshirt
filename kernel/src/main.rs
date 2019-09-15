@@ -5,7 +5,7 @@
 use std::io::Write as _;
 
 fn main() {
-    let module = kernel_core::module::Module::from_bytes(&include_bytes!("../../modules/preloaded/target/wasm32-wasi/release/preloaded.wasm")[..]);
+    let module = kernel_core::module::Module::from_bytes(&include_bytes!("../../modules/target/wasm32-wasi/release/preloaded.wasm")[..]);
 
     // TODO: signatures don't seem to be enforced
     // TODO: some of these have wrong signatures
