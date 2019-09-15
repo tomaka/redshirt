@@ -85,7 +85,7 @@ impl<TExtEx: Clone> System<TExtEx> {
     /// Copies the given memory range of the given process into a `Vec<u8>`.
     // TODO: should really return &mut [u8] I think
     // TODO: use RangeBounds trait instead of Range
-    pub fn read_memory(&self, pid: Pid, range: core::ops::Range<usize>) -> Vec<u8> {
+    pub fn read_memory(&mut self, pid: Pid, range: core::ops::Range<usize>) -> Vec<u8> {
         self.core.read_memory(pid, range)
     }
 }

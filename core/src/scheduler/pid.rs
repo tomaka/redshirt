@@ -37,6 +37,12 @@ impl PidPool {
     }
 }
 
+impl From<Pid> for u64 {
+    fn from(pid: Pid) -> u64 {
+        pid.0
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

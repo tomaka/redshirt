@@ -11,14 +11,16 @@ use self::pid::PidPool;
 
 mod pid;
 mod process;
+mod processes;
 
 // TODO: move definition?
 pub use self::pid::Pid;
 
 pub struct Core<T> {
-    pid_pool: PidPool,
-    loaded: HashMap<Pid, Program>,
+    /// List of running processes.
+    processes: processes::ProcessesCollection<Process>,
 
+    /// List of functions available to processes that are handled by the user of this struct.
     extrinsics: HashMap<((InterfaceId, Cow<'static, str>)), (T, Signature)>,
 
     /// For each interface, its definition and which program is fulfilling it.
@@ -30,11 +32,9 @@ pub struct Core<T> {
     /// to the requested function. When the interpreter wants to execute that function, it passes
     /// back that `usize` to us, and we can look which function it is.
     externals_indices: BiHashMap<usize, (InterfaceId, Cow<'static, str>)>,
-
-    /// Queue of tasks to execute.
-    scheduled: VecDeque<Scheduled>,
 }
 
+/// Prototype for a `Core` under construction.
 pub struct CoreBuilder<T> {
     /// See the corresponding field in `Core`.
     extrinsics: HashMap<((InterfaceId, Cow<'static, str>)), (T, Signature)>,
@@ -61,23 +61,13 @@ pub enum CoreRunOutcome<'a, T> {
     Nothing,
 }
 
-struct Program {
-    state_machine: process::ProcessStateMachine,
+struct Process {
     depends_on: Vec<Pid>,
     depended_on: HashSet<Pid>,
 
     /// If `Some`, then after this execution finishes we must schedule `Pid` and feed the value
-    /// back to it. The `Program` corresponding to `Pid` **must** have `execution` set to `Some`.
+    /// back to it.
     feed_value_to: Option<Pid>,
-}
-
-/// Task scheduled for execution.
-struct Scheduled {
-    /// Program scheduled for execution. It **must** have `execution` set to `Some`.
-    pid: Pid,
-
-    /// Value to pass back when resuming execution.
-    resume_value: Option<wasmi::RuntimeValue>,
 }
 
 impl<T> Core<T> {
@@ -108,39 +98,33 @@ impl<T> Core<T> {
     // TODO: make multithreaded
     #[allow(clippy::needless_lifetimes)]        // TODO: lifetime necessary because of async/await
     pub async fn run<'a>(&'a mut self) -> CoreRunOutcome<'a, T> {
-        // TODO: wasi doesn't allow interrupting executions
-        while let Some(scheduled) = self.scheduled.pop_front() {
-            let program = self.loaded.get_mut(&scheduled.pid).unwrap();
-            match program.state_machine.resume(scheduled.resume_value).unwrap() {       // TODO: don't unwrap
-                process::ExecOutcome::Finished(val) => {
-                    if let Some(feed_value_to) = program.feed_value_to.take() {
-                        self.scheduled.push_back(Scheduled {
-                            pid: feed_value_to,
-                            resume_value: val,
-                        });
-                    } else {
-                        return CoreRunOutcome::ProgramFinished {
-                            pid: scheduled.pid,
-                            return_value: val,
-                        };
-                    }
-                }
-                process::ExecOutcome::Interrupted { id, params } => {
-                    let (interface, function) = self.externals_indices.get_by_left(&id).unwrap();
-                    // TODO: check params against signature? is that necessary? maybe a debug_assert!
-                    if let Some((extrinsic, _)) = self.extrinsics.get(&(interface.clone(), function.clone())) {
-                        return CoreRunOutcome::ProgramWaitExtrinsic {
-                            pid: scheduled.pid,
-                            extrinsic,
-                            params,
-                        };
-                    }
-                }
-                process::ExecOutcome::Errored(trap) => {
-                    println!("oops, actual error! {:?}", trap);
-                    // TODO: remove program from list and return `ProgramCrashed` event
+        match self.processes.run() {
+            processes::RunOneOutcome::Finished { mut process, value } => {
+                if let Some(feed_value_to) = process.user_data().feed_value_to.take() {
+                    self.processes.process_by_id(&feed_value_to).unwrap().resume(value);
+                } else {
+                    return CoreRunOutcome::ProgramFinished {
+                        pid: *process.pid(),
+                        return_value: value,
+                    };
                 }
             }
+            processes::RunOneOutcome::Interrupted { process, id, params } => {
+                /*let (interface, function) = self.externals_indices.get_by_left(&id).unwrap();
+                // TODO: check params against signature? is that necessary? maybe a debug_assert!
+                if let Some((extrinsic, _)) = self.extrinsics.get(&(interface.clone(), function.clone())) {
+                    return CoreRunOutcome::ProgramWaitExtrinsic {
+                        pid: scheduled.pid,
+                        extrinsic,
+                        params,
+                    };
+                }*/
+            }
+            processes::RunOneOutcome::Errored { pid, user_data, error } => {
+                println!("oops, actual error! {:?}", error);
+                // TODO: remove program from list and return `ProgramCrashed` event
+            }
+            processes::RunOneOutcome::Idle => {}
         }
 
         // TODO: sleep or something instead of terminating the future
@@ -151,11 +135,8 @@ impl<T> Core<T> {
     /// inject back the result of the extrinsic call.
     // TODO: don't expose wasmi::RuntimeValue
     pub fn resolve_extrinsic_call(&mut self, pid: Pid, return_value: Option<wasmi::RuntimeValue>) {
-        // TODO: check if that's correct
-        self.scheduled.push_back(Scheduled {
-            pid,
-            resume_value: return_value,
-        });
+        // TODO: check if the value type is correct
+        self.processes.process_by_id(&pid).unwrap().resume(return_value);
     }
 
     /// Sets the process that fulfills the given interface.
@@ -179,56 +160,51 @@ impl<T> Core<T> {
     ///
     /// Each import of the [`Module`](crate::module::Module) is resolved.
     pub fn execute(&mut self, module: &Module) -> Result<Pid, ()> {
-        let state_machine = process::ProcessStateMachine::new(module, |interface, function, signature| {
-            if let Some(index) = self.externals_indices.get_by_right(&(interface.clone(), function.into())) {
+        let metadata = Process {
+            depends_on: Vec::new(),
+            depended_on: HashSet::default(),
+            feed_value_to: None,
+        };
+
+        let mut externals_indices = &mut self.externals_indices;
+        let interfaces = &mut self.interfaces;
+        let extrinsics = &mut self.extrinsics;
+
+        let process = self.processes.execute(module, metadata, move |interface, function, signature| {
+            if let Some(index) = externals_indices.get_by_right(&(interface.clone(), function.into())) {
                 // TODO: check signature validity
                 return Ok(*index);
             }
-            
+
             // TODO: also check interfaces dependencies
-            if let Some((_, expected_sig)) = self.extrinsics.get(&(interface.clone(), function.into())) {
+            if let Some((_, expected_sig)) = extrinsics.get(&(interface.clone(), function.into())) {
                 if !expected_sig.matches_wasmi(signature) {
                     return Err(());
                 }
 
-                let index = self.externals_indices.len();
-                self.externals_indices.insert(index, (interface.clone(), function.to_owned().into()));
+                let index = externals_indices.len();
+                externals_indices.insert(index, (interface.clone(), function.to_owned().into()));
                 return Ok(index);
             }
 
-            if let Some((provider_pid, interface_def)) = self.interfaces.get(&interface) {
+            if let Some((provider_pid, interface_def)) = interfaces.get(&interface) {
                 // TODO: check function existance and signature validity against interface_def
-                let index = self.externals_indices.len();
-                self.externals_indices.insert(index, (interface.clone(), function.to_owned().into()));
+                let index = externals_indices.len();
+                externals_indices.insert(index, (interface.clone(), function.to_owned().into()));
                 return Ok(index);
             }
 
             Err(())
         })?;
 
-        // We don't modify `self` until after we started the state machine.
-        let pid = self.pid_pool.assign();
-        let schedule_me = state_machine.is_executing();
-        self.loaded.insert(pid, Program {
-            state_machine,
-            depends_on: Vec::new(),
-            depended_on: HashSet::new(),
-            feed_value_to: None,
-        });
-        if schedule_me {
-            self.scheduled.push_back(Scheduled {
-                pid,
-                resume_value: None,
-            });
-        }
-        Ok(pid)
+        Ok(*process.pid())
     }
 
     /// Copies the given memory range of the given process into a `Vec<u8>`.
     // TODO: should really return &mut [u8] I think
     // TODO: use RangeBounds trait instead of Range
-    pub fn read_memory(&self, pid: Pid, range: core::ops::Range<usize>) -> Vec<u8> {
-        self.loaded.get(&pid).unwrap().state_machine.read_memory(range)
+    pub fn read_memory(&mut self, pid: Pid, range: core::ops::Range<usize>) -> Vec<u8> {
+        self.processes.process_by_id(&pid).unwrap().read_memory(range)
     }
 }
 
@@ -250,12 +226,10 @@ impl<T> CoreBuilder<T> {
         self.extrinsics.shrink_to_fit();
 
         Core {
-            pid_pool: PidPool::new(),
-            loaded: HashMap::with_capacity(128),
+            processes: processes::ProcessesCollection::new(),
             extrinsics: self.extrinsics,
             interfaces: HashMap::with_capacity(32),
             externals_indices: self.externals_indices,
-            scheduled: VecDeque::with_capacity(32),
         }
     }
 }
