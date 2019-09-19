@@ -14,5 +14,5 @@ hashbrown = "0.6.0"
 smallvec = { version = "0.6.10", default-features = false }
 sha2 = "0.8.0"
 wabt = "0.9.1"
-wasmi = { git = "https://github.com/tomaka/wasmi", branch = "moo", default-features = false, features = ["core"] }
+wasmi = { git = "https://github.com/paritytech/wasmi", default-features = false, features = ["core"] }
 #wasmi = { version = "0.5.1", default-features = false, features = ["core"] }       # TODO: https://github.com/paritytech/wasmi/pull/210
