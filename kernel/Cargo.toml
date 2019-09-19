@@ -12,7 +12,3 @@ rand = "0.7"
 
 # TODO: remove
 wasmi = { git = "https://github.com/tomaka/wasmi", branch = "moo", default-features = false, features = ["core"] }
-
-[profile.release]
-lto = true
-panic = "abort"

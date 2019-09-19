@@ -1,0 +1,16 @@
+language: rust
+cache: cargo
+
+rust:
+  - nightly
+
+script:
+  - cargo build --verbose --workspace
+  - cargo test --verbose --workspace
+  - cargo doc --verbose --workspace --document-private-items
+  #- cargo fmt --all -- --check
+
+notifications:
+  email:
+    on_success: never
+    on_failure: never
