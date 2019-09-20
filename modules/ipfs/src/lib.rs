@@ -5,6 +5,6 @@ use futures::prelude::*;
 pub async fn get(_hash: &[u8; 32]) -> impl AsyncRead {
     // TODO: duh
     std::io::Cursor::new(
-        &include_bytes!("../../target/wasm32-unknown-unknown/release/preloaded.wasm")[..],
+        &include_bytes!("../../../target/wasm32-unknown-unknown/release/preloaded.wasm")[..],
     )
 }

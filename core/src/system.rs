@@ -2,10 +2,11 @@
 
 use crate::interface::InterfaceId;
 use crate::module::Module;
-use crate::scheduler::{Core, CoreBuilder, CoreRunOutcome, Pid};
+use crate::scheduler::{Core, CoreBuilder, CoreProcess, CoreRunOutcome, Pid};
 use crate::signature::{Signature, ValueType};
 use alloc::borrow::Cow;
 use core::{iter, ops::RangeBounds};
+use parity_scale_codec::{Encode, Decode, DecodeAll};
 use smallvec::SmallVec;
 
 pub struct System<TExtEx> {
@@ -89,7 +90,7 @@ impl<TExtEx: Clone> System<TExtEx> {
                     params,
                 } => {
                     // TODO: implement
-                    parse_register_interface(params);
+                    parse_register_interface(&mut process, params);
                     // self.core.set_interface_provider();
                     process.resolve_extrinsic_call(Some(wasmi::RuntimeValue::I32(5)));
                 }
@@ -151,6 +152,14 @@ impl<TExtEx> SystemBuilder<TExtEx> {
     }
 }
 
-fn parse_register_interface(params: Vec<wasmi::RuntimeValue>) {
-    assert_eq!(params.len(), 1);
+fn parse_register_interface<TExtEx>(process: &mut CoreProcess<Extrinsic<TExtEx>>, params: Vec<wasmi::RuntimeValue>) {
+    assert_eq!(params.len(), 2);
+    let mem = {
+        let addr = params[0].try_into::<i32>().unwrap() as usize;
+        let sz = params[1].try_into::<i32>().unwrap() as usize;
+        process.read_memory(addr..addr + sz).unwrap()
+    };
+
+    let interface = syscalls::ffi::Interface::decode(&mut &mem[..]).unwrap();      // TODO: decode_all doesn't work; figure out why
+    println!("{:?}", interface);
 }

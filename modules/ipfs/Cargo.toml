@@ -8,4 +8,4 @@ publish = false
 [dependencies]
 futures-preview = "0.3.0-alpha.18"
 #libp2p = "0.12.0"
-stdlib = { path = "../stdlib" }
+syscalls = { path = "../syscalls" }

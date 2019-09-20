@@ -11,8 +11,10 @@ bs58 = { version = "0.2.5", default-features = false }
 err-derive = "0.1.5"
 futures-preview = { version = "0.3.0-alpha.18", default-features = false }      # TODO: necessary?
 hashbrown = "0.6.0"
-smallvec = { version = "0.6.10", default-features = false }
+parity-scale-codec = { version = "1.0.5", features = ["derive"] } # TODO: might be unused
 sha2 = "0.8.0"
+smallvec = { version = "0.6.10", default-features = false }
+syscalls = { path = "../modules/syscalls", default-features = false }
 wabt = "0.9.1"
 wasmi = { git = "https://github.com/paritytech/wasmi", default-features = false, features = ["core"] }
 #wasmi = { version = "0.5.1", default-features = false, features = ["core"] }       # TODO: https://github.com/paritytech/wasmi/pull/210

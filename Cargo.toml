@@ -1,7 +1,10 @@
 [workspace]
 members = [
     "core",
-    "kernel"
+    "kernel",
+    "modules/ipfs",
+    "modules/preloaded",
+    "modules/syscalls",
 ]
 
 [profile.dev]
