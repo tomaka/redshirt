@@ -12,4 +12,8 @@ fn main() {
         .status()
         .unwrap();
     assert!(status.success());
+
+    for entry in walkdir::WalkDir::new("../modules/ipfs") {
+        println!("cargo:rerun-if-changed={}", entry.unwrap().path().display());
+    }
 }

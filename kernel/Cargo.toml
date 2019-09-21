@@ -13,3 +13,6 @@ rand = "0.7"
 
 # TODO: remove
 wasmi = { git = "https://github.com/paritytech/wasmi", default-features = false, features = ["core"] }
+
+[build-dependencies]
+walkdir = "2.2.9"
