@@ -2,9 +2,9 @@
 members = [
     "core",
     "kernel",
+    "interfaces/syscalls",
     "modules/ipfs",
     "modules/preloaded",
-    "modules/syscalls",
 ]
 
 [profile.dev]

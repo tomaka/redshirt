@@ -1,5 +1,9 @@
 // Copyright(c) 2019 Pierre Krieger
 
 fn main() {
-    syscalls::register_interface("loader");
+    syscalls::register_interface("loader", foo);
+}
+
+pub extern fn foo() {
+
 }
