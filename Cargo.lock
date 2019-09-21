@@ -250,6 +250,7 @@ version = "0.1.0"
 dependencies = [
  "futures-preview 0.3.0-alpha.18 (registry+https://github.com/rust-lang/crates.io-index)",
  "syscalls 0.1.0",
+ "tcp 0.1.0",
 ]
 
 [[package]]
@@ -611,6 +612,13 @@ dependencies = [
 
 [[package]]
 name = "syscalls"
+version = "0.1.0"
+dependencies = [
+ "parity-scale-codec 1.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "tcp"
 version = "0.1.0"
 dependencies = [
  "parity-scale-codec 1.0.5 (registry+https://github.com/rust-lang/crates.io-index)",

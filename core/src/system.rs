@@ -145,7 +145,7 @@ impl<TExtEx> SystemBuilder<TExtEx> {
         let mut core = self.core.build();
 
         for program in self.main_programs.drain() {
-            core.execute(&program).unwrap(); // TODO:
+            core.execute(&program).expect("failed to start main program"); // TODO:
         }
 
         System { core }

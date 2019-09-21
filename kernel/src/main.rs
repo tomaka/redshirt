@@ -72,6 +72,18 @@ fn main() {
             &kernel_core::sig!((I32)),
             Extrinsic::ProcExit,
         )
+        .with_extrinsic(
+            "tcptcptcp".parse::<kernel_core::interface::InterfaceHash>().unwrap(),
+            "tcp_open",
+            &kernel_core::sig!((Pointer, I32) -> I32),
+            Extrinsic::TcpOpen,
+        )
+        .with_extrinsic(
+            "tcptcptcp".parse::<kernel_core::interface::InterfaceHash>().unwrap(),
+            "tcp_close",
+            &kernel_core::sig!((Pointer, I32) -> I32),
+            Extrinsic::TcpClose,
+        )
         .with_main_program(module)
         .build();
 
@@ -87,6 +99,8 @@ fn main() {
         FdFdstatGet,
         FdWrite,
         ProcExit,
+        TcpOpen,
+        TcpClose,
     }
 
     loop {

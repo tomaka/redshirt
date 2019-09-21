@@ -6,7 +6,6 @@ use parity_scale_codec::{Encode as _};
 
 pub mod ffi;
 
-#[cfg(feature = "static-link")]
 #[cfg(target_os = "unknown")]      // TODO: bad
 pub fn register_interface(name: &str, f: extern fn() -> ()) {
     unsafe {
@@ -14,7 +13,7 @@ pub fn register_interface(name: &str, f: extern fn() -> ()) {
             name: name.to_owned(),
             fns: vec![
                 ffi::InterfaceFn {
-                    pointer: std::mem::transmute(f),
+                    pointer: std::mem::transmute(f),        // TODO: make safer?
                     name: "bar".to_string(),
                 }
             ],

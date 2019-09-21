@@ -208,7 +208,7 @@ impl<T> Core<T> {
     /// Start executing the module passed as parameter.
     ///
     /// Each import of the [`Module`](crate::module::Module) is resolved.
-    pub fn execute(&mut self, module: &Module) -> Result<CoreProcess<T>, ()> {
+    pub fn execute(&mut self, module: &Module) -> Result<CoreProcess<T>, vm::NewErr> {
         let metadata = Process {
             depends_on: Vec::new(),
             depended_on: HashSet::default(),
@@ -234,6 +234,7 @@ impl<T> Core<T> {
                         extrinsics.get(&(interface.clone(), function.into()))
                     {
                         if !expected_sig.matches_wasmi(signature) {
+                            println!("signature mismatch: {:?} vs {:?}", expected_sig, signature);      // TODO:
                             return Err(());
                         }
 

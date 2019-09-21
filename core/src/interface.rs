@@ -1,8 +1,8 @@
 // Copyright(c) 2019 Pierre Krieger
 
 use crate::signature::Signature;
+use core::{fmt, str::FromStr};
 use sha2::{digest::FixedOutput as _, Digest as _};
-use std::fmt;
 
 /// Definition of an interface.
 pub struct Interface {
@@ -94,6 +94,12 @@ impl InterfaceBuilder {
     }
 }
 
+impl From<InterfaceHash> for InterfaceId {
+    fn from(hash: InterfaceHash) -> InterfaceId {
+        InterfaceId::Hash(hash)
+    }
+}
+
 impl From<[u8; 32]> for InterfaceId {
     fn from(hash: [u8; 32]) -> InterfaceId {
         InterfaceId::Hash(hash.into())
@@ -115,6 +121,19 @@ impl<'a> From<&'a str> for InterfaceId {
 impl From<[u8; 32]> for InterfaceHash {
     fn from(hash: [u8; 32]) -> InterfaceHash {
         InterfaceHash(hash)
+    }
+}
+
+impl FromStr for InterfaceHash {
+    type Err = bs58::decode::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut tmp_out = [0; 32];
+        let len = bs58::decode(s).into(&mut tmp_out)?;
+        debug_assert!(len <= 32);
+        let mut real_out = [0; 32];
+        real_out[32 - len..].copy_from_slice(&tmp_out[..len]);
+        Ok(InterfaceHash(real_out))
     }
 }
 

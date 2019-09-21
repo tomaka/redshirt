@@ -67,7 +67,10 @@ pub struct ProcessStateMachine {
 impl ProcessStateMachine {
     /// Creates a new process state machine from the given module.
     ///
-    /// The closure is called for each import that the module has.
+    /// The closure is called for each import that the module has. It must assign a number to each
+    /// import, or return an error if the import can't be resolved. When the VM calls one of these
+    /// functions, this number will be returned back in order for the user to know how to handle
+    /// the call.
     ///
     /// If a start function exists in the module, we start executing it and the returned object is
     /// in the paused state. If that is the case, one must call `resume` with a `None` pass-back
@@ -75,7 +78,7 @@ impl ProcessStateMachine {
     pub fn new(
         module: &Module,
         mut symbols: impl FnMut(&InterfaceId, &str, &wasmi::Signature) -> Result<usize, ()>,
-    ) -> Result<Self, ()> {
+    ) -> Result<Self, NewErr> {
         struct ImportResolve<'a>(
             RefCell<&'a mut dyn FnMut(&InterfaceId, &str, &wasmi::Signature) -> Result<usize, ()>>,
         );
@@ -149,13 +152,20 @@ impl ProcessStateMachine {
 
         let not_started =
             wasmi::ModuleInstance::new(module.as_ref(), &ImportResolve(RefCell::new(&mut symbols)))
-                .map_err(|_| ())?;
-        let module = not_started.assert_no_start(); // TODO: true in practice, bad to do in theory
+                .map_err(NewErr::Interpreter)?;
+
+        // TODO: WASM has a special "start" instruction that can be used to designate a function
+        // that must be executed before the module is considered initialized. It is unclear whether
+        // this is intended to be a function that for example initializes global variables, or if
+        // this is an equivalent of "main". In practice, Rust never seems to generate such as
+        // "start" instruction, so for now we ignore it.
+        let module = not_started.assert_no_start();
+
         let memory = if let Some(mem) = module.export_by_name("memory") {
             if let Some(mem) = mem.as_memory() {
                 Some(mem.clone())
             } else {
-                return Err(());
+                return Err(NewErr::MemoryIsntMemory);
             }
         } else {
             None
@@ -176,7 +186,7 @@ impl ProcessStateMachine {
         ) {
             Ok(()) | Err(StartErr::SymbolNotFound) => {}
             Err(StartErr::Poisoned) | Err(StartErr::AlreadyRunning) => unreachable!(),
-            Err(StartErr::NotAFunction) => return Err(()),
+            Err(StartErr::NotAFunction) => return Err(NewErr::MainIsntAFunction),
         };
 
         Ok(state_machine)
@@ -391,6 +401,20 @@ pub enum ExecOutcome {
     /// [`is_poisoned`](ProcessStateMachine::is_poisoned) will return true.
     // TODO: error type should change here
     Errored(wasmi::Trap),
+}
+
+/// Error that can happen when initializing a VM.
+#[derive(Debug, Error)]
+pub enum NewErr {
+    /// Error in the interpreter.
+    #[error(display = "Error in the interpreter")]
+    Interpreter(#[error(cause)] wasmi::Error),
+    /// If a "memory" symbol is provided, it must be a memory.
+    #[error(display = "If a \"memory\" symbol is provided, it must be a memory")]
+    MemoryIsntMemory,
+    /// If a "main" symbol is provided, it must be a function.
+    #[error(display = "If a \"main\" symbol is provided, it must be a function")]
+    MainIsntAFunction,
 }
 
 /// Error that can happen when starting the execution of a function.

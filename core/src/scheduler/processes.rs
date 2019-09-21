@@ -107,7 +107,7 @@ impl<T> ProcessesCollection<T> {
         module: &Module,
         user_data: T,
         symbols: impl FnMut(&InterfaceId, &str, &wasmi::Signature) -> Result<usize, ()>,
-    ) -> Result<ProcessesCollectionProc<T>, ()> {
+    ) -> Result<ProcessesCollectionProc<T>, vm::NewErr> {
         let state_machine = vm::ProcessStateMachine::new(module, symbols)?;
         let has_main = state_machine.is_executing();
 

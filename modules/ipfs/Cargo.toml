@@ -9,3 +9,4 @@ publish = false
 futures-preview = "0.3.0-alpha.18"
 #libp2p = "0.12.0"
 syscalls = { path = "../../interfaces/syscalls" }
+tcp = { path = "../../interfaces/tcp" }

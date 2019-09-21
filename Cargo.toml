@@ -3,6 +3,7 @@ members = [
     "core",
     "kernel",
     "interfaces/syscalls",
+    "interfaces/tcp",
     "modules/ipfs",
     "modules/preloaded",
 ]
