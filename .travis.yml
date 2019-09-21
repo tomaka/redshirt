@@ -5,6 +5,7 @@ rust:
   - nightly
 
 script:
+  - rustup target install wasm32-unknown-unknown
   - cargo build --verbose --workspace
   - cargo test --verbose --workspace
   - cargo doc --verbose --workspace --document-private-items
