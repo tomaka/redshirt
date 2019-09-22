@@ -1,7 +1,7 @@
 // Copyright(c) 2019 Pierre Krieger
 
 use crate::signature::Signature;
-use core::{fmt, str::FromStr};
+use core::{convert::TryFrom, fmt, str::FromStr};
 use sha2::{digest::FixedOutput as _, Digest as _};
 
 /// Definition of an interface.
@@ -125,6 +125,18 @@ impl From<[u8; 32]> for InterfaceHash {
     }
 }
 
+impl<'a> TryFrom<&'a [u8]> for InterfaceHash {
+    type Error = ();
+    fn try_from(value: &'a [u8]) -> Result<Self, Self::Error> {
+        if value.len() != 32 {
+            return Err(());
+        }
+        let mut hash = [0; 32];
+        hash.copy_from_slice(value);
+        Ok(InterfaceHash(hash))
+    }
+}
+
 impl FromStr for InterfaceHash {
     type Err = bs58::decode::Error;
 
@@ -149,3 +161,5 @@ impl fmt::Debug for InterfaceHash {
         write!(f, "InterfaceHash({})", bs58::encode(&self.0).into_string())
     }
 }
+
+// TODO: test that displaying and parsing InterfaceHash yields back same result

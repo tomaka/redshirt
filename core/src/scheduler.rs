@@ -6,7 +6,7 @@ use crate::signature::Signature;
 use crate::sig;
 
 use alloc::borrow::Cow;
-use core::{marker::PhantomData, ops::RangeBounds};
+use core::{convert::TryFrom, marker::PhantomData, ops::RangeBounds};
 use hashbrown::{hash_map::Entry, HashMap, HashSet};
 
 mod pid;
@@ -178,7 +178,7 @@ impl<T> Core<T> {
                 };
             }
             processes::RunOneOutcome::Interrupted {
-                process,
+                mut process,
                 id,
                 params,
             } => {
@@ -192,7 +192,17 @@ impl<T> Core<T> {
                         };
                     }
                     Extrinsic::RegisterInterface => {
-                        unimplemented!()
+                        assert_eq!(params.len(), 1);
+                        let hash = {
+                            let addr = params[0].try_into::<i32>().unwrap() as usize;
+                            process.read_memory(addr..addr + 32).unwrap()
+                        };
+                        assert_eq!(hash.len(), 32);
+                        match self.interfaces.entry(TryFrom::try_from(&hash[..]).unwrap()) {
+                            Entry::Occupied(_) => panic!(),
+                            Entry::Vacant(e) => e.insert(process.pid()),
+                        };
+                        process.resume(Some(wasmi::RuntimeValue::I32(0)));
                     },
                     _ => unimplemented!()   // TODO:
                 }

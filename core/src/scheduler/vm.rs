@@ -362,7 +362,7 @@ impl ProcessStateMachine {
             return Err(());
         }
 
-        Ok(mem.with_direct_access_mut(move |mem| f(&mut mem[start..=end])))
+        Ok(mem.with_direct_access_mut(move |mem| f(&mut mem[start..end])))
     }
 }
 

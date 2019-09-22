@@ -24,9 +24,9 @@ extern "C" {
     ///
     /// Messages written in `out` can be decoded into a [`Message`].
     pub(crate) fn next_message(
-        to_poll: *mut [u64],
+        to_poll: *mut u64,
         to_poll_len: u32,
-        out: *mut [u8],
+        out: *mut u8,
         out_len: u32,
         block: bool
     ) -> u32;
@@ -36,8 +36,8 @@ extern "C" {
     /// The message body is what will go into the [`actual_data`](Message::actual_data) field of
     /// the [`Message`] that the target will receive.
     pub(crate) fn emit_message(
-        interface_hash: *const [u8; 32],
-        msg: *const [u8],
+        interface_hash: *const u8,
+        msg: *const u8,
         msg_len: u32,
         needs_answer: bool,
     ) -> u64;
@@ -47,7 +47,7 @@ extern "C" {
     /// Returns `0` on success, or `1` if there is no message with that id.
     pub(crate) fn emit_answer(
         message_id: u64,
-        msg: *const [u8],
+        msg: *const u8,
         msg_len: u32,
     ) -> u32;
 
@@ -60,7 +60,7 @@ extern "C" {
     ///
     /// If this succeeds, when a process calls `emit_message` with that interface hash, the
     /// message will arrive to the current process and can be retrieved with [`next_message`].
-    pub(crate) fn register_interface(interface_hash: *const [u8; 32]) -> u32;
+    pub(crate) fn register_interface(interface_hash: *const u8) -> u32;
 }
 
 #[derive(Debug, Encode, Decode)]
