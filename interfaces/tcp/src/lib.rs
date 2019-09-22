@@ -6,7 +6,7 @@
 
 // TODO: everything here is a draft
 
-use parity_scale_codec::{Encode as _};
+use parity_scale_codec::{Encode as _, DecodeAll};
 use std::net::SocketAddr;
 
 pub mod ffi;
@@ -28,10 +28,20 @@ impl TcpStream {
             },
         };
 
-        let event = syscalls::emit_message(&ffi::INTERFACE, &tcp_open, true);
+        let msg_id = syscalls::emit_message(&ffi::INTERFACE, &tcp_open, true).unwrap().unwrap();
+        let msg = syscalls::next_message(&mut [msg_id], true).unwrap();
+        let handle = match msg {
+            // TODO: code style: improve syscall's API
+            syscalls::Message::Response(syscalls::ffi::ResponseMessage { message_id, actual_data }) => {
+                assert_eq!(message_id, msg_id);
+                let msg: ffi::TcpOpenResponse = DecodeAll::decode_all(&actual_data).unwrap();
+                msg.result.unwrap()
+            },
+            _ => unreachable!()
+        };
 
         TcpStream {
-            handle: 0,      // FIXME:
+            handle,
         }
     }
 }

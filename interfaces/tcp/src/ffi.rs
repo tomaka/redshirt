@@ -17,6 +17,11 @@ pub struct TcpOpen {
 }
 
 #[derive(Debug, Encode, Decode)]
+pub struct TcpOpenResponse {
+    pub result: Result<u32, ()>,
+}
+
+#[derive(Debug, Encode, Decode)]
 pub struct TcpClose {
     pub socket_id: u32,
 }

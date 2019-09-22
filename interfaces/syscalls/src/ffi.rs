@@ -35,12 +35,19 @@ extern "C" {
     ///
     /// The message body is what will go into the [`actual_data`](Message::actual_data) field of
     /// the [`Message`] that the target will receive.
+    ///
+    /// Returns `0` on success, and `1` in case of error.
+    ///
+    /// On success, if `needs_answer` is true, will write the ID of new event into the memory
+    /// pointed by `event_id_out`.
+    // TODO: what if failure? ugh
     pub(crate) fn emit_message(
         interface_hash: *const u8,
         msg: *const u8,
         msg_len: u32,
         needs_answer: bool,
-    ) -> u64;
+        event_id_out: *mut u64,
+    ) -> u32;
 
     /// Sends an answer back to the emitter of given `message_id`.
     ///
