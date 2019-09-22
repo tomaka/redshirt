@@ -2,6 +2,8 @@
 
 //! Bindings for interfacing with the environment of the "kernel".
 
+#![deny(intra_doc_link_resolution_failure)]
+
 use parity_scale_codec::{Encode as _};
 
 pub mod ffi;

@@ -1,12 +1,12 @@
 // Copyright(c) 2019 Pierre Krieger
 
-use crate::interface::{Interface, InterfaceId};
+use crate::interface::{Interface, InterfaceHash, InterfaceId};
 use crate::module::Module;
 use crate::signature::Signature;
+use crate::sig;
 
 use alloc::borrow::Cow;
-use bimap::BiHashMap;
-use core::ops::RangeBounds;
+use core::{marker::PhantomData, ops::RangeBounds};
 use hashbrown::{hash_map::Entry, HashMap, HashSet};
 
 mod pid;
@@ -21,28 +21,39 @@ pub struct Core<T> {
     /// List of running processes.
     processes: processes::ProcessesCollection<Process>,
 
-    /// List of functions available to processes that are handled by the user of this struct.
-    extrinsics: HashMap<(InterfaceId, Cow<'static, str>), (T, Signature)>,
-
     /// For each interface, its definition and which program is fulfilling it.
-    ///
-    /// Must never collide with `extrinsics`.
-    interfaces: HashMap<InterfaceId, (Pid, Interface)>,
+    interfaces: HashMap<InterfaceHash, Pid>,
 
-    /// Holds a bijection between arbitrary values (the `usize` on the left side) that we pass
-    /// to the WASM interpreter, and the function that corresponds to it.
-    /// Whenever the interpreter wants to link to a function, we look for the `usize` corresponding
-    /// to the requested function. When the interpreter wants to execute that function, it passes
-    /// back that `usize` to us, and we can look which function it is.
-    externals_indices: BiHashMap<usize, (InterfaceId, Cow<'static, str>)>,
+    /// List of functions that processes can call.
+    /// The key of this map is an arbitrary `usize` that we pass to the WASM interpreter.
+    /// This field is never modified after the `Core` is created.
+    extrinsics: HashMap<usize, Extrinsic<T>>,
+
+    /// Map used to resolve imports when starting a process.
+    /// For each module and function name, stores the signature and an arbitrary usize that
+    /// corresponds to the entry in `extrinsics`.
+    /// This field is never modified after the `Core` is created.
+    extrinsics_id_assign: HashMap<(InterfaceId, Cow<'static, str>), (usize, Signature)>,
+}
+
+/// Possible function available to processes.
+/// The [`External`](Extrinsic::External) variant corresponds to functions that the user of the
+/// [`Core`] registers. The rest are handled by the [`Core`] itself.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Extrinsic<T> {
+    NextMessage,
+    EmitMessage,
+    EmitAnswer,
+    RegisterInterface,
+    External(T),
 }
 
 /// Prototype for a `Core` under construction.
 pub struct CoreBuilder<T> {
     /// See the corresponding field in `Core`.
-    extrinsics: HashMap<(InterfaceId, Cow<'static, str>), (T, Signature)>,
+    extrinsics: HashMap<usize, Extrinsic<T>>,
     /// See the corresponding field in `Core`.
-    externals_indices: BiHashMap<usize, (InterfaceId, Cow<'static, str>)>,
+    extrinsics_id_assign: HashMap<(InterfaceId, Cow<'static, str>), (usize, Signature)>,
 }
 
 /// Outcome of calling [`run`](Core::run).
@@ -78,41 +89,47 @@ enum CoreRunOutcomeInner {
     },
     ProgramWaitExtrinsic {
         process: Pid,
-        extrinsic: (InterfaceId, Cow<'static, str>),
+        extrinsic: usize,
         params: Vec<wasmi::RuntimeValue>,
     },
     Idle,
 }
 
+/// Additional information about a process.
 struct Process {
-    depends_on: Vec<Pid>,
-    depended_on: HashSet<Pid>,
+    /// Data available for retrieval by the process.
+    messages_queue: Vec<syscalls::ffi::Message>,
 
-    /// If `Some`, then after this execution finishes we must schedule `Pid` and feed the value
-    /// back to it.
-    feed_value_to: Option<Pid>,
+    /// List of messages that have been received and that need an answer. Contains the PID of the
+    /// emitter of the message.
+    // TODO: messages uniquely belong to a process
+    messages_to_answer: Vec<(u64, Pid)>,
 }
 
 /// Access to a process within the core.
 pub struct CoreProcess<'a, T> {
+    /// Access to the process within the inner collection.
     process: processes::ProcessesCollectionProc<'a, Process>,
-    /// Reference to the same field in `Core`.
-    extrinsics: &'a HashMap<((InterfaceId, Cow<'static, str>)), (T, Signature)>,
-    /// Reference to the same field in `Core`.
-    interfaces: &'a mut HashMap<InterfaceId, (Pid, Interface)>,
+    /// Marker to keep `T` in place.
+    marker: PhantomData<T>,
 }
 
 impl<T> Core<T> {
     /// Initialies a new `Core`.
     pub fn new() -> CoreBuilder<T> {
-        CoreBuilder {
-            extrinsics: HashMap::new(),
-            externals_indices: BiHashMap::new(),
-        }
-    }
+        let builder = CoreBuilder {
+            extrinsics: Default::default(),
+            extrinsics_id_assign: Default::default(),
+        };
 
-    pub fn has_interface(&self, interface: InterfaceId) -> bool {
-        self.interfaces.contains_key(&interface)
+        let root_interface_id: InterfaceId = From::from([0; 32]);
+
+        // TODO: signatures
+        builder
+            .with_extrinsic_inner(root_interface_id.clone(), "next_message", sig!(()), Extrinsic::NextMessage)
+            .with_extrinsic_inner(root_interface_id.clone(), "emit_message", sig!(()), Extrinsic::EmitMessage)
+            .with_extrinsic_inner(root_interface_id.clone(), "emit_answer", sig!(()), Extrinsic::EmitAnswer)
+            .with_extrinsic_inner(root_interface_id.clone(), "register_interface", sig!(()), Extrinsic::RegisterInterface)
     }
 
     /// Run the core once.
@@ -137,10 +154,12 @@ impl<T> Core<T> {
             } => CoreRunOutcome::ProgramWaitExtrinsic {
                 process: CoreProcess {
                     process: self.processes.process_by_id(process).unwrap(),
-                    extrinsics: &self.extrinsics,
-                    interfaces: &mut self.interfaces,
+                    marker: PhantomData,
                 },
-                extrinsic: &self.extrinsics.get(&extrinsic).unwrap().0,
+                extrinsic: match self.extrinsics.get(&extrinsic).unwrap() {
+                    Extrinsic::External(ref token) => token,
+                    _ => panic!()
+                },
                 params,
             },
         }
@@ -152,33 +171,30 @@ impl<T> Core<T> {
     fn run_inner(&mut self) -> CoreRunOutcomeInner {
         match self.processes.run() {
             processes::RunOneOutcome::Finished { mut process, value } => {
-                if let Some(feed_value_to) = process.user_data().feed_value_to.take() {
-                    drop(process);
-                    self.processes
-                        .process_by_id(feed_value_to)
-                        .unwrap()
-                        .resume(value);
-                } else {
-                    return CoreRunOutcomeInner::ProgramFinished {
-                        process: process.pid(),
-                        return_value: value,
-                    };
-                }
+                // TODO: must clean up all the interfaces stuff
+                return CoreRunOutcomeInner::ProgramFinished {
+                    process: process.pid(),
+                    return_value: value,
+                };
             }
             processes::RunOneOutcome::Interrupted {
                 process,
                 id,
                 params,
             } => {
-                let (interface, function) = self.externals_indices.get_by_left(&id).unwrap();
-                // TODO: check params against signature? is that necessary? maybe a debug_assert!
-                let key = (interface.clone(), function.clone());
-                if self.extrinsics.contains_key(&key) {
-                    return CoreRunOutcomeInner::ProgramWaitExtrinsic {
-                        process: process.pid(),
-                        extrinsic: key,
-                        params,
-                    };
+                // TODO: check params against signature with a debug_assert
+                match self.extrinsics.get(&id).unwrap() {
+                    Extrinsic::External(token) => {
+                        return CoreRunOutcomeInner::ProgramWaitExtrinsic {
+                            process: process.pid(),
+                            extrinsic: id,
+                            params,
+                        };
+                    }
+                    Extrinsic::RegisterInterface => {
+                        unimplemented!()
+                    },
+                    _ => unimplemented!()   // TODO:
                 }
             }
             processes::RunOneOutcome::Errored {
@@ -186,6 +202,7 @@ impl<T> Core<T> {
                 user_data,
                 error,
             } => {
+                // TODO: must clean up all the interfaces stuff
                 println!("oops, actual error! {:?}", error);
                 // TODO: remove program from list and return `ProgramCrashed` event
             }
@@ -200,8 +217,7 @@ impl<T> Core<T> {
         let p = self.processes.process_by_id(pid)?;
         Some(CoreProcess {
             process: p,
-            extrinsics: &self.extrinsics,
-            interfaces: &mut self.interfaces,
+            marker: PhantomData,
         })
     }
 
@@ -210,46 +226,20 @@ impl<T> Core<T> {
     /// Each import of the [`Module`](crate::module::Module) is resolved.
     pub fn execute(&mut self, module: &Module) -> Result<CoreProcess<T>, vm::NewErr> {
         let metadata = Process {
-            depends_on: Vec::new(),
-            depended_on: HashSet::default(),
-            feed_value_to: None,
+            messages_queue: Vec::new(),
+            messages_to_answer: Vec::new(),
         };
 
-        let externals_indices = &mut self.externals_indices;
-        let interfaces = &mut self.interfaces;
-        let extrinsics = &mut self.extrinsics;
+        let extrinsics_id_assign = &mut self.extrinsics_id_assign;
 
         let process =
             self.processes
                 .execute(module, metadata, move |interface, function, signature| {
-                    if let Some(index) =
-                        externals_indices.get_by_right(&(interface.clone(), function.into()))
+                    if let Some((index, signature)) =
+                        extrinsics_id_assign.get(&(interface.clone(), function.into()))
                     {
                         // TODO: check signature validity
                         return Ok(*index);
-                    }
-
-                    // TODO: also check interfaces dependencies
-                    if let Some((_, expected_sig)) =
-                        extrinsics.get(&(interface.clone(), function.into()))
-                    {
-                        if !expected_sig.matches_wasmi(signature) {
-                            println!("signature mismatch: {:?} vs {:?}", expected_sig, signature);      // TODO:
-                            return Err(());
-                        }
-
-                        let index = externals_indices.len();
-                        externals_indices
-                            .insert(index, (interface.clone(), function.to_owned().into()));
-                        return Ok(index);
-                    }
-
-                    if let Some((provider_pid, interface_def)) = interfaces.get(&interface) {
-                        // TODO: check function existance and signature validity against interface_def
-                        let index = externals_indices.len();
-                        externals_indices
-                            .insert(index, (interface.clone(), function.to_owned().into()));
-                        return Ok(index);
                     }
 
                     Err(())
@@ -257,8 +247,7 @@ impl<T> Core<T> {
 
         Ok(CoreProcess {
             process,
-            extrinsics: &self.extrinsics,
-            interfaces: &mut self.interfaces,
+            marker: PhantomData,
         })
     }
 }
@@ -277,31 +266,6 @@ impl<'a, T> CoreProcess<'a, T> {
         self.process.resume(return_value);
     }
 
-    /// Sets the process that fulfills the given interface.
-    ///
-    /// Returns an error if there is already a process fulfilling the given interface.
-    pub fn set_interface_provider(&mut self, interface: Interface) -> Result<(), ()> {
-        if self
-            .extrinsics
-            .keys()
-            .any(|(i, _)| i == &InterfaceId::Hash(interface.hash().clone()))
-        {
-            // TODO: more efficient way?
-            return Err(());
-        }
-
-        match self
-            .interfaces
-            .entry(InterfaceId::Hash(interface.hash().clone()))
-        {
-            Entry::Occupied(_) => Err(()),
-            Entry::Vacant(e) => {
-                e.insert((self.process.pid(), interface));
-                Ok(())
-            }
-        }
-    }
-
     /// Copies the given memory range of the given process into a `Vec<u8>`.
     ///
     /// Returns an error if the range is invalid.
@@ -317,38 +281,56 @@ impl<'a, T> CoreProcess<'a, T> {
 }
 
 impl<T> CoreBuilder<T> {
+    /// Registers a function that processes can call.
+    // TODO: more docs
     pub fn with_extrinsic(
         mut self,
         interface: impl Into<InterfaceId>,
         f_name: impl Into<Cow<'static, str>>,
-        signature: &Signature,
+        signature: Signature,
         token: impl Into<T>,
+    ) -> Self {
+        self.with_extrinsic_inner(interface, f_name, signature, Extrinsic::External(token.into()))
+    }
+
+    /// Inner implementation of `with_extrinsic`.
+    fn with_extrinsic_inner(
+        mut self,
+        interface: impl Into<InterfaceId>,
+        f_name: impl Into<Cow<'static, str>>,
+        signature: Signature,
+        extrinsic: Extrinsic<T>,
     ) -> Self {
         // TODO: panic if we already have it
         let interface = interface.into();
         let f_name = f_name.into();
 
-        self.extrinsics.insert(
-            (interface.clone(), f_name.clone()),
-            (token.into(), signature.clone()),
-        );
-        let index = self.externals_indices.len();
-        debug_assert!(!self.externals_indices.contains_left(&index));
-        self.externals_indices.insert(index, (interface, f_name));
+        let index = self.extrinsics.len();
+        debug_assert!(!self.extrinsics.contains_key(&index));
+        self.extrinsics_id_assign.insert((interface, f_name), (index, signature));
+        self.extrinsics.insert(index, extrinsic);
         self
     }
 
+    /// Turns the builder into a [`Core`].
     pub fn build(mut self) -> Core<T> {
-        // We're not going to modify `extrinsics` ever again, so let's free some memory.
+        // We're not going to modify these fields ever again, so let's free some memory.
         self.extrinsics.shrink_to_fit();
+        self.extrinsics_id_assign.shrink_to_fit();
+        debug_assert_eq!(self.extrinsics.len(), self.extrinsics_id_assign.len());
 
         Core {
             processes: processes::ProcessesCollection::new(),
-            extrinsics: self.extrinsics,
             interfaces: HashMap::with_capacity(32),
-            externals_indices: self.externals_indices,
+            extrinsics: self.extrinsics,
+            extrinsics_id_assign: self.extrinsics_id_assign,
         }
     }
+}
+
+// TODO:
+fn poll_next_message(list: &mut [u64]) {
+    unimplemented!()
 }
 
 #[cfg(test)]

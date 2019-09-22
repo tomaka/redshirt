@@ -3,6 +3,7 @@
 #![feature(never_type)]
 #![warn(missing_docs)]
 #![deny(unsafe_code)]
+#![deny(intra_doc_link_resolution_failure)]
 #![allow(dead_code)] // TODO: temporary during development
 
 // TODO: futures don't work in #![no_std] :-/

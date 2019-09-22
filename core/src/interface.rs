@@ -5,6 +5,7 @@ use core::{fmt, str::FromStr};
 use sha2::{digest::FixedOutput as _, Digest as _};
 
 /// Definition of an interface.
+// TODO: remove?
 pub struct Interface {
     name: String,
     functions: Vec<Function>,

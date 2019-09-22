@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 pub struct Pid(u64);
 
 /// Pool of identifiers. Can assign new identifiers from it.
+// TODO: since PID are exposed in user space, make them unpredictable
 pub struct PidPool {
     next: AtomicU64,
 }

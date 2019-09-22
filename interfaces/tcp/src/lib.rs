@@ -2,8 +2,10 @@
 
 //! TCP/IP.
 
-// TODO: everything here is a draft
+#![deny(intra_doc_link_resolution_failure)]
 
+// TODO: everything here is a draft
+/*
 use parity_scale_codec::{Encode as _};
 use std::net::SocketAddr;
 
@@ -45,3 +47,4 @@ impl Drop for TcpStream {
         unsafe { ffi::tcp_close(param_bytes.as_ptr() as *const _, param_bytes.len() as u32); }
     }
 }
+*/

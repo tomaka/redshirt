@@ -1,6 +1,7 @@
 // Copyright(c) 2019 Pierre Krieger
 
 #![feature(never_type)]
+#![deny(intra_doc_link_resolution_failure)]
 
 use std::io::Write as _;
 
@@ -15,73 +16,73 @@ fn main() {
         .with_extrinsic(
             "wasi_unstable",
             "args_get",
-            &kernel_core::sig!((Pointer, Pointer)),
+            kernel_core::sig!((Pointer, Pointer)),
             Extrinsic::ArgsGet,
         )
         .with_extrinsic(
             "wasi_unstable",
             "args_sizes_get",
-            &kernel_core::sig!(() -> I32),
+            kernel_core::sig!(() -> I32),
             Extrinsic::ArgsSizesGet,
         )
         .with_extrinsic(
             "wasi_unstable",
             "clock_time_get",
-            &kernel_core::sig!((I32, I64) -> I64),
+            kernel_core::sig!((I32, I64) -> I64),
             Extrinsic::ClockTimeGet,
         )
         .with_extrinsic(
             "wasi_unstable",
             "environ_get",
-            &kernel_core::sig!((Pointer, Pointer)),
+            kernel_core::sig!((Pointer, Pointer)),
             Extrinsic::EnvironGet,
         )
         .with_extrinsic(
             "wasi_unstable",
             "environ_sizes_get",
-            &kernel_core::sig!(() -> I32),
+            kernel_core::sig!(() -> I32),
             Extrinsic::EnvironSizesGet,
         )
         .with_extrinsic(
             "wasi_unstable",
             "fd_prestat_get",
-            &kernel_core::sig!((I32, Pointer)),
+            kernel_core::sig!((I32, Pointer)),
             Extrinsic::FdPrestatGet,
         )
         .with_extrinsic(
             "wasi_unstable",
             "fd_prestat_dir_name",
-            &kernel_core::sig!((I32, Pointer, I32)),
+            kernel_core::sig!((I32, Pointer, I32)),
             Extrinsic::FdPrestatDirName,
         )
         .with_extrinsic(
             "wasi_unstable",
             "fd_fdstat_get",
-            &kernel_core::sig!((I32, Pointer)),
+            kernel_core::sig!((I32, Pointer)),
             Extrinsic::FdFdstatGet,
         )
         .with_extrinsic(
             "wasi_unstable",
             "fd_write",
-            &kernel_core::sig!((I32, Pointer, I32) -> I32),
+            kernel_core::sig!((I32, Pointer, I32) -> I32),
             Extrinsic::FdWrite,
         )
         .with_extrinsic(
             "wasi_unstable",
             "proc_exit",
-            &kernel_core::sig!((I32)),
+            kernel_core::sig!((I32)),
             Extrinsic::ProcExit,
         )
         .with_extrinsic(
             "tcptcptcp".parse::<kernel_core::interface::InterfaceHash>().unwrap(),
             "tcp_open",
-            &kernel_core::sig!((Pointer, I32) -> I32),
+            kernel_core::sig!((Pointer, I32) -> I32),
             Extrinsic::TcpOpen,
         )
         .with_extrinsic(
             "tcptcptcp".parse::<kernel_core::interface::InterfaceHash>().unwrap(),
             "tcp_close",
-            &kernel_core::sig!((Pointer, I32) -> I32),
+            kernel_core::sig!((Pointer, I32) -> I32),
             Extrinsic::TcpClose,
         )
         .with_main_program(module)
@@ -176,6 +177,16 @@ fn main() {
                     kernel_core::system::SystemRunOutcome::ProgramWaitExtrinsic {
                         pid,
                         extrinsic: Extrinsic::ProcExit,
+                        params,
+                    } => unimplemented!(),
+                    kernel_core::system::SystemRunOutcome::ProgramWaitExtrinsic {
+                        pid,
+                        extrinsic: Extrinsic::TcpOpen,
+                        params,
+                    } => unimplemented!(),
+                    kernel_core::system::SystemRunOutcome::ProgramWaitExtrinsic {
+                        pid,
+                        extrinsic: Extrinsic::TcpClose,
                         params,
                     } => unimplemented!(),
                     other => break other,

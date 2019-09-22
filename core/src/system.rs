@@ -38,22 +38,14 @@ pub enum SystemRunOutcome<TExtEx> {
 
 #[derive(Debug)]
 enum Extrinsic<TExtEx> {
-    RegisterInterface,
     External(TExtEx),
 }
 
 // TODO: we require Clone because of stupid borrowing issues; remove
 impl<TExtEx: Clone> System<TExtEx> {
     pub fn new() -> SystemBuilder<TExtEx> {
-        let mut core = Core::new().with_extrinsic(
-            [0; 32],
-            "register_interface",
-            &Signature::new(iter::empty(), Some(ValueType::I32)),
-            Extrinsic::RegisterInterface,
-        );
-
         SystemBuilder {
-            core,
+            core: Core::new(),
             main_programs: SmallVec::new(),
         }
     }
@@ -84,16 +76,16 @@ impl<TExtEx: Clone> System<TExtEx> {
                 CoreRunOutcome::ProgramCrashed { pid, error } => {
                     return SystemRunOutcome::ProgramCrashed { pid, error }
                 }
-                CoreRunOutcome::ProgramWaitExtrinsic {
+                // TODO: remove
+                /*CoreRunOutcome::ProgramWaitExtrinsic {
                     mut process,
                     extrinsic: &Extrinsic::RegisterInterface,
                     params,
                 } => {
-                    // TODO: implement
                     parse_register_interface(&mut process, params);
                     // self.core.set_interface_provider();
                     process.resolve_extrinsic_call(Some(wasmi::RuntimeValue::I32(5)));
-                }
+                }*/
                 CoreRunOutcome::ProgramWaitExtrinsic {
                     ref mut process,
                     extrinsic: &Extrinsic::External(ref external_token),
@@ -124,7 +116,7 @@ impl<TExtEx> SystemBuilder<TExtEx> {
         mut self,
         interface: impl Into<InterfaceId>,
         f_name: impl Into<Cow<'static, str>>,
-        signature: &Signature,
+        signature: Signature,
         token: TExtEx,
     ) -> Self {
         self.core =
@@ -152,7 +144,8 @@ impl<TExtEx> SystemBuilder<TExtEx> {
     }
 }
 
-fn parse_register_interface<TExtEx>(process: &mut CoreProcess<Extrinsic<TExtEx>>, params: Vec<wasmi::RuntimeValue>) {
+// TODO: ? keep? delete?
+/*fn parse_register_interface<TExtEx>(process: &mut CoreProcess<Extrinsic<TExtEx>>, params: Vec<wasmi::RuntimeValue>) {
     assert_eq!(params.len(), 2);
     let mem = {
         let addr = params[0].try_into::<i32>().unwrap() as usize;
@@ -162,4 +155,4 @@ fn parse_register_interface<TExtEx>(process: &mut CoreProcess<Extrinsic<TExtEx>>
 
     let interface = syscalls::ffi::Interface::decode(&mut &mem[..]).unwrap();      // TODO: decode_all doesn't work; figure out why
     println!("{:?}", interface);
-}
+}*/
