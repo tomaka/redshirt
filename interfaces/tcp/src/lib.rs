@@ -5,7 +5,7 @@
 #![deny(intra_doc_link_resolution_failure)]
 
 // TODO: everything here is a draft
-/*
+
 use parity_scale_codec::{Encode as _};
 use std::net::SocketAddr;
 
@@ -28,11 +28,10 @@ impl TcpStream {
             },
         };
 
-        let param_bytes = tcp_open.encode();
-        let handle = unsafe { ffi::tcp_open(param_bytes.as_ptr() as *const _, param_bytes.len() as u32) } as u32;       // TODO: no, don't return as return value
+        let event = syscalls::emit_message(&ffi::INTERFACE, &tcp_open, true);
 
         TcpStream {
-            handle,
+            handle: 0,      // FIXME:
         }
     }
 }
@@ -43,8 +42,6 @@ impl Drop for TcpStream {
             socket_id: self.handle,
         };
 
-        let param_bytes = tcp_close.encode();
-        unsafe { ffi::tcp_close(param_bytes.as_ptr() as *const _, param_bytes.len() as u32); }
+        syscalls::emit_message(&ffi::INTERFACE, &tcp_close, false);
     }
 }
-*/

@@ -192,6 +192,7 @@ impl<T> Core<T> {
                         };
                     }
                     Extrinsic::RegisterInterface => {
+                        // TODO: lots of unwraps here
                         assert_eq!(params.len(), 1);
                         let hash = {
                             let addr = params[0].try_into::<i32>().unwrap() as usize;
@@ -203,7 +204,7 @@ impl<T> Core<T> {
                             Entry::Vacant(e) => e.insert(process.pid()),
                         };
                         process.resume(Some(wasmi::RuntimeValue::I32(0)));
-                    },
+                    }
                     _ => unimplemented!()   // TODO:
                 }
             }
