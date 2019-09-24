@@ -121,10 +121,12 @@ enum CoreRunOutcomeInner {
         interface: InterfaceHash,
         message: Vec<u8>,
     },
+    LoopAgain,
     Idle,
 }
 
 /// Additional information about a process.
+#[derive(Debug)]
 struct Process {
     /// Data available for retrieval by the process.
     // TODO: shrink_to_fit
@@ -140,7 +142,7 @@ struct Process {
     messages_to_answer: Vec<(u64, Pid)>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone)]     // TODO: remove Clone
 struct MessageWait {
     /// Identifiers of the messages we are waiting upon.
     msg_ids: Vec<u64>,
@@ -179,36 +181,39 @@ impl<T> Core<T> {
     /// Run the core once.
     // TODO: make multithreaded
     pub fn run(&mut self) -> CoreRunOutcome<T> {
-        match self.run_inner() {
-            CoreRunOutcomeInner::Idle => CoreRunOutcome::Idle,
-            CoreRunOutcomeInner::ProgramFinished {
-                process,
-                return_value,
-            } => CoreRunOutcome::ProgramFinished {
-                process: self.process_by_id(process).unwrap(),
-                return_value,
-            },
-            CoreRunOutcomeInner::ProgramCrashed { pid, error } => {
-                CoreRunOutcome::ProgramCrashed { pid, error }
+        loop {
+            break match self.run_inner() {
+                CoreRunOutcomeInner::Idle => CoreRunOutcome::Idle,
+                CoreRunOutcomeInner::LoopAgain => continue,
+                CoreRunOutcomeInner::ProgramFinished {
+                    process,
+                    return_value,
+                } => CoreRunOutcome::ProgramFinished {
+                    process: self.process_by_id(process).unwrap(),
+                    return_value,
+                },
+                CoreRunOutcomeInner::ProgramCrashed { pid, error } => {
+                    CoreRunOutcome::ProgramCrashed { pid, error }
+                }
+                CoreRunOutcomeInner::ProgramWaitExtrinsic {
+                    process,
+                    extrinsic,
+                    params,
+                } => CoreRunOutcome::ProgramWaitExtrinsic {
+                    process: CoreProcess {
+                        process: self.processes.process_by_id(process).unwrap(),
+                        marker: PhantomData,
+                    },
+                    extrinsic: match self.extrinsics.get(&extrinsic).unwrap() {
+                        Extrinsic::External(ref token) => token,
+                        _ => panic!()
+                    },
+                    params,
+                },
+                CoreRunOutcomeInner::InterfaceMessage { event_id, interface, message } => {
+                    CoreRunOutcome::InterfaceMessage { event_id, interface, message }
+                },
             }
-            CoreRunOutcomeInner::ProgramWaitExtrinsic {
-                process,
-                extrinsic,
-                params,
-            } => CoreRunOutcome::ProgramWaitExtrinsic {
-                process: CoreProcess {
-                    process: self.processes.process_by_id(process).unwrap(),
-                    marker: PhantomData,
-                },
-                extrinsic: match self.extrinsics.get(&extrinsic).unwrap() {
-                    Extrinsic::External(ref token) => token,
-                    _ => panic!()
-                },
-                params,
-            },
-            CoreRunOutcomeInner::InterfaceMessage { event_id, interface, message } => {
-                CoreRunOutcome::InterfaceMessage { event_id, interface, message }
-            },
         }
     }
 
@@ -251,6 +256,7 @@ impl<T> Core<T> {
                             Entry::Vacant(e) => e.insert(InterfaceHandler::Process(process.pid())),
                         };
                         process.resume(Some(wasmi::RuntimeValue::I32(0)));
+                        return CoreRunOutcomeInner::LoopAgain;
                     }
                     Extrinsic::NextMessage => {
                         // TODO: lots of unwraps here
@@ -268,12 +274,15 @@ impl<T> Core<T> {
                         let block = params[4].try_into::<i32>().unwrap() != 0;
                         assert!(block);     // not blocking not supported
                         assert!(process.user_data().message_wait.is_none());
+                        println!("now waiting for {:?}; queue is {:?}", msg_ids, process.user_data());
                         process.user_data().message_wait = Some(MessageWait {
                             msg_ids,
                             out_pointer,
                             out_size,
                         });
                         try_resume_message_wait(&mut process);
+                        // TODO: only loop again if we resumed
+                        return CoreRunOutcomeInner::LoopAgain;
                     }
                     Extrinsic::EmitMessage => {
                         // TODO: lots of unwraps here
@@ -513,8 +522,13 @@ fn try_resume_message_wait(process: &mut processes::ProcessesCollectionProc<Proc
     let first_msg_bytes = process.user_data().messages_queue[0].encode();
     if msg_wait.out_size as usize >= first_msg_bytes.len() {       // TODO: don't use as
         process.write_memory(msg_wait.out_pointer, &first_msg_bytes).unwrap();
+        process.user_data().messages_queue.remove(0);
+        // TODO: zero the message id that we successfully waited for
+    } else {
+        println!("buffer too small");
     }
 
+    println!("resumed process after message");
     process.user_data().message_wait = None;
     process.resume(Some(wasmi::RuntimeValue::I32(first_msg_bytes.len() as i32)));      // TODO: don't use as
 }
