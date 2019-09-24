@@ -1,6 +1,6 @@
 // Copyright(c) 2019 Pierre Krieger
 
-use crate::interface::InterfaceId;
+use crate::interface::{InterfaceHash, InterfaceId};
 use crate::module::Module;
 use crate::scheduler::{Core, CoreBuilder, CoreProcess, CoreRunOutcome, Pid};
 use crate::signature::{Signature, ValueType};
@@ -33,6 +33,11 @@ pub enum SystemRunOutcome<TExtEx> {
         extrinsic: TExtEx,
         params: Vec<wasmi::RuntimeValue>,
     },
+    InterfaceMessage {
+        event_id: Option<u64>,
+        interface: InterfaceHash,
+        message: Vec<u8>,
+    },
     Idle,
 }
 
@@ -62,6 +67,7 @@ impl<TExtEx: Clone> System<TExtEx> {
     }
 
     pub fn run(&mut self) -> SystemRunOutcome<TExtEx> {
+        // TODO: remove loop?
         loop {
             match self.core.run() {
                 CoreRunOutcome::ProgramFinished {
@@ -97,7 +103,10 @@ impl<TExtEx: Clone> System<TExtEx> {
                         params: params.clone(),
                     };
                 }
-                CoreRunOutcome::Idle => {}
+                CoreRunOutcome::InterfaceMessage { event_id, interface, message } => {
+                    return SystemRunOutcome::InterfaceMessage { event_id, interface, message };
+                }
+                CoreRunOutcome::Idle => return SystemRunOutcome::Idle,
             }
         }
     }
@@ -108,6 +117,11 @@ impl<TExtEx: Clone> System<TExtEx> {
     // TODO: should really return &mut [u8] I think
     pub fn read_memory(&mut self, pid: Pid, range: impl RangeBounds<usize>) -> Result<Vec<u8>, ()> {
         self.core.process_by_id(pid).ok_or(())?.read_memory(range)
+    }
+
+    // TODO: better API
+    pub fn answer_event(&mut self, event_id: u64, response: &[u8]) {
+        self.core.answer_event(event_id, response)
     }
 }
 
@@ -122,6 +136,11 @@ impl<TExtEx> SystemBuilder<TExtEx> {
         self.core =
             self.core
                 .with_extrinsic(interface, f_name, signature, Extrinsic::External(token));
+        self
+    }
+
+    pub fn with_interface_handler(mut self, interface: impl Into<InterfaceHash>) -> Self {
+        self.core = self.core.with_interface_handler(interface);
         self
     }
 

@@ -168,6 +168,11 @@ impl<T> ProcessesCollection<T> {
         }
     }
 
+    /// Returns an iterator to all the processes that exist in the collection.
+    pub fn pids<'a>(&'a self) -> impl ExactSizeIterator<Item = Pid> + 'a {
+        self.processes.keys().cloned()
+    }
+
     /// Returns a process by its [`Pid`], if it exists.
     pub fn process_by_id(&mut self, pid: Pid) -> Option<ProcessesCollectionProc<T>> {
         match self.processes.entry(pid) {
@@ -221,6 +226,13 @@ impl<'a, T> ProcessesCollectionProc<'a, T> {
     // TODO: adjust to final API
     pub fn read_memory(&mut self, range: impl RangeBounds<usize>) -> Result<Vec<u8>, ()> {
         self.process.get_mut().state_machine.read_memory(range)
+    }
+
+    /// Write the data at the given memory location.
+    ///
+    /// Returns an error if the range is invalid or out of range.
+    pub fn write_memory(&mut self, offset: u32, value: &[u8]) -> Result<(), ()> {
+        self.process.get_mut().state_machine.write_memory(offset, value)
     }
 
     /// Aborts the process and returns the associated user data.

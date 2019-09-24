@@ -22,6 +22,11 @@ pub fn register_interface(hash: &[u8; 32]) -> Result<(), ()> {
     }
 }
 
+#[cfg(not(target_os = "unknown"))]
+pub fn register_interface(hash: &[u8; 32]) -> Result<(), ()> {
+    unimplemented!()
+}
+
 #[cfg(target_os = "unknown")]      // TODO: bad
 pub fn next_message(to_poll: &mut [u64], block: bool) -> Option<Message> {
     unsafe {
@@ -46,6 +51,10 @@ pub fn next_message(to_poll: &mut [u64], block: bool) -> Option<Message> {
             return Some(msg);
         }
     }
+}
+#[cfg(not(target_os = "unknown"))]
+pub fn next_message(to_poll: &mut [u64], block: bool) -> Option<Message> {
+    unimplemented!()
 }
 
 pub fn emit_message(interface_hash: &[u8; 32], msg: &impl Encode, needs_answer: bool) -> Result<Option<u64>, ()> {

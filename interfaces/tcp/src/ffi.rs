@@ -11,6 +11,18 @@ pub const INTERFACE: [u8; 32] = [
 ];
 
 #[derive(Debug, Encode, Decode)]
+pub enum TcpMessage {
+    Open(TcpOpen),
+    Close(TcpClose),
+    /// Ask to read data from a socket. The response contains the data. For each socket, only one
+    /// read can exist at any given point in time.
+    Read(TcpRead),
+    /// Ask to write data to a socket. A response is sent back once written. For each socket, only
+    /// one write can exist at any given point in time.
+    Write(TcpWrite),
+}
+
+#[derive(Debug, Encode, Decode)]
 pub struct TcpOpen {
     pub ip: [u16; 8],
     pub port: u16,
@@ -24,4 +36,25 @@ pub struct TcpOpenResponse {
 #[derive(Debug, Encode, Decode)]
 pub struct TcpClose {
     pub socket_id: u32,
+}
+
+#[derive(Debug, Encode, Decode)]
+pub struct TcpRead {
+    pub socket_id: u32,
+}
+
+#[derive(Debug, Encode, Decode)]
+pub struct TcpReadResponse {
+    pub result: Result<Vec<u8>, ()>,
+}
+
+#[derive(Debug, Encode, Decode)]
+pub struct TcpWrite {
+    pub socket_id: u32,
+    pub data: Vec<u8>,
+}
+
+#[derive(Debug, Encode, Decode)]
+pub struct TcpWriteResponse {
+    pub result: Result<(), ()>,
 }

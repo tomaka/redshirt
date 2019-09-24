@@ -335,7 +335,15 @@ impl ProcessStateMachine {
     /// Returns an error if the range is invalid or out of range.
     // TODO: should really return &mut [u8] I think
     pub fn read_memory(&self, range: impl RangeBounds<usize>) -> Result<Vec<u8>, ()> {
+        // TODO: there's a method to do that in wasmi
         self.dma(range, |mem| mem.to_vec())
+    }
+
+    /// Write the data at the given memory location.
+    ///
+    /// Returns an error if the range is invalid or out of range.
+    pub fn write_memory(&mut self, offset: u32, value: &[u8]) -> Result<(), ()> {
+        self.memory.as_ref().unwrap().set(offset, value).map_err(|_| ())
     }
 
     fn dma<T>(
