@@ -21,7 +21,7 @@ pub struct TcpStream {
 }
 
 impl TcpStream {
-    pub fn connect(socket_addr: &SocketAddr) -> TcpStream {
+    pub async fn connect(socket_addr: &SocketAddr) -> TcpStream {
         let tcp_open = ffi::TcpMessage::Open(match socket_addr {
             SocketAddr::V4(addr) => ffi::TcpOpen {
                 ip: addr.ip().to_ipv6_mapped().segments(),
