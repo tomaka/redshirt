@@ -108,15 +108,23 @@ impl<TExtEx: Clone> System<TExtEx> {
                     };
                 }
                 CoreRunOutcome::InterfaceMessage {
+                    pid,
                     event_id,
                     interface,
                     message,
                 } if interface == threads::ffi::INTERFACE => {
                     let msg: threads::ffi::ThreadsMessage = DecodeAll::decode_all(&message).unwrap();
                     println!("threads message: {:?}", msg);
-                    // TODO:
+                    match msg {
+                        threads::ffi::ThreadsMessage::New(new_thread) => {
+                            self.core.process_by_id(pid).unwrap().start_thread(new_thread.fn_ptr, vec![wasmi::RuntimeValue::I32(new_thread.user_data as i32)]);
+                            // TODO:
+                        },
+                        _ => unimplemented!()
+                    }
                 }
                 CoreRunOutcome::InterfaceMessage {
+                    pid,
                     event_id,
                     interface,
                     message,

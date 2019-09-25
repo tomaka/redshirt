@@ -336,7 +336,7 @@ impl<T> ProcessStateMachine<T> {
         };
 
         // Try to start executing `main`.
-        match state_machine.start_thread_inner(
+        match state_machine.start_thread_by_name(
             "main",
             &[wasmi::RuntimeValue::I32(0), wasmi::RuntimeValue::I32(0)][..],
             main_thread_user_data,
@@ -358,21 +358,36 @@ impl<T> ProcessStateMachine<T> {
     /// Starts executing a function. Immediately pauses the execution and puts it in an
     /// interrupted state.
     ///
-    /// Returns an error if [`is_executing`](ProcessStateMachine::is_executing) returns true.
-    ///
-    /// You should call [`resume`](ProcessStateMachine::resume) afterwards with a value of `None`.
+    /// You should call [`run`](Thread::run) afterwards with a value of `None`.
     pub fn start_thread_by_id(
         &mut self,
-        interface: &InterfaceHash,
-        function: &str,
+        function_id: u32,
         params: impl Into<Cow<'static, [wasmi::RuntimeValue]>>,
         user_data: T,
-    ) -> Result<(), StartErr> {
-        unimplemented!()
+    ) -> Result<Thread<T>, StartErr> {
+        if self.is_poisoned {
+            return Err(StartErr::Poisoned);
+        }
+
+        // TODO: proper error handling
+        let function = self.indirect_table.as_ref().map(|t| t.get(function_id).unwrap()).unwrap().unwrap();
+        let execution = wasmi::FuncInstance::invoke_resumable(&function, params).unwrap();
+        self.threads.push(ThreadState {
+            execution: Some(execution),
+            interrupted: false,
+            user_data,
+        });
+
+        let thread_id = self.threads.len() - 1;
+        Ok(Thread {
+            vm: self,
+            index: thread_id,
+        })
     }
 
-    /// Same as `start`, but executes a symbol by name.
-    fn start_thread_inner(
+    /// Same as [`start_thread_by_id`](ProcessStateMachine::start_thread_by_id), but executes a
+    /// symbol by name.
+    fn start_thread_by_name(
         &mut self,
         symbol_name: &str,
         params: impl Into<Cow<'static, [wasmi::RuntimeValue]>>,

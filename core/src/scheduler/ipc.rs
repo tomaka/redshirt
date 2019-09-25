@@ -86,6 +86,7 @@ pub enum CoreRunOutcome<'a, T> {
         params: Vec<wasmi::RuntimeValue>,
     },
     InterfaceMessage {
+        pid: Pid,
         event_id: Option<u64>,
         interface: InterfaceHash,
         message: Vec<u8>,
@@ -111,6 +112,8 @@ enum CoreRunOutcomeInner {
         params: Vec<wasmi::RuntimeValue>,
     },
     InterfaceMessage {
+        // TODO: `pid` is redundant with `event_id`; should just be a better API with an `Event` handle struct
+        pid: Pid,
         event_id: Option<u64>,
         interface: InterfaceHash,
         message: Vec<u8>,
@@ -232,10 +235,12 @@ impl<T> Core<T> {
                     params,
                 },
                 CoreRunOutcomeInner::InterfaceMessage {
+                    pid,
                     event_id,
                     interface,
                     message,
                 } => CoreRunOutcome::InterfaceMessage {
+                    pid,
                     event_id,
                     interface,
                     message,
@@ -274,6 +279,7 @@ impl<T> Core<T> {
                     }
 
                     Extrinsic::RegisterInterface => {
+                        println!("register interface!");
                         // TODO: lots of unwraps here
                         assert_eq!(params.len(), 1);
                         let hash = {
@@ -332,6 +338,7 @@ impl<T> Core<T> {
                             InterfaceHandler::External => {
                                 thread.resume(Some(wasmi::RuntimeValue::I32(0)));
                                 return CoreRunOutcomeInner::InterfaceMessage {
+                                    pid: thread.pid(),
                                     event_id,
                                     interface,
                                     message,
@@ -447,6 +454,16 @@ impl<'a, T> CoreProcess<'a, T> {
     /// Returns the [`Pid`] of the process.
     pub fn pid(&self) -> Pid {
         self.process.pid()
+    }
+
+    /// Adds a new thread to the process, starting the function with the given index and passing
+    /// the given parameters.
+    // TODO: return Result
+    // TODO: don't expose wasmi::RuntimeValue
+    pub fn start_thread(&mut self, fn_index: u32, params: Vec<wasmi::RuntimeValue>) {
+        self.process.start_thread(fn_index, params, Thread {
+            message_wait: None,
+        })
     }
 
     /// After `ProgramWaitExtrinsic` has been returned, you have to call this method in order to

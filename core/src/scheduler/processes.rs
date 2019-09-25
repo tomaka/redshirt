@@ -296,6 +296,26 @@ impl<'a, TPud, TTud> ProcessesCollectionProc<'a, TPud, TTud> {
         &mut self.process.get_mut().user_data
     }
 
+    /// Adds a new thread to the process, starting the function with the given index and passing
+    /// the given parameters.
+    // TODO: return Result
+    // TODO: don't expose wasmi::RuntimeValue
+    pub fn start_thread(&mut self, fn_index: u32, params: Vec<wasmi::RuntimeValue>, user_data: TTud) {
+        let thread_id = ThreadId(5555);/* FIXME: {
+            let id = self.next_thread_id;
+            self.next_thread_id.0 += 1;
+            id
+        };*/
+
+        let thread_data = Thread {
+            user_data,
+            thread_id,
+            value_back: Some(None),
+        };
+
+        self.process.get_mut().state_machine.start_thread_by_id(fn_index, params, thread_data);
+    }
+
     pub fn main_thread(self) -> ProcessesCollectionThread<'a, TPud, TTud> {
         ProcessesCollectionThread {
             process: self.process,
