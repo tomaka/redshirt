@@ -76,22 +76,6 @@ fn main() {
             kernel_core::sig!((I32)),
             Extrinsic::ProcExit,
         )
-        .with_extrinsic(
-            "tcptcptcp"
-                .parse::<kernel_core::interface::InterfaceHash>()
-                .unwrap(),
-            "tcp_open",
-            kernel_core::sig!((Pointer, I32) -> I32),
-            Extrinsic::TcpOpen,
-        )
-        .with_extrinsic(
-            "tcptcptcp"
-                .parse::<kernel_core::interface::InterfaceHash>()
-                .unwrap(),
-            "tcp_close",
-            kernel_core::sig!((Pointer, I32) -> I32),
-            Extrinsic::TcpClose,
-        )
         .with_interface_handler([
             // TCP
             0x10, 0x19, 0x16, 0x2a, 0x2b, 0x0c, 0x41, 0x36, 0x4a, 0x20, 0x01, 0x51, 0x47, 0x38,
@@ -115,8 +99,6 @@ fn main() {
         FdFdstatGet,
         FdWrite,
         ProcExit,
-        TcpOpen,
-        TcpClose,
     }
 
     loop {
@@ -193,16 +175,6 @@ fn main() {
                     kernel_core::system::SystemRunOutcome::ProgramWaitExtrinsic {
                         pid,
                         extrinsic: Extrinsic::ProcExit,
-                        params,
-                    } => unimplemented!(),
-                    kernel_core::system::SystemRunOutcome::ProgramWaitExtrinsic {
-                        pid,
-                        extrinsic: Extrinsic::TcpOpen,
-                        params,
-                    } => unimplemented!(),
-                    kernel_core::system::SystemRunOutcome::ProgramWaitExtrinsic {
-                        pid,
-                        extrinsic: Extrinsic::TcpClose,
                         params,
                     } => unimplemented!(),
                     kernel_core::system::SystemRunOutcome::InterfaceMessage {
