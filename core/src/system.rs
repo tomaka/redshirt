@@ -50,8 +50,7 @@ enum Extrinsic<TExtEx> {
 impl<TExtEx: Clone> System<TExtEx> {
     pub fn new() -> SystemBuilder<TExtEx> {
         // We handle some low-level interfaces here.
-        let core = Core::new()
-            .with_interface_handler(threads::ffi::INTERFACE);
+        let core = Core::new().with_interface_handler(threads::ffi::INTERFACE);
 
         SystemBuilder {
             core,
@@ -113,14 +112,18 @@ impl<TExtEx: Clone> System<TExtEx> {
                     interface,
                     message,
                 } if interface == threads::ffi::INTERFACE => {
-                    let msg: threads::ffi::ThreadsMessage = DecodeAll::decode_all(&message).unwrap();
+                    let msg: threads::ffi::ThreadsMessage =
+                        DecodeAll::decode_all(&message).unwrap();
                     println!("threads message: {:?}", msg);
                     match msg {
                         threads::ffi::ThreadsMessage::New(new_thread) => {
-                            self.core.process_by_id(pid).unwrap().start_thread(new_thread.fn_ptr, vec![wasmi::RuntimeValue::I32(new_thread.user_data as i32)]);
+                            self.core.process_by_id(pid).unwrap().start_thread(
+                                new_thread.fn_ptr,
+                                vec![wasmi::RuntimeValue::I32(new_thread.user_data as i32)],
+                            );
                             // TODO:
-                        },
-                        _ => unimplemented!()
+                        }
+                        _ => unimplemented!(),
                     }
                 }
                 CoreRunOutcome::InterfaceMessage {

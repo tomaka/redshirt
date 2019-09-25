@@ -86,7 +86,6 @@ pub enum RunOneOutcome<'a, TPud, TTud> {
         user_data: TPud,
 
         // TODO: return all the threads user data
-
         /// Value returned by the main thread that has finished.
         value: Option<wasmi::RuntimeValue>,
     },
@@ -195,10 +194,12 @@ impl<TPud, TTud> ProcessesCollection<TPud, TTud> {
             let entry = self
                 .processes
                 .iter_mut()
-                .filter_map(|(k, p)| if let Some(i) = p.ready_to_run_thread_index() {
-                    Some((*k, i))
-                } else {
-                    None
+                .filter_map(|(k, p)| {
+                    if let Some(i) = p.ready_to_run_thread_index() {
+                        Some((*k, i))
+                    } else {
+                        None
+                    }
                 })
                 .next();
             match entry {
@@ -211,7 +212,11 @@ impl<TPud, TTud> ProcessesCollection<TPud, TTud> {
         };
 
         let run_outcome = {
-            let mut thread = process.get_mut().state_machine.thread(thread_index).unwrap();
+            let mut thread = process
+                .get_mut()
+                .state_machine
+                .thread(thread_index)
+                .unwrap();
             let value_back = thread.user_data().value_back.take().unwrap();
             thread.run(value_back)
         };
@@ -219,23 +224,32 @@ impl<TPud, TTud> ProcessesCollection<TPud, TTud> {
         match run_outcome {
             Err(vm::RunErr::BadValueTy { .. }) => panic!(), // TODO:
             Err(vm::RunErr::Poisoned) => unreachable!(),
-            Ok(vm::ExecOutcome::ThreadFinished { thread_index: 0, return_value, .. }) => {
+            Ok(vm::ExecOutcome::ThreadFinished {
+                thread_index: 0,
+                return_value,
+                ..
+            }) => {
                 let (pid, Process { user_data, .. }) = process.remove_entry();
                 RunOneOutcome::ProcessFinished {
                     pid,
                     user_data,
                     value: return_value,
                 }
-            },
-            Ok(vm::ExecOutcome::ThreadFinished { return_value, user_data, .. }) => {
-                RunOneOutcome::ThreadFinished {
-                    process: ProcessesCollectionProc { process },
-                    user_data: user_data.user_data,
-                    value: return_value,
-                }
+            }
+            Ok(vm::ExecOutcome::ThreadFinished {
+                return_value,
+                user_data,
+                ..
+            }) => RunOneOutcome::ThreadFinished {
+                process: ProcessesCollectionProc { process },
+                user_data: user_data.user_data,
+                value: return_value,
             },
             Ok(vm::ExecOutcome::Interrupted { id, params, .. }) => RunOneOutcome::Interrupted {
-                thread: ProcessesCollectionThread { process, thread_index },
+                thread: ProcessesCollectionThread {
+                    process,
+                    thread_index,
+                },
                 id,
                 params,
             },
@@ -300,12 +314,17 @@ impl<'a, TPud, TTud> ProcessesCollectionProc<'a, TPud, TTud> {
     /// the given parameters.
     // TODO: return Result
     // TODO: don't expose wasmi::RuntimeValue
-    pub fn start_thread(&mut self, fn_index: u32, params: Vec<wasmi::RuntimeValue>, user_data: TTud) {
-        let thread_id = ThreadId(5555);/* FIXME: {
-            let id = self.next_thread_id;
-            self.next_thread_id.0 += 1;
-            id
-        };*/
+    pub fn start_thread(
+        &mut self,
+        fn_index: u32,
+        params: Vec<wasmi::RuntimeValue>,
+        user_data: TTud,
+    ) {
+        let thread_id = ThreadId(5555); /* FIXME: {
+                                            let id = self.next_thread_id;
+                                            self.next_thread_id.0 += 1;
+                                            id
+                                        };*/
 
         let thread_data = Thread {
             user_data,
@@ -313,7 +332,10 @@ impl<'a, TPud, TTud> ProcessesCollectionProc<'a, TPud, TTud> {
             value_back: Some(None),
         };
 
-        self.process.get_mut().state_machine.start_thread_by_id(fn_index, params, thread_data);
+        self.process
+            .get_mut()
+            .state_machine
+            .start_thread_by_id(fn_index, params, thread_data);
     }
 
     pub fn main_thread(self) -> ProcessesCollectionThread<'a, TPud, TTud> {
@@ -347,7 +369,11 @@ impl<'a, TPud, TTud> ProcessesCollectionProc<'a, TPud, TTud> {
 
 impl<'a, TPud, TTud> ProcessesCollectionThread<'a, TPud, TTud> {
     fn inner(&mut self) -> vm::Thread<Thread<TTud>> {
-        self.process.get_mut().state_machine.thread(self.thread_index).unwrap()
+        self.process
+            .get_mut()
+            .state_machine
+            .thread(self.thread_index)
+            .unwrap()
     }
 
     /// Returns the [`Pid`] of the process. Allows later retrieval by calling

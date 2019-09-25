@@ -43,7 +43,7 @@ use smallvec::SmallVec;
 /// [`user_data`](Thread::user_data) or [`into_user_data`](Thread::into_user_data).
 ///
 /// # Poisoning
-/// 
+///
 /// If the main thread stops, or if any thread encounters an error, then the VM moves into a
 /// "poisoned" state. It is then no longer possible to run anything in it. Threads are kept alive
 /// so that you can examine their state, but attempting to call [`run`](Thread::run) will return
@@ -378,7 +378,9 @@ impl<T> ProcessStateMachine<T> {
         }
 
         // Find the function within the process.
-        let function = self.indirect_table.as_ref()
+        let function = self
+            .indirect_table
+            .as_ref()
             .and_then(|t| t.get(function_id).ok())
             .and_then(|f| f)
             .ok_or(StartErr::FunctionNotFound)?;
@@ -436,7 +438,7 @@ impl<T> ProcessStateMachine<T> {
 
     /// Returns the thread with the given index. The index is between `0` and
     /// [`num_threads`](ProcessStateMachine::num_threads).
-    /// 
+    ///
     /// The main thread is always index `0`, unless it has terminated.
     ///
     /// Keep in mind that when a thread finishes, all the indices above its index shift by one.
@@ -444,10 +446,7 @@ impl<T> ProcessStateMachine<T> {
     /// Returns `None` if the index is superior or equal to what [`num_threads`] would return.
     pub fn thread(&mut self, index: usize) -> Option<Thread<T>> {
         if index < self.threads.len() {
-            Some(Thread {
-                vm: self,
-                index,
-            })
+            Some(Thread { vm: self, index })
         } else {
             None
         }
@@ -502,7 +501,8 @@ impl<T> ProcessStateMachine<T> {
 }
 
 impl<T> fmt::Debug for ProcessStateMachine<T>
-where T: fmt::Debug
+where
+    T: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_list().entries(self.threads.iter()).finish()
@@ -510,7 +510,8 @@ where T: fmt::Debug
 }
 
 impl<T> fmt::Debug for ThreadState<T>
-where T: fmt::Debug
+where
+    T: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_tuple("Thread").field(&self.user_data).finish()
@@ -557,7 +558,7 @@ impl<'a, T> Thread<'a, T> {
         }
 
         let thread_state = &mut self.vm.threads[self.index];
-    
+
         let mut execution = thread_state.execution.take().unwrap();
         let result = if thread_state.interrupted {
             let expected_ty = execution.resumable_value_type();
@@ -569,7 +570,6 @@ impl<'a, T> Thread<'a, T> {
                 });
             }
             execution.resume_execution(value, &mut DummyExternals)
-
         } else {
             if value.is_some() {
                 return Err(RunErr::BadValueTy {
@@ -593,7 +593,7 @@ impl<'a, T> Thread<'a, T> {
                     return_value,
                     user_data,
                 })
-            },
+            }
             Err(wasmi::ResumableError::AlreadyStarted) => unreachable!(),
             Err(wasmi::ResumableError::NotResumable) => unreachable!(),
             Err(wasmi::ResumableError::Trap(ref trap)) if trap.kind().is_host() => {
@@ -638,7 +638,8 @@ impl<'a, T> Thread<'a, T> {
 }
 
 impl<'a, T> fmt::Debug for Thread<'a, T>
-where T: fmt::Debug
+where
+    T: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(&self.vm.threads[self.index], f)
@@ -676,8 +677,8 @@ mod tests {
         .unwrap();
 
         match ProcessStateMachine::new(&module, |_, _, _| unreachable!()) {
-            Err(NewErr::MainNotFound) => {},
-            _ => panic!()
+            Err(NewErr::MainNotFound) => {}
+            _ => panic!(),
         }
     }
 
@@ -723,7 +724,11 @@ mod tests {
             _ => panic!(),
         }
 
-        match state_machine.thread(0).unwrap().run(Some(wasmi::RuntimeValue::I32(2227))) {
+        match state_machine
+            .thread(0)
+            .unwrap()
+            .run(Some(wasmi::RuntimeValue::I32(2227)))
+        {
             Ok(ExecOutcome::Finished(Some(wasmi::RuntimeValue::I32(2227)))) => {}
             _ => panic!(),
         }

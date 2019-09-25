@@ -318,8 +318,7 @@ impl<T> Core<T> {
                         let event_id = if needs_answer {
                             let event_id_write = params[4].try_into::<i32>().unwrap() as u32;
                             let new_message_id = self.next_message_id;
-                            self.messages_to_answer
-                                .insert(new_message_id, thread.pid());
+                            self.messages_to_answer.insert(new_message_id, thread.pid());
                             self.next_message_id += 1;
                             let mut buf = [0; 8];
                             LittleEndian::write_u64(&mut buf, new_message_id);
@@ -333,7 +332,11 @@ impl<T> Core<T> {
                             "proc emitting message {:?} needs_answer={:?}",
                             message, needs_answer
                         );
-                        match self.interfaces.get(&interface).expect("Interface handler not found") {
+                        match self
+                            .interfaces
+                            .get(&interface)
+                            .expect("Interface handler not found")
+                        {
                             InterfaceHandler::Process(_) => unimplemented!(),
                             InterfaceHandler::External => {
                                 thread.resume(Some(wasmi::RuntimeValue::I32(0)));
@@ -405,11 +408,10 @@ impl<T> Core<T> {
                     try_resume_message_wait(&mut thread);
                     match thread.next_thread() {
                         Some(t) => thread = t,
-                        None => break
+                        None => break,
                     };
                 }
             }
-
         } else {
             // TODO: what to do here?
             panic!("no process found with that event")
@@ -424,24 +426,25 @@ impl<T> Core<T> {
             messages_queue: VecDeque::new(),
         };
 
-        let thread_metadata = Thread {
-            message_wait: None,
-        };
+        let thread_metadata = Thread { message_wait: None };
 
         let extrinsics_id_assign = &mut self.extrinsics_id_assign;
 
-        let process =
-            self.processes
-                .execute(module, proc_metadata, thread_metadata, move |interface, function, signature| {
-                    if let Some((index, signature)) =
-                        extrinsics_id_assign.get(&(interface.clone(), function.into()))
-                    {
-                        // TODO: check signature validity
-                        return Ok(*index);
-                    }
+        let process = self.processes.execute(
+            module,
+            proc_metadata,
+            thread_metadata,
+            move |interface, function, signature| {
+                if let Some((index, signature)) =
+                    extrinsics_id_assign.get(&(interface.clone(), function.into()))
+                {
+                    // TODO: check signature validity
+                    return Ok(*index);
+                }
 
-                    Err(())
-                })?;
+                Err(())
+            },
+        )?;
 
         Ok(CoreProcess {
             process,
@@ -461,9 +464,8 @@ impl<'a, T> CoreProcess<'a, T> {
     // TODO: return Result
     // TODO: don't expose wasmi::RuntimeValue
     pub fn start_thread(&mut self, fn_index: u32, params: Vec<wasmi::RuntimeValue>) {
-        self.process.start_thread(fn_index, params, Thread {
-            message_wait: None,
-        })
+        self.process
+            .start_thread(fn_index, params, Thread { message_wait: None })
     }
 
     /// After `ProgramWaitExtrinsic` has been returned, you have to call this method in order to
@@ -727,12 +729,7 @@ mod tests {
         .unwrap();
 
         let mut core = Core::<u32>::new()
-            .with_extrinsic(
-                [0; 32],
-                "test",
-                Signature::new(iter::empty(), None),
-                639u32,
-            )
+            .with_extrinsic([0; 32], "test", Signature::new(iter::empty(), None), 639u32)
             .build();
 
         let expected_pid = core.execute(&module).unwrap().pid();

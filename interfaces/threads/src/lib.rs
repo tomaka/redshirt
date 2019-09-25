@@ -14,7 +14,7 @@ pub mod ffi;
 pub fn spawn_thread(function: impl FnOnce()) {
     let function_box: Box<Box<dyn FnOnce()>> = Box::new(Box::new(function));
 
-    extern fn caller(user_data: u32) {
+    extern "C" fn caller(user_data: u32) {
         unsafe {
             let user_data = Box::from_raw(user_data as *mut Box<dyn FnOnce()>);
             user_data();
@@ -23,7 +23,7 @@ pub fn spawn_thread(function: impl FnOnce()) {
 
     unsafe {
         let thread_new = ffi::ThreadsMessage::New(ffi::ThreadNew {
-            fn_ptr: mem::transmute(caller as extern fn(u32)),
+            fn_ptr: mem::transmute(caller as extern "C" fn(u32)),
             user_data: Box::into_raw(function_box) as usize as u32,
         });
 
