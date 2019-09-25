@@ -15,7 +15,7 @@ use parity_scale_codec::Encode as _;
 /// Handles scheduling processes and inter-process communications.
 pub struct Core<T> {
     /// List of running processes.
-    processes: processes::ProcessesCollection<Process>,
+    processes: processes::ProcessesCollection<Process, Thread>,
 
     /// For each interface, its definition and which program is fulfilling it.
     interfaces: HashMap<InterfaceHash, InterfaceHandler>,
@@ -125,11 +125,15 @@ struct Process {
     /// Messages available for retrieval by the process by calling `next_message`.
     // TODO: call shrink_to_fit from time to time
     messages_queue: VecDeque<syscalls::ffi::Message>,
+}
 
-    /// If `Some`, the process is sleeping and waiting for a message to come.
+/// Additional information about a thread.
+#[derive(Debug)]
+struct Thread {
+    /// If `Some`, the thread is sleeping and waiting for a message to come.
     ///
     /// Note that this can be `Some` even if the `messages_queue` is not empty, in the case where
-    /// the process is wait only on messages that aren't in the queue.
+    /// the thread is waiting only on messages that aren't in the queue.
     message_wait: Option<MessageWait>,
 }
 
@@ -151,7 +155,7 @@ struct MessageWait {
 /// Access to a process within the core.
 pub struct CoreProcess<'a, T> {
     /// Access to the process within the inner collection.
-    process: processes::ProcessesCollectionProc<'a, Process>,
+    process: processes::ProcessesCollectionProc<'a, Process, Thread>,
     /// Marker to keep `T` in place.
     marker: PhantomData<T>,
 }
@@ -245,15 +249,17 @@ impl<T> Core<T> {
     // TODO: make multithreaded
     fn run_inner(&mut self) -> CoreRunOutcomeInner {
         match self.processes.run() {
-            processes::RunOneOutcome::Finished { mut process, value } => {
+            processes::RunOneOutcome::ProcessFinished { pid, value, .. } => {
                 // TODO: must clean up all the interfaces stuff
+                // TODO: also, what do we do with the pending messages and all?
                 return CoreRunOutcomeInner::ProgramFinished {
-                    process: process.pid(),
+                    process: pid,
                     return_value: value,
                 };
             }
+            processes::RunOneOutcome::ThreadFinished { .. } => {}
             processes::RunOneOutcome::Interrupted {
-                mut process,
+                mut thread,
                 id,
                 params,
             } => {
@@ -261,7 +267,7 @@ impl<T> Core<T> {
                 match self.extrinsics.get(&id).unwrap() {
                     Extrinsic::External(token) => {
                         return CoreRunOutcomeInner::ProgramWaitExtrinsic {
-                            process: process.pid(),
+                            process: thread.pid(),
                             extrinsic: id,
                             params,
                         };
@@ -272,19 +278,19 @@ impl<T> Core<T> {
                         assert_eq!(params.len(), 1);
                         let hash = {
                             let addr = params[0].try_into::<i32>().unwrap() as usize;
-                            process.read_memory(addr..addr + 32).unwrap()
+                            thread.read_memory(addr..addr + 32).unwrap()
                         };
                         assert_eq!(hash.len(), 32);
                         match self.interfaces.entry(TryFrom::try_from(&hash[..]).unwrap()) {
                             Entry::Occupied(_) => panic!(),
-                            Entry::Vacant(e) => e.insert(InterfaceHandler::Process(process.pid())),
+                            Entry::Vacant(e) => e.insert(InterfaceHandler::Process(thread.pid())),
                         };
-                        process.resume(Some(wasmi::RuntimeValue::I32(0)));
+                        thread.resume(Some(wasmi::RuntimeValue::I32(0)));
                         return CoreRunOutcomeInner::LoopAgain;
                     }
 
                     Extrinsic::NextMessage => {
-                        extrinsic_next_message(&mut process, params);
+                        extrinsic_next_message(&mut thread, params);
                         // TODO: only loop again if we resumed
                         return CoreRunOutcomeInner::LoopAgain;
                     }
@@ -294,25 +300,25 @@ impl<T> Core<T> {
                         assert_eq!(params.len(), 5);
                         let interface: InterfaceHash = {
                             let addr = params[0].try_into::<i32>().unwrap() as usize;
-                            TryFrom::try_from(&process.read_memory(addr..addr + 32).unwrap()[..])
+                            TryFrom::try_from(&thread.read_memory(addr..addr + 32).unwrap()[..])
                                 .unwrap()
                         };
                         let message = {
                             let addr = params[1].try_into::<i32>().unwrap() as usize;
                             let sz = params[2].try_into::<i32>().unwrap() as usize;
-                            process.read_memory(addr..addr + sz).unwrap()
+                            thread.read_memory(addr..addr + sz).unwrap()
                         };
                         let needs_answer = params[3].try_into::<i32>().unwrap() != 0;
                         let event_id = if needs_answer {
                             let event_id_write = params[4].try_into::<i32>().unwrap() as u32;
                             let new_message_id = self.next_message_id;
                             self.messages_to_answer
-                                .insert(new_message_id, process.pid());
+                                .insert(new_message_id, thread.pid());
                             self.next_message_id += 1;
                             let mut buf = [0; 8];
                             LittleEndian::write_u64(&mut buf, new_message_id);
-                            process.write_memory(event_id_write, &buf).unwrap();
-                            // TODO: process.user_data().;
+                            thread.write_memory(event_id_write, &buf).unwrap();
+                            // TODO: thread.user_data().;
                             Some(new_message_id)
                         } else {
                             None
@@ -324,7 +330,7 @@ impl<T> Core<T> {
                         match self.interfaces.get(&interface).expect("Interface handler not found") {
                             InterfaceHandler::Process(_) => unimplemented!(),
                             InterfaceHandler::External => {
-                                process.resume(Some(wasmi::RuntimeValue::I32(0)));
+                                thread.resume(Some(wasmi::RuntimeValue::I32(0)));
                                 return CoreRunOutcomeInner::InterfaceMessage {
                                     event_id,
                                     interface,
@@ -341,9 +347,9 @@ impl<T> Core<T> {
                         let message = {
                             let addr = params[1].try_into::<i32>().unwrap() as usize;
                             let sz = params[2].try_into::<i32>().unwrap() as usize;
-                            process.read_memory(addr..addr + sz).unwrap()
+                            thread.read_memory(addr..addr + sz).unwrap()
                         };
-                        drop(process);
+                        drop(thread);
                         self.answer_event(msg_id, &message);
                         // TODO: only loop again if we resumed
                         return CoreRunOutcomeInner::LoopAgain;
@@ -385,9 +391,18 @@ impl<T> Core<T> {
             let mut process = self.processes.process_by_id(emitter_pid).unwrap();
             let queue_was_empty = process.user_data().messages_queue.is_empty();
             process.user_data().messages_queue.push_back(actual_message);
+
             if queue_was_empty {
-                try_resume_message_wait(&mut process);
+                let mut thread = process.main_thread();
+                loop {
+                    try_resume_message_wait(&mut thread);
+                    match thread.next_thread() {
+                        Some(t) => thread = t,
+                        None => break
+                    };
+                }
             }
+
         } else {
             // TODO: what to do here?
             panic!("no process found with that event")
@@ -398,8 +413,11 @@ impl<T> Core<T> {
     ///
     /// Each import of the [`Module`](crate::module::Module) is resolved.
     pub fn execute(&mut self, module: &Module) -> Result<CoreProcess<T>, vm::NewErr> {
-        let metadata = Process {
+        let proc_metadata = Process {
             messages_queue: VecDeque::new(),
+        };
+
+        let thread_metadata = Thread {
             message_wait: None,
         };
 
@@ -407,7 +425,7 @@ impl<T> Core<T> {
 
         let process =
             self.processes
-                .execute(module, metadata, move |interface, function, signature| {
+                .execute(module, proc_metadata, thread_metadata, move |interface, function, signature| {
                     if let Some((index, signature)) =
                         extrinsics_id_assign.get(&(interface.clone(), function.into()))
                     {
@@ -438,7 +456,9 @@ impl<'a, T> CoreProcess<'a, T> {
         // TODO: check if the value type is correct
         // TODO: check that we're not waiting for an event instead, in which case it's wrong to
         //       call this function
-        self.process.resume(return_value);
+        //self.process.resume(return_value);
+        // TODO: re-implement after threads system addition
+        unimplemented!()
     }
 
     /// Copies the given memory range of the given process into a `Vec<u8>`.
@@ -526,7 +546,7 @@ impl<T> CoreBuilder<T> {
 ///
 /// Tries to resume the process by fetching a message from the queue.
 fn extrinsic_next_message(
-    process: &mut processes::ProcessesCollectionProc<Process>,
+    process: &mut processes::ProcessesCollectionThread<Process, Thread>,
     params: Vec<wasmi::RuntimeValue>,
 ) {
     // TODO: lots of unwraps here
@@ -562,14 +582,14 @@ fn extrinsic_next_message(
     try_resume_message_wait(process);
 }
 
-/// If the given process is waiting for a message to arrive, checks the queue and tries to resume
-/// said process.
-fn try_resume_message_wait(process: &mut processes::ProcessesCollectionProc<Process>) {
-    if process.user_data().messages_queue.is_empty() {
+/// If the given thread is waiting for a message to arrive, checks the queue and tries to resume
+/// said thread.
+fn try_resume_message_wait(thread: &mut processes::ProcessesCollectionThread<Process, Thread>) {
+    if thread.process_user_data().messages_queue.is_empty() {
         return;
     }
 
-    let msg_wait = match process.user_data().message_wait {
+    let msg_wait = match thread.user_data().message_wait {
         Some(ref wait) => wait.clone(), // TODO: don't clone?
         None => return,
     };
@@ -577,13 +597,13 @@ fn try_resume_message_wait(process: &mut processes::ProcessesCollectionProc<Proc
     // Try to find a message in the queue that matches something the user is waiting for.
     let mut index_in_queue = 0;
     let index_in_msg_ids = loop {
-        if index_in_queue >= process.user_data().messages_queue.len() {
+        if index_in_queue >= thread.process_user_data().messages_queue.len() {
             // No message found.
             return;
         }
 
         // For that message in queue, grab the value that must be in `msg_ids` in order to match.
-        let msg_id = match &process.user_data().messages_queue[index_in_queue] {
+        let msg_id = match &thread.process_user_data().messages_queue[index_in_queue] {
             syscalls::ffi::Message::Interface(_) => 1,
             syscalls::ffi::Message::Response(response) => {
                 debug_assert!(response.message_id >= 2);
@@ -602,24 +622,24 @@ fn try_resume_message_wait(process: &mut processes::ProcessesCollectionProc<Proc
 
     // Turn said message into bytes.
     // TODO: would be great to not do that every single time
-    let msg_bytes = process.user_data().messages_queue[index_in_queue].encode();
+    let msg_bytes = thread.process_user_data().messages_queue[index_in_queue].encode();
 
     if msg_wait.out_size as usize >= msg_bytes.len() {
         // TODO: don't use as
         /// Write the message in the process's memory.
-        process
+        thread
             .write_memory(msg_wait.out_pointer, &msg_bytes)
             .unwrap();
         /// Zero the corresponding entry in the messages to wait upon.
-        process
+        thread
             .write_memory(msg_wait.msg_ids_ptr + index_in_msg_ids * 8, &[0; 8])
             .unwrap();
         /// Pop the message from the queue, so that we don't deliver it twice.
-        process.user_data().messages_queue.remove(0);
+        thread.process_user_data().messages_queue.remove(0);
     }
 
-    process.user_data().message_wait = None;
-    process.resume(Some(wasmi::RuntimeValue::I32(msg_bytes.len() as i32))); // TODO: don't use as
+    thread.user_data().message_wait = None;
+    thread.resume(Some(wasmi::RuntimeValue::I32(msg_bytes.len() as i32))); // TODO: don't use as
 }
 
 #[cfg(test)]

@@ -32,6 +32,9 @@ use smallvec::SmallVec;
 /// executing the imported function. When a thread is created, this inject-back value must be
 /// `None`.
 ///
+/// The generic parameter of this struct is some userdata that is associated with each thread.
+/// You must pass a value when creating a thread, and can retreive it later.
+///
 /// # Poisonning
 /// 
 /// If the main thread stops, or if any thread encounters an error, then the VM moves into a
@@ -44,7 +47,7 @@ use smallvec::SmallVec;
 /// thread simultaneously. This might change in the future.
 /// 
 // TODO: Debug
-pub struct ProcessStateMachine {
+pub struct ProcessStateMachine<T> {
     /// Original module, with resolved imports.
     module: wasmi::ModuleRef,
 
@@ -62,7 +65,7 @@ pub struct ProcessStateMachine {
     indirect_table: Option<wasmi::TableRef>,
 
     /// List of threads that this process is running.
-    threads: SmallVec<[ThreadState; 4]>,
+    threads: SmallVec<[ThreadState<T>; 4]>,
 
     /// If true, the state machine is in a poisoned state and cannot run any code anymore.
     is_poisoned: bool,
@@ -70,7 +73,7 @@ pub struct ProcessStateMachine {
 
 /// State of a single thread within the VM.
 // TODO: Debug
-struct ThreadState {
+struct ThreadState<T> {
     /// Each program can only run once at a time. It only has one "thread".
     /// If `Some`, we are currently executing something in `Program`. If `None`, we aren't.
     execution: Option<wasmi::FuncInvocation<'static>>,
@@ -78,13 +81,16 @@ struct ThreadState {
     /// If false, then one must call `execution.start_execution()` instead of `resume_execution()`.
     /// This is a special situation that is required after we put a value in `execution`.
     interrupted: bool,
+
+    /// Opaque user data associated to the thread.
+    user_data: T,
 }
 
 /// Access to a thread within the virtual machine.
 // TODO: Debug
-pub struct Thread<'a> {
+pub struct Thread<'a, T> {
     /// Reference to the parent object.
-    vm: &'a mut ProcessStateMachine,
+    vm: &'a mut ProcessStateMachine<T>,
 
     // Index within [`ProcessStateMachine::threads`] of the thread we are referencing.
     index: usize,
@@ -92,9 +98,20 @@ pub struct Thread<'a> {
 
 /// Outcome of the [`run`](Thread::run) function.
 // TODO: restore: #[derive(Debug)]
-pub enum ExecOutcome<'a> {
-    /// The thread has finished. The thread no longer exists.
-    Finished(Option<wasmi::RuntimeValue>),
+pub enum ExecOutcome<'a, T> {
+    /// A thread has finished. The thread no longer exists.
+    ///
+    /// If this was the main thread, calling [`is_poisoned`](ProcessStateMachine::is_poisoned)
+    /// will return true.
+    // TODO: return all the user datas of all other threads if this is the main thread?
+    //       or have a different enum variant?
+    Finished {
+        /// Return value of the thread function.
+        return_value: Option<wasmi::RuntimeValue>,
+
+        /// User data that was stored within the thread.
+        user_data: T,
+    },
 
     /// The currently-executed thread has been paused due to a call to an external function.
     ///
@@ -107,7 +124,7 @@ pub enum ExecOutcome<'a> {
     /// >           [`run`](Thread::run) with a value of the wrong type.
     Interrupted {
         /// Thread that was interrupted.
-        thread: Thread<'a>,
+        thread: Thread<'a, T>,
 
         /// Identifier of the function to call. Corresponds to the value provided at
         /// initialization when resolving imports.
@@ -121,8 +138,13 @@ pub enum ExecOutcome<'a> {
     /// poisoned state.
     ///
     /// Calling [`is_poisoned`](ProcessStateMachine::is_poisoned) will return true.
-    // TODO: error type should change here
-    Errored(wasmi::Trap),
+    Errored {
+        /// Error that happened.
+        // TODO: error type should change here
+        error: wasmi::Trap,
+        /// User data that was associated to thread.
+        user_data: T,
+    },
 }
 
 /// Error that can happen when initializing a VM.
@@ -176,7 +198,7 @@ pub enum RunErr {
     },
 }
 
-impl ProcessStateMachine {
+impl<T> ProcessStateMachine<T> {
     /// Creates a new process state machine from the given module.
     ///
     /// The closure is called for each import that the module has. It must assign a number to each
@@ -189,6 +211,7 @@ impl ProcessStateMachine {
     /// value in order to resume execution of `main`.
     pub fn new(
         module: &Module,
+        main_thread_user_data: T,
         mut symbols: impl FnMut(&InterfaceId, &str, &wasmi::Signature) -> Result<usize, ()>,
     ) -> Result<Self, NewErr> {
         struct ImportResolve<'a>(
@@ -305,6 +328,7 @@ impl ProcessStateMachine {
         match state_machine.start_thread_inner(
             "main",
             &[wasmi::RuntimeValue::I32(0), wasmi::RuntimeValue::I32(0)][..],
+            main_thread_user_data,
         ) {
             Ok(_) => {}
             Err(StartErr::SymbolNotFound) => return Err(NewErr::MainNotFound),
@@ -331,6 +355,7 @@ impl ProcessStateMachine {
         interface: &InterfaceHash,
         function: &str,
         params: impl Into<Cow<'static, [wasmi::RuntimeValue]>>,
+        user_data: T,
     ) -> Result<(), StartErr> {
         unimplemented!()
     }
@@ -340,7 +365,8 @@ impl ProcessStateMachine {
         &mut self,
         symbol_name: &str,
         params: impl Into<Cow<'static, [wasmi::RuntimeValue]>>,
-    ) -> Result<Thread, StartErr> {
+        user_data: T,
+    ) -> Result<Thread<T>, StartErr> {
         if self.is_poisoned {
             return Err(StartErr::Poisoned);
         }
@@ -351,6 +377,7 @@ impl ProcessStateMachine {
                 self.threads.push(ThreadState {
                     execution: Some(execution),
                     interrupted: false,
+                    user_data,
                 });
             }
             None => return Err(StartErr::SymbolNotFound),
@@ -358,7 +385,10 @@ impl ProcessStateMachine {
         }
 
         let thread_id = self.threads.len() - 1;
-        Ok(self.thread(thread_id).unwrap())
+        Ok(Thread {
+            vm: self,
+            index: thread_id,
+        })
     }
 
     /// Returns the number of threads that we have.
@@ -369,7 +399,7 @@ impl ProcessStateMachine {
     /// Returns the thread with the given index.
     ///
     /// Returns `None` if the index is superior or equal to what [`num_threads`] would return.
-    pub fn thread(&mut self, index: usize) -> Option<Thread> {
+    pub fn thread(&mut self, index: usize) -> Option<Thread<T>> {
         if index < self.threads.len() {
             Some(Thread {
                 vm: self,
@@ -400,11 +430,11 @@ impl ProcessStateMachine {
             .map_err(|_| ())
     }
 
-    fn dma<T>(
+    fn dma<R>(
         &self,
         range: impl RangeBounds<usize>,
-        f: impl FnOnce(&mut [u8]) -> T,
-    ) -> Result<T, ()> {
+        f: impl FnOnce(&mut [u8]) -> R,
+    ) -> Result<R, ()> {
         let mem = self.memory.as_ref().unwrap();
         let mem_sz = mem.current_size().0 * 65536;
 
@@ -428,7 +458,7 @@ impl ProcessStateMachine {
     }
 }
 
-impl<'a> Thread<'a> {
+impl<'a, T> Thread<'a, T> {
     /// Resumes execution of the thread.
     ///
     /// If this is the first call you call [`run`](Thread::run) for this thread, then you must pass
@@ -436,7 +466,7 @@ impl<'a> Thread<'a> {
     ///
     /// If you call this function after a previous call to [`run`](Thread::run) that was
     /// interrupted by an external function call, then you must pass back the outcome of that call.
-    pub fn run(mut self, value: Option<wasmi::RuntimeValue>) -> Result<ExecOutcome<'a>, RunErr> {
+    pub fn run(mut self, value: Option<wasmi::RuntimeValue>) -> Result<ExecOutcome<'a, T>, RunErr> {
         struct DummyExternals;
         impl wasmi::Externals for DummyExternals {
             fn invoke_index(
@@ -492,12 +522,16 @@ impl<'a> Thread<'a> {
         };
 
         match result {
-            Ok(val) => {
+            Ok(return_value) => {
                 // If this is the "main" function, destroy all threads.
+                let user_data = self.vm.threads.remove(self.index).user_data;
                 if self.index == 0 {
                     self.vm.threads.clear();
                 }
-                Ok(ExecOutcome::Finished(val))
+                Ok(ExecOutcome::Finished {
+                    return_value,
+                    user_data,
+                })
             },
             Err(wasmi::ResumableError::AlreadyStarted) => unreachable!(),
             Err(wasmi::ResumableError::NotResumable) => unreachable!(),
@@ -514,10 +548,24 @@ impl<'a> Thread<'a> {
                 })
             }
             Err(wasmi::ResumableError::Trap(trap)) => {
+                let user_data = self.vm.threads.remove(self.index).user_data;
                 self.vm.is_poisoned = true;
-                Ok(ExecOutcome::Errored(trap))
+                Ok(ExecOutcome::Errored {
+                    user_data,
+                    error: trap,
+                })
             }
         }
+    }
+
+    /// Returns the user data associated to that thread.
+    pub fn user_data(&mut self) -> &mut T {
+        &mut self.vm.threads[self.index].user_data
+    }
+
+    /// Turns this thread into the user data associated to it.
+    pub fn into_user_data(self) -> &'a mut T {
+        &mut self.vm.threads[self.index].user_data
     }
 }
 
