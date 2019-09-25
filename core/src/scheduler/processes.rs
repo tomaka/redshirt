@@ -109,7 +109,6 @@ impl<T> ProcessesCollection<T> {
         symbols: impl FnMut(&InterfaceId, &str, &wasmi::Signature) -> Result<usize, ()>,
     ) -> Result<ProcessesCollectionProc<T>, vm::NewErr> {
         let state_machine = vm::ProcessStateMachine::new(module, symbols)?;
-        let has_main = state_machine.is_executing();
 
         // We only modify `self` at the very end.
         let new_pid = self.pid_pool.assign();
@@ -118,7 +117,7 @@ impl<T> ProcessesCollection<T> {
             Process {
                 state_machine,
                 user_data,
-                value_back: if has_main { Some(None) } else { None },
+                value_back: Some(None),
             },
         );
         // Shrink the list from time to time so that it doesn't grow too much.
@@ -146,13 +145,13 @@ impl<T> ProcessesCollection<T> {
         };
 
         let value_back = process.get_mut().value_back.take().unwrap();
-        match process.get_mut().state_machine.resume(value_back) {
-            Err(vm::ResumeErr::BadValueTy { .. }) => panic!(), // TODO:
+        match process.get_mut().state_machine.thread(0).unwrap().run(value_back) {
+            Err(vm::RunErr::BadValueTy { .. }) => panic!(), // TODO:
             Ok(vm::ExecOutcome::Finished(value)) => RunOneOutcome::Finished {
                 process: ProcessesCollectionProc { process },
                 value,
             },
-            Ok(vm::ExecOutcome::Interrupted { id, params }) => RunOneOutcome::Interrupted {
+            Ok(vm::ExecOutcome::Interrupted { id, params, .. }) => RunOneOutcome::Interrupted {
                 process: ProcessesCollectionProc { process },
                 id,
                 params,

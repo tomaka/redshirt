@@ -693,7 +693,7 @@ mod tests {
             .with_extrinsic(
                 [0; 32],
                 "test",
-                &Signature::new(iter::empty(), None),
+                Signature::new(iter::empty(), None),
                 639u32,
             )
             .build();
