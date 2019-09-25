@@ -53,8 +53,7 @@ use smallvec::SmallVec;
 ///
 /// The [`ProcessStateMachine`] is single-threaded. In other words, the VM can only ever run one
 /// thread simultaneously. This might change in the future.
-/// 
-// TODO: Debug
+///
 pub struct ProcessStateMachine<T> {
     /// Original module, with resolved imports.
     module: wasmi::ModuleRef,
@@ -80,7 +79,6 @@ pub struct ProcessStateMachine<T> {
 }
 
 /// State of a single thread within the VM.
-// TODO: Debug
 struct ThreadState<T> {
     /// Execution context of this thread. This notably holds the program counter, state of the
     /// stack, and so on.
@@ -98,7 +96,6 @@ struct ThreadState<T> {
 }
 
 /// Access to a thread within the virtual machine.
-// TODO: Debug
 pub struct Thread<'a, T> {
     /// Reference to the parent object.
     vm: &'a mut ProcessStateMachine<T>,
@@ -108,7 +105,7 @@ pub struct Thread<'a, T> {
 }
 
 /// Outcome of the [`run`](Thread::run) function.
-// TODO: restore: #[derive(Debug)]
+#[derive(Debug)]
 pub enum ExecOutcome<'a, T> {
     /// A thread has finished. The thread no longer exists in the list.
     ///
@@ -504,6 +501,22 @@ impl<T> ProcessStateMachine<T> {
     }
 }
 
+impl<T> fmt::Debug for ProcessStateMachine<T>
+where T: fmt::Debug
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_list().entries(self.threads.iter()).finish()
+    }
+}
+
+impl<T> fmt::Debug for ThreadState<T>
+where T: fmt::Debug
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_tuple("Thread").field(&self.user_data).finish()
+    }
+}
+
 impl<'a, T> Thread<'a, T> {
     /// Starts or continues execution of this thread.
     ///
@@ -621,6 +634,14 @@ impl<'a, T> Thread<'a, T> {
     /// Turns this thread into the user data associated to it.
     pub fn into_user_data(self) -> &'a mut T {
         &mut self.vm.threads[self.index].user_data
+    }
+}
+
+impl<'a, T> fmt::Debug for Thread<'a, T>
+where T: fmt::Debug
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Debug::fmt(&self.vm.threads[self.index], f)
     }
 }
 
