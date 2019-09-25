@@ -1,6 +1,9 @@
 Experiment to build some kind of operating-system-like environment where executables are all in
 WASM and are loaded from some IPFS-like decentralized network.
 
+I'm frequently telling people what my vision of an operating system would be. Now I've started
+building it.
+
 # General idea
 
 - This is an operating-system-like environment, but it could be seen as similar to a web browser
@@ -13,21 +16,34 @@ WASM and are loaded from some IPFS-like decentralized network.
   "execute /usr/bin/foo". Instead you say "execute A45d9a21c3a7". The WASM binary, if it doesn't
   exist locally, is fetched from IPFS or something similar.
 
-- A program can register itself as a provider of an interface. Interfaces are referred by hash as
-  well. Only one process can be a provider of an interface at any given point in time.
+- There exists 3 core syscalls (send a message, send an answer, wait for a message), and
+  everything else is done by passing messages between processes or between a process and the
+  "kernel".
 
-- The import table of a WASM module can contain functions from interfaces. The "kernel" will link
-  them to the process that provides that interface.
+- A program can register itself as a handler of an interface. Example of what an interface is:
+  TCP/IP, files manager, threads manager, etc. Interfaces are referred by hash as well. Only one
+  process can be a handler of an interface at any given point in time. For example, the process
+  that handles TCP/IP registers itself as the handler of the TCP/IP interface. The user decides
+  which process handles which interface.
 
 - Very few things are built in. No built-in concepts such as networking or files. Almost
   everything is done through interfaces.
 
-- The lowest-level interfaces are provided by the OS itself. On desktop, the provided interfaces
-  would for example be TCP/IP, UDP, file system, etc. On bare metal, the provided interfaces would
-  be for example "interrupt handler manager", "PCI", etc. and the provider for TCP/IP would be a
-  regular WASM process built on top of the PCI, Ethernet, etc. interfaces.
+- Low-level interfaces are handled by the kernel On desktop, the kernel handles for example TCP/IP,
+  UDP, file system, etc. by asking the host OS. On bare metal, the provided interfaces would
+  be for example "interrupt handler manager", "PCI", etc. and the handler for the TCP/IP interface
+  would be a regular WASM process that communicates with the PCI, Ethernet, etc. interfaces.
 
 - Interfaces are referred to by a hash built in a determinstic way based on the name of the
-  interface and its functions' names and signatures. There's no versioning system.
+  interface and its messages. If you make a breaking change to an interface, it automatically
+  becomes incompatible. There's no version number.
 
-- The programs loader is itself just an interface provider.
+- The programs loader is itself just an interface handler. In other words, when the kernel wants to
+  start a program, it sends an IPC message to a process that then returns the WASM bytecode.
+
+# Current state
+
+- Threads are working, but there's no synchronization primitive yet.
+- WASM programs can interface with TCP/IP in a blocking way. Rust asynchronous networking
+  requires threads.
+- Next step once TCP/IP works is to build the IPFS-like system.
