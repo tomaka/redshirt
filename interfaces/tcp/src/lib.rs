@@ -7,7 +7,7 @@
 // TODO: everything here is a draft
 
 use futures::prelude::*;
-use parity_scale_codec::{Encode as _, DecodeAll};
+use parity_scale_codec::{DecodeAll, Encode as _};
 use std::{io, net::SocketAddr, pin::Pin, task::Context, task::Poll};
 
 pub mod ffi;
@@ -33,16 +33,21 @@ impl TcpStream {
             },
         });
 
-        let msg_id = syscalls::emit_message(&ffi::INTERFACE, &tcp_open, true).unwrap().unwrap();
+        let msg_id = syscalls::emit_message(&ffi::INTERFACE, &tcp_open, true)
+            .unwrap()
+            .unwrap();
         let msg = syscalls::next_message(&mut [msg_id], true).unwrap();
         let handle = match msg {
             // TODO: code style: improve syscall's API
-            syscalls::Message::Response(syscalls::ffi::ResponseMessage { message_id, actual_data }) => {
+            syscalls::Message::Response(syscalls::ffi::ResponseMessage {
+                message_id,
+                actual_data,
+            }) => {
                 assert_eq!(message_id, msg_id);
                 let msg: ffi::TcpOpenResponse = DecodeAll::decode_all(&actual_data).unwrap();
                 msg.result.unwrap()
-            },
-            _ => unreachable!()
+            }
+            _ => unreachable!(),
         };
 
         TcpStream {
@@ -54,29 +59,38 @@ impl TcpStream {
 }
 
 impl AsyncRead for TcpStream {
-    fn poll_read(self: Pin<&mut Self>, cx: &mut Context, buf: &mut [u8]) -> Poll<Result<usize, io::Error>> {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context,
+        buf: &mut [u8],
+    ) -> Poll<Result<usize, io::Error>> {
         // TODO: for now we're always blocking because we don't have threads
         let tcp_read = ffi::TcpMessage::Read(ffi::TcpRead {
             socket_id: self.handle,
         });
-        let msg_id = syscalls::emit_message(&ffi::INTERFACE, &tcp_read, true).unwrap().unwrap();
+        let msg_id = syscalls::emit_message(&ffi::INTERFACE, &tcp_read, true)
+            .unwrap()
+            .unwrap();
         let msg = syscalls::next_message(&mut [msg_id], true).unwrap();
         let result = match msg {
             // TODO: code style: improve syscall's API
-            syscalls::Message::Response(syscalls::ffi::ResponseMessage { message_id, actual_data }) => {
+            syscalls::Message::Response(syscalls::ffi::ResponseMessage {
+                message_id,
+                actual_data,
+            }) => {
                 assert_eq!(message_id, msg_id);
                 let msg: ffi::TcpReadResponse = DecodeAll::decode_all(&actual_data).unwrap();
                 msg.result
-            },
-            _ => unreachable!()
+            }
+            _ => unreachable!(),
         };
 
         let data = match result {
             Ok(d) => d,
-            Err(_) => return Poll::Ready(Err(io::ErrorKind::Other.into()))      // TODO:
+            Err(_) => return Poll::Ready(Err(io::ErrorKind::Other.into())), // TODO:
         };
 
-        buf[..data.len()].copy_from_slice(&data);       // TODO: this just assumes that buf is large enough
+        buf[..data.len()].copy_from_slice(&data); // TODO: this just assumes that buf is large enough
         Poll::Ready(Ok(data.len()))
     }
 
@@ -84,27 +98,36 @@ impl AsyncRead for TcpStream {
 }
 
 impl AsyncWrite for TcpStream {
-    fn poll_write(self: Pin<&mut Self>, cx: &mut Context, buf: &[u8]) -> Poll<Result<usize, io::Error>> {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context,
+        buf: &[u8],
+    ) -> Poll<Result<usize, io::Error>> {
         // TODO: for now we're always blocking because we don't have threads
         let tcp_write = ffi::TcpMessage::Write(ffi::TcpWrite {
             socket_id: self.handle,
             data: buf.to_vec(),
         });
-        let msg_id = syscalls::emit_message(&ffi::INTERFACE, &tcp_write, true).unwrap().unwrap();
+        let msg_id = syscalls::emit_message(&ffi::INTERFACE, &tcp_write, true)
+            .unwrap()
+            .unwrap();
         let msg = syscalls::next_message(&mut [msg_id], true).unwrap();
         let result = match msg {
             // TODO: code style: improve syscall's API
-            syscalls::Message::Response(syscalls::ffi::ResponseMessage { message_id, actual_data }) => {
+            syscalls::Message::Response(syscalls::ffi::ResponseMessage {
+                message_id,
+                actual_data,
+            }) => {
                 assert_eq!(message_id, msg_id);
                 let msg: ffi::TcpWriteResponse = DecodeAll::decode_all(&actual_data).unwrap();
                 msg.result
-            },
-            _ => unreachable!()
+            }
+            _ => unreachable!(),
         };
 
         match result {
             Ok(_) => Poll::Ready(Ok(buf.len())),
-            Err(_) => Poll::Ready(Err(io::ErrorKind::Other.into()))      // TODO:
+            Err(_) => Poll::Ready(Err(io::ErrorKind::Other.into())), // TODO:
         }
     }
 

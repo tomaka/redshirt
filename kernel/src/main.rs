@@ -3,7 +3,7 @@
 #![feature(never_type)]
 #![deny(intra_doc_link_resolution_failure)]
 
-use parity_scale_codec::{Encode as _, DecodeAll};
+use parity_scale_codec::{DecodeAll, Encode as _};
 use std::io::Write as _;
 
 mod tcp_interface;
@@ -77,26 +77,30 @@ fn main() {
             Extrinsic::ProcExit,
         )
         .with_extrinsic(
-            "tcptcptcp".parse::<kernel_core::interface::InterfaceHash>().unwrap(),
+            "tcptcptcp"
+                .parse::<kernel_core::interface::InterfaceHash>()
+                .unwrap(),
             "tcp_open",
             kernel_core::sig!((Pointer, I32) -> I32),
             Extrinsic::TcpOpen,
         )
         .with_extrinsic(
-            "tcptcptcp".parse::<kernel_core::interface::InterfaceHash>().unwrap(),
+            "tcptcptcp"
+                .parse::<kernel_core::interface::InterfaceHash>()
+                .unwrap(),
             "tcp_close",
             kernel_core::sig!((Pointer, I32) -> I32),
             Extrinsic::TcpClose,
         )
-        .with_interface_handler([   // TCP
-            0x10, 0x19, 0x16, 0x2a, 0x2b, 0x0c, 0x41, 0x36,
-            0x4a, 0x20, 0x01, 0x51, 0x47, 0x38, 0x27, 0x08,
-            0x4a, 0x3c, 0x1e, 0x07, 0x18, 0x1c, 0x27, 0x11,
-            0x55, 0x15, 0x1d, 0x5f, 0x22, 0x5b, 0x16, 0x20,
+        .with_interface_handler([
+            // TCP
+            0x10, 0x19, 0x16, 0x2a, 0x2b, 0x0c, 0x41, 0x36, 0x4a, 0x20, 0x01, 0x51, 0x47, 0x38,
+            0x27, 0x08, 0x4a, 0x3c, 0x1e, 0x07, 0x18, 0x1c, 0x27, 0x11, 0x55, 0x15, 0x1d, 0x5f,
+            0x22, 0x5b, 0x16, 0x20,
         ])
         .with_main_program(module)
         .build();
-    
+
     let mut tcp = tcp_interface::TcpState::new();
 
     #[derive(Clone)]
@@ -202,14 +206,17 @@ fn main() {
                         params,
                     } => unimplemented!(),
                     kernel_core::system::SystemRunOutcome::InterfaceMessage {
-                        event_id, interface, message
+                        event_id,
+                        interface,
+                        message,
                     } => {
                         // TODO: we assume it's TCP
-                        let message: tcp::ffi::TcpMessage = DecodeAll::decode_all(&message).unwrap();
+                        let message: tcp::ffi::TcpMessage =
+                            DecodeAll::decode_all(&message).unwrap();
                         tcp.handle_message(event_id, message);
                         continue;
-                    },
-                    kernel_core::system::SystemRunOutcome::Idle => {},
+                    }
+                    kernel_core::system::SystemRunOutcome::Idle => {}
                     other => break other,
                 }
 

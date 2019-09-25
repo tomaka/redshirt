@@ -343,7 +343,11 @@ impl ProcessStateMachine {
     ///
     /// Returns an error if the range is invalid or out of range.
     pub fn write_memory(&mut self, offset: u32, value: &[u8]) -> Result<(), ()> {
-        self.memory.as_ref().unwrap().set(offset, value).map_err(|_| ())
+        self.memory
+            .as_ref()
+            .unwrap()
+            .set(offset, value)
+            .map_err(|_| ())
     }
 
     fn dma<T>(

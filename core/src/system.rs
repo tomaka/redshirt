@@ -6,7 +6,7 @@ use crate::scheduler::{Core, CoreBuilder, CoreProcess, CoreRunOutcome, Pid};
 use crate::signature::{Signature, ValueType};
 use alloc::borrow::Cow;
 use core::{iter, ops::RangeBounds};
-use parity_scale_codec::{Encode, Decode, DecodeAll};
+use parity_scale_codec::{Decode, DecodeAll, Encode};
 use smallvec::SmallVec;
 
 pub struct System<TExtEx> {
@@ -103,8 +103,16 @@ impl<TExtEx: Clone> System<TExtEx> {
                         params: params.clone(),
                     };
                 }
-                CoreRunOutcome::InterfaceMessage { event_id, interface, message } => {
-                    return SystemRunOutcome::InterfaceMessage { event_id, interface, message };
+                CoreRunOutcome::InterfaceMessage {
+                    event_id,
+                    interface,
+                    message,
+                } => {
+                    return SystemRunOutcome::InterfaceMessage {
+                        event_id,
+                        interface,
+                        message,
+                    };
                 }
                 CoreRunOutcome::Idle => return SystemRunOutcome::Idle,
             }
@@ -156,7 +164,8 @@ impl<TExtEx> SystemBuilder<TExtEx> {
         let mut core = self.core.build();
 
         for program in self.main_programs.drain() {
-            core.execute(&program).expect("failed to start main program"); // TODO:
+            core.execute(&program)
+                .expect("failed to start main program"); // TODO:
         }
 
         System { core }

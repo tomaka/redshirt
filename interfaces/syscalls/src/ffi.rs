@@ -1,7 +1,7 @@
 // Copyright(c) 2019 Pierre Krieger
 
 use core::ffi::c_void;
-use parity_scale_codec::{Encode, Decode};
+use parity_scale_codec::{Decode, Encode};
 
 #[link(wasm_import_module = "")]
 extern "C" {
@@ -37,7 +37,7 @@ extern "C" {
         to_poll_len: u32,
         out: *mut u8,
         out_len: u32,
-        block: bool
+        block: bool,
     ) -> u32;
 
     /// Sends a message to the process that has registered the given interface.
@@ -67,11 +67,7 @@ extern "C" {
     ///
     /// When this function is being called, a "lock" is being held on the memory pointed by
     /// `msg`. In particular, it is invalid to modify this buffer while the function is running.
-    pub(crate) fn emit_answer(
-        message_id: u64,
-        msg: *const u8,
-        msg_len: u32,
-    ) -> u32;
+    pub(crate) fn emit_answer(message_id: u64, msg: *const u8, msg_len: u32) -> u32;
 
     /// Registers the current process as the provider for the interface passed as parameter.
     ///

@@ -4,13 +4,13 @@
 
 #![deny(intra_doc_link_resolution_failure)]
 
-use parity_scale_codec::{Encode, DecodeAll};
+use parity_scale_codec::{DecodeAll, Encode};
 
 pub use ffi::Message;
 
 pub mod ffi;
 
-#[cfg(target_os = "unknown")]      // TODO: bad
+#[cfg(target_os = "unknown")] // TODO: bad
 pub fn register_interface(hash: &[u8; 32]) -> Result<(), ()> {
     unsafe {
         let ret = ffi::register_interface(hash as *const [u8; 32] as *const _);
@@ -27,7 +27,7 @@ pub fn register_interface(hash: &[u8; 32]) -> Result<(), ()> {
     unimplemented!()
 }
 
-#[cfg(target_os = "unknown")]      // TODO: bad
+#[cfg(target_os = "unknown")] // TODO: bad
 pub fn next_message(to_poll: &mut [u64], block: bool) -> Option<Message> {
     unsafe {
         let mut out = Vec::with_capacity(32);
@@ -37,7 +37,7 @@ pub fn next_message(to_poll: &mut [u64], block: bool) -> Option<Message> {
                 to_poll.len() as u32,
                 out.as_mut_ptr(),
                 out.capacity() as u32,
-                block
+                block,
             ) as usize;
             if ret == 0 {
                 return None;
@@ -57,7 +57,11 @@ pub fn next_message(to_poll: &mut [u64], block: bool) -> Option<Message> {
     unimplemented!()
 }
 
-pub fn emit_message(interface_hash: &[u8; 32], msg: &impl Encode, needs_answer: bool) -> Result<Option<u64>, ()> {
+pub fn emit_message(
+    interface_hash: &[u8; 32],
+    msg: &impl Encode,
+    needs_answer: bool,
+) -> Result<Option<u64>, ()> {
     unsafe {
         let buf = msg.encode();
         let mut event_id_out = 0;
@@ -66,7 +70,7 @@ pub fn emit_message(interface_hash: &[u8; 32], msg: &impl Encode, needs_answer: 
             buf.as_ptr(),
             buf.len() as u32,
             needs_answer,
-            &mut event_id_out as *mut _
+            &mut event_id_out as *mut _,
         );
         if ret != 0 {
             return Err(());

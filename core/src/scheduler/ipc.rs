@@ -3,14 +3,14 @@
 use crate::interface::{Interface, InterfaceHash, InterfaceId};
 use crate::module::Module;
 use crate::scheduler::{pid, pid::Pid, processes, vm};
-use crate::signature::Signature;
 use crate::sig;
+use crate::signature::Signature;
 
 use alloc::{borrow::Cow, collections::VecDeque};
 use byteorder::{ByteOrder as _, LittleEndian};
 use core::{convert::TryFrom, marker::PhantomData, ops::RangeBounds};
 use hashbrown::{hash_map::Entry, HashMap, HashSet};
-use parity_scale_codec::{Encode as _};
+use parity_scale_codec::Encode as _;
 
 /// Handles scheduling processes and inter-process communications.
 pub struct Core<T> {
@@ -134,7 +134,7 @@ struct Process {
 }
 
 /// How a process is waiting for messages.
-#[derive(Debug, Clone)]     // TODO: remove Clone
+#[derive(Debug, Clone)] // TODO: remove Clone
 struct MessageWait {
     /// Identifiers of the messages we are waiting upon. Duplicate of what is in the process's
     /// memory.
@@ -169,10 +169,30 @@ impl<T> Core<T> {
 
         // TODO: signatures
         builder
-            .with_extrinsic_inner(root_interface_id.clone(), "next_message", sig!(()), Extrinsic::NextMessage)
-            .with_extrinsic_inner(root_interface_id.clone(), "emit_message", sig!(()), Extrinsic::EmitMessage)
-            .with_extrinsic_inner(root_interface_id.clone(), "emit_answer", sig!(()), Extrinsic::EmitAnswer)
-            .with_extrinsic_inner(root_interface_id.clone(), "register_interface", sig!((Pointer) -> I32), Extrinsic::RegisterInterface)
+            .with_extrinsic_inner(
+                root_interface_id.clone(),
+                "next_message",
+                sig!(()),
+                Extrinsic::NextMessage,
+            )
+            .with_extrinsic_inner(
+                root_interface_id.clone(),
+                "emit_message",
+                sig!(()),
+                Extrinsic::EmitMessage,
+            )
+            .with_extrinsic_inner(
+                root_interface_id.clone(),
+                "emit_answer",
+                sig!(()),
+                Extrinsic::EmitAnswer,
+            )
+            .with_extrinsic_inner(
+                root_interface_id.clone(),
+                "register_interface",
+                sig!((Pointer) -> I32),
+                Extrinsic::RegisterInterface,
+            )
     }
 
     /// Run the core once.
@@ -203,14 +223,20 @@ impl<T> Core<T> {
                     },
                     extrinsic: match self.extrinsics.get(&extrinsic).unwrap() {
                         Extrinsic::External(ref token) => token,
-                        _ => panic!()
+                        _ => panic!(),
                     },
                     params,
                 },
-                CoreRunOutcomeInner::InterfaceMessage { event_id, interface, message } => {
-                    CoreRunOutcome::InterfaceMessage { event_id, interface, message }
+                CoreRunOutcomeInner::InterfaceMessage {
+                    event_id,
+                    interface,
+                    message,
+                } => CoreRunOutcome::InterfaceMessage {
+                    event_id,
+                    interface,
+                    message,
                 },
-            }
+            };
         }
     }
 
@@ -268,7 +294,8 @@ impl<T> Core<T> {
                         assert_eq!(params.len(), 5);
                         let interface: InterfaceHash = {
                             let addr = params[0].try_into::<i32>().unwrap() as usize;
-                            TryFrom::try_from(&process.read_memory(addr..addr + 32).unwrap()[..]).unwrap()
+                            TryFrom::try_from(&process.read_memory(addr..addr + 32).unwrap()[..])
+                                .unwrap()
                         };
                         let message = {
                             let addr = params[1].try_into::<i32>().unwrap() as usize;
@@ -279,7 +306,8 @@ impl<T> Core<T> {
                         let event_id = if needs_answer {
                             let event_id_write = params[4].try_into::<i32>().unwrap() as u32;
                             let new_message_id = self.next_message_id;
-                            self.messages_to_answer.insert(new_message_id, process.pid());
+                            self.messages_to_answer
+                                .insert(new_message_id, process.pid());
                             self.next_message_id += 1;
                             let mut buf = [0; 8];
                             LittleEndian::write_u64(&mut buf, new_message_id);
@@ -289,7 +317,10 @@ impl<T> Core<T> {
                         } else {
                             None
                         };
-                        println!("proc emitting message {:?} needs_answer={:?}", message, needs_answer);
+                        println!(
+                            "proc emitting message {:?} needs_answer={:?}",
+                            message, needs_answer
+                        );
                         match self.interfaces.get(&interface).unwrap() {
                             InterfaceHandler::Process(_) => unimplemented!(),
                             InterfaceHandler::External => {
@@ -357,7 +388,6 @@ impl<T> Core<T> {
             if queue_was_empty {
                 try_resume_message_wait(&mut process);
             }
-
         } else {
             // TODO: what to do here?
             panic!("no process found with that event")
@@ -435,7 +465,12 @@ impl<T> CoreBuilder<T> {
         signature: Signature,
         token: impl Into<T>,
     ) -> Self {
-        self.with_extrinsic_inner(interface, f_name, signature, Extrinsic::External(token.into()))
+        self.with_extrinsic_inner(
+            interface,
+            f_name,
+            signature,
+            Extrinsic::External(token.into()),
+        )
     }
 
     /// Inner implementation of `with_extrinsic`.
@@ -452,7 +487,8 @@ impl<T> CoreBuilder<T> {
 
         let index = self.extrinsics.len();
         debug_assert!(!self.extrinsics.contains_key(&index));
-        self.extrinsics_id_assign.insert((interface, f_name), (index, signature));
+        self.extrinsics_id_assign
+            .insert((interface, f_name), (index, signature));
         self.extrinsics.insert(index, extrinsic);
         self
     }
@@ -463,7 +499,8 @@ impl<T> CoreBuilder<T> {
     /// being handled internally.
     pub fn with_interface_handler(mut self, interface: impl Into<InterfaceHash>) -> Self {
         // TODO: check for duplicates
-        self.interfaces.insert(interface.into(), InterfaceHandler::External);
+        self.interfaces
+            .insert(interface.into(), InterfaceHandler::External);
         self
     }
 
@@ -479,7 +516,7 @@ impl<T> CoreBuilder<T> {
             interfaces: self.interfaces,
             extrinsics: self.extrinsics,
             extrinsics_id_assign: self.extrinsics_id_assign,
-            next_message_id: 2,     // 0 and 1 are special message IDs
+            next_message_id: 2, // 0 and 1 are special message IDs
             messages_to_answer: HashMap::default(),
         }
     }
@@ -488,7 +525,10 @@ impl<T> CoreBuilder<T> {
 /// Called when a process calls the `next_message` extrinsic.
 ///
 /// Tries to resume the process by fetching a message from the queue.
-fn extrinsic_next_message(process: &mut processes::ProcessesCollectionProc<Process>, params: Vec<wasmi::RuntimeValue>) {
+fn extrinsic_next_message(
+    process: &mut processes::ProcessesCollectionProc<Process>,
+    params: Vec<wasmi::RuntimeValue>,
+) {
     // TODO: lots of unwraps here
     assert_eq!(params.len(), 5);
     let msg_ids_ptr = params[0].try_into::<i32>().unwrap() as u32;
@@ -505,9 +545,13 @@ fn extrinsic_next_message(process: &mut processes::ProcessesCollectionProc<Proce
     let out_size = params[3].try_into::<i32>().unwrap() as u32;
     let block = params[4].try_into::<i32>().unwrap() != 0;
 
-    assert!(block);     // not blocking not supported
+    assert!(block); // not blocking not supported
     assert!(process.user_data().message_wait.is_none());
-    println!("now waiting for {:?}; queue is {:?}", msg_ids, process.user_data());
+    println!(
+        "now waiting for {:?}; queue is {:?}",
+        msg_ids,
+        process.user_data()
+    );
     process.user_data().message_wait = Some(MessageWait {
         msg_ids,
         msg_ids_ptr,
@@ -544,7 +588,7 @@ fn try_resume_message_wait(process: &mut processes::ProcessesCollectionProc<Proc
             syscalls::ffi::Message::Response(response) => {
                 debug_assert!(response.message_id >= 2);
                 response.message_id
-            },
+            }
         };
 
         if let Some(p) = msg_wait.msg_ids.iter().position(|id| *id == msg_id) {
@@ -560,17 +604,22 @@ fn try_resume_message_wait(process: &mut processes::ProcessesCollectionProc<Proc
     // TODO: would be great to not do that every single time
     let msg_bytes = process.user_data().messages_queue[index_in_queue].encode();
 
-    if msg_wait.out_size as usize >= msg_bytes.len() {       // TODO: don't use as
+    if msg_wait.out_size as usize >= msg_bytes.len() {
+        // TODO: don't use as
         /// Write the message in the process's memory.
-        process.write_memory(msg_wait.out_pointer, &msg_bytes).unwrap();
+        process
+            .write_memory(msg_wait.out_pointer, &msg_bytes)
+            .unwrap();
         /// Zero the corresponding entry in the messages to wait upon.
-        process.write_memory(msg_wait.msg_ids_ptr + index_in_msg_ids * 8, &[0; 8]).unwrap();
+        process
+            .write_memory(msg_wait.msg_ids_ptr + index_in_msg_ids * 8, &[0; 8])
+            .unwrap();
         /// Pop the message from the queue, so that we don't deliver it twice.
         process.user_data().messages_queue.remove(0);
     }
 
     process.user_data().message_wait = None;
-    process.resume(Some(wasmi::RuntimeValue::I32(msg_bytes.len() as i32)));      // TODO: don't use as
+    process.resume(Some(wasmi::RuntimeValue::I32(msg_bytes.len() as i32))); // TODO: don't use as
 }
 
 #[cfg(test)]
@@ -606,7 +655,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore]       // TODO: test fails
+    #[ignore] // TODO: test fails
     fn trapping_module() {
         let module = Module::from_wat(
             r#"(module
@@ -624,7 +673,7 @@ mod tests {
             CoreRunOutcome::ProgramCrashed { pid, .. } => {
                 assert_eq!(pid, expected_pid);
             }
-            _ => panic!()
+            _ => panic!(),
         }
     }
 

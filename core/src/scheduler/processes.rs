@@ -232,7 +232,10 @@ impl<'a, T> ProcessesCollectionProc<'a, T> {
     ///
     /// Returns an error if the range is invalid or out of range.
     pub fn write_memory(&mut self, offset: u32, value: &[u8]) -> Result<(), ()> {
-        self.process.get_mut().state_machine.write_memory(offset, value)
+        self.process
+            .get_mut()
+            .state_machine
+            .write_memory(offset, value)
     }
 
     /// Aborts the process and returns the associated user data.
