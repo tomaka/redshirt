@@ -18,7 +18,7 @@ building it.
 
 - There exists 3 core syscalls (send a message, send an answer, wait for a message), and
   everything else is done by passing messages between processes or between a process and the
-  "kernel".
+  "kernel". Programs don't know who they are sending the message to.
 
 - A program can register itself as a handler of an interface. Example of what an interface is:
   TCP/IP, files manager, threads manager, etc. Interfaces are referred by hash as well. Only one
@@ -26,13 +26,17 @@ building it.
   that handles TCP/IP registers itself as the handler of the TCP/IP interface. The user decides
   which process handles which interface.
 
-- Very few things are built in. No built-in concepts such as networking or files. Almost
-  everything is done through interfaces.
-
-- Low-level interfaces are handled by the kernel On desktop, the kernel handles for example TCP/IP,
-  UDP, file system, etc. by asking the host OS. On bare metal, the provided interfaces would
+- Low-level interfaces are handled by the kernel itself. On desktop, the kernel handles for example
+  TCP/IP, UDP, file system, etc. by asking the host OS. On bare metal, the provided interfaces would
   be for example "interrupt handler manager", "PCI", etc. and the handler for the TCP/IP interface
   would be a regular WASM process that communicates with the PCI, Ethernet, etc. interfaces.
+
+- For security purposes, the user could choose to grant or deny to access to interface on a
+  per-program basis, much like Android/browsers/etc. do. Don't want "sudoku" to access TCP/IP?
+  Deny it.
+
+- Very few things are built in. No built-in concepts such as networking or files. Almost
+  everything is done through interfaces.
 
 - Interfaces are referred to by a hash built in a determinstic way based on the name of the
   interface and its messages. If you make a breaking change to an interface, it automatically
