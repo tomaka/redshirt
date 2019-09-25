@@ -312,7 +312,8 @@ impl<T> ProcessStateMachine<T> {
         // that must be executed before the module is considered initialized. It is unclear whether
         // this is intended to be a function that for example initializes global variables, or if
         // this is an equivalent of "main". In practice, Rust never seems to generate such as
-        // "start" instruction, so for now we ignore it.
+        // "start" instruction, so for now we ignore it. The code below panics if there is such
+        // a "start" item, so we will fortunately not blindly run into troubles.
         let module = not_started.assert_no_start();
 
         let memory = if let Some(mem) = module.export_by_name("memory") {
