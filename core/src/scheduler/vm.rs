@@ -14,10 +14,10 @@ use smallvec::SmallVec;
 /// Initializing a state machine is done by passing a [`Module`](crate::module::Module) object,
 /// which holds a successfully-parsed WASM binary.
 ///
-/// The module might contain a list of functions to import that the initialization process must
-/// resolve. When such an import is encountered, the closure passed to the
+/// The module might contain a list of functions to import and that the initialization process
+/// must resolve. When such an import is encountered, the closure passed to the
 /// [`new`](ProcessStateMachine::new) function is invoked and must return an opaque integer decided
-/// by the user. This integer is later passed back to the user of this struct in situations when
+/// by the user. This integer is later passed back to the user of this struct in the situation when
 /// the state machine invokes that external function.
 ///
 /// # Threads
@@ -27,19 +27,27 @@ use smallvec::SmallVec;
 ///
 /// In order to run the VM, grab a thread by calling [`ProcessStateMachine::threads`], then call
 /// [`Thread::run`]. The thread will then run until it either finishes (in which case the thread
-/// is then destroyed), or attempts to call an imported function. The [`run`](Thread::run) method
-/// requires passing a value to inject back and that corresponds to the return value obtained by
-/// executing the imported function. When a thread is created, this inject-back value must be
-/// `None`.
+/// is then destroyed), or attempts to call an imported function.
+///
+/// TODO: It is intended that in the future the `run` function stops after a certain period of
+/// time has elapsed, in order to do preemptive multithreading. This requires a lot of changes in
+/// the interpreter, and isn't going to happen any time soon.
+///
+/// The [`run`](Thread::run) method requires passing a value. The first time you call
+/// [`run`](Thread::run) for any given thread, you must pass the value `None`. If that thread is
+/// then interrupted by a call to an imported function, you must execute the imported function and
+/// pass its return value the next time you call [`run`](Thread::run).
 ///
 /// The generic parameter of this struct is some userdata that is associated with each thread.
-/// You must pass a value when creating a thread, and can retreive it later.
+/// You must pass a value when creating a thread, and can retreive it later by calling
+/// [`user_data`](Thread::user_data) or [`into_user_data`](Thread::into_user_data).
 ///
-/// # Poisonning
+/// # Poisoning
 /// 
 /// If the main thread stops, or if any thread encounters an error, then the VM moves into a
-/// "poisoned" state. It is then no longer possible to run anything in it. If the main thread
-/// stops, then all threads are destroyed.
+/// "poisoned" state. It is then no longer possible to run anything in it. Threads are kept alive
+/// so that you can examine their state, but attempting to call [`run`](Thread::run) will return
+/// an error.
 ///
 /// # Single-threaded-ness
 ///
@@ -74,15 +82,18 @@ pub struct ProcessStateMachine<T> {
 /// State of a single thread within the VM.
 // TODO: Debug
 struct ThreadState<T> {
-    /// Each program can only run once at a time. It only has one "thread".
-    /// If `Some`, we are currently executing something in `Program`. If `None`, we aren't.
+    /// Execution context of this thread. This notably holds the program counter, state of the
+    /// stack, and so on.
+    ///
+    /// This field is an `Option` because we need to be able to temporarily extract it. It must
+    /// always be `Some`.
     execution: Option<wasmi::FuncInvocation<'static>>,
 
     /// If false, then one must call `execution.start_execution()` instead of `resume_execution()`.
-    /// This is a special situation that is required after we put a value in `execution`.
+    /// This is a particularity of the WASM interpreter that we don't want to expose in our API.
     interrupted: bool,
 
-    /// Opaque user data associated to the thread.
+    /// Opaque user data associated with the thread.
     user_data: T,
 }
 
@@ -183,7 +194,7 @@ pub enum StartErr {
     Poisoned,
     /// Couldn't find the requested function.
     #[error(display = "Function to start was not found")]
-    SymbolNotFound,
+    FunctionNotFound,
     /// The requested function has been found in the list of exports, but it is not a function.
     #[error(display = "Symbol to start is not a function")]
     NotAFunction,
@@ -342,7 +353,7 @@ impl<T> ProcessStateMachine<T> {
             main_thread_user_data,
         ) {
             Ok(_) => {}
-            Err(StartErr::SymbolNotFound) => return Err(NewErr::MainNotFound),
+            Err(StartErr::FunctionNotFound) => return Err(NewErr::MainNotFound),
             Err(StartErr::Poisoned) => unreachable!(),
             Err(StartErr::NotAFunction) => return Err(NewErr::MainIsntAFunction),
         };
@@ -369,8 +380,12 @@ impl<T> ProcessStateMachine<T> {
             return Err(StartErr::Poisoned);
         }
 
-        // TODO: proper error handling
-        let function = self.indirect_table.as_ref().map(|t| t.get(function_id).unwrap()).unwrap().unwrap();
+        // Find the function within the process.
+        let function = self.indirect_table.as_ref()
+            .and_then(|t| t.get(function_id).ok())
+            .and_then(|f| f)
+            .ok_or(StartErr::FunctionNotFound)?;
+
         let execution = wasmi::FuncInstance::invoke_resumable(&function, params).unwrap();
         self.threads.push(ThreadState {
             execution: Some(execution),
@@ -406,7 +421,7 @@ impl<T> ProcessStateMachine<T> {
                     user_data,
                 });
             }
-            None => return Err(StartErr::SymbolNotFound),
+            None => return Err(StartErr::FunctionNotFound),
             _ => return Err(StartErr::NotAFunction),
         }
 
@@ -426,6 +441,8 @@ impl<T> ProcessStateMachine<T> {
     /// [`num_threads`](ProcessStateMachine::num_threads).
     /// 
     /// The main thread is always index `0`, unless it has terminated.
+    ///
+    /// Keep in mind that when a thread finishes, all the indices above its index shift by one.
     ///
     /// Returns `None` if the index is superior or equal to what [`num_threads`] would return.
     pub fn thread(&mut self, index: usize) -> Option<Thread<T>> {
@@ -586,6 +603,14 @@ impl<'a, T> Thread<'a, T> {
                 })
             }
         }
+    }
+
+    /// Returns the index of the thread, so that you can retreive the thread later by calling
+    /// [`ProcessStateMachine::thread`].
+    ///
+    /// Keep in mind that when a thread finishes, all the indices above its index shift by one.
+    pub fn index(&self) -> usize {
+        self.index
     }
 
     /// Returns the user data associated to that thread.
