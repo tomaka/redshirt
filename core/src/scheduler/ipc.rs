@@ -6,7 +6,7 @@ use crate::scheduler::{pid, pid::Pid, processes, vm};
 use crate::signature::Signature;
 use crate::sig;
 
-use alloc::borrow::Cow;
+use alloc::{borrow::Cow, collections::VecDeque};
 use byteorder::{ByteOrder as _, LittleEndian};
 use core::{convert::TryFrom, marker::PhantomData, ops::RangeBounds};
 use hashbrown::{hash_map::Entry, HashMap, HashSet};
@@ -123,9 +123,8 @@ enum CoreRunOutcomeInner {
 #[derive(Debug)]
 struct Process {
     /// Messages available for retrieval by the process by calling `next_message`.
-    // TODO: shrink_to_fit
-    // TODO: VecDeque?
-    messages_queue: Vec<syscalls::ffi::Message>,
+    // TODO: call shrink_to_fit from time to time
+    messages_queue: VecDeque<syscalls::ffi::Message>,
 
     /// If `Some`, the process is sleeping and waiting for a message to come.
     ///
@@ -241,6 +240,7 @@ impl<T> Core<T> {
                             params,
                         };
                     }
+
                     Extrinsic::RegisterInterface => {
                         // TODO: lots of unwraps here
                         assert_eq!(params.len(), 1);
@@ -256,11 +256,13 @@ impl<T> Core<T> {
                         process.resume(Some(wasmi::RuntimeValue::I32(0)));
                         return CoreRunOutcomeInner::LoopAgain;
                     }
+
                     Extrinsic::NextMessage => {
                         extrinsic_next_message(&mut process, params);
                         // TODO: only loop again if we resumed
                         return CoreRunOutcomeInner::LoopAgain;
                     }
+
                     Extrinsic::EmitMessage => {
                         // TODO: lots of unwraps here
                         assert_eq!(params.len(), 5);
@@ -300,8 +302,20 @@ impl<T> Core<T> {
                             }
                         }
                     }
+
                     Extrinsic::EmitAnswer => {
-                        unimplemented!()
+                        // TODO: lots of unwraps here
+                        assert_eq!(params.len(), 3);
+                        let msg_id = params[0].try_into::<i32>().unwrap() as u64;
+                        let message = {
+                            let addr = params[1].try_into::<i32>().unwrap() as usize;
+                            let sz = params[2].try_into::<i32>().unwrap() as usize;
+                            process.read_memory(addr..addr + sz).unwrap()
+                        };
+                        drop(process);
+                        self.answer_event(msg_id, &message);
+                        // TODO: only loop again if we resumed
+                        return CoreRunOutcomeInner::LoopAgain;
                     }
                 }
             }
@@ -339,7 +353,7 @@ impl<T> Core<T> {
         if let Some(emitter_pid) = self.messages_to_answer.remove(&event_id) {
             let mut process = self.processes.process_by_id(emitter_pid).unwrap();
             let queue_was_empty = process.user_data().messages_queue.is_empty();
-            process.user_data().messages_queue.push(actual_message);
+            process.user_data().messages_queue.push_back(actual_message);
             if queue_was_empty {
                 try_resume_message_wait(&mut process);
             }
@@ -355,7 +369,7 @@ impl<T> Core<T> {
     /// Each import of the [`Module`](crate::module::Module) is resolved.
     pub fn execute(&mut self, module: &Module) -> Result<CoreProcess<T>, vm::NewErr> {
         let metadata = Process {
-            messages_queue: Vec::new(),
+            messages_queue: VecDeque::new(),
             message_wait: None,
         };
 
