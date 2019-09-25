@@ -22,10 +22,16 @@ extern "C" {
     /// If the function returns value inferior or equal to `out_len` (and different from 0), then
     /// a message has been written in `out`.
     ///
-    /// Messages are always returned in the order they have been received. In particular, this
-    /// function does **not** search the queue of messages for a message that fits in `out_len`.
+    /// Messages, amongst the set that matches `to_poll`, are always returned in the order they
+    /// have been received. In particular, this function does **not** search the queue of messages
+    /// for a message that fits in `out_len`. It will however skip the messages in the queue that
+    /// do not match any entry in `to_poll`.
     ///
     /// Messages written in `out` can be decoded into a [`Message`].
+    ///
+    /// When this function is being called, a "lock" is being held on the memory pointed by
+    /// `to_poll` and `out`. In particular, it is invalid to modify these buffers while the
+    /// function is running.
     pub(crate) fn next_message(
         to_poll: *mut u64,
         to_poll_len: u32,
@@ -43,6 +49,10 @@ extern "C" {
     ///
     /// On success, if `needs_answer` is true, will write the ID of new event into the memory
     /// pointed by `event_id_out`.
+    ///
+    /// When this function is being called, a "lock" is being held on the memory pointed by
+    /// `interface_hash`, `msg` and `event_id_out`. In particular, it is invalid to modify these
+    /// buffers while the function is running.
     pub(crate) fn emit_message(
         interface_hash: *const u8,
         msg: *const u8,
@@ -54,6 +64,9 @@ extern "C" {
     /// Sends an answer back to the emitter of given `message_id`.
     ///
     /// Returns `0` on success, or `1` if there is no message with that id.
+    ///
+    /// When this function is being called, a "lock" is being held on the memory pointed by
+    /// `msg`. In particular, it is invalid to modify this buffer while the function is running.
     pub(crate) fn emit_answer(
         message_id: u64,
         msg: *const u8,
@@ -69,6 +82,10 @@ extern "C" {
     ///
     /// If this succeeds, when a process calls `emit_message` with that interface hash, the
     /// message will arrive to the current process and can be retrieved with [`next_message`].
+    ///
+    /// When this function is being called, a "lock" is being held on the memory pointed by
+    /// `interface_hash`. In particular, it is invalid to modify this buffer while the function
+    /// is running.
     pub(crate) fn register_interface(interface_hash: *const u8) -> u32;
 }
 

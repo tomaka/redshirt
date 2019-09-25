@@ -122,26 +122,30 @@ enum CoreRunOutcomeInner {
 /// Additional information about a process.
 #[derive(Debug)]
 struct Process {
-    /// Data available for retrieval by the process.
+    /// Messages available for retrieval by the process by calling `next_message`.
     // TODO: shrink_to_fit
     // TODO: VecDeque?
     messages_queue: Vec<syscalls::ffi::Message>,
 
     /// If `Some`, the process is sleeping and waiting for a message to come.
+    ///
+    /// Note that this can be `Some` even if the `messages_queue` is not empty, in the case where
+    /// the process is wait only on messages that aren't in the queue.
     message_wait: Option<MessageWait>,
-
-    /// List of messages that have been received and that need an answer. Contains the PID of the
-    /// emitter of the message.
-    // TODO: messages uniquely belong to a process, therefore the map should be global
-    messages_to_answer: Vec<(u64, Pid)>,
 }
 
+/// How a process is waiting for messages.
 #[derive(Debug, Clone)]     // TODO: remove Clone
 struct MessageWait {
-    /// Identifiers of the messages we are waiting upon.
+    /// Identifiers of the messages we are waiting upon. Duplicate of what is in the process's
+    /// memory.
     msg_ids: Vec<u64>,
+    /// Offset within the memory of the process where the list of messages to wait upon is
+    /// located. This is necessary as we have to zero.
+    msg_ids_ptr: u32,
     /// Offset within the memory of the process where to write the received message.
     out_pointer: u32,
+    /// Size of the memory of the process dedicated to receiving the message.
     out_size: u32,
 }
 
@@ -169,7 +173,7 @@ impl<T> Core<T> {
             .with_extrinsic_inner(root_interface_id.clone(), "next_message", sig!(()), Extrinsic::NextMessage)
             .with_extrinsic_inner(root_interface_id.clone(), "emit_message", sig!(()), Extrinsic::EmitMessage)
             .with_extrinsic_inner(root_interface_id.clone(), "emit_answer", sig!(()), Extrinsic::EmitAnswer)
-            .with_extrinsic_inner(root_interface_id.clone(), "register_interface", sig!(()), Extrinsic::RegisterInterface)
+            .with_extrinsic_inner(root_interface_id.clone(), "register_interface", sig!((Pointer) -> I32), Extrinsic::RegisterInterface)
     }
 
     /// Run the core once.
@@ -253,28 +257,7 @@ impl<T> Core<T> {
                         return CoreRunOutcomeInner::LoopAgain;
                     }
                     Extrinsic::NextMessage => {
-                        // TODO: lots of unwraps here
-                        assert_eq!(params.len(), 5);
-                        let msg_ids = {
-                            let addr = params[0].try_into::<i32>().unwrap() as usize;
-                            let len = params[1].try_into::<i32>().unwrap() as usize;
-                            let mem = process.read_memory(addr..addr + len * 8).unwrap();
-                            let mut out = vec![0u64; len];
-                            byteorder::LittleEndian::read_u64_into(&mem, &mut out);
-                            out
-                        };
-                        let out_pointer = params[2].try_into::<i32>().unwrap() as u32;
-                        let out_size = params[3].try_into::<i32>().unwrap() as u32;
-                        let block = params[4].try_into::<i32>().unwrap() != 0;
-                        assert!(block);     // not blocking not supported
-                        assert!(process.user_data().message_wait.is_none());
-                        println!("now waiting for {:?}; queue is {:?}", msg_ids, process.user_data());
-                        process.user_data().message_wait = Some(MessageWait {
-                            msg_ids,
-                            out_pointer,
-                            out_size,
-                        });
-                        try_resume_message_wait(&mut process);
+                        extrinsic_next_message(&mut process, params);
                         // TODO: only loop again if we resumed
                         return CoreRunOutcomeInner::LoopAgain;
                     }
@@ -373,7 +356,6 @@ impl<T> Core<T> {
     pub fn execute(&mut self, module: &Module) -> Result<CoreProcess<T>, vm::NewErr> {
         let metadata = Process {
             messages_queue: Vec::new(),
-            messages_to_answer: Vec::new(),
             message_wait: None,
         };
 
@@ -489,42 +471,92 @@ impl<T> CoreBuilder<T> {
     }
 }
 
-/// If the process passed as parameter is waiting for a message to arrive, checks the queue to see
-/// if we can resume said process.
+/// Called when a process calls the `next_message` extrinsic.
+///
+/// Tries to resume the process by fetching a message from the queue.
+fn extrinsic_next_message(process: &mut processes::ProcessesCollectionProc<Process>, params: Vec<wasmi::RuntimeValue>) {
+    // TODO: lots of unwraps here
+    assert_eq!(params.len(), 5);
+    let msg_ids_ptr = params[0].try_into::<i32>().unwrap() as u32;
+    let msg_ids = {
+        let addr = msg_ids_ptr as usize;
+        let len = params[1].try_into::<i32>().unwrap() as usize;
+        let mem = process.read_memory(addr..addr + len * 8).unwrap();
+        let mut out = vec![0u64; len];
+        byteorder::LittleEndian::read_u64_into(&mem, &mut out);
+        out
+    };
+
+    let out_pointer = params[2].try_into::<i32>().unwrap() as u32;
+    let out_size = params[3].try_into::<i32>().unwrap() as u32;
+    let block = params[4].try_into::<i32>().unwrap() != 0;
+
+    assert!(block);     // not blocking not supported
+    assert!(process.user_data().message_wait.is_none());
+    println!("now waiting for {:?}; queue is {:?}", msg_ids, process.user_data());
+    process.user_data().message_wait = Some(MessageWait {
+        msg_ids,
+        msg_ids_ptr,
+        out_pointer,
+        out_size,
+    });
+
+    try_resume_message_wait(process);
+}
+
+/// If the given process is waiting for a message to arrive, checks the queue and tries to resume
+/// said process.
 fn try_resume_message_wait(process: &mut processes::ProcessesCollectionProc<Process>) {
-    if process.user_data().message_wait.is_none() {
+    if process.user_data().messages_queue.is_empty() {
         return;
     }
 
-    let first_msg_id = if process.user_data().messages_queue.is_empty() {
-        return;
-    } else {
-        match &process.user_data().messages_queue[0] {
+    let msg_wait = match process.user_data().message_wait {
+        Some(ref wait) => wait.clone(), // TODO: don't clone?
+        None => return,
+    };
+
+    // Try to find a message in the queue that matches something the user is waiting for.
+    let mut index_in_queue = 0;
+    let index_in_msg_ids = loop {
+        if index_in_queue >= process.user_data().messages_queue.len() {
+            // No message found.
+            return;
+        }
+
+        // For that message in queue, grab the value that must be in `msg_ids` in order to match.
+        let msg_id = match &process.user_data().messages_queue[index_in_queue] {
             syscalls::ffi::Message::Interface(_) => 1,
             syscalls::ffi::Message::Response(response) => {
                 debug_assert!(response.message_id >= 2);
                 response.message_id
             },
+        };
+
+        if let Some(p) = msg_wait.msg_ids.iter().position(|id| *id == msg_id) {
+            break p as u32;
         }
+
+        index_in_queue += 1;
     };
 
-    let msg_wait = process.user_data().message_wait.clone().unwrap();       // TODO: don't clone
-    if !msg_wait.msg_ids.iter().any(|id| *id == first_msg_id) {
-        return;
-    }
+    // If we reach here, we have found a message that matches what the user wants.
 
-    let first_msg_bytes = process.user_data().messages_queue[0].encode();
-    if msg_wait.out_size as usize >= first_msg_bytes.len() {       // TODO: don't use as
-        process.write_memory(msg_wait.out_pointer, &first_msg_bytes).unwrap();
+    // Turn said message into bytes.
+    // TODO: would be great to not do that every single time
+    let msg_bytes = process.user_data().messages_queue[index_in_queue].encode();
+
+    if msg_wait.out_size as usize >= msg_bytes.len() {       // TODO: don't use as
+        /// Write the message in the process's memory.
+        process.write_memory(msg_wait.out_pointer, &msg_bytes).unwrap();
+        /// Zero the corresponding entry in the messages to wait upon.
+        process.write_memory(msg_wait.msg_ids_ptr + index_in_msg_ids * 8, &[0; 8]).unwrap();
+        /// Pop the message from the queue, so that we don't deliver it twice.
         process.user_data().messages_queue.remove(0);
-        // TODO: zero the message id that we successfully waited for
-    } else {
-        println!("buffer too small");
     }
 
-    println!("resumed process after message");
     process.user_data().message_wait = None;
-    process.resume(Some(wasmi::RuntimeValue::I32(first_msg_bytes.len() as i32)));      // TODO: don't use as
+    process.resume(Some(wasmi::RuntimeValue::I32(msg_bytes.len() as i32)));      // TODO: don't use as
 }
 
 #[cfg(test)]
