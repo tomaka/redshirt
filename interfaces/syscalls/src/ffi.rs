@@ -82,6 +82,7 @@ extern "C" {
     /// When this function is being called, a "lock" is being held on the memory pointed by
     /// `interface_hash`. In particular, it is invalid to modify this buffer while the function
     /// is running.
+    // TODO: turn into a message through an interface
     pub(crate) fn register_interface(interface_hash: *const u8) -> u32;
 }
 

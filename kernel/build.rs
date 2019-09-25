@@ -5,10 +5,13 @@ use std::process::Command;
 fn main() {
     let status = Command::new("cargo")
         //.arg("+nightly")
-        .arg("build")
+        .arg("rustc")
         .arg("--release")
         .args(&["--target", "wasm32-unknown-unknown"])
         .args(&["--package", "ipfs"])
+        .args(&["--bin", "ipfs"])
+        .arg("--")
+        .args(&["-C", "link-arg=--export-table"])
         .status()
         .unwrap();
     assert!(status.success());

@@ -52,6 +52,12 @@ pub struct ProcessStateMachine {
     /// any memory.
     memory: Option<wasmi::MemoryRef>,
 
+    /// Table of the indirect function calls.
+    ///
+    /// In WASM, function pointers are in reality indices in a table called
+    /// `__indirect_function_table`. This is this table, if it exists.
+    indirect_table: Option<wasmi::TableRef>,
+
     /// Each program can only run once at a time. It only has one "thread".
     /// If `Some`, we are currently executing something in `Program`. If `None`, we aren't.
     execution: Option<wasmi::FuncInvocation<'static>>,
@@ -171,9 +177,20 @@ impl ProcessStateMachine {
             None
         };
 
+        let indirect_table = if let Some(tbl) = module.export_by_name("__indirect_function_table") {
+            if let Some(tbl) = tbl.as_table() {
+                Some(tbl.clone())
+            } else {
+                return Err(NewErr::IndirectTableIsntTable);
+            }
+        } else {
+            None
+        };
+
         let mut state_machine = ProcessStateMachine {
             module,
             memory,
+            indirect_table,
             execution: None,
             interrupted: false,
             is_poisoned: false,
@@ -427,6 +444,9 @@ pub enum NewErr {
     /// If a "main" symbol is provided, it must be a function.
     #[error(display = "If a \"main\" symbol is provided, it must be a function")]
     MainIsntAFunction,
+    /// If a "__indirect_function_table" symbol is provided, it must be a table.
+    #[error(display = "If a \"__indirect_function_table\" symbol is provided, it must be a table")]
+    IndirectTableIsntTable
 }
 
 /// Error that can happen when starting the execution of a function.

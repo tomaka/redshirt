@@ -5,6 +5,10 @@ use futures::prelude::*;
 fn main() {
     //syscalls::register_interface(&[0; 32]).unwrap();
 
+    threads::spawn_thread(move || {
+        
+    });
+
     futures::executor::block_on(async move {
         let mut tcp_stream = tcp::TcpStream::connect(&"127.0.0.1:8000".parse().unwrap()).await;
 

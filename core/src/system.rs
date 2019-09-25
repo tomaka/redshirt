@@ -49,8 +49,12 @@ enum Extrinsic<TExtEx> {
 // TODO: we require Clone because of stupid borrowing issues; remove
 impl<TExtEx: Clone> System<TExtEx> {
     pub fn new() -> SystemBuilder<TExtEx> {
+        // We handle some low-level interfaces here.
+        let core = Core::new()
+            .with_interface_handler(threads::ffi::INTERFACE);
+
         SystemBuilder {
-            core: Core::new(),
+            core,
             main_programs: SmallVec::new(),
         }
     }
@@ -102,6 +106,15 @@ impl<TExtEx: Clone> System<TExtEx> {
                         extrinsic: external_token.clone(),
                         params: params.clone(),
                     };
+                }
+                CoreRunOutcome::InterfaceMessage {
+                    event_id,
+                    interface,
+                    message,
+                } if interface == threads::ffi::INTERFACE => {
+                    let msg: threads::ffi::ThreadsMessage = DecodeAll::decode_all(&message).unwrap();
+                    println!("threads message: {:?}", msg);
+                    // TODO:
                 }
                 CoreRunOutcome::InterfaceMessage {
                     event_id,

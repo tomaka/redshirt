@@ -1,0 +1,9 @@
+[package]
+name = "threads"
+version = "0.1.0"
+authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+parity-scale-codec = { version = "1.0.5", features = ["derive"] }
+syscalls = { path = "../syscalls" }

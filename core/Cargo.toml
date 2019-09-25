@@ -12,6 +12,7 @@ err-derive = "0.1.5"
 futures-preview = { version = "0.3.0-alpha.18", default-features = false }      # TODO: necessary?
 hashbrown = "0.6.0"
 parity-scale-codec = { version = "1.0.5", features = ["derive"] } # TODO: might be unused
+threads = { path = "../interfaces/threads", default-features = false }
 sha2 = "0.8.0"
 smallvec = { version = "0.6.10", default-features = false }
 syscalls = { path = "../interfaces/syscalls", default-features = false }

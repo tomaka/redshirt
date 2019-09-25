@@ -824,6 +824,7 @@ dependencies = [
  "libp2p 0.12.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "syscalls 0.1.0",
  "tcp 0.1.0",
+ "threads 0.1.0",
 ]
 
 [[package]]
@@ -877,6 +878,7 @@ dependencies = [
  "sha2 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "smallvec 0.6.10 (registry+https://github.com/rust-lang/crates.io-index)",
  "syscalls 0.1.0",
+ "threads 0.1.0",
  "wabt 0.9.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "wasmi 0.5.1 (git+https://github.com/paritytech/wasmi)",
 ]
@@ -2267,6 +2269,14 @@ name = "tcp"
 version = "0.1.0"
 dependencies = [
  "futures-preview 0.3.0-alpha.18 (registry+https://github.com/rust-lang/crates.io-index)",
+ "parity-scale-codec 1.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "syscalls 0.1.0",
+]
+
+[[package]]
+name = "threads"
+version = "0.1.0"
+dependencies = [
  "parity-scale-codec 1.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "syscalls 0.1.0",
 ]

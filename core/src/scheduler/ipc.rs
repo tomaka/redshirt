@@ -321,7 +321,7 @@ impl<T> Core<T> {
                             "proc emitting message {:?} needs_answer={:?}",
                             message, needs_answer
                         );
-                        match self.interfaces.get(&interface).unwrap() {
+                        match self.interfaces.get(&interface).expect("Interface handler not found") {
                             InterfaceHandler::Process(_) => unimplemented!(),
                             InterfaceHandler::External => {
                                 process.resume(Some(wasmi::RuntimeValue::I32(0)));

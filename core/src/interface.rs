@@ -150,6 +150,18 @@ impl FromStr for InterfaceHash {
     }
 }
 
+impl PartialEq<InterfaceHash> for [u8; 32] {
+    fn eq(&self, other: &InterfaceHash) -> bool {
+        self == &other.0
+    }
+}
+
+impl PartialEq<[u8; 32]> for InterfaceHash {
+    fn eq(&self, other: &[u8; 32]) -> bool {
+        self.0 == *other
+    }
+}
+
 impl fmt::Display for InterfaceHash {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Display::fmt(&bs58::encode(&self.0).into_string(), f)
