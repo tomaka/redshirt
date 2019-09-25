@@ -218,12 +218,19 @@ impl<TPud, TTud> ProcessesCollection<TPud, TTud> {
 
         match run_outcome {
             Err(vm::RunErr::BadValueTy { .. }) => panic!(), // TODO:
-            Ok(vm::ExecOutcome::Finished { return_value, .. }) => {
-                // TODO: is this when the main thread finishes? or when any thread finishes?
+            Err(vm::RunErr::Poisoned) => unreachable!(),
+            Ok(vm::ExecOutcome::ThreadFinished { thread_index: 0, return_value, .. }) => {
                 let (pid, Process { user_data, .. }) = process.remove_entry();
                 RunOneOutcome::ProcessFinished {
                     pid,
                     user_data,
+                    value: return_value,
+                }
+            },
+            Ok(vm::ExecOutcome::ThreadFinished { return_value, user_data, .. }) => {
+                RunOneOutcome::ThreadFinished {
+                    process: ProcessesCollectionProc { process },
+                    user_data: user_data.user_data,
                     value: return_value,
                 }
             },

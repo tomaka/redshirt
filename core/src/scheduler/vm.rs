@@ -99,13 +99,20 @@ pub struct Thread<'a, T> {
 /// Outcome of the [`run`](Thread::run) function.
 // TODO: restore: #[derive(Debug)]
 pub enum ExecOutcome<'a, T> {
-    /// A thread has finished. The thread no longer exists.
+    /// A thread has finished. The thread no longer exists in the list.
     ///
-    /// If this was the main thread, calling [`is_poisoned`](ProcessStateMachine::is_poisoned)
-    /// will return true.
-    // TODO: return all the user datas of all other threads if this is the main thread?
-    //       or have a different enum variant?
-    Finished {
+    /// If this was the main thread (i.e. `thread_index` is 0), then the state machine is now in
+    /// a poisoned state, and calling [`is_poisoned`](ProcessStateMachine::is_poisoned) will
+    /// return true.
+    ///
+    /// > **Note**: Keep in mind that how you want to react to this event is probably very
+    /// >           different depending on whether `thread_index` is 0. If this is the main thread,
+    /// >           then the entire process is now stopped.
+    ///
+    ThreadFinished {
+        /// Index of the thread that has finished.
+        thread_index: usize,
+
         /// Return value of the thread function.
         return_value: Option<wasmi::RuntimeValue>,
 
@@ -139,11 +146,12 @@ pub enum ExecOutcome<'a, T> {
     ///
     /// Calling [`is_poisoned`](ProcessStateMachine::is_poisoned) will return true.
     Errored {
+        /// Thread that error'd.
+        thread: Thread<'a, T>,
+
         /// Error that happened.
         // TODO: error type should change here
         error: wasmi::Trap,
-        /// User data that was associated to thread.
-        user_data: T,
     },
 }
 
@@ -184,6 +192,9 @@ pub enum StartErr {
 /// Error that can happen when resuming the execution of a function.
 #[derive(Debug, Error)]
 pub enum RunErr {
+    /// The state machine is poisoned.
+    #[error(display = "State machine is poisoned")]
+    Poisoned,
     /// Passed a wrong value back.
     #[error(
         display = "Expected value of type {:?} but got {:?} instead",
@@ -391,12 +402,15 @@ impl<T> ProcessStateMachine<T> {
         })
     }
 
-    /// Returns the number of threads that we have.
+    /// Returns the number of threads that are running.
     pub fn num_threads(&self) -> usize {
         self.threads.len()
     }
 
-    /// Returns the thread with the given index.
+    /// Returns the thread with the given index. The index is between `0` and
+    /// [`num_threads`](ProcessStateMachine::num_threads).
+    /// 
+    /// The main thread is always index `0`, unless it has terminated.
     ///
     /// Returns `None` if the index is superior or equal to what [`num_threads`] would return.
     pub fn thread(&mut self, index: usize) -> Option<Thread<T>> {
@@ -459,12 +473,11 @@ impl<T> ProcessStateMachine<T> {
 }
 
 impl<'a, T> Thread<'a, T> {
-    /// Resumes execution of the thread.
+    /// Starts or continues execution of this thread.
     ///
     /// If this is the first call you call [`run`](Thread::run) for this thread, then you must pass
     /// a value of `None`.
-    ///
-    /// If you call this function after a previous call to [`run`](Thread::run) that was
+    /// If, however, you call this function after a previous call to [`run`](Thread::run) that was
     /// interrupted by an external function call, then you must pass back the outcome of that call.
     pub fn run(mut self, value: Option<wasmi::RuntimeValue>) -> Result<ExecOutcome<'a, T>, RunErr> {
         struct DummyExternals;
@@ -494,7 +507,9 @@ impl<'a, T> Thread<'a, T> {
         }
         impl wasmi::HostError for Interrupt {}
 
-        assert!(!self.vm.is_poisoned);
+        if self.vm.is_poisoned {
+            return Err(RunErr::Poisoned);
+        }
 
         let thread_state = &mut self.vm.threads[self.index];
     
@@ -523,12 +538,13 @@ impl<'a, T> Thread<'a, T> {
 
         match result {
             Ok(return_value) => {
-                // If this is the "main" function, destroy all threads.
                 let user_data = self.vm.threads.remove(self.index).user_data;
+                // If this is the "main" function, the state machine is now poisoned.
                 if self.index == 0 {
-                    self.vm.threads.clear();
+                    self.vm.is_poisoned = true;
                 }
-                Ok(ExecOutcome::Finished {
+                Ok(ExecOutcome::ThreadFinished {
+                    thread_index: self.index,
                     return_value,
                     user_data,
                 })
@@ -548,10 +564,9 @@ impl<'a, T> Thread<'a, T> {
                 })
             }
             Err(wasmi::ResumableError::Trap(trap)) => {
-                let user_data = self.vm.threads.remove(self.index).user_data;
                 self.vm.is_poisoned = true;
                 Ok(ExecOutcome::Errored {
-                    user_data,
+                    thread: self,
                     error: trap,
                 })
             }

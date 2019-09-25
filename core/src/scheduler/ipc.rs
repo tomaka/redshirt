@@ -73,7 +73,7 @@ pub struct CoreBuilder<T> {
 // TODO: #[derive(Debug)]
 pub enum CoreRunOutcome<'a, T> {
     ProgramFinished {
-        process: CoreProcess<'a, T>,
+        process: Pid,
         return_value: Option<wasmi::RuntimeValue>, // TODO: force to i32?
     },
     ProgramCrashed {
@@ -210,7 +210,7 @@ impl<T> Core<T> {
                     process,
                     return_value,
                 } => CoreRunOutcome::ProgramFinished {
-                    process: self.process_by_id(process).unwrap(),
+                    process,
                     return_value,
                 },
                 CoreRunOutcomeInner::ProgramCrashed { pid, error } => {

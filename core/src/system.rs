@@ -79,7 +79,7 @@ impl<TExtEx: Clone> System<TExtEx> {
                     return_value,
                 } => {
                     return SystemRunOutcome::ProgramFinished {
-                        pid: process.pid(),
+                        pid: process,
                         return_value,
                     }
                 }
