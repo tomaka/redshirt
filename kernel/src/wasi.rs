@@ -3,7 +3,77 @@
 use byteorder::{ByteOrder as _, LittleEndian};
 use std::io::Write as _;
 
-pub fn fd_write(
+#[derive(Debug, Clone)]
+pub enum WasiExtrinsic {
+    ArgsGet,
+    ArgsSizesGet,
+    ClockTimeGet,
+    EnvironGet,
+    EnvironSizesGet,
+    FdPrestatGet,
+    FdPrestatDirName,
+    FdFdstatGet,
+    FdWrite,
+    ProcExit,
+}
+
+pub fn handle_wasi(
+    system: &mut kernel_core::system::System<impl Clone>,
+    extrinsic: WasiExtrinsic,
+    pid: kernel_core::scheduler::Pid,
+    thread_id: kernel_core::scheduler::ThreadId,
+    params: Vec<wasmi::RuntimeValue>,
+) {
+    const ENV_VARS: &[u8] = b"RUST_BACKTRACE=1\0";
+
+    match extrinsic {
+        WasiExtrinsic::ArgsGet => unimplemented!(),
+        WasiExtrinsic::ArgsSizesGet => {
+            assert_eq!(params.len(), 2);
+            let num_ptr = params[0].try_into::<i32>().unwrap() as u32;
+            let buf_size_ptr = params[1].try_into::<i32>().unwrap() as u32;
+            system.write_memory(pid, num_ptr, &[0, 0, 0, 0]).unwrap();
+            system.resolve_extrinsic_call(thread_id, Some(wasmi::RuntimeValue::I32(0)));
+        }
+        WasiExtrinsic::ClockTimeGet => unimplemented!(),
+        WasiExtrinsic::EnvironGet => {
+            assert_eq!(params.len(), 2);
+            let ptrs_ptr = params[0].try_into::<i32>().unwrap() as u32;
+            let buf_ptr = params[1].try_into::<i32>().unwrap() as u32;
+            let mut buf = [0; 4];
+            LittleEndian::write_u32(&mut buf, buf_ptr);
+            system.write_memory(pid, ptrs_ptr, &buf).unwrap();
+            system.write_memory(pid, buf_ptr, ENV_VARS).unwrap();
+            system.resolve_extrinsic_call(thread_id, Some(wasmi::RuntimeValue::I32(0)));
+        }
+        WasiExtrinsic::EnvironSizesGet => {
+            assert_eq!(params.len(), 2);
+            let num_ptr = params[0].try_into::<i32>().unwrap() as u32;
+            let buf_size_ptr = params[1].try_into::<i32>().unwrap() as u32;
+            let mut buf = [0; 4];
+            LittleEndian::write_u32(&mut buf, 1);
+            system.write_memory(pid, num_ptr, &buf).unwrap();
+            LittleEndian::write_u32(&mut buf, ENV_VARS.len() as u32);
+            system.write_memory(pid, buf_size_ptr, &buf).unwrap();
+            system.resolve_extrinsic_call(thread_id, Some(wasmi::RuntimeValue::I32(0)));
+        }
+        WasiExtrinsic::FdPrestatGet => {
+            assert_eq!(params.len(), 2);
+            let fd = params[0].try_into::<i32>().unwrap() as usize;
+            let ptr = params[1].try_into::<i32>().unwrap() as u32;
+            //system.write_memory(pid, ptr, &[0]).unwrap();
+            println!("prestat called with {:?}", fd);
+            // TODO: incorrect
+            system.resolve_extrinsic_call(thread_id, Some(wasmi::RuntimeValue::I32(8)));
+        }
+        WasiExtrinsic::FdPrestatDirName => unimplemented!(),
+        WasiExtrinsic::FdFdstatGet => unimplemented!(),
+        WasiExtrinsic::FdWrite => fd_write(system, pid, thread_id, params),
+        WasiExtrinsic::ProcExit => unimplemented!(),
+    }
+}
+
+fn fd_write(
     system: &mut kernel_core::system::System<impl Clone>,
     pid: kernel_core::scheduler::Pid,
     thread_id: kernel_core::scheduler::ThreadId,

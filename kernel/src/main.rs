@@ -22,61 +22,61 @@ fn main() {
             "wasi_unstable",
             "args_get",
             kernel_core::sig!((Pointer, Pointer)),
-            Extrinsic::ArgsGet,
+            wasi::WasiExtrinsic::ArgsGet,
         )
         .with_extrinsic(
             "wasi_unstable",
             "args_sizes_get",
             kernel_core::sig!(() -> I32),
-            Extrinsic::ArgsSizesGet,
+            wasi::WasiExtrinsic::ArgsSizesGet,
         )
         .with_extrinsic(
             "wasi_unstable",
             "clock_time_get",
             kernel_core::sig!((I32, I64) -> I64),
-            Extrinsic::ClockTimeGet,
+            wasi::WasiExtrinsic::ClockTimeGet,
         )
         .with_extrinsic(
             "wasi_unstable",
             "environ_get",
             kernel_core::sig!((Pointer, Pointer)),
-            Extrinsic::EnvironGet,
+            wasi::WasiExtrinsic::EnvironGet,
         )
         .with_extrinsic(
             "wasi_unstable",
             "environ_sizes_get",
             kernel_core::sig!(() -> I32),
-            Extrinsic::EnvironSizesGet,
+            wasi::WasiExtrinsic::EnvironSizesGet,
         )
         .with_extrinsic(
             "wasi_unstable",
             "fd_prestat_get",
             kernel_core::sig!((I32, Pointer)),
-            Extrinsic::FdPrestatGet,
+            wasi::WasiExtrinsic::FdPrestatGet,
         )
         .with_extrinsic(
             "wasi_unstable",
             "fd_prestat_dir_name",
             kernel_core::sig!((I32, Pointer, I32)),
-            Extrinsic::FdPrestatDirName,
+            wasi::WasiExtrinsic::FdPrestatDirName,
         )
         .with_extrinsic(
             "wasi_unstable",
             "fd_fdstat_get",
             kernel_core::sig!((I32, Pointer)),
-            Extrinsic::FdFdstatGet,
+            wasi::WasiExtrinsic::FdFdstatGet,
         )
         .with_extrinsic(
             "wasi_unstable",
             "fd_write",
             kernel_core::sig!((I32, Pointer, I32) -> I32),
-            Extrinsic::FdWrite,
+            wasi::WasiExtrinsic::FdWrite,
         )
         .with_extrinsic(
             "wasi_unstable",
             "proc_exit",
             kernel_core::sig!((I32)),
-            Extrinsic::ProcExit,
+            wasi::WasiExtrinsic::ProcExit,
         )
         .with_interface_handler([
             // TCP
@@ -89,22 +89,6 @@ fn main() {
 
     let mut tcp = tcp_interface::TcpState::new();
 
-    #[derive(Clone)]
-    enum Extrinsic {
-        ArgsGet,
-        ArgsSizesGet,
-        ClockTimeGet,
-        EnvironGet,
-        EnvironSizesGet,
-        FdPrestatGet,
-        FdPrestatDirName,
-        FdFdstatGet,
-        FdWrite,
-        ProcExit,
-    }
-
-    const ENV_VARS: &[u8] = b"RUST_BACKTRACE=1\0";
-
     loop {
         let result = futures::executor::block_on(async {
             loop {
@@ -112,103 +96,12 @@ fn main() {
                     kernel_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
                         pid,
                         thread_id,
-                        extrinsic: Extrinsic::ArgsGet,
-                        params,
-                    } => unimplemented!(),
-                    kernel_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
-                        pid,
-                        thread_id,
-                        extrinsic: Extrinsic::ArgsSizesGet,
+                        extrinsic,
                         params,
                     } => {
-                        assert_eq!(params.len(), 2);
-                        let num_ptr = params[0].try_into::<i32>().unwrap() as u32;
-                        let buf_size_ptr = params[1].try_into::<i32>().unwrap() as u32;
-                        system.write_memory(pid, num_ptr, &[0, 0, 0, 0]).unwrap();
-                        system.resolve_extrinsic_call(thread_id, Some(wasmi::RuntimeValue::I32(0)));
+                        wasi::handle_wasi(&mut system, extrinsic, pid, thread_id, params);
                         continue;
-                    }
-                    kernel_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
-                        pid,
-                        thread_id,
-                        extrinsic: Extrinsic::ClockTimeGet,
-                        params,
-                    } => unimplemented!(),
-                    kernel_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
-                        pid,
-                        thread_id,
-                        extrinsic: Extrinsic::EnvironGet,
-                        params,
-                    } => {
-                        assert_eq!(params.len(), 2);
-                        let ptrs_ptr = params[0].try_into::<i32>().unwrap() as u32;
-                        let buf_ptr = params[1].try_into::<i32>().unwrap() as u32;
-                        let mut buf = [0; 4];
-                        LittleEndian::write_u32(&mut buf, buf_ptr);
-                        system.write_memory(pid, ptrs_ptr, &buf).unwrap();
-                        system.write_memory(pid, buf_ptr, ENV_VARS).unwrap();
-                        system.resolve_extrinsic_call(thread_id, Some(wasmi::RuntimeValue::I32(0)));
-                        continue;
-                    }
-                    kernel_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
-                        pid,
-                        thread_id,
-                        extrinsic: Extrinsic::EnvironSizesGet,
-                        params,
-                    } => {
-                        assert_eq!(params.len(), 2);
-                        let num_ptr = params[0].try_into::<i32>().unwrap() as u32;
-                        let buf_size_ptr = params[1].try_into::<i32>().unwrap() as u32;
-                        let mut buf = [0; 4];
-                        LittleEndian::write_u32(&mut buf, 1);
-                        system.write_memory(pid, num_ptr, &buf).unwrap();
-                        LittleEndian::write_u32(&mut buf, ENV_VARS.len() as u32);
-                        system.write_memory(pid, buf_size_ptr, &buf).unwrap();
-                        system.resolve_extrinsic_call(thread_id, Some(wasmi::RuntimeValue::I32(0)));
-                        continue;
-                    }
-                    kernel_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
-                        pid,
-                        thread_id,
-                        extrinsic: Extrinsic::FdPrestatGet,
-                        params,
-                    } => {
-                        assert_eq!(params.len(), 2);
-                        let fd = params[0].try_into::<i32>().unwrap() as usize;
-                        let ptr = params[1].try_into::<i32>().unwrap() as u32;
-                        //system.write_memory(pid, ptr, &[0]).unwrap();
-                        println!("prestat called with {:?}", fd);
-                        // TODO: incorrect
-                        system.resolve_extrinsic_call(thread_id, Some(wasmi::RuntimeValue::I32(8)));
-                        continue;
-                    }
-                    kernel_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
-                        pid,
-                        thread_id,
-                        extrinsic: Extrinsic::FdPrestatDirName,
-                        params,
-                    } => unimplemented!(),
-                    kernel_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
-                        pid,
-                        thread_id,
-                        extrinsic: Extrinsic::FdFdstatGet,
-                        params,
-                    } => unimplemented!(),
-                    kernel_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
-                        pid,
-                        thread_id,
-                        extrinsic: Extrinsic::FdWrite,
-                        params,
-                    } => {
-                        wasi::fd_write(&mut system, pid, thread_id, params);
-                        continue;
-                    }
-                    kernel_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
-                        pid,
-                        thread_id,
-                        extrinsic: Extrinsic::ProcExit,
-                        params,
-                    } => unimplemented!(),
+                    },
                     kernel_core::system::SystemRunOutcome::InterfaceMessage {
                         event_id,
                         interface,
