@@ -21,7 +21,7 @@ pub struct TcpStream {
 }
 
 impl TcpStream {
-    pub async fn connect(socket_addr: &SocketAddr) -> TcpStream {
+    pub fn connect(socket_addr: &SocketAddr) -> impl Future<Output = TcpStream> {
         let tcp_open = ffi::TcpMessage::Open(match socket_addr {
             SocketAddr::V4(addr) => ffi::TcpOpen {
                 ip: addr.ip().to_ipv6_mapped().segments(),
@@ -36,6 +36,7 @@ impl TcpStream {
         let msg_id = syscalls::emit_message(&ffi::INTERFACE, &tcp_open, true)
             .unwrap()
             .unwrap();
+        // TODO: blocking; wait instead
         let msg = syscalls::next_message(&mut [msg_id], true).unwrap();
         let handle = match msg {
             // TODO: code style: improve syscall's API
@@ -50,10 +51,12 @@ impl TcpStream {
             _ => unreachable!(),
         };
 
-        TcpStream {
-            handle,
-            has_pending_read: None,
-            has_pending_write: None,
+        async move {
+            TcpStream {
+                handle,
+                has_pending_read: None,
+                has_pending_write: None,
+            }
         }
     }
 }

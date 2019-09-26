@@ -10,7 +10,7 @@ use std::mem;
 
 pub mod ffi;
 
-#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+#[cfg(target_arch = "wasm32")]
 pub fn spawn_thread(function: impl FnOnce()) {
     let function_box: Box<Box<dyn FnOnce()>> = Box::new(Box::new(function));
 

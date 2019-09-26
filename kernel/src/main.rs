@@ -10,7 +10,7 @@ mod tcp_interface;
 
 fn main() {
     let module = kernel_core::module::Module::from_bytes(
-        &include_bytes!("../../target/wasm32-unknown-unknown/release/ipfs.wasm")[..],
+        &include_bytes!("../../target/wasm32-wasi/release/ipfs.wasm")[..],
     );
 
     // TODO: signatures don't seem to be enforced
@@ -105,47 +105,47 @@ fn main() {
         let result = futures::executor::block_on(async {
             loop {
                 match system.run() {
-                    kernel_core::system::SystemRunOutcome::ProgramWaitExtrinsic {
+                    kernel_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
                         pid,
                         extrinsic: Extrinsic::ArgsGet,
                         params,
                     } => unimplemented!(),
-                    kernel_core::system::SystemRunOutcome::ProgramWaitExtrinsic {
+                    kernel_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
                         pid,
                         extrinsic: Extrinsic::ArgsSizesGet,
                         params,
                     } => unimplemented!(),
-                    kernel_core::system::SystemRunOutcome::ProgramWaitExtrinsic {
+                    kernel_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
                         pid,
                         extrinsic: Extrinsic::ClockTimeGet,
                         params,
                     } => unimplemented!(),
-                    kernel_core::system::SystemRunOutcome::ProgramWaitExtrinsic {
+                    kernel_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
                         pid,
                         extrinsic: Extrinsic::EnvironGet,
                         params,
                     } => unimplemented!(),
-                    kernel_core::system::SystemRunOutcome::ProgramWaitExtrinsic {
+                    kernel_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
                         pid,
                         extrinsic: Extrinsic::EnvironSizesGet,
                         params,
                     } => unimplemented!(),
-                    kernel_core::system::SystemRunOutcome::ProgramWaitExtrinsic {
+                    kernel_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
                         pid,
                         extrinsic: Extrinsic::FdPrestatGet,
                         params,
                     } => unimplemented!(),
-                    kernel_core::system::SystemRunOutcome::ProgramWaitExtrinsic {
+                    kernel_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
                         pid,
                         extrinsic: Extrinsic::FdPrestatDirName,
                         params,
                     } => unimplemented!(),
-                    kernel_core::system::SystemRunOutcome::ProgramWaitExtrinsic {
+                    kernel_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
                         pid,
                         extrinsic: Extrinsic::FdFdstatGet,
                         params,
                     } => unimplemented!(),
-                    kernel_core::system::SystemRunOutcome::ProgramWaitExtrinsic {
+                    kernel_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
                         pid,
                         extrinsic: Extrinsic::FdWrite,
                         params,
@@ -172,7 +172,7 @@ fn main() {
                         );
                         continue;
                     }
-                    kernel_core::system::SystemRunOutcome::ProgramWaitExtrinsic {
+                    kernel_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
                         pid,
                         extrinsic: Extrinsic::ProcExit,
                         params,

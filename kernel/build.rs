@@ -7,7 +7,7 @@ fn main() {
         //.arg("+nightly")
         .arg("rustc")
         .arg("--release")
-        .args(&["--target", "wasm32-unknown-unknown"])
+        .args(&["--target", "wasm32-wasi"])
         .args(&["--package", "ipfs"])
         .args(&["--bin", "ipfs"])
         .arg("--")

@@ -28,7 +28,7 @@ pub enum SystemRunOutcome<TExtEx> {
         pid: Pid,
         error: wasmi::Error,
     },
-    ProgramWaitExtrinsic {
+    ThreadWaitExtrinsic {
         pid: Pid,
         extrinsic: TExtEx,
         params: Vec<wasmi::RuntimeValue>,
@@ -58,7 +58,7 @@ impl<TExtEx: Clone> System<TExtEx> {
         }
     }
 
-    /// After `ProgramWaitExtrinsic` has been returned, you have to call this method in order to
+    /// After `ThreadWaitExtrinsic` has been returned, you have to call this method in order to
     /// inject back the result of the extrinsic call.
     // TODO: don't expose wasmi::RuntimeValue
     pub fn resolve_extrinsic_call(&mut self, pid: Pid, return_value: Option<wasmi::RuntimeValue>) {
@@ -86,7 +86,7 @@ impl<TExtEx: Clone> System<TExtEx> {
                     return SystemRunOutcome::ProgramCrashed { pid, error }
                 }
                 // TODO: remove
-                /*CoreRunOutcome::ProgramWaitExtrinsic {
+                /*CoreRunOutcome::ThreadWaitExtrinsic {
                     mut process,
                     extrinsic: &Extrinsic::RegisterInterface,
                     params,
@@ -95,12 +95,12 @@ impl<TExtEx: Clone> System<TExtEx> {
                     // self.core.set_interface_provider();
                     process.resolve_extrinsic_call(Some(wasmi::RuntimeValue::I32(5)));
                 }*/
-                CoreRunOutcome::ProgramWaitExtrinsic {
+                CoreRunOutcome::ThreadWaitExtrinsic {
                     ref mut process,
                     extrinsic: &Extrinsic::External(ref external_token),
                     ref params,
                 } => {
-                    return SystemRunOutcome::ProgramWaitExtrinsic {
+                    return SystemRunOutcome::ThreadWaitExtrinsic {
                         pid: process.pid(),
                         extrinsic: external_token.clone(),
                         params: params.clone(),

@@ -11,7 +11,7 @@ pub const INTERFACE: [u8; 32] = [
 #[derive(Debug, Encode, Decode)]
 pub enum ThreadsMessage {
     New(ThreadNew),
-    FuxedWait(FutexWait),
+    FutexWait(FutexWait),
     FutexWake(FutexWake),
 }
 

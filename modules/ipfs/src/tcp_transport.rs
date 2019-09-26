@@ -1,11 +1,5 @@
-use futures::{
-    future::{self, Either, FutureResult},
-    prelude::*,
-    stream::{self, Chain, IterOk, Once}
-};
-use futures::compat::Compat;
-use get_if_addrs::{IfAddr, get_if_addrs};
-use ipnet::{IpNet, Ipv4Net, Ipv6Net};
+use futures::{prelude::*, compat::Compat};
+use futures01::Future;
 use libp2p_core::{
     Transport,
     multiaddr::{Protocol, Multiaddr},
@@ -20,8 +14,6 @@ use std::{
     time::{Duration, Instant},
     vec::IntoIter
 };
-use tokio_io::{AsyncRead, AsyncWrite};
-use tokio_timer::Delay;
 
 /// Represents the configuration for a TCP/IP transport capability for libp2p.
 #[derive(Debug, Clone, Default)]
@@ -37,11 +29,11 @@ impl TcpConfig {
 }
 
 impl Transport for TcpConfig {
-    type Output = TcpTransStream;
+    type Output = Compat<tcp::TcpStream>;
     type Error = io::Error;
-    type Listener = TcpListener;
-    type ListenerUpgrade = FutureResult<Self::Output, Self::Error>;
-    type Dial = TcpDialFut;
+    type Listener = Box<dyn futures01::Stream<Item = ListenerEvent<Self::ListenerUpgrade>, Error = Self::Error> + Send>;
+    type ListenerUpgrade = futures01::future::FutureResult<Self::Output, Self::Error>;
+    type Dial = Box<dyn futures01::Future<Item = Self::Output, Error = io::Error> + Send>;
 
     fn listen_on(self, addr: Multiaddr) -> Result<Self::Listener, TransportError<Self::Error>> {
         unimplemented!()
@@ -60,12 +52,7 @@ impl Transport for TcpConfig {
             };
 
         debug!("Dialing {}", addr);
-
-        let future = TcpDialFut {
-            inner: Box::pin(TcpStream::connect(&socket_addr)),
-        };
-
-        Ok(future)
+        Ok(Box::new(Future::map(Compat::new(Box::pin(tcp::TcpStream::connect(&socket_addr).map(Ok))), |f| Compat::new(f))))
     }
 }
 
@@ -83,78 +70,5 @@ fn multiaddr_to_socketaddr(addr: &Multiaddr) -> Result<SocketAddr, ()> {
         (Protocol::Ip4(ip), Protocol::Tcp(port)) => Ok(SocketAddr::new(ip.into(), port)),
         (Protocol::Ip6(ip), Protocol::Tcp(port)) => Ok(SocketAddr::new(ip.into(), port)),
         _ => Err(()),
-    }
-}
-
-/// Future that dials a TCP/IP address.
-#[derive(Debug)]
-#[must_use = "futures do nothing unless polled"]
-pub struct TcpDialFut {
-    inner: Pin<Box<dyn Future<Output = tcp::TcpStream>>>,
-}
-
-impl Future for TcpDialFut {
-    type Item = TcpTransStream;
-    type Error = io::Error;
-
-    fn poll(&mut self) -> Poll<TcpTransStream, io::Error> {
-        match self.inner.poll() {
-            Ok(Async::Ready(stream)) => {
-                Ok(Async::Ready(TcpTransStream { inner: stream }))
-            }
-            Ok(Async::NotReady) => Ok(Async::NotReady),
-            Err(err) => {
-                debug!("Error while dialing => {:?}", err);
-                Err(err)
-            }
-        }
-    }
-}
-
-/// Wraps around a `TcpStream` and adds logging for important events.
-#[derive(Debug)]
-pub struct TcpTransStream {
-    inner: TcpStream,
-}
-
-impl Read for TcpTransStream {
-    fn read(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
-        self.inner.read(buf)
-    }
-}
-
-impl AsyncRead for TcpTransStream {
-    unsafe fn prepare_uninitialized_buffer(&self, buf: &mut [u8]) -> bool {
-        self.inner.prepare_uninitialized_buffer(buf)
-    }
-
-    fn read_buf<B: bytes::BufMut>(&mut self, buf: &mut B) -> Poll<usize, io::Error> {
-        self.inner.read_buf(buf)
-    }
-}
-
-impl Write for TcpTransStream {
-    fn write(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
-        self.inner.write(buf)
-    }
-
-    fn flush(&mut self) -> Result<(), io::Error> {
-        self.inner.flush()
-    }
-}
-
-impl AsyncWrite for TcpTransStream {
-    fn shutdown(&mut self) -> Poll<(), io::Error> {
-        AsyncWrite::shutdown(&mut self.inner)
-    }
-}
-
-impl Drop for TcpTransStream {
-    fn drop(&mut self) {
-        if let Ok(addr) = self.inner.peer_addr() {
-            debug!("Dropped TCP connection to {:?}", addr);
-        } else {
-            debug!("Dropped TCP connection to undeterminate peer");
-        }
     }
 }

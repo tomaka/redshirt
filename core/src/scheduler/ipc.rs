@@ -80,7 +80,7 @@ pub enum CoreRunOutcome<'a, T> {
         pid: Pid,
         error: wasmi::Error,
     },
-    ProgramWaitExtrinsic {
+    ThreadWaitExtrinsic {
         process: CoreProcess<'a, T>,
         extrinsic: &'a T,
         params: Vec<wasmi::RuntimeValue>,
@@ -106,7 +106,7 @@ enum CoreRunOutcomeInner {
         pid: Pid,
         error: wasmi::Error,
     },
-    ProgramWaitExtrinsic {
+    ThreadWaitExtrinsic {
         process: Pid,
         extrinsic: usize,
         params: Vec<wasmi::RuntimeValue>,
@@ -131,17 +131,23 @@ struct Process {
 }
 
 /// Additional information about a thread.
-#[derive(Debug)]
-struct Thread {
-    /// If `Some`, the thread is sleeping and waiting for a message to come.
+#[derive(Debug, PartialEq, Eq)]
+enum Thread {
+    /// Thread is ready to run. Must be consistent with the actual state of the thread.
+    ReadyToRun,
+
+    /// The thread is sleeping and waiting for a message to come.
     ///
-    /// Note that this can be `Some` even if the `messages_queue` is not empty, in the case where
+    /// Note that this can be set even if the `messages_queue` is not empty, in the case where
     /// the thread is waiting only on messages that aren't in the queue.
-    message_wait: Option<MessageWait>,
+    MessageWait(MessageWait),
+
+    /// The thread is sleeping and waiting for an extrinsic.
+    ExtrinsicWait,
 }
 
 /// How a process is waiting for messages.
-#[derive(Debug, Clone)] // TODO: remove Clone
+#[derive(Debug, Clone, PartialEq, Eq)] // TODO: remove Clone
 struct MessageWait {
     /// Identifiers of the messages we are waiting upon. Duplicate of what is in the process's
     /// memory.
@@ -219,11 +225,11 @@ impl<T> Core<T> {
                 CoreRunOutcomeInner::ProgramCrashed { pid, error } => {
                     CoreRunOutcome::ProgramCrashed { pid, error }
                 }
-                CoreRunOutcomeInner::ProgramWaitExtrinsic {
+                CoreRunOutcomeInner::ThreadWaitExtrinsic {
                     process,
                     extrinsic,
                     params,
-                } => CoreRunOutcome::ProgramWaitExtrinsic {
+                } => CoreRunOutcome::ThreadWaitExtrinsic {
                     process: CoreProcess {
                         process: self.processes.process_by_id(process).unwrap(),
                         marker: PhantomData,
@@ -268,10 +274,13 @@ impl<T> Core<T> {
                 id,
                 params,
             } => {
+                debug_assert_eq!(*thread.user_data(), Thread::ReadyToRun);
+
                 // TODO: check params against signature with a debug_assert
                 match self.extrinsics.get(&id).unwrap() {
                     Extrinsic::External(token) => {
-                        return CoreRunOutcomeInner::ProgramWaitExtrinsic {
+                        *thread.user_data() = Thread::ExtrinsicWait;
+                        return CoreRunOutcomeInner::ThreadWaitExtrinsic {
                             process: thread.pid(),
                             extrinsic: id,
                             params,
@@ -426,14 +435,12 @@ impl<T> Core<T> {
             messages_queue: VecDeque::new(),
         };
 
-        let thread_metadata = Thread { message_wait: None };
-
         let extrinsics_id_assign = &mut self.extrinsics_id_assign;
 
         let process = self.processes.execute(
             module,
             proc_metadata,
-            thread_metadata,
+            Thread::ReadyToRun,
             move |interface, function, signature| {
                 if let Some((index, signature)) =
                     extrinsics_id_assign.get(&(interface.clone(), function.into()))
@@ -465,10 +472,10 @@ impl<'a, T> CoreProcess<'a, T> {
     // TODO: don't expose wasmi::RuntimeValue
     pub fn start_thread(&mut self, fn_index: u32, params: Vec<wasmi::RuntimeValue>) {
         self.process
-            .start_thread(fn_index, params, Thread { message_wait: None })
+            .start_thread(fn_index, params, Thread::ReadyToRun)
     }
 
-    /// After `ProgramWaitExtrinsic` has been returned, you have to call this method in order to
+    /// After `ThreadWaitExtrinsic` has been returned, you have to call this method in order to
     /// inject back the result of the extrinsic call.
     // TODO: don't expose wasmi::RuntimeValue
     pub fn resolve_extrinsic_call(&mut self, return_value: Option<wasmi::RuntimeValue>) {
@@ -585,13 +592,13 @@ fn extrinsic_next_message(
     let block = params[4].try_into::<i32>().unwrap() != 0;
 
     assert!(block); // not blocking not supported
-    assert!(process.user_data().message_wait.is_none());
+    assert!(*process.user_data() == Thread::ReadyToRun);
     println!(
         "now waiting for {:?}; queue is {:?}",
         msg_ids,
         process.user_data()
     );
-    process.user_data().message_wait = Some(MessageWait {
+    *process.user_data() = Thread::MessageWait(MessageWait {
         msg_ids,
         msg_ids_ptr,
         out_pointer,
@@ -608,9 +615,9 @@ fn try_resume_message_wait(thread: &mut processes::ProcessesCollectionThread<Pro
         return;
     }
 
-    let msg_wait = match thread.user_data().message_wait {
-        Some(ref wait) => wait.clone(), // TODO: don't clone?
-        None => return,
+    let msg_wait = match thread.user_data() {
+        Thread::MessageWait(ref wait) => wait.clone(), // TODO: don't clone?
+        _ => return,
     };
 
     // Try to find a message in the queue that matches something the user is waiting for.
@@ -657,7 +664,7 @@ fn try_resume_message_wait(thread: &mut processes::ProcessesCollectionThread<Pro
         thread.process_user_data().messages_queue.remove(0);
     }
 
-    thread.user_data().message_wait = None;
+    *thread.user_data() = Thread::ReadyToRun;
     thread.resume(Some(wasmi::RuntimeValue::I32(msg_bytes.len() as i32))); // TODO: don't use as
 }
 
@@ -735,7 +742,7 @@ mod tests {
         let expected_pid = core.execute(&module).unwrap().pid();
 
         match core.run() {
-            CoreRunOutcome::ProgramWaitExtrinsic {
+            CoreRunOutcome::ThreadWaitExtrinsic {
                 process,
                 extrinsic,
                 params,
