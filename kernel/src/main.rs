@@ -3,6 +3,7 @@
 #![feature(never_type)]
 #![deny(intra_doc_link_resolution_failure)]
 
+use byteorder::{ByteOrder as _, LittleEndian};
 use parity_scale_codec::{DecodeAll, Encode as _};
 use std::io::Write as _;
 
@@ -101,6 +102,8 @@ fn main() {
         ProcExit,
     }
 
+    const ENV_VARS: &[u8] = b"RUST_BACKTRACE=0\0";
+
     loop {
         let result = futures::executor::block_on(async {
             loop {
@@ -138,7 +141,20 @@ fn main() {
                         thread_id,
                         extrinsic: Extrinsic::EnvironGet,
                         params,
-                    } => unimplemented!(),
+                    } => {
+                        assert_eq!(params.len(), 2);
+                        let ptrs_ptr = params[0].try_into::<i32>().unwrap() as u32;
+                        let buf_ptr = params[1].try_into::<i32>().unwrap() as u32;
+                        let mut buf = [0; 4];
+                        LittleEndian::write_u32(&mut buf, buf_ptr);
+                        system.write_memory(pid, ptrs_ptr, &buf).unwrap();
+                        system.write_memory(pid, buf_ptr, ENV_VARS).unwrap();
+                        system.resolve_extrinsic_call(
+                            thread_id,
+                            Some(wasmi::RuntimeValue::I32(0)),
+                        );
+                        continue;
+                    },
                     kernel_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
                         pid,
                         thread_id,
@@ -148,7 +164,11 @@ fn main() {
                         assert_eq!(params.len(), 2);
                         let num_ptr = params[0].try_into::<i32>().unwrap() as u32;
                         let buf_size_ptr = params[1].try_into::<i32>().unwrap() as u32;
-                        system.write_memory(pid, num_ptr, &[0, 0, 0, 0]).unwrap();
+                        let mut buf = [0; 4];
+                        LittleEndian::write_u32(&mut buf, 1);
+                        system.write_memory(pid, num_ptr, &buf).unwrap();
+                        LittleEndian::write_u32(&mut buf, ENV_VARS.len() as u32);
+                        system.write_memory(pid, buf_size_ptr, &buf).unwrap();
                         system.resolve_extrinsic_call(
                             thread_id,
                             Some(wasmi::RuntimeValue::I32(0)),
@@ -193,6 +213,7 @@ fn main() {
                         assert_eq!(params.len(), 4);
                         //assert!(params[0] == wasmi::RuntimeValue::I32(0) || params[0] == wasmi::RuntimeValue::I32(1));      // either stdout or stderr
                         let addr = params[1].try_into::<i32>().unwrap() as usize;
+                        assert_eq!(params[2], wasmi::RuntimeValue::I32(1));
                         let mem = system.read_memory(pid, addr..addr + 4).unwrap();
                         let mem = ((mem[0] as u32)
                             | ((mem[1] as u32) << 8)
