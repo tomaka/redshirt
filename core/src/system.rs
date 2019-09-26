@@ -1,6 +1,5 @@
 // Copyright(c) 2019 Pierre Krieger
 
-use crate::interface::{InterfaceHash, InterfaceId};
 use crate::module::Module;
 use crate::scheduler::{Core, CoreBuilder, CoreProcess, CoreRunOutcome, Pid, ThreadId};
 use crate::signature::{Signature, ValueType};
@@ -36,7 +35,7 @@ pub enum SystemRunOutcome<TExtEx> {
     },
     InterfaceMessage {
         event_id: Option<u64>,
-        interface: InterfaceHash,
+        interface: [u8; 32],
         message: Vec<u8>,
     },
     Idle,
@@ -173,7 +172,7 @@ impl<TExtEx: Clone> System<TExtEx> {
 impl<TExtEx> SystemBuilder<TExtEx> {
     pub fn with_extrinsic(
         mut self,
-        interface: impl Into<InterfaceId>,
+        interface: impl Into<Cow<'static, str>>,
         f_name: impl Into<Cow<'static, str>>,
         signature: Signature,
         token: TExtEx,
@@ -184,7 +183,7 @@ impl<TExtEx> SystemBuilder<TExtEx> {
         self
     }
 
-    pub fn with_interface_handler(mut self, interface: impl Into<InterfaceHash>) -> Self {
+    pub fn with_interface_handler(mut self, interface: impl Into<[u8; 32]>) -> Self {
         self.core = self.core.with_interface_handler(interface);
         self
     }

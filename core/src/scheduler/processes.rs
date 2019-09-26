@@ -1,6 +1,5 @@
 // Copyright(c) 2019 Pierre Krieger
 
-use crate::interface::InterfaceId;
 use crate::module::Module;
 use crate::scheduler::{
     pid::{Pid, PidPool},
@@ -159,7 +158,7 @@ impl<TPud, TTud> ProcessesCollection<TPud, TTud> {
         module: &Module,
         proc_user_data: TPud,
         main_thread_user_data: TTud,
-        symbols: impl FnMut(&InterfaceId, &str, &wasmi::Signature) -> Result<usize, ()>,
+        symbols: impl FnMut(&str, &str, &wasmi::Signature) -> Result<usize, ()>,
     ) -> Result<ProcessesCollectionProc<TPud, TTud>, vm::NewErr> {
         let main_thread_id = {
             let id = self.next_thread_id;

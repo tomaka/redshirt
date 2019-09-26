@@ -1,6 +1,5 @@
 // Copyright(c) 2019 Pierre Krieger
 
-use crate::interface::{InterfaceHash, InterfaceId};
 use crate::module::Module;
 use alloc::borrow::Cow;
 use core::{cell::RefCell, convert::TryInto, fmt, ops::Bound, ops::RangeBounds};
@@ -231,10 +230,10 @@ impl<T> ProcessStateMachine<T> {
     pub fn new(
         module: &Module,
         main_thread_user_data: T,
-        mut symbols: impl FnMut(&InterfaceId, &str, &wasmi::Signature) -> Result<usize, ()>,
+        mut symbols: impl FnMut(&str, &str, &wasmi::Signature) -> Result<usize, ()>,
     ) -> Result<Self, NewErr> {
         struct ImportResolve<'a>(
-            RefCell<&'a mut dyn FnMut(&InterfaceId, &str, &wasmi::Signature) -> Result<usize, ()>>,
+            RefCell<&'a mut dyn FnMut(&str, &str, &wasmi::Signature) -> Result<usize, ()>>,
         );
         impl<'a> wasmi::ImportResolver for ImportResolve<'a> {
             fn resolve_func(
@@ -243,26 +242,13 @@ impl<T> ProcessStateMachine<T> {
                 field_name: &str,
                 signature: &wasmi::Signature,
             ) -> Result<wasmi::FuncRef, wasmi::Error> {
-                // Parse `module_name` as if it is a base58 representation of an interface hash.
-                let interface_hash = {
-                    let mut buf_out = [0; 32];
-                    let mut buf_interm = [0; 32];
-                    match bs58::decode(module_name).into(&mut buf_interm[..]) {
-                        Ok(n) => {
-                            buf_out[(32 - n)..].copy_from_slice(&buf_interm[..n]);
-                            InterfaceId::Hash(InterfaceHash::from(buf_out))
-                        }
-                        Err(_) => InterfaceId::Bytes(module_name.to_owned()),
-                    }
-                };
-
                 let closure = &mut **self.0.borrow_mut();
-                let index = match closure(&interface_hash, field_name, signature) {
+                let index = match closure(module_name, field_name, signature) {
                     Ok(i) => i,
                     Err(_) => {
                         return Err(wasmi::Error::Instantiation(format!(
-                            "Couldn't resolve `{:?}`:`{}`",
-                            interface_hash, field_name
+                            "Couldn't resolve `{}`:`{}`",
+                            module_name, field_name
                         )))
                     }
                 };

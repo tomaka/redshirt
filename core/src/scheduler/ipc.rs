@@ -1,6 +1,5 @@
 // Copyright(c) 2019 Pierre Krieger
 
-use crate::interface::{Interface, InterfaceHash, InterfaceId};
 use crate::module::Module;
 use crate::scheduler::{pid, pid::Pid, processes, vm, ThreadId};
 use crate::sig;
@@ -17,8 +16,8 @@ pub struct Core<T> {
     /// List of running processes.
     processes: processes::ProcessesCollection<Process, Thread>,
 
-    /// For each interface, its definition and which program is fulfilling it.
-    interfaces: HashMap<InterfaceHash, InterfaceHandler>,
+    /// For each interface, which program is fulfilling it.
+    interfaces: HashMap<[u8; 32], InterfaceHandler>,
 
     /// List of functions that processes can call.
     /// The key of this map is an arbitrary `usize` that we pass to the WASM interpreter.
@@ -29,7 +28,7 @@ pub struct Core<T> {
     /// For each module and function name, stores the signature and an arbitrary usize that
     /// corresponds to the entry in `extrinsics`.
     /// This field is never modified after the `Core` is created.
-    extrinsics_id_assign: HashMap<(InterfaceId, Cow<'static, str>), (usize, Signature)>,
+    extrinsics_id_assign: HashMap<(Cow<'static, str>, Cow<'static, str>), (usize, Signature)>,
 
     /// Identifier of the next event to generate.
     next_message_id: u64,
@@ -62,11 +61,11 @@ enum Extrinsic<T> {
 /// Prototype for a `Core` under construction.
 pub struct CoreBuilder<T> {
     /// See the corresponding field in `Core`.
-    interfaces: HashMap<InterfaceHash, InterfaceHandler>,
+    interfaces: HashMap<[u8; 32], InterfaceHandler>,
     /// See the corresponding field in `Core`.
     extrinsics: HashMap<usize, Extrinsic<T>>,
     /// See the corresponding field in `Core`.
-    extrinsics_id_assign: HashMap<(InterfaceId, Cow<'static, str>), (usize, Signature)>,
+    extrinsics_id_assign: HashMap<(Cow<'static, str>, Cow<'static, str>), (usize, Signature)>,
 }
 
 /// Outcome of calling [`run`](Core::run).
@@ -88,7 +87,7 @@ pub enum CoreRunOutcome<'a, T> {
     InterfaceMessage {
         pid: Pid,
         event_id: Option<u64>,
-        interface: InterfaceHash,
+        interface: [u8; 32],
         message: Vec<u8>,
     },
     /// Nothing to do. No process is ready to run.
@@ -115,7 +114,7 @@ enum CoreRunOutcomeInner {
         // TODO: `pid` is redundant with `event_id`; should just be a better API with an `Event` handle struct
         pid: Pid,
         event_id: Option<u64>,
-        interface: InterfaceHash,
+        interface: [u8; 32],
         message: Vec<u8>,
     },
     LoopAgain,
@@ -186,7 +185,7 @@ impl<T> Core<T> {
             extrinsics_id_assign: Default::default(),
         };
 
-        let root_interface_id: InterfaceId = From::from([0; 32]);
+        let root_interface_id = "";
 
         // TODO: signatures
         builder
@@ -321,7 +320,7 @@ impl<T> Core<T> {
                     Extrinsic::EmitMessage => {
                         // TODO: lots of unwraps here
                         assert_eq!(params.len(), 5);
-                        let interface: InterfaceHash = {
+                        let interface: [u8; 32] = {
                             let addr = params[0].try_into::<i32>().unwrap() as u32;
                             TryFrom::try_from(&thread.read_memory(addr, 32).unwrap()[..])
                                 .unwrap()
@@ -460,7 +459,7 @@ impl<T> Core<T> {
             Thread::ReadyToRun,
             move |interface, function, signature| {
                 if let Some((index, signature)) =
-                    extrinsics_id_assign.get(&(interface.clone(), function.into()))
+                    extrinsics_id_assign.get(&(interface.into(), function.into()))
                 {
                     // TODO: check signature validity
                     return Ok(*index);
@@ -536,7 +535,7 @@ impl<T> CoreBuilder<T> {
     // TODO: more docs
     pub fn with_extrinsic(
         mut self,
-        interface: impl Into<InterfaceId>,
+        interface: impl Into<Cow<'static, str>>,
         f_name: impl Into<Cow<'static, str>>,
         signature: Signature,
         token: impl Into<T>,
@@ -552,7 +551,7 @@ impl<T> CoreBuilder<T> {
     /// Inner implementation of `with_extrinsic`.
     fn with_extrinsic_inner(
         mut self,
-        interface: impl Into<InterfaceId>,
+        interface: impl Into<Cow<'static, str>>,
         f_name: impl Into<Cow<'static, str>>,
         signature: Signature,
         extrinsic: Extrinsic<T>,
@@ -573,7 +572,7 @@ impl<T> CoreBuilder<T> {
     ///
     /// Messages destined to this interface will be returned in the [`CoreRunOutcome`] instead of
     /// being handled internally.
-    pub fn with_interface_handler(mut self, interface: impl Into<InterfaceHash>) -> Self {
+    pub fn with_interface_handler(mut self, interface: impl Into<[u8; 32]>) -> Self {
         // TODO: check for duplicates
         self.interfaces
             .insert(interface.into(), InterfaceHandler::External);

@@ -12,7 +12,6 @@
 extern crate alloc; // TODO: is that needed?
 extern crate core; // TODO: is that needed?
 
-pub mod interface;
 pub mod module;
 pub mod scheduler;
 pub mod signature;
