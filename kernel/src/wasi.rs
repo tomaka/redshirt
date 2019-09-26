@@ -1,8 +1,11 @@
 // Copyright(c) 2019 Pierre Krieger
 
 use byteorder::{ByteOrder as _, LittleEndian};
+use kernel_core::system::{System, SystemBuilder};
+use kernel_core::scheduler::{Pid, ThreadId};
 use std::io::Write as _;
 
+/// Extrinsic related to WASI.
 #[derive(Debug, Clone)]
 pub struct WasiExtrinsic(WasiExtrinsicInner);
 
@@ -22,8 +25,10 @@ enum WasiExtrinsicInner {
 
 /// Adds to the `SystemBuilder` the extrinsics required by WASI.
 pub fn register_extrinsics<T: From<WasiExtrinsic>>(
-    system: kernel_core::system::SystemBuilder<T>,
-) -> kernel_core::system::SystemBuilder<T> {
+    system: SystemBuilder<T>,
+) -> SystemBuilder<T> {
+    // TODO: signatures don't seem to be enforced
+    // TODO: some of these have wrong signatures
     system
         .with_extrinsic(
             "wasi_unstable",
@@ -88,10 +93,10 @@ pub fn register_extrinsics<T: From<WasiExtrinsic>>(
 }
 
 pub fn handle_wasi(
-    system: &mut kernel_core::system::System<impl Clone>,
+    system: &mut System<impl Clone>,
     extrinsic: WasiExtrinsic,
-    pid: kernel_core::scheduler::Pid,
-    thread_id: kernel_core::scheduler::ThreadId,
+    pid: Pid,
+    thread_id: ThreadId,
     params: Vec<wasmi::RuntimeValue>,
 ) {
     const ENV_VARS: &[u8] = b"RUST_BACKTRACE=1\0";

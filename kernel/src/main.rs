@@ -15,8 +15,6 @@ fn main() {
         &include_bytes!("../../target/wasm32-wasi/release/ipfs.wasm")[..],
     );
 
-    // TODO: signatures don't seem to be enforced
-    // TODO: some of these have wrong signatures
     let mut system = wasi::register_extrinsics(kernel_core::system::System::new())
         .with_interface_handler([
             // TCP
