@@ -168,12 +168,12 @@ pub enum NewErr {
     /// Error in the interpreter.
     #[error(display = "Error in the interpreter")]
     Interpreter(#[error(cause)] wasmi::Error),
-    /// The "main" symbol doesn't exist.
-    #[error(display = "The \"main\" symbol doesn't exist")]
-    MainNotFound,
-    /// The "main" symbol must be a function.
-    #[error(display = "The \"main\" symbol must be a function")]
-    MainIsntAFunction,
+    /// The "start" symbol doesn't exist.
+    #[error(display = "The \"start\" symbol doesn't exist")]
+    StartNotFound,
+    /// The "start" symbol must be a function.
+    #[error(display = "The \"start\" symbol must be a function")]
+    StartIsntAFunction,
     /// If a "memory" symbol is provided, it must be a memory.
     #[error(display = "If a \"memory\" symbol is provided, it must be a memory")]
     MemoryIsntMemory,
@@ -182,7 +182,7 @@ pub enum NewErr {
     IndirectTableIsntTable,
 }
 
-/// Error that can happen when starting the execution of a function.
+/// Error that can happen when starting a new thread.
 #[derive(Debug, Error)]
 pub enum StartErr {
     /// The state machine is poisoned and cannot run anymore.
@@ -333,9 +333,9 @@ impl<T> ProcessStateMachine<T> {
         // Try to start executing `_start`.
         match state_machine.start_thread_by_name("_start", &[][..], main_thread_user_data) {
             Ok(_) => {}
-            Err(StartErr::FunctionNotFound) => return Err(NewErr::MainNotFound),
+            Err(StartErr::FunctionNotFound) => return Err(NewErr::StartNotFound),
             Err(StartErr::Poisoned) => unreachable!(),
-            Err(StartErr::NotAFunction) => return Err(NewErr::MainIsntAFunction),
+            Err(StartErr::NotAFunction) => return Err(NewErr::StartIsntAFunction),
         };
 
         Ok(state_machine)
@@ -456,33 +456,6 @@ impl<T> ProcessStateMachine<T> {
             .unwrap()
             .set(offset, value)
             .map_err(|_| ())
-    }
-
-    fn dma<R>(
-        &self,
-        range: impl RangeBounds<usize>,
-        f: impl FnOnce(&mut [u8]) -> R,
-    ) -> Result<R, ()> {
-        let mem = self.memory.as_ref().unwrap();
-        let mem_sz = mem.current_size().0 * 65536;
-
-        let start = match range.start_bound() {
-            Bound::Included(b) => *b,
-            Bound::Excluded(b) => b.checked_add(1).ok_or(())?,
-            Bound::Unbounded => 0,
-        };
-
-        let end = match range.end_bound() {
-            Bound::Included(b) => b.checked_add(1).ok_or(())?,
-            Bound::Excluded(b) => *b,
-            Bound::Unbounded => mem_sz,
-        };
-
-        if start > end || end > mem_sz {
-            return Err(());
-        }
-
-        Ok(mem.with_direct_access_mut(move |mem| f(&mut mem[start..end])))
     }
 }
 
@@ -663,7 +636,7 @@ mod tests {
         .unwrap();
 
         match ProcessStateMachine::new(&module, |_, _, _| unreachable!()) {
-            Err(NewErr::MainNotFound) => {}
+            Err(NewErr::StartNotFound) => {}
             _ => panic!(),
         }
     }
