@@ -440,7 +440,8 @@ impl<T> ProcessStateMachine<T> {
     ///
     /// Keep in mind that when a thread finishes, all the indices above its index shift by one.
     ///
-    /// Returns `None` if the index is superior or equal to what [`num_threads`] would return.
+    /// Returns `None` if the index is superior or equal to what
+    /// [`num_threads`](ProcessStateMachine::num_threads) would return.
     pub fn thread(&mut self, index: usize) -> Option<Thread<T>> {
         if index < self.threads.len() {
             Some(Thread { vm: self, index })

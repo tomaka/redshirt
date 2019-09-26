@@ -12,7 +12,8 @@ use hashbrown::{
     HashMap,
 };
 
-/// Collection of multiple [`ProcessStateMachine`]s grouped together in a smart way.
+/// Collection of multiple [`ProcessStateMachine`](vm::ProcessStateMachine)s grouped together in a
+/// smart way.
 ///
 /// This struct handles interleaving processes execution.
 ///
@@ -108,8 +109,8 @@ pub enum RunOneOutcome<'a, TPud, TTud> {
     /// The currently-executed function has been paused due to a call to an external function.
     ///
     /// This variant contains the identifier of the external function that is expected to be
-    /// called, and its parameters. When you call [`resume`](ProcessesCollectionProc::resume) again,
-    /// you must pass back the outcome of calling that function.
+    /// called, and its parameters. When you call [`resume`](ProcessesCollectionThread::resume)
+    /// again, you must pass back the outcome of calling that function.
     Interrupted {
         /// Thread that has been interrupted.
         thread: ProcessesCollectionThread<'a, TPud, TTud>,

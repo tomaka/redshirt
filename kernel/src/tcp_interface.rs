@@ -80,7 +80,6 @@ impl TcpState {
 
         let (ev, _, _) =
             future::select_all(self.sockets.values_mut().map(|tcp| tcp.next_event())).await;
-        println!("answering with {:?}", ev);
         ev
     }
 }
