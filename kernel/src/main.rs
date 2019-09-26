@@ -103,7 +103,7 @@ fn main() {
         ProcExit,
     }
 
-    const ENV_VARS: &[u8] = b"RUST_BACKTRACE=0\0";
+    const ENV_VARS: &[u8] = b"RUST_BACKTRACE=1\0";
 
     loop {
         let result = futures::executor::block_on(async {
@@ -187,6 +187,7 @@ fn main() {
                         let ptr = params[1].try_into::<i32>().unwrap() as u32;
                         //system.write_memory(pid, ptr, &[0]).unwrap();
                         println!("prestat called with {:?}", fd);
+                        // TODO: incorrect
                         system.resolve_extrinsic_call(
                             thread_id,
                             Some(wasmi::RuntimeValue::I32(8)),

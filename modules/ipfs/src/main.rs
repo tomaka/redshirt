@@ -3,6 +3,8 @@
 use futures::prelude::*;
 
 fn main() {
+    panic!();
+
     threads::spawn_thread(move || {
         syscalls::register_interface(&[0; 32]).unwrap();
     });
