@@ -345,11 +345,7 @@ impl<T> ProcessStateMachine<T> {
         };
 
         // Try to start executing `_start`.
-        match state_machine.start_thread_by_name(
-            "_start",
-            &[][..],
-            main_thread_user_data,
-        ) {
+        match state_machine.start_thread_by_name("_start", &[][..], main_thread_user_data) {
             Ok(_) => {}
             Err(StartErr::FunctionNotFound) => return Err(NewErr::MainNotFound),
             Err(StartErr::Poisoned) => unreachable!(),

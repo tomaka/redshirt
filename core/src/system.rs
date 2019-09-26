@@ -62,7 +62,11 @@ impl<TExtEx: Clone> System<TExtEx> {
     /// After `ThreadWaitExtrinsic` has been returned, you have to call this method in order to
     /// inject back the result of the extrinsic call.
     // TODO: don't expose wasmi::RuntimeValue
-    pub fn resolve_extrinsic_call(&mut self, thread: ThreadId, return_value: Option<wasmi::RuntimeValue>) {
+    pub fn resolve_extrinsic_call(
+        &mut self,
+        thread: ThreadId,
+        return_value: Option<wasmi::RuntimeValue>,
+    ) {
         // TODO: can the user badly misuse that API?
         self.core
             .thread_by_id(thread)
@@ -155,7 +159,10 @@ impl<TExtEx: Clone> System<TExtEx> {
     }
 
     pub fn write_memory(&mut self, pid: Pid, offset: u32, data: &[u8]) -> Result<(), ()> {
-        self.core.process_by_id(pid).ok_or(())?.write_memory(offset, data)
+        self.core
+            .process_by_id(pid)
+            .ok_or(())?
+            .write_memory(offset, data)
     }
 
     // TODO: better API

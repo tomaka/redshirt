@@ -125,12 +125,9 @@ fn main() {
                         let num_ptr = params[0].try_into::<i32>().unwrap() as u32;
                         let buf_size_ptr = params[1].try_into::<i32>().unwrap() as u32;
                         system.write_memory(pid, num_ptr, &[0, 0, 0, 0]).unwrap();
-                        system.resolve_extrinsic_call(
-                            thread_id,
-                            Some(wasmi::RuntimeValue::I32(0)),
-                        );
+                        system.resolve_extrinsic_call(thread_id, Some(wasmi::RuntimeValue::I32(0)));
                         continue;
-                    },
+                    }
                     kernel_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
                         pid,
                         thread_id,
@@ -150,12 +147,9 @@ fn main() {
                         LittleEndian::write_u32(&mut buf, buf_ptr);
                         system.write_memory(pid, ptrs_ptr, &buf).unwrap();
                         system.write_memory(pid, buf_ptr, ENV_VARS).unwrap();
-                        system.resolve_extrinsic_call(
-                            thread_id,
-                            Some(wasmi::RuntimeValue::I32(0)),
-                        );
+                        system.resolve_extrinsic_call(thread_id, Some(wasmi::RuntimeValue::I32(0)));
                         continue;
-                    },
+                    }
                     kernel_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
                         pid,
                         thread_id,
@@ -170,12 +164,9 @@ fn main() {
                         system.write_memory(pid, num_ptr, &buf).unwrap();
                         LittleEndian::write_u32(&mut buf, ENV_VARS.len() as u32);
                         system.write_memory(pid, buf_size_ptr, &buf).unwrap();
-                        system.resolve_extrinsic_call(
-                            thread_id,
-                            Some(wasmi::RuntimeValue::I32(0)),
-                        );
+                        system.resolve_extrinsic_call(thread_id, Some(wasmi::RuntimeValue::I32(0)));
                         continue;
-                    },
+                    }
                     kernel_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
                         pid,
                         thread_id,
@@ -188,12 +179,9 @@ fn main() {
                         //system.write_memory(pid, ptr, &[0]).unwrap();
                         println!("prestat called with {:?}", fd);
                         // TODO: incorrect
-                        system.resolve_extrinsic_call(
-                            thread_id,
-                            Some(wasmi::RuntimeValue::I32(8)),
-                        );
+                        system.resolve_extrinsic_call(thread_id, Some(wasmi::RuntimeValue::I32(8)));
                         continue;
-                    },
+                    }
                     kernel_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
                         pid,
                         thread_id,

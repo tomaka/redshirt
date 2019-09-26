@@ -244,7 +244,10 @@ impl<TPud, TTud> ProcessesCollection<TPud, TTud> {
                 user_data,
                 ..
             }) => RunOneOutcome::ThreadFinished {
-                process: ProcessesCollectionProc { process, next_thread_id: &mut self.next_thread_id },
+                process: ProcessesCollectionProc {
+                    process,
+                    next_thread_id: &mut self.next_thread_id,
+                },
                 user_data: user_data.user_data,
                 value: return_value,
             },
@@ -275,7 +278,10 @@ impl<TPud, TTud> ProcessesCollection<TPud, TTud> {
     /// Returns a process by its [`Pid`], if it exists.
     pub fn process_by_id(&mut self, pid: Pid) -> Option<ProcessesCollectionProc<TPud, TTud>> {
         match self.processes.entry(pid) {
-            Entry::Occupied(e) => Some(ProcessesCollectionProc { process: e, next_thread_id: &mut self.next_thread_id }),
+            Entry::Occupied(e) => Some(ProcessesCollectionProc {
+                process: e,
+                next_thread_id: &mut self.next_thread_id,
+            }),
             Entry::Vacant(_) => None,
         }
     }

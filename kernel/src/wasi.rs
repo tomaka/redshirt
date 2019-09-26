@@ -7,9 +7,9 @@ pub fn fd_write(
     system: &mut kernel_core::system::System<impl Clone>,
     pid: kernel_core::scheduler::Pid,
     thread_id: kernel_core::scheduler::ThreadId,
-    params: Vec<wasmi::RuntimeValue>
+    params: Vec<wasmi::RuntimeValue>,
 ) {
-    assert_eq!(params.len(), 4);        // TODO: what to do when it's not the case?
+    assert_eq!(params.len(), 4); // TODO: what to do when it's not the case?
 
     //assert!(params[0] == wasmi::RuntimeValue::I32(1) || params[0] == wasmi::RuntimeValue::I32(2));      // either stdout or stderr
 
@@ -44,8 +44,5 @@ pub fn fd_write(
         system.write_memory(pid, out_ptr, &buf).unwrap();
     }
 
-    system.resolve_extrinsic_call(
-        thread_id,
-        Some(wasmi::RuntimeValue::I32(0)),
-    );
+    system.resolve_extrinsic_call(thread_id, Some(wasmi::RuntimeValue::I32(0)));
 }

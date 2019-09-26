@@ -2,7 +2,7 @@
 
 use crate::interface::{Interface, InterfaceHash, InterfaceId};
 use crate::module::Module;
-use crate::scheduler::{pid, pid::Pid, processes, ThreadId, vm};
+use crate::scheduler::{pid, pid::Pid, processes, vm, ThreadId};
 use crate::sig;
 use crate::signature::Signature;
 
