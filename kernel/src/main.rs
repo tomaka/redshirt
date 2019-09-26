@@ -17,67 +17,7 @@ fn main() {
 
     // TODO: signatures don't seem to be enforced
     // TODO: some of these have wrong signatures
-    let mut system = kernel_core::system::System::new()
-        .with_extrinsic(
-            "wasi_unstable",
-            "args_get",
-            kernel_core::sig!((Pointer, Pointer)),
-            wasi::WasiExtrinsic::ArgsGet,
-        )
-        .with_extrinsic(
-            "wasi_unstable",
-            "args_sizes_get",
-            kernel_core::sig!(() -> I32),
-            wasi::WasiExtrinsic::ArgsSizesGet,
-        )
-        .with_extrinsic(
-            "wasi_unstable",
-            "clock_time_get",
-            kernel_core::sig!((I32, I64) -> I64),
-            wasi::WasiExtrinsic::ClockTimeGet,
-        )
-        .with_extrinsic(
-            "wasi_unstable",
-            "environ_get",
-            kernel_core::sig!((Pointer, Pointer)),
-            wasi::WasiExtrinsic::EnvironGet,
-        )
-        .with_extrinsic(
-            "wasi_unstable",
-            "environ_sizes_get",
-            kernel_core::sig!(() -> I32),
-            wasi::WasiExtrinsic::EnvironSizesGet,
-        )
-        .with_extrinsic(
-            "wasi_unstable",
-            "fd_prestat_get",
-            kernel_core::sig!((I32, Pointer)),
-            wasi::WasiExtrinsic::FdPrestatGet,
-        )
-        .with_extrinsic(
-            "wasi_unstable",
-            "fd_prestat_dir_name",
-            kernel_core::sig!((I32, Pointer, I32)),
-            wasi::WasiExtrinsic::FdPrestatDirName,
-        )
-        .with_extrinsic(
-            "wasi_unstable",
-            "fd_fdstat_get",
-            kernel_core::sig!((I32, Pointer)),
-            wasi::WasiExtrinsic::FdFdstatGet,
-        )
-        .with_extrinsic(
-            "wasi_unstable",
-            "fd_write",
-            kernel_core::sig!((I32, Pointer, I32) -> I32),
-            wasi::WasiExtrinsic::FdWrite,
-        )
-        .with_extrinsic(
-            "wasi_unstable",
-            "proc_exit",
-            kernel_core::sig!((I32)),
-            wasi::WasiExtrinsic::ProcExit,
-        )
+    let mut system = wasi::register_extrinsics(kernel_core::system::System::new())
         .with_interface_handler([
             // TCP
             0x10, 0x19, 0x16, 0x2a, 0x2b, 0x0c, 0x41, 0x36, 0x4a, 0x20, 0x01, 0x51, 0x47, 0x38,
@@ -101,7 +41,7 @@ fn main() {
                     } => {
                         wasi::handle_wasi(&mut system, extrinsic, pid, thread_id, params);
                         continue;
-                    },
+                    }
                     kernel_core::system::SystemRunOutcome::InterfaceMessage {
                         event_id,
                         interface,
