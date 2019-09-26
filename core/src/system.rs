@@ -153,9 +153,8 @@ impl<TExtEx: Clone> System<TExtEx> {
     /// Copies the given memory range of the given process into a `Vec<u8>`.
     ///
     /// Returns an error if the range is invalid.
-    // TODO: should really return &mut [u8] I think
-    pub fn read_memory(&mut self, pid: Pid, range: impl RangeBounds<usize>) -> Result<Vec<u8>, ()> {
-        self.core.process_by_id(pid).ok_or(())?.read_memory(range)
+    pub fn read_memory(&mut self, pid: Pid, offset: u32, size: u32) -> Result<Vec<u8>, ()> {
+        self.core.process_by_id(pid).ok_or(())?.read_memory(offset, size)
     }
 
     pub fn write_memory(&mut self, pid: Pid, offset: u32, data: &[u8]) -> Result<(), ()> {

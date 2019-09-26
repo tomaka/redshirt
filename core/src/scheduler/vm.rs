@@ -3,7 +3,7 @@
 use crate::interface::{InterfaceHash, InterfaceId};
 use crate::module::Module;
 use alloc::borrow::Cow;
-use core::{cell::RefCell, fmt, ops::Bound, ops::RangeBounds};
+use core::{cell::RefCell, convert::TryInto, fmt, ops::Bound, ops::RangeBounds};
 use err_derive::*;
 use smallvec::SmallVec;
 
@@ -453,10 +453,12 @@ impl<T> ProcessStateMachine<T> {
     /// Copies the given memory range into a `Vec<u8>`.
     ///
     /// Returns an error if the range is invalid or out of range.
-    // TODO: should really return &mut [u8] I think
-    pub fn read_memory(&self, range: impl RangeBounds<usize>) -> Result<Vec<u8>, ()> {
-        // TODO: there's a method to do that in wasmi
-        self.dma(range, |mem| mem.to_vec())
+    pub fn read_memory(&self, offset: u32, size: u32) -> Result<Vec<u8>, ()> {
+        self.memory
+            .as_ref()
+            .unwrap()
+            .get(offset, size.try_into().map_err(|_| ())?)
+            .map_err(|_| ())
     }
 
     /// Write the data at the given memory location.

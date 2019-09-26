@@ -5,6 +5,8 @@ use kernel_core::system::{System, SystemBuilder};
 use kernel_core::scheduler::{Pid, ThreadId};
 use std::io::Write as _;
 
+// TODO: lots of unwraps as `as` conversions in this module
+
 /// Extrinsic related to WASI.
 #[derive(Debug, Clone)]
 pub struct WasiExtrinsic(WasiExtrinsicInner);
@@ -162,10 +164,10 @@ fn fd_write(
     // Elements 0, 2, 4, 6, ... or that list are pointers, and elements 1, 3, 5, 7, ... are
     // lengths.
     let list_to_write = {
-        let addr = params[1].try_into::<i32>().unwrap() as usize;
-        let num = params[2].try_into::<i32>().unwrap() as usize;
-        let list_buf = system.read_memory(pid, addr..addr + 4 * num * 2).unwrap();
-        let mut list_out = vec![0u32; num * 2];
+        let addr = params[1].try_into::<i32>().unwrap() as u32;
+        let num = params[2].try_into::<i32>().unwrap() as u32;
+        let list_buf = system.read_memory(pid, addr, 4 * num * 2).unwrap();
+        let mut list_out = vec![0u32; (num * 2) as usize];
         LittleEndian::read_u32_into(&list_buf, &mut list_out);
         list_out
     };
@@ -173,10 +175,10 @@ fn fd_write(
     let mut total_written = 0;
 
     for ptr_and_len in list_to_write.windows(2) {
-        let ptr = ptr_and_len[0] as usize;
-        let len = ptr_and_len[1] as usize;
+        let ptr = ptr_and_len[0] as u32;
+        let len = ptr_and_len[1] as u32;
 
-        let to_write = system.read_memory(pid, ptr..ptr + len).unwrap();
+        let to_write = system.read_memory(pid, ptr, len).unwrap();
         std::io::stdout().write_all(&to_write).unwrap();
         total_written += to_write.len();
     }

@@ -300,8 +300,8 @@ impl<T> Core<T> {
                         // TODO: lots of unwraps here
                         assert_eq!(params.len(), 1);
                         let hash = {
-                            let addr = params[0].try_into::<i32>().unwrap() as usize;
-                            thread.read_memory(addr..addr + 32).unwrap()
+                            let addr = params[0].try_into::<i32>().unwrap() as u32;
+                            thread.read_memory(addr, 32).unwrap()
                         };
                         assert_eq!(hash.len(), 32);
                         match self.interfaces.entry(TryFrom::try_from(&hash[..]).unwrap()) {
@@ -322,14 +322,14 @@ impl<T> Core<T> {
                         // TODO: lots of unwraps here
                         assert_eq!(params.len(), 5);
                         let interface: InterfaceHash = {
-                            let addr = params[0].try_into::<i32>().unwrap() as usize;
-                            TryFrom::try_from(&thread.read_memory(addr..addr + 32).unwrap()[..])
+                            let addr = params[0].try_into::<i32>().unwrap() as u32;
+                            TryFrom::try_from(&thread.read_memory(addr, 32).unwrap()[..])
                                 .unwrap()
                         };
                         let message = {
-                            let addr = params[1].try_into::<i32>().unwrap() as usize;
-                            let sz = params[2].try_into::<i32>().unwrap() as usize;
-                            thread.read_memory(addr..addr + sz).unwrap()
+                            let addr = params[1].try_into::<i32>().unwrap() as u32;
+                            let sz = params[2].try_into::<i32>().unwrap() as u32;
+                            thread.read_memory(addr, sz).unwrap()
                         };
                         let needs_answer = params[3].try_into::<i32>().unwrap() != 0;
                         let event_id = if needs_answer {
@@ -372,9 +372,9 @@ impl<T> Core<T> {
                         assert_eq!(params.len(), 3);
                         let msg_id = params[0].try_into::<i32>().unwrap() as u64;
                         let message = {
-                            let addr = params[1].try_into::<i32>().unwrap() as usize;
-                            let sz = params[2].try_into::<i32>().unwrap() as usize;
-                            thread.read_memory(addr..addr + sz).unwrap()
+                            let addr = params[1].try_into::<i32>().unwrap() as u32;
+                            let sz = params[2].try_into::<i32>().unwrap() as u32;
+                            thread.read_memory(addr, sz).unwrap()
                         };
                         drop(thread);
                         self.answer_event(msg_id, &message);
@@ -495,9 +495,8 @@ impl<'a, T> CoreProcess<'a, T> {
     /// Copies the given memory range of the given process into a `Vec<u8>`.
     ///
     /// Returns an error if the range is invalid.
-    // TODO: should really return &mut [u8] I think
-    pub fn read_memory(&mut self, range: impl RangeBounds<usize>) -> Result<Vec<u8>, ()> {
-        self.process.read_memory(range)
+    pub fn read_memory(&mut self, offset: u32, size: u32) -> Result<Vec<u8>, ()> {
+        self.process.read_memory(offset, size)
     }
 
     pub fn write_memory(&mut self, offset: u32, data: &[u8]) -> Result<(), ()> {
@@ -610,10 +609,10 @@ fn extrinsic_next_message(
     assert_eq!(params.len(), 5);
     let msg_ids_ptr = params[0].try_into::<i32>().unwrap() as u32;
     let msg_ids = {
-        let addr = msg_ids_ptr as usize;
-        let len = params[1].try_into::<i32>().unwrap() as usize;
-        let mem = process.read_memory(addr..addr + len * 8).unwrap();
-        let mut out = vec![0u64; len];
+        let addr = msg_ids_ptr;
+        let len = params[1].try_into::<i32>().unwrap() as u32;
+        let mem = process.read_memory(addr, len * 8).unwrap();
+        let mut out = vec![0u64; len as usize];
         byteorder::LittleEndian::read_u64_into(&mem, &mut out);
         out
     };

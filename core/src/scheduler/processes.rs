@@ -380,9 +380,8 @@ impl<'a, TPud, TTud> ProcessesCollectionProc<'a, TPud, TTud> {
         }
     }
 
-    // TODO: adjust to final API
-    pub fn read_memory(&mut self, range: impl RangeBounds<usize>) -> Result<Vec<u8>, ()> {
-        self.process.get_mut().state_machine.read_memory(range)
+    pub fn read_memory(&mut self, offset: u32, size: u32) -> Result<Vec<u8>, ()> {
+        self.process.get_mut().state_machine.read_memory(offset, size)
     }
 
     /// Write the data at the given memory location.
@@ -455,9 +454,8 @@ impl<'a, TPud, TTud> ProcessesCollectionThread<'a, TPud, TTud> {
         user_data.value_back = Some(value);
     }
 
-    // TODO: adjust to final API
-    pub fn read_memory(&mut self, range: impl RangeBounds<usize>) -> Result<Vec<u8>, ()> {
-        self.process.get_mut().state_machine.read_memory(range)
+    pub fn read_memory(&mut self, offset: u32, size: u32) -> Result<Vec<u8>, ()> {
+        self.process.get_mut().state_machine.read_memory(offset, size)
     }
 
     /// Write the data at the given memory location.
