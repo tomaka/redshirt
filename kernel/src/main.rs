@@ -39,8 +39,7 @@ fn main() {
                         event_id,
                         interface,
                         message,
-                    } => {
-                        // TODO: we assume it's TCP
+                    } if interface == tcp::ffi::INTERFACE => {
                         let message: tcp::ffi::TcpMessage =
                             DecodeAll::decode_all(&message).unwrap();
                         tcp.handle_message(event_id, message);
