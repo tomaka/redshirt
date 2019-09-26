@@ -344,10 +344,10 @@ impl<T> ProcessStateMachine<T> {
             threads: SmallVec::new(),
         };
 
-        // Try to start executing `main`.
+        // Try to start executing `_start`.
         match state_machine.start_thread_by_name(
-            "main",
-            &[wasmi::RuntimeValue::I32(0), wasmi::RuntimeValue::I32(0)][..],
+            "_start",
+            &[][..],
             main_thread_user_data,
         ) {
             Ok(_) => {}

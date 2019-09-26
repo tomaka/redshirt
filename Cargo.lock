@@ -674,6 +674,7 @@ dependencies = [
  "rand 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "tcp 0.1.0",
  "walkdir 2.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
+ "wasi 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "wasmi 0.5.1 (git+https://github.com/paritytech/wasmi)",
 ]
 

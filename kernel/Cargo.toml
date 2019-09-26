@@ -14,6 +14,7 @@ kernel-core = { path = "../core" }
 parity-scale-codec = "1.0.5"
 rand = "0.7"
 tcp = { path = "../interfaces/tcp" }
+wasi = "0.7.0"
 
 # TODO: remove
 wasmi = { git = "https://github.com/paritytech/wasmi", default-features = false, features = ["core"] }

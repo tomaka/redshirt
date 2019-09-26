@@ -154,6 +154,10 @@ impl<TExtEx: Clone> System<TExtEx> {
         self.core.process_by_id(pid).ok_or(())?.read_memory(range)
     }
 
+    pub fn write_memory(&mut self, pid: Pid, offset: u32, data: &[u8]) -> Result<(), ()> {
+        self.core.process_by_id(pid).ok_or(())?.write_memory(offset, data)
+    }
+
     // TODO: better API
     pub fn answer_event(&mut self, event_id: u64, response: &[u8]) {
         self.core.answer_event(event_id, response)

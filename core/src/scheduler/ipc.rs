@@ -500,6 +500,10 @@ impl<'a, T> CoreProcess<'a, T> {
         self.process.read_memory(range)
     }
 
+    pub fn write_memory(&mut self, offset: u32, data: &[u8]) -> Result<(), ()> {
+        self.process.write_memory(offset, data)
+    }
+
     /// Kills the process immediately.
     pub fn abort(self) {
         self.process.abort();

@@ -116,7 +116,17 @@ fn main() {
                         thread_id,
                         extrinsic: Extrinsic::ArgsSizesGet,
                         params,
-                    } => unimplemented!(),
+                    } => {
+                        assert_eq!(params.len(), 2);
+                        let num_ptr = params[0].try_into::<i32>().unwrap() as u32;
+                        let buf_size_ptr = params[1].try_into::<i32>().unwrap() as u32;
+                        system.write_memory(pid, num_ptr, &[0, 0, 0, 0]).unwrap();
+                        system.resolve_extrinsic_call(
+                            thread_id,
+                            Some(wasmi::RuntimeValue::I32(0)),
+                        );
+                        continue;
+                    },
                     kernel_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
                         pid,
                         thread_id,
@@ -134,13 +144,34 @@ fn main() {
                         thread_id,
                         extrinsic: Extrinsic::EnvironSizesGet,
                         params,
-                    } => unimplemented!(),
+                    } => {
+                        assert_eq!(params.len(), 2);
+                        let num_ptr = params[0].try_into::<i32>().unwrap() as u32;
+                        let buf_size_ptr = params[1].try_into::<i32>().unwrap() as u32;
+                        system.write_memory(pid, num_ptr, &[0, 0, 0, 0]).unwrap();
+                        system.resolve_extrinsic_call(
+                            thread_id,
+                            Some(wasmi::RuntimeValue::I32(0)),
+                        );
+                        continue;
+                    },
                     kernel_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
                         pid,
                         thread_id,
                         extrinsic: Extrinsic::FdPrestatGet,
                         params,
-                    } => unimplemented!(),
+                    } => {
+                        assert_eq!(params.len(), 2);
+                        let fd = params[0].try_into::<i32>().unwrap() as usize;
+                        let ptr = params[1].try_into::<i32>().unwrap() as u32;
+                        //system.write_memory(pid, ptr, &[0]).unwrap();
+                        println!("prestat called with {:?}", fd);
+                        system.resolve_extrinsic_call(
+                            thread_id,
+                            Some(wasmi::RuntimeValue::I32(8)),
+                        );
+                        continue;
+                    },
                     kernel_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
                         pid,
                         thread_id,
@@ -174,7 +205,10 @@ fn main() {
                             | ((buf_size[3] as u32) << 24))
                             as usize;
                         let buf = system.read_memory(pid, mem..mem + buf_size).unwrap();
+                        std::io::stdout().write_all(b"Message from process: ").unwrap();
                         std::io::stdout().write_all(&buf).unwrap();
+                        std::io::stdout().write_all(b"\r").unwrap();
+                        std::io::stdout().flush().unwrap();
                         system.resolve_extrinsic_call(
                             thread_id,
                             Some(wasmi::RuntimeValue::I32(buf.len() as i32)),
