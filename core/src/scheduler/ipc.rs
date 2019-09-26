@@ -2,7 +2,7 @@
 
 use crate::interface::{Interface, InterfaceHash, InterfaceId};
 use crate::module::Module;
-use crate::scheduler::{pid, pid::Pid, processes, vm};
+use crate::scheduler::{pid, pid::Pid, processes, ThreadId, vm};
 use crate::sig;
 use crate::signature::Signature;
 
@@ -81,7 +81,7 @@ pub enum CoreRunOutcome<'a, T> {
         error: wasmi::Error,
     },
     ThreadWaitExtrinsic {
-        process: CoreProcess<'a, T>,
+        thread: CoreThread<'a, T>,
         extrinsic: &'a T,
         params: Vec<wasmi::RuntimeValue>,
     },
@@ -107,7 +107,7 @@ enum CoreRunOutcomeInner {
         error: wasmi::Error,
     },
     ThreadWaitExtrinsic {
-        process: Pid,
+        thread: ThreadId,
         extrinsic: usize,
         params: Vec<wasmi::RuntimeValue>,
     },
@@ -169,6 +169,14 @@ pub struct CoreProcess<'a, T> {
     marker: PhantomData<T>,
 }
 
+/// Access to a thread within the core.
+pub struct CoreThread<'a, T> {
+    /// Access to the thread within the inner collection.
+    thread: processes::ProcessesCollectionThread<'a, Process, Thread>,
+    /// Marker to keep `T` in place.
+    marker: PhantomData<T>,
+}
+
 impl<T> Core<T> {
     /// Initialies a new `Core`.
     pub fn new() -> CoreBuilder<T> {
@@ -226,12 +234,12 @@ impl<T> Core<T> {
                     CoreRunOutcome::ProgramCrashed { pid, error }
                 }
                 CoreRunOutcomeInner::ThreadWaitExtrinsic {
-                    process,
+                    thread,
                     extrinsic,
                     params,
                 } => CoreRunOutcome::ThreadWaitExtrinsic {
-                    process: CoreProcess {
-                        process: self.processes.process_by_id(process).unwrap(),
+                    thread: CoreThread {
+                        thread: self.processes.thread_by_id(thread).unwrap(),
                         marker: PhantomData,
                     },
                     extrinsic: match self.extrinsics.get(&extrinsic).unwrap() {
@@ -281,7 +289,7 @@ impl<T> Core<T> {
                     Extrinsic::External(token) => {
                         *thread.user_data() = Thread::ExtrinsicWait;
                         return CoreRunOutcomeInner::ThreadWaitExtrinsic {
-                            process: thread.pid(),
+                            thread: thread.id(),
                             extrinsic: id,
                             params,
                         };
@@ -399,6 +407,15 @@ impl<T> Core<T> {
         })
     }
 
+    /// Returns an object granting access to a thread, if it exists.
+    pub fn thread_by_id(&mut self, thread: ThreadId) -> Option<CoreThread<T>> {
+        let thread = self.processes.thread_by_id(thread)?;
+        Some(CoreThread {
+            thread,
+            marker: PhantomData,
+        })
+    }
+
     // TODO: better API
     pub fn answer_event(&mut self, event_id: u64, response: &[u8]) {
         let actual_message = syscalls::ffi::Message::Response(syscalls::ffi::ResponseMessage {
@@ -475,18 +492,6 @@ impl<'a, T> CoreProcess<'a, T> {
             .start_thread(fn_index, params, Thread::ReadyToRun)
     }
 
-    /// After `ThreadWaitExtrinsic` has been returned, you have to call this method in order to
-    /// inject back the result of the extrinsic call.
-    // TODO: don't expose wasmi::RuntimeValue
-    pub fn resolve_extrinsic_call(&mut self, return_value: Option<wasmi::RuntimeValue>) {
-        // TODO: check if the value type is correct
-        // TODO: check that we're not waiting for an event instead, in which case it's wrong to
-        //       call this function
-        //self.process.resume(return_value);
-        // TODO: re-implement after threads system addition
-        unimplemented!()
-    }
-
     /// Copies the given memory range of the given process into a `Vec<u8>`.
     ///
     /// Returns an error if the range is invalid.
@@ -498,6 +503,28 @@ impl<'a, T> CoreProcess<'a, T> {
     /// Kills the process immediately.
     pub fn abort(self) {
         self.process.abort();
+    }
+}
+
+impl<'a, T> CoreThread<'a, T> {
+    /// Returns the [`ThreadId`] of the thread.
+    pub fn id(&mut self) -> ThreadId {
+        self.thread.id()
+    }
+
+    /// Returns the [`Pid`] of the process associated to this thread.
+    pub fn pid(&self) -> Pid {
+        self.thread.pid()
+    }
+
+    /// After `ThreadWaitExtrinsic` has been returned, you have to call this method in order to
+    /// inject back the result of the extrinsic call.
+    // TODO: don't expose wasmi::RuntimeValue
+    pub fn resolve_extrinsic_call(&mut self, return_value: Option<wasmi::RuntimeValue>) {
+        assert_eq!(*self.thread.user_data(), Thread::ExtrinsicWait);
+        *self.thread.user_data() = Thread::ReadyToRun;
+        // TODO: check if the value type is correct
+        self.thread.resume(return_value);
     }
 }
 

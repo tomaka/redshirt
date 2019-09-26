@@ -61,6 +61,9 @@ struct Thread<TTud> {
 pub struct ProcessesCollectionProc<'a, TPud, TTud> {
     /// Pointer within the hashmap.
     process: OccupiedEntry<'a, Pid, Process<TPud, TTud>, DefaultHashBuilder>,
+
+    /// Reference to the same field in [`ProcessesCollection`].
+    next_thread_id: &'a mut ThreadId,
 }
 
 /// Access to a thread within the collection.
@@ -241,7 +244,7 @@ impl<TPud, TTud> ProcessesCollection<TPud, TTud> {
                 user_data,
                 ..
             }) => RunOneOutcome::ThreadFinished {
-                process: ProcessesCollectionProc { process },
+                process: ProcessesCollectionProc { process, next_thread_id: &mut self.next_thread_id },
                 user_data: user_data.user_data,
                 value: return_value,
             },
@@ -272,9 +275,34 @@ impl<TPud, TTud> ProcessesCollection<TPud, TTud> {
     /// Returns a process by its [`Pid`], if it exists.
     pub fn process_by_id(&mut self, pid: Pid) -> Option<ProcessesCollectionProc<TPud, TTud>> {
         match self.processes.entry(pid) {
-            Entry::Occupied(e) => Some(ProcessesCollectionProc { process: e }),
+            Entry::Occupied(e) => Some(ProcessesCollectionProc { process: e, next_thread_id: &mut self.next_thread_id }),
             Entry::Vacant(_) => None,
         }
+    }
+
+    /// Returns a thread by its [`ThreadId`], if it exists.
+    pub fn thread_by_id(&mut self, id: ThreadId) -> Option<ProcessesCollectionThread<TPud, TTud>> {
+        // TODO: ouch that's O(n)
+
+        let mut loop_out = None;
+        for (pid, process) in self.processes.iter_mut() {
+            for thread_index in 0..process.state_machine.num_threads() {
+                let mut thread = process.state_machine.thread(thread_index).unwrap();
+                if thread.user_data().thread_id == id {
+                    loop_out = Some((pid.clone(), thread_index));
+                    break;
+                }
+            }
+        }
+
+        let (pid, thread_index) = loop_out?;
+        Some(ProcessesCollectionThread {
+            process: match self.processes.entry(pid) {
+                Entry::Vacant(_) => unreachable!(),
+                Entry::Occupied(e) => e,
+            },
+            thread_index,
+        })
     }
 }
 
@@ -320,11 +348,11 @@ impl<'a, TPud, TTud> ProcessesCollectionProc<'a, TPud, TTud> {
         params: Vec<wasmi::RuntimeValue>,
         user_data: TTud,
     ) {
-        let thread_id = ThreadId(5555); /* FIXME: {
-                                            let id = self.next_thread_id;
-                                            self.next_thread_id.0 += 1;
-                                            id
-                                        };*/
+        let thread_id = {
+            let id = *self.next_thread_id;
+            self.next_thread_id.0 += 1;
+            id
+        };
 
         let thread_data = Thread {
             user_data,
@@ -374,6 +402,12 @@ impl<'a, TPud, TTud> ProcessesCollectionThread<'a, TPud, TTud> {
             .state_machine
             .thread(self.thread_index)
             .unwrap()
+    }
+
+    /// Returns the id of the thread. Allows later retrieval by calling
+    /// [`thread_by_id`](ProcessesCollection::thread_by_id).
+    pub fn id(&mut self) -> ThreadId {
+        self.inner().into_user_data().thread_id
     }
 
     /// Returns the [`Pid`] of the process. Allows later retrieval by calling

@@ -8,3 +8,4 @@ mod vm;
 // TODO: move definition?
 pub use self::ipc::{Core, CoreBuilder, CoreProcess, CoreRunOutcome};
 pub use self::pid::Pid;
+pub use self::processes::ThreadId;

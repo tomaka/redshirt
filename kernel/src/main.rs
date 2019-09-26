@@ -107,46 +107,55 @@ fn main() {
                 match system.run() {
                     kernel_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
                         pid,
+                        thread_id,
                         extrinsic: Extrinsic::ArgsGet,
                         params,
                     } => unimplemented!(),
                     kernel_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
                         pid,
+                        thread_id,
                         extrinsic: Extrinsic::ArgsSizesGet,
                         params,
                     } => unimplemented!(),
                     kernel_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
                         pid,
+                        thread_id,
                         extrinsic: Extrinsic::ClockTimeGet,
                         params,
                     } => unimplemented!(),
                     kernel_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
                         pid,
+                        thread_id,
                         extrinsic: Extrinsic::EnvironGet,
                         params,
                     } => unimplemented!(),
                     kernel_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
                         pid,
+                        thread_id,
                         extrinsic: Extrinsic::EnvironSizesGet,
                         params,
                     } => unimplemented!(),
                     kernel_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
                         pid,
+                        thread_id,
                         extrinsic: Extrinsic::FdPrestatGet,
                         params,
                     } => unimplemented!(),
                     kernel_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
                         pid,
+                        thread_id,
                         extrinsic: Extrinsic::FdPrestatDirName,
                         params,
                     } => unimplemented!(),
                     kernel_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
                         pid,
+                        thread_id,
                         extrinsic: Extrinsic::FdFdstatGet,
                         params,
                     } => unimplemented!(),
                     kernel_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
                         pid,
+                        thread_id,
                         extrinsic: Extrinsic::FdWrite,
                         params,
                     } => {
@@ -167,13 +176,14 @@ fn main() {
                         let buf = system.read_memory(pid, mem..mem + buf_size).unwrap();
                         std::io::stdout().write_all(&buf).unwrap();
                         system.resolve_extrinsic_call(
-                            pid,
+                            thread_id,
                             Some(wasmi::RuntimeValue::I32(buf.len() as i32)),
                         );
                         continue;
                     }
                     kernel_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
                         pid,
+                        thread_id,
                         extrinsic: Extrinsic::ProcExit,
                         params,
                     } => unimplemented!(),

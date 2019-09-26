@@ -2,7 +2,7 @@
 
 use crate::interface::{InterfaceHash, InterfaceId};
 use crate::module::Module;
-use crate::scheduler::{Core, CoreBuilder, CoreProcess, CoreRunOutcome, Pid};
+use crate::scheduler::{Core, CoreBuilder, CoreProcess, CoreRunOutcome, Pid, ThreadId};
 use crate::signature::{Signature, ValueType};
 use alloc::borrow::Cow;
 use core::{iter, ops::RangeBounds};
@@ -30,6 +30,7 @@ pub enum SystemRunOutcome<TExtEx> {
     },
     ThreadWaitExtrinsic {
         pid: Pid,
+        thread_id: ThreadId,
         extrinsic: TExtEx,
         params: Vec<wasmi::RuntimeValue>,
     },
@@ -61,10 +62,10 @@ impl<TExtEx: Clone> System<TExtEx> {
     /// After `ThreadWaitExtrinsic` has been returned, you have to call this method in order to
     /// inject back the result of the extrinsic call.
     // TODO: don't expose wasmi::RuntimeValue
-    pub fn resolve_extrinsic_call(&mut self, pid: Pid, return_value: Option<wasmi::RuntimeValue>) {
+    pub fn resolve_extrinsic_call(&mut self, thread: ThreadId, return_value: Option<wasmi::RuntimeValue>) {
         // TODO: can the user badly misuse that API?
         self.core
-            .process_by_id(pid)
+            .thread_by_id(thread)
             .unwrap()
             .resolve_extrinsic_call(return_value);
     }
@@ -96,12 +97,14 @@ impl<TExtEx: Clone> System<TExtEx> {
                     process.resolve_extrinsic_call(Some(wasmi::RuntimeValue::I32(5)));
                 }*/
                 CoreRunOutcome::ThreadWaitExtrinsic {
-                    ref mut process,
+                    ref mut thread,
                     extrinsic: &Extrinsic::External(ref external_token),
                     ref params,
                 } => {
+                    let pid = thread.pid();
                     return SystemRunOutcome::ThreadWaitExtrinsic {
-                        pid: process.pid(),
+                        pid,
+                        thread_id: thread.id(),
                         extrinsic: external_token.clone(),
                         params: params.clone(),
                     };
