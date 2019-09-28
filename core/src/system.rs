@@ -5,11 +5,13 @@ use crate::scheduler::{Core, CoreBuilder, CoreProcess, CoreRunOutcome, Pid, Thre
 use crate::signature::{Signature, ValueType};
 use alloc::borrow::Cow;
 use core::{iter, ops::RangeBounds};
+use hashbrown::HashMap;
 use parity_scale_codec::{Decode, DecodeAll, Encode};
 use smallvec::SmallVec;
 
 pub struct System<TExtEx> {
     core: Core<Extrinsic<TExtEx>>,
+    futex_waits: HashMap<(Pid, u32), u64>,
 }
 
 pub struct SystemBuilder<TExtEx> {
@@ -123,13 +125,19 @@ impl<TExtEx: Clone> System<TExtEx> {
                     println!("threads message: {:?}", msg);
                     match msg {
                         threads::ffi::ThreadsMessage::New(new_thread) => {
+                            assert!(event_id.is_none());
                             self.core.process_by_id(pid).unwrap().start_thread(
                                 new_thread.fn_ptr,
                                 vec![wasmi::RuntimeValue::I32(new_thread.user_data as i32)],
                             );
-                            // TODO:
                         }
-                        _ => unimplemented!(),
+                        threads::ffi::ThreadsMessage::FutexWake(wake) => {
+                            assert!(event_id.is_none());
+                            // TODO: implement
+                        }
+                        threads::ffi::ThreadsMessage::FutexWait(wait) => {
+                            unimplemented!()
+                        }
                     }
                 }
                 CoreRunOutcome::InterfaceMessage {
@@ -204,7 +212,10 @@ impl<TExtEx> SystemBuilder<TExtEx> {
                 .expect("failed to start main program"); // TODO:
         }
 
-        System { core }
+        System {
+            core,
+            futex_waits: Default::default(),
+        }
     }
 }
 

@@ -102,5 +102,7 @@ pub struct InterfaceMessage {
 #[derive(Debug, Encode, Decode)]
 pub struct ResponseMessage {
     pub message_id: u64,
+    /// Index within the list to poll where this message was.
+    pub index_in_list: u32,
     pub actual_data: Vec<u8>,
 }

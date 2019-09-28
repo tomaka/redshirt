@@ -6,7 +6,7 @@
 
 use parity_scale_codec::{DecodeAll, Encode};
 
-pub use ffi::Message;
+pub use ffi::{Message, InterfaceMessage, ResponseMessage};
 
 pub mod ffi;
 

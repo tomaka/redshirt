@@ -125,6 +125,9 @@ enum CoreRunOutcomeInner {
 #[derive(Debug)]
 struct Process {
     /// Messages available for retrieval by the process by calling `next_message`.
+    ///
+    /// Note that the [`index_in_list`](syscalls::ffi::ResponseMessage::index_in_list) field is
+    /// set to a dummy value, and must be filled before actually delivering the message.
     // TODO: call shrink_to_fit from time to time
     messages_queue: VecDeque<syscalls::ffi::Message>,
 }
@@ -419,6 +422,8 @@ impl<T> Core<T> {
     pub fn answer_event(&mut self, event_id: u64, response: &[u8]) {
         let actual_message = syscalls::ffi::Message::Response(syscalls::ffi::ResponseMessage {
             message_id: event_id,
+            // We a dummy value here and fill it up later when actually delivering the message.
+            index_in_list: 0,
             actual_data: response.to_vec(),
         });
 
@@ -674,6 +679,12 @@ fn try_resume_message_wait(thread: &mut processes::ProcessesCollectionThread<Pro
     };
 
     // If we reach here, we have found a message that matches what the user wants.
+
+    // Adjust the `index_in_list` field of the message to match what we have.
+    match thread.process_user_data().messages_queue[index_in_queue] {
+        syscalls::ffi::Message::Response(ref mut response) => response.index_in_list = index_in_msg_ids,
+        _ => {}
+    }
 
     // Turn said message into bytes.
     // TODO: would be great to not do that every single time

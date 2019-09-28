@@ -30,3 +30,8 @@ pub fn spawn_thread(function: impl FnOnce()) {
         syscalls::emit_message(&ffi::INTERFACE, &thread_new, false).unwrap();
     }
 }
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn spawn_thread(function: impl FnOnce()) {
+    panic!()
+}
