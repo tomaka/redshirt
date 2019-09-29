@@ -224,9 +224,8 @@ impl<T> ProcessStateMachine<T> {
     /// functions, this number will be returned back in order for the user to know how to handle
     /// the call.
     ///
-    /// If a start function exists in the module, we start executing it and the returned object is
-    /// in the paused state. If that is the case, one must call `resume` with a `None` pass-back
-    /// value in order to resume execution of `main`.
+    /// A single main thread (whose user data is passed by parameter) is automatically created and
+    /// is paused at the start of the "_start" function of the module.
     pub fn new(
         module: &Module,
         main_thread_user_data: T,
@@ -297,7 +296,7 @@ impl<T> ProcessStateMachine<T> {
         // TODO: WASM has a special "start" instruction that can be used to designate a function
         // that must be executed before the module is considered initialized. It is unclear whether
         // this is intended to be a function that for example initializes global variables, or if
-        // this is an equivalent of "main". In practice, Rust never seems to generate such as
+        // this is an equivalent of "_start". In practice, Rust never seems to generate such as
         // "start" instruction, so for now we ignore it. The code below panics if there is such
         // a "start" item, so we will fortunately not blindly run into troubles.
         let module = not_started.assert_no_start();
