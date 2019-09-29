@@ -54,7 +54,6 @@ enum Extrinsic<T> {
     NextMessage,
     EmitMessage,
     EmitAnswer,
-    RegisterInterface,
     External(T),
 }
 
@@ -207,12 +206,6 @@ impl<T> Core<T> {
                 sig!(()),
                 Extrinsic::EmitAnswer,
             )
-            .with_extrinsic_inner(
-                root_interface_id.clone(),
-                "register_interface",
-                sig!((Pointer) -> I32),
-                Extrinsic::RegisterInterface,
-            )
     }
 
     /// Run the core once.
@@ -292,23 +285,6 @@ impl<T> Core<T> {
                             extrinsic: id,
                             params,
                         };
-                    }
-
-                    Extrinsic::RegisterInterface => {
-                        println!("register interface!");
-                        // TODO: lots of unwraps here
-                        assert_eq!(params.len(), 1);
-                        let hash = {
-                            let addr = params[0].try_into::<i32>().unwrap() as u32;
-                            thread.read_memory(addr, 32).unwrap()
-                        };
-                        assert_eq!(hash.len(), 32);
-                        match self.interfaces.entry(TryFrom::try_from(&hash[..]).unwrap()) {
-                            Entry::Occupied(_) => panic!(),
-                            Entry::Vacant(e) => e.insert(InterfaceHandler::Process(thread.pid())),
-                        };
-                        thread.resume(Some(wasmi::RuntimeValue::I32(0)));
-                        return CoreRunOutcomeInner::LoopAgain;
                     }
 
                     Extrinsic::NextMessage => {

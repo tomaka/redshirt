@@ -68,22 +68,6 @@ extern "C" {
     /// When this function is being called, a "lock" is being held on the memory pointed by
     /// `msg`. In particular, it is invalid to modify this buffer while the function is running.
     pub(crate) fn emit_answer(message_id: u64, msg: *const u8, msg_len: u32) -> u32;
-
-    /// Registers the current process as the provider for the interface passed as parameter.
-    ///
-    /// Only one process can ever be registered for any given interface. If `register_interface`
-    /// is ever called twice (even amongst different processes), the second call will fail.
-    ///
-    /// Return `0` on success, or `1` on failure.
-    ///
-    /// If this succeeds, when a process calls `emit_message` with that interface hash, the
-    /// message will arrive to the current process and can be retrieved with [`next_message`].
-    ///
-    /// When this function is being called, a "lock" is being held on the memory pointed by
-    /// `interface_hash`. In particular, it is invalid to modify this buffer while the function
-    /// is running.
-    // TODO: turn into a message through an interface
-    pub(crate) fn register_interface(interface_hash: *const u8) -> u32;
 }
 
 #[derive(Debug, Encode, Decode)]

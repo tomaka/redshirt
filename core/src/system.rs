@@ -50,7 +50,9 @@ enum Extrinsic<TExtEx> {
 impl<TExtEx: Clone> System<TExtEx> {
     pub fn new() -> SystemBuilder<TExtEx> {
         // We handle some low-level interfaces here.
-        let core = Core::new().with_interface_handler(threads::ffi::INTERFACE);
+        let core = Core::new()
+            .with_interface_handler(interface::ffi::INTERFACE)
+            .with_interface_handler(threads::ffi::INTERFACE);
 
         SystemBuilder {
             core,
@@ -89,16 +91,6 @@ impl<TExtEx: Clone> System<TExtEx> {
                 CoreRunOutcome::ProgramCrashed { pid, error } => {
                     return SystemRunOutcome::ProgramCrashed { pid, error }
                 }
-                // TODO: remove
-                /*CoreRunOutcome::ThreadWaitExtrinsic {
-                    mut process,
-                    extrinsic: &Extrinsic::RegisterInterface,
-                    params,
-                } => {
-                    parse_register_interface(&mut process, params);
-                    // self.core.set_interface_provider();
-                    process.resolve_extrinsic_call(Some(wasmi::RuntimeValue::I32(5)));
-                }*/
                 CoreRunOutcome::ThreadWaitExtrinsic {
                     ref mut thread,
                     extrinsic: &Extrinsic::External(ref external_token),
@@ -130,6 +122,23 @@ impl<TExtEx: Clone> System<TExtEx> {
                             // TODO:
                         }
                         _ => unimplemented!(),
+                    }
+                }
+                CoreRunOutcome::InterfaceMessage {
+                    pid,
+                    event_id,
+                    interface,
+                    message,
+                } if interface == interface::ffi::INTERFACE => {
+                    let msg: interface::ffi::InterfaceMessage =
+                        DecodeAll::decode_all(&message).unwrap();
+                    println!("interface message: {:?}", msg);
+                    match msg {
+                        interface::ffi::InterfaceMessage::Register(hash) => {
+                            // TODO:
+                            let response = interface::ffi::InterfaceRegisterResponse { result: Ok(()) };
+                            self.core.answer_event(event_id.unwrap(), &response.encode());
+                        }
                     }
                 }
                 CoreRunOutcome::InterfaceMessage {
@@ -207,16 +216,3 @@ impl<TExtEx> SystemBuilder<TExtEx> {
         System { core }
     }
 }
-
-// TODO: ? keep? delete?
-/*fn parse_register_interface<TExtEx>(process: &mut CoreProcess<Extrinsic<TExtEx>>, params: Vec<wasmi::RuntimeValue>) {
-    assert_eq!(params.len(), 2);
-    let mem = {
-        let addr = params[0].try_into::<i32>().unwrap() as usize;
-        let sz = params[1].try_into::<i32>().unwrap() as usize;
-        process.read_memory(addr..addr + sz).unwrap()
-    };
-
-    let interface = syscalls::ffi::Interface::decode(&mut &mem[..]).unwrap();      // TODO: decode_all doesn't work; figure out why
-    println!("{:?}", interface);
-}*/
