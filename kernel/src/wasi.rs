@@ -23,6 +23,7 @@ enum WasiExtrinsicInner {
     FdFdstatGet,
     FdWrite,
     ProcExit,
+    SchedYield,
 }
 
 /// Adds to the `SystemBuilder` the extrinsics required by WASI.
@@ -90,6 +91,12 @@ pub fn register_extrinsics<T: From<WasiExtrinsic>>(system: SystemBuilder<T>) -> 
             kernel_core::sig!((I32)),
             WasiExtrinsic(WasiExtrinsicInner::ProcExit).into(),
         )
+        .with_extrinsic(
+            "wasi_unstable",
+            "sched_yield",
+            kernel_core::sig!(()),
+            WasiExtrinsic(WasiExtrinsicInner::SchedYield).into(),
+        )
 }
 
 pub fn handle_wasi(
@@ -145,6 +152,10 @@ pub fn handle_wasi(
         WasiExtrinsicInner::FdFdstatGet => unimplemented!(),
         WasiExtrinsicInner::FdWrite => fd_write(system, pid, thread_id, params),
         WasiExtrinsicInner::ProcExit => unimplemented!(),
+        WasiExtrinsicInner::SchedYield => {
+            // TODO: guarantee the yield
+            system.resolve_extrinsic_call(thread_id, Some(wasmi::RuntimeValue::I32(0)));
+        },
     }
 }
 

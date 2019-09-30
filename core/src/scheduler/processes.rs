@@ -10,6 +10,7 @@ use hashbrown::{
     hash_map::{DefaultHashBuilder, Entry, OccupiedEntry},
     HashMap,
 };
+use rand::seq::SliceRandom as _;
 
 /// Collection of multiple [`ProcessStateMachine`](vm::ProcessStateMachine)s grouped together in a
 /// smart way.
@@ -206,9 +207,10 @@ impl<TPud, TTud> ProcessesCollection<TPud, TTud> {
     pub fn run(&mut self) -> RunOneOutcome<TPud, TTud> {
         // We start by finding a thread in `self.processes` that is ready to run.
         let (mut process, thread_index): (OccupiedEntry<_, _, _>, usize) = {
-            let entry = self
-                .processes
-                .iter_mut()
+            let mut entries = self.processes.iter_mut().collect::<Vec<_>>();
+            entries.shuffle(&mut rand::thread_rng());
+            let entry = entries
+                .into_iter()
                 .filter_map(|(k, p)| {
                     if let Some(i) = p.ready_to_run_thread_index() {
                         Some((*k, i))

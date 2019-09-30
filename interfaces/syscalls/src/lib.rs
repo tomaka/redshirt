@@ -8,9 +8,9 @@ extern crate alloc;
 
 use alloc::sync::Arc;
 use core::{mem, task::{Context, Poll, Waker}};
+use crossbeam::{channel, queue::SegQueue};
 use futures::prelude::*;
 use parity_scale_codec::{DecodeAll, Encode};
-use spin::Mutex;
 
 pub use ffi::{Message, InterfaceMessage, ResponseMessage};
 
@@ -121,22 +121,22 @@ pub fn spawn_thread(function: impl FnOnce()) {
 #[cfg(target_arch = "wasm32")] // TODO: bad
 // TODO: strongly-typed Future
 pub fn message_response(msg_id: u64) -> impl Future<Output = ResponseMessage> {
-    let message_sink = Arc::new(Mutex::new(None));
+    let (message_sink_tx, message_sink_rx) = channel::bounded(1);
     future::poll_fn(move |cx| {
-        let mut message_sink_lock = message_sink.lock();
-        if message_sink_lock.is_none() {
-            REACTOR.new_elems.lock().push((msg_id, message_sink.clone(), cx.waker().clone()));
+        if let Ok(message) = message_sink_rx.try_recv() {
+            match message {
+                Message::Response(r) => Poll::Ready(r),
+                _ => unreachable!()     // TODO: replace with std::hint::unreachable when we're mature
+            }
+
+        } else {
+            REACTOR.new_elems.push((msg_id, message_sink_tx.clone(), cx.waker().clone()));
             let futex_wake = threads::ffi::ThreadsMessage::FutexWake(threads::ffi::FutexWake {
                 addr: &REACTOR.notify_futex as *const u32 as usize as u32,
                 nwake: 1,
             });
             emit_message(&threads::ffi::INTERFACE, &futex_wake, false).unwrap();
-            return Poll::Pending;
-        }
-
-        match message_sink_lock.take().unwrap() {
-            Message::Response(r) => Poll::Ready(r),
-            _ => unreachable!()     // TODO: replace with std::hint::unreachable when we're mature
+            Poll::Pending
         }
     })
 }
@@ -202,14 +202,14 @@ lazy_static::lazy_static! {
 
         Reactor {
             notify_futex: 0,
-            new_elems: Mutex::new(Vec::with_capacity(16))
+            new_elems: SegQueue::new()
         }
     };
 }
 
 struct Reactor {
     notify_futex: u32,
-    new_elems: Mutex<Vec<(u64, Arc<Mutex<Option<Message>>>, Waker)>>,
+    new_elems: SegQueue<(u64, channel::Sender<Message>, Waker)>,
 }
 
 fn background_thread() {
@@ -217,8 +217,6 @@ fn background_thread() {
     let mut wakers = Vec::with_capacity(16);
 
     loop {
-        let mut new_elems = REACTOR.new_elems.lock();
-
         // Basic cleanup in order to release memory acquired during peaks.
         if message_ids.capacity() - message_ids.len() >= 32 {
             message_ids.shrink_to_fit();
@@ -236,7 +234,7 @@ fn background_thread() {
 
         message_ids[0] = wait_notify;
 
-        for (msg_id, sink, waker) in new_elems.drain(..) {
+        while let Ok((msg_id, sink, waker)) = REACTOR.new_elems.pop() {
             // TODO: is it possible that we get a message id for a message that's already been responsed? figure this out
             if let Some(existing_pos) = message_ids.iter().position(|m| *m == msg_id) {
                 wakers[existing_pos] = (sink, waker);
@@ -245,9 +243,6 @@ fn background_thread() {
                 wakers.push((sink, waker));
             }
         }
-
-        debug_assert!(new_elems.is_empty());
-        // TODO: new_elems.shrink_to(16);
 
         loop {
             let msg = match next_message(&mut message_ids, true) {
@@ -265,7 +260,7 @@ fn background_thread() {
             message_ids.remove(msg.index_in_list as usize);
 
             let (sink, waker) = wakers.remove(msg.index_in_list as usize - 1);
-            *sink.lock() = Some(Message::Response(msg));
+            let _ = sink.try_send(Message::Response(msg));
             waker.wake();
         }
     }

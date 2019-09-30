@@ -61,7 +61,6 @@ impl AsyncRead for TcpStream {
     ) -> Poll<Result<usize, io::Error>> {
         loop {
             if let Some(pending_read) = self.pending_read.as_mut() {
-                println!("polling pending read");
                 let data = match ready!(Future::poll(Pin::new(pending_read), cx)).result {
                     Ok(d) => d,
                     Err(_) => return Poll::Ready(Err(io::ErrorKind::Other.into())), // TODO:
@@ -90,36 +89,29 @@ impl AsyncRead for TcpStream {
 
 impl AsyncWrite for TcpStream {
     fn poll_write(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         cx: &mut Context,
         buf: &[u8],
     ) -> Poll<Result<usize, io::Error>> {
-        // TODO: for now we're always blocking because we don't have threads
-        let tcp_write = ffi::TcpMessage::Write(ffi::TcpWrite {
-            socket_id: self.handle,
-            data: buf.to_vec(),
-        });
-        let msg_id = syscalls::emit_message(&ffi::INTERFACE, &tcp_write, true)
-            .unwrap()
-            .unwrap();
-        let msg = syscalls::next_message(&mut [msg_id], true).unwrap();
-        let result = match msg {
-            // TODO: code style: improve syscall's API
-            syscalls::Message::Response(syscalls::ffi::ResponseMessage {
-                message_id,
-                actual_data,
-                ..
-            }) => {
-                assert_eq!(message_id, msg_id);
-                let msg: ffi::TcpWriteResponse = DecodeAll::decode_all(&actual_data).unwrap();
-                msg.result
+        loop {
+            if let Some(pending_write) = self.pending_write.as_mut() {
+                match ready!(Future::poll(Pin::new(pending_write), cx)).result {
+                    Ok(()) => self.pending_write = None,
+                    Err(_) => return Poll::Ready(Err(io::ErrorKind::Other.into())), // TODO:
+                }
             }
-            _ => unreachable!(),
-        };
 
-        match result {
-            Ok(_) => Poll::Ready(Ok(buf.len())),
-            Err(_) => Poll::Ready(Err(io::ErrorKind::Other.into())), // TODO:
+            let tcp_write = ffi::TcpMessage::Write(ffi::TcpWrite {
+                socket_id: self.handle,
+                data: buf.to_vec(),
+            });
+            let msg_id = syscalls::emit_message(&ffi::INTERFACE, &tcp_write, true)
+                .unwrap()
+                .unwrap();
+            self.pending_write = Some(Box::pin(async move {
+                let msg = syscalls::message_response(msg_id).await;
+                DecodeAll::decode_all(&msg.actual_data).unwrap()
+            }));
         }
     }
 

@@ -80,7 +80,6 @@ impl<TExtEx: Clone> System<TExtEx> {
     pub fn run(&mut self) -> SystemRunOutcome<TExtEx> {
         // TODO: remove loop?
         loop {
-            println!("loop!");
             match self.core.run() {
                 CoreRunOutcome::ProgramFinished {
                     process,
