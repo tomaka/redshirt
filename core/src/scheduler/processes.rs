@@ -381,7 +381,7 @@ impl<'a, TPud, TTud> ProcessesCollectionProc<'a, TPud, TTud> {
             .get_mut()
             .state_machine
             .start_thread_by_id(fn_index, params, thread_data)?;
-        
+
         let thread_index = self.process.get_mut().state_machine.num_threads();
         Ok(ProcessesCollectionThread {
             process: self.process,
@@ -401,7 +401,10 @@ impl<'a, TPud, TTud> ProcessesCollectionProc<'a, TPud, TTud> {
     }
 
     pub fn read_memory(&mut self, offset: u32, size: u32) -> Result<Vec<u8>, ()> {
-        self.process.get_mut().state_machine.read_memory(offset, size)
+        self.process
+            .get_mut()
+            .state_machine
+            .read_memory(offset, size)
     }
 
     /// Write the data at the given memory location.
@@ -480,7 +483,10 @@ impl<'a, TPud, TTud> ProcessesCollectionThread<'a, TPud, TTud> {
     }
 
     pub fn read_memory(&mut self, offset: u32, size: u32) -> Result<Vec<u8>, ()> {
-        self.process.get_mut().state_machine.read_memory(offset, size)
+        self.process
+            .get_mut()
+            .state_machine
+            .read_memory(offset, size)
     }
 
     /// Write the data at the given memory location.

@@ -136,8 +136,10 @@ impl<TExtEx: Clone> System<TExtEx> {
                     match msg {
                         interface::ffi::InterfaceMessage::Register(hash) => {
                             // TODO:
-                            let response = interface::ffi::InterfaceRegisterResponse { result: Ok(()) };
-                            self.core.answer_event(event_id.unwrap(), &response.encode());
+                            let response =
+                                interface::ffi::InterfaceRegisterResponse { result: Ok(()) };
+                            self.core
+                                .answer_event(event_id.unwrap(), &response.encode());
                         }
                     }
                 }
@@ -162,7 +164,10 @@ impl<TExtEx: Clone> System<TExtEx> {
     ///
     /// Returns an error if the range is invalid.
     pub fn read_memory(&mut self, pid: Pid, offset: u32, size: u32) -> Result<Vec<u8>, ()> {
-        self.core.process_by_id(pid).ok_or(())?.read_memory(offset, size)
+        self.core
+            .process_by_id(pid)
+            .ok_or(())?
+            .read_memory(offset, size)
     }
 
     pub fn write_memory(&mut self, pid: Pid, offset: u32, data: &[u8]) -> Result<(), ()> {

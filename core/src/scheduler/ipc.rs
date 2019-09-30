@@ -298,8 +298,7 @@ impl<T> Core<T> {
                         assert_eq!(params.len(), 5);
                         let interface: [u8; 32] = {
                             let addr = params[0].try_into::<i32>().unwrap() as u32;
-                            TryFrom::try_from(&thread.read_memory(addr, 32).unwrap()[..])
-                                .unwrap()
+                            TryFrom::try_from(&thread.read_memory(addr, 32).unwrap()[..]).unwrap()
                         };
                         let message = {
                             let addr = params[1].try_into::<i32>().unwrap() as u32;
@@ -461,8 +460,13 @@ impl<'a, T> CoreProcess<'a, T> {
     /// Adds a new thread to the process, starting the function with the given index and passing
     /// the given parameters.
     // TODO: don't expose wasmi::RuntimeValue
-    pub fn start_thread(self, fn_index: u32, params: Vec<wasmi::RuntimeValue>) -> Result<CoreThread<'a, T>, vm::StartErr> {
-        let thread = self.process
+    pub fn start_thread(
+        self,
+        fn_index: u32,
+        params: Vec<wasmi::RuntimeValue>,
+    ) -> Result<CoreThread<'a, T>, vm::StartErr> {
+        let thread = self
+            .process
             .start_thread(fn_index, params, Thread::ReadyToRun)?;
         Ok(CoreThread {
             thread,

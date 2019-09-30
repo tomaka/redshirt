@@ -28,7 +28,8 @@ pub fn register_interface(hash: [u8; 32]) -> Result<(), ()> {
                 actual_data,
             }) => {
                 assert_eq!(message_id, msg_id);
-                let msg: ffi::InterfaceRegisterResponse = DecodeAll::decode_all(&actual_data).unwrap();
+                let msg: ffi::InterfaceRegisterResponse =
+                    DecodeAll::decode_all(&actual_data).unwrap();
                 msg.result
             }
             _ => unreachable!(),
