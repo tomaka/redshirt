@@ -80,6 +80,7 @@ impl<TExtEx: Clone> System<TExtEx> {
     pub fn run(&mut self) -> SystemRunOutcome<TExtEx> {
         // TODO: remove loop?
         loop {
+            println!("loop!");
             match self.core.run() {
                 CoreRunOutcome::ProgramFinished {
                     process,
@@ -206,6 +207,7 @@ impl<TExtEx: Clone> System<TExtEx> {
 
     // TODO: better API
     pub fn answer_event(&mut self, event_id: u64, response: &[u8]) {
+        println!("answered event {:?}", event_id);
         self.core.answer_event(event_id, response)
     }
 }

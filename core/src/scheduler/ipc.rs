@@ -323,8 +323,8 @@ impl<T> Core<T> {
                             None
                         };
                         println!(
-                            "proc emitting message {:?} needs_answer={:?}",
-                            message, needs_answer
+                            "proc emitting {:?} message {:?} needs_answer={:?}",
+                            event_id, message, needs_answer
                         );
                         match self
                             .interfaces

@@ -144,6 +144,7 @@ pub fn message_response(msg_id: u64) -> impl Future<Output = ResponseMessage> {
 #[cfg(not(target_arch = "wasm32"))] // TODO: bad
 // TODO: strongly-typed Future
 pub fn message_response(msg_id: u64) -> impl Future<Output = ResponseMessage> {
+    panic!();
     future::pending()
 }
 

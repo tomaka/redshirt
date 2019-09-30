@@ -6,7 +6,7 @@
 
 // TODO: everything here is a draft
 
-use futures::prelude::*;
+use futures::{prelude::*, ready};
 use parity_scale_codec::{DecodeAll, Encode as _};
 use std::{io, mem, net::SocketAddr, pin::Pin, sync::Arc, task::Context, task::Poll, task::Waker};
 
@@ -15,9 +15,11 @@ pub mod ffi;
 pub struct TcpStream {
     handle: u32,
     /// If Some, we have sent out a "read" message and are waiting for a response.
-    has_pending_read: Option<u64>,
+    // TODO: use strongly typed Future here
+    pending_read: Option<Pin<Box<dyn Future<Output = ffi::TcpReadResponse>>>>,
     /// If Some, we have sent out a "write" message and are waiting for a response.
-    has_pending_write: Option<u64>,
+    // TODO: use strongly typed Future here
+    pending_write: Option<Pin<Box<dyn Future<Output = ffi::TcpWriteResponse>>>>,
 }
 
 impl TcpStream {
@@ -44,8 +46,8 @@ impl TcpStream {
 
             TcpStream {
                 handle,
-                has_pending_read: None,
-                has_pending_write: None,
+                pending_read: None,
+                pending_write: None,
             }
         }
     }
@@ -53,39 +55,34 @@ impl TcpStream {
 
 impl AsyncRead for TcpStream {
     fn poll_read(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         cx: &mut Context,
         buf: &mut [u8],
     ) -> Poll<Result<usize, io::Error>> {
-        // TODO: for now we're always blocking because we don't have threads
-        let tcp_read = ffi::TcpMessage::Read(ffi::TcpRead {
-            socket_id: self.handle,
-        });
-        let msg_id = syscalls::emit_message(&ffi::INTERFACE, &tcp_read, true)
-            .unwrap()
-            .unwrap();
-        let msg = syscalls::next_message(&mut [msg_id], true).unwrap();
-        let result = match msg {
-            // TODO: code style: improve syscall's API
-            syscalls::Message::Response(syscalls::ffi::ResponseMessage {
-                message_id,
-                actual_data,
-                ..
-            }) => {
-                assert_eq!(message_id, msg_id);
-                let msg: ffi::TcpReadResponse = DecodeAll::decode_all(&actual_data).unwrap();
-                msg.result
+        loop {
+            if let Some(pending_read) = self.pending_read.as_mut() {
+                println!("polling pending read");
+                let data = match ready!(Future::poll(Pin::new(pending_read), cx)).result {
+                    Ok(d) => d,
+                    Err(_) => return Poll::Ready(Err(io::ErrorKind::Other.into())), // TODO:
+                };
+
+                self.pending_read = None;
+                buf[..data.len()].copy_from_slice(&data); // TODO: this just assumes that buf is large enough
+                return Poll::Ready(Ok(data.len()));
             }
-            _ => unreachable!(),
-        };
 
-        let data = match result {
-            Ok(d) => d,
-            Err(_) => return Poll::Ready(Err(io::ErrorKind::Other.into())), // TODO:
-        };
-
-        buf[..data.len()].copy_from_slice(&data); // TODO: this just assumes that buf is large enough
-        Poll::Ready(Ok(data.len()))
+            let tcp_read = ffi::TcpMessage::Read(ffi::TcpRead {
+                socket_id: self.handle,
+            });
+            let msg_id = syscalls::emit_message(&ffi::INTERFACE, &tcp_read, true)
+                .unwrap()
+                .unwrap();
+            self.pending_read = Some(Box::pin(async move {
+                let msg = syscalls::message_response(msg_id).await;
+                DecodeAll::decode_all(&msg.actual_data).unwrap()
+            }));
+        }
     }
 
     // TODO: unsafe fn initializer(&self) -> Initializer { ... }
