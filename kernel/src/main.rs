@@ -4,6 +4,7 @@
 #![deny(intra_doc_link_resolution_failure)]
 
 use byteorder::{ByteOrder as _, LittleEndian};
+use futures::prelude::*;
 use parity_scale_codec::{DecodeAll, Encode as _};
 use std::io::Write as _;
 
@@ -25,7 +26,7 @@ fn main() {
     loop {
         let result = futures::executor::block_on(async {
             loop {
-                match system.run() {
+                let only_poll = match system.run() {
                     kernel_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
                         pid,
                         thread_id,
@@ -33,7 +34,7 @@ fn main() {
                         params,
                     } => {
                         wasi::handle_wasi(&mut system, extrinsic, pid, thread_id, params);
-                        continue;
+                        true
                     }
                     kernel_core::system::SystemRunOutcome::InterfaceMessage {
                         event_id,
@@ -45,11 +46,20 @@ fn main() {
                         tcp.handle_message(event_id, message);
                         continue;
                     }
-                    kernel_core::system::SystemRunOutcome::Idle => {}
+                    kernel_core::system::SystemRunOutcome::Idle => false,
                     other => break other,
-                }
+                };
 
-                let (msg_to_respond, response_bytes) = match tcp.next_event().await {
+                let event = if only_poll {
+                    match tcp.next_event().now_or_never() {
+                        Some(e) => e,
+                        None => continue,
+                    }
+                } else {
+                    tcp.next_event().await
+                };
+
+                let (msg_to_respond, response_bytes) = match event {
                     tcp_interface::TcpResponse::Open(msg_id, msg) => (msg_id, msg.encode()),
                     tcp_interface::TcpResponse::Read(msg_id, msg) => (msg_id, msg.encode()),
                     tcp_interface::TcpResponse::Write(msg_id, msg) => (msg_id, msg.encode()),

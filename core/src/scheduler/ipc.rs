@@ -407,16 +407,15 @@ impl<T> Core<T> {
             let queue_was_empty = process.user_data().messages_queue.is_empty();
             process.user_data().messages_queue.push_back(actual_message);
 
-            if queue_was_empty {
-                let mut thread = process.main_thread();
-                loop {
-                    try_resume_message_wait(&mut thread);
-                    match thread.next_thread() {
-                        Some(t) => thread = t,
-                        None => break,
-                    };
-                }
+            let mut thread = process.main_thread();
+            loop {
+                try_resume_message_wait(&mut thread);
+                match thread.next_thread() {
+                    Some(t) => thread = t,
+                    None => break,
+                };
             }
+
         } else {
             // TODO: what to do here?
             panic!("no process found with that event")

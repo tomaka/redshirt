@@ -93,26 +93,25 @@ impl AsyncWrite for TcpStream {
         cx: &mut Context,
         buf: &[u8],
     ) -> Poll<Result<usize, io::Error>> {
-        loop {
-            if let Some(pending_write) = self.pending_write.as_mut() {
-                match ready!(Future::poll(Pin::new(pending_write), cx)).result {
-                    Ok(()) => self.pending_write = None,
-                    Err(_) => return Poll::Ready(Err(io::ErrorKind::Other.into())), // TODO:
-                }
+        if let Some(pending_write) = self.pending_write.as_mut() {
+            match ready!(Future::poll(Pin::new(pending_write), cx)).result {
+                Ok(()) => self.pending_write = None,
+                Err(_) => return Poll::Ready(Err(io::ErrorKind::Other.into())), // TODO:
             }
-
-            let tcp_write = ffi::TcpMessage::Write(ffi::TcpWrite {
-                socket_id: self.handle,
-                data: buf.to_vec(),
-            });
-            let msg_id = syscalls::emit_message(&ffi::INTERFACE, &tcp_write, true)
-                .unwrap()
-                .unwrap();
-            self.pending_write = Some(Box::pin(async move {
-                let msg = syscalls::message_response(msg_id).await;
-                DecodeAll::decode_all(&msg.actual_data).unwrap()
-            }));
         }
+
+        let tcp_write = ffi::TcpMessage::Write(ffi::TcpWrite {
+            socket_id: self.handle,
+            data: buf.to_vec(),
+        });
+        let msg_id = syscalls::emit_message(&ffi::INTERFACE, &tcp_write, true)
+            .unwrap()
+            .unwrap();
+        self.pending_write = Some(Box::pin(async move {
+            let msg = syscalls::message_response(msg_id).await;
+            DecodeAll::decode_all(&msg.actual_data).unwrap()
+        }));
+        Poll::Ready(Ok(buf.len()))
     }
 
     fn poll_flush(self: Pin<&mut Self>, _: &mut Context) -> Poll<Result<(), io::Error>> {

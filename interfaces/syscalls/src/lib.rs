@@ -122,10 +122,15 @@ pub fn spawn_thread(function: impl FnOnce()) {
 // TODO: strongly-typed Future
 pub fn message_response(msg_id: u64) -> impl Future<Output = ResponseMessage> {
     let (message_sink_tx, message_sink_rx) = channel::bounded(1);
+    let mut finished = false;
     future::poll_fn(move |cx| {
+        assert!(!finished);
         if let Ok(message) = message_sink_rx.try_recv() {
             match message {
-                Message::Response(r) => Poll::Ready(r),
+                Message::Response(r) => {
+                    finished = true;
+                    Poll::Ready(r)
+                },
                 _ => unreachable!()     // TODO: replace with std::hint::unreachable when we're mature
             }
 
