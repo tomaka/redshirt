@@ -128,6 +128,7 @@ pub fn spawn_thread(function: impl FnOnce()) {
 
 #[cfg(target_arch = "wasm32")] // TODO: bad
 // TODO: strongly-typed Future
+// TODO: the strongly typed Future should have a Drop impl that cancels the message
 pub fn message_response<T: DecodeAll>(msg_id: u64) -> impl Future<Output = T> {
     let (message_sink_tx, message_sink_rx) = channel::bounded(1);
     let mut finished = false;
