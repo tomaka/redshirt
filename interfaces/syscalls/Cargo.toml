@@ -8,5 +8,6 @@ edition = "2018"
 futures-preview = "0.3.0-alpha.18"
 lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
 parity-scale-codec = { version = "1.0.5", features = ["derive"] }
+pin-utils = "0.1.0-alpha.4"
 spin = "0.5.2"      # TODO: obviously not great
 threads = { path = "../threads" }

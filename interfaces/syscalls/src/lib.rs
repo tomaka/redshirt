@@ -17,7 +17,7 @@ pub use ffi::{Message, InterfaceMessage, ResponseMessage};
 pub mod ffi;
 
 #[cfg(target_arch = "wasm32")] // TODO: bad
-pub fn next_message(to_poll: &mut [u64], block: bool) -> Option<Message> {
+pub fn next_message_raw(to_poll: &mut [u64], block: bool) -> Option<Vec<u8>> {
     unsafe {
         let mut out = Vec::with_capacity(32);
         loop {
@@ -36,10 +36,16 @@ pub fn next_message(to_poll: &mut [u64], block: bool) -> Option<Message> {
                 continue;
             }
             out.set_len(ret);
-            let msg: Message = DecodeAll::decode_all(&out).unwrap();
-            return Some(msg);
+            return Some(out);
         }
     }
+}
+
+#[cfg(target_arch = "wasm32")] // TODO: bad
+pub fn next_message(to_poll: &mut [u64], block: bool) -> Option<Message> {
+    let out = next_message_raw(to_poll, block)?;
+    let msg: Message = DecodeAll::decode_all(&out).unwrap();
+    Some(msg)
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -115,10 +121,10 @@ pub fn spawn_thread(function: impl FnOnce()) {
 #[cfg(target_arch = "wasm32")] // TODO: bad
 // TODO: strongly-typed Future
 pub fn message_response(msg_id: u64) -> impl Future<Output = ResponseMessage> {
-    let message_sink = Arc::new(Mutex::new(Vec::new()));
+    let message_sink = Arc::new(Mutex::new(None));
     future::poll_fn(move |cx| {
         let mut message_sink_lock = message_sink.lock();
-        if message_sink_lock.is_empty() {
+        if message_sink_lock.is_none() {
             REACTOR.new_elems.lock().push((msg_id, message_sink.clone(), cx.waker().clone()));
             let futex_wake = threads::ffi::ThreadsMessage::FutexWake(threads::ffi::FutexWake {
                 addr: &REACTOR.notify_futex as *const u32 as usize as u32,
@@ -128,9 +134,7 @@ pub fn message_response(msg_id: u64) -> impl Future<Output = ResponseMessage> {
             return Poll::Pending;
         }
 
-        let outcome = mem::replace(&mut *message_sink_lock, Vec::new());
-        let outcome: Message = DecodeAll::decode_all(&outcome).unwrap();
-        match outcome {
+        match message_sink_lock.take().unwrap() {
             Message::Response(r) => Poll::Ready(r),
             _ => unreachable!()     // TODO: replace with std::hint::unreachable when we're mature
         }
@@ -146,6 +150,50 @@ pub fn message_response(msg_id: u64) -> impl Future<Output = ResponseMessage> {
 // TODO: add a variant of message_response but for multiple messages
 
 
+pub fn block_on<T>(future: impl Future<Output = T>) -> T {
+    struct Notify { futex: u32 }
+    impl futures::task::ArcWake for Notify {
+        fn wake_by_ref(arc_self: &Arc<Self>) {
+            let futex_wake = threads::ffi::ThreadsMessage::FutexWake(threads::ffi::FutexWake {
+                addr: &arc_self.futex as *const u32 as usize as u32,
+                nwake: 1,
+            });
+            emit_message(&threads::ffi::INTERFACE, &futex_wake, false).unwrap();
+        }
+    }
+
+    let notify = Arc::new(Notify {
+        futex: 0,
+    });
+
+    let waker = futures::task::waker(notify.clone());
+    let mut context = Context::from_waker(&waker);
+
+    pin_utils::pin_mut!(future);
+
+    loop {
+        let wait_msg_id = {
+            let msg = threads::ffi::ThreadsMessage::FutexWait(threads::ffi::FutexWait {
+                addr: &notify.futex as *const u32 as usize as u32,
+                val_cmp: 0,
+            });
+            emit_message(&threads::ffi::INTERFACE, &msg, true).unwrap().unwrap()
+        };
+
+        if let Poll::Ready(val) = Future::poll(future.as_mut(), &mut context) {
+            // TODO: cancel wait message
+            return val;
+        }
+
+        // TODO: should we check the result here?
+        match next_message(&mut [wait_msg_id], true) {
+            Some(Message::Response(_)) => {},
+            Some(Message::Interface(_)) => unreachable!(),
+            None => unreachable!(),
+        };
+    }
+}
+
 lazy_static::lazy_static! {
     static ref REACTOR: Reactor = {
         // TODO: circular dependency with `threads`
@@ -160,7 +208,7 @@ lazy_static::lazy_static! {
 
 struct Reactor {
     notify_futex: u32,
-    new_elems: Mutex<Vec<(u64, Arc<Mutex<Vec<u8>>>, Waker)>>,
+    new_elems: Mutex<Vec<(u64, Arc<Mutex<Option<Message>>>, Waker)>>,
 }
 
 fn background_thread() {
@@ -216,7 +264,7 @@ fn background_thread() {
             message_ids.remove(msg.index_in_list as usize);
 
             let (sink, waker) = wakers.remove(msg.index_in_list as usize - 1);
-            *sink.lock() = msg.actual_data;
+            *sink.lock() = Some(Message::Response(msg));
             waker.wake();
         }
     }

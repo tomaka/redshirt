@@ -5,13 +5,13 @@ use crate::scheduler::{Core, CoreBuilder, CoreProcess, CoreRunOutcome, Pid, Thre
 use crate::signature::{Signature, ValueType};
 use alloc::borrow::Cow;
 use core::{iter, ops::RangeBounds};
-use hashbrown::HashMap;
+use hashbrown::{HashMap, hash_map::Entry};
 use parity_scale_codec::{Decode, DecodeAll, Encode};
 use smallvec::SmallVec;
 
 pub struct System<TExtEx> {
     core: Core<Extrinsic<TExtEx>>,
-    futex_waits: HashMap<(Pid, u32), u64>,
+    futex_waits: HashMap<(Pid, u32), SmallVec<[u64; 4]>>,
 }
 
 pub struct SystemBuilder<TExtEx> {
@@ -123,12 +123,31 @@ impl<TExtEx: Clone> System<TExtEx> {
                                 vec![wasmi::RuntimeValue::I32(new_thread.user_data as i32)],
                             );
                         }
-                        threads::ffi::ThreadsMessage::FutexWake(wake) => {
+                        threads::ffi::ThreadsMessage::FutexWake(mut wake) => {
                             assert!(event_id.is_none());
+                            if let Some(list) = self.futex_waits.get_mut(&(pid, wake.addr)) {
+                                while wake.nwake > 0 && !list.is_empty() {
+                                    wake.nwake -= 1;
+                                    let event_id = list.remove(0);
+                                    self.core
+                                        .answer_event(event_id, &[]);
+                                }
+
+                                if list.is_empty() {
+                                    self.futex_waits.remove(&(pid, wake.addr));
+                                }
+                            }
                             // TODO: implement
                         }
                         threads::ffi::ThreadsMessage::FutexWait(wait) => {
-                            unimplemented!()
+                            let event_id = event_id.unwrap();
+                            // TODO: val_cmp
+                            match self.futex_waits.entry((pid, wait.addr)) {
+                                Entry::Occupied(mut e) => e.get_mut().push(event_id),
+                                Entry::Vacant(e) => {
+                                    e.insert({ let mut sv = SmallVec::new(); sv.push(event_id); sv });
+                                },
+                            }
                         }
                     }
                 }

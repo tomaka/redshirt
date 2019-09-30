@@ -7,7 +7,7 @@ fn main() {
         interface::register_interface([0; 32]).unwrap();
     });
 
-    futures::executor::block_on(async move {
+    syscalls::block_on(async move {
         let mut tcp_stream = tcp::TcpStream::connect(&"127.0.0.1:8000".parse().unwrap()).await;
 
         tcp_stream
