@@ -47,7 +47,7 @@ building it.
 
 # Current state
 
-- Threads are working, but there's no synchronization primitive yet.
-- WASM programs can interface with TCP/IP in a blocking way. Rust asynchronous networking
-  requires threads.
-- Next step once TCP/IP works is to build the IPFS-like system.
+- Threads and Futures are working.
+- WASM programs can use TCP/IP, but the implementation is very hacky.
+- Building IPFS is currently blocked due to the lack of Rust ECDH library that compiles for WASM.
+  The plan is to bypass this problem by not using encryption.
