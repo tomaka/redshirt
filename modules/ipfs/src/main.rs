@@ -24,7 +24,9 @@ Connection: Keep-Alive
         tcp_stream.flush().await.unwrap();
 
         let mut out = vec![0; 65536];
-        tcp_stream.read(&mut out).await.unwrap();
+        let out_len = tcp_stream.read(&mut out).await.unwrap();
+        out.truncate(out_len);
+        println!("out = {:?}", out);
     });
 }
 
