@@ -40,8 +40,7 @@ impl TcpStream {
             .unwrap();
 
         async move {
-            let response = syscalls::message_response(msg_id).await;
-            let message: ffi::TcpOpenResponse = DecodeAll::decode_all(&response.actual_data).unwrap();
+            let message: ffi::TcpOpenResponse = syscalls::message_response(msg_id).await;
             let handle = message.result.unwrap();
 
             TcpStream {
@@ -77,10 +76,7 @@ impl AsyncRead for TcpStream {
             let msg_id = syscalls::emit_message(&ffi::INTERFACE, &tcp_read, true)
                 .unwrap()
                 .unwrap();
-            self.pending_read = Some(Box::pin(async move {
-                let msg = syscalls::message_response(msg_id).await;
-                DecodeAll::decode_all(&msg.actual_data).unwrap()
-            }));
+            self.pending_read = Some(Box::pin(syscalls::message_response(msg_id)));
         }
     }
 
@@ -107,10 +103,7 @@ impl AsyncWrite for TcpStream {
         let msg_id = syscalls::emit_message(&ffi::INTERFACE, &tcp_write, true)
             .unwrap()
             .unwrap();
-        self.pending_write = Some(Box::pin(async move {
-            let msg = syscalls::message_response(msg_id).await;
-            DecodeAll::decode_all(&msg.actual_data).unwrap()
-        }));
+        self.pending_write = Some(Box::pin(syscalls::message_response(msg_id)));
         Poll::Ready(Ok(buf.len()))
     }
 

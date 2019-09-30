@@ -80,6 +80,14 @@ pub fn emit_message(
     }
 }
 
+pub async fn emit_message_with_response<T: DecodeAll>(
+    interface_hash: [u8; 32],
+    msg: impl Encode,
+) -> Result<T, ()> {
+    let msg_id = emit_message(&interface_hash, &msg, true)?.unwrap();
+    Ok(message_response(msg_id).await)
+}
+
 pub fn emit_answer(message_id: u64, msg: &impl Encode) -> Result<(), ()> {
     unsafe {
         let buf = msg.encode();
@@ -120,7 +128,7 @@ pub fn spawn_thread(function: impl FnOnce()) {
 
 #[cfg(target_arch = "wasm32")] // TODO: bad
 // TODO: strongly-typed Future
-pub fn message_response(msg_id: u64) -> impl Future<Output = ResponseMessage> {
+pub fn message_response<T: DecodeAll>(msg_id: u64) -> impl Future<Output = T> {
     let (message_sink_tx, message_sink_rx) = channel::bounded(1);
     let mut finished = false;
     future::poll_fn(move |cx| {
@@ -129,7 +137,7 @@ pub fn message_response(msg_id: u64) -> impl Future<Output = ResponseMessage> {
             match message {
                 Message::Response(r) => {
                     finished = true;
-                    Poll::Ready(r)
+                    Poll::Ready(DecodeAll::decode_all(&r.actual_data).unwrap())
                 },
                 _ => unreachable!()     // TODO: replace with std::hint::unreachable when we're mature
             }
@@ -148,7 +156,7 @@ pub fn message_response(msg_id: u64) -> impl Future<Output = ResponseMessage> {
 
 #[cfg(not(target_arch = "wasm32"))] // TODO: bad
 // TODO: strongly-typed Future
-pub fn message_response(msg_id: u64) -> impl Future<Output = ResponseMessage> {
+pub fn message_response<T: DecodeAll>(msg_id: u64) -> impl Future<Output = T> {
     panic!();
     future::pending()
 }
@@ -265,8 +273,9 @@ fn background_thread() {
             message_ids.remove(msg.index_in_list as usize);
 
             let (sink, waker) = wakers.remove(msg.index_in_list as usize - 1);
-            let _ = sink.try_send(Message::Response(msg));
-            waker.wake();
+            if let Ok(_) = sink.try_send(Message::Response(msg)) {
+                waker.wake();
+            }
         }
     }
 }
