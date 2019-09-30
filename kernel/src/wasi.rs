@@ -1,8 +1,8 @@
 // Copyright(c) 2019 Pierre Krieger
 
 use byteorder::{ByteOrder as _, LittleEndian};
-use kernel_core::system::{System, SystemBuilder};
 use kernel_core::scheduler::{Pid, ThreadId};
+use kernel_core::system::{System, SystemBuilder};
 use std::io::Write as _;
 
 // TODO: lots of unwraps as `as` conversions in this module
@@ -26,9 +26,7 @@ enum WasiExtrinsicInner {
 }
 
 /// Adds to the `SystemBuilder` the extrinsics required by WASI.
-pub fn register_extrinsics<T: From<WasiExtrinsic>>(
-    system: SystemBuilder<T>,
-) -> SystemBuilder<T> {
+pub fn register_extrinsics<T: From<WasiExtrinsic>>(system: SystemBuilder<T>) -> SystemBuilder<T> {
     // TODO: signatures don't seem to be enforced
     // TODO: some of these have wrong signatures
     system

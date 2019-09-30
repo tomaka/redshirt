@@ -8,6 +8,7 @@ publish = false
 [dependencies]
 futures-preview = { version = "0.3.0-alpha.18", features = ["compat", "io-compat"] }
 futures01 = { package = "futures", version = "0.1" }
+interface = { path = "../../interfaces/interface" }
 libp2p-core = { git = "https://github.com/tomaka/libp2p-rs", branch = "wasi" }
 libp2p-kad = { git = "https://github.com/tomaka/libp2p-rs", branch = "wasi" }
 libp2p-mplex = { git = "https://github.com/tomaka/libp2p-rs", branch = "wasi" }

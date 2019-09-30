@@ -145,6 +145,7 @@ pub enum RunOneOutcome<'a, TPud, TTud> {
 const PROCESSES_MIN_CAPACITY: usize = 128;
 
 impl<TPud, TTud> ProcessesCollection<TPud, TTud> {
+    /// Creates a new empty collection.
     pub fn new() -> Self {
         ProcessesCollection {
             pid_pool: PidPool::new(),
@@ -153,6 +154,15 @@ impl<TPud, TTud> ProcessesCollection<TPud, TTud> {
         }
     }
 
+    /// Creates a new process state machine from the given module.
+    ///
+    /// The closure is called for each import that the module has. It must assign a number to each
+    /// import, or return an error if the import can't be resolved. When the VM calls one of these
+    /// functions, this number will be returned back in order for the user to know how to handle
+    /// the call.
+    ///
+    /// A single main thread (whose user data is passed by parameter) is automatically created and
+    /// is paused at the start of the "_start" function of the module.
     pub fn execute(
         &mut self,
         module: &Module,
@@ -191,6 +201,8 @@ impl<TPud, TTud> ProcessesCollection<TPud, TTud> {
     }
 
     /// Runs one thread amongst the collection.
+    ///
+    /// Which thread is run is implementation-defined and no guarantee is made.
     pub fn run(&mut self) -> RunOneOutcome<TPud, TTud> {
         // We start by finding a thread in `self.processes` that is ready to run.
         let (mut process, thread_index): (OccupiedEntry<_, _, _>, usize) = {
@@ -346,14 +358,13 @@ impl<'a, TPud, TTud> ProcessesCollectionProc<'a, TPud, TTud> {
 
     /// Adds a new thread to the process, starting the function with the given index and passing
     /// the given parameters.
-    // TODO: return Result
-    // TODO: don't expose wasmi::RuntimeValue
+    // TODO: don't expose wasmi::RuntimeValue in the API
     pub fn start_thread(
-        &mut self,
+        mut self,
         fn_index: u32,
         params: Vec<wasmi::RuntimeValue>,
         user_data: TTud,
-    ) {
+    ) -> Result<ProcessesCollectionThread<'a, TPud, TTud>, vm::StartErr> {
         let thread_id = {
             let id = *self.next_thread_id;
             self.next_thread_id.0 += 1;
@@ -369,9 +380,19 @@ impl<'a, TPud, TTud> ProcessesCollectionProc<'a, TPud, TTud> {
         self.process
             .get_mut()
             .state_machine
-            .start_thread_by_id(fn_index, params, thread_data);
+            .start_thread_by_id(fn_index, params, thread_data)?;
+
+        let thread_index = self.process.get_mut().state_machine.num_threads();
+        Ok(ProcessesCollectionThread {
+            process: self.process,
+            thread_index,
+        })
     }
 
+    /// Returns an object representing the main thread of this process.
+    ///
+    /// The "main thread" of a process is created automatically when you call
+    /// [`ProcessesCollection::execute`]. If it stops, the entire process stops.
     pub fn main_thread(self) -> ProcessesCollectionThread<'a, TPud, TTud> {
         ProcessesCollectionThread {
             process: self.process,
@@ -380,7 +401,10 @@ impl<'a, TPud, TTud> ProcessesCollectionProc<'a, TPud, TTud> {
     }
 
     pub fn read_memory(&mut self, offset: u32, size: u32) -> Result<Vec<u8>, ()> {
-        self.process.get_mut().state_machine.read_memory(offset, size)
+        self.process
+            .get_mut()
+            .state_machine
+            .read_memory(offset, size)
     }
 
     /// Write the data at the given memory location.
@@ -411,6 +435,8 @@ impl<'a, TPud, TTud> ProcessesCollectionThread<'a, TPud, TTud> {
 
     /// Returns the id of the thread. Allows later retrieval by calling
     /// [`thread_by_id`](ProcessesCollection::thread_by_id).
+    ///
+    /// [`ThreadId`]s are unique within a [`ProcessesCollection`], independently from the process.
     pub fn id(&mut self) -> ThreadId {
         self.inner().into_user_data().thread_id
     }
@@ -421,6 +447,9 @@ impl<'a, TPud, TTud> ProcessesCollectionThread<'a, TPud, TTud> {
         *self.process.key()
     }
 
+    /// Returns the following thread within the next process, or `None` if this is the last thread.
+    ///
+    /// Threads are ordered arbitrarily. In particular, they are **not** ordered by [`ThreadId`].
     pub fn next_thread(mut self) -> Option<ProcessesCollectionThread<'a, TPud, TTud>> {
         self.thread_index += 1;
         if self.thread_index >= self.process.get_mut().state_machine.num_threads() {
@@ -454,7 +483,10 @@ impl<'a, TPud, TTud> ProcessesCollectionThread<'a, TPud, TTud> {
     }
 
     pub fn read_memory(&mut self, offset: u32, size: u32) -> Result<Vec<u8>, ()> {
-        self.process.get_mut().state_machine.read_memory(offset, size)
+        self.process
+            .get_mut()
+            .state_machine
+            .read_memory(offset, size)
     }
 
     /// Write the data at the given memory location.

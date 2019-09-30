@@ -11,23 +11,6 @@ pub use ffi::{Message, InterfaceMessage, ResponseMessage};
 pub mod ffi;
 
 #[cfg(target_arch = "wasm32")] // TODO: bad
-pub fn register_interface(hash: &[u8; 32]) -> Result<(), ()> {
-    unsafe {
-        let ret = ffi::register_interface(hash as *const [u8; 32] as *const _);
-        if ret == 0 {
-            Ok(())
-        } else {
-            Err(())
-        }
-    }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-pub fn register_interface(hash: &[u8; 32]) -> Result<(), ()> {
-    unimplemented!()
-}
-
-#[cfg(target_arch = "wasm32")] // TODO: bad
 pub fn next_message(to_poll: &mut [u64], block: bool) -> Option<Message> {
     unsafe {
         let mut out = Vec::with_capacity(32);

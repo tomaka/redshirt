@@ -4,7 +4,7 @@ use futures::prelude::*;
 
 fn main() {
     threads::spawn_thread(move || {
-        syscalls::register_interface(&[0; 32]).unwrap();
+        interface::register_interface([0; 32]).unwrap();
     });
 
     futures::executor::block_on(async move {
