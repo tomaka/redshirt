@@ -3,7 +3,7 @@
 use futures::prelude::*;
 
 fn main() {
-    threads::spawn_thread(move || {
+    syscalls::spawn_thread(move || {
         interface::register_interface([0; 32]).unwrap();
     });
 

@@ -6,8 +6,6 @@ edition = "2018"
 
 [dependencies]
 futures-preview = "0.3.0-alpha.18"
-lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
 parity-scale-codec = { version = "1.0.5", features = ["derive"] }
-spin = "0.5.2"      # TODO: obviously not great
 syscalls = { path = "../syscalls" }
 threads = { path = "../threads" }

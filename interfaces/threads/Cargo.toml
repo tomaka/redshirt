@@ -6,4 +6,3 @@ edition = "2018"
 
 [dependencies]
 parity-scale-codec = { version = "1.0.5", features = ["derive"] }
-syscalls = { path = "../syscalls" }

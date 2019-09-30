@@ -650,7 +650,6 @@ dependencies = [
  "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "syscalls 0.1.0",
  "tcp 0.1.0",
- "threads 0.1.0",
 ]
 
 [[package]]
@@ -1567,7 +1566,11 @@ dependencies = [
 name = "syscalls"
 version = "0.1.0"
 dependencies = [
+ "futures-preview 0.3.0-alpha.18 (registry+https://github.com/rust-lang/crates.io-index)",
+ "lazy_static 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "parity-scale-codec 1.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "spin 0.5.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "threads 0.1.0",
 ]
 
 [[package]]
@@ -1575,9 +1578,7 @@ name = "tcp"
 version = "0.1.0"
 dependencies = [
  "futures-preview 0.3.0-alpha.18 (registry+https://github.com/rust-lang/crates.io-index)",
- "lazy_static 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "parity-scale-codec 1.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
- "spin 0.5.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "syscalls 0.1.0",
  "threads 0.1.0",
 ]
@@ -1587,7 +1588,6 @@ name = "threads"
 version = "0.1.0"
 dependencies = [
  "parity-scale-codec 1.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
- "syscalls 0.1.0",
 ]
 
 [[package]]

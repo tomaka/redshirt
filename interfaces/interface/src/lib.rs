@@ -26,6 +26,7 @@ pub fn register_interface(hash: [u8; 32]) -> Result<(), ()> {
             syscalls::Message::Response(syscalls::ffi::ResponseMessage {
                 message_id,
                 actual_data,
+                ..
             }) => {
                 assert_eq!(message_id, msg_id);
                 let msg: ffi::InterfaceRegisterResponse =

@@ -18,4 +18,3 @@ libp2p-swarm = { git = "https://github.com/tomaka/libp2p-rs", branch = "wasi" }
 log = "0.4"
 syscalls = { path = "../../interfaces/syscalls" }
 tcp = { path = "../../interfaces/tcp" }
-threads = { path = "../../interfaces/threads" }
