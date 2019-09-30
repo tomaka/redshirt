@@ -460,11 +460,14 @@ impl<'a, T> CoreProcess<'a, T> {
 
     /// Adds a new thread to the process, starting the function with the given index and passing
     /// the given parameters.
-    // TODO: return Result
     // TODO: don't expose wasmi::RuntimeValue
-    pub fn start_thread(&mut self, fn_index: u32, params: Vec<wasmi::RuntimeValue>) {
-        self.process
-            .start_thread(fn_index, params, Thread::ReadyToRun)
+    pub fn start_thread(self, fn_index: u32, params: Vec<wasmi::RuntimeValue>) -> Result<CoreThread<'a, T>, vm::StartErr> {
+        let thread = self.process
+            .start_thread(fn_index, params, Thread::ReadyToRun)?;
+        Ok(CoreThread {
+            thread,
+            marker: PhantomData,
+        })
     }
 
     /// Copies the given memory range of the given process into a `Vec<u8>`.

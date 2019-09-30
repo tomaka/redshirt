@@ -360,11 +360,11 @@ impl<'a, TPud, TTud> ProcessesCollectionProc<'a, TPud, TTud> {
     /// the given parameters.
     // TODO: don't expose wasmi::RuntimeValue in the API
     pub fn start_thread(
-        &mut self,
+        mut self,
         fn_index: u32,
         params: Vec<wasmi::RuntimeValue>,
         user_data: TTud,
-    ) -> Result<ProcessesCollectionThread, vm::StartErr> {
+    ) -> Result<ProcessesCollectionThread<'a, TPud, TTud>, vm::StartErr> {
         let thread_id = {
             let id = *self.next_thread_id;
             self.next_thread_id.0 += 1;
