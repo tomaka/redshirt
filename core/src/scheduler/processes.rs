@@ -5,7 +5,7 @@ use crate::scheduler::{
     pid::{Pid, PidPool},
     vm,
 };
-use core::ops::RangeBounds;
+use core::{fmt, ops::RangeBounds};
 use hashbrown::{
     hash_map::{DefaultHashBuilder, Entry, OccupiedEntry},
     HashMap,
@@ -77,7 +77,7 @@ pub struct ProcessesCollectionThread<'a, TPud, TTud> {
 }
 
 /// Outcome of the [`run`](ProcessesCollection::run) function.
-// TODO: Debug
+#[derive(Debug)]
 pub enum RunOneOutcome<'a, TPud, TTud> {
     /// The main thread of a process has finished.
     ///
@@ -449,6 +449,18 @@ impl<'a, TPud, TTud> ProcessesCollectionProc<'a, TPud, TTud> {
     }
 }
 
+impl<'a, TPud, TTud> fmt::Debug for ProcessesCollectionProc<'a, TPud, TTud>
+where TPud: fmt::Debug, TTud: fmt::Debug
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // TODO: threads user data
+        f.debug_struct("ProcessesCollectionProc")
+            .field("pid", &self.pid())
+            //.field("user_data", self.user_data())     // TODO: requires &mut self :-/
+            .finish()
+    }
+}
+
 impl<'a, TPud, TTud> ProcessesCollectionThread<'a, TPud, TTud> {
     fn inner(&mut self) -> vm::Thread<Thread<TTud>> {
         self.process
@@ -522,5 +534,23 @@ impl<'a, TPud, TTud> ProcessesCollectionThread<'a, TPud, TTud> {
             .get_mut()
             .state_machine
             .write_memory(offset, value)
+    }
+}
+
+impl<'a, TPud, TTud> fmt::Debug for ProcessesCollectionThread<'a, TPud, TTud>
+where TPud: fmt::Debug, TTud: fmt::Debug
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        //let id = self.id();
+        let pid = self.pid();
+        // TODO: requires &mut self :-/
+        //let ready_to_run = self.inner().into_user_data().value_back.is_some();
+
+        f.debug_struct("ProcessesCollectionThread")
+            .field("pid", &pid)
+            //.field("thread_id", &id)
+            //.field("user_data", self.user_data())
+            //.field("ready_to_run", &ready_to_run)
+            .finish()
     }
 }
