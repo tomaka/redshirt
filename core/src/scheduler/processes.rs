@@ -257,10 +257,19 @@ impl<TPud, TTud> ProcessesCollection<TPud, TTud> {
                 return_value,
                 user_data: main_thread_user_data,
             }) => {
-                let (pid, Process { user_data, state_machine }) = process.remove_entry();
+                let (
+                    pid,
+                    Process {
+                        user_data,
+                        state_machine,
+                    },
+                ) = process.remove_entry();
                 let other_threads_ud = state_machine.into_user_datas();
                 let mut dead_threads = Vec::with_capacity(1 + other_threads_ud.len());
-                dead_threads.push((main_thread_user_data.thread_id, main_thread_user_data.user_data));
+                dead_threads.push((
+                    main_thread_user_data.thread_id,
+                    main_thread_user_data.user_data,
+                ));
                 for thread in other_threads_ud {
                     dead_threads.push((thread.thread_id, thread.user_data));
                 }
@@ -293,7 +302,13 @@ impl<TPud, TTud> ProcessesCollection<TPud, TTud> {
                 params,
             },
             Ok(vm::ExecOutcome::Errored { error, .. }) => {
-                let (pid, Process { user_data, state_machine }) = process.remove_entry();
+                let (
+                    pid,
+                    Process {
+                        user_data,
+                        state_machine,
+                    },
+                ) = process.remove_entry();
                 let dead_threads = state_machine
                     .into_user_datas()
                     .map(|t| (t.thread_id, t.user_data))
@@ -451,7 +466,9 @@ impl<'a, TPud, TTud> ProcessesCollectionProc<'a, TPud, TTud> {
 }
 
 impl<'a, TPud, TTud> fmt::Debug for ProcessesCollectionProc<'a, TPud, TTud>
-where TPud: fmt::Debug, TTud: fmt::Debug
+where
+    TPud: fmt::Debug,
+    TTud: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // TODO: threads user data
@@ -539,7 +556,9 @@ impl<'a, TPud, TTud> ProcessesCollectionThread<'a, TPud, TTud> {
 }
 
 impl<'a, TPud, TTud> fmt::Debug for ProcessesCollectionThread<'a, TPud, TTud>
-where TPud: fmt::Debug, TTud: fmt::Debug
+where
+    TPud: fmt::Debug,
+    TTud: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         //let id = self.id();

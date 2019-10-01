@@ -5,7 +5,7 @@ use crate::scheduler::{pid::Pid, processes, vm, ThreadId};
 use crate::sig;
 use crate::signature::Signature;
 
-use alloc::{borrow::Cow, collections::VecDeque, vec::Vec, vec};
+use alloc::{borrow::Cow, collections::VecDeque, vec, vec::Vec};
 use byteorder::{ByteOrder as _, LittleEndian};
 use core::{convert::TryFrom, marker::PhantomData};
 use hashbrown::HashMap;

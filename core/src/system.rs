@@ -3,7 +3,7 @@
 use crate::module::Module;
 use crate::scheduler::{Core, CoreBuilder, CoreRunOutcome, Pid, ThreadId};
 use crate::signature::Signature;
-use alloc::{borrow::Cow, vec::Vec, vec};
+use alloc::{borrow::Cow, vec, vec::Vec};
 use hashbrown::{hash_map::Entry, HashMap};
 use parity_scale_codec::{DecodeAll, Encode};
 use smallvec::SmallVec;

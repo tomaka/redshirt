@@ -1,7 +1,7 @@
 // Copyright(c) 2019 Pierre Krieger
 
 use crate::module::Module;
-use alloc::{borrow::Cow, vec::Vec, boxed::Box, format};
+use alloc::{borrow::Cow, boxed::Box, format, vec::Vec};
 use core::{cell::RefCell, convert::TryInto, fmt};
 use err_derive::*;
 use smallvec::SmallVec;
@@ -720,5 +720,4 @@ mod tests {
 
         // TODO: start running another function and check that `Poisoned` error is returned
     }
-
 }
