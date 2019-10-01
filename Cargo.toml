@@ -2,6 +2,8 @@
 members = [
     "core",
     "kernel",
+    "interfaces/interface",
+    "interfaces/loader",
     "interfaces/syscalls",
     "interfaces/threads",
     "interfaces/tcp",

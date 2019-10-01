@@ -3,13 +3,9 @@
 use futures::prelude::*;
 
 fn main() {
-    syscalls::spawn_thread(move || {
-        syscalls::block_on(async move {
-            interface::register_interface([0; 32]).await.unwrap();
-        });
-    });
-
     syscalls::block_on(async move {
+        interface::register_interface(loader::ffi::INTERFACE).await.unwrap();
+
         let mut tcp_stream = tcp::TcpStream::connect(&"127.0.0.1:8000".parse().unwrap()).await;
 
         tcp_stream

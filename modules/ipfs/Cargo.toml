@@ -15,6 +15,7 @@ libp2p-mplex = { git = "https://github.com/tomaka/libp2p-rs", branch = "wasi" }
 #libp2p-secio = { git = "https://github.com/tomaka/libp2p-rs", branch = "wasi" }
 libp2p-plaintext = { git = "https://github.com/tomaka/libp2p-rs", branch = "wasi" }
 libp2p-swarm = { git = "https://github.com/tomaka/libp2p-rs", branch = "wasi" }
+loader = { path = "../../interfaces/loader" }
 log = "0.4"
 syscalls = { path = "../../interfaces/syscalls" }
 tcp = { path = "../../interfaces/tcp" }
