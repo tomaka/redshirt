@@ -16,6 +16,9 @@ cargo run
 
 > **Note**: At the time of writing, compiling with `--release` freezes the Rust compiler forever.
 
+> **Note**: `cargo build` might have compilation errors. Only the main binary is guaranteed to
+>           build.
+
 # Contributing
 
 Please note that I haven't decided of a license yet. At the moment this is not a free software
