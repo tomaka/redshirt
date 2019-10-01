@@ -364,6 +364,7 @@ impl<T> Core<T> {
                 pid,
                 user_data,
                 error,
+                ..
             } => {
                 // TODO: must clean up all the interfaces stuff
                 println!("oops, actual error! {:?}", error);

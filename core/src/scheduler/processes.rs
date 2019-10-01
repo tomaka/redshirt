@@ -89,7 +89,11 @@ pub enum RunOneOutcome<'a, TPud, TTud> {
         /// User data of the process.
         user_data: TPud,
 
-        // TODO: return all the threads user data
+        /// Id and user datas of all the threads of the process. The first element is the main
+        /// thread's.
+        /// These threads no longer exist.
+        dead_threads: Vec<(ThreadId, TTud)>,
+
         /// Value returned by the main thread that has finished.
         value: Option<wasmi::RuntimeValue>,
     },
@@ -127,9 +131,15 @@ pub enum RunOneOutcome<'a, TPud, TTud> {
     Errored {
         /// Pid of the process that has been destroyed.
         pid: Pid,
+
         /// User data that belonged to the process.
         user_data: TPud,
-        // TODO: return all the threads user data
+
+        /// Id and user datas of all the threads of the process. The first element is the main
+        /// thread's.
+        /// These threads no longer exist.
+        dead_threads: Vec<(ThreadId, TTud)>,
+
         /// Error that happened.
         // TODO: error type should change here
         error: wasmi::Trap,
@@ -244,12 +254,20 @@ impl<TPud, TTud> ProcessesCollection<TPud, TTud> {
             Ok(vm::ExecOutcome::ThreadFinished {
                 thread_index: 0,
                 return_value,
-                ..
+                user_data: main_thread_user_data,
             }) => {
-                let (pid, Process { user_data, .. }) = process.remove_entry();
+                let (pid, Process { user_data, state_machine }) = process.remove_entry();
+                let other_threads_ud = state_machine.into_user_datas();
+                let mut dead_threads = Vec::with_capacity(1 + other_threads_ud.len());
+                dead_threads.push((main_thread_user_data.thread_id, main_thread_user_data.user_data));
+                for thread in other_threads_ud {
+                    dead_threads.push((thread.thread_id, thread.user_data));
+                }
+                debug_assert_eq!(dead_threads.len(), dead_threads.capacity());
                 RunOneOutcome::ProcessFinished {
                     pid,
                     user_data,
+                    dead_threads,
                     value: return_value,
                 }
             }
@@ -274,10 +292,15 @@ impl<TPud, TTud> ProcessesCollection<TPud, TTud> {
                 params,
             },
             Ok(vm::ExecOutcome::Errored { error, .. }) => {
-                let (pid, Process { user_data, .. }) = process.remove_entry();
+                let (pid, Process { user_data, state_machine }) = process.remove_entry();
+                let dead_threads = state_machine
+                    .into_user_datas()
+                    .map(|t| (t.thread_id, t.user_data))
+                    .collect::<Vec<_>>();
                 RunOneOutcome::Errored {
                     pid,
                     user_data,
+                    dead_threads,
                     error,
                 }
             }

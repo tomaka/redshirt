@@ -435,6 +435,11 @@ impl<T> ProcessStateMachine<T> {
         }
     }
 
+    /// Consumes this VM and returns all the remaining threads' user datas.
+    pub fn into_user_datas(self) -> impl ExactSizeIterator<Item = T> {
+        self.threads.into_iter().map(|thread| thread.user_data)
+    }
+
     /// Copies the given memory range into a `Vec<u8>`.
     ///
     /// Returns an error if the range is invalid or out of range.
