@@ -1,10 +1,7 @@
 [workspace]
 members = [
-    "core",
-    "kernel",
-    "interfaces/syscalls",
-    "interfaces/threads",
-    "interfaces/tcp",
+    "ipfs",
+    "preloaded",
 ]
 
 [profile.dev]

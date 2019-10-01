@@ -10,6 +10,7 @@ fn main() {
         .args(&["--target", "wasm32-wasi"])
         .args(&["--package", "ipfs"])
         .args(&["--bin", "ipfs"])
+        .args(&["--manifest-path", "../modules/ipfs/Cargo.toml"])
         .arg("--")
         .args(&["-C", "link-arg=--export-table"])
         .status()
