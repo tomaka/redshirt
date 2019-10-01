@@ -1,14 +1,14 @@
 // Copyright(c) 2019 Pierre Krieger
 
 use crate::module::Module;
-use crate::scheduler::{pid, pid::Pid, processes, vm, ThreadId};
+use crate::scheduler::{pid::Pid, processes, vm, ThreadId};
 use crate::sig;
 use crate::signature::Signature;
 
 use alloc::{borrow::Cow, collections::VecDeque, vec::Vec, vec};
 use byteorder::{ByteOrder as _, LittleEndian};
-use core::{convert::TryFrom, marker::PhantomData, ops::RangeBounds};
-use hashbrown::{hash_map::Entry, HashMap, HashSet};
+use core::{convert::TryFrom, marker::PhantomData};
+use hashbrown::HashMap;
 use parity_scale_codec::Encode as _;
 
 /// Handles scheduling processes and inter-process communications.
@@ -281,7 +281,7 @@ impl<T> Core<T> {
 
                 // TODO: check params against signature with a debug_assert
                 match self.extrinsics.get(&id).unwrap() {
-                    Extrinsic::External(token) => {
+                    Extrinsic::External(_) => {
                         *thread.user_data() = Thread::ExtrinsicWait;
                         return CoreRunOutcomeInner::ThreadWaitExtrinsic {
                             thread: thread.id(),
@@ -360,12 +360,7 @@ impl<T> Core<T> {
                     }
                 }
             }
-            processes::RunOneOutcome::Errored {
-                pid,
-                user_data,
-                error,
-                ..
-            } => {
+            processes::RunOneOutcome::Errored { error, .. } => {
                 // TODO: must clean up all the interfaces stuff
                 println!("oops, actual error! {:?}", error);
                 // TODO: remove program from list and return `ProgramCrashed` event
@@ -405,7 +400,6 @@ impl<T> Core<T> {
 
         if let Some(emitter_pid) = self.messages_to_answer.remove(&event_id) {
             let mut process = self.processes.process_by_id(emitter_pid).unwrap();
-            let queue_was_empty = process.user_data().messages_queue.is_empty();
             process.user_data().messages_queue.push_back(actual_message);
 
             let mut thread = process.main_thread();
@@ -436,8 +430,8 @@ impl<T> Core<T> {
             module,
             proc_metadata,
             Thread::ReadyToRun,
-            move |interface, function, signature| {
-                if let Some((index, signature)) =
+            move |interface, function, obtained_signature| {
+                if let Some((index, expected_signature)) =
                     extrinsics_id_assign.get(&(interface.into(), function.into()))
                 {
                     // TODO: check signature validity
@@ -521,7 +515,7 @@ impl<T> CoreBuilder<T> {
     /// Registers a function that processes can call.
     // TODO: more docs
     pub fn with_extrinsic(
-        mut self,
+        self,
         interface: impl Into<Cow<'static, str>>,
         f_name: impl Into<Cow<'static, str>>,
         signature: Signature,
@@ -676,15 +670,15 @@ fn try_resume_message_wait(thread: &mut processes::ProcessesCollectionThread<Pro
 
     if msg_wait.out_size as usize >= msg_bytes.len() {
         // TODO: don't use as
-        /// Write the message in the process's memory.
+        // Write the message in the process's memory.
         thread
             .write_memory(msg_wait.out_pointer, &msg_bytes)
             .unwrap();
-        /// Zero the corresponding entry in the messages to wait upon.
+        // Zero the corresponding entry in the messages to wait upon.
         thread
             .write_memory(msg_wait.msg_ids_ptr + index_in_msg_ids * 8, &[0; 8])
             .unwrap();
-        /// Pop the message from the queue, so that we don't deliver it twice.
+        // Pop the message from the queue, so that we don't deliver it twice.
         thread.process_user_data().messages_queue.remove(0);
     }
 

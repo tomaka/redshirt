@@ -6,7 +6,7 @@ use crate::scheduler::{
     vm,
 };
 use alloc::vec::Vec;
-use core::{fmt, ops::RangeBounds};
+use core::fmt;
 use hashbrown::{
     hash_map::{DefaultHashBuilder, Entry, OccupiedEntry},
     HashMap,

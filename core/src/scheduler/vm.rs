@@ -2,7 +2,7 @@
 
 use crate::module::Module;
 use alloc::{borrow::Cow, vec::Vec, boxed::Box, format};
-use core::{cell::RefCell, convert::TryInto, fmt, ops::Bound, ops::RangeBounds};
+use core::{cell::RefCell, convert::TryInto, fmt};
 use err_derive::*;
 use smallvec::SmallVec;
 

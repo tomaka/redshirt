@@ -1,12 +1,11 @@
 // Copyright(c) 2019 Pierre Krieger
 
 use crate::module::Module;
-use crate::scheduler::{Core, CoreBuilder, CoreProcess, CoreRunOutcome, Pid, ThreadId};
-use crate::signature::{Signature, ValueType};
+use crate::scheduler::{Core, CoreBuilder, CoreRunOutcome, Pid, ThreadId};
+use crate::signature::Signature;
 use alloc::{borrow::Cow, vec::Vec, vec};
-use core::{iter, ops::RangeBounds};
 use hashbrown::{hash_map::Entry, HashMap};
-use parity_scale_codec::{Decode, DecodeAll, Encode};
+use parity_scale_codec::{DecodeAll, Encode};
 use smallvec::SmallVec;
 
 pub struct System<TExtEx> {
