@@ -5,6 +5,7 @@ use crate::scheduler::{
     pid::{Pid, PidPool},
     vm,
 };
+use alloc::vec::Vec;
 use core::{fmt, ops::RangeBounds};
 use hashbrown::{
     hash_map::{DefaultHashBuilder, Entry, OccupiedEntry},

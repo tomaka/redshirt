@@ -1,7 +1,7 @@
 // Copyright(c) 2019 Pierre Krieger
 
 use crate::module::Module;
-use alloc::borrow::Cow;
+use alloc::{borrow::Cow, vec::Vec, boxed::Box, format};
 use core::{cell::RefCell, convert::TryInto, fmt, ops::Bound, ops::RangeBounds};
 use err_derive::*;
 use smallvec::SmallVec;

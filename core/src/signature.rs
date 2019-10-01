@@ -1,5 +1,6 @@
 // Copyright(c) 2019 Pierre Krieger
 
+use alloc::vec::Vec;
 use smallvec::SmallVec;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

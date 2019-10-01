@@ -1,7 +1,7 @@
 // Copyright(c) 2019 Pierre Krieger
 
+use core::fmt;
 use sha2::Digest as _;
-use std::fmt;
 
 /// Represents a successfully-parsed binary.
 ///

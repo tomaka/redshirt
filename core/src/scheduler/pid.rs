@@ -1,7 +1,7 @@
 // Copyright(c) 2019 Pierre Krieger
 
-use std::fmt;
-use std::sync::atomic::{AtomicU64, Ordering};
+use core::fmt;
+use core::sync::atomic::{AtomicU64, Ordering};
 
 /// Identifier of a running process within a core.
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
