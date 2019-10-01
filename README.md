@@ -4,6 +4,27 @@ WASM and are loaded from some IPFS-like decentralized network.
 I'm frequently telling people what my vision of an operating system would be. Now I've started
 building it.
 
+# How to test
+
+```
+# The example does an HTTP request to localhost:8000, so you should start one:
+python -m SimpleHTTPServer 8000
+
+# Then:
+cargo run
+```
+
+> **Note**: At the time of writing, compiling with `--release` freezes the Rust compiler forever.
+
+# Contributing
+
+Please note that I haven't decided of a license yet. At the moment this is not a free software
+(yet).
+
+In general, I'd gladly accept PRs that fix bugs, do some minor API improvements, fix typos, etc.
+However, since this is just a prototype, anything more involved is probably a bad idea as it may
+go against the design that is in my head.
+
 # General idea
 
 - This is an operating-system-like environment, but it could be seen as similar to a web browser
