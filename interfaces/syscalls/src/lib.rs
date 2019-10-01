@@ -7,13 +7,16 @@
 extern crate alloc;
 
 use alloc::sync::Arc;
-use core::{mem, task::{Context, Poll, Waker}};
+use core::{
+    mem,
+    task::{Context, Poll, Waker},
+};
 use crossbeam::{channel, queue::SegQueue};
 use futures::prelude::*;
 use parity_scale_codec::{DecodeAll, Encode};
 
 pub use block_on::block_on;
-pub use ffi::{Message, InterfaceMessage, ResponseMessage};
+pub use ffi::{InterfaceMessage, Message, ResponseMessage};
 
 mod block_on;
 
@@ -130,8 +133,8 @@ pub fn spawn_thread(function: impl FnOnce()) {
 }
 
 #[cfg(target_arch = "wasm32")] // TODO: bad
-// TODO: strongly-typed Future
-// TODO: the strongly typed Future should have a Drop impl that cancels the message
+                               // TODO: strongly-typed Future
+                               // TODO: the strongly typed Future should have a Drop impl that cancels the message
 pub fn message_response<T: DecodeAll>(msg_id: u64) -> impl Future<Output = T> {
     let (message_sink_tx, message_sink_rx) = channel::bounded(1);
     let mut finished = false;
@@ -142,12 +145,13 @@ pub fn message_response<T: DecodeAll>(msg_id: u64) -> impl Future<Output = T> {
                 Message::Response(r) => {
                     finished = true;
                     Poll::Ready(DecodeAll::decode_all(&r.actual_data).unwrap())
-                },
-                _ => unreachable!()     // TODO: replace with std::hint::unreachable when we're mature
+                }
+                _ => unreachable!(), // TODO: replace with std::hint::unreachable when we're mature
             }
-
         } else {
-            REACTOR.new_elems.push((msg_id, message_sink_tx.clone(), cx.waker().clone()));
+            REACTOR
+                .new_elems
+                .push((msg_id, message_sink_tx.clone(), cx.waker().clone()));
             let futex_wake = threads::ffi::ThreadsMessage::FutexWake(threads::ffi::FutexWake {
                 addr: &REACTOR.notify_futex as *const u32 as usize as u32,
                 nwake: 1,
@@ -159,7 +163,7 @@ pub fn message_response<T: DecodeAll>(msg_id: u64) -> impl Future<Output = T> {
 }
 
 #[cfg(not(target_arch = "wasm32"))] // TODO: bad
-// TODO: strongly-typed Future
+                                    // TODO: strongly-typed Future
 pub fn message_response<T: DecodeAll>(msg_id: u64) -> impl Future<Output = T> {
     panic!();
     future::pending()
@@ -201,7 +205,9 @@ fn background_thread() {
                 addr: &REACTOR.notify_futex as *const u32 as usize as u32,
                 val_cmp: 0,
             });
-            emit_message(&threads::ffi::INTERFACE, &msg, true).unwrap().unwrap()
+            emit_message(&threads::ffi::INTERFACE, &msg, true)
+                .unwrap()
+                .unwrap()
         };
 
         message_ids[0] = wait_notify;

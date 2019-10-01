@@ -155,7 +155,7 @@ pub fn handle_wasi(
         WasiExtrinsicInner::SchedYield => {
             // TODO: guarantee the yield
             system.resolve_extrinsic_call(thread_id, Some(wasmi::RuntimeValue::I32(0)));
-        },
+        }
     }
 }
 

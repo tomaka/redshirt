@@ -415,7 +415,6 @@ impl<T> Core<T> {
                     None => break,
                 };
             }
-
         } else {
             // TODO: what to do here?
             panic!("no process found with that event")
@@ -664,7 +663,9 @@ fn try_resume_message_wait(thread: &mut processes::ProcessesCollectionThread<Pro
 
     // Adjust the `index_in_list` field of the message to match what we have.
     match thread.process_user_data().messages_queue[index_in_queue] {
-        syscalls::ffi::Message::Response(ref mut response) => response.index_in_list = index_in_msg_ids,
+        syscalls::ffi::Message::Response(ref mut response) => {
+            response.index_in_list = index_in_msg_ids
+        }
         _ => {}
     }
 

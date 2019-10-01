@@ -5,7 +5,7 @@ use crate::scheduler::{Core, CoreBuilder, CoreProcess, CoreRunOutcome, Pid, Thre
 use crate::signature::{Signature, ValueType};
 use alloc::borrow::Cow;
 use core::{iter, ops::RangeBounds};
-use hashbrown::{HashMap, hash_map::Entry};
+use hashbrown::{hash_map::Entry, HashMap};
 use parity_scale_codec::{Decode, DecodeAll, Encode};
 use smallvec::SmallVec;
 
@@ -129,8 +129,7 @@ impl<TExtEx: Clone> System<TExtEx> {
                                 while wake.nwake > 0 && !list.is_empty() {
                                     wake.nwake -= 1;
                                     let event_id = list.remove(0);
-                                    self.core
-                                        .answer_event(event_id, &[]);
+                                    self.core.answer_event(event_id, &[]);
                                 }
 
                                 if list.is_empty() {
@@ -145,8 +144,12 @@ impl<TExtEx: Clone> System<TExtEx> {
                             match self.futex_waits.entry((pid, wait.addr)) {
                                 Entry::Occupied(mut e) => e.get_mut().push(event_id),
                                 Entry::Vacant(e) => {
-                                    e.insert({ let mut sv = SmallVec::new(); sv.push(event_id); sv });
-                                },
+                                    e.insert({
+                                        let mut sv = SmallVec::new();
+                                        sv.push(event_id);
+                                        sv
+                                    });
+                                }
                             }
                         }
                     }

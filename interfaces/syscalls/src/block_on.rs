@@ -1,6 +1,9 @@
 use crate::{emit_message, next_message, Message};
 use alloc::sync::Arc;
-use core::{mem, task::{Context, Poll, Waker}};
+use core::{
+    mem,
+    task::{Context, Poll, Waker},
+};
 use futures::prelude::*;
 use parity_scale_codec::{DecodeAll, Encode};
 
@@ -15,7 +18,9 @@ pub fn block_on<T>(future: impl Future<Output = T>) -> T {
 
     // Create the waker passed when polling the future.
     let notify = {
-        struct Notify { futex: u32 }
+        struct Notify {
+            futex: u32,
+        }
         impl futures::task::ArcWake for Notify {
             fn wake_by_ref(arc_self: &Arc<Self>) {
                 let futex_wake = threads::ffi::ThreadsMessage::FutexWake(threads::ffi::FutexWake {
@@ -26,9 +31,7 @@ pub fn block_on<T>(future: impl Future<Output = T>) -> T {
             }
         }
 
-        Arc::new(Notify {
-            futex: 0,
-        })
+        Arc::new(Notify { futex: 0 })
     };
 
     let waker = futures::task::waker(notify.clone());
@@ -42,7 +45,9 @@ pub fn block_on<T>(future: impl Future<Output = T>) -> T {
                 addr: &notify.futex as *const u32 as usize as u32,
                 val_cmp: 0,
             });
-            emit_message(&threads::ffi::INTERFACE, &msg, true).unwrap().unwrap()
+            emit_message(&threads::ffi::INTERFACE, &msg, true)
+                .unwrap()
+                .unwrap()
         };
 
         if let Poll::Ready(val) = Future::poll(future.as_mut(), &mut context) {
@@ -54,7 +59,7 @@ pub fn block_on<T>(future: impl Future<Output = T>) -> T {
         // up.
         // TODO: should we check here whether the result is an appropriate `Response`?
         match next_message(&mut [futex_wait_msg], true) {
-            Some(Message::Response(_)) => {},
+            Some(Message::Response(_)) => {}
             Some(Message::Interface(_)) => unreachable!(),
             None => unreachable!(),
         };

@@ -15,7 +15,8 @@ pub mod ffi;
 #[cfg(target_arch = "wasm32")] // TODO: bad
 pub async fn register_interface(hash: [u8; 32]) -> Result<(), ()> {
     let msg = ffi::InterfaceMessage::Register(hash);
-    let rep: ffi::InterfaceRegisterResponse = syscalls::emit_message_with_response(ffi::INTERFACE, msg).await?;
+    let rep: ffi::InterfaceRegisterResponse =
+        syscalls::emit_message_with_response(ffi::INTERFACE, msg).await?;
     rep.result
 }
 
