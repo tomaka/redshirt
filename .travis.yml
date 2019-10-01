@@ -8,6 +8,7 @@ rust:
 
 script:
   - rustup target install wasm32-unknown-unknown
+  - rustup target install wasm32-wasi
   - cargo build --verbose --workspace
   - cargo test --verbose --workspace
   - cargo doc --verbose --workspace --document-private-items
