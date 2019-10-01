@@ -12,7 +12,10 @@ use crossbeam::{channel, queue::SegQueue};
 use futures::prelude::*;
 use parity_scale_codec::{DecodeAll, Encode};
 
+pub use block_on::block_on;
 pub use ffi::{Message, InterfaceMessage, ResponseMessage};
+
+mod block_on;
 
 pub mod ffi;
 
@@ -163,51 +166,6 @@ pub fn message_response<T: DecodeAll>(msg_id: u64) -> impl Future<Output = T> {
 }
 
 // TODO: add a variant of message_response but for multiple messages
-
-
-pub fn block_on<T>(future: impl Future<Output = T>) -> T {
-    struct Notify { futex: u32 }
-    impl futures::task::ArcWake for Notify {
-        fn wake_by_ref(arc_self: &Arc<Self>) {
-            let futex_wake = threads::ffi::ThreadsMessage::FutexWake(threads::ffi::FutexWake {
-                addr: &arc_self.futex as *const u32 as usize as u32,
-                nwake: 1,
-            });
-            emit_message(&threads::ffi::INTERFACE, &futex_wake, false).unwrap();
-        }
-    }
-
-    let notify = Arc::new(Notify {
-        futex: 0,
-    });
-
-    let waker = futures::task::waker(notify.clone());
-    let mut context = Context::from_waker(&waker);
-
-    pin_utils::pin_mut!(future);
-
-    loop {
-        let wait_msg_id = {
-            let msg = threads::ffi::ThreadsMessage::FutexWait(threads::ffi::FutexWait {
-                addr: &notify.futex as *const u32 as usize as u32,
-                val_cmp: 0,
-            });
-            emit_message(&threads::ffi::INTERFACE, &msg, true).unwrap().unwrap()
-        };
-
-        if let Poll::Ready(val) = Future::poll(future.as_mut(), &mut context) {
-            // TODO: cancel wait message
-            return val;
-        }
-
-        // TODO: should we check the result here?
-        match next_message(&mut [wait_msg_id], true) {
-            Some(Message::Response(_)) => {},
-            Some(Message::Interface(_)) => unreachable!(),
-            None => unreachable!(),
-        };
-    }
-}
 
 lazy_static::lazy_static! {
     static ref REACTOR: Reactor = {
