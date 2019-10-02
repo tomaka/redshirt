@@ -98,6 +98,7 @@ pub enum CoreRunOutcome<'a, T> {
     },
     MessageResponse {
         message_id: u64,
+        pid: Pid,
         response: Vec<u8>,
     },
     /// Nothing to do. No process is ready to run.
@@ -128,6 +129,7 @@ enum CoreRunOutcomeInner {
         message: Vec<u8>,
     },
     MessageResponse {
+        pid: Pid,
         message_id: u64,
         response: Vec<u8>,
     },
@@ -271,9 +273,11 @@ impl<T> Core<T> {
                     message,
                 },
                 CoreRunOutcomeInner::MessageResponse {
+                    pid,
                     message_id,
                     response,
                 } => CoreRunOutcome::MessageResponse {
+                    pid,
                     message_id,
                     response,
                 },
@@ -378,8 +382,9 @@ impl<T> Core<T> {
                             let sz = params[2].try_into::<i32>().unwrap() as u32;
                             thread.read_memory(addr, sz).unwrap()
                         };
+                        let pid = thread.pid();
                         drop(thread);
-                        return self.answer_event_inner(msg_id, &message, true)
+                        return self.answer_event_inner(msg_id, &message, Some(pid))
                             .unwrap_or(CoreRunOutcomeInner::LoopAgain);
                     }
                 }
@@ -510,14 +515,12 @@ impl<T> Core<T> {
     /// through this method.
     // TODO: better API
     pub fn answer_event(&mut self, event_id: u64, response: &[u8]) {
-        let ret = self.answer_event_inner(event_id, response, false);
+        let ret = self.answer_event_inner(event_id, response, None);
         assert!(ret.is_none());
     }
 
-    /// Similar to [`answer_event`], but allows choosing whether it is an error to answer messages
-    /// that have been emitted from the public API of this struct.
     // TODO: better API
-    fn answer_event_inner(&mut self, event_id: u64, response: &[u8], external_allowed: bool) -> Option<CoreRunOutcomeInner> {
+    fn answer_event_inner(&mut self, event_id: u64, response: &[u8], answerer_pid: Option<Pid>) -> Option<CoreRunOutcomeInner> {
         let actual_message = syscalls::ffi::Message::Response(syscalls::ffi::ResponseMessage {
             message_id: event_id,
             // We a dummy value here and fill it up later when actually delivering the message.
@@ -525,8 +528,8 @@ impl<T> Core<T> {
             actual_data: response.to_vec(),
         });
 
-        match self.messages_to_answer.remove(&event_id) {
-            Some(MessageEmitter::Process(emitter_pid)) => {
+        match (self.messages_to_answer.remove(&event_id), answerer_pid) {
+            (Some(MessageEmitter::Process(emitter_pid)), _) => {
                 let mut process = self.processes.process_by_id(emitter_pid).unwrap();
                 process.user_data().messages_queue.push_back(actual_message);
 
@@ -541,13 +544,14 @@ impl<T> Core<T> {
 
                 None
             }
-            Some(MessageEmitter::External) => {
+            (Some(MessageEmitter::External), Some(answerer_pid)) => {
                 Some(CoreRunOutcomeInner::MessageResponse {
+                    pid: answerer_pid, 
                     message_id: event_id,
                     response: response.to_vec(),
                 })
             }
-            None => {
+            (None, _) | (Some(MessageEmitter::External), None) => {
                 // TODO: what to do here?
                 panic!("no process found with that event")
             }
