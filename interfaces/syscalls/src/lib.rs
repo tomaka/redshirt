@@ -8,7 +8,9 @@ extern crate alloc;
 
 use alloc::sync::Arc;
 use core::{
+    marker::PhantomData,
     mem,
+    pin::Pin,
     task::{Context, Poll, Waker},
 };
 use crossbeam::{atomic::AtomicCell, queue::SegQueue};
@@ -58,6 +60,7 @@ pub fn emit_message(
 }
 
 /// Combines [`emit_message`] with [`message_response`].
+// TODO: the returned Future should have a Drop impl that cancels the message
 pub async fn emit_message_with_response<T: DecodeAll>(
     interface_hash: [u8; 32],
     msg: impl Encode,
@@ -84,60 +87,106 @@ pub fn emit_answer(message_id: u64, msg: &impl Encode) -> Result<(), ()> {
 /// registered.
 ///
 // TODO: move to interface interface?
-pub fn next_interface_message() -> impl Future<Output = InterfaceMessage> {
-    let cell = Arc::new(AtomicCell::new(None));
-    let mut finished = false;
-    future::poll_fn(move |cx| {
-        assert!(!finished);
-        if let Some(message) = cell.take() {
-            match message {
-                Message::Interface(imsg) => {
-                    finished = true;
-                    Poll::Ready(imsg)
-                }
-                _ => unreachable!(), // TODO: replace with std::hint::unreachable when we're mature
-            }
-        } else {
-            block_on::register_message_waker(1, cell.clone(), cx.waker().clone());
-            Poll::Pending
-        }
-    })
+pub fn next_interface_message() -> InterfaceMessageFuture {
+    InterfaceMessageFuture {
+        cell: Arc::new(AtomicCell::new(None)),
+        finished: false,
+    }
 }
 
 /// Returns a future that is ready when a response to the given message comes back.
 ///
 /// The return value is the type the message decodes to.
+pub fn message_response<T: DecodeAll>(msg_id: u64) -> MessageResponseFuture<T> {
+    MessageResponseFuture {
+        cell: Arc::new(AtomicCell::new(None)),
+        finished: false,
+        msg_id,
+        marker: PhantomData,
+    }
+}
+
+// TODO: add a variant of message_response but for multiple messages
+
+#[must_use]
+pub struct MessageResponseFuture<T> {
+    msg_id: u64,
+    cell: Arc<AtomicCell<Option<Message>>>,
+    finished: bool,
+    marker: PhantomData<T>,
+}
+
 #[cfg(target_arch = "wasm32")] // TODO: bad
-                               // TODO: strongly-typed Future
-                               // TODO: the strongly typed Future should have a Drop impl that cancels the message
-pub fn message_response<T: DecodeAll>(msg_id: u64) -> impl Future<Output = T> {
-    let cell = Arc::new(AtomicCell::new(None));
-    let mut finished = false;
-    future::poll_fn(move |cx| {
-        assert!(!finished);
-        if let Some(message) = cell.take() {
+impl<T> Future for MessageResponseFuture<T>
+where
+    T: DecodeAll
+{
+    type Output = T;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        assert!(!self.finished);
+        if let Some(message) = self.cell.take() {
             match message {
                 Message::Response(r) => {
-                    finished = true;
+                    self.finished = true;
                     Poll::Ready(DecodeAll::decode_all(&r.actual_data).unwrap())
                 }
                 _ => unreachable!(), // TODO: replace with std::hint::unreachable when we're mature
             }
         } else {
-            block_on::register_message_waker(msg_id, cell.clone(), cx.waker().clone());
+            block_on::register_message_waker(self.msg_id, self.cell.clone(), cx.waker().clone());
             Poll::Pending
         }
-    })
+    }
 }
 
-/// Returns a future that is ready when a response to the given message comes back.
-///
-/// The return value is the type the message decodes to.
 #[cfg(not(target_arch = "wasm32"))] // TODO: bad
-                                    // TODO: strongly-typed Future
-pub fn message_response<T: DecodeAll>(msg_id: u64) -> impl Future<Output = T> {
-    panic!();
-    future::pending()
+impl<T> Future for MessageResponseFuture<T> {
+    type Output = T;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        panic!()
+    }
 }
 
-// TODO: add a variant of message_response but for multiple messages
+impl<T> Unpin for MessageResponseFuture<T> {
+}
+
+#[must_use]
+pub struct InterfaceMessageFuture {
+    cell: Arc<AtomicCell<Option<Message>>>,
+    finished: bool,
+}
+
+#[cfg(target_arch = "wasm32")] // TODO: bad
+impl Future for InterfaceMessageFuture {
+    type Output = InterfaceMessage;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        assert!(!self.finished);
+        if let Some(message) = self.cell.take() {
+            match message {
+                Message::Interface(imsg) => {
+                    self.finished = true;
+                    Poll::Ready(imsg)
+                }
+                _ => unreachable!(), // TODO: replace with std::hint::unreachable when we're mature
+            }
+        } else {
+            block_on::register_message_waker(1, self.cell.clone(), cx.waker().clone());
+            Poll::Pending
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))] // TODO: bad
+impl Future for InterfaceMessageFuture {
+    type Output = InterfaceMessage;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        panic!()
+    }
+}
+
+impl Unpin for InterfaceMessageFuture {
+}
