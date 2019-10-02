@@ -17,8 +17,11 @@ fn main() {
         .unwrap();
     assert!(status.success());
 
-    // TODO: doesn't work if a dependency changes
-    for entry in walkdir::WalkDir::new("../modules/ipfs") {
+    // TODO: not a great solution
+    for entry in walkdir::WalkDir::new("../modules/") {
+        println!("cargo:rerun-if-changed={}", entry.unwrap().path().display());
+    }
+    for entry in walkdir::WalkDir::new("../interfaces/") {
         println!("cargo:rerun-if-changed={}", entry.unwrap().path().display());
     }
 }
