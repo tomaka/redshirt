@@ -98,7 +98,7 @@ pub async fn emit_message_with_response<T: DecodeAll>(
 pub fn emit_answer(message_id: u64, msg: &impl Encode) -> Result<(), ()> {
     unsafe {
         let buf = msg.encode();
-        let ret = ffi::emit_answer(message_id, buf.as_ptr(), buf.len() as u32);
+        let ret = ffi::emit_answer(&message_id, buf.as_ptr(), buf.len() as u32);
         if ret == 0 {
             Ok(())
         } else {

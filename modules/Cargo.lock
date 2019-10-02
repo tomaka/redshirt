@@ -496,6 +496,7 @@ dependencies = [
  "libp2p-swarm 0.2.0 (git+https://github.com/tomaka/libp2p-rs?branch=wasi)",
  "loader 0.1.0",
  "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
+ "parity-scale-codec 1.0.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "syscalls 0.1.0",
  "tcp 0.1.0",
 ]

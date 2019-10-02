@@ -67,7 +67,7 @@ extern "C" {
     ///
     /// When this function is being called, a "lock" is being held on the memory pointed by
     /// `msg`. In particular, it is invalid to modify this buffer while the function is running.
-    pub(crate) fn emit_answer(message_id: u64, msg: *const u8, msg_len: u32) -> u32;
+    pub(crate) fn emit_answer(message_id: *const u64, msg: *const u8, msg_len: u32) -> u32;
 }
 
 #[derive(Debug, Encode, Decode)]
@@ -78,6 +78,8 @@ pub enum Message {
 
 #[derive(Debug, Encode, Decode)]
 pub struct InterfaceMessage {
+    /// Interface the message concerns.
+    pub interface: [u8; 32],
     /// Id of the message. Can be used for answering. `None` if no answer is expected.
     pub message_id: Option<u64>,
     /// Id of the process that emitted the message. `None` if message was emitted by kernel.

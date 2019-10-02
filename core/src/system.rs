@@ -105,7 +105,10 @@ impl<TExtEx: Clone> System<TExtEx> {
                         params: params.clone(),
                     };
                 }
-                CoreRunOutcome::MessageResponse { .. } => unreachable!(),
+                CoreRunOutcome::MessageResponse { message_id, response } => {
+                    let response = loader::ffi::LoadResponse::decode_all(&response).unwrap();
+                    println!("msg response: {:?} {:?}", message_id, response);
+                },
                 CoreRunOutcome::InterfaceMessage {
                     pid,
                     event_id,

@@ -1,6 +1,7 @@
 // Copyright(c) 2019 Pierre Krieger
 
 use futures::prelude::*;
+use parity_scale_codec::DecodeAll;
 
 fn main() {
     syscalls::block_on(async move {
@@ -8,7 +9,13 @@ fn main() {
 
         loop {
             let msg = syscalls::next_interface_message().await;
-            println!("received message: {:?}", msg);
+            assert_eq!(msg.interface, loader::ffi::INTERFACE);
+            let msg_data = loader::ffi::LoaderMessage::decode_all(&msg.actual_data).unwrap();
+            let loader::ffi::LoaderMessage::Load(hash_to_load) = msg_data;
+            println!("received message: {:?}", hash_to_load);
+            syscalls::emit_answer(msg.message_id.unwrap(), &loader::ffi::LoadResponse {
+                result: Ok(vec![1, 2, 3, 4])
+            });
         }
 
         /*let mut tcp_stream = tcp::TcpStream::connect(&"127.0.0.1:8000".parse().unwrap()).await;
