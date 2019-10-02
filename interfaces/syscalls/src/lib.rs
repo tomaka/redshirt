@@ -1,6 +1,30 @@
 // Copyright(c) 2019 Pierre Krieger
 
 //! Bindings for interfacing with the environment of the "kernel".
+//!
+//! # About threads
+//!
+//! Multithreading in WASM isn't specified yet, and Rust doesn't allow multithreaded WASM code.
+//! In particular, multithreaded WASM code in LLVM is undefined behaviour.
+//!
+//! With that in mind, this makes writing an implementation of `Future` challenging. When the
+//! `Future` returns `Poll::Pending`, the `Waker` has to be stored somewhere and invoked. Since
+//! there is possibility of having multiple threads, the only moment when the `Waker` can be
+//! invoked is when we explicitly call a function whose role is to do that. The only reasonable
+//! choices for such function are [`block_on`], or similar.
+//! 
+//! For the same reason, it is also challenging to write an implementation of [`block_on`].
+//! Sleeping the current thread is possible, because the lack of background threads makes it
+//! impossible for the `Waker` to be invoked. An implementation of [`block_on`] **must** somehow
+//! perform actions that will drive to completion the `Future` it is blocking upon, otherwise
+//! nothing will ever happen.
+//!
+//! Consequently, it has been decided that the implementations of `Future` that this module
+//! provide interact, through a global variable, with the behaviour of [`block_on`]. More
+//! precisely, before a `Future` returns `Poll::Pending`, it stores its `Waker` in a global
+//! variable alongside with the ID of the message whose response ware waiting for, and the
+//! [`block_on`] function reads and processes that global variable.
+//!
 
 #![deny(intra_doc_link_resolution_failure)]
 
@@ -8,6 +32,7 @@ extern crate alloc;
 
 use alloc::sync::Arc;
 use core::{
+    hint::unreachable_unchecked,
     marker::PhantomData,
     mem,
     pin::Pin,
@@ -131,7 +156,10 @@ where
                     self.finished = true;
                     Poll::Ready(DecodeAll::decode_all(&r.actual_data).unwrap())
                 }
-                _ => unreachable!(), // TODO: replace with std::hint::unreachable when we're mature
+                #[cfg(debug_assertions)]
+                _ => unsafe { unreachable_unchecked() },
+                #[cfg(not(debug_assertions))]
+                _ => unreachable!(),
             }
         } else {
             block_on::register_message_waker(self.msg_id, self.cell.clone(), cx.waker().clone());
@@ -170,7 +198,10 @@ impl Future for InterfaceMessageFuture {
                     self.finished = true;
                     Poll::Ready(imsg)
                 }
-                _ => unreachable!(), // TODO: replace with std::hint::unreachable when we're mature
+                #[cfg(debug_assertions)]
+                _ => unsafe { unreachable_unchecked() },
+                #[cfg(not(debug_assertions))]
+                _ => unreachable!(),
             }
         } else {
             block_on::register_message_waker(1, self.cell.clone(), cx.waker().clone());
