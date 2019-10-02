@@ -618,28 +618,28 @@ mod tests {
     fn start_in_paused_if_main() {
         let module = Module::from_wat(
             r#"(module
-            (func $main (param $p0 i32) (param $p1 i32) (result i32)
+            (func $_start (result i32)
                 i32.const 5)
-            (export "main" (func $main)))
+            (export "_start" (func $_start)))
         "#,
         )
         .unwrap();
 
-        let _state_machine = ProcessStateMachine::new(&module, |_, _, _| unreachable!()).unwrap();
+        let _state_machine = ProcessStateMachine::new(&module, (), |_, _, _| unreachable!()).unwrap();
     }
 
     #[test]
     fn start_stopped_if_no_main() {
         let module = Module::from_wat(
             r#"(module
-            (func $main (param $p0 i32) (param $p1 i32) (result i32)
+            (func $_start (result i32)
                 i32.const 5)
-            (export "foo" (func $main)))
+            (export "foo" (func $_start)))
         "#,
         )
         .unwrap();
 
-        match ProcessStateMachine::new(&module, |_, _, _| unreachable!()) {
+        match ProcessStateMachine::new(&module, (), |_, _, _| unreachable!()) {
             Err(NewErr::StartNotFound) => {}
             _ => panic!(),
         }
@@ -649,17 +649,17 @@ mod tests {
     fn main_executes() {
         let module = Module::from_wat(
             r#"(module
-            (func $main (param $p0 i32) (param $p1 i32) (result i32)
+            (func $_start (result i32)
                 i32.const 5)
-            (export "main" (func $main)))
+            (export "_start" (func $_start)))
         "#,
         )
         .unwrap();
 
         let mut state_machine =
-            ProcessStateMachine::new(&module, |_, _, _| unreachable!()).unwrap();
+            ProcessStateMachine::new(&module, (), |_, _, _| unreachable!()).unwrap();
         match state_machine.thread(0).unwrap().run(None) {
-            Ok(ExecOutcome::Finished(Some(wasmi::RuntimeValue::I32(5)))) => {}
+            Ok(ExecOutcome::ThreadFinished { return_value: Some(wasmi::RuntimeValue::I32(5)), .. }) => {}
             _ => panic!(),
         }
         assert!(state_machine.thread(0).is_none());
@@ -670,14 +670,14 @@ mod tests {
         let module = Module::from_wat(
             r#"(module
             (import "" "test" (func $test (result i32)))
-            (func $main (param $p0 i32) (param $p1 i32) (result i32)
+            (func $_start (result i32)
                 call $test)
-            (export "main" (func $main)))
+            (export "_start" (func $_start)))
         "#,
         )
         .unwrap();
 
-        let mut state_machine = ProcessStateMachine::new(&module, |_, _, _| Ok(9876)).unwrap();
+        let mut state_machine = ProcessStateMachine::new(&module, (), |_, _, _| Ok(9876)).unwrap();
         match state_machine.thread(0).unwrap().run(None) {
             Ok(ExecOutcome::Interrupted {
                 id: 9876,
@@ -692,7 +692,7 @@ mod tests {
             .unwrap()
             .run(Some(wasmi::RuntimeValue::I32(2227)))
         {
-            Ok(ExecOutcome::Finished(Some(wasmi::RuntimeValue::I32(2227)))) => {}
+            Ok(ExecOutcome::ThreadFinished { return_value: Some(wasmi::RuntimeValue::I32(2227)), .. }) => {}
             _ => panic!(),
         }
         assert!(state_machine.thread(0).is_none());
@@ -702,17 +702,17 @@ mod tests {
     fn poisoning_works() {
         let module = Module::from_wat(
             r#"(module
-            (func $main (param $p0 i32) (param $p1 i32) (result i32)
+            (func $_start
                 unreachable)
-            (export "main" (func $main)))
+            (export "_start" (func $_start)))
         "#,
         )
         .unwrap();
 
         let mut state_machine =
-            ProcessStateMachine::new(&module, |_, _, _| unreachable!()).unwrap();
+            ProcessStateMachine::new(&module, (), |_, _, _| unreachable!()).unwrap();
         match state_machine.thread(0).unwrap().run(None) {
-            Ok(ExecOutcome::Errored(_)) => {}
+            Ok(ExecOutcome::Errored { .. }) => {}
             _ => panic!(),
         }
 

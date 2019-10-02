@@ -862,9 +862,9 @@ mod tests {
     fn basic_module() {
         let module = Module::from_wat(
             r#"(module
-            (func $main (param $p0 i32) (param $p1 i32) (result i32)
+            (func $_start (result i32)
                 i32.const 5)
-            (export "main" (func $main)))
+            (export "_start" (func $_start)))
         "#,
         )
         .unwrap();
@@ -877,7 +877,7 @@ mod tests {
                 process,
                 return_value,
             } => {
-                assert_eq!(process.pid(), expected_pid);
+                assert_eq!(process, expected_pid);
                 assert_eq!(return_value, Some(wasmi::RuntimeValue::I32(5)));
             }
             _ => panic!(),
@@ -911,34 +911,35 @@ mod tests {
     fn module_wait_extrinsic() {
         let module = Module::from_wat(
             r#"(module
-            (import "" "test" (func $test (result i32)))
-            (func $main (param $p0 i32) (param $p1 i32) (result i32)
+            (import "foo" "test" (func $test (result i32)))
+            (func $_start (result i32)
                 call $test)
-            (export "main" (func $main)))
+            (export "_start" (func $_start)))
         "#,
         )
         .unwrap();
 
         let mut core = Core::<u32>::new()
-            .with_extrinsic([0; 32], "test", Signature::new(iter::empty(), None), 639u32)
+            .with_extrinsic("foo", "test", Signature::new(iter::empty(), None), 639u32)
             .build();
 
         let expected_pid = core.execute(&module).unwrap().pid();
 
-        match core.run() {
+        let thread_id = match core.run() {
             CoreRunOutcome::ThreadWaitExtrinsic {
-                process,
+                mut thread,
                 extrinsic,
                 params,
             } => {
-                assert_eq!(process.pid(), expected_pid);
+                assert_eq!(thread.pid(), expected_pid);
                 assert_eq!(*extrinsic, 639);
                 assert!(params.is_empty());
+                thread.id()
             }
             _ => panic!(),
-        }
+        };
 
-        core.process_by_id(expected_pid)
+        core.thread_by_id(thread_id)
             .unwrap()
             .resolve_extrinsic_call(Some(wasmi::RuntimeValue::I32(713)));
 
@@ -947,7 +948,7 @@ mod tests {
                 process,
                 return_value,
             } => {
-                assert_eq!(process.pid(), expected_pid);
+                assert_eq!(process, expected_pid);
                 assert_eq!(return_value, Some(wasmi::RuntimeValue::I32(713)));
             }
             _ => panic!(),
