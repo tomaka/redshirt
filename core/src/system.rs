@@ -105,6 +105,7 @@ impl<TExtEx: Clone> System<TExtEx> {
                         params: params.clone(),
                     };
                 }
+                CoreRunOutcome::MessageResponse { .. } => unreachable!(),
                 CoreRunOutcome::InterfaceMessage {
                     pid,
                     event_id,
@@ -113,7 +114,6 @@ impl<TExtEx: Clone> System<TExtEx> {
                 } if interface == threads::ffi::INTERFACE => {
                     let msg: threads::ffi::ThreadsMessage =
                         DecodeAll::decode_all(&message).unwrap();
-                    println!("threads message: {:?}", msg);
                     match msg {
                         threads::ffi::ThreadsMessage::New(new_thread) => {
                             assert!(event_id.is_none());
@@ -163,14 +163,18 @@ impl<TExtEx: Clone> System<TExtEx> {
                         DecodeAll::decode_all(&message).unwrap();
                     println!("interface message: {:?}", msg);
                     match msg {
-                        interface::ffi::InterfaceMessage::Register(hash) => {
-                            // TODO:
+                        interface::ffi::InterfaceMessage::Register(interface_hash) => {
+                            self.core.set_interface_handler(interface_hash, pid).unwrap();
                             let response =
                                 interface::ffi::InterfaceRegisterResponse { result: Ok(()) };
                             self.core
                                 .answer_event(event_id.unwrap(), &response.encode());
                         }
                     }
+
+                    // TODO: temporary, for testing purposes
+                    let msg = loader::ffi::LoaderMessage::Load([0; 32]);
+                    self.core.emit_interface_message_answer(loader::ffi::INTERFACE, msg).unwrap();
                 }
                 CoreRunOutcome::InterfaceMessage {
                     pid,

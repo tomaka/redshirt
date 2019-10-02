@@ -11,7 +11,7 @@ use core::{
     mem,
     task::{Context, Poll, Waker},
 };
-use crossbeam::{channel, queue::SegQueue};
+use crossbeam::{atomic::AtomicCell, queue::SegQueue};
 use futures::prelude::*;
 use parity_scale_codec::{DecodeAll, Encode};
 
@@ -66,19 +66,20 @@ pub fn emit_message(
 ) -> Result<Option<u64>, ()> {
     unsafe {
         let buf = msg.encode();
-        let mut event_id_out = 0;
+        let mut event_id_out = 0xdeadbeefu64;
         let ret = ffi::emit_message(
             interface_hash as *const [u8; 32] as *const _,
             buf.as_ptr(),
             buf.len() as u32,
             needs_answer,
-            &mut event_id_out as *mut _,
+            &mut event_id_out as *mut u64,
         );
         if ret != 0 {
             return Err(());
         }
 
         if needs_answer {
+            debug_assert_ne!(event_id_out, 0xdeadbeefu64);      // TODO: what if written event_id is actually deadbeef?
             Ok(Some(event_id_out))
         } else {
             Ok(None)
@@ -106,8 +107,32 @@ pub fn emit_answer(message_id: u64, msg: &impl Encode) -> Result<(), ()> {
     }
 }
 
+pub fn next_interface_message() -> impl Future<Output = InterfaceMessage> {
+    let cell = Arc::new(AtomicCell::new(None));
+    let mut finished = false;
+    future::poll_fn(move |cx| {
+        assert!(!finished);
+        if let Some(message) = cell.take() {
+            match message {
+                Message::Interface(imsg) => {
+                    finished = true;
+                    Poll::Ready(imsg)
+                }
+                _ => unreachable!(), // TODO: replace with std::hint::unreachable when we're mature
+            }
+        } else {
+            block_on::register_message_waker(1, cell.clone(), cx.waker().clone());
+            Poll::Pending
+        }
+    })
+}
+
+/// > **WARNING**: Rust (and more importantly LLVM) at the moment assumes that only a single WASM
+/// >              thread can exist at any given point in time. More specifically, LLVM assumes
+/// >              that only a single stack exists, and maintains a stack pointer as a global
+/// >              variable. It is therefore unsound to use stack variables on separate threads.
 #[cfg(target_arch = "wasm32")]
-pub fn spawn_thread(function: impl FnOnce()) {
+pub unsafe fn spawn_thread(function: impl FnOnce()) {
     let function_box: Box<Box<dyn FnOnce()>> = Box::new(Box::new(function));
 
     extern "C" fn caller(user_data: u32) {
@@ -117,18 +142,16 @@ pub fn spawn_thread(function: impl FnOnce()) {
         }
     }
 
-    unsafe {
-        let thread_new = threads::ffi::ThreadsMessage::New(threads::ffi::ThreadNew {
-            fn_ptr: mem::transmute(caller as extern "C" fn(u32)),
-            user_data: Box::into_raw(function_box) as usize as u32,
-        });
+    let thread_new = threads::ffi::ThreadsMessage::New(threads::ffi::ThreadNew {
+        fn_ptr: mem::transmute(caller as extern "C" fn(u32)),
+        user_data: Box::into_raw(function_box) as usize as u32,
+    });
 
-        emit_message(&threads::ffi::INTERFACE, &thread_new, false).unwrap();
-    }
+    emit_message(&threads::ffi::INTERFACE, &thread_new, false).unwrap();
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn spawn_thread(function: impl FnOnce()) {
+pub unsafe fn spawn_thread(function: impl FnOnce()) {
     panic!()
 }
 
@@ -136,11 +159,11 @@ pub fn spawn_thread(function: impl FnOnce()) {
                                // TODO: strongly-typed Future
                                // TODO: the strongly typed Future should have a Drop impl that cancels the message
 pub fn message_response<T: DecodeAll>(msg_id: u64) -> impl Future<Output = T> {
-    let (message_sink_tx, message_sink_rx) = channel::bounded(1);
+    let cell = Arc::new(AtomicCell::new(None));
     let mut finished = false;
     future::poll_fn(move |cx| {
         assert!(!finished);
-        if let Ok(message) = message_sink_rx.try_recv() {
+        if let Some(message) = cell.take() {
             match message {
                 Message::Response(r) => {
                     finished = true;
@@ -149,14 +172,7 @@ pub fn message_response<T: DecodeAll>(msg_id: u64) -> impl Future<Output = T> {
                 _ => unreachable!(), // TODO: replace with std::hint::unreachable when we're mature
             }
         } else {
-            REACTOR
-                .new_elems
-                .push((msg_id, message_sink_tx.clone(), cx.waker().clone()));
-            let futex_wake = threads::ffi::ThreadsMessage::FutexWake(threads::ffi::FutexWake {
-                addr: &REACTOR.notify_futex as *const u32 as usize as u32,
-                nwake: 1,
-            });
-            emit_message(&threads::ffi::INTERFACE, &futex_wake, false).unwrap();
+            block_on::register_message_waker(msg_id, cell.clone(), cx.waker().clone());
             Poll::Pending
         }
     })
@@ -170,77 +186,3 @@ pub fn message_response<T: DecodeAll>(msg_id: u64) -> impl Future<Output = T> {
 }
 
 // TODO: add a variant of message_response but for multiple messages
-
-lazy_static::lazy_static! {
-    static ref REACTOR: Reactor = {
-        // TODO: circular dependency with `threads`
-        spawn_thread(|| background_thread());
-
-        Reactor {
-            notify_futex: 0,
-            new_elems: SegQueue::new()
-        }
-    };
-}
-
-struct Reactor {
-    notify_futex: u32,
-    new_elems: SegQueue<(u64, channel::Sender<Message>, Waker)>,
-}
-
-fn background_thread() {
-    let mut message_ids = vec![0];
-    let mut wakers = Vec::with_capacity(16);
-
-    loop {
-        // Basic cleanup in order to release memory acquired during peaks.
-        if message_ids.capacity() - message_ids.len() >= 32 {
-            message_ids.shrink_to_fit();
-        }
-
-        // We want to be notified whenever the non-background thread adds elements to the
-        // `Reactor`.
-        let wait_notify = {
-            let msg = threads::ffi::ThreadsMessage::FutexWait(threads::ffi::FutexWait {
-                addr: &REACTOR.notify_futex as *const u32 as usize as u32,
-                val_cmp: 0,
-            });
-            emit_message(&threads::ffi::INTERFACE, &msg, true)
-                .unwrap()
-                .unwrap()
-        };
-
-        message_ids[0] = wait_notify;
-
-        while let Ok((msg_id, sink, waker)) = REACTOR.new_elems.pop() {
-            // TODO: is it possible that we get a message id for a message that's already been responsed? figure this out
-            if let Some(existing_pos) = message_ids.iter().position(|m| *m == msg_id) {
-                wakers[existing_pos] = (sink, waker);
-            } else {
-                message_ids.push(msg_id);
-                wakers.push((sink, waker));
-            }
-        }
-
-        loop {
-            let msg = match next_message(&mut message_ids, true) {
-                Some(Message::Response(msg)) => msg,
-                Some(Message::Interface(_)) => unreachable!(),
-                None => unreachable!(),
-            };
-
-            if msg.message_id == wait_notify {
-                debug_assert_eq!(msg.index_in_list, 0);
-                break;
-            }
-
-            debug_assert_ne!(msg.index_in_list, 0);
-            message_ids.remove(msg.index_in_list as usize);
-
-            let (sink, waker) = wakers.remove(msg.index_in_list as usize - 1);
-            if let Ok(_) = sink.try_send(Message::Response(msg)) {
-                waker.wake();
-            }
-        }
-    }
-}

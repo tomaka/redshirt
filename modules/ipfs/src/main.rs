@@ -6,7 +6,12 @@ fn main() {
     syscalls::block_on(async move {
         interface::register_interface(loader::ffi::INTERFACE).await.unwrap();
 
-        let mut tcp_stream = tcp::TcpStream::connect(&"127.0.0.1:8000".parse().unwrap()).await;
+        loop {
+            let msg = syscalls::next_interface_message().await;
+            println!("received message: {:?}", msg);
+        }
+
+        /*let mut tcp_stream = tcp::TcpStream::connect(&"127.0.0.1:8000".parse().unwrap()).await;
 
         tcp_stream
             .write_all(
@@ -24,7 +29,7 @@ Connection: Keep-Alive
         let mut out = vec![0; 65536];
         let out_len = tcp_stream.read(&mut out).await.unwrap();
         out.truncate(out_len);
-        println!("out = {:?}", out);
+        println!("out = {:?}", out);*/
     });
 }
 

@@ -8,8 +8,8 @@ use crate::signature::Signature;
 use alloc::{borrow::Cow, collections::VecDeque, vec, vec::Vec};
 use byteorder::{ByteOrder as _, LittleEndian};
 use core::{convert::TryFrom, marker::PhantomData};
-use hashbrown::HashMap;
-use parity_scale_codec::Encode as _;
+use hashbrown::{HashMap, hash_map::Entry};
+use parity_scale_codec::Encode;
 
 /// Handles scheduling processes and inter-process communications.
 pub struct Core<T> {
@@ -89,6 +89,10 @@ pub enum CoreRunOutcome<'a, T> {
         interface: [u8; 32],
         message: Vec<u8>,
     },
+    MessageResponse {
+        message_id: u64,
+        response: Vec<u8>,
+    },
     /// Nothing to do. No process is ready to run.
     Idle,
 }
@@ -125,7 +129,8 @@ enum CoreRunOutcomeInner {
 struct Process {
     /// Messages available for retrieval by the process by calling `next_message`.
     ///
-    /// Note that the [`index_in_list`](syscalls::ffi::ResponseMessage::index_in_list) field is
+    /// Note that the [`ResponseMessage::index_in_list`](syscalls::ffi::ResponseMessage::index_in_list)
+    /// and [`InterfaceMessage::index_in_list`](syscalls::ffi::InterfaceMessage::index_in_list) fields are
     /// set to a dummy value, and must be filled before actually delivering the message.
     // TODO: call shrink_to_fit from time to time
     messages_queue: VecDeque<syscalls::ffi::Message>,
@@ -271,7 +276,7 @@ impl<T> Core<T> {
                     return_value: value,
                 };
             }
-            processes::RunOneOutcome::ThreadFinished { .. } => {}
+            processes::RunOneOutcome::ThreadFinished { .. } => { println!("thread finished"); }
             processes::RunOneOutcome::Interrupted {
                 mut thread,
                 id,
@@ -297,6 +302,8 @@ impl<T> Core<T> {
                     }
 
                     Extrinsic::EmitMessage => {
+                        // TODO: after this extrinsic is handled, we should maybe resume execution of the currently
+                        // run function, rather than jumping to a different one
                         // TODO: lots of unwraps here
                         assert_eq!(params.len(), 5);
                         let interface: [u8; 32] = {
@@ -322,10 +329,6 @@ impl<T> Core<T> {
                         } else {
                             None
                         };
-                        println!(
-                            "proc emitting {:?} message {:?} needs_answer={:?}",
-                            event_id, message, needs_answer
-                        );
                         match self
                             .interfaces
                             .get(&interface)
@@ -387,6 +390,91 @@ impl<T> Core<T> {
             thread,
             marker: PhantomData,
         })
+    }
+
+    // TODO: better API
+    pub fn set_interface_handler(&mut self, interface: [u8; 32], process: Pid) -> Result<(), ()> {
+        if self.processes.process_by_id(process).is_none() {
+            return Err(());
+        }
+
+        match self.interfaces.entry(interface) {
+            Entry::Occupied(_) => return Err(()),
+            Entry::Vacant(e) => e.insert(InterfaceHandler::Process(process)),
+        };
+
+        Ok(())
+    }
+
+    /// Emits a message for the handler of the given interface.
+    ///
+    /// The message doesn't expect any answer.
+    // TODO: better API
+    pub fn emit_interface_message_no_answer(&mut self, interface: [u8; 32], message: impl Encode) -> Result<(), ()> {
+        let message = syscalls::ffi::Message::Interface(syscalls::ffi::InterfaceMessage {
+            message_id: None,
+            emitter_pid: None,
+            index_in_list: 0,
+            actual_data: message.encode(),
+        });
+
+        let pid = match self.interfaces.get(&interface).ok_or(())? {
+            InterfaceHandler::Process(pid) => *pid,
+            InterfaceHandler::External => return Err(()),       // TODO: explain that explicitely
+        };
+
+        let mut process = self.processes.process_by_id(pid).unwrap();
+        process.user_data()
+            .messages_queue
+            .push_back(message);
+
+        let mut thread = process.main_thread();
+        loop {
+            try_resume_message_wait(&mut thread);
+            match thread.next_thread() {
+                Some(t) => thread = t,
+                None => break,
+            };
+        }
+
+        Ok(())
+    }
+
+    /// Emits a message for the handler of the given interface.
+    ///
+    /// The message does expect an answer. The answer will be sent back as
+    /// [`MessageResponse`](CoreRunOutcome::MessageResponse) event.
+    // TODO: better API
+    pub fn emit_interface_message_answer(&mut self, interface: [u8; 32], message: impl Encode) -> Result<u64, ()> {
+        let message_id = 2222;      // TODO:
+
+        let message = syscalls::ffi::Message::Interface(syscalls::ffi::InterfaceMessage {
+            message_id: Some(message_id),
+            emitter_pid: None,
+            index_in_list: 0,
+            actual_data: message.encode(),
+        });
+
+        let pid = match self.interfaces.get(&interface).ok_or(())? {
+            InterfaceHandler::Process(pid) => *pid,
+            InterfaceHandler::External => return Err(()),       // TODO: explain that explicitely
+        };
+
+        let mut process = self.processes.process_by_id(pid).unwrap();
+        process.user_data()
+            .messages_queue
+            .push_back(message);
+
+        let mut thread = process.main_thread();
+        loop {
+            try_resume_message_wait(&mut thread);
+            match thread.next_thread() {
+                Some(t) => thread = t,
+                None => break,
+            };
+        }
+
+        Ok(message_id)
     }
 
     // TODO: better API
@@ -603,11 +691,6 @@ fn extrinsic_next_message(
 
     assert!(block); // not blocking not supported
     assert!(*process.user_data() == Thread::ReadyToRun);
-    println!(
-        "now waiting for {:?}; queue is {:?}",
-        msg_ids,
-        process.user_data()
-    );
     *process.user_data() = Thread::MessageWait(MessageWait {
         msg_ids,
         msg_ids_ptr,
@@ -659,9 +742,11 @@ fn try_resume_message_wait(thread: &mut processes::ProcessesCollectionThread<Pro
     // Adjust the `index_in_list` field of the message to match what we have.
     match thread.process_user_data().messages_queue[index_in_queue] {
         syscalls::ffi::Message::Response(ref mut response) => {
-            response.index_in_list = index_in_msg_ids
+            response.index_in_list = index_in_msg_ids;
         }
-        _ => {}
+        syscalls::ffi::Message::Interface(ref mut interface) => {
+            interface.index_in_list = index_in_msg_ids;
+        }
     }
 
     // Turn said message into bytes.
@@ -679,7 +764,7 @@ fn try_resume_message_wait(thread: &mut processes::ProcessesCollectionThread<Pro
             .write_memory(msg_wait.msg_ids_ptr + index_in_msg_ids * 8, &[0; 8])
             .unwrap();
         // Pop the message from the queue, so that we don't deliver it twice.
-        thread.process_user_data().messages_queue.remove(0);
+        thread.process_user_data().messages_queue.remove(index_in_queue);
     }
 
     *thread.user_data() = Thread::ReadyToRun;
