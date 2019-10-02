@@ -3,10 +3,11 @@ use alloc::sync::Arc;
 use core::{
     cell::RefCell,
     mem,
+    sync::atomic::{AtomicBool, Ordering},
     task::{Context, Poll, Waker},
 };
 use crossbeam::atomic::AtomicCell;
-use futures::prelude::*;
+use futures::{prelude::*, task};
 use parity_scale_codec::{DecodeAll, Encode};
 use send_wrapper::SendWrapper;
 
@@ -26,11 +27,35 @@ pub fn block_on<T>(future: impl Future<Output = T>) -> T {
 
     pin_utils::pin_mut!(future);
 
-    let mut context = Context::from_waker(futures::task::noop_waker_ref());
+    // This `Arc<AtomicBool>` will be set to true if we are waken up during the polling.
+    let woken_up = Arc::new(AtomicBool::new(false));
+    let waker = {
+        struct Notify(Arc<AtomicBool>);
+        impl task::ArcWake for Notify {
+            fn wake_by_ref(arc_self: &Arc<Self>) {
+                arc_self.0.store(true, Ordering::SeqCst);
+            }
+        }
+        task::waker(Arc::new(Notify(woken_up.clone())))
+    };
+
+    let mut context = Context::from_waker(&waker);
 
     loop {
-        if let Poll::Ready(val) = Future::poll(future.as_mut(), &mut context) {
-            return val;
+        // We poll the future continuously until it is either Ready, or the waker stops being
+        // invoked during the polling.
+        loop {
+            if let Poll::Ready(val) = Future::poll(future.as_mut(), &mut context) {
+                return val;
+            }
+
+            // If the waker has been used during the polling of this future, then we have to pol
+            // again.
+            if woken_up.swap(false, Ordering::SeqCst) {
+                continue
+            } else {
+                break
+            }
         }
 
         let mut state = (&*STATE).borrow_mut();
