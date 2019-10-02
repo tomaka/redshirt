@@ -14,6 +14,10 @@ addons:
     packages:
       - clang-8
 
+env:
+  - CC=clang-8
+  - CXX=clang++-8
+
 script:
   - rustup target install wasm32-unknown-unknown
   - rustup target install wasm32-wasi
