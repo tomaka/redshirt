@@ -6,6 +6,14 @@ cache:
 rust:
   - nightly
 
+dist: xenial
+addons:
+  apt:
+    sources:
+      - llvm-toolchain-xenial-8
+    packages:
+      - clang-8
+
 script:
   - rustup target install wasm32-unknown-unknown
   - rustup target install wasm32-wasi
