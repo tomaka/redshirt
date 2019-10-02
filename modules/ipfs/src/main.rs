@@ -40,6 +40,7 @@ Connection: Keep-Alive
     });
 }
 
+// TODO: compiles but fails to link because of wasm-in-browser stuff getting in the way
 /*use futures01::prelude::*;
 use futures::compat::Compat01As03;
 use libp2p_core::{
@@ -113,7 +114,7 @@ fn main() {
         // behaviour.add_address(&"QmSoLSafTMBsPKadTEgaXctDQVcqN88CNLHXMkTNwMKPnu".parse().unwrap(), "/ip4/128.199.219.111/tcp/4001".parse().unwrap());
         // behaviour.add_address(&"QmSoLV4Bbm51jM9C4gDYZQ9Cy3U6aXMJDAbzgu2fzaDs64".parse().unwrap(), "/ip4/104.236.76.40/tcp/4001".parse().unwrap());
         // behaviour.add_address(&"QmSoLer265NRgSp2LA3dPaeykiS1J6DifTC88f5uVQKNAd".parse().unwrap(), "/ip4/178.62.158.247/tcp/4001".parse().unwrap());
-.
+
         // The following addresses are permanently unreachable:
         // Other(Other(A(Transport(A(Underlying(Os { code: 101, kind: Other, message: "Network is unreachable" }))))))
         // behaviour.add_address(&"QmSoLPppuBtQSGwKDZT2M73ULpjvfd3aZ6ha4oFGL1KrGM".parse().unwrap(), "/ip6/2604:a880:1:20::203:d001/tcp/4001".parse().unwrap());
@@ -134,7 +135,7 @@ fn main() {
     swarm.get_closest_peers(to_search);
 
     // Kick it off!
-    futures::executor::block_on(Compat01As03::new(futures01::future::poll_fn(move || -> Result<_, ()> {
+    syscalls::block_on(Compat01As03::new(futures01::future::poll_fn(move || -> Result<_, ()> {
         loop {
             match swarm.poll().expect("Error while polling swarm") {
                 Async::Ready(Some(KademliaEvent::GetClosestPeersResult(res))) => {

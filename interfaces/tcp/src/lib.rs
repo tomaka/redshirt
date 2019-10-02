@@ -16,10 +16,10 @@ pub struct TcpStream {
     handle: u32,
     /// If Some, we have sent out a "read" message and are waiting for a response.
     // TODO: use strongly typed Future here
-    pending_read: Option<Pin<Box<dyn Future<Output = ffi::TcpReadResponse>>>>,
+    pending_read: Option<Pin<Box<dyn Future<Output = ffi::TcpReadResponse> + Send>>>,
     /// If Some, we have sent out a "write" message and are waiting for a response.
     // TODO: use strongly typed Future here
-    pending_write: Option<Pin<Box<dyn Future<Output = ffi::TcpWriteResponse>>>>,
+    pending_write: Option<Pin<Box<dyn Future<Output = ffi::TcpWriteResponse> + Send>>>,
 }
 
 impl TcpStream {
