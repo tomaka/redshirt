@@ -22,43 +22,13 @@ mod block_on;
 
 pub mod ffi;
 
-#[cfg(target_arch = "wasm32")] // TODO: bad
-pub fn next_message_raw(to_poll: &mut [u64], block: bool) -> Option<Vec<u8>> {
-    unsafe {
-        let mut out = Vec::with_capacity(32);
-        loop {
-            let ret = ffi::next_message(
-                to_poll.as_mut_ptr(),
-                to_poll.len() as u32,
-                out.as_mut_ptr(),
-                out.capacity() as u32,
-                block,
-            ) as usize;
-            if ret == 0 {
-                return None;
-            }
-            if ret > out.capacity() {
-                out.reserve(ret);
-                continue;
-            }
-            out.set_len(ret);
-            return Some(out);
-        }
-    }
-}
-
-#[cfg(target_arch = "wasm32")] // TODO: bad
-pub fn next_message(to_poll: &mut [u64], block: bool) -> Option<Message> {
-    let out = next_message_raw(to_poll, block)?;
-    let msg: Message = DecodeAll::decode_all(&out).unwrap();
-    Some(msg)
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-pub fn next_message(to_poll: &mut [u64], block: bool) -> Option<Message> {
-    unimplemented!()
-}
-
+/// Emits a message destined to the handler of the given interface.
+///
+/// Returns `Ok` if the message has been successfully dispatched.
+///
+/// If `needs_answer` is true, then we expect an answer to the message to come later. A message ID
+/// is generated and is returned within `Ok(Some(...))`.
+/// If `needs_answer` is false, the function always returns `Ok(None)`.
 pub fn emit_message(
     interface_hash: &[u8; 32],
     msg: &impl Encode,
@@ -87,6 +57,7 @@ pub fn emit_message(
     }
 }
 
+/// Combines [`emit_message`] with [`message_response`].
 pub async fn emit_message_with_response<T: DecodeAll>(
     interface_hash: [u8; 32],
     msg: impl Encode,
@@ -95,6 +66,8 @@ pub async fn emit_message_with_response<T: DecodeAll>(
     Ok(message_response(msg_id).await)
 }
 
+/// Answers the given message.
+// TODO: move to interface interface?
 pub fn emit_answer(message_id: u64, msg: &impl Encode) -> Result<(), ()> {
     unsafe {
         let buf = msg.encode();
@@ -107,6 +80,10 @@ pub fn emit_answer(message_id: u64, msg: &impl Encode) -> Result<(), ()> {
     }
 }
 
+/// Returns a future that is ready when a new message arrives on an interface that we have
+/// registered.
+///
+// TODO: move to interface interface?
 pub fn next_interface_message() -> impl Future<Output = InterfaceMessage> {
     let cell = Arc::new(AtomicCell::new(None));
     let mut finished = false;
@@ -127,6 +104,9 @@ pub fn next_interface_message() -> impl Future<Output = InterfaceMessage> {
     })
 }
 
+/// Returns a future that is ready when a response to the given message comes back.
+///
+/// The return value is the type the message decodes to.
 #[cfg(target_arch = "wasm32")] // TODO: bad
                                // TODO: strongly-typed Future
                                // TODO: the strongly typed Future should have a Drop impl that cancels the message
@@ -150,6 +130,9 @@ pub fn message_response<T: DecodeAll>(msg_id: u64) -> impl Future<Output = T> {
     })
 }
 
+/// Returns a future that is ready when a response to the given message comes back.
+///
+/// The return value is the type the message decodes to.
 #[cfg(not(target_arch = "wasm32"))] // TODO: bad
                                     // TODO: strongly-typed Future
 pub fn message_response<T: DecodeAll>(msg_id: u64) -> impl Future<Output = T> {

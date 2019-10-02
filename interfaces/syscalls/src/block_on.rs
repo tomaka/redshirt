@@ -1,4 +1,4 @@
-use crate::{emit_message, next_message, Message, ResponseMessage, InterfaceMessage};
+use crate::{emit_message, Message, ResponseMessage, InterfaceMessage};
 use alloc::sync::Arc;
 use core::{
     cell::RefCell,
@@ -59,7 +59,7 @@ pub fn block_on<T>(future: impl Future<Output = T>) -> T {
         }
 
         let mut state = (&*STATE).borrow_mut();
-        let msg = next_message(&mut state.message_ids, true).unwrap();
+        let msg = wait_next_message(&mut state.message_ids);
         println!("got message: {:?}", msg);
 
         // TODO: index_in_list as a method on Message
@@ -89,4 +89,36 @@ lazy_static::lazy_static! {
 struct ResponsesState {
     message_ids: Vec<u64>,
     sinks_wakers: Vec<(Arc<AtomicCell<Option<Message>>>, Waker)>,
+}
+
+/// Blocks the thread until a message comes.
+///
+/// See the [`next_message`](crate::ffi::next_message) FFI function for the semantics of
+/// `to_poll`.
+#[cfg(target_arch = "wasm32")] // TODO: bad
+fn wait_next_message(to_poll: &mut [u64]) -> Message {
+    unsafe {
+        let mut out = Vec::with_capacity(32);
+        loop {
+            let ret = crate::ffi::next_message(
+                to_poll.as_mut_ptr(),
+                to_poll.len() as u32,
+                out.as_mut_ptr(),
+                out.capacity() as u32,
+                true,
+            ) as usize;
+            debug_assert_ne!(ret, 0); // function can't return 0 if block is true
+            if ret > out.capacity() {
+                out.reserve(ret);
+                continue;
+            }
+            out.set_len(ret);
+            return DecodeAll::decode_all(&out).unwrap();
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))] // TODO: bad
+fn wait_next_message(to_poll: &mut [u64]) -> Message {
+    panic!()
 }
