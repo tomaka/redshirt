@@ -9,7 +9,7 @@ use parity_scale_codec::{DecodeAll, Encode};
 use smallvec::SmallVec;
 
 pub struct System<TExtEx> {
-    core: Core<Extrinsic<TExtEx>>,
+    core: Core<TExtEx>,
     futex_waits: HashMap<(Pid, u32), SmallVec<[u64; 4]>>,
 
     /// Set of messages that we emitted of requests to load a program from the loader interface.
@@ -19,7 +19,7 @@ pub struct System<TExtEx> {
 }
 
 pub struct SystemBuilder<TExtEx> {
-    core: CoreBuilder<Extrinsic<TExtEx>>,
+    core: CoreBuilder<TExtEx>,
     main_programs: SmallVec<[Module; 1]>,
 }
 
@@ -45,11 +45,6 @@ pub enum SystemRunOutcome<TExtEx> {
         message: Vec<u8>,
     },
     Idle,
-}
-
-#[derive(Debug)]
-enum Extrinsic<TExtEx> {
-    External(TExtEx),
 }
 
 // TODO: we require Clone because of stupid borrowing issues; remove
@@ -99,7 +94,7 @@ impl<TExtEx: Clone> System<TExtEx> {
                 }
                 CoreRunOutcome::ThreadWaitExtrinsic {
                     ref mut thread,
-                    extrinsic: &Extrinsic::External(ref external_token),
+                    extrinsic: external_token,
                     ref params,
                 } => {
                     let pid = thread.pid();
@@ -241,7 +236,7 @@ impl<TExtEx> SystemBuilder<TExtEx> {
     ) -> Self {
         self.core =
             self.core
-                .with_extrinsic(interface, f_name, signature, Extrinsic::External(token));
+                .with_extrinsic(interface, f_name, signature, token);
         self
     }
 
