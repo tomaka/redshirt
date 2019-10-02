@@ -37,13 +37,13 @@ fn main() {
                         true
                     }
                     kernel_core::system::SystemRunOutcome::InterfaceMessage {
-                        event_id,
+                        message_id,
                         interface,
                         message,
                     } if interface == tcp::ffi::INTERFACE => {
                         let message: tcp::ffi::TcpMessage =
                             DecodeAll::decode_all(&message).unwrap();
-                        tcp.handle_message(event_id, message);
+                        tcp.handle_message(message_id, message);
                         continue;
                     }
                     kernel_core::system::SystemRunOutcome::Idle => false,
@@ -64,7 +64,7 @@ fn main() {
                     tcp_interface::TcpResponse::Read(msg_id, msg) => (msg_id, msg.encode()),
                     tcp_interface::TcpResponse::Write(msg_id, msg) => (msg_id, msg.encode()),
                 };
-                system.answer_event(msg_to_respond, &response_bytes);
+                system.answer_message(msg_to_respond, &response_bytes);
             }
         });
 

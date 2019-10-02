@@ -35,7 +35,7 @@ pub enum SystemRunOutcome<TExtEx> {
         params: Vec<wasmi::RuntimeValue>,
     },
     InterfaceMessage {
-        event_id: Option<u64>,
+        message_id: Option<u64>,
         interface: [u8; 32],
         message: Vec<u8>,
     },
@@ -111,7 +111,7 @@ impl<TExtEx: Clone> System<TExtEx> {
                 },
                 CoreRunOutcome::InterfaceMessage {
                     pid,
-                    event_id,
+                    message_id,
                     interface,
                     message,
                 } if interface == threads::ffi::INTERFACE => {
@@ -119,19 +119,19 @@ impl<TExtEx: Clone> System<TExtEx> {
                         DecodeAll::decode_all(&message).unwrap();
                     match msg {
                         threads::ffi::ThreadsMessage::New(new_thread) => {
-                            assert!(event_id.is_none());
+                            assert!(message_id.is_none());
                             self.core.process_by_id(pid).unwrap().start_thread(
                                 new_thread.fn_ptr,
                                 vec![wasmi::RuntimeValue::I32(new_thread.user_data as i32)],
                             );
                         }
                         threads::ffi::ThreadsMessage::FutexWake(mut wake) => {
-                            assert!(event_id.is_none());
+                            assert!(message_id.is_none());
                             if let Some(list) = self.futex_waits.get_mut(&(pid, wake.addr)) {
                                 while wake.nwake > 0 && !list.is_empty() {
                                     wake.nwake -= 1;
-                                    let event_id = list.remove(0);
-                                    self.core.answer_event(event_id, &[]);
+                                    let message_id = list.remove(0);
+                                    self.core.answer_message(message_id, &[]);
                                 }
 
                                 if list.is_empty() {
@@ -141,14 +141,14 @@ impl<TExtEx: Clone> System<TExtEx> {
                             // TODO: implement
                         }
                         threads::ffi::ThreadsMessage::FutexWait(wait) => {
-                            let event_id = event_id.unwrap();
+                            let message_id = message_id.unwrap();
                             // TODO: val_cmp
                             match self.futex_waits.entry((pid, wait.addr)) {
-                                Entry::Occupied(mut e) => e.get_mut().push(event_id),
+                                Entry::Occupied(mut e) => e.get_mut().push(message_id),
                                 Entry::Vacant(e) => {
                                     e.insert({
                                         let mut sv = SmallVec::new();
-                                        sv.push(event_id);
+                                        sv.push(message_id);
                                         sv
                                     });
                                 }
@@ -158,7 +158,7 @@ impl<TExtEx: Clone> System<TExtEx> {
                 }
                 CoreRunOutcome::InterfaceMessage {
                     pid,
-                    event_id,
+                    message_id,
                     interface,
                     message,
                 } if interface == interface::ffi::INTERFACE => {
@@ -171,7 +171,7 @@ impl<TExtEx: Clone> System<TExtEx> {
                             let response =
                                 interface::ffi::InterfaceRegisterResponse { result: Ok(()) };
                             self.core
-                                .answer_event(event_id.unwrap(), &response.encode());
+                                .answer_message(message_id.unwrap(), &response.encode());
                         }
                     }
 
@@ -181,12 +181,12 @@ impl<TExtEx: Clone> System<TExtEx> {
                 }
                 CoreRunOutcome::InterfaceMessage {
                     pid,
-                    event_id,
+                    message_id,
                     interface,
                     message,
                 } => {
                     return SystemRunOutcome::InterfaceMessage {
-                        event_id,
+                        message_id,
                         interface,
                         message,
                     };
@@ -214,9 +214,9 @@ impl<TExtEx: Clone> System<TExtEx> {
     }
 
     // TODO: better API
-    pub fn answer_event(&mut self, event_id: u64, response: &[u8]) {
-        println!("answered event {:?}", event_id);
-        self.core.answer_event(event_id, response)
+    pub fn answer_message(&mut self, message_id: u64, response: &[u8]) {
+        println!("answered event {:?}", message_id);
+        self.core.answer_message(message_id, response)
     }
 }
 

@@ -36,21 +36,21 @@ pub fn emit_message(
 ) -> Result<Option<u64>, ()> {
     unsafe {
         let buf = msg.encode();
-        let mut event_id_out = 0xdeadbeefu64;
+        let mut message_id_out = 0xdeadbeefu64;
         let ret = ffi::emit_message(
             interface_hash as *const [u8; 32] as *const _,
             buf.as_ptr(),
             buf.len() as u32,
             needs_answer,
-            &mut event_id_out as *mut u64,
+            &mut message_id_out as *mut u64,
         );
         if ret != 0 {
             return Err(());
         }
 
         if needs_answer {
-            debug_assert_ne!(event_id_out, 0xdeadbeefu64);      // TODO: what if written event_id is actually deadbeef?
-            Ok(Some(event_id_out))
+            debug_assert_ne!(message_id_out, 0xdeadbeefu64);      // TODO: what if written message_id is actually deadbeef?
+            Ok(Some(message_id_out))
         } else {
             Ok(None)
         }

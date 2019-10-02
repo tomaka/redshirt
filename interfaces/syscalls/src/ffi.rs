@@ -48,17 +48,17 @@ extern "C" {
     /// Returns `0` on success, and `1` in case of error.
     ///
     /// On success, if `needs_answer` is true, will write the ID of new event into the memory
-    /// pointed by `event_id_out`.
+    /// pointed by `message_id_out`.
     ///
     /// When this function is being called, a "lock" is being held on the memory pointed by
-    /// `interface_hash`, `msg` and `event_id_out`. In particular, it is invalid to modify these
+    /// `interface_hash`, `msg` and `message_id_out`. In particular, it is invalid to modify these
     /// buffers while the function is running.
     pub(crate) fn emit_message(
         interface_hash: *const u8,
         msg: *const u8,
         msg_len: u32,
         needs_answer: bool,
-        event_id_out: *mut u64,
+        message_id_out: *mut u64,
     ) -> u32;
 
     /// Sends an answer back to the emitter of given `message_id`.

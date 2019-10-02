@@ -33,10 +33,10 @@ impl TcpState {
         }
     }
 
-    pub fn handle_message(&mut self, event_id: Option<u64>, message: tcp::ffi::TcpMessage) {
+    pub fn handle_message(&mut self, message_id: Option<u64>, message: tcp::ffi::TcpMessage) {
         match message {
             tcp::ffi::TcpMessage::Open(open) => {
-                let event_id = event_id.unwrap();
+                let message_id = message_id.unwrap();
                 let ip_addr = Ipv6Addr::from(open.ip);
                 let socket_addr = if let Some(ip_addr) = ip_addr.to_ipv4() {
                     SocketAddr::new(ip_addr.into(), open.port)
@@ -48,25 +48,25 @@ impl TcpState {
                 let socket = TcpStream::connect(socket_addr);
                 self.sockets.insert(
                     socket_id,
-                    TcpConnec::Connecting(socket_id, event_id, Box::pin(socket)),
+                    TcpConnec::Connecting(socket_id, message_id, Box::pin(socket)),
                 );
             }
             tcp::ffi::TcpMessage::Close(close) => {
                 let _ = self.sockets.remove(&close.socket_id);
             }
             tcp::ffi::TcpMessage::Read(read) => {
-                let event_id = event_id.unwrap();
+                let message_id = message_id.unwrap();
                 self.sockets
                     .get_mut(&read.socket_id)
                     .unwrap()
-                    .start_read(event_id);
+                    .start_read(message_id);
             }
             tcp::ffi::TcpMessage::Write(write) => {
-                let event_id = event_id.unwrap();
+                let message_id = message_id.unwrap();
                 self.sockets
                     .get_mut(&write.socket_id)
                     .unwrap()
-                    .start_write(event_id, write.data);
+                    .start_write(message_id, write.data);
             }
         }
     }
@@ -100,7 +100,7 @@ enum TcpConnec {
 }
 
 impl TcpConnec {
-    pub fn start_read(&mut self, event_id: u64) {
+    pub fn start_read(&mut self, message_id: u64) {
         let pending_read = match self {
             TcpConnec::Socket {
                 ref mut pending_read,
@@ -110,10 +110,10 @@ impl TcpConnec {
         };
 
         assert!(pending_read.is_none());
-        *pending_read = Some(event_id);
+        *pending_read = Some(message_id);
     }
 
-    pub fn start_write(&mut self, event_id: u64, data: Vec<u8>) {
+    pub fn start_write(&mut self, message_id: u64, data: Vec<u8>) {
         let pending_write = match self {
             TcpConnec::Socket {
                 ref mut pending_write,
@@ -123,17 +123,17 @@ impl TcpConnec {
         };
 
         assert!(pending_write.is_none());
-        *pending_write = Some((event_id, data));
+        *pending_write = Some((message_id, data));
     }
 
     pub fn next_event<'a>(&'a mut self) -> impl Future<Output = TcpResponse> + 'a {
         future::poll_fn(move |cx| {
             let (new_self, event) = match self {
-                TcpConnec::Connecting(id, event_id, ref mut fut) => {
+                TcpConnec::Connecting(id, message_id, ref mut fut) => {
                     match ready!(Future::poll(Pin::new(fut), cx)) {
                         Ok(socket) => {
                             let ev = TcpResponse::Open(
-                                *event_id,
+                                *message_id,
                                 tcp::ffi::TcpOpenResponse { result: Ok(*id) },
                             );
                             (
@@ -148,7 +148,7 @@ impl TcpConnec {
                         }
                         Err(_) => {
                             let ev = TcpResponse::Open(
-                                *event_id,
+                                *message_id,
                                 tcp::ffi::TcpOpenResponse { result: Err(()) },
                             );
                             (TcpConnec::Poisoned, ev)
