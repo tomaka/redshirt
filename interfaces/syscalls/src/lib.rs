@@ -9,21 +9,28 @@
 //!
 //! With that in mind, this makes writing an implementation of `Future` challenging. When the
 //! `Future` returns `Poll::Pending`, the `Waker` has to be stored somewhere and invoked. Since
-//! there is possibility of having multiple threads, the only moment when the `Waker` can be
+//! there is no possibility of having multiple threads, the only moment when the `Waker` can be
 //! invoked is when we explicitly call a function whose role is to do that. The only reasonable
-//! choices for such function are [`block_on`], or similar.
+//! choice for such function is the [`block_on`] function, or similar functions.
 //! 
 //! For the same reason, it is also challenging to write an implementation of [`block_on`].
-//! Sleeping the current thread is possible, because the lack of background threads makes it
-//! impossible for the `Waker` to be invoked. An implementation of [`block_on`] **must** somehow
-//! perform actions that will drive to completion the `Future` it is blocking upon, otherwise
-//! nothing will ever happen.
+//! Putting the current thread to sleep is not enough, because the lack of background threads
+//! makes it impossible for the `Waker` to be invoked. An implementation of [`block_on`] **must**
+//! somehow perform actions that will drive to completion the `Future` it is blocking upon,
+//! otherwise nothing will ever happen.
 //!
 //! Consequently, it has been decided that the implementations of `Future` that this module
 //! provide interact, through a global variable, with the behaviour of [`block_on`]. More
 //! precisely, before a `Future` returns `Poll::Pending`, it stores its `Waker` in a global
 //! variable alongside with the ID of the message whose response ware waiting for, and the
 //! [`block_on`] function reads and processes that global variable.
+//!
+//! It is not possible to build a `Future` that is not built on top of [`MessageResponseFuture`]
+//! or [`InterfaceMessageFuture`], and every single use-cases of `Future`s that we could think of
+//! can and must be built on top of one of these two `Future`. Similarly, it is not possible to
+//! build an implementation of [`block_on`] without having access to the internals of these
+//! `Future`s. Tying these `Future`s to the implementation of [`block_on`] is therefore the
+//! logical thing to do.
 //!
 
 #![deny(intra_doc_link_resolution_failure)]
