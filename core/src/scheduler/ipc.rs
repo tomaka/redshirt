@@ -338,10 +338,11 @@ impl<T> Core<T> {
                             thread.read_memory(addr, sz).unwrap()
                         };
                         let needs_answer = params[3].try_into::<i32>().unwrap() != 0;
+                        let emitter_pid = thread.pid();
                         let event_id = if needs_answer {
                             let event_id_write = params[4].try_into::<i32>().unwrap() as u32;
                             let new_message_id = self.next_message_id;
-                            self.messages_to_answer.insert(new_message_id, MessageEmitter::Process(thread.pid()));
+                            self.messages_to_answer.insert(new_message_id, MessageEmitter::Process(emitter_pid));
                             self.next_message_id += 1;
                             let mut buf = [0; 8];
                             LittleEndian::write_u64(&mut buf, new_message_id);
@@ -356,7 +357,29 @@ impl<T> Core<T> {
                             .get(&interface)
                             .expect("Interface handler not found")
                         {
-                            InterfaceHandler::Process(_) => unimplemented!(),
+                            InterfaceHandler::Process(pid) => {
+                                let message = syscalls::ffi::Message::Interface(syscalls::ffi::InterfaceMessage {
+                                    interface,
+                                    index_in_list: 0,
+                                    message_id: event_id,
+                                    emitter_pid: Some(emitter_pid.into()),
+                                    actual_data: message,
+                                });
+
+                                let mut process = self.processes.process_by_id(*pid).unwrap();
+                                process.user_data()
+                                    .messages_queue
+                                    .push_back(message);
+
+                                let mut thread = process.main_thread();
+                                loop {
+                                    try_resume_message_wait(&mut thread);
+                                    match thread.next_thread() {
+                                        Some(t) => thread = t,
+                                        None => break,
+                                    };
+                                }
+                            },
                             InterfaceHandler::External => {
                                 thread.resume(Some(wasmi::RuntimeValue::I32(0)));
                                 return CoreRunOutcomeInner::InterfaceMessage {
@@ -473,7 +496,11 @@ impl<T> Core<T> {
     /// [`MessageResponse`](CoreRunOutcome::MessageResponse) event.
     // TODO: better API
     pub fn emit_interface_message_answer(&mut self, interface: [u8; 32], message: impl Encode) -> Result<u64, ()> {
-        let message_id = 2222;      // TODO:
+        let message_id = {
+            let id = self.next_message_id;
+            self.next_message_id += 1;
+            id
+        };
 
         let message = syscalls::ffi::Message::Interface(syscalls::ffi::InterfaceMessage {
             interface,
@@ -502,8 +529,8 @@ impl<T> Core<T> {
             };
         }
 
-        // TODO: assert no duplicates
-        self.messages_to_answer.insert(message_id, MessageEmitter::External);
+        let _old_val = self.messages_to_answer.insert(message_id, MessageEmitter::External);
+        debug_assert!(_old_val.is_none());
 
         Ok(message_id)
     }
