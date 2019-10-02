@@ -4,13 +4,18 @@ use crate::module::Module;
 use crate::scheduler::{Core, CoreBuilder, CoreRunOutcome, Pid, ThreadId};
 use crate::signature::Signature;
 use alloc::{borrow::Cow, vec, vec::Vec};
-use hashbrown::{hash_map::Entry, HashMap};
+use hashbrown::{hash_map::Entry, HashMap, HashSet};
 use parity_scale_codec::{DecodeAll, Encode};
 use smallvec::SmallVec;
 
 pub struct System<TExtEx> {
     core: Core<Extrinsic<TExtEx>>,
     futex_waits: HashMap<(Pid, u32), SmallVec<[u64; 4]>>,
+
+    /// Set of messages that we emitted of requests to load a program from the loader interface.
+    /// All these messages expect a `loader::ffi::LoadResponse` as answer.
+    // TODO: call shink_to_fit from time to time
+    loading_programs: HashSet<u64>,
 }
 
 pub struct SystemBuilder<TExtEx> {
@@ -105,10 +110,15 @@ impl<TExtEx: Clone> System<TExtEx> {
                         params: params.clone(),
                     };
                 }
+
                 CoreRunOutcome::MessageResponse { message_id, response, .. } => {
-                    let response = loader::ffi::LoadResponse::decode_all(&response).unwrap();
-                    println!("msg response: {:?} {:?}", message_id, response);
-                },
+                    if self.loading_programs.remove(&message_id) {
+                        let loader::ffi::LoadResponse { result } = DecodeAll::decode_all(&response).unwrap();
+                        let module = Module::from_bytes(&result.unwrap());
+                        self.core.execute(&module).unwrap();
+                    }
+                }
+
                 CoreRunOutcome::InterfaceMessage {
                     pid,
                     message_id,
@@ -177,7 +187,8 @@ impl<TExtEx: Clone> System<TExtEx> {
 
                     // TODO: temporary, for testing purposes
                     let msg = loader::ffi::LoaderMessage::Load([0; 32]);
-                    self.core.emit_interface_message_answer(loader::ffi::INTERFACE, msg).unwrap();
+                    let id = self.core.emit_interface_message_answer(loader::ffi::INTERFACE, msg).unwrap();
+                    self.loading_programs.insert(id);
                 }
                 CoreRunOutcome::InterfaceMessage {
                     pid,
@@ -258,6 +269,7 @@ impl<TExtEx> SystemBuilder<TExtEx> {
         System {
             core,
             futex_waits: Default::default(),
+            loading_programs: Default::default(),
         }
     }
 }

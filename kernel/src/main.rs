@@ -70,7 +70,7 @@ fn main() {
 
         match result {
             kernel_core::system::SystemRunOutcome::ProgramFinished { pid, return_value } => {
-                println!("Program finished {:?} => {:?}", pid, return_value)
+                println!("Program finished {:?} => {:?}", pid, return_value);
             }
             kernel_core::system::SystemRunOutcome::ProgramCrashed { pid, error } => {
                 println!("Program crashed {:?} => {:?}", pid, error);

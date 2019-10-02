@@ -13,8 +13,9 @@ fn main() {
             let msg_data = loader::ffi::LoaderMessage::decode_all(&msg.actual_data).unwrap();
             let loader::ffi::LoaderMessage::Load(hash_to_load) = msg_data;
             println!("received message: {:?}", hash_to_load);
+            let data = include_bytes!("../../target/wasm32-wasi/release/preloaded.wasm");
             syscalls::emit_answer(msg.message_id.unwrap(), &loader::ffi::LoadResponse {
-                result: Ok(vec![1, 2, 3, 4])
+                result: Ok(data.to_vec())
             });
         }
 
