@@ -59,21 +59,30 @@ pub fn block_on<T>(future: impl Future<Output = T>) -> T {
         }
 
         let mut state = (&*STATE).borrow_mut();
-        let msg = wait_next_message(&mut state.message_ids);
-        println!("got message: {:?}", msg);
+        // `block` indicates whether we should block the thread or just peek. Always `true` during
+        // the first iteration, and `false` in further iterations.
+        let mut block = true;
 
-        // TODO: index_in_list as a method on Message
-        let index_in_list = match msg {
-            Message::Response(ResponseMessage { ref index_in_list, .. }) => *index_in_list,
-            Message::Interface(InterfaceMessage { ref index_in_list, .. }) => *index_in_list,
-        };
+        // We process in a loop all pending messages.
+        while let Some(msg) = next_message(&mut state.message_ids, block) {
+            println!("got message: {:?}", msg);
+            block = false;
 
-        let was_in = state.message_ids.remove(index_in_list as usize);
-        assert_eq!(was_in, 0);
+            // TODO: index_in_list as a method on Message
+            let index_in_list = match msg {
+                Message::Response(ResponseMessage { ref index_in_list, .. }) => *index_in_list,
+                Message::Interface(InterfaceMessage { ref index_in_list, .. }) => *index_in_list,
+            };
 
-        let (mut cell, waker) = state.sinks_wakers.remove(index_in_list as usize);
-        cell.store(Some(msg));
-        waker.wake();
+            let was_in = state.message_ids.remove(index_in_list as usize);
+            assert_eq!(was_in, 0);
+
+            let (mut cell, waker) = state.sinks_wakers.remove(index_in_list as usize);
+            cell.store(Some(msg));
+            waker.wake();
+        }
+
+        debug_assert!(!block);
     }
 }
 
@@ -91,12 +100,14 @@ struct ResponsesState {
     sinks_wakers: Vec<(Arc<AtomicCell<Option<Message>>>, Waker)>,
 }
 
-/// Blocks the thread until a message comes.
+/// Checks whether a new message arrives, optionally blocking the thread.
+///
+/// If `block` is true, then the return value is always `Some`.
 ///
 /// See the [`next_message`](crate::ffi::next_message) FFI function for the semantics of
 /// `to_poll`.
 #[cfg(target_arch = "wasm32")] // TODO: bad
-fn wait_next_message(to_poll: &mut [u64]) -> Message {
+fn next_message(to_poll: &mut [u64], block: bool) -> Option<Message> {
     unsafe {
         let mut out = Vec::with_capacity(32);
         loop {
@@ -105,20 +116,22 @@ fn wait_next_message(to_poll: &mut [u64]) -> Message {
                 to_poll.len() as u32,
                 out.as_mut_ptr(),
                 out.capacity() as u32,
-                true,
+                block,
             ) as usize;
-            debug_assert_ne!(ret, 0); // function can't return 0 if block is true
+            if ret == 0 {
+                return None;
+            }
             if ret > out.capacity() {
                 out.reserve(ret);
                 continue;
             }
             out.set_len(ret);
-            return DecodeAll::decode_all(&out).unwrap();
+            return Some(DecodeAll::decode_all(&out).unwrap());
         }
     }
 }
 
 #[cfg(not(target_arch = "wasm32"))] // TODO: bad
-fn wait_next_message(to_poll: &mut [u64]) -> Message {
+fn next_message(to_poll: &mut [u64], block: bool) -> Option<Message> {
     panic!()
 }

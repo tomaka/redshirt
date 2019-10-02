@@ -770,7 +770,6 @@ fn extrinsic_next_message(
     let out_size = params[3].try_into::<i32>().unwrap() as u32;
     let block = params[4].try_into::<i32>().unwrap() != 0;
 
-    assert!(block); // not blocking not supported
     assert!(*process.user_data() == Thread::ReadyToRun);
     *process.user_data() = Thread::MessageWait(MessageWait {
         msg_ids,
@@ -780,6 +779,12 @@ fn extrinsic_next_message(
     });
 
     try_resume_message_wait(process);
+
+    if !block && *process.user_data() != Thread::ReadyToRun {
+        debug_assert!(if let Thread::MessageWait(_) = process.user_data() { true } else { false });
+        *process.user_data() = Thread::ReadyToRun;
+        process.resume(Some(wasmi::RuntimeValue::I32(0)));
+    }
 }
 
 /// If the given thread is waiting for a message to arrive, checks the queue and tries to resume
