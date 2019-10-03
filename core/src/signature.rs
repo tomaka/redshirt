@@ -14,7 +14,7 @@ pub struct Signature {
 /// # Example
 ///
 /// ```
-/// let _sig: kernel_core::signature::Signature = kernel_core::sig!((I32, I64) -> Pointer);
+/// let _sig: kernel_core::signature::Signature = kernel_core::sig!((I32, I64) -> I32);
 /// ```
 #[macro_export]
 macro_rules! sig {
@@ -33,7 +33,6 @@ macro_rules! sig {
 // TODO: what about U32/U64/etc.?
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum ValueType {
-    Pointer,
     I32,
     I64,
     F32,
@@ -78,7 +77,6 @@ impl From<Signature> for wasmi::Signature {
 impl From<ValueType> for wasmi::ValueType {
     fn from(ty: ValueType) -> wasmi::ValueType {
         match ty {
-            ValueType::Pointer => wasmi::ValueType::I32,
             ValueType::I32 => wasmi::ValueType::I32,
             ValueType::I64 => wasmi::ValueType::I64,
             ValueType::F32 => wasmi::ValueType::F32,

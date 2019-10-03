@@ -214,25 +214,25 @@ impl<T> Core<T> {
             .with_extrinsic_inner(
                 root_interface_id.clone(),
                 "next_message",
-                sig!((Pointer, I32, Pointer, I32, I32) -> I32),
+                sig!((I32, I32, I32, I32, I32) -> I32),
                 Extrinsic::NextMessage,
             )
             .with_extrinsic_inner(
                 root_interface_id.clone(),
                 "emit_message",
-                sig!((Pointer, Pointer, I32, I32, Pointer) -> I32),
+                sig!((I32, I32, I32, I32, I32) -> I32),
                 Extrinsic::EmitMessage,
             )
             .with_extrinsic_inner(
                 root_interface_id.clone(),
                 "emit_answer",
-                sig!((Pointer, Pointer, I32) -> I32),
+                sig!((I32, I32, I32) -> I32),
                 Extrinsic::EmitAnswer,
             )
             .with_extrinsic_inner(
                 root_interface_id.clone(),
                 "cancel_message",
-                sig!((Pointer) -> I32),
+                sig!((I32) -> I32),
                 Extrinsic::CancelMessage,
             )
     }

@@ -32,13 +32,13 @@ pub fn register_extrinsics<T: From<WasiExtrinsic>>(system: SystemBuilder<T>) -> 
         .with_extrinsic(
             "wasi_unstable",
             "args_get",
-            kernel_core::sig!((Pointer, Pointer) -> I32),
+            kernel_core::sig!((I32, I32) -> I32),
             WasiExtrinsic(WasiExtrinsicInner::ArgsGet).into(),
         )
         .with_extrinsic(
             "wasi_unstable",
             "args_sizes_get",
-            kernel_core::sig!((Pointer, Pointer) -> I32),
+            kernel_core::sig!((I32, I32) -> I32),
             WasiExtrinsic(WasiExtrinsicInner::ArgsSizesGet).into(),
         )
         .with_extrinsic(
@@ -51,37 +51,37 @@ pub fn register_extrinsics<T: From<WasiExtrinsic>>(system: SystemBuilder<T>) -> 
         .with_extrinsic(
             "wasi_unstable",
             "environ_get",
-            kernel_core::sig!((Pointer, Pointer) -> I32),
+            kernel_core::sig!((I32, I32) -> I32),
             WasiExtrinsic(WasiExtrinsicInner::EnvironGet).into(),
         )
         .with_extrinsic(
             "wasi_unstable",
             "environ_sizes_get",
-            kernel_core::sig!((Pointer, Pointer) -> I32),
+            kernel_core::sig!((I32, I32) -> I32),
             WasiExtrinsic(WasiExtrinsicInner::EnvironSizesGet).into(),
         )
         .with_extrinsic(
             "wasi_unstable",
             "fd_prestat_get",
-            kernel_core::sig!((I32, Pointer) -> I32),
+            kernel_core::sig!((I32, I32) -> I32),
             WasiExtrinsic(WasiExtrinsicInner::FdPrestatGet).into(),
         )
         .with_extrinsic(
             "wasi_unstable",
             "fd_prestat_dir_name",
-            kernel_core::sig!((I32, Pointer, I32) -> I32),
+            kernel_core::sig!((I32, I32, I32) -> I32),
             WasiExtrinsic(WasiExtrinsicInner::FdPrestatDirName).into(),
         )
         .with_extrinsic(
             "wasi_unstable",
             "fd_fdstat_get",
-            kernel_core::sig!((I32, Pointer) -> I32),
+            kernel_core::sig!((I32, I32) -> I32),
             WasiExtrinsic(WasiExtrinsicInner::FdFdstatGet).into(),
         )
         .with_extrinsic(
             "wasi_unstable",
             "fd_write",
-            kernel_core::sig!((I32, Pointer, I32, Pointer) -> I32),
+            kernel_core::sig!((I32, I32, I32, I32) -> I32),
             WasiExtrinsic(WasiExtrinsicInner::FdWrite).into(),
         )
         .with_extrinsic(
