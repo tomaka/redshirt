@@ -882,7 +882,7 @@ fn try_resume_message_wait(thread: &mut processes::ProcessesCollectionThread<Pro
 #[cfg(test)]
 mod tests {
     use super::{Core, CoreRunOutcome};
-    use crate::{module::Module, signature::Signature};
+    use crate::{module::Module, signature::{Signature, ValueType}};
     use core::iter;
 
     #[test]
@@ -947,7 +947,7 @@ mod tests {
         .unwrap();
 
         let mut core = Core::<u32>::new()
-            .with_extrinsic("foo", "test", Signature::new(iter::empty(), None), 639u32)
+            .with_extrinsic("foo", "test", Signature::new(iter::empty(), Some(ValueType::I32)), 639u32)
             .build();
 
         let expected_pid = core.execute(&module).unwrap().pid();
