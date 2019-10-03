@@ -1,3 +1,5 @@
+// Copyright(c) 2019 Pierre Krieger
+
 //! Parsing of the XML definitions file.
 
 use std::{collections::HashMap, io::Read};
@@ -37,13 +39,23 @@ pub struct VkCommand {
     pub params: Vec<(VkType, String)>
 }
 
-/// Successfully-parsed Vulkan type definition.
+/// Successfully-parsed Vulkan type.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VkType {
     Ident(String),
-    MutPointer(Box<VkType>),
-    ConstPointer(Box<VkType>),
+    /// Pointer to some memory location containing a certain number of elements of the given type.
+    MutPointer(Box<VkType>, VkTypePtrLen),
+    /// Pointer to some memory location containing a certain number of elements of the given type.
+    ConstPointer(Box<VkType>, VkTypePtrLen),
     Array(Box<VkType>, String),
+}
+
+/// Number of elements in a memory location indicated with a pointer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VkTypePtrLen {
+    One,
+    NullTerminated,
+    OtherField(String),
 }
 
 /// Parses the file `vk.xml` from the given source. Assumes that everything is well-formed and
@@ -177,7 +189,7 @@ fn parse_type(events_source: &mut Events<impl Read>, attributes: Vec<OwnedAttrib
             Some((name, VkTypeDef::Enum))
         },
         Some("bitmask") => {
-            let (_, name) = parse_ty_name(events_source);
+            let (_, name) = parse_ty_name(events_source, attributes);
             Some((name, VkTypeDef::Bitmask))
         },
         Some("include") | Some("define") | Some("basetype") => {
@@ -185,7 +197,7 @@ fn parse_type(events_source: &mut Events<impl Read>, attributes: Vec<OwnedAttrib
             None
         },
         Some("handle") => {
-            let (_, name) = parse_ty_name(events_source);
+            let (_, name) = parse_ty_name(events_source, attributes);
             Some((name, VkTypeDef::Handle))
         },
         Some("funcpointer") => {
@@ -203,8 +215,8 @@ fn parse_type(events_source: &mut Events<impl Read>, attributes: Vec<OwnedAttrib
 
             loop {
                 match events_source.next() {
-                    Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "member") =>{
-                        fields.push(parse_ty_name(events_source));
+                    Some(Ok(XmlEvent::StartElement { name, attributes, .. })) if name_equals(&name, "member") =>{
+                        fields.push(parse_ty_name(events_source, attributes));
                     },
                     Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "comment") =>
                         advance_until_elem_end(events_source, &name),
@@ -266,14 +278,14 @@ fn parse_command(events_source: &mut Events<impl Read>, attributes: Vec<OwnedAtt
 
     loop {
         match events_source.next() {
-            Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "proto") => {
-                let (ret_ty, f_name) = parse_ty_name(events_source);
+            Some(Ok(XmlEvent::StartElement { name, attributes, .. })) if name_equals(&name, "proto") => {
+                let (ret_ty, f_name) = parse_ty_name(events_source, attributes);
                 out.name = f_name;
                 out.ret_ty = ret_ty;
             },
 
-            Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "param") =>{
-                out.params.push(parse_ty_name(events_source));
+            Some(Ok(XmlEvent::StartElement { name, attributes, .. })) if name_equals(&name, "param") =>{
+                out.params.push(parse_ty_name(events_source, attributes));
             },
 
             Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "implicitexternsyncparams") =>
@@ -299,10 +311,11 @@ fn parse_command(events_source: &mut Events<impl Read>, attributes: Vec<OwnedAtt
 /// Call this function right after finding a `StartElement`. This function parses the content of
 /// the element and expects a single `<type>` tag and a single `<name>` tag. It returns the type
 /// and the name.
-fn parse_ty_name(events_source: &mut Events<impl Read>) -> (VkType, String) {
+fn parse_ty_name(events_source: &mut Events<impl Read>, attributes: Vec<OwnedAttribute>) -> (VkType, String) {
     let mut ret_ty_out = String::new();
     let mut name_out = String::new();
     let mut enum_content = String::new();
+    let len_attr = find_attr(&attributes, "len");
 
     let mut white_spaces = String::new();
 
@@ -327,12 +340,26 @@ fn parse_ty_name(events_source: &mut Events<impl Read>) -> (VkType, String) {
 
     // TODO: there's also "**"
     let ret_ty = if white_spaces.contains("*") {
-        if white_spaces.contains("const") {
-            VkType::ConstPointer(Box::new(VkType::Ident(ret_ty_out)))
+        let len = if let Some(len) = len_attr {
+            if len == "null-terminated" {
+                VkTypePtrLen::NullTerminated
+            } else {
+                VkTypePtrLen::OtherField(len.to_owned())
+            }
+            // TODO: len.split();   number of elements gives nesting level
         } else {
-            VkType::MutPointer(Box::new(VkType::Ident(ret_ty_out)))
+            VkTypePtrLen::One
+        };
+
+        if white_spaces.contains("const") {
+            VkType::ConstPointer(Box::new(VkType::Ident(ret_ty_out)), len)
+        } else {
+            VkType::MutPointer(Box::new(VkType::Ident(ret_ty_out)), len)
         }
+
     } else {
+        assert!(len_attr.is_none());
+
         if white_spaces.contains("[") {
             if enum_content.is_empty() {
                 // TODO: hard-coded :-/

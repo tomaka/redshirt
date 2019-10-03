@@ -1,3 +1,30 @@
+// Copyright(c) 2019 Pierre Krieger
+
+//! Vulkan bindings.
+//!
+//! # How it works
+//!
+//! This library contains an implementation of the Vulkan API v1.1. The [`vkGetInstanceProcAddr`]
+//! function is the entry point of the Vulkan API, according to [the Vulkan specifications]
+//! (https://www.khronos.org/registry/vulkan/specs/1.1-extensions/html/vkspec.html).
+//!
+//! The way this implementation works is by serializing all the Vulkan function calls into a
+//! [`VulkanMessage`] enum and sending it to the interface handler. If return type of the function
+//! is not `()`, the function waits for the answer to come back before returning.
+//!
+//! From the point of view of the user of Vulkan, this is all that is needed.
+//!
+//! # From the point of view of the interface handler
+//!
+//! On the side of the interface handler, the serialized Vulkan function calls have to be
+//! handled. The most straight-forward way to do that is by directly handling the messages and
+//! sending back answers.
+//!
+//! Another possibility, however, is to use the [`VulkanRedirect`] struct. The [`VulkanRedirect`]
+//! can leverage another implementation of Vulkan (through a `vkGetInstanceProcAddr` function) and
+//! can handle [`VulkanMessage`]s through the [`VulkanRedirect::handle`] method.
+//!
+
 use core::{ffi::c_void, mem, ptr};
 use parity_scale_codec::{Decode, Encode};
 use std::ffi::CStr;
@@ -24,3 +51,25 @@ pub type PFN_vkInternalFreeNotification = extern "system" fn(*mut c_void, usize,
 pub type PFN_vkDebugReportCallbackEXT = extern "system" fn(DebugReportFlagsEXT, DebugReportObjectTypeEXT, u64, usize, i32, *const i8, *const i8, *mut c_void) -> Bool32;
 #[allow(non_camel_case_types)]
 pub type PFN_vkVoidFunction = extern "system" fn() -> ();
+
+/// Leverages an existing Vulkan implementation to handle [`VulkanMessage`]s.
+pub struct VulkanRedirect {
+    /// How we retrieve instance proc addresses.
+    get_instance_proc_addr: extern "system" fn(usize, *const u8) -> PFN_vkVoidFunction,
+}
+
+impl VulkanRedirect {
+    pub fn new(get_instance_proc_addr: extern "system" fn(usize, *const u8) -> PFN_vkVoidFunction) -> VulkanRedirect {
+        VulkanRedirect {
+            get_instance_proc_addr,
+        }
+    }
+
+    /// Handles the given [`VulkanMessage`], optionally producing the answer to send back in
+    /// response to this call.
+    pub fn handle(message: VulkanMessage) -> Option<Vec<u8>> {
+        // TODO: implement, lol
+        panic!("{:?}", message);
+        //None
+    }
+}
