@@ -61,6 +61,7 @@ enum Extrinsic<T> {
     NextMessage,
     EmitMessage,
     EmitAnswer,
+    CancelMessage,
     External(T),
 }
 
@@ -226,6 +227,12 @@ impl<T> Core<T> {
                 "emit_answer",
                 sig!(()),
                 Extrinsic::EmitAnswer,
+            )
+            .with_extrinsic_inner(
+                root_interface_id.clone(),
+                "cancel_message",
+                sig!(()),
+                Extrinsic::CancelMessage,
             )
     }
 
@@ -410,6 +417,8 @@ impl<T> Core<T> {
                         return self.answer_message_inner(msg_id, &message, Some(pid))
                             .unwrap_or(CoreRunOutcomeInner::LoopAgain);
                     }
+
+                    Extrinsic::CancelMessage => unimplemented!(),
                 }
             }
             processes::RunOneOutcome::Errored { error, .. } => {

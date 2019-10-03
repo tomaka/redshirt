@@ -66,8 +66,24 @@ extern "C" {
     /// Returns `0` on success, or `1` if there is no message with that id.
     ///
     /// When this function is being called, a "lock" is being held on the memory pointed by
-    /// `msg`. In particular, it is invalid to modify this buffer while the function is running.
+    /// `message_id` and `msg`. In particular, it is invalid to modify these buffers while the
+    /// function is running.
     pub(crate) fn emit_answer(message_id: *const u64, msg: *const u8, msg_len: u32) -> u32;
+
+    /// Cancel an expected answer.
+    ///
+    /// After a message that needs an answer has been emitted using `emit_message`,
+    /// the `cancel_message` function can be used to signal that we're not interested in the
+    /// answer.
+    ///
+    /// After this function has been called, the passed `message_id` is no longer valid.
+    ///
+    /// Returns `0` on success, or `1` if there is no message with that id.
+    ///
+    /// When this function is being called, a "lock" is being held on the memory pointed by
+    /// `message_id`. In particular, it is invalid to modify this buffer while the function is
+    /// running.
+    pub(crate) fn cancel_message(message_id: *const u64) -> u32;
 }
 
 #[derive(Debug, Encode, Decode)]

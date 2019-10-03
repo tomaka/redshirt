@@ -4,12 +4,13 @@
 
 #![deny(intra_doc_link_resolution_failure)]
 
-// TODO: everything here is a draft
-
 use std::mem;
 
 pub mod ffi;
 
+///
+/// > **WARNING**: DON'T USE THIS FUNCTION.
+///
 /// > **WARNING**: Rust (and more importantly LLVM) at the moment assumes that only a single WASM
 /// >              thread can exist at any given point in time. More specifically, LLVM assumes
 /// >              that only a single stack exists, and maintains a stack pointer as a global

@@ -115,6 +115,17 @@ pub fn emit_answer(message_id: u64, msg: &impl Encode) -> Result<(), ()> {
     }
 }
 
+/// Cancel the given message. No answer will be received.
+pub fn cancel_message(message_id: u64) -> Result<(), ()> {
+    unsafe {
+        if ffi::cancel_message(&message_id) == 0 {
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+}
+
 /// Returns a future that is ready when a new message arrives on an interface that we have
 /// registered.
 ///
