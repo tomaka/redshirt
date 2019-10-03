@@ -143,7 +143,6 @@ pub fn handle_wasi(
             let fd = params[0].try_into::<i32>().unwrap() as usize;
             let ptr = params[1].try_into::<i32>().unwrap() as u32;
             //system.write_memory(pid, ptr, &[0]).unwrap();
-            println!("prestat called with {:?}", fd);
             // TODO: incorrect
             system.resolve_extrinsic_call(thread_id, Some(wasmi::RuntimeValue::I32(8)));
         }
