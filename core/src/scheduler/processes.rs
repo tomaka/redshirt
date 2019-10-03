@@ -22,8 +22,8 @@ pub struct ProcessesCollection<TPud, TTud> {
     /// Allocations of process IDs.
     pid_pool: IdPool,
 
-    /// Identifier to assign to the next thread we create.
-    next_thread_id: ThreadId,
+    /// Allocation of thread IDs.
+    thread_id_pool: IdPool,
 
     /// List of running processes.
     processes: HashMap<Pid, Process<TPud, TTud>>,
@@ -63,7 +63,7 @@ pub struct ProcessesCollectionProc<'a, TPud, TTud> {
     process: OccupiedEntry<'a, Pid, Process<TPud, TTud>, DefaultHashBuilder>,
 
     /// Reference to the same field in [`ProcessesCollection`].
-    next_thread_id: &'a mut ThreadId,
+    thread_id_pool: &'a mut IdPool,
 }
 
 /// Access to a thread within the collection.
@@ -159,7 +159,7 @@ impl<TPud, TTud> ProcessesCollection<TPud, TTud> {
     pub fn new() -> Self {
         ProcessesCollection {
             pid_pool: IdPool::new(),
-            next_thread_id: ThreadId(1),
+            thread_id_pool: IdPool::new(),
             processes: HashMap::with_capacity(PROCESSES_MIN_CAPACITY),
         }
     }
@@ -180,12 +180,7 @@ impl<TPud, TTud> ProcessesCollection<TPud, TTud> {
         main_thread_user_data: TTud,
         symbols: impl FnMut(&str, &str, &wasmi::Signature) -> Result<usize, ()>,
     ) -> Result<ProcessesCollectionProc<TPud, TTud>, vm::NewErr> {
-        let main_thread_id = {
-            let id = self.next_thread_id;
-            self.next_thread_id.0 += 1;
-            id
-        };
-
+        let main_thread_id = self.thread_id_pool.assign();  // TODO: check for duplicates
         let main_thread_data = Thread {
             user_data: main_thread_user_data,
             thread_id: main_thread_id,
@@ -286,7 +281,7 @@ impl<TPud, TTud> ProcessesCollection<TPud, TTud> {
             }) => RunOneOutcome::ThreadFinished {
                 process: ProcessesCollectionProc {
                     process,
-                    next_thread_id: &mut self.next_thread_id,
+                    thread_id_pool: &mut self.thread_id_pool,
                 },
                 user_data: user_data.user_data,
                 value: return_value,
@@ -331,7 +326,7 @@ impl<TPud, TTud> ProcessesCollection<TPud, TTud> {
         match self.processes.entry(pid) {
             Entry::Occupied(e) => Some(ProcessesCollectionProc {
                 process: e,
-                next_thread_id: &mut self.next_thread_id,
+                thread_id_pool: &mut self.thread_id_pool,
             }),
             Entry::Vacant(_) => None,
         }
@@ -366,6 +361,12 @@ impl<TPud, TTud> ProcessesCollection<TPud, TTud> {
 impl<TPud, TTud> Default for ProcessesCollection<TPud, TTud> {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl From<u64> for ThreadId {
+    fn from(id: u64) -> ThreadId {
+        ThreadId(id)
     }
 }
 
@@ -404,12 +405,7 @@ impl<'a, TPud, TTud> ProcessesCollectionProc<'a, TPud, TTud> {
         params: Vec<wasmi::RuntimeValue>,
         user_data: TTud,
     ) -> Result<ProcessesCollectionThread<'a, TPud, TTud>, vm::StartErr> {
-        let thread_id = {
-            let id = *self.next_thread_id;
-            self.next_thread_id.0 += 1;
-            id
-        };
-
+        let thread_id = self.thread_id_pool.assign();       // TODO: check for duplicates
         let thread_data = Thread {
             user_data,
             thread_id,
