@@ -11,6 +11,7 @@
 
 extern crate alloc;
 
+mod id_pool;
 pub mod module;
 pub mod scheduler;
 pub mod signature;

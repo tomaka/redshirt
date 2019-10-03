@@ -1,10 +1,8 @@
 // Copyright(c) 2019 Pierre Krieger
 
+use crate::id_pool::IdPool;
 use crate::module::Module;
-use crate::scheduler::{
-    pid::{Pid, PidPool},
-    vm,
-};
+use crate::scheduler::{Pid, vm};
 use alloc::vec::Vec;
 use core::fmt;
 use hashbrown::{
@@ -22,7 +20,7 @@ use rand::seq::SliceRandom as _;
 /// the user to put extra information associated to a process or a thread.
 pub struct ProcessesCollection<TPud, TTud> {
     /// Allocations of process IDs.
-    pid_pool: PidPool,
+    pid_pool: IdPool,
 
     /// Identifier to assign to the next thread we create.
     next_thread_id: ThreadId,
@@ -160,7 +158,7 @@ impl<TPud, TTud> ProcessesCollection<TPud, TTud> {
     /// Creates a new empty collection.
     pub fn new() -> Self {
         ProcessesCollection {
-            pid_pool: PidPool::new(),
+            pid_pool: IdPool::new(),
             next_thread_id: ThreadId(1),
             processes: HashMap::with_capacity(PROCESSES_MIN_CAPACITY),
         }

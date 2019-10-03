@@ -1,7 +1,7 @@
 // Copyright(c) 2019 Pierre Krieger
 
 use crate::module::Module;
-use crate::scheduler::{pid::Pid, processes, vm, ThreadId};
+use crate::scheduler::{processes, vm, Pid, ThreadId};
 use crate::sig;
 use crate::signature::Signature;
 
