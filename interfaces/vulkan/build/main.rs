@@ -15,8 +15,8 @@ fn main() {
         File::create(&dest_path).unwrap()
     };
 
-    for typedef in &registry.type_defs {
-        write_type_def(out.by_ref(), typedef);
+    for (name, typedef) in &registry.type_defs {
+        write_type_def(out.by_ref(), name, typedef);
     }
 
     write_commands_enum(out.by_ref(), &registry);
@@ -24,14 +24,12 @@ fn main() {
     write_get_instance_proc_addr(out.by_ref(), &registry);
 }
 
-fn write_type_def(mut out: impl Write, type_def: &parse::VkTypeDef) {
+fn write_type_def(mut out: impl Write, name: &str, type_def: &parse::VkTypeDef) {
     match type_def {
-        parse::VkTypeDef::Enum(name) | parse::VkTypeDef::Bitmask(name) | parse::VkTypeDef::Handle(name) => {
-            if !name.is_empty() {   // TODO: problem on the parsing side; remove
-                writeln!(out, "type {} = u32;", name).unwrap();
-            }
+        parse::VkTypeDef::Enum | parse::VkTypeDef::Bitmask | parse::VkTypeDef::Handle => {
+            writeln!(out, "type {} = u32;", name).unwrap();
         },
-        parse::VkTypeDef::Struct { name, fields } => {
+        parse::VkTypeDef::Struct { fields } => {
             //writeln!(out, "#[derive(Encode, Decode)]").unwrap();
             writeln!(out, "struct {} {{", name).unwrap();
             for (field_ty, field_name) in fields {
@@ -84,7 +82,6 @@ fn write_get_instance_proc_addr(mut out: impl Write, registry: &parse::VkRegistr
             .collect::<String>();
 
         writeln!(out, "        \"{}\" => {{", command.name).unwrap();
-        // TODO: try using `as usize` as an intermediate
         writeln!(out, "            mem::transmute::<_, PFN_vkVoidFunction>(wrapper_{} as extern \"system\" fn({}) -> {})", command.name, params_tys, print_ty(&command.ret_ty)).unwrap();
         writeln!(out, "        }}").unwrap();
     }
@@ -104,10 +101,21 @@ fn print_ty(ty: &parse::VkType) -> String {
         parse::VkType::Ident(ident) if ident == "uint64_t" => "u64".to_string(),
         parse::VkType::Ident(ident) if ident == "size_t" => "usize".to_string(),
         parse::VkType::Ident(ident) if ident == "float" => "f32".to_string(),
+
+        parse::VkType::Ident(ident) if ident == "VkSampleMask" => "u32".to_string(),
         parse::VkType::Ident(ident) if ident == "VkBool32" => "u32".to_string(),
         parse::VkType::Ident(ident) if ident == "VkDeviceAddress" => "u64".to_string(),
         parse::VkType::Ident(ident) if ident == "VkDeviceSize" => "u64".to_string(),
+
+        parse::VkType::Ident(ident) if ident == "ANativeWindow" => "c_void".to_string(),
+        parse::VkType::Ident(ident) if ident == "AHardwareBuffer" => "c_void".to_string(),
+        parse::VkType::Ident(ident) if ident == "CAMetalLayer" => "c_void".to_string(),
+        parse::VkType::Ident(ident) if ident == "wl_display" => "c_void".to_string(),
+        parse::VkType::Ident(ident) if ident == "wl_surface" => "c_void".to_string(),
+        parse::VkType::Ident(ident) if ident == "Display" => "c_void".to_string(),
+
         parse::VkType::Ident(ty) => ty.to_string(),
+
         parse::VkType::Array(t, arr) => format!("[{}; {}]", print_ty(t), arr),
         parse::VkType::MutPointer(t) if **t == parse::VkType::Ident("void".into()) => "*mut c_void".to_owned(),
         parse::VkType::ConstPointer(t) if **t == parse::VkType::Ident("void".into()) => "*const c_void".to_owned(),

@@ -1,6 +1,6 @@
 //! Parsing of the XML definitions file.
 
-use std::io::Read;
+use std::{collections::HashMap, io::Read};
 use xml::{EventReader, attribute::OwnedAttribute, name::OwnedName, reader::Events, reader::XmlEvent};
 
 /// Successfully-parsed Vulkan registry definitions.
@@ -12,17 +12,16 @@ pub struct VkRegistry {
     /// List of all the Vulkan commands.
     pub commands: Vec<VkCommand>,
     /// Type definitions.
-    pub type_defs: Vec<VkTypeDef>,
+    pub type_defs: HashMap<String, VkTypeDef>,
 }
 
 /// A type definition of the Vulkan API.
 #[derive(Debug, Clone)]
 pub enum VkTypeDef {
-    Enum(String),
-    Bitmask(String),
-    Handle(String),
+    Enum,
+    Bitmask,
+    Handle,
     Struct {
-        name: String,
         fields: Vec<(VkType, String)>,
     },
 }
@@ -92,7 +91,7 @@ pub fn parse(source: impl Read) -> VkRegistry {
 fn parse_registry(events_source: &mut Events<impl Read>) -> VkRegistry {
     let mut out = VkRegistry {
         commands: Vec::new(),
-        type_defs: Vec::new(),
+        type_defs: HashMap::new(),
     };
 
     loop {
@@ -140,14 +139,17 @@ fn parse_registry(events_source: &mut Events<impl Read>) -> VkRegistry {
 
 /// Call this function right after finding a `StartElement` with the name `types`. This function
 /// parses the content of the element.
-fn parse_types(events_source: &mut Events<impl Read>) -> Vec<VkTypeDef> {
-    let mut out = Vec::new();
+fn parse_types(events_source: &mut Events<impl Read>) -> HashMap<String, VkTypeDef> {
+    let mut out = HashMap::new();
 
     loop {
         match events_source.next() {
             Some(Ok(XmlEvent::StartElement { name, attributes, .. })) if name_equals(&name, "type") => {
-                if let Some(typedef) = parse_type(events_source, attributes) {
-                    out.push(typedef);
+                if let Some((name, ty)) = parse_type(events_source, attributes) {
+                    if !name.is_empty() {        // TODO: shouldn't be there; find the bug
+                        let _prev_val = out.insert(name.clone(), ty);
+                        assert!(_prev_val.is_none(), "Duplicate value for {:?}", name);
+                    }
                 }
             },
             Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "comment") =>
@@ -167,16 +169,16 @@ fn parse_types(events_source: &mut Events<impl Read>) -> Vec<VkTypeDef> {
 
 /// Call this function right after finding a `StartElement` with the name `type`. This
 /// function parses the content of the element.
-fn parse_type(events_source: &mut Events<impl Read>, attributes: Vec<OwnedAttribute>) -> Option<VkTypeDef> {
+fn parse_type(events_source: &mut Events<impl Read>, attributes: Vec<OwnedAttribute>) -> Option<(String, VkTypeDef)> {
     match find_attr(&attributes, "category") {
         Some("enum") => {
             let name = find_attr(&attributes, "name").unwrap().to_owned();
             advance_until_elem_end(events_source, &"type".parse().unwrap());
-            Some(VkTypeDef::Enum(name))
+            Some((name, VkTypeDef::Enum))
         },
         Some("bitmask") => {
             let (_, name) = parse_ty_name(events_source);
-            Some(VkTypeDef::Bitmask(name))
+            Some((name, VkTypeDef::Bitmask))
         },
         Some("include") | Some("define") | Some("basetype") => {
             advance_until_elem_end(events_source, &"type".parse().unwrap());
@@ -184,7 +186,7 @@ fn parse_type(events_source: &mut Events<impl Read>, attributes: Vec<OwnedAttrib
         },
         Some("handle") => {
             let (_, name) = parse_ty_name(events_source);
-            Some(VkTypeDef::Handle(name))
+            Some((name, VkTypeDef::Handle))
         },
         Some("funcpointer") => {
             // We deliberately ignore function pointers, and manually generate their definitions.
@@ -215,7 +217,7 @@ fn parse_type(events_source: &mut Events<impl Read>, attributes: Vec<OwnedAttrib
                 }
             }
 
-            Some(VkTypeDef::Struct { name, fields })
+            Some((name, VkTypeDef::Struct { fields }))
         },
         None if find_attr(&attributes, "requires").is_some() => {
             advance_until_elem_end(events_source, &"type".parse().unwrap());
