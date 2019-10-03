@@ -15,5 +15,11 @@ pub enum InterfaceMessage {
 
 #[derive(Debug, Encode, Decode)]
 pub struct InterfaceRegisterResponse {
-    pub result: Result<(), ()>,
+    pub result: Result<(), InterfaceRegisterError>,
+}
+
+#[derive(Debug, Encode, Decode)]
+pub enum InterfaceRegisterError {
+    /// There already exists a process registered for this interface.
+    AlreadyRegistered,
 }

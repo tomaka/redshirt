@@ -1,3 +1,5 @@
+// Copyright(c) 2019 Pierre Krieger
+
 use crate::{emit_message, Message, ResponseMessage, InterfaceMessage};
 use alloc::{
     collections::VecDeque,
@@ -83,7 +85,6 @@ pub fn block_on<T>(future: impl Future<Output = T>) -> T {
 
         // We process in a loop all pending messages.
         while let Some(msg) = next_message(&mut state.message_ids, block) {
-            println!("got message: {:?}", msg);
             block = false;
 
             match msg {
