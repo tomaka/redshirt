@@ -2,6 +2,7 @@
 members = [
     "ipfs",
     "preloaded",
+    "vulkan-triangle",
 ]
 
 [profile.dev]
