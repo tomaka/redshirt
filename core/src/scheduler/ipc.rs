@@ -1,5 +1,6 @@
 // Copyright(c) 2019 Pierre Krieger
 
+use crate::id_pool::IdPool;
 use crate::module::Module;
 use crate::scheduler::{processes, vm, Pid, ThreadId};
 use crate::sig;
@@ -31,8 +32,8 @@ pub struct Core<T> {
     /// This field is never modified after the `Core` is created.
     extrinsics_id_assign: HashMap<(Cow<'static, str>, Cow<'static, str>), (usize, Signature)>,
 
-    /// Identifier of the next event to generate.
-    next_message_id: u64,
+    /// Pool of identifiers for messages.
+    message_id_pool: IdPool,
 
     /// List of messages that have been emitted and that are waiting for a response.
     // TODO: doc about hash safety
@@ -348,9 +349,15 @@ impl<T> Core<T> {
                         let emitter_pid = thread.pid();
                         let message_id = if needs_answer {
                             let message_id_write = params[4].try_into::<i32>().unwrap() as u32;
-                            let new_message_id = self.next_message_id;
-                            self.messages_to_answer.insert(new_message_id, MessageEmitter::Process(emitter_pid));
-                            self.next_message_id += 1;
+                            let new_message_id = loop {
+                                let id = self.message_id_pool.assign();
+                                if id == 0 || id == 1 { continue; }
+                                match self.messages_to_answer.entry(id) {
+                                    Entry::Occupied(_) => continue,
+                                    Entry::Vacant(e) => e.insert(MessageEmitter::Process(emitter_pid)),
+                                };
+                                break id;
+                            };
                             let mut buf = [0; 8];
                             LittleEndian::write_u64(&mut buf, new_message_id);
                             thread.write_memory(message_id_write, &buf).unwrap();
@@ -505,10 +512,13 @@ impl<T> Core<T> {
     /// [`MessageResponse`](CoreRunOutcome::MessageResponse) event.
     // TODO: better API
     pub fn emit_interface_message_answer(&mut self, interface: [u8; 32], message: impl Encode) -> Result<u64, ()> {
-        let message_id = {
-            let id = self.next_message_id;
-            self.next_message_id += 1;
-            id
+        let (message_id, messages_to_answer_entry) = loop {
+            let id = self.message_id_pool.assign();
+            if id == 0 || id == 1 { continue; }
+            match self.messages_to_answer.entry(id) {
+                Entry::Vacant(e) => break (id, e),
+                Entry::Occupied(_) => continue,
+            };
         };
 
         let message = syscalls::ffi::Message::Interface(syscalls::ffi::InterfaceMessage {
@@ -538,9 +548,7 @@ impl<T> Core<T> {
             };
         }
 
-        let _old_val = self.messages_to_answer.insert(message_id, MessageEmitter::External);
-        debug_assert!(_old_val.is_none());
-
+        messages_to_answer_entry.insert(MessageEmitter::External);
         Ok(message_id)
     }
 
@@ -755,7 +763,7 @@ impl<T> CoreBuilder<T> {
             interfaces: self.interfaces,
             extrinsics: self.extrinsics,
             extrinsics_id_assign: self.extrinsics_id_assign,
-            next_message_id: 2, // 0 and 1 are special message IDs
+            message_id_pool: IdPool::new(),
             messages_to_answer: HashMap::default(),
         }
     }
