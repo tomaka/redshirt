@@ -121,7 +121,6 @@ pub fn emit_answer(message_id: u64, msg: &impl Encode) -> Result<(), ()> {
 // TODO: move to interface interface?
 pub fn next_interface_message() -> InterfaceMessageFuture {
     InterfaceMessageFuture {
-        cell: Arc::new(AtomicCell::new(None)),
         finished: false,
     }
 }
@@ -131,7 +130,6 @@ pub fn next_interface_message() -> InterfaceMessageFuture {
 /// The return value is the type the message decodes to.
 pub fn message_response<T: DecodeAll>(msg_id: u64) -> MessageResponseFuture<T> {
     MessageResponseFuture {
-        cell: Arc::new(AtomicCell::new(None)),
         finished: false,
         msg_id,
         marker: PhantomData,
@@ -143,7 +141,6 @@ pub fn message_response<T: DecodeAll>(msg_id: u64) -> MessageResponseFuture<T> {
 #[must_use]
 pub struct MessageResponseFuture<T> {
     msg_id: u64,
-    cell: Arc<AtomicCell<Option<Message>>>,
     finished: bool,
     marker: PhantomData<T>,
 }
@@ -157,19 +154,11 @@ where
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         assert!(!self.finished);
-        if let Some(message) = self.cell.take() {
-            match message {
-                Message::Response(r) => {
-                    self.finished = true;
-                    Poll::Ready(DecodeAll::decode_all(&r.actual_data).unwrap())
-                }
-                #[cfg(debug_assertions)]
-                _ => unsafe { unreachable_unchecked() },
-                #[cfg(not(debug_assertions))]
-                _ => unreachable!(),
-            }
+        if let Some(message) = block_on::peek_response(self.msg_id) {
+            self.finished = true;
+            Poll::Ready(DecodeAll::decode_all(&message.actual_data).unwrap())
         } else {
-            block_on::register_message_waker(self.msg_id, self.cell.clone(), cx.waker().clone());
+            block_on::register_message_waker(self.msg_id, cx.waker().clone());
             Poll::Pending
         }
     }
@@ -189,7 +178,6 @@ impl<T> Unpin for MessageResponseFuture<T> {
 
 #[must_use]
 pub struct InterfaceMessageFuture {
-    cell: Arc<AtomicCell<Option<Message>>>,
     finished: bool,
 }
 
@@ -199,19 +187,11 @@ impl Future for InterfaceMessageFuture {
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         assert!(!self.finished);
-        if let Some(message) = self.cell.take() {
-            match message {
-                Message::Interface(imsg) => {
-                    self.finished = true;
-                    Poll::Ready(imsg)
-                }
-                #[cfg(debug_assertions)]
-                _ => unsafe { unreachable_unchecked() },
-                #[cfg(not(debug_assertions))]
-                _ => unreachable!(),
-            }
+        if let Some(message) = block_on::peek_interface_message() {
+            self.finished = true;
+            Poll::Ready(message)
         } else {
-            block_on::register_message_waker(1, self.cell.clone(), cx.waker().clone());
+            block_on::register_message_waker(1, cx.waker().clone());
             Poll::Pending
         }
     }

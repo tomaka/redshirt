@@ -1,5 +1,8 @@
 use crate::{emit_message, Message, ResponseMessage, InterfaceMessage};
-use alloc::sync::Arc;
+use alloc::{
+    collections::VecDeque,
+    sync::Arc,
+};
 use core::{
     cell::RefCell,
     mem,
@@ -8,14 +11,27 @@ use core::{
 };
 use crossbeam::atomic::AtomicCell;
 use futures::{prelude::*, task};
+use hashbrown::HashMap;
 use parity_scale_codec::{DecodeAll, Encode};
 use send_wrapper::SendWrapper;
 
 // TODO: document
-pub(crate) fn register_message_waker(message_id: u64, destination: Arc<AtomicCell<Option<Message>>>, waker: Waker) {
+pub(crate) fn register_message_waker(message_id: u64, waker: Waker) {
     let mut state = (&*STATE).borrow_mut();
     state.message_ids.push(message_id);
-    state.sinks_wakers.push((destination, waker));
+    state.wakers.push(waker);
+}
+
+// TODO: document
+pub(crate) fn peek_interface_message() -> Option<InterfaceMessage> {
+    let mut state = (&*STATE).borrow_mut();
+    state.interface_messages_queue.pop_front()
+}
+
+// TODO: document
+pub(crate) fn peek_response(msg_id: u64) -> Option<ResponseMessage> {
+    let mut state = (&*STATE).borrow_mut();
+    state.pending_messages.remove(&msg_id)
 }
 
 /// Blocks the current thread until the [`Future`](core::future::Future) passed as parameter
@@ -59,6 +75,8 @@ pub fn block_on<T>(future: impl Future<Output = T>) -> T {
         }
 
         let mut state = (&*STATE).borrow_mut();
+        debug_assert_eq!(state.message_ids.len(), state.wakers.len());
+
         // `block` indicates whether we should block the thread or just peek. Always `true` during
         // the first iteration, and `false` in further iterations.
         let mut block = true;
@@ -68,18 +86,27 @@ pub fn block_on<T>(future: impl Future<Output = T>) -> T {
             println!("got message: {:?}", msg);
             block = false;
 
-            // TODO: index_in_list as a method on Message
-            let index_in_list = match msg {
-                Message::Response(ResponseMessage { ref index_in_list, .. }) => *index_in_list,
-                Message::Interface(InterfaceMessage { ref index_in_list, .. }) => *index_in_list,
+            match msg {
+                Message::Response(msg) => {
+                    let _was_in = state.message_ids.remove(msg.index_in_list as usize);
+                    debug_assert_eq!(_was_in, 0);
+
+                    let waker = state.wakers.remove(msg.index_in_list as usize);
+                    waker.wake();
+
+                    let _was_in = state.pending_messages.insert(msg.message_id, msg);
+                    debug_assert!(_was_in.is_none());
+                },
+                Message::Interface(msg) => {
+                    let _was_in = state.message_ids.remove(msg.index_in_list as usize);
+                    debug_assert_eq!(_was_in, 0);
+
+                    let waker = state.wakers.remove(msg.index_in_list as usize);
+                    waker.wake();
+
+                    state.interface_messages_queue.push_back(msg);
+                },
             };
-
-            let was_in = state.message_ids.remove(index_in_list as usize);
-            assert_eq!(was_in, 0);
-
-            let (mut cell, waker) = state.sinks_wakers.remove(index_in_list as usize);
-            cell.store(Some(msg));
-            waker.wake();
         }
 
         debug_assert!(!block);
@@ -90,14 +117,30 @@ lazy_static::lazy_static! {
     static ref STATE: SendWrapper<RefCell<ResponsesState>> = {
         SendWrapper::new(RefCell::new(ResponsesState {
             message_ids: Vec::new(),
-            sinks_wakers: Vec::new(),
+            wakers: Vec::new(),
+            pending_messages: HashMap::with_capacity(6),
+            interface_messages_queue: VecDeque::with_capacity(2),
         }))
     };
 }
 
 struct ResponsesState {
     message_ids: Vec<u64>,
-    sinks_wakers: Vec<(Arc<AtomicCell<Option<Message>>>, Waker)>,
+    wakers: Vec<Waker>,
+
+    /// Queue of response messages waiting to be delivered.
+    ///
+    /// > **Note**: We have to maintain this queue as a global variable rather than a per-future
+    /// >           channel, otherwise dropping a `Future` would silently drop messages that have
+    /// >           already been received.
+    pending_messages: HashMap<u64, ResponseMessage>,
+
+    /// Queue of interface messages waiting to be delivered.
+    ///
+    /// > **Note**: We have to maintain this queue as a global variable rather than a per-future
+    /// >           channel, otherwise dropping a `Future` would silently drop messages that have
+    /// >           already been received.
+    interface_messages_queue: VecDeque<InterfaceMessage>,
 }
 
 /// Checks whether a new message arrives, optionally blocking the thread.
