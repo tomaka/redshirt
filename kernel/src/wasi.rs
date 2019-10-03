@@ -23,6 +23,7 @@ enum WasiExtrinsicInner {
     FdFdstatGet,
     FdWrite,
     ProcExit,
+    RandomGet,
     SchedYield,
 }
 
@@ -92,6 +93,12 @@ pub fn register_extrinsics<T: From<WasiExtrinsic>>(system: SystemBuilder<T>) -> 
         )
         .with_extrinsic(
             "wasi_unstable",
+            "random_get",
+            kernel_core::sig!((I32, I32) -> I32),
+            WasiExtrinsic(WasiExtrinsicInner::RandomGet).into(),
+        )
+        .with_extrinsic(
+            "wasi_unstable",
             "sched_yield",
             kernel_core::sig!(()),
             WasiExtrinsic(WasiExtrinsicInner::SchedYield).into(),
@@ -150,6 +157,17 @@ pub fn handle_wasi(
         WasiExtrinsicInner::FdFdstatGet => unimplemented!(),
         WasiExtrinsicInner::FdWrite => fd_write(system, pid, thread_id, params),
         WasiExtrinsicInner::ProcExit => unimplemented!(),
+        WasiExtrinsicInner::RandomGet => {
+            assert_eq!(params.len(), 2);
+            let buf = params[0].try_into::<i32>().unwrap() as u32;
+            let len = params[1].try_into::<i32>().unwrap() as u32;
+            let mut randomness = Vec::<u8>::new();
+            for _ in 0 .. len {
+                randomness.push(rand::random());
+            }
+            system.write_memory(pid, buf, &randomness).unwrap();
+            system.resolve_extrinsic_call(thread_id, Some(wasmi::RuntimeValue::I32(0)));
+        }
         WasiExtrinsicInner::SchedYield => {
             // TODO: guarantee the yield
             system.resolve_extrinsic_call(thread_id, Some(wasmi::RuntimeValue::I32(0)));
