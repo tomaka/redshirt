@@ -22,6 +22,7 @@ pub struct Core<T> {
     /// List of functions that processes can call.
     /// The key of this map is an arbitrary `usize` that we pass to the WASM interpreter.
     /// This field is never modified after the `Core` is created.
+    // TODO: move extrinsics system somewhere else? it's not really IPC
     extrinsics: HashMap<usize, Extrinsic<T>>,
 
     /// Map used to resolve imports when starting a process.
@@ -208,30 +209,29 @@ impl<T> Core<T> {
 
         let root_interface_id = "";
 
-        // TODO: signatures
         builder
             .with_extrinsic_inner(
                 root_interface_id.clone(),
                 "next_message",
-                sig!(()),
+                sig!((Pointer, I32, Pointer, I32, I32) -> I32),
                 Extrinsic::NextMessage,
             )
             .with_extrinsic_inner(
                 root_interface_id.clone(),
                 "emit_message",
-                sig!(()),
+                sig!((Pointer, Pointer, I32, I32, Pointer) -> I32),
                 Extrinsic::EmitMessage,
             )
             .with_extrinsic_inner(
                 root_interface_id.clone(),
                 "emit_answer",
-                sig!(()),
+                sig!((Pointer, Pointer, I32) -> I32),
                 Extrinsic::EmitAnswer,
             )
             .with_extrinsic_inner(
                 root_interface_id.clone(),
                 "cancel_message",
-                sig!(()),
+                sig!((Pointer) -> I32),
                 Extrinsic::CancelMessage,
             )
     }
@@ -612,8 +612,13 @@ impl<T> Core<T> {
                 if let Some((index, expected_signature)) =
                     extrinsics_id_assign.get(&(interface.into(), function.into()))
                 {
-                    // TODO: check signature validity
-                    return Ok(*index);
+                    if expected_signature.matches_wasmi(obtained_signature) {
+                        return Ok(*index);
+                    } else {
+                        // TODO: remove this println?
+                        // TODO: way to report the signature mismatch?
+                        println!("signature mismatch for {:?}:{:?}; expected={:?}; obtained={:?}", interface, function, expected_signature, obtained_signature);
+                    }
                 }
 
                 Err(())

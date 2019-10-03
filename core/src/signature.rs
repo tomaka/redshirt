@@ -30,6 +30,7 @@ macro_rules! sig {
     }};
 }
 
+// TODO: what about U32/U64/etc.?
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum ValueType {
     Pointer,
