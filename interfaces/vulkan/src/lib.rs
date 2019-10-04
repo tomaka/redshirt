@@ -48,8 +48,6 @@ use core::{ffi::c_void, mem, ptr};
 use parity_scale_codec::{Decode, Encode};
 use std::ffi::CStr;
 
-include!(concat!(env!("OUT_DIR"), "/vk.rs"));
-
 // TODO: this has been randomly generated; instead should be a hash or something
 pub const INTERFACE: [u8; 32] = [
     0x30, 0xc1, 0xd8, 0x90, 0x74, 0x2f, 0x9b, 0x1a, 0x11, 0xfc, 0xcb, 0x53, 0x35, 0xc0, 0x6f, 0xe6,
@@ -75,14 +73,18 @@ pub type PFN_vkVoidFunction = extern "system" fn() -> ();
 
 /// Leverages an existing Vulkan implementation to handle [`VulkanMessage`]s.
 pub struct VulkanRedirect {
-    /// How we retrieve instance proc addresses.
-    get_instance_proc_addr: unsafe extern "system" fn(usize, *const u8) -> PFN_vkVoidFunction,
+    instance_pointers: InstancePtrs,
 }
 
 impl VulkanRedirect {
+    // TODO: should function be unsafe? I guess yes
     pub fn new(get_instance_proc_addr: unsafe extern "system" fn(usize, *const u8) -> PFN_vkVoidFunction) -> VulkanRedirect {
-        VulkanRedirect {
-            get_instance_proc_addr,
+        unsafe {
+            VulkanRedirect {
+                instance_pointers: InstancePtrs::load_with(|name: &std::ffi::CStr| {
+                    get_instance_proc_addr(0, name.as_ptr() as *const _)
+                }),
+            }
         }
     }
 
@@ -94,3 +96,5 @@ impl VulkanRedirect {
         }
     }
 }
+
+include!(concat!(env!("OUT_DIR"), "/vk.rs"));

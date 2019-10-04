@@ -36,6 +36,9 @@ fn main() {
     write_redirect_handle(out.by_ref(), &registry);
     writeln!(out, "}}").unwrap();
     writeln!(out, "").unwrap();
+
+    write_instance_pointers(out.by_ref(), &registry);
+    writeln!(out, "").unwrap();
 }
 
 fn write_enum_values(mut out: impl Write, registry: &parse::VkRegistry) {
@@ -220,6 +223,35 @@ fn write_param_serialize(out: &mut dyn Write, param_name: &str, param_ty: &parse
     }
 }
 
+fn write_instance_pointers(mut out: impl Write, registry: &parse::VkRegistry) {
+    writeln!(out, "struct InstancePtrs {{").unwrap();
+
+    for command in &registry.commands {
+        write!(out, "    r#{}: Option<extern \"system\" fn(", command.name).unwrap();
+        for (param_off, (param_ty, _)) in command.params.iter().enumerate() {
+            // TODO: skip device pointers
+            if param_off != 0 { write!(out, ", ").unwrap(); }
+            write!(out, "{}", print_ty(&param_ty)).unwrap();
+        }
+        writeln!(out, ") -> {}>,", print_ty(&command.ret_ty)).unwrap();
+    }
+
+    writeln!(out, "}}").unwrap();
+    writeln!(out, "").unwrap();
+    writeln!(out, "impl InstancePtrs {{").unwrap();
+    writeln!(out, "    unsafe fn load_with(mut loader: impl FnMut(&std::ffi::CStr) -> PFN_vkVoidFunction) -> Self {{").unwrap();
+    for command in &registry.commands {
+        writeln!(out, "        let r#{n} = loader(std::ffi::CStr::from_bytes_with_nul_unchecked(b\"{n}\\0\"));", n = command.name).unwrap();
+    }
+    writeln!(out, "        InstancePtrs {{").unwrap();
+    for command in &registry.commands {
+        writeln!(out, "            r#{n}: mem::transmute(r#{n}),", n = command.name).unwrap();
+    }
+    writeln!(out, "        }}").unwrap();
+    writeln!(out, "    }}").unwrap();
+    writeln!(out, "}}").unwrap();
+}
+
 fn write_redirect_handle(mut out: impl Write, registry: &parse::VkRegistry) {
     writeln!(out, "match <u16 as Decode>::decode(&mut msg_buf)? {{").unwrap();
 
@@ -237,6 +269,19 @@ fn write_redirect_handle(mut out: impl Write, registry: &parse::VkRegistry) {
                 writeln!(out, ";").unwrap();
             }
         }
+
+        let mut var_name_gen = 0;
+        let mut params = Vec::new();
+        for (param_ty, param_name) in &command.params {
+            let n = write_param_deserialize_step2(&mut out, &mut var_name_gen, &format!("r#{}", param_name), param_ty, registry);
+            write!(params, "n{}, ", n).unwrap();
+        }
+        writeln!(out, "        assert!(msg_buf.is_empty());").unwrap();     // TODO: return Error
+
+        write!(out, "        let ret = (state.instance_pointers.r#{}.unwrap())(", command.name).unwrap();
+        out.write_all(&params).unwrap();
+        writeln!(out, ");").unwrap();
+
         writeln!(out, "        Ok(None)").unwrap();
         writeln!(out, "    }},").unwrap();
     }
@@ -340,6 +385,79 @@ fn write_param_deserialize_step1(out: &mut dyn Write, ty: &parse::VkType, regist
     }
 
     Ok(())
+}
+
+// Generates some Rust code that turns a variable that can be expressed as `step1_name` into
+// something usable.
+fn write_param_deserialize_step2(
+    out: &mut dyn Write,
+    var_name_gen: &mut u32,
+    step1_name: &str,
+    ty: &parse::VkType,
+    registry: &parse::VkRegistry
+) -> u32 {
+    let type_def = if let parse::VkType::Ident(ty_name) = ty {
+        registry.type_defs.get(ty_name)
+    } else {
+        None
+    };
+
+    let var_name = *var_name_gen;
+    *var_name_gen += 1;
+
+    match (ty, type_def) {
+        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Struct { fields })) => {
+            let mut interm = Vec::new();
+            writeln!(interm, "let n{} = if let Some({}) = {} {{", var_name, step1_name, step1_name).unwrap();
+            writeln!(interm, "    Some({} {{", ty_name).unwrap();
+            for (field_off, (field_ty, field_name)) in fields.iter().enumerate() {
+                let n = write_param_deserialize_step2(out, var_name_gen, &format!("({}.{})", step1_name, field_off), &field_ty, registry);
+                write!(interm, "        r#{}: n{},", field_name, n).unwrap();
+            }
+            writeln!(interm, "    }})").unwrap();
+            writeln!(interm, "}} else {{ None }};").unwrap();
+            out.write_all(&interm).unwrap();
+        }
+        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Union { fields })) => {
+            writeln!(out, "let n{} = mem::zeroed::<{}>();", var_name, print_ty(ty)).unwrap();    // FIXME:
+        }
+        (parse::VkType::Ident(ty_name), _) => {
+            writeln!(out, "let n{} = {};", var_name, step1_name).unwrap();
+        },
+        (parse::VkType::ConstPointer(ty_name, _), _) if **ty_name == parse::VkType::Ident("void".to_string()) => {
+            // TODO: these pNext parameters :-/
+            writeln!(out, "let n{} = ptr::null::<{}>();", var_name, print_ty(ty)).unwrap()
+        }
+        (parse::VkType::ConstPointer(ty_name, parse::VkTypePtrLen::One), _) => {
+            let n = write_param_deserialize_step2(out, var_name_gen, step1_name, &ty_name, registry);
+            writeln!(out, "let n{} = n{}.as_ref().map(|p| p as *const _).unwrap_or(ptr::null());", var_name, n).unwrap();
+        }
+        (parse::VkType::ConstPointer(ty_name, parse::VkTypePtrLen::NullTerminated), _) |
+        (parse::VkType::ConstPointer(ty_name, parse::VkTypePtrLen::OtherField(_)), _) |
+        (parse::VkType::ConstPointer(ty_name, parse::VkTypePtrLen::RustExpr(_)), _) => {
+            writeln!(out, "let n{} = {}.as_ptr();", var_name, step1_name).unwrap();
+        }
+        (parse::VkType::MutPointer(ty_name, parse::VkTypePtrLen::One), _) => {
+            let second_var_name = *var_name_gen;
+            *var_name_gen += 1;
+            writeln!(out, "let n{}: {} = mem::zeroed();", second_var_name, print_ty(ty_name)).unwrap();
+            writeln!(out, "let n{} = &mut n{} as *mut _;", var_name, second_var_name).unwrap();
+        }
+        (parse::VkType::MutPointer(ty_name, parse::VkTypePtrLen::NullTerminated), _) |
+        (parse::VkType::MutPointer(ty_name, parse::VkTypePtrLen::OtherField(_)), _) |
+        (parse::VkType::MutPointer(ty_name, parse::VkTypePtrLen::RustExpr(_)), _) => {
+            writeln!(out, "let n{} = {}.as_mut_ptr();", var_name, step1_name).unwrap();
+        }
+        (parse::VkType::Array(ty_name, len), _) => {
+            // TODO: no
+            /*writeln!(out, "        for val in (0..{}).map(|n| {}[n]) {{", len, param_name).unwrap();
+            write_param_serialize(out, "val", &ty_name, registry);
+            writeln!(out, "        }}").unwrap();*/
+            writeln!(out, "let n{} = mem::zeroed::<[{}; {}]>();", var_name, print_ty(ty_name), len).unwrap();
+        }
+    }
+
+    var_name
 }
 
 fn write_get_instance_proc_addr(mut out: impl Write, registry: &parse::VkRegistry) {
