@@ -65,10 +65,14 @@ fn write_enum_values(mut out: impl Write, registry: &parse::VkRegistry) {
     }
 
     for typedef in registry.type_defs.values() {
-        if let parse::VkTypeDef::Struct { fields } = typedef {
-            for (param_ty, _) in fields {
-                visit_type(&param_ty, &mut to_print);
-            }
+        match typedef {
+            parse::VkTypeDef::Struct { fields } |
+            parse::VkTypeDef::Union { fields } => {
+                for (param_ty, _) in fields {
+                    visit_type(&param_ty, &mut to_print);
+                }
+            },
+            _ => {}
         }
     }
 
@@ -89,7 +93,19 @@ fn write_type_def(mut out: impl Write, name: &str, type_def: &parse::VkTypeDef) 
         },
         parse::VkTypeDef::Struct { fields } => {
             writeln!(out, "#[repr(C)]").unwrap();
+            writeln!(out, "#[allow(non_snake_case)]").unwrap();
+            writeln!(out, "#[derive(Copy, Clone)]").unwrap();
             writeln!(out, "struct {} {{", name).unwrap();
+            for (field_ty, field_name) in fields {
+                writeln!(out, "    r#{}: {},", field_name, print_ty(&field_ty)).unwrap();
+            }
+            writeln!(out, "}}").unwrap();
+        },
+        parse::VkTypeDef::Union { fields } => {
+            writeln!(out, "#[repr(C)]").unwrap();
+            writeln!(out, "#[allow(non_snake_case)]").unwrap();
+            writeln!(out, "#[derive(Copy, Clone)]").unwrap();
+            writeln!(out, "union {} {{", name).unwrap();
             for (field_ty, field_name) in fields {
                 writeln!(out, "    r#{}: {},", field_name, print_ty(&field_ty)).unwrap();
             }
@@ -104,6 +120,7 @@ fn write_commands_wrappers(mut out: impl Write, registry: &parse::VkRegistry) {
             continue;
         }
 
+        writeln!(out, "#[allow(non_snake_case)]").unwrap();
         writeln!(out, "extern \"system\" fn wrapper_{}(", command.name).unwrap();
         for (ty, n) in &command.params {
             writeln!(out, "    r#{}: {},", n, print_ty(ty)).unwrap();
@@ -174,12 +191,14 @@ fn print_ty(ty: &parse::VkType) -> String {
         parse::VkType::Ident(ident) if ident == "void" => "()".to_string(),
         parse::VkType::Ident(ident) if ident == "int" => "i32".to_string(),
         parse::VkType::Ident(ident) if ident == "int32_t" => "i32".to_string(),
+        parse::VkType::Ident(ident) if ident == "int64_t" => "i64".to_string(),
         parse::VkType::Ident(ident) if ident == "uint8_t" => "u8".to_string(),
         parse::VkType::Ident(ident) if ident == "uint16_t" => "u16".to_string(),
         parse::VkType::Ident(ident) if ident == "uint32_t" => "u32".to_string(),
         parse::VkType::Ident(ident) if ident == "uint64_t" => "u64".to_string(),
         parse::VkType::Ident(ident) if ident == "size_t" => "usize".to_string(),
         parse::VkType::Ident(ident) if ident == "float" => "f32".to_string(),
+        parse::VkType::Ident(ident) if ident == "double" => "f64".to_string(),
 
         parse::VkType::Ident(ident) if ident == "VkSampleMask" => "u32".to_string(),
         parse::VkType::Ident(ident) if ident == "VkBool32" => "u32".to_string(),
@@ -199,6 +218,17 @@ fn print_ty(ty: &parse::VkType) -> String {
         parse::VkType::Ident(ident) if ident == "HINSTANCE" => "*mut c_void".to_string(),
         parse::VkType::Ident(ident) if ident == "DWORD" => "u32".to_string(),
         parse::VkType::ConstPointer(t, _) if **t == parse::VkType::Ident("SECURITY_ATTRIBUTES".into()) => "*const c_void".to_owned(),
+
+        // FIXME: the definitions below are probably false, but we don't care because we probably won't use them
+        parse::VkType::Ident(ident) if ident == "xcb_connection_t" => "u32".to_string(),
+        parse::VkType::Ident(ident) if ident == "xcb_window_t" => "u32".to_string(),
+        parse::VkType::Ident(ident) if ident == "xcb_visualid_t" => "u32".to_string(),      // TODO: definitely wrong
+        parse::VkType::Ident(ident) if ident == "zx_handle_t" => "u32".to_string(),
+        parse::VkType::Ident(ident) if ident == "Window" => "u32".to_string(),
+        parse::VkType::Ident(ident) if ident == "VisualID" => "u32".to_string(),
+        parse::VkType::Ident(ident) if ident == "RROutput" => "u32".to_string(),
+        parse::VkType::Ident(ident) if ident == "GgpFrameToken" => "u32".to_string(),
+        parse::VkType::Ident(ident) if ident == "GgpStreamDescriptor" => "u32".to_string(),
 
         parse::VkType::Ident(ty) => ty.to_string(),
 

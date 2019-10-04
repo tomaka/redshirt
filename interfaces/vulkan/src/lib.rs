@@ -34,6 +34,15 @@
 //! can handle incoming messages through the [`VulkanRedirect::handle`] method. Considering
 //! the potential instability of these bindings, this is the recommended way to do it.
 //!
+//! # About items visibility
+//!
+//! If you look at the source code of this module, you might notice that we generate lots of
+//! Vulkan FFI definitions. With the expection of [`vkGetInstanceProcAddr`], though, they are all
+//! private.
+//!
+//! This is because the objective of this module is **not** to provide bindings for Vulkan, but
+//! only to provide an implementation of the Vulkan API. Please generate your own bindings.
+//!
 
 use core::{ffi::c_void, mem, ptr};
 use parity_scale_codec::{Decode, Encode};
@@ -48,17 +57,19 @@ pub const INTERFACE: [u8; 32] = [
 ];
 
 #[allow(non_camel_case_types)]
-pub type PFN_vkAllocationFunction = extern "system" fn(*mut c_void, usize, usize, SystemAllocationScope) -> *mut c_void;
+type PFN_vkAllocationFunction = extern "system" fn(*mut c_void, usize, usize, VkSystemAllocationScope) -> *mut c_void;
 #[allow(non_camel_case_types)]
-pub type PFN_vkReallocationFunction = extern "system" fn(*mut c_void, *mut c_void, usize, usize, SystemAllocationScope) -> *mut c_void;
+type PFN_vkReallocationFunction = extern "system" fn(*mut c_void, *mut c_void, usize, usize, VkSystemAllocationScope) -> *mut c_void;
 #[allow(non_camel_case_types)]
-pub type PFN_vkFreeFunction = extern "system" fn(*mut c_void, *mut c_void);
+type PFN_vkFreeFunction = extern "system" fn(*mut c_void, *mut c_void);
 #[allow(non_camel_case_types)]
-pub type PFN_vkInternalAllocationNotification = extern "system" fn(*mut c_void, usize, InternalAllocationType, SystemAllocationScope) -> *mut c_void;
+type PFN_vkInternalAllocationNotification = extern "system" fn(*mut c_void, usize, VkInternalAllocationType, VkSystemAllocationScope) -> *mut c_void;
 #[allow(non_camel_case_types)]
-pub type PFN_vkInternalFreeNotification = extern "system" fn(*mut c_void, usize, InternalAllocationType, SystemAllocationScope) -> *mut c_void;
+type PFN_vkInternalFreeNotification = extern "system" fn(*mut c_void, usize, VkInternalAllocationType, VkSystemAllocationScope) -> *mut c_void;
 #[allow(non_camel_case_types)]
-pub type PFN_vkDebugReportCallbackEXT = extern "system" fn(DebugReportFlagsEXT, DebugReportObjectTypeEXT, u64, usize, i32, *const i8, *const i8, *mut c_void) -> Bool32;
+type PFN_vkDebugReportCallbackEXT = extern "system" fn(VkDebugReportFlagsEXT, VkDebugReportObjectTypeEXT, u64, usize, i32, *const i8, *const i8, *mut c_void) -> u32;
+#[allow(non_camel_case_types)]
+type PFN_vkDebugUtilsMessengerCallbackEXT = extern "system" fn(VkDebugUtilsMessageSeverityFlagBitsEXT, VkDebugUtilsMessageTypeFlagsEXT, *const VkDebugUtilsMessengerCallbackDataEXT, *mut c_void) -> u32;
 #[allow(non_camel_case_types)]
 pub type PFN_vkVoidFunction = extern "system" fn() -> ();
 

@@ -28,6 +28,9 @@ pub enum VkTypeDef {
     Struct {
         fields: Vec<(VkType, String)>,
     },
+    Union {
+        fields: Vec<(VkType, String)>,
+    },
 }
 
 /// Successfully-parsed Vulkan command definition.
@@ -211,8 +214,26 @@ fn parse_type(events_source: &mut Events<impl Read>, attributes: Vec<OwnedAttrib
             None
         },
         Some("union") => {
-            advance_until_elem_end(events_source, &"type".parse().unwrap());
-            None      // TODO: wrong
+            let name = find_attr(&attributes, "name").unwrap().to_owned();
+            let mut fields = Vec::new();
+
+            loop {
+                match events_source.next() {
+                    Some(Ok(XmlEvent::StartElement { name, attributes, .. })) if name_equals(&name, "member") =>{
+                        fields.push(parse_ty_name(events_source, attributes));
+                    },
+                    Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "comment") =>
+                        advance_until_elem_end(events_source, &name),
+                    Some(Ok(XmlEvent::EndElement { .. })) => break,
+                    Some(Ok(XmlEvent::CData(..))) |
+                    Some(Ok(XmlEvent::Comment(..))) |
+                    Some(Ok(XmlEvent::Characters(..))) |
+                    Some(Ok(XmlEvent::Whitespace(..))) => {},
+                    ev => panic!("Unexpected: {:?}", ev),
+                }
+            }
+
+            Some((name, VkTypeDef::Union { fields }))
         },
         Some("struct") => {
             let name = find_attr(&attributes, "name").unwrap().to_owned();
