@@ -68,8 +68,22 @@ pub fn emit_message(
     msg: &impl Encode,
     needs_answer: bool,
 ) -> Result<Option<u64>, ()> {
+    emit_message_raw(interface_hash, &msg.encode(), needs_answer)
+}
+
+/// Emits a message destined to the handler of the given interface.
+///
+/// Returns `Ok` if the message has been successfully dispatched.
+///
+/// If `needs_answer` is true, then we expect an answer to the message to come later. A message ID
+/// is generated and is returned within `Ok(Some(...))`.
+/// If `needs_answer` is false, the function always returns `Ok(None)`.
+pub fn emit_message_raw(
+    interface_hash: &[u8; 32],
+    buf: &[u8],
+    needs_answer: bool,
+) -> Result<Option<u64>, ()> {
     unsafe {
-        let buf = msg.encode();
         let mut message_id_out = 0xdeadbeefu64;
         let ret = ffi::emit_message(
             interface_hash as *const [u8; 32] as *const _,
@@ -133,6 +147,16 @@ pub fn cancel_message(message_id: u64) -> Result<(), ()> {
 pub fn next_interface_message() -> InterfaceMessageFuture {
     InterfaceMessageFuture {
         finished: false,
+    }
+}
+
+/// Returns a future that is ready when a response to the given message comes back.
+///
+/// The return value is the type the message decodes to.
+pub fn message_response_sync_raw(msg_id: u64) -> ResponseMessage {
+    match block_on::next_message(&mut [msg_id], true).unwrap() {
+        Message::Response(m) => m,
+        _ => panic!()
     }
 }
 

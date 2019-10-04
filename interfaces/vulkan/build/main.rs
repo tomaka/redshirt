@@ -127,6 +127,8 @@ fn write_commands_wrappers(mut out: impl Write, registry: &parse::VkRegistry) {
         }
         writeln!(out, ") -> {} {{", print_ty(&command.ret_ty)).unwrap();
         writeln!(out, "    let mut msg_buf = Vec::<u8>::new();    // TODO: with_capacity").unwrap();
+        writeln!(out, "    let msg_id = syscalls::emit_message_raw(&INTERFACE, &msg_buf, true).unwrap().unwrap();").unwrap();
+        writeln!(out, "    let response = syscalls::message_response_sync_raw(msg_id);").unwrap();
 
         /*writeln!(out, "    let msg = VulkanMessage::{} {{", &command.name[2..]).unwrap();
         for (param_ty, param_name) in &command.params {

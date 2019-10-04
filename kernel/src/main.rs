@@ -18,10 +18,18 @@ fn main() {
 
     let mut system = wasi::register_extrinsics(kernel_core::system::System::new())
         .with_interface_handler(tcp::ffi::INTERFACE)
+        .with_interface_handler(vulkan::INTERFACE)
         .with_main_program(module)
         .build();
 
     let mut tcp = tcp_interface::TcpState::new();
+    let mut vk = {
+        #[link(name = "vulkan")]
+        extern "system" {
+            fn vkGetInstanceProcAddr(instance: usize, pName: *const u8) -> vulkan::PFN_vkVoidFunction;
+        }
+        vulkan::VulkanRedirect::new(vkGetInstanceProcAddr)
+    };
 
     loop {
         let result = futures::executor::block_on(async {
@@ -44,6 +52,18 @@ fn main() {
                         let message: tcp::ffi::TcpMessage =
                             DecodeAll::decode_all(&message).unwrap();
                         tcp.handle_message(message_id, message);
+                        continue;
+                    }
+                    kernel_core::system::SystemRunOutcome::InterfaceMessage {
+                        message_id,
+                        interface,
+                        message,
+                    } if interface == vulkan::INTERFACE => {
+                        // TODO:
+                        println!("received vk message: {:?}", message);
+                        if let Some(response) = vk.handle(&message) {
+                            system.answer_message(message_id.unwrap(), &response);
+                        }
                         continue;
                     }
                     kernel_core::system::SystemRunOutcome::Idle => false,

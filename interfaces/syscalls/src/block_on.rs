@@ -151,7 +151,7 @@ struct ResponsesState {
 /// See the [`next_message`](crate::ffi::next_message) FFI function for the semantics of
 /// `to_poll`.
 #[cfg(target_arch = "wasm32")] // TODO: bad
-fn next_message(to_poll: &mut [u64], block: bool) -> Option<Message> {
+pub(crate) fn next_message(to_poll: &mut [u64], block: bool) -> Option<Message> {
     unsafe {
         let mut out = Vec::with_capacity(32);
         loop {
@@ -176,6 +176,6 @@ fn next_message(to_poll: &mut [u64], block: bool) -> Option<Message> {
 }
 
 #[cfg(not(target_arch = "wasm32"))] // TODO: bad
-fn next_message(to_poll: &mut [u64], block: bool) -> Option<Message> {
+pub(crate) fn next_message(to_poll: &mut [u64], block: bool) -> Option<Message> {
     panic!()
 }

@@ -76,11 +76,11 @@ pub type PFN_vkVoidFunction = extern "system" fn() -> ();
 /// Leverages an existing Vulkan implementation to handle [`VulkanMessage`]s.
 pub struct VulkanRedirect {
     /// How we retrieve instance proc addresses.
-    get_instance_proc_addr: extern "system" fn(usize, *const u8) -> PFN_vkVoidFunction,
+    get_instance_proc_addr: unsafe extern "system" fn(usize, *const u8) -> PFN_vkVoidFunction,
 }
 
 impl VulkanRedirect {
-    pub fn new(get_instance_proc_addr: extern "system" fn(usize, *const u8) -> PFN_vkVoidFunction) -> VulkanRedirect {
+    pub fn new(get_instance_proc_addr: unsafe extern "system" fn(usize, *const u8) -> PFN_vkVoidFunction) -> VulkanRedirect {
         VulkanRedirect {
             get_instance_proc_addr,
         }
@@ -88,9 +88,8 @@ impl VulkanRedirect {
 
     /// Handles the given [`VulkanMessage`], optionally producing the answer to send back in
     /// response to this call.
-    pub fn handle(message: &[u8]) -> Option<Vec<u8>> {
+    pub fn handle(&mut self, message: &[u8]) -> Option<Vec<u8>> {
         // TODO: implement, lol
-        panic!("{:?}", message);
-        //None
+        None
     }
 }
