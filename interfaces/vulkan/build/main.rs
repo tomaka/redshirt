@@ -36,6 +36,11 @@ fn main() {
 fn write_enum_values(mut out: impl Write, registry: &parse::VkRegistry) {
     // Some of these constant values are used for constant array lengths, so we have to print them
     // out.
+    //
+    // Printing *all* constants (instead of just the ones we need) could be an option, but the
+    // Vulkan definition files include some annoying values such as `(~0ULL)` or `(~0U-2)` that
+    // are not Rust-friendly and that we don't want to bother parsing.
+
     let mut to_print = HashSet::new();
 
     fn visit_type(ty: &parse::VkType, to_print: &mut HashSet<String>) {
