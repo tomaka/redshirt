@@ -21,7 +21,7 @@ use vulkano::command_buffer::{AutoCommandBufferBuilder, DynamicState};
 use vulkano::device::{Device, DeviceExtensions};
 use vulkano::framebuffer::{Framebuffer, FramebufferAbstract, Subpass, RenderPassAbstract};
 use vulkano::image::SwapchainImage;
-use vulkano::instance::{Instance, PhysicalDevice, RawInstanceExtensions};
+use vulkano::instance::{ApplicationInfo, Instance, PhysicalDevice, RawInstanceExtensions};
 use vulkano::pipeline::GraphicsPipeline;
 use vulkano::pipeline::viewport::Viewport;
 use vulkano::swapchain::{AcquireError, PresentMode, SurfaceTransform, Swapchain, SwapchainCreationError};
@@ -45,7 +45,13 @@ fn main() {
 
         let loader = vulkano::instance::loader::FunctionPointers::new(Box::new(MyLoader) as Box<_>);
         // Now creating the instance.
-        Instance::with_loader(loader, None, RawInstanceExtensions::none(), None).unwrap()
+        let app_info = ApplicationInfo {
+            application_name: Some("hello".into()),
+            application_version: None,
+            engine_name: Some("world".into()),
+            engine_version: None,
+        };
+        Instance::with_loader(loader, Some(&app_info), RawInstanceExtensions::none(), None).unwrap()
     };
 
     // We then choose which physical device to use.

@@ -115,7 +115,7 @@ fn write_type_def(mut out: impl Write, name: &str, type_def: &parse::VkTypeDef) 
 }
 
 fn write_commands_wrappers(mut out: impl Write, registry: &parse::VkRegistry) {
-    for command in &registry.commands {
+    for (command_id, command) in registry.commands.iter().enumerate() {
         if command.name == "vkGetDeviceProcAddr" || command.name == "vkGetInstanceProcAddr" {
             continue;
         }
@@ -126,9 +126,20 @@ fn write_commands_wrappers(mut out: impl Write, registry: &parse::VkRegistry) {
             writeln!(out, "    r#{}: {},", n, print_ty(ty)).unwrap();
         }
         writeln!(out, ") -> {} {{", print_ty(&command.ret_ty)).unwrap();
-        writeln!(out, "    let mut msg_buf = Vec::<u8>::new();    // TODO: with_capacity").unwrap();
-        writeln!(out, "    let msg_id = syscalls::emit_message_raw(&INTERFACE, &msg_buf, true).unwrap().unwrap();").unwrap();
-        writeln!(out, "    let response = syscalls::message_response_sync_raw(msg_id);").unwrap();
+        writeln!(out, "    #![allow(unused_unsafe)]").unwrap();
+        writeln!(out, "    unsafe {{").unwrap();
+        writeln!(out, "        let mut msg_buf = Vec::<u8>::new();    // TODO: with_capacity").unwrap();
+
+        // The first 2 bytes of the message is the command ID.
+        writeln!(out, "        <u16 as Encode>::encode_to(&{}, &mut msg_buf);", command_id as u16).unwrap();
+
+        // We then append every parameter one by one.
+        for (param_ty, param_name) in &command.params {
+            write_param_serialize(out.by_ref(), &format!("r#{}", param_name), param_ty, registry);
+        }
+
+        writeln!(out, "        let msg_id = syscalls::emit_message_raw(&INTERFACE, &msg_buf, true).unwrap().unwrap();").unwrap();
+        writeln!(out, "        let response = syscalls::message_response_sync_raw(msg_id);").unwrap();
 
         /*writeln!(out, "    let msg = VulkanMessage::{} {{", &command.name[2..]).unwrap();
         for (param_ty, param_name) in &command.params {
@@ -144,9 +155,81 @@ fn write_commands_wrappers(mut out: impl Write, registry: &parse::VkRegistry) {
         writeln!(out, "    }};").unwrap();*/
 
         //write!(out, "    syscalls::block_on(syscalls::emit_message_with_response(INTERFACE, msg));").unwrap();*/
-        writeln!(out, "    panic!()").unwrap();
+        writeln!(out, "        panic!()").unwrap();
+        writeln!(out, "    }}").unwrap();
         writeln!(out, "}}").unwrap();
         writeln!(out, "").unwrap();
+    }
+}
+
+fn write_param_serialize(mut out: impl Write, param_name: &str, param_ty: &parse::VkType, registry: &parse::VkRegistry) {
+    let type_def = if let parse::VkType::Ident(ty_name) = param_ty {
+        registry.type_defs.get(ty_name)
+    } else {
+        None
+    };
+
+    match (param_ty, type_def) {
+        (parse::VkType::Ident(ty_name), _) if ty_name.starts_with("PFN_") => {
+            // We skip serializing all function pointers.
+        },
+        (parse::VkType::Ident(ty_name), _) if ty_name == "size_t" => {
+            // TODO: a size_t indicates some memory length, and this memory that must be serialized
+        },
+        (parse::VkType::Ident(ty_name), _) if ty_name == "float" => {
+            writeln!(out, "        <u32 as Encode>::encode_to(&mem::transmute::<f32, u32>({}), &mut msg_buf);", param_name).unwrap()
+        },
+        (parse::VkType::Ident(ty_name), _) if ty_name == "HANDLE" || ty_name == "HINSTANCE" || ty_name == "HWND" || ty_name == "LPCWSTR" || ty_name == "CAMetalLayer" || ty_name == "AHardwareBuffer" => {
+            // TODO: what to do here?
+        },
+        (parse::VkType::Ident(ty_name), _) if print_ty(param_ty).starts_with("*mut ") || print_ty(param_ty).starts_with("*const ") || print_ty(param_ty).starts_with("c_void") => {
+            // TODO:
+            panic!("{:?}", ty_name);
+        },
+        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Enum)) |
+        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Bitmask)) |
+        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Handle)) |
+        (parse::VkType::Ident(ty_name), None) => {
+            match registry.type_defs.get(ty_name) {
+                Some(parse::VkTypeDef::Enum) | Some(parse::VkTypeDef::Bitmask) | Some(parse::VkTypeDef::Handle) |
+                None => writeln!(out, "        <{} as Encode>::encode_to(&{}, &mut msg_buf);", print_ty(param_ty), param_name).unwrap(),
+                _ => {}
+            }
+        },
+        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Struct { fields })) => {
+            for (field_ty, field_name) in fields {
+                write_param_serialize(Box::new(out.by_ref()) as Box<dyn Write>, &format!("{}.r#{}", param_name, field_name), &field_ty, registry);
+            }
+        }
+        (parse::VkType::ConstPointer(ty_name, _), _) if **ty_name == parse::VkType::Ident("void".to_string()) => {
+            // TODO: these pNext parameters :-/
+        }
+        (parse::VkType::ConstPointer(ty_name, parse::VkTypePtrLen::One), _) => {
+            // TODO: only do this if parameter is optional?
+            writeln!(out, "        if !{}.is_null() {{", param_name).unwrap();
+            writeln!(out, "            <u32 as Encode>::encode_to(&1, &mut msg_buf);").unwrap();
+            write_param_serialize(Box::new(out.by_ref()) as Box<dyn Write>, &format!("(*{})", param_name), &ty_name, registry);
+            writeln!(out, "        }} else {{").unwrap();
+            writeln!(out, "            <u32 as Encode>::encode_to(&0, &mut msg_buf);").unwrap();
+            writeln!(out, "        }}").unwrap();
+        }
+        (parse::VkType::ConstPointer(ty_name, parse::VkTypePtrLen::NullTerminated), _) => {
+            writeln!(out, "        if !{}.is_null() {{", param_name).unwrap();
+            writeln!(out, "            let len = (0isize..).find(|n| *{}.offset(*n) == 0).unwrap() as u32;", param_name).unwrap();
+            writeln!(out, "            <u32 as Encode>::encode_to(&len, &mut msg_buf);").unwrap();
+            writeln!(out, "            for n in 0..len {{").unwrap();
+            write_param_serialize(Box::new(out.by_ref()) as Box<dyn Write>, &format!("(*{}.offset(n as isize))", param_name), &ty_name, registry);
+            writeln!(out, "            }}").unwrap();
+            writeln!(out, "        }} else {{").unwrap();
+            writeln!(out, "            <u32 as Encode>::encode_to(&0, &mut msg_buf);").unwrap();
+            writeln!(out, "        }}").unwrap();
+        }
+        (parse::VkType::Array(ty_name, len), _) => {
+            writeln!(out, "        for val in (0..{}).map(|n| {}[n]) {{", len, param_name).unwrap();
+            write_param_serialize(Box::new(out.by_ref()) as Box<dyn Write>, "val", &ty_name, registry);
+            writeln!(out, "        }}").unwrap();
+        },
+        _ => {}
     }
 }
 
@@ -191,6 +274,7 @@ fn write_get_instance_proc_addr(mut out: impl Write, registry: &parse::VkRegistr
 fn print_ty(ty: &parse::VkType) -> String {
     match ty {
         parse::VkType::Ident(ident) if ident == "void" => "()".to_string(),
+        parse::VkType::Ident(ident) if ident == "char" => "u8".to_string(),
         parse::VkType::Ident(ident) if ident == "int" => "i32".to_string(),
         parse::VkType::Ident(ident) if ident == "int32_t" => "i32".to_string(),
         parse::VkType::Ident(ident) if ident == "int64_t" => "i64".to_string(),
