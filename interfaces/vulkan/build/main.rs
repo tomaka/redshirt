@@ -1,5 +1,6 @@
 // Copyright(c) 2019 Pierre Krieger
 
+use std::collections::HashSet;
 use std::env;
 use std::fs::File;
 use std::io::{Cursor, Write};
@@ -22,17 +23,58 @@ fn main() {
         writeln!(out, "").unwrap();
     }
 
-    write_commands_enum(out.by_ref(), &registry);
+    write_enum_values(out.by_ref(), &registry);
     writeln!(out, "").unwrap();
 
     write_commands_wrappers(out.by_ref(), &registry);
     writeln!(out, "").unwrap();
 
-    write_result_structs(out.by_ref(), &registry);
-    writeln!(out, "").unwrap();
-
     write_get_instance_proc_addr(out.by_ref(), &registry);
     writeln!(out, "").unwrap();
+}
+
+fn write_enum_values(mut out: impl Write, registry: &parse::VkRegistry) {
+    // Some of these constant values are used for constant array lengths, so we have to print them
+    // out.
+    let mut to_print = HashSet::new();
+
+    fn visit_type(ty: &parse::VkType, to_print: &mut HashSet<String>) {
+        match ty {
+            parse::VkType::Ident(_) => {},
+            parse::VkType::MutPointer(t, _) => visit_type(t, to_print),
+            parse::VkType::ConstPointer(t, _) => visit_type(t, to_print),
+            parse::VkType::Array(t, len) => {
+                visit_type(t, to_print);
+                if !len.chars().next().unwrap().is_digit(10) {
+                    to_print.insert(len.clone());
+                }
+            },
+        }
+    }
+
+    for command in &registry.commands {
+        visit_type(&command.ret_ty, &mut to_print);
+        for (param_ty, _) in &command.params {
+            visit_type(param_ty, &mut to_print);
+        }
+    }
+
+    for typedef in registry.type_defs.values() {
+        if let parse::VkTypeDef::Struct { fields } = typedef {
+            for (param_ty, _) in fields {
+                visit_type(&param_ty, &mut to_print);
+            }
+        }
+    }
+
+    for to_print in to_print {
+        let value = match registry.enums.get(&to_print) {
+            Some(v) => v,
+            None => panic!("Can't find definition of constant {:?}", to_print),
+        };
+
+        writeln!(out, "const {}: usize = {};", to_print, value).unwrap();
+    }
 }
 
 fn write_type_def(mut out: impl Write, name: &str, type_def: &parse::VkTypeDef) {
@@ -41,86 +83,13 @@ fn write_type_def(mut out: impl Write, name: &str, type_def: &parse::VkTypeDef) 
             writeln!(out, "type {} = u32;", name).unwrap();
         },
         parse::VkTypeDef::Struct { fields } => {
+            writeln!(out, "#[repr(C)]").unwrap();
             writeln!(out, "struct {} {{", name).unwrap();
             for (field_ty, field_name) in fields {
                 writeln!(out, "    r#{}: {},", field_name, print_ty(&field_ty)).unwrap();
             }
             writeln!(out, "}}").unwrap();
         },
-    }
-}
-
-fn write_commands_enum(mut out: impl Write, registry: &parse::VkRegistry) {
-    //writeln!(out, "#[derive(Encode, Decode)]").unwrap();
-    writeln!(out, "#[allow(non_camel_case_types)]").unwrap();
-    writeln!(out, "pub enum VulkanMessage {{").unwrap();
-
-    for command in &registry.commands {
-        if command.name == "vkGetDeviceProcAddr" || command.name == "vkGetInstanceProcAddr" {
-            continue;
-        }
-
-        writeln!(out, "    {} {{", &command.name[2..]).unwrap();
-        for (param_ty, param_name) in &command.params {
-            let param_ty = match param_ty {
-                // Parameters that are a mutable pointers are skipped, because that's where we'll
-                // write the result.
-                parse::VkType::MutPointer(_, _) => continue,
-                parse::VkType::ConstPointer(t, parse::VkTypePtrLen::One) => print_ty(t),
-                parse::VkType::ConstPointer(t, parse::VkTypePtrLen::NullTerminated) |
-                parse::VkType::ConstPointer(t, parse::VkTypePtrLen::OtherField(_)) =>
-                    format!("Vec<{}>", print_ty(t)),
-                t => print_ty(t),
-            };
-
-            writeln!(out, "        r#{}: {},", param_name, param_ty).unwrap();
-        }
-        writeln!(out, "    }},").unwrap();
-    }
-
-    writeln!(out, "}}").unwrap();
-}
-
-fn write_result_structs(mut out: impl Write, registry: &parse::VkRegistry) {
-    for command in &registry.commands {
-        if command.name == "vkGetDeviceProcAddr" || command.name == "vkGetInstanceProcAddr" {
-            continue;
-        }
-
-        let mut fields = Vec::new();
-
-        if command.ret_ty != parse::VkType::Ident("void".to_string()) {
-            fields.push(("return_value".to_owned(), &command.ret_ty));
-        }
-
-        for (param_ty, param_name) in &command.params {
-            if let parse::VkType::MutPointer(ty, len) = param_ty {
-                match len {
-                    parse::VkTypePtrLen::One => {
-                        fields.push((format!("r#{}", param_name), ty));
-                    }
-                    parse::VkTypePtrLen::NullTerminated |
-                    parse::VkTypePtrLen::OtherField(_) => {
-                        // TODO: Vec
-                        fields.push((format!("r#{}", param_name), ty));
-                    }
-                }
-            }
-        }
-
-        // Don't generate any struct if there's no field.
-        if fields.is_empty() {
-            continue;
-        }
-
-        //writeln!(out, "#[derive(Encode, Decode)]").unwrap();
-        writeln!(out, "#[allow(non_camel_case_types)]").unwrap();
-        writeln!(out, "pub struct VkResponse{} {{", &command.name[2..]).unwrap();
-        for (param_name, param_ty) in fields {
-            writeln!(out, "    pub {}: {},", param_name, print_ty(&param_ty)).unwrap();
-        }
-        writeln!(out, "}}").unwrap();
-        writeln!(out, "").unwrap();
     }
 }
 
@@ -135,8 +104,9 @@ fn write_commands_wrappers(mut out: impl Write, registry: &parse::VkRegistry) {
             writeln!(out, "    r#{}: {},", n, print_ty(ty)).unwrap();
         }
         writeln!(out, ") -> {} {{", print_ty(&command.ret_ty)).unwrap();
+        writeln!(out, "    let mut msg_buf = Vec::<u8>::new();    // TODO: with_capacity").unwrap();
 
-        writeln!(out, "    let msg = VulkanMessage::{} {{", &command.name[2..]).unwrap();
+        /*writeln!(out, "    let msg = VulkanMessage::{} {{", &command.name[2..]).unwrap();
         for (param_ty, param_name) in &command.params {
             // Parameters that are a mutable pointer are skipped, because that's where we'll
             // write the result.
@@ -147,7 +117,7 @@ fn write_commands_wrappers(mut out: impl Write, registry: &parse::VkRegistry) {
             }
             writeln!(out, "        r#{}, ", param_name).unwrap();
         }
-        writeln!(out, "    }};").unwrap();
+        writeln!(out, "    }};").unwrap();*/
 
         //write!(out, "    syscalls::block_on(syscalls::emit_message_with_response(INTERFACE, msg));").unwrap();*/
         writeln!(out, "    panic!()").unwrap();
@@ -173,7 +143,14 @@ fn write_get_instance_proc_addr(mut out: impl Write, registry: &parse::VkRegistr
 
         let params_tys = command.params
             .iter()
-            .map(|(ty, _)| format!("{}, ", print_ty(ty)))
+            .enumerate()
+            .map(|(off, (ty, _))| {
+                if off == 0 {
+                    format!("{}", print_ty(ty))
+                } else {
+                    format!(", {}", print_ty(ty))
+                }
+            })
             .collect::<String>();
 
         writeln!(out, "        \"{}\" => {{", command.name).unwrap();
@@ -210,6 +187,13 @@ fn print_ty(ty: &parse::VkType) -> String {
         parse::VkType::Ident(ident) if ident == "wl_display" => "c_void".to_string(),
         parse::VkType::Ident(ident) if ident == "wl_surface" => "c_void".to_string(),
         parse::VkType::Ident(ident) if ident == "Display" => "c_void".to_string(),
+        parse::VkType::Ident(ident) if ident == "LPCWSTR" => "*const u16".to_string(),
+        parse::VkType::Ident(ident) if ident == "HANDLE" => "*mut c_void".to_string(),
+        parse::VkType::Ident(ident) if ident == "HMONITOR" => "*mut c_void".to_string(),
+        parse::VkType::Ident(ident) if ident == "HWND" => "*mut c_void".to_string(),
+        parse::VkType::Ident(ident) if ident == "HINSTANCE" => "*mut c_void".to_string(),
+        parse::VkType::Ident(ident) if ident == "DWORD" => "u32".to_string(),
+        parse::VkType::ConstPointer(t, _) if **t == parse::VkType::Ident("SECURITY_ATTRIBUTES".into()) => "*const c_void".to_owned(),
 
         parse::VkType::Ident(ty) => ty.to_string(),
 

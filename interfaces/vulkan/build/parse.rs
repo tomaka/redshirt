@@ -15,6 +15,8 @@ pub struct VkRegistry {
     pub commands: Vec<VkCommand>,
     /// Type definitions.
     pub type_defs: HashMap<String, VkTypeDef>,
+    /// Enum values.
+    pub enums: HashMap<String, String>,
 }
 
 /// A type definition of the Vulkan API.
@@ -104,6 +106,7 @@ fn parse_registry(events_source: &mut Events<impl Read>) -> VkRegistry {
     let mut out = VkRegistry {
         commands: Vec::new(),
         type_defs: HashMap::new(),
+        enums: HashMap::new(),
     };
 
     loop {
@@ -118,10 +121,12 @@ fn parse_registry(events_source: &mut Events<impl Read>) -> VkRegistry {
                 assert!(out.commands.is_empty());
                 out.commands = commands;
             },
-
-            // We actually don't care what enum values are.
-            Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "enums") =>
-                advance_until_elem_end(events_source, &name),
+            Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "enums") => {
+                for (name, value) in parse_enums(events_source) {
+                    let _prev_val = out.enums.insert(name.clone(), value);
+                    assert!(_prev_val.is_none(), "Duplicate value for {:?}", name);
+                }
+            },
 
             // Other things we don't care about.
             Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "comment") =>
@@ -241,6 +246,56 @@ fn parse_type(events_source: &mut Events<impl Read>, attributes: Vec<OwnedAttrib
         },
         cat => panic!("Unexpected type category: {:?} with attrs {:?}", cat, attributes),
     }
+}
+
+/// Call this function right after finding a `StartElement` with the name `enums`. This function
+/// parses the content of the element.
+fn parse_enums(events_source: &mut Events<impl Read>) -> HashMap<String, String> {
+    let mut out = HashMap::new();
+
+    loop {
+        match events_source.next() {
+            Some(Ok(XmlEvent::StartElement { name, attributes, .. })) if name_equals(&name, "enum") => {
+                if let Some((name, value)) = parse_enum(events_source, attributes) {
+                    let _prev_val = out.insert(name.clone(), value);
+                    assert!(_prev_val.is_none(), "Duplicate value for {:?}", name);
+                }
+            },
+
+            Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "comment") =>
+                advance_until_elem_end(events_source, &name),
+            Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "unused") =>
+                advance_until_elem_end(events_source, &name),
+            Some(Ok(XmlEvent::EndElement { name, .. })) => {
+                assert!(name_equals(&name, "enums"));
+                return out
+            },
+            Some(Ok(XmlEvent::CData(..))) |
+            Some(Ok(XmlEvent::Comment(..))) |
+            Some(Ok(XmlEvent::Characters(..))) |
+            Some(Ok(XmlEvent::Whitespace(..))) => {},
+            ev => panic!("Unexpected: {:?}", ev),
+        }
+    }
+}
+
+/// Call this function right after finding a `StartElement` with the name `enum`. This
+/// function parses the content of the element.
+fn parse_enum(events_source: &mut Events<impl Read>, attributes: Vec<OwnedAttribute>) -> Option<(String, String)> {
+    let name = find_attr(&attributes, "name").unwrap().to_owned();
+
+    let value = if let Some(value) = find_attr(&attributes, "value") {
+        value.to_owned()
+    } else if let Some(alias) = find_attr(&attributes, "alias") {
+        alias.to_owned()
+    } else if let Some(bitpos) = find_attr(&attributes, "bitpos") {
+        format!("2 << {}", bitpos)
+    } else {
+        panic!("Can't figure out enum value: {:?}", attributes);
+    };
+
+    advance_until_elem_end(events_source, &"enum".parse().unwrap());
+    Some((name, value))
 }
 
 /// Call this function right after finding a `StartElement` with the name `commands`. This
