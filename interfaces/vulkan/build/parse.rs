@@ -47,20 +47,41 @@ pub struct VkCommand {
 /// Successfully-parsed Vulkan type.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VkType {
+    /// A single type identifier. Can be either a primitive C type (such as `void`, `uin32_t`, or
+    /// `xcb_window_t`), or a type defined in the registry. Never contains any pointer or array.
     Ident(String),
+
     /// Pointer to some memory location containing a certain number of elements of the given type.
     MutPointer(Box<VkType>, VkTypePtrLen),
+
     /// Pointer to some memory location containing a certain number of elements of the given type.
     ConstPointer(Box<VkType>, VkTypePtrLen),
+
+    /// Array of fixed size. The size is given by the second parameter and can be either a
+    /// constant numeric value (for example `2`), or a constant from the registry (for example
+    /// `VK_MAX_DESCRIPTION_SIZE`).
     Array(Box<VkType>, String),
 }
 
 /// Number of elements in a memory location indicated with a pointer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VkTypePtrLen {
+    /// The pointer points to a single element.
     One,
+
+    /// The pointer points to a list of elements that ends when a `0` is reached.
+    /// Typically used for C-style strings.
+    /// For example a `const char*` is represented as
+    /// `VkType::ConstPointer(VkType::Ident("char"), VkTypePtrLen::NullTerminated)`.
     NullTerminated,
+
+    /// The size of the list is given by a another field. The semantics of "other field" depend
+    /// on the context.
     OtherField(String),
+
+    /// This is even more vague than `OtherField`, and is basically some math operation applied
+    /// on another field.
+    RustExpr(String),
 }
 
 /// Parses the file `vk.xml` from the given source. Assumes that everything is well-formed and
@@ -152,7 +173,7 @@ fn parse_registry(events_source: &mut Events<impl Read>) -> VkRegistry {
             Some(Ok(XmlEvent::Comment(..))) |
             Some(Ok(XmlEvent::Characters(..))) |
             Some(Ok(XmlEvent::Whitespace(..))) => {},
-            ev => panic!("Unexpected; probably because unimplemented: {:?}", ev),      // TODO: turn into "Unexpected" once everything is implemented
+            ev => panic!("Unexpected: {:?}", ev),
         }
     }
 }
@@ -414,23 +435,33 @@ fn parse_ty_name(events_source: &mut Events<impl Read>, attributes: Vec<OwnedAtt
         }
     }
 
-    // TODO: there's also "**"
     let ret_ty = if white_spaces.contains("*") {
-        let len = if let Some(len) = len_attr {
-            if len == "null-terminated" {
-                VkTypePtrLen::NullTerminated
-            } else {
-                VkTypePtrLen::OtherField(len.to_owned())
-            }
-            // TODO: len.split();   number of elements gives nesting level
-        } else {
-            VkTypePtrLen::One
-        };
+        // TODO: we assume that there's no weird combination such as mut pointers to const pointers
+        if let Some(len) = len_attr {
+            let mut ty_out = VkType::Ident(ret_ty_out);
+            for elem in len.split(',').rev() {
+                let len = if elem == "null-terminated" {
+                    VkTypePtrLen::NullTerminated
+                } else if elem.starts_with("latexmath:") {
+                    VkTypePtrLen::RustExpr(find_attr(&attributes, "altlen").unwrap().to_owned())
+                } else {
+                    VkTypePtrLen::OtherField(elem.to_owned())
+                };
 
-        if white_spaces.contains("const") {
-            VkType::ConstPointer(Box::new(VkType::Ident(ret_ty_out)), len)
+                if white_spaces.contains("const") {
+                    ty_out = VkType::ConstPointer(Box::new(ty_out), len);
+                } else {
+                    ty_out = VkType::MutPointer(Box::new(ty_out), len);
+                }
+            }
+            ty_out
+
         } else {
-            VkType::MutPointer(Box::new(VkType::Ident(ret_ty_out)), len)
+            if white_spaces.contains("const") {
+                VkType::ConstPointer(Box::new(VkType::Ident(ret_ty_out)), VkTypePtrLen::One)
+            } else {
+                VkType::MutPointer(Box::new(VkType::Ident(ret_ty_out)), VkTypePtrLen::One)
+            }
         }
 
     } else {

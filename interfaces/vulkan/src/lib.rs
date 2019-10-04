@@ -86,10 +86,11 @@ impl VulkanRedirect {
         }
     }
 
-    /// Handles the given [`VulkanMessage`], optionally producing the answer to send back in
-    /// response to this call.
+    /// Handles the given message, optionally producing the answer to send back in response to
+    /// this call.
     pub fn handle(&mut self, message: &[u8]) -> Option<Vec<u8>> {
-        // TODO: implement, lol
-        None
+        unsafe {
+            redirect_handle_inner(self, message).unwrap()
+        }
     }
 }
