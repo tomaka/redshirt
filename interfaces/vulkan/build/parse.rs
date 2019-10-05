@@ -76,13 +76,94 @@ pub enum VkTypePtrLen {
     /// `VkType::ConstPointer(VkType::Ident("char"), VkTypePtrLen::NullTerminated)`.
     NullTerminated,
 
-    /// The size of the list is given by a another field. The semantics of "other field" depend
-    /// on the context.
-    OtherField(String),
+    /// The size of the list is given by some runtime Rust expression. The expression might require
+    /// knowing the value of an other field of the struct or list of parameters that this type is
+    /// contained it.
+    ///
+    /// In order to obtain a Rust expression that contains the length, transform `other_field` into
+    /// an expression containing the value of `other_field`, and prepend `before_other_field` and
+    /// append `after_other_field`.
+    ///
+    /// `other_field` might be a list, in which case the first element is the other field, and each
+    /// subsequent element is a subfield the previous one.
+    ///
+    /// For example `before_other_field` might be `"("` and `after_other_field` might be `" / 4)"`.
+    OtherField {
+        before_other_field: String,
+        other_field: Vec<String>,
+        after_other_field: String,
+    },
+}
 
-    /// This is even more vague than `OtherField`, and is basically some math operation applied
-    /// on another field.
-    RustExpr(String),
+impl VkCommand {
+    /// Finds the type of a field of the list of parameters of this command.
+    ///
+    /// The registry must be passed in order to look up the definition of structs.
+    pub fn find_param_field_ty<'b>(&'b self, registry: &'b VkRegistry, subfields: impl IntoIterator<Item = impl AsRef<str>>) -> Option<&'b VkType> {
+        find_subfield_in_list(&self.params, registry, subfields)
+    }
+}
+
+/// Finds the type of a subfield of the list of fields.
+///
+/// The registry must be passed in order to look up the definition of structs.
+pub fn find_subfield_in_list<'b>(fields: &'b [(VkType, String)], registry: &'b VkRegistry, subfields: impl IntoIterator<Item = impl AsRef<str>>) -> Option<&'b VkType> {
+    let mut subfields = subfields.into_iter();
+    let first = subfields.next().unwrap();
+    let mut ty = fields.iter().find(|(_, n)| n == first.as_ref()).map(|(t, _)| t)?;
+    while let Some(next) = subfields.next() {
+        if let VkTypeDef::Struct { fields } = registry.type_defs.get(ty.derefed_type().as_ident().unwrap()).unwrap() {
+            ty = fields.iter().find(|(_, n)| n == next.as_ref()).map(|(t, _)| t)?;
+        } else {
+            return None;
+        }
+    }
+    Some(ty)
+}
+
+impl VkType {
+    /// If `self` is a pointer, generates an expression that dereferences `expr` until it is
+    /// a plain value.
+    pub fn gen_deref_expr(&self, expr: &str) -> String {
+        match self {
+            VkType::MutPointer(t, _) => t.gen_deref_expr(&format!("*{}", expr)),
+            VkType::ConstPointer(t, _) => t.gen_deref_expr(&format!("*{}", expr)),
+            _ => expr.to_owned()
+        }
+    }
+
+    /// If `self` is a pointer, returns the dereferenced type. Does that recursively.
+    pub fn derefed_type(&self) -> &VkType {
+        match self {
+            VkType::MutPointer(t, _) => t.derefed_type(),
+            VkType::ConstPointer(t, _) => t.derefed_type(),
+            t => t,
+        }
+    }
+
+    /// If `self` is an `Ident`, returns the identifier.
+    pub fn as_ident(&self) -> Option<&str> {
+        match self {
+            VkType::Ident(s) => Some(&s),
+            _ => None,
+        }
+    }
+}
+
+impl VkTypeDef {
+    /// If `self` is a `Struct`, returns the type of the given subfield.
+    pub fn resolve_subfield_ty(&self, subfield: &str) -> Option<&VkType> {
+        match self {
+            VkTypeDef::Struct { fields } => {
+                if let Some(elem) = fields.iter().find(|(_, n)| n == subfield) {
+                    Some(&elem.0)
+                } else {
+                    None
+                }
+            },
+            _ => None,
+        }
+    }
 }
 
 /// Parses the file `vk.xml` from the given source. Assumes that everything is well-formed and
@@ -451,10 +532,28 @@ fn parse_ty_name(events_source: &mut Events<impl Read>, attributes: Vec<OwnedAtt
             for elem in len.split(',').rev() {
                 let len = if elem == "null-terminated" {
                     VkTypePtrLen::NullTerminated
-                } else if elem.starts_with("latexmath:") {
-                    VkTypePtrLen::RustExpr(find_attr(&attributes, "altlen").unwrap().to_owned())
+                } else if elem == r#"latexmath:[\lceil{\mathit{rasterizationSamples} \over 32}\rceil]"# {
+                    VkTypePtrLen::OtherField {
+                        before_other_field: "(".to_owned(),
+                        other_field: vec!["rasterizationSamples".to_owned()],
+                        after_other_field: " + 31) / 32".to_owned(),
+                    }
+                } else if elem == r#"latexmath:[\textrm{codeSize} \over 4]"# {
+                    VkTypePtrLen::OtherField {
+                        before_other_field: "".to_owned(),
+                        other_field: vec!["codeSize".to_owned()],
+                        after_other_field: " / 4".to_owned(),
+                    }
                 } else {
-                    VkTypePtrLen::OtherField(elem.to_owned())
+                    // If `altlen` is something, then this is likely a mathematical expression
+                    // that needs to be hardcoded similar to the ones above.
+                    assert!(find_attr(&attributes, "altlen").is_none(),
+                        "Field runtime length might have to be hardcoded: {:?}", len);
+                    VkTypePtrLen::OtherField {
+                        before_other_field: "".to_owned(),
+                        other_field: elem.split("::").map(|v| v.to_owned()).collect(),
+                        after_other_field: "".to_owned(),
+                    }
                 };
 
                 if white_spaces.contains("const") {

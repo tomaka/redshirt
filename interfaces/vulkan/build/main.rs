@@ -148,14 +148,25 @@ fn write_commands_wrappers(mut out: impl Write, registry: &parse::VkRegistry) {
 
         // We then append every parameter one by one.
         for (param_ty, param_name) in &command.params {
-            write_param_serialize(out.by_ref(), false, &format!("r#{}", param_name), param_ty, registry);
+            write_serialize(
+                out.by_ref(),
+                false,
+                &format!("r#{}", param_name),
+                param_ty,
+                registry,
+                &mut |fields| {
+                    let mut ret = fields[0].clone();
+                    for f in fields.iter().skip(1) { ret.push_str(".r#"); ret.push_str(f); }
+                    (ret, command.find_param_field_ty(registry, fields).unwrap().clone())
+                }
+            );
         }
 
         writeln!(out, "    let msg_id = syscalls::emit_message_raw(&INTERFACE, &msg_buf, true).unwrap().unwrap();").unwrap();
         writeln!(out, "    let response = syscalls::message_response_sync_raw(msg_id);").unwrap();
 
         writeln!(out, "    let response_read = |mut msg_buf: &[u8]| -> Result<{}, parity_scale_codec::Error> {{", print_ty(&command.ret_ty)).unwrap();
-        let ret_value_expr = write_param_deserialize(&command.ret_ty, registry, &mut |_, _| panic!());
+        let ret_value_expr = write_deserialize(&command.ret_ty, registry, &mut |_, _| panic!());
         writeln!(out, "        let ret = {};", ret_value_expr).unwrap();
         for (param_ty, param_name) in &command.params {
             assert_ne!(param_name, "ret");      // TODO: rename parameters instead
@@ -186,10 +197,8 @@ fn write_redirect_handle(mut out: impl Write, registry: &parse::VkRegistry) {
         let mut var_name_gen = 0;
         let mut params_list = Vec::new();
         let mut params = String::new();
-        let mut first_param = String::new();
-        let mut last_param = String::new();
         for (param_num, (param_ty, param_name)) in command.params.iter().enumerate() {
-            let expr = write_param_deserialize(param_ty, registry, &mut |interm, mutable| {
+            let expr = write_deserialize(param_ty, registry, &mut |interm, mutable| {
                 let v_name = format!("n{}", var_name_gen);
                 var_name_gen += 1;
                 let mutable = if mutable { format!("mut ") } else { String::new() };
@@ -203,22 +212,15 @@ fn write_redirect_handle(mut out: impl Write, registry: &parse::VkRegistry) {
             if !params.is_empty() { params.push_str(", "); }
             params_list.push(v_name.clone());
             params.push_str(&v_name);
-
-            if param_num == 0 {
-                first_param = v_name.clone();
-            }
-            if param_num == command.params.len() - 1 {
-                last_param = v_name;
-            }
         }
 
         // TODO: shouldn't panic but return an error instead
         let f_ptr = match fpointers::command_ty(&command) {
             fpointers::CommandTy::Static => format!("(state.static_pointers.r#{}.unwrap())", command.name),
             // TODO: this is wrong if the first parameter is a PhysicalDevice
-            fpointers::CommandTy::Instance => format!("(state.instance_pointers.get(&({} as usize)).unwrap().r#{}.unwrap())", first_param, command.name),       // TODO: remove as usize?
+            fpointers::CommandTy::Instance => format!("(state.instance_pointers.get(&({} as usize)).unwrap().r#{}.unwrap())", params_list[0], command.name),       // TODO: remove as usize?
             // TODO: this is wrong if the first parameter is a CommandBuffer or Queue
-            fpointers::CommandTy::Device => format!("(state.device_pointers.get(&({} as usize)).unwrap().r#{}.unwrap())", first_param, command.name),       // TODO: remove as usize?
+            fpointers::CommandTy::Device => format!("(state.device_pointers.get(&({} as usize)).unwrap().r#{}.unwrap())", params_list[0], command.name),       // TODO: remove as usize?
         };
 
         writeln!(out, "        assert!(msg_buf.is_empty());").unwrap();     // TODO: return Error
@@ -228,18 +230,31 @@ fn write_redirect_handle(mut out: impl Write, registry: &parse::VkRegistry) {
         // `vkCreateDevice`, or `vkDestroyDevice`, we need to load or unload function pointers.
         // TODO: move that in lib.rs?
         if command.name == "vkCreateInstance" {
-            writeln!(out, "        state.assign_handle_to_pid(*{}, emitter_pid);", last_param).unwrap();
-            writeln!(out, "        state.instance_pointers.insert(*{}, InstancePtrs::load_with(|name: &std::ffi::CStr| {{", last_param).unwrap();
-            writeln!(out, "            (state.get_instance_proc_addr)(*{}, name.as_ptr() as *const _)", last_param).unwrap();
+            writeln!(out, "        state.assign_handle_to_pid(*{}, emitter_pid);", params_list[2]).unwrap();
+            writeln!(out, "        state.instance_pointers.insert(*{}, InstancePtrs::load_with(|name: &std::ffi::CStr| {{", params_list[2]).unwrap();
+            writeln!(out, "            (state.get_instance_proc_addr)(*{}, name.as_ptr() as *const _)", params_list[2]).unwrap();
             writeln!(out, "        }}));").unwrap();
         } else if command.name == "vkDestroyInstance" {
-            writeln!(out, "        state.instance_pointers.remove(&({}));", first_param).unwrap();
-        }  // TODO: same with device
+            writeln!(out, "        state.deassign_handle({});", params_list[0]).unwrap();
+            writeln!(out, "        state.instance_pointers.remove(&{});", params_list[0]).unwrap();
+        } else if command.name == "vkCreateDevice" {
+            writeln!(out, "        state.assign_handle_to_pid(*{}, emitter_pid);", params_list[3]).unwrap();
+            writeln!(out, "        state.device_pointers.insert(*{}, DevicePtrs::load_with(|name: &std::ffi::CStr| {{", params_list[3]).unwrap();
+            writeln!(out, "            (state.get_instance_proc_addr)(*{}, name.as_ptr() as *const _)", params_list[3]).unwrap();
+            writeln!(out, "        }}));").unwrap();
+        } else if command.name == "vkDestroyDevice" {
+            writeln!(out, "        state.deassign_handle({});", params_list[0]).unwrap();
+            writeln!(out, "        state.device_pointers.remove(&{});", params_list[0]).unwrap();
+        }  // TODO: same with physical devices, command buffers and queues
 
         writeln!(out, "        let mut msg_buf = Vec::new();").unwrap();     // TODO: with_capacity()?
-        write_param_serialize(out.by_ref(), true, "ret", &command.ret_ty, registry);
+        write_serialize(out.by_ref(), true, "ret", &command.ret_ty, registry, &mut |_| panic!());
         for ((param_ty, _), param_var) in command.params.iter().zip(params_list.iter()) {
-            write_param_serialize(out.by_ref(), true, param_var, param_ty, registry);
+            write_serialize(out.by_ref(), true, param_var, param_ty, registry, &mut |field| {
+                // TODO: there are some len="pAllocateInfo::descriptorSetCount" attributes
+                /*params_list[command.params.iter().position(|p| p.1 == field).unwrap()].clone()*/
+                (format!("panic!()"), parse::VkType::Ident("int".to_string()))
+            });
         }
 
         writeln!(out, "        if !msg_buf.is_empty() {{").unwrap();
@@ -255,109 +270,125 @@ fn write_redirect_handle(mut out: impl Write, registry: &parse::VkRegistry) {
 }
 
 /// Generates Rust code that serializes a Vulkan data structure into a buffer.
-fn write_param_serialize(out: &mut dyn Write, is_response: bool, param_name: &str, param_ty: &parse::VkType, registry: &parse::VkRegistry) {
+///
+/// If `skip_const` is true, then we only serialize elements that are behind a mutable pointers,
+/// i.e. elements that might have been modified by an earlier call to a Vulkan function.
+fn write_serialize(
+    out: &mut dyn Write,
+    skip_const: bool,
+    param_name: &str,
+    param_ty: &parse::VkType,
+    registry: &parse::VkRegistry,
+    other_field: &mut dyn FnMut(&[String]) -> (String, parse::VkType)
+) {
     let type_def = if let parse::VkType::Ident(ty_name) = param_ty {
         registry.type_defs.get(ty_name)
     } else {
         None
     };
 
-    match (param_ty, type_def) {
-        (parse::VkType::Ident(ty_name), _) if ty_name.starts_with("PFN_") => {
+    match (param_ty, type_def, skip_const) {
+        (parse::VkType::Ident(ty_name), _, _) if ty_name.starts_with("PFN_") => {
             // We skip serializing all function pointers.
         },
-        (parse::VkType::Ident(ty_name), _) if ty_name == "void" => {
+        (parse::VkType::Ident(ty_name), _, _) if ty_name == "void" => {
             // Nothing to do when serializing `void`.
         },
-        (parse::VkType::Ident(ty_name), _) if ty_name == "size_t" => {
-            // TODO: a size_t indicates some memory length, and it is this memory that must be serialized
+        (parse::VkType::Ident(ty_name), _, _) if ty_name == "size_t" => {
+            // A `size_t` is platform-specific, but by using the `Compact` we can make it the same size everywhere.
+            writeln!(out, "        <Compact<u128> as Encode>::encode_to(&Compact({} as u128), &mut msg_buf);", param_name).unwrap();
         },
-        (parse::VkType::Ident(ty_name), _) if ty_name == "float" => {
+        (parse::VkType::Ident(ty_name), _, _) if ty_name == "float" => {
             writeln!(out, "        <u32 as Encode>::encode_to(&mem::transmute::<f32, u32>({}), &mut msg_buf);", param_name).unwrap()
         },
-        (parse::VkType::Ident(ty_name), _) if ty_name == "HANDLE" || ty_name == "HINSTANCE" || ty_name == "HWND" || ty_name == "LPCWSTR" || ty_name == "CAMetalLayer" || ty_name == "AHardwareBuffer" => {
+        (parse::VkType::Ident(ty_name), _, _) if ty_name == "HANDLE" || ty_name == "HINSTANCE" || ty_name == "HWND" || ty_name == "LPCWSTR" || ty_name == "CAMetalLayer" || ty_name == "AHardwareBuffer" => {
             // TODO: what to do here?
         },
-        (parse::VkType::Ident(ty_name), _) if print_ty(param_ty).starts_with("*mut ") || print_ty(param_ty).starts_with("*const ") || print_ty(param_ty).starts_with("c_void") => {
-            // TODO:
-            if !is_response {
-                panic!("{:?}", ty_name);
-            }
+        (parse::VkType::Ident(ty_name), _, _) if print_ty(param_ty).starts_with("*mut ") || print_ty(param_ty).starts_with("*const ") || print_ty(param_ty).starts_with("c_void") => {
+            // Platform-specific handles are serialized using the `Compact` encoding, so we can make it the same size everywhere.
+            writeln!(out, "        <Compact<u128> as Encode>::encode_to(&Compact({} as usize as u128), &mut msg_buf);", param_name).unwrap();
         },
-        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Enum)) |
-        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Bitmask)) |
-        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::NonDispatchableHandle)) |
-        (parse::VkType::Ident(ty_name), None) => {
+        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Enum), false) |
+        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Bitmask), false) |
+        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::NonDispatchableHandle), false) |
+        (parse::VkType::Ident(ty_name), None, false) => {
             writeln!(out, "        <{} as Encode>::encode_to(&{}, &mut msg_buf);", print_ty(param_ty), param_name).unwrap();
         },
-        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::DispatchableHandle)) => {
-            if !is_response {
+        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Enum), true) |
+        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Bitmask), true) |
+        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::NonDispatchableHandle), true) |
+        (parse::VkType::Ident(ty_name), None, true) => {
+        },
+        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::DispatchableHandle), _) => {
+            // TODO: hack
+            if !skip_const {
                 writeln!(out, "        <u32 as Encode>::encode_to(&({} as u32), &mut msg_buf);", param_name).unwrap();      // TODO: debug_assert! that we fit in u32?
             } else {
                 writeln!(out, "        <u32 as Encode>::encode_to(&state.handles_host_to_vm.get(&{}).unwrap().1, &mut msg_buf);", param_name).unwrap();     // TODO: check PID?
             }
         }
-        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Struct { fields })) => {
+        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Struct { fields }), _) => {
             for (field_ty, field_name) in fields {
-                write_param_serialize(out, is_response, &format!("{}.r#{}", param_name, field_name), &field_ty, registry);
+                write_serialize(
+                    out,
+                    skip_const,
+                    &format!("{}.r#{}", param_name, field_name),
+                    &field_ty,
+                    registry,
+                    &mut |to_find| {
+                        let mut ret = param_name.to_owned();
+                        for f in to_find { ret.push_str(".r#"); ret.push_str(f); }
+                        let ty = parse::find_subfield_in_list(fields, registry, to_find).unwrap().clone();
+                        (ret, ty)
+                    }
+                );
             }
         }
-        (parse::VkType::ConstPointer(ty_name, _), _) if **ty_name == parse::VkType::Ident("void".to_string()) => {
+        (parse::VkType::ConstPointer(ty_name, _), _, _) if **ty_name == parse::VkType::Ident("void".to_string()) => {
             // TODO: these pNext parameters :-/
         }
-        (parse::VkType::ConstPointer(ty_name, parse::VkTypePtrLen::One), _) => {
+        (parse::VkType::MutPointer(ty_name, parse::VkTypePtrLen::One), _, _) |
+        (parse::VkType::ConstPointer(ty_name, parse::VkTypePtrLen::One), _, false) => {
             // TODO: only do this if parameter is optional?
-            if !is_response {
-                writeln!(out, "        if !{}.is_null() {{", param_name).unwrap();
-                writeln!(out, "            <u32 as Encode>::encode_to(&1, &mut msg_buf);").unwrap();
-                write_param_serialize(out, is_response, &format!("(*{})", param_name), &ty_name, registry);
-                writeln!(out, "        }} else {{").unwrap();
-                writeln!(out, "            <u32 as Encode>::encode_to(&0, &mut msg_buf);").unwrap();
-                writeln!(out, "        }}").unwrap();
-            }
-        }
-        (parse::VkType::ConstPointer(ty_name, parse::VkTypePtrLen::NullTerminated), _) => {
-            if !is_response {
-                writeln!(out, "        if !{}.is_null() {{", param_name).unwrap();
-                writeln!(out, "            let len = (0isize..).find(|n| *{}.offset(*n) == 0).unwrap() as u32;", param_name).unwrap();
-                writeln!(out, "            <u32 as Encode>::encode_to(&len, &mut msg_buf);").unwrap();
-                writeln!(out, "            for n in 0..len {{").unwrap();
-                write_param_serialize(out, is_response, &format!("(*{}.offset(n as isize))", param_name), &ty_name, registry);
-                writeln!(out, "            }}").unwrap();
-                writeln!(out, "        }} else {{").unwrap();
-                writeln!(out, "            <u32 as Encode>::encode_to(&0, &mut msg_buf);").unwrap();
-                writeln!(out, "        }}").unwrap();
-            }
-        }
-        // TODO: not implemented
-        /*(parse::VkType::ConstPointer(ty_name, parse::VkTypePtrLen::OtherField(expr)), _) |
-        (parse::VkType::ConstPointer(ty_name, parse::VkTypePtrLen::RustExpr(expr)), _) => {
             writeln!(out, "        if !{}.is_null() {{", param_name).unwrap();
-            writeln!(out, "            let len = {} as isize;", expr).unwrap();
+            writeln!(out, "            <u32 as Encode>::encode_to(&1, &mut msg_buf);").unwrap();
+            write_serialize(out, false, &format!("(*{})", param_name), &ty_name, registry, other_field);
+            writeln!(out, "        }} else {{").unwrap();
+            writeln!(out, "            <u32 as Encode>::encode_to(&0, &mut msg_buf);").unwrap();
+            writeln!(out, "        }}").unwrap();
+        }
+        (parse::VkType::MutPointer(ty_name, parse::VkTypePtrLen::NullTerminated), _, _) |
+        (parse::VkType::ConstPointer(ty_name, parse::VkTypePtrLen::NullTerminated), _, false) => {
+            writeln!(out, "        if !{}.is_null() {{", param_name).unwrap();
+            writeln!(out, "            let len = (0isize..).find(|n| *{}.offset(*n) == 0).unwrap() as u32;", param_name).unwrap();
             writeln!(out, "            <u32 as Encode>::encode_to(&len, &mut msg_buf);").unwrap();
             writeln!(out, "            for n in 0..len {{").unwrap();
-            write_param_serialize(out, &format!("(*{}.offset(n as isize))", param_name), &ty_name, registry);
+            write_serialize(out, false, &format!("(*{}.offset(n as isize))", param_name), &ty_name, registry, other_field);
             writeln!(out, "            }}").unwrap();
             writeln!(out, "        }} else {{").unwrap();
             writeln!(out, "            <u32 as Encode>::encode_to(&0, &mut msg_buf);").unwrap();
             writeln!(out, "        }}").unwrap();
-        }*/
-        (parse::VkType::Array(ty_name, len), _) => {
+        }
+        (parse::VkType::MutPointer(ty_name, parse::VkTypePtrLen::OtherField { before_other_field, other_field: field, after_other_field }), _, _) |
+        (parse::VkType::ConstPointer(ty_name, parse::VkTypePtrLen::OtherField { before_other_field, other_field: field, after_other_field }), _, _) => {
+            let (other_field_name, other_field_ty) = other_field(field);
+            let other_field_name = other_field_ty.gen_deref_expr(&other_field_name);
+
+            writeln!(out, "        if !{}.is_null() {{", param_name).unwrap();      // TODO: remove?
+            writeln!(out, "            let len = {}{}{};", before_other_field, other_field_name, after_other_field).unwrap();
+            writeln!(out, "            <u32 as Encode>::encode_to(&(len as u32), &mut msg_buf);").unwrap();      // TODO: remove?
+            writeln!(out, "            for m in 0..len {{").unwrap();       // TODO: might conflict with other variable name
+            write_serialize(out, false, &format!("(*{}.offset(m as isize))", param_name), &ty_name, registry, other_field);
+            writeln!(out, "            }}").unwrap();
+            writeln!(out, "        }} else {{").unwrap();
+            writeln!(out, "            <u32 as Encode>::encode_to(&0, &mut msg_buf);").unwrap();
+            writeln!(out, "        }}").unwrap();
+        }
+        (parse::VkType::Array(ty_name, len), _, _) => {
             writeln!(out, "        for val in (0..{}).map(|n| {}[n]) {{", len, param_name).unwrap();
-            write_param_serialize(out, is_response, "val", &ty_name, registry);
+            write_serialize(out, skip_const, "val", &ty_name, registry, other_field);
             writeln!(out, "        }}").unwrap();
         },
-        (parse::VkType::MutPointer(ty_name, parse::VkTypePtrLen::One), _) => {
-            // TODO: only do this if parameter is optional?
-            if is_response {
-                writeln!(out, "        if !{}.is_null() {{", param_name).unwrap();
-                writeln!(out, "            <u32 as Encode>::encode_to(&1, &mut msg_buf);").unwrap();
-                write_param_serialize(out, is_response, &format!("(*{})", param_name), &ty_name, registry);
-                writeln!(out, "        }} else {{").unwrap();
-                writeln!(out, "            <u32 as Encode>::encode_to(&0, &mut msg_buf);").unwrap();
-                writeln!(out, "        }}").unwrap();
-            }
-        }
         _ => {}     // TODO: remove default fallback so that we're explicit
     }
 }
@@ -379,10 +410,10 @@ fn write_param_serialize(out: &mut dyn Write, is_response: bool, param_name: &st
 /// called.
 ///
 /// Also note that the code generated by the implementation is deterministic. This allows one
-/// to call [`write_param_deserialize`] once and use the produced code in a loop.
+/// to call [`write_deserialize`] once and use the produced code in a loop.
 ///
 // TODO: talk about environment: what is available to use, and the `?` operator
-fn write_param_deserialize(
+fn write_deserialize(
     ty: &parse::VkType,
     registry: &parse::VkRegistry,
     interm_step_gen: &mut dyn FnMut(String, bool) -> String,
@@ -398,19 +429,18 @@ fn write_param_deserialize(
             format!("mem::transmute::<_, {}>(0usize)", print_ty(ty))
         },
         (parse::VkType::Ident(ty_name), _) if ty_name == "size_t" => {
-            // TODO: ???
-            format!("0")
+            format!("<Compact<u128> as Decode>::decode(&mut msg_buf)?.0 as {}", print_ty(ty))
         },
         (parse::VkType::Ident(ty_name), _) if ty_name == "float" => {
             format!("mem::transmute::<u32, f32>(Decode::decode(&mut msg_buf)?)")
         },
         (parse::VkType::Ident(ty_name), _) if ty_name == "LPCWSTR" || ty_name == "CAMetalLayer" || ty_name == "AHardwareBuffer" => {
             // TODO: what to do here?
-            format!("mem::zeroed::<{}>()", print_ty(ty))
+            format!("{{ let v: {} = panic!(); v }}", print_ty(ty))
         },
         (parse::VkType::Ident(ty_name), _) if ty_name == "HANDLE" || ty_name == "HINSTANCE" || ty_name == "HWND" => {
             // TODO: what to do here?
-            format!("mem::zeroed::<{}>()", print_ty(ty))
+            format!("{{ let v: {} = panic!(); v }}", print_ty(ty))
         },
         (parse::VkType::Ident(ty_name), _) if print_ty(ty).starts_with("*mut ") || print_ty(ty).starts_with("*const ") || print_ty(ty).starts_with("c_void") => {
             // TODO:
@@ -429,7 +459,7 @@ fn write_param_deserialize(
         (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Struct { fields })) => {
             let mut field_names = String::new();
             for (field_ty, field_name) in fields {
-                let field_expr = write_param_deserialize(field_ty, registry, &mut |e, mutable| interm_step_gen(e, mutable));
+                let field_expr = write_deserialize(field_ty, registry, &mut |e, mutable| interm_step_gen(e, mutable));
                 let field_interm = interm_step_gen(format!("/* {}::{} */ {}", ty_name, field_name, field_expr), false);
                 if !field_names.is_empty() { field_names.push_str(", "); }
                 field_names.push_str(&format!("r#{}: {}", field_name, field_interm));
@@ -453,7 +483,7 @@ fn write_param_deserialize(
             let is_present = interm_step_gen("<u32 as Decode>::decode(&mut msg_buf)? != 0".to_owned(), false);
 
             let interm = {
-                let inner = write_param_deserialize(&ty_name, registry, &mut |f, mutable| {
+                let inner = write_deserialize(&ty_name, registry, &mut |f, mutable| {
                     let var = interm_step_gen(format!("if {} {{ Some({}) }} else {{ None }}", is_present, f), mutable);
                     if mutable {
                         format!("(*{}.as_mut().unwrap())", var)
@@ -469,18 +499,12 @@ fn write_param_deserialize(
             format!("{}.as_ref().map(|p| p as *const _).unwrap_or(ptr::null())", var)
         }
 
-        (parse::VkType::ConstPointer(ty_name, len), _) => {
-            // TODO: not implemented for non-null-terminated
-            if let parse::VkTypePtrLen::NullTerminated = len {
-            } else {
-                return format!("mem::zeroed::<{}>()", print_ty(ty))
-            };
-    
+        (parse::VkType::ConstPointer(ty_name, parse::VkTypePtrLen::NullTerminated), _) => {
             // Pointers, when serialized, always start with the number of elements.
             let len_var = interm_step_gen(format!("/* len({}) */ <u32 as Decode>::decode(&mut msg_buf)? as usize", print_ty(ty_name)), false);
 
             let interm = {
-                let inner = write_param_deserialize(&ty_name, registry, &mut |f, mutable| {
+                let inner = write_deserialize(&ty_name, registry, &mut |f, mutable| {
                     let var = interm_step_gen(format!("{{ \
                         let mut list = Vec::with_capacity({len}); \
                         for _n in 0..{len} {{ list.push({inner}); }} \
@@ -489,18 +513,37 @@ fn write_param_deserialize(
                     format!("{}[_n]", var)
                 });
 
-                let opt_null_delim = if let parse::VkTypePtrLen::NullTerminated = len {
-                    format!("list.push(0);")
-                } else {
-                    String::new()
-                };
+                format!("{{ \
+                    let mut list = Vec::with_capacity({len}); \
+                    for _n in 0..{len} {{ list.push({inner}); }} \
+                    list.push(0); \
+                    list \
+                }}", inner=inner, len=len_var)
+            };
+
+            let var = interm_step_gen(interm, false);
+            format!("if !{var}.is_empty() {{ {var}.as_ptr() }} else {{ ptr::null() }}", var=var)
+        }
+
+        (parse::VkType::ConstPointer(ty_name, parse::VkTypePtrLen::OtherField { .. }), _) => {    
+            // Pointers, when serialized, always start with the number of elements.
+            let len_var = interm_step_gen(format!("/* len({}) */ <u32 as Decode>::decode(&mut msg_buf)? as usize", print_ty(ty_name)), false);
+
+            let interm = {
+                let inner = write_deserialize(&ty_name, registry, &mut |f, mutable| {
+                    let var = interm_step_gen(format!("{{ \
+                        let mut list = Vec::with_capacity({len}); \
+                        for _n in 0..{len} {{ list.push({inner}); }} \
+                        list \
+                    }}", inner=f, len=len_var), mutable);
+                    format!("{}[_n]", var)
+                });
 
                 format!("{{ \
                     let mut list = Vec::with_capacity({len}); \
                     for _n in 0..{len} {{ list.push({inner}); }} \
-                    {opt_null_delim} \
                     list \
-                }}", inner=inner, len=len_var, opt_null_delim=opt_null_delim)
+                }}", inner=inner, len=len_var)
             };
 
             let var = interm_step_gen(interm, false);
@@ -510,7 +553,7 @@ fn write_param_deserialize(
         (parse::VkType::Array(ty_name, len), _) => {
             // TODO: no
             /*writeln!(out, "        for val in (0..{}).map(|n| {}[n]) {{", len, param_name).unwrap();
-            write_param_serialize(out, "val", &ty_name, registry);
+            write_serialize(out, "val", &ty_name, registry);
             writeln!(out, "        }}").unwrap();*/
             format!("mem::zeroed::<[{}; {}]>()", print_ty(ty_name), len)
         }
@@ -605,7 +648,7 @@ fn write_deserialize_response_into(
             let len_var = interm_step_gen(format!("/* len({}) */ <u32 as Decode>::decode(&mut msg_buf)? as usize", print_ty(ty_name)), false);
 
             let interm = {
-                let inner = write_param_deserialize(&ty_name, registry, &mut |f, mutable| {
+                let inner = write_deserialize(&ty_name, registry, &mut |f, mutable| {
                     let var = interm_step_gen(format!("{{ \
                         let mut list = Vec::with_capacity({len}); \
                         for _n in 0..{len} {{ list.push({inner}); }} \

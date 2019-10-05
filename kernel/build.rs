@@ -6,7 +6,7 @@ fn main() {
     let status = Command::new("cargo")
         //.arg("+nightly")
         .arg("rustc")
-        .arg("--release")
+        //.arg("--release")
         .args(&["--target", "wasm32-wasi"])
         .args(&["--package", "vulkan-triangle"])
         .args(&["--bin", "vulkan-triangle"])

@@ -46,7 +46,7 @@
 
 use core::{ffi::c_void, mem, ptr};
 use hashbrown::HashMap;
-use parity_scale_codec::{Decode, Encode};
+use parity_scale_codec::{Compact, Decode, Encode};
 use std::ffi::CStr;
 
 // TODO: this has been randomly generated; instead should be a hash or something
@@ -80,6 +80,7 @@ pub struct VulkanRedirect {
     device_pointers: HashMap<usize, DevicePtrs>,
     handles_host_to_vm: HashMap<usize, (u64, u32)>,
     handles_vm_to_host: HashMap<(u64, u32), usize>,
+    // TODO: store physical devices of instance and queues and command buffers of devices
 }
 
 impl VulkanRedirect {
@@ -118,6 +119,12 @@ impl VulkanRedirect {
 
         self.handles_vm_to_host.insert((emitter_pid, new_id), handle);
         self.handles_host_to_vm.insert(handle, (emitter_pid, new_id));
+    }
+
+    fn deassign_handle(&mut self, handle: usize) {
+        if let Some(v) = self.handles_host_to_vm.remove(&handle) {
+            self.handles_vm_to_host.remove(&v);
+        }
     }
 }
 
