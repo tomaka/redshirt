@@ -214,6 +214,19 @@ fn write_param_serialize(out: &mut dyn Write, param_name: &str, param_ty: &parse
             writeln!(out, "            <u32 as Encode>::encode_to(&0, &mut msg_buf);").unwrap();
             writeln!(out, "        }}").unwrap();
         }
+        // TODO: not implemented
+        /*(parse::VkType::ConstPointer(ty_name, parse::VkTypePtrLen::OtherField(expr)), _) |
+        (parse::VkType::ConstPointer(ty_name, parse::VkTypePtrLen::RustExpr(expr)), _) => {
+            writeln!(out, "        if !{}.is_null() {{", param_name).unwrap();
+            writeln!(out, "            let len = {} as isize;", expr).unwrap();
+            writeln!(out, "            <u32 as Encode>::encode_to(&len, &mut msg_buf);").unwrap();
+            writeln!(out, "            for n in 0..len {{").unwrap();
+            write_param_serialize(out, &format!("(*{}.offset(n as isize))", param_name), &ty_name, registry);
+            writeln!(out, "            }}").unwrap();
+            writeln!(out, "        }} else {{").unwrap();
+            writeln!(out, "            <u32 as Encode>::encode_to(&0, &mut msg_buf);").unwrap();
+            writeln!(out, "        }}").unwrap();
+        }*/
         (parse::VkType::Array(ty_name, len), _) => {
             writeln!(out, "        for val in (0..{}).map(|n| {}[n]) {{", len, param_name).unwrap();
             write_param_serialize(out, "val", &ty_name, registry);
@@ -253,6 +266,7 @@ fn write_instance_pointers(mut out: impl Write, registry: &parse::VkRegistry) {
 }
 
 fn write_redirect_handle(mut out: impl Write, registry: &parse::VkRegistry) {
+    writeln!(out, "#![allow(unused_parens)]").unwrap();
     writeln!(out, "match <u16 as Decode>::decode(&mut msg_buf)? {{").unwrap();
 
     for (command_id, command) in registry.commands.iter().enumerate() {
@@ -265,22 +279,24 @@ fn write_redirect_handle(mut out: impl Write, registry: &parse::VkRegistry) {
         let mut var_name_gen = 0;
         let mut params = String::new();
         for (param_ty, param_name) in &command.params {
-            let expr = write_param_deserialize(param_ty, registry, &mut |interm| {
+            let expr = write_param_deserialize(param_ty, registry, &mut |interm, mutable| {
                 let v_name = format!("n{}", var_name_gen);
                 var_name_gen += 1;
-                writeln!(out, "let {} = {};", v_name, interm).unwrap();
+                let mutable = if mutable { format!("mut ") } else { String::new() };
+                writeln!(out, "        let {}{} = {};", mutable, v_name, interm).unwrap();
                 v_name
             });
 
             let v_name = format!("n{}", var_name_gen);
             var_name_gen += 1;
-            writeln!(out, "let {} = {};", v_name, expr).unwrap();
+            writeln!(out, "        let {} = {};", v_name, expr).unwrap();
             if !params.is_empty() { params.push_str(", "); }
             params.push_str(&v_name);
         }
 
         writeln!(out, "        assert!(msg_buf.is_empty());").unwrap();     // TODO: return Error
         writeln!(out, "        let ret = (state.instance_pointers.r#{}.unwrap())({});", command.name, params).unwrap();
+        writeln!(out, "        println!(\"{{:?}}\", ret);").unwrap();
         writeln!(out, "        Ok(None)").unwrap();
         writeln!(out, "    }},").unwrap();
     }
@@ -289,27 +305,28 @@ fn write_redirect_handle(mut out: impl Write, registry: &parse::VkRegistry) {
     writeln!(out, "}}").unwrap();
 }
 
-/// Generates Rust code that turns a serialized call into Vulkan data structures.
+/// Generates Rust code that turns a serialized call into a Vulkan data structure.
 ///
 /// Because of various difficulties, the API of this function is a bit tricky.
-/// The function must return an expression that deserializes from a local variable named `msg_buf`
-/// a value of type `ty`.
+/// The function must return an expression that decodes a value of type `ty` from a local variable
+/// named `msg_buf`.
 ///
 /// Because `ty` might contain pointers, the `interm_step_gen` function can be used in order to
 /// create a local variable and "pin" it. The closure takes as parameter an expression to put in
 /// the variable, and returns the name of the local variable. The local variable must not move.
+/// The second parameter to the closure indicates whether the variable must be mutable.
 ///
 /// Keep in mind that the expression passed to `interm_step_gen` can decode data from `msg_buf`.
 /// You must be careful to respect the order of operations. If `interm_step_gen` is called
-/// multiple times, its expressions must be executed in the order in which the closure has been
+/// multiple times, the expressions must be executed in the order in which the closure has been
 /// called.
 ///
-/// Also note that the implementation is deterministic in the code they generate. This allows
-/// one to call [`write_param_deserialize`] and use the produced code in a loop.
+/// Also note that the code generated by the implementation is deterministic. This allows one
+/// to call [`write_param_deserialize`] once and use the produced code in a loop.
 fn write_param_deserialize(
     ty: &parse::VkType,
     registry: &parse::VkRegistry,
-    interm_step_gen: &mut dyn FnMut(String) -> String,
+    interm_step_gen: &mut dyn FnMut(String, bool) -> String,
 ) -> String {
     let type_def = if let parse::VkType::Ident(ty_name) = ty {
         registry.type_defs.get(ty_name)
@@ -319,7 +336,7 @@ fn write_param_deserialize(
 
     match (ty, type_def) {
         (parse::VkType::Ident(ty_name), _) if ty_name.starts_with("PFN_") => {
-            format!("mem::transmute::<_, {}>(ptr::null::<()>())", print_ty(ty))
+            format!("mem::transmute::<_, {}>(0usize)", print_ty(ty))
         },
         (parse::VkType::Ident(ty_name), _) if ty_name == "size_t" => {
             // TODO: ???
@@ -328,9 +345,13 @@ fn write_param_deserialize(
         (parse::VkType::Ident(ty_name), _) if ty_name == "float" => {
             format!("mem::transmute::<u32, f32>(Decode::decode(&mut msg_buf)?)")
         },
-        (parse::VkType::Ident(ty_name), _) if ty_name == "HANDLE" || ty_name == "HINSTANCE" || ty_name == "HWND" || ty_name == "LPCWSTR" || ty_name == "CAMetalLayer" || ty_name == "AHardwareBuffer" => {
+        (parse::VkType::Ident(ty_name), _) if ty_name == "LPCWSTR" || ty_name == "CAMetalLayer" || ty_name == "AHardwareBuffer" => {
             // TODO: what to do here?
-            format!("ptr::null::<{}>()", print_ty(ty))
+            format!("mem::zeroed::<{}>()", print_ty(ty))
+        },
+        (parse::VkType::Ident(ty_name), _) if ty_name == "HANDLE" || ty_name == "HINSTANCE" || ty_name == "HWND" => {
+            // TODO: what to do here?
+            format!("mem::zeroed::<{}>()", print_ty(ty))
         },
         (parse::VkType::Ident(ty_name), _) if print_ty(ty).starts_with("*mut ") || print_ty(ty).starts_with("*const ") || print_ty(ty).starts_with("c_void") => {
             // TODO:
@@ -346,8 +367,8 @@ fn write_param_deserialize(
         (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Struct { fields })) => {
             let mut field_names = String::new();
             for (field_ty, field_name) in fields {
-                let field_expr = write_param_deserialize(field_ty, registry, &mut |e| interm_step_gen(e));
-                let field_interm = interm_step_gen(field_expr);
+                let field_expr = write_param_deserialize(field_ty, registry, &mut |e, mutable| interm_step_gen(e, mutable));
+                let field_interm = interm_step_gen(format!("/* {}::{} */ {}", ty_name, field_name, field_expr), false);
                 if !field_names.is_empty() { field_names.push_str(", "); }
                 field_names.push_str(&format!("r#{}: {}", field_name, field_interm));
             }
@@ -367,32 +388,42 @@ fn write_param_deserialize(
         }
 
         (parse::VkType::ConstPointer(ty_name, parse::VkTypePtrLen::One), _) => {
-            let is_present = interm_step_gen("<u32 as Decode>::decode(&mut msg_buf)? != 0".to_owned());
+            let is_present = interm_step_gen("<u32 as Decode>::decode(&mut msg_buf)? != 0".to_owned(), false);
 
             let interm = {
-                let inner = write_param_deserialize(&ty_name, registry, &mut |f| {
-                    let var = interm_step_gen(format!("if {} {{ Some({}) }} else {{ None }}", is_present, f));
-                    format!("(*{}.as_ref().unwrap())", var)
+                let inner = write_param_deserialize(&ty_name, registry, &mut |f, mutable| {
+                    let var = interm_step_gen(format!("if {} {{ Some({}) }} else {{ None }}", is_present, f), mutable);
+                    if mutable {
+                        format!("(*{}.as_mut().unwrap())", var)
+                    } else {
+                        format!("(*{}.as_ref().unwrap())", var)
+                    }
                 });
 
                 format!("if {} {{ Some({}) }} else {{ None }}", is_present, inner)
             };
 
-            let var = interm_step_gen(interm);
+            let var = interm_step_gen(interm, false);
             format!("{}.as_ref().map(|p| p as *const _).unwrap_or(ptr::null())", var)
         }
 
         (parse::VkType::ConstPointer(ty_name, len), _) => {
+            // TODO: not implemented for non-null-terminated
+            if let parse::VkTypePtrLen::NullTerminated = len {
+            } else {
+                return format!("mem::zeroed::<{}>()", print_ty(ty))
+            };
+    
             // Pointers, when serialized, always start with the number of elements.
-            let len_var = interm_step_gen("<u32 as Decode>::decode(&mut msg_buf)? as usize".to_owned());
+            let len_var = interm_step_gen(format!("/* len({}) */ <u32 as Decode>::decode(&mut msg_buf)? as usize", print_ty(ty_name)), false);
 
             let interm = {
-                let inner = write_param_deserialize(&ty_name, registry, &mut |f| {
-                    let var = interm_step_gen(format!("{{
-                        let mut list = Vec::with_capacity({len});
-                        for _n in 0..{len} {{ list.push({inner}); }}
-                        list
-                    }}", inner=f, len=len_var));
+                let inner = write_param_deserialize(&ty_name, registry, &mut |f, mutable| {
+                    let var = interm_step_gen(format!("{{ \
+                        let mut list = Vec::with_capacity({len}); \
+                        for _n in 0..{len} {{ list.push({inner}); }} \
+                        list \
+                    }}", inner=f, len=len_var), mutable);
                     format!("{}[_n]", var)
                 });
 
@@ -402,16 +433,15 @@ fn write_param_deserialize(
                     String::new()
                 };
 
-                format!("{{
-                    let len = <u32 as Decode>::decode(&mut msg_buf)?;
-                    let mut list = Vec::with_capacity({len});
-                    for _n in 0..{len} {{ list.push({inner}); }}
-                    {opt_null_delim}
-                    list
+                format!("{{ \
+                    let mut list = Vec::with_capacity({len}); \
+                    for _n in 0..{len} {{ list.push({inner}); }} \
+                    {opt_null_delim} \
+                    list \
                 }}", inner=inner, len=len_var, opt_null_delim=opt_null_delim)
             };
 
-            let var = interm_step_gen(interm);
+            let var = interm_step_gen(interm, false);
             format!("if !{var}.is_empty() {{ {var}.as_ptr() }} else {{ ptr::null() }}", var=var)
         }
 
@@ -424,8 +454,9 @@ fn write_param_deserialize(
         }
 
         (parse::VkType::MutPointer(ty_name, _), _) => {
-            // TODO:
-            format!("ptr::null_mut::<{}>()", print_ty(ty_name))
+            // TODO: draft
+            let var = interm_step_gen(format!("mem::MaybeUninit::uninit()"), true);
+            format!("{}.as_mut_ptr()", var)
         }
     }
 }
