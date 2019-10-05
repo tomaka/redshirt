@@ -97,8 +97,16 @@ fn write_enum_values(mut out: impl Write, registry: &parse::VkRegistry) {
 
 fn write_type_def(mut out: impl Write, name: &str, type_def: &parse::VkTypeDef) {
     match type_def {
-        parse::VkTypeDef::Enum | parse::VkTypeDef::Bitmask | parse::VkTypeDef::Handle => {
+        parse::VkTypeDef::Enum | parse::VkTypeDef::Bitmask => {
             writeln!(out, "type {} = u32;", name).unwrap();
+        },
+        parse::VkTypeDef::Handle => {
+            // Note that handles are normally `usize`, but this obviously cannot work because the
+            // pointer size might be different between the host and the VM. As such, we convert
+            // back and forth between usize and u64.
+            // TODO: this is wrong, because if the host is 32bits, we're incorrectly passing 64bits
+            //       values; this is a complicated topic
+            writeln!(out, "type {} = u64;", name).unwrap();
         },
         parse::VkTypeDef::Struct { fields } => {
             writeln!(out, "#[repr(C)]").unwrap();
@@ -153,12 +161,14 @@ fn write_commands_wrappers(mut out: impl Write, registry: &parse::VkRegistry) {
 
         writeln!(out, "        let response_read = |mut msg_buf: &[u8]| -> Result<{}, parity_scale_codec::Error> {{", print_ty(&command.ret_ty)).unwrap();
         let ret_value_expr = write_param_deserialize(&command.ret_ty, registry, &mut |_, _| panic!());
+        writeln!(out, "            let ret = {};", ret_value_expr).unwrap();
         for (param_ty, param_name) in &command.params {
+            assert_ne!(param_name, "ret");      // TODO: rename parameters instead
             let write_back = write_deserialize_response_into(param_ty, registry, param_name);
             writeln!(out, "            {}", write_back).unwrap();
         }
         // TODO: writeln!(out, "            assert!(msg_buf.is_empty());").unwrap();     // TODO: return Error
-        writeln!(out, "            Ok({})", ret_value_expr).unwrap();
+        writeln!(out, "            Ok(ret)").unwrap();
         writeln!(out, "        }};").unwrap();
         writeln!(out, "        response_read(&response).unwrap()").unwrap();
 
@@ -180,6 +190,7 @@ fn write_redirect_handle(mut out: impl Write, registry: &parse::VkRegistry) {
         writeln!(out, "    {} => {{ // {}", command_id, command.name).unwrap();
 
         let mut var_name_gen = 0;
+        let mut params_list = Vec::new();
         let mut params = String::new();
         let mut first_param = String::new();
         let mut last_param = String::new();
@@ -196,6 +207,7 @@ fn write_redirect_handle(mut out: impl Write, registry: &parse::VkRegistry) {
             var_name_gen += 1;
             writeln!(out, "        let {} = {};", v_name, expr).unwrap();
             if !params.is_empty() { params.push_str(", "); }
+            params_list.push(v_name.clone());
             params.push_str(&v_name);
 
             if param_num == 0 {
@@ -206,29 +218,34 @@ fn write_redirect_handle(mut out: impl Write, registry: &parse::VkRegistry) {
             }
         }
 
+        // TODO: shouldn't panic but return an error instead
+        writeln!(out, "        println!(\"{{:?}}\", state.instance_pointers.keys().cloned().collect::<Vec<_>>());").unwrap();     // TODO: return Error
         let f_ptr = match fpointers::command_ty(&command) {
             fpointers::CommandTy::Static => format!("(state.static_pointers.r#{}.unwrap())", command.name),
             // TODO: this is wrong if the first parameter is a PhysicalDevice
-            fpointers::CommandTy::Instance => format!("(state.instance_pointers.get(&{}).unwrap().r#{}.unwrap())", first_param, command.name),
+            fpointers::CommandTy::Instance => format!("(state.instance_pointers.get(&({} as usize)).unwrap().r#{}.unwrap())", first_param, command.name),       // TODO: remove as usize?
             // TODO: this is wrong if the first parameter is a CommandBuffer or Queue
-            fpointers::CommandTy::Device => format!("(state.device_pointers.get(&{}).unwrap().r#{}.unwrap())", first_param, command.name),
+            fpointers::CommandTy::Device => format!("(state.device_pointers.get(&({} as usize)).unwrap().r#{}.unwrap())", first_param, command.name),       // TODO: remove as usize?
         };
 
         writeln!(out, "        assert!(msg_buf.is_empty());").unwrap();     // TODO: return Error
         writeln!(out, "        let ret = {}({});", f_ptr, params).unwrap();
         writeln!(out, "        let mut msg_buf = Vec::new();").unwrap();     // TODO: with_capacity()?
         write_param_serialize(out.by_ref(), true, "ret", &command.ret_ty, registry);
+        for ((param_ty, _), param_var) in command.params.iter().zip(params_list.iter()) {
+            write_param_serialize(out.by_ref(), true, param_var, param_ty, registry);
+        }
         writeln!(out, "        println!(\"{{:?}}\", ret);").unwrap();
 
         // As special additions, if this is `vkCreateInstance`, `vkDestroyInstance`,
         // `vkCreateDevice`, or `vkDestroyDevice`, we need to load or unload function pointers.
         // TODO: move that in lib.rs?
         if command.name == "vkCreateInstance" {
-            writeln!(out, "        state.instance_pointers.insert(*{}, InstancePtrs::load_with(|name: &std::ffi::CStr| {{", last_param).unwrap();
-            writeln!(out, "            (state.get_instance_proc_addr)({} as usize, name.as_ptr() as *const _)", last_param).unwrap();       // TODO: ` as usize`? check type of VkInstance
+            writeln!(out, "        state.instance_pointers.insert(*{} as usize, InstancePtrs::load_with(|name: &std::ffi::CStr| {{", last_param).unwrap();      // TODO: ` as usize`?
+            writeln!(out, "            (state.get_instance_proc_addr)(*{} as usize, name.as_ptr() as *const _)", last_param).unwrap();       // TODO: ` as usize`?
             writeln!(out, "        }}));").unwrap();
         } else if command.name == "vkDestroyInstance" {
-            writeln!(out, "        state.instance_pointers.remove(&{});", first_param).unwrap();
+            writeln!(out, "        state.instance_pointers.remove(&({} as usize));", first_param).unwrap();      // TODO: ` as usize`?
         }  // TODO: same with device
 
         writeln!(out, "        if !msg_buf.is_empty() {{").unwrap();
@@ -269,7 +286,9 @@ fn write_param_serialize(out: &mut dyn Write, is_response: bool, param_name: &st
         },
         (parse::VkType::Ident(ty_name), _) if print_ty(param_ty).starts_with("*mut ") || print_ty(param_ty).starts_with("*const ") || print_ty(param_ty).starts_with("c_void") => {
             // TODO:
-            panic!("{:?}", ty_name);
+            if !is_response {
+                panic!("{:?}", ty_name);
+            }
         },
         (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Enum)) |
         (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Bitmask)) |
@@ -618,7 +637,9 @@ fn write_deserialize_response_into(
                     _ => return String::new()       // TODO: not implemented
                 }
 
-                format!("*{} = <{} as Decode>::decode(&mut msg_buf)?;", out_var_name, print_ty(ty_name))
+                format!("if <u32 as Decode>::decode(&mut msg_buf)? != 0 {{ \
+                    *{} = <{} as Decode>::decode(&mut msg_buf)?; \
+                }}", out_var_name, print_ty(ty_name))
 
             } else {
                 // This is to avoid situations where we might have pointers within the returned

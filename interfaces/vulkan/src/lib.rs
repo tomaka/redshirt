@@ -76,8 +76,8 @@ pub type PFN_vkVoidFunction = extern "system" fn() -> ();
 pub struct VulkanRedirect {
     get_instance_proc_addr: unsafe extern "system" fn(usize, *const u8) -> PFN_vkVoidFunction,
     static_pointers: StaticPtrs,
-    instance_pointers: HashMap<u32, InstancePtrs>,
-    device_pointers: HashMap<u32, DevicePtrs>,
+    instance_pointers: HashMap<usize, InstancePtrs>,
+    device_pointers: HashMap<usize, DevicePtrs>,
 }
 
 impl VulkanRedirect {
