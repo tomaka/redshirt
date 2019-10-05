@@ -61,7 +61,7 @@ fn main() {
                     } if interface == vulkan::INTERFACE => {
                         // TODO:
                         println!("received vk message: {:?}", message);
-                        if let Some(response) = vk.handle(&message) {
+                        if let Some(response) = vk.handle(0, &message) {        // TODO: proper PID
                             system.answer_message(message_id.unwrap(), &response);
                         }
                         continue;

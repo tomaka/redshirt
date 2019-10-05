@@ -24,7 +24,8 @@ pub struct VkRegistry {
 pub enum VkTypeDef {
     Enum,
     Bitmask,
-    Handle,
+    DispatchableHandle,
+    NonDispatchableHandle,
     Struct {
         fields: Vec<(VkType, String)>,
     },
@@ -226,8 +227,16 @@ fn parse_type(events_source: &mut Events<impl Read>, attributes: Vec<OwnedAttrib
             None
         },
         Some("handle") => {
-            let (_, name) = parse_ty_name(events_source, attributes);
-            Some((name, VkTypeDef::Handle))
+            let (ty, name) = parse_ty_name(events_source, attributes.clone());
+            if ty == VkType::Ident("VK_DEFINE_HANDLE".to_owned()) {
+                Some((name, VkTypeDef::DispatchableHandle))
+            } else if ty == VkType::Ident("VK_DEFINE_NON_DISPATCHABLE_HANDLE".to_owned()) {
+                Some((name, VkTypeDef::NonDispatchableHandle))
+            } else if find_attr(&attributes, "alias").is_some() {
+                None
+            } else {
+                panic!("Unknown handle type: {:?} for {:?}", ty, name)
+            }
         },
         Some("funcpointer") => {
             // We deliberately ignore function pointers, and manually generate their definitions.

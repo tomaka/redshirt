@@ -33,7 +33,7 @@ fn main() {
     write_get_instance_proc_addr(out.by_ref(), &registry);
     writeln!(out, "").unwrap();
 
-    writeln!(out, "unsafe fn redirect_handle_inner(state: &mut VulkanRedirect, mut msg_buf: &[u8]) -> Result<Option<Vec<u8>>, parity_scale_codec::Error> {{").unwrap();
+    writeln!(out, "unsafe fn redirect_handle_inner(state: &mut VulkanRedirect, emitter_pid: u64, mut msg_buf: &[u8]) -> Result<Option<Vec<u8>>, parity_scale_codec::Error> {{").unwrap();
     write_redirect_handle(out.by_ref(), &registry);
     writeln!(out, "}}").unwrap();
     writeln!(out, "").unwrap();
@@ -100,13 +100,11 @@ fn write_type_def(mut out: impl Write, name: &str, type_def: &parse::VkTypeDef) 
         parse::VkTypeDef::Enum | parse::VkTypeDef::Bitmask => {
             writeln!(out, "type {} = u32;", name).unwrap();
         },
-        parse::VkTypeDef::Handle => {
-            // Note that handles are normally `usize`, but this obviously cannot work because the
-            // pointer size might be different between the host and the VM. As such, we convert
-            // back and forth between usize and u64.
-            // TODO: this is wrong, because if the host is 32bits, we're incorrectly passing 64bits
-            //       values; this is a complicated topic
+        parse::VkTypeDef::NonDispatchableHandle => {
             writeln!(out, "type {} = u64;", name).unwrap();
+        },
+        parse::VkTypeDef::DispatchableHandle => {
+            writeln!(out, "type {} = usize;", name).unwrap();
         },
         parse::VkTypeDef::Struct { fields } => {
             writeln!(out, "#[repr(C)]").unwrap();
@@ -138,41 +136,37 @@ fn write_commands_wrappers(mut out: impl Write, registry: &parse::VkRegistry) {
         }
 
         writeln!(out, "#[allow(non_snake_case)]").unwrap();
-        writeln!(out, "extern \"system\" fn wrapper_{}(", command.name).unwrap();
+        writeln!(out, "unsafe extern \"system\" fn wrapper_{}(", command.name).unwrap();
         for (ty, n) in &command.params {
             writeln!(out, "    r#{}: {},", n, print_ty(ty)).unwrap();
         }
         writeln!(out, ") -> {} {{", print_ty(&command.ret_ty)).unwrap();
-        writeln!(out, "    #![allow(unused_unsafe)]").unwrap();
-        writeln!(out, "    unsafe {{").unwrap();
-        writeln!(out, "        let mut msg_buf = Vec::<u8>::new();    // TODO: with_capacity").unwrap();
+        writeln!(out, "    let mut msg_buf = Vec::<u8>::new();    // TODO: with_capacity").unwrap();
 
         // The first 2 bytes of the message is the command ID.
-        writeln!(out, "        <u16 as Encode>::encode_to(&{}, &mut msg_buf);", command_id as u16).unwrap();
+        writeln!(out, "    <u16 as Encode>::encode_to(&{}, &mut msg_buf);", command_id as u16).unwrap();
 
         // We then append every parameter one by one.
         for (param_ty, param_name) in &command.params {
             write_param_serialize(out.by_ref(), false, &format!("r#{}", param_name), param_ty, registry);
         }
 
-        writeln!(out, "        let msg_id = syscalls::emit_message_raw(&INTERFACE, &msg_buf, true).unwrap().unwrap();").unwrap();
-        writeln!(out, "        let response = syscalls::message_response_sync_raw(msg_id);").unwrap();
-        writeln!(out, "        println!(\"got response: {{:?}}\", response);").unwrap();
+        writeln!(out, "    let msg_id = syscalls::emit_message_raw(&INTERFACE, &msg_buf, true).unwrap().unwrap();").unwrap();
+        writeln!(out, "    let response = syscalls::message_response_sync_raw(msg_id);").unwrap();
 
-        writeln!(out, "        let response_read = |mut msg_buf: &[u8]| -> Result<{}, parity_scale_codec::Error> {{", print_ty(&command.ret_ty)).unwrap();
+        writeln!(out, "    let response_read = |mut msg_buf: &[u8]| -> Result<{}, parity_scale_codec::Error> {{", print_ty(&command.ret_ty)).unwrap();
         let ret_value_expr = write_param_deserialize(&command.ret_ty, registry, &mut |_, _| panic!());
-        writeln!(out, "            let ret = {};", ret_value_expr).unwrap();
+        writeln!(out, "        let ret = {};", ret_value_expr).unwrap();
         for (param_ty, param_name) in &command.params {
             assert_ne!(param_name, "ret");      // TODO: rename parameters instead
             let write_back = write_deserialize_response_into(param_ty, registry, param_name);
-            writeln!(out, "            {}", write_back).unwrap();
+            writeln!(out, "        {}", write_back).unwrap();
         }
         // TODO: writeln!(out, "            assert!(msg_buf.is_empty());").unwrap();     // TODO: return Error
-        writeln!(out, "            Ok(ret)").unwrap();
-        writeln!(out, "        }};").unwrap();
-        writeln!(out, "        response_read(&response).unwrap()").unwrap();
+        writeln!(out, "        Ok(ret)").unwrap();
+        writeln!(out, "    }};").unwrap();
+        writeln!(out, "    response_read(&response).unwrap()").unwrap();
 
-        writeln!(out, "    }}").unwrap();
         writeln!(out, "}}").unwrap();
         writeln!(out, "").unwrap();
     }
@@ -219,7 +213,6 @@ fn write_redirect_handle(mut out: impl Write, registry: &parse::VkRegistry) {
         }
 
         // TODO: shouldn't panic but return an error instead
-        writeln!(out, "        println!(\"{{:?}}\", state.instance_pointers.keys().cloned().collect::<Vec<_>>());").unwrap();     // TODO: return Error
         let f_ptr = match fpointers::command_ty(&command) {
             fpointers::CommandTy::Static => format!("(state.static_pointers.r#{}.unwrap())", command.name),
             // TODO: this is wrong if the first parameter is a PhysicalDevice
@@ -230,23 +223,24 @@ fn write_redirect_handle(mut out: impl Write, registry: &parse::VkRegistry) {
 
         writeln!(out, "        assert!(msg_buf.is_empty());").unwrap();     // TODO: return Error
         writeln!(out, "        let ret = {}({});", f_ptr, params).unwrap();
-        writeln!(out, "        let mut msg_buf = Vec::new();").unwrap();     // TODO: with_capacity()?
-        write_param_serialize(out.by_ref(), true, "ret", &command.ret_ty, registry);
-        for ((param_ty, _), param_var) in command.params.iter().zip(params_list.iter()) {
-            write_param_serialize(out.by_ref(), true, param_var, param_ty, registry);
-        }
-        writeln!(out, "        println!(\"{{:?}}\", ret);").unwrap();
 
         // As special additions, if this is `vkCreateInstance`, `vkDestroyInstance`,
         // `vkCreateDevice`, or `vkDestroyDevice`, we need to load or unload function pointers.
         // TODO: move that in lib.rs?
         if command.name == "vkCreateInstance" {
-            writeln!(out, "        state.instance_pointers.insert(*{} as usize, InstancePtrs::load_with(|name: &std::ffi::CStr| {{", last_param).unwrap();      // TODO: ` as usize`?
-            writeln!(out, "            (state.get_instance_proc_addr)(*{} as usize, name.as_ptr() as *const _)", last_param).unwrap();       // TODO: ` as usize`?
+            writeln!(out, "        state.assign_handle_to_pid(*{}, emitter_pid);", last_param).unwrap();
+            writeln!(out, "        state.instance_pointers.insert(*{}, InstancePtrs::load_with(|name: &std::ffi::CStr| {{", last_param).unwrap();
+            writeln!(out, "            (state.get_instance_proc_addr)(*{}, name.as_ptr() as *const _)", last_param).unwrap();
             writeln!(out, "        }}));").unwrap();
         } else if command.name == "vkDestroyInstance" {
-            writeln!(out, "        state.instance_pointers.remove(&({} as usize));", first_param).unwrap();      // TODO: ` as usize`?
+            writeln!(out, "        state.instance_pointers.remove(&({}));", first_param).unwrap();
         }  // TODO: same with device
+
+        writeln!(out, "        let mut msg_buf = Vec::new();").unwrap();     // TODO: with_capacity()?
+        write_param_serialize(out.by_ref(), true, "ret", &command.ret_ty, registry);
+        for ((param_ty, _), param_var) in command.params.iter().zip(params_list.iter()) {
+            write_param_serialize(out.by_ref(), true, param_var, param_ty, registry);
+        }
 
         writeln!(out, "        if !msg_buf.is_empty() {{").unwrap();
         writeln!(out, "            Ok(Some(msg_buf))").unwrap();
@@ -292,10 +286,17 @@ fn write_param_serialize(out: &mut dyn Write, is_response: bool, param_name: &st
         },
         (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Enum)) |
         (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Bitmask)) |
-        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Handle)) |
+        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::NonDispatchableHandle)) |
         (parse::VkType::Ident(ty_name), None) => {
             writeln!(out, "        <{} as Encode>::encode_to(&{}, &mut msg_buf);", print_ty(param_ty), param_name).unwrap();
         },
+        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::DispatchableHandle)) => {
+            if !is_response {
+                writeln!(out, "        <u32 as Encode>::encode_to(&({} as u32), &mut msg_buf);", param_name).unwrap();      // TODO: debug_assert! that we fit in u32?
+            } else {
+                writeln!(out, "        <u32 as Encode>::encode_to(&state.handles_host_to_vm.get(&{}).unwrap().1, &mut msg_buf);", param_name).unwrap();     // TODO: check PID?
+            }
+        }
         (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Struct { fields })) => {
             for (field_ty, field_name) in fields {
                 write_param_serialize(out, is_response, &format!("{}.r#{}", param_name, field_name), &field_ty, registry);
@@ -379,6 +380,8 @@ fn write_param_serialize(out: &mut dyn Write, is_response: bool, param_name: &st
 ///
 /// Also note that the code generated by the implementation is deterministic. This allows one
 /// to call [`write_param_deserialize`] once and use the produced code in a loop.
+///
+// TODO: talk about environment: what is available to use, and the `?` operator
 fn write_param_deserialize(
     ty: &parse::VkType,
     registry: &parse::VkRegistry,
@@ -415,9 +418,12 @@ fn write_param_deserialize(
         },
         (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Enum)) |
         (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Bitmask)) |
-        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Handle)) |
+        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::NonDispatchableHandle)) |
         (parse::VkType::Ident(ty_name), None) => {
             format!("<{} as Decode>::decode(&mut msg_buf)?", print_ty(ty))
+        },
+        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::DispatchableHandle)) => {
+            format!("*state.handles_vm_to_host.get(&(emitter_pid, <u32 as Decode>::decode(&mut msg_buf)?)).unwrap()")
         },
 
         (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Struct { fields })) => {
@@ -556,7 +562,8 @@ fn write_deserialize_response_into(
     match (ty, type_def) {
         (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Enum)) |
         (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Bitmask)) |
-        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Handle)) |
+        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::NonDispatchableHandle)) |
+        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::DispatchableHandle)) |
         (parse::VkType::Ident(ty_name), None) => String::new(),
 
         (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Struct { fields })) => {
@@ -633,13 +640,18 @@ fn write_deserialize_response_into(
         (parse::VkType::MutPointer(ty_name, parse::VkTypePtrLen::One), _) => {
             if let parse::VkType::Ident(t) = &**ty_name {
                 match registry.type_defs.get(t) {
-                    Some(parse::VkTypeDef::Enum) | Some(parse::VkTypeDef::Bitmask) | Some(parse::VkTypeDef::Handle) => {},
-                    _ => return String::new()       // TODO: not implemented
+                    Some(parse::VkTypeDef::Enum) | Some(parse::VkTypeDef::Bitmask) | Some(parse::VkTypeDef::NonDispatchableHandle) => {
+                        format!("if <u32 as Decode>::decode(&mut msg_buf)? != 0 {{ \
+                            *{} = <{} as Decode>::decode(&mut msg_buf)?; \
+                        }}", out_var_name, print_ty(ty_name))
+                    },
+                    Some(parse::VkTypeDef::DispatchableHandle) => {
+                        format!("if <u32 as Decode>::decode(&mut msg_buf)? != 0 {{ \
+                            *{} = <u32 as Decode>::decode(&mut msg_buf)? as usize; \
+                        }}", out_var_name)
+                    },
+                    _ => String::new()       // TODO: not implemented
                 }
-
-                format!("if <u32 as Decode>::decode(&mut msg_buf)? != 0 {{ \
-                    *{} = <{} as Decode>::decode(&mut msg_buf)?; \
-                }}", out_var_name, print_ty(ty_name))
 
             } else {
                 // This is to avoid situations where we might have pointers within the returned
@@ -689,7 +701,7 @@ fn write_get_instance_proc_addr(mut out: impl Write, registry: &parse::VkRegistr
             .collect::<String>();
 
         writeln!(out, "        \"{}\" => {{", command.name).unwrap();
-        writeln!(out, "            let ptr = wrapper_{} as extern \"system\" fn({}) -> {};", command.name, params_tys, print_ty(&command.ret_ty)).unwrap();
+        writeln!(out, "            let ptr = wrapper_{} as unsafe extern \"system\" fn({}) -> {};", command.name, params_tys, print_ty(&command.ret_ty)).unwrap();
         writeln!(out, "            mem::transmute::<_, PFN_vkVoidFunction>(ptr)").unwrap();
         writeln!(out, "        }}").unwrap();
     }

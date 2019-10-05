@@ -78,6 +78,8 @@ pub struct VulkanRedirect {
     static_pointers: StaticPtrs,
     instance_pointers: HashMap<usize, InstancePtrs>,
     device_pointers: HashMap<usize, DevicePtrs>,
+    handles_host_to_vm: HashMap<usize, (u64, u32)>,
+    handles_vm_to_host: HashMap<(u64, u32), usize>,
 }
 
 impl VulkanRedirect {
@@ -91,16 +93,31 @@ impl VulkanRedirect {
                 }),
                 instance_pointers: HashMap::default(),
                 device_pointers: HashMap::default(),
+                handles_host_to_vm: HashMap::default(),
+                handles_vm_to_host: HashMap::default(),
             }
         }
     }
 
     /// Handles the given message, optionally producing the answer to send back in response to
     /// this call.
-    pub fn handle(&mut self, message: &[u8]) -> Option<Vec<u8>> {
+    ///
+    /// The `emitter_pid` is used to isolate resources used by processes.
+    pub fn handle(&mut self, emitter_pid: u64, message: &[u8]) -> Option<Vec<u8>> {
         unsafe {
-            redirect_handle_inner(self, message).unwrap()
+            redirect_handle_inner(self, emitter_pid, message).unwrap()
         }
+    }
+
+    fn assign_handle_to_pid(&mut self, handle: usize, emitter_pid: u64) {
+        let mut new_id = 1;
+        // TODO: better way to do that
+        while self.handles_vm_to_host.keys().any(|(_, i)| *i == new_id) {
+            new_id += 1;
+        }
+
+        self.handles_vm_to_host.insert((emitter_pid, new_id), handle);
+        self.handles_host_to_vm.insert(handle, (emitter_pid, new_id));
     }
 }
 
