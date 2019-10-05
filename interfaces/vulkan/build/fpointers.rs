@@ -53,7 +53,9 @@ fn write_pointers(out: &mut dyn Write, registry: &parse::VkRegistry, struct_name
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum CommandTy {
     Static,
+    /// The command operates on an `Instance` and must be loaded using `vkGetInstanceProcAddr`.
     Instance,
+    /// The command operates on a `Device` and must be loaded using `vkGetDeviceProcAddr`.
     Device,
 }
 
@@ -66,6 +68,19 @@ pub fn command_ty(command: &parse::VkCommand) -> CommandTy {
         parse::VkType::Ident(ident) if ident == "VkDevice" => CommandTy::Device,
         parse::VkType::Ident(ident) if ident == "VkQueue" => CommandTy::Device,
         parse::VkType::Ident(ident) if ident == "VkCommandBuffer" => CommandTy::Device,
-        _ => CommandTy::Static,
+        _ => {
+            // In order to make sure that this function doesn't silently break if a new type
+            // of function is introduced, we hardcode the list of static functions here and panic
+            // if there's an unknown one.
+            match command.name.as_str() {
+                "vkCreateInstance" => {},
+                "vkEnumerateInstanceVersion" => {},
+                "vkEnumerateInstanceLayerProperties" => {},
+                "vkEnumerateInstanceExtensionProperties" => {},
+                _ => panic!()
+            }
+
+            CommandTy::Static
+        },
     }
 }

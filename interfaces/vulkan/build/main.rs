@@ -151,11 +151,15 @@ fn write_commands_wrappers(mut out: impl Write, registry: &parse::VkRegistry) {
         writeln!(out, "        let response = syscalls::message_response_sync_raw(msg_id);").unwrap();
         writeln!(out, "        println!(\"got response: {{:?}}\", response);").unwrap();
 
-        // TODO: clearly unfinished; need to write in mutable buffers and all that stuff
-        writeln!(out, "        fn response_read(mut msg_buf: &[u8]) -> Result<{}, parity_scale_codec::Error> {{", print_ty(&command.ret_ty)).unwrap();
+        writeln!(out, "        let response_read = |mut msg_buf: &[u8]| -> Result<{}, parity_scale_codec::Error> {{", print_ty(&command.ret_ty)).unwrap();
         let ret_value_expr = write_param_deserialize(&command.ret_ty, registry, &mut |_, _| panic!());
+        for (param_ty, param_name) in &command.params {
+            let write_back = write_deserialize_response_into(param_ty, registry, param_name);
+            writeln!(out, "            {}", write_back).unwrap();
+        }
+        // TODO: writeln!(out, "            assert!(msg_buf.is_empty());").unwrap();     // TODO: return Error
         writeln!(out, "            Ok({})", ret_value_expr).unwrap();
-        writeln!(out, "        }}").unwrap();
+        writeln!(out, "        }};").unwrap();
         writeln!(out, "        response_read(&response).unwrap()").unwrap();
 
         writeln!(out, "    }}").unwrap();
@@ -204,7 +208,9 @@ fn write_redirect_handle(mut out: impl Write, registry: &parse::VkRegistry) {
 
         let f_ptr = match fpointers::command_ty(&command) {
             fpointers::CommandTy::Static => format!("(state.static_pointers.r#{}.unwrap())", command.name),
+            // TODO: this is wrong if the first parameter is a PhysicalDevice
             fpointers::CommandTy::Instance => format!("(state.instance_pointers.get(&{}).unwrap().r#{}.unwrap())", first_param, command.name),
+            // TODO: this is wrong if the first parameter is a CommandBuffer or Queue
             fpointers::CommandTy::Device => format!("(state.device_pointers.get(&{}).unwrap().r#{}.unwrap())", first_param, command.name),
         };
 
@@ -213,12 +219,10 @@ fn write_redirect_handle(mut out: impl Write, registry: &parse::VkRegistry) {
         writeln!(out, "        let mut msg_buf = Vec::new();").unwrap();     // TODO: with_capacity()?
         write_param_serialize(out.by_ref(), true, "ret", &command.ret_ty, registry);
         writeln!(out, "        println!(\"{{:?}}\", ret);").unwrap();
-        /*for ((param_ty, _), param_name) in command.params.iter().zip(params) {
-            write_param_serialize(out.by_ref(), true, &format!("r#{}", param_name), param_ty, registry);
-        }*/
 
         // As special additions, if this is `vkCreateInstance`, `vkDestroyInstance`,
         // `vkCreateDevice`, or `vkDestroyDevice`, we need to load or unload function pointers.
+        // TODO: move that in lib.rs?
         if command.name == "vkCreateInstance" {
             writeln!(out, "        state.instance_pointers.insert(*{}, InstancePtrs::load_with(|name: &std::ffi::CStr| {{", last_param).unwrap();
             writeln!(out, "            (state.get_instance_proc_addr)({} as usize, name.as_ptr() as *const _)", last_param).unwrap();       // TODO: ` as usize`? check type of VkInstance
@@ -503,6 +507,136 @@ fn write_param_deserialize(
             let var = interm_step_gen(format!("mem::zeroed::<{}>()", print_ty(ty_name)), true);
             format!("&mut {} as *mut _", var)
         }
+    }
+}
+
+/// Generates Rust code that deserializes a response to a Vulkan function call and writes it
+/// to `out`.
+///
+/// When you call a Vulkan function, some of the parameters include mutable pointers that the
+/// Vulkan function writes to.
+/// Since we're using a proxying mechanism, the mutable pointers themselves are not transmitted.
+/// Instead, the data that Vulkan writes to the given pointer is serialized into the response, and
+/// this function deserializes that and writes the data.
+///
+/// This function is called for each parameter made for a Vulkan function call, but most
+/// parameters are ignored.
+///
+/// This function must generate statements (for example: "foo = 5;").
+fn write_deserialize_response_into(
+    ty: &parse::VkType,
+    registry: &parse::VkRegistry,
+    out_var_name: &str,
+) -> String {
+    let type_def = if let parse::VkType::Ident(ty_name) = ty {
+        registry.type_defs.get(ty_name)
+    } else {
+        None
+    };
+
+    match (ty, type_def) {
+        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Enum)) |
+        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Bitmask)) |
+        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Handle)) |
+        (parse::VkType::Ident(ty_name), None) => String::new(),
+
+        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Struct { fields })) => {
+            let mut out = String::new();
+            for (field_ty, field_name) in fields {
+                out.push_str(&write_deserialize_response_into(
+                    field_ty,
+                    registry,
+                    &format!("{}.r#{}", out_var_name, field_name)
+                ));
+            }
+            out
+        }
+
+        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Union { fields })) => {
+            // TODO: implement?
+            String::new()
+        }
+
+        (parse::VkType::MutPointer(ty_name, _), _) |
+        (parse::VkType::ConstPointer(ty_name, _), _) if **ty_name == parse::VkType::Ident("void".to_string()) => {
+            // TODO: what to do here?
+            String::new()
+        }
+
+        (parse::VkType::ConstPointer(ty_name, parse::VkTypePtrLen::One), _) => {
+            write_deserialize_response_into(ty_name, registry, &format!("(*{})", out_var_name))
+        }
+
+        // TODO: is that implemented?
+        /*(parse::VkType::ConstPointer(ty_name, len), _) => {
+            // TODO: not implemented for non-null-terminated
+            if let parse::VkTypePtrLen::NullTerminated = len {
+            } else {
+                return format!("mem::zeroed::<{}>()", print_ty(ty))
+            };
+    
+            // Pointers, when serialized, always start with the number of elements.
+            let len_var = interm_step_gen(format!("/* len({}) */ <u32 as Decode>::decode(&mut msg_buf)? as usize", print_ty(ty_name)), false);
+
+            let interm = {
+                let inner = write_param_deserialize(&ty_name, registry, &mut |f, mutable| {
+                    let var = interm_step_gen(format!("{{ \
+                        let mut list = Vec::with_capacity({len}); \
+                        for _n in 0..{len} {{ list.push({inner}); }} \
+                        list \
+                    }}", inner=f, len=len_var), mutable);
+                    format!("{}[_n]", var)
+                });
+
+                let opt_null_delim = if let parse::VkTypePtrLen::NullTerminated = len {
+                    format!("list.push(0);")
+                } else {
+                    String::new()
+                };
+
+                format!("{{ \
+                    let mut list = Vec::with_capacity({len}); \
+                    for _n in 0..{len} {{ list.push({inner}); }} \
+                    {opt_null_delim} \
+                    list \
+                }}", inner=inner, len=len_var, opt_null_delim=opt_null_delim)
+            };
+
+            let var = interm_step_gen(interm, false);
+            format!("if !{var}.is_empty() {{ {var}.as_ptr() }} else {{ ptr::null() }}", var=var)
+        }*/
+
+        (parse::VkType::Array(ty_name, len), _) => {
+            let inner = write_deserialize_response_into(ty_name, registry, &format!("{}[n]", out_var_name));
+            format!("for n in 0..{} {{ {} }}", len, inner)
+        }
+
+        (parse::VkType::MutPointer(ty_name, parse::VkTypePtrLen::One), _) => {
+            if let parse::VkType::Ident(t) = &**ty_name {
+                match registry.type_defs.get(t) {
+                    Some(parse::VkTypeDef::Enum) | Some(parse::VkTypeDef::Bitmask) | Some(parse::VkTypeDef::Handle) => {},
+                    _ => return String::new()       // TODO: not implemented
+                }
+
+                format!("*{} = <{} as Decode>::decode(&mut msg_buf)?;", out_var_name, print_ty(ty_name))
+
+            } else {
+                // This is to avoid situations where we might have pointers within the returned
+                // type.
+                panic!()
+            }
+        }
+
+        (parse::VkType::MutPointer(ty_name, parse::VkTypePtrLen::NullTerminated), _) => {
+            // Passing a pointer to null-terminated buffer whose content is uninitialized doesn't
+            // make sense. If this path is reached, there is either a mistake in the Vulkan API
+            // definition, or a new way to call functions has been introduced.
+            panic!()
+        }
+
+        // TODO: MutPointer with non-one length
+
+        _ => String::new()
     }
 }
 
