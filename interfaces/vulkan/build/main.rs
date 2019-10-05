@@ -261,27 +261,26 @@ fn write_redirect_handle(mut out: impl Write, registry: &parse::VkRegistry) {
         }
 
         writeln!(out, "    {} => {{ // {}", command_id, command.name).unwrap();
-        for (param_ty, param_name) in &command.params {
-            let mut interm = Vec::new();
-            if let Ok(()) = write_param_deserialize_step1(&mut interm, param_ty, registry) {
-                write!(out, "let r#{} = ", param_name).unwrap();
-                out.write_all(&interm).unwrap();
-                writeln!(out, ";").unwrap();
-            }
-        }
 
         let mut var_name_gen = 0;
-        let mut params = Vec::new();
+        let mut params = String::new();
         for (param_ty, param_name) in &command.params {
-            let n = write_param_deserialize_step2(&mut out, &mut var_name_gen, &format!("r#{}", param_name), param_ty, registry);
-            write!(params, "n{}, ", n).unwrap();
+            let expr = write_param_deserialize(param_ty, registry, &mut |interm| {
+                let v_name = format!("n{}", var_name_gen);
+                var_name_gen += 1;
+                writeln!(out, "let {} = {};", v_name, interm).unwrap();
+                v_name
+            });
+
+            let v_name = format!("n{}", var_name_gen);
+            var_name_gen += 1;
+            writeln!(out, "let {} = {};", v_name, expr).unwrap();
+            if !params.is_empty() { params.push_str(", "); }
+            params.push_str(&v_name);
         }
+
         writeln!(out, "        assert!(msg_buf.is_empty());").unwrap();     // TODO: return Error
-
-        write!(out, "        let ret = (state.instance_pointers.r#{}.unwrap())(", command.name).unwrap();
-        out.write_all(&params).unwrap();
-        writeln!(out, ");").unwrap();
-
+        writeln!(out, "        let ret = (state.instance_pointers.r#{}.unwrap())({});", command.name, params).unwrap();
         writeln!(out, "        Ok(None)").unwrap();
         writeln!(out, "    }},").unwrap();
     }
@@ -290,7 +289,28 @@ fn write_redirect_handle(mut out: impl Write, registry: &parse::VkRegistry) {
     writeln!(out, "}}").unwrap();
 }
 
-fn write_param_deserialize_step1(out: &mut dyn Write, ty: &parse::VkType, registry: &parse::VkRegistry) -> Result<(), ()> {
+/// Generates Rust code that turns a serialized call into Vulkan data structures.
+///
+/// Because of various difficulties, the API of this function is a bit tricky.
+/// The function must return an expression that deserializes from a local variable named `msg_buf`
+/// a value of type `ty`.
+///
+/// Because `ty` might contain pointers, the `interm_step_gen` function can be used in order to
+/// create a local variable and "pin" it. The closure takes as parameter an expression to put in
+/// the variable, and returns the name of the local variable. The local variable must not move.
+///
+/// Keep in mind that the expression passed to `interm_step_gen` can decode data from `msg_buf`.
+/// You must be careful to respect the order of operations. If `interm_step_gen` is called
+/// multiple times, its expressions must be executed in the order in which the closure has been
+/// called.
+///
+/// Also note that the implementation is deterministic in the code they generate. This allows
+/// one to call [`write_param_deserialize`] and use the produced code in a loop.
+fn write_param_deserialize(
+    ty: &parse::VkType,
+    registry: &parse::VkRegistry,
+    interm_step_gen: &mut dyn FnMut(String) -> String,
+) -> String {
     let type_def = if let parse::VkType::Ident(ty_name) = ty {
         registry.type_defs.get(ty_name)
     } else {
@@ -299,18 +319,18 @@ fn write_param_deserialize_step1(out: &mut dyn Write, ty: &parse::VkType, regist
 
     match (ty, type_def) {
         (parse::VkType::Ident(ty_name), _) if ty_name.starts_with("PFN_") => {
-            write!(out, "ptr::null::<{}>()", print_ty(ty)).unwrap()
+            format!("mem::transmute::<_, {}>(ptr::null::<()>())", print_ty(ty))
         },
         (parse::VkType::Ident(ty_name), _) if ty_name == "size_t" => {
             // TODO: ???
-            write!(out, "0").unwrap()
+            format!("0")
         },
         (parse::VkType::Ident(ty_name), _) if ty_name == "float" => {
-            write!(out, "mem::transmute::<u32, f32>(Decode::decode(&mut msg_buf)?)").unwrap()
+            format!("mem::transmute::<u32, f32>(Decode::decode(&mut msg_buf)?)")
         },
         (parse::VkType::Ident(ty_name), _) if ty_name == "HANDLE" || ty_name == "HINSTANCE" || ty_name == "HWND" || ty_name == "LPCWSTR" || ty_name == "CAMetalLayer" || ty_name == "AHardwareBuffer" => {
             // TODO: what to do here?
-            write!(out, "ptr::null::<{}>()", print_ty(ty)).unwrap()
+            format!("ptr::null::<{}>()", print_ty(ty))
         },
         (parse::VkType::Ident(ty_name), _) if print_ty(ty).starts_with("*mut ") || print_ty(ty).starts_with("*const ") || print_ty(ty).starts_with("c_void") => {
             // TODO:
@@ -320,144 +340,94 @@ fn write_param_deserialize_step1(out: &mut dyn Write, ty: &parse::VkType, regist
         (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Bitmask)) |
         (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Handle)) |
         (parse::VkType::Ident(ty_name), None) => {
-            write!(out, "<{} as Decode>::decode(&mut msg_buf)?", print_ty(ty)).unwrap();
+            format!("<{} as Decode>::decode(&mut msg_buf)?", print_ty(ty))
         },
+
         (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Struct { fields })) => {
-            writeln!(out, "{{").unwrap();
-            let mut fields_out = Vec::new();
+            let mut field_names = String::new();
             for (field_ty, field_name) in fields {
-                let mut interm = Vec::new();
-                if let Ok(()) = write_param_deserialize_step1(&mut interm, &field_ty, registry) {
-                    write!(out, "let r#{} = ", field_name).unwrap();
-                    out.write_all(&interm).unwrap();
-                    writeln!(out, ";").unwrap();
-                    fields_out.push(field_name);
-                }
+                let field_expr = write_param_deserialize(field_ty, registry, &mut |e| interm_step_gen(e));
+                let field_interm = interm_step_gen(field_expr);
+                if !field_names.is_empty() { field_names.push_str(", "); }
+                field_names.push_str(&format!("r#{}: {}", field_name, field_interm));
             }
-            write!(out, "(").unwrap();
-            for field_name in fields_out {
-                write!(out, "r#{}, ", field_name).unwrap();
-            }
-            writeln!(out, ") }}").unwrap();
+
+            format!("{} {{ {} }}", ty_name, field_names)
         }
+
         (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Union { fields })) => {
-            writeln!(out, "mem::zeroed::<{}>()", print_ty(ty)).unwrap();    // FIXME:
+            // FIXME: implement properly
+            format!("mem::zeroed::<{}>()", print_ty(ty))
         }
+
+        (parse::VkType::MutPointer(ty_name, _), _) |
         (parse::VkType::ConstPointer(ty_name, _), _) if **ty_name == parse::VkType::Ident("void".to_string()) => {
-            // TODO: these pNext parameters :-/
-            write!(out, "ptr::null::<{}>()", print_ty(ty)).unwrap()
+            // TODO: what to do here?
+            format!("mem::zeroed::<{}>()", print_ty(ty))
         }
+
         (parse::VkType::ConstPointer(ty_name, parse::VkTypePtrLen::One), _) => {
-            // TODO: only do this if parameter is optional?
-            write!(out, "if <u32 as Decode>::decode(&mut msg_buf)? != 0 {{ Some(").unwrap();
-            write_param_deserialize_step1(out, &ty_name, registry).unwrap();
-            write!(out, ") }} else {{ None }}").unwrap();
+            let is_present = interm_step_gen("<u32 as Decode>::decode(&mut msg_buf)? != 0".to_owned());
+
+            let interm = {
+                let inner = write_param_deserialize(&ty_name, registry, &mut |f| {
+                    let var = interm_step_gen(format!("if {} {{ Some({}) }} else {{ None }}", is_present, f));
+                    format!("(*{}.as_ref().unwrap())", var)
+                });
+
+                format!("if {} {{ Some({}) }} else {{ None }}", is_present, inner)
+            };
+
+            let var = interm_step_gen(interm);
+            format!("{}.as_ref().map(|p| p as *const _).unwrap_or(ptr::null())", var)
         }
-        (parse::VkType::ConstPointer(ty_name, parse::VkTypePtrLen::NullTerminated), _) => {
-            // TODO: can be optimized by grabbing a pointer to `msg_buf` itself if the type is
-            //       [u8] (which is always the case in practice for null-terminated)
-            writeln!(out, "{{ let len = <u32 as Decode>::decode(&mut msg_buf)? as usize;").unwrap();
-            writeln!(out, "let mut out = Vec::with_capacity(len);").unwrap();
-            writeln!(out, "for n in 0..len {{ out.push(").unwrap();
-            write_param_deserialize_step1(out, &ty_name, registry).unwrap();
-            writeln!(out, "); }}").unwrap();
-            writeln!(out, "out }}").unwrap();
+
+        (parse::VkType::ConstPointer(ty_name, len), _) => {
+            // Pointers, when serialized, always start with the number of elements.
+            let len_var = interm_step_gen("<u32 as Decode>::decode(&mut msg_buf)? as usize".to_owned());
+
+            let interm = {
+                let inner = write_param_deserialize(&ty_name, registry, &mut |f| {
+                    let var = interm_step_gen(format!("{{
+                        let mut list = Vec::with_capacity({len});
+                        for _n in 0..{len} {{ list.push({inner}); }}
+                        list
+                    }}", inner=f, len=len_var));
+                    format!("{}[_n]", var)
+                });
+
+                let opt_null_delim = if let parse::VkTypePtrLen::NullTerminated = len {
+                    format!("list.push(0);")
+                } else {
+                    String::new()
+                };
+
+                format!("{{
+                    let len = <u32 as Decode>::decode(&mut msg_buf)?;
+                    let mut list = Vec::with_capacity({len});
+                    for _n in 0..{len} {{ list.push({inner}); }}
+                    {opt_null_delim}
+                    list
+                }}", inner=inner, len=len_var, opt_null_delim=opt_null_delim)
+            };
+
+            let var = interm_step_gen(interm);
+            format!("if !{var}.is_empty() {{ {var}.as_ptr() }} else {{ ptr::null() }}", var=var)
         }
-        (parse::VkType::ConstPointer(ty_name, parse::VkTypePtrLen::OtherField(rust_expr)), _) |
-        (parse::VkType::ConstPointer(ty_name, parse::VkTypePtrLen::RustExpr(rust_expr)), _) => {
-            writeln!(out, "{{").unwrap();
-            writeln!(out, "let mut out = Vec::with_capacity(({}) as usize);", rust_expr).unwrap();
-            writeln!(out, "for n in 0..{} {{ out.push(", rust_expr).unwrap();
-            write_param_deserialize_step1(out, &ty_name, registry).unwrap();
-            writeln!(out, "); }}").unwrap();
-            writeln!(out, "out }}").unwrap();
-        }
-        (parse::VkType::MutPointer(_, _), _) => {
-            return Err(())
-        }
+
         (parse::VkType::Array(ty_name, len), _) => {
             // TODO: no
             /*writeln!(out, "        for val in (0..{}).map(|n| {}[n]) {{", len, param_name).unwrap();
             write_param_serialize(out, "val", &ty_name, registry);
             writeln!(out, "        }}").unwrap();*/
-            writeln!(out, "mem::zeroed::<[{}; {}]>()", print_ty(ty_name), len).unwrap();
+            format!("mem::zeroed::<[{}; {}]>()", print_ty(ty_name), len)
+        }
+
+        (parse::VkType::MutPointer(ty_name, _), _) => {
+            // TODO:
+            format!("ptr::null_mut::<{}>()", print_ty(ty_name))
         }
     }
-
-    Ok(())
-}
-
-// Generates some Rust code that turns a variable that can be expressed as `step1_name` into
-// something usable.
-fn write_param_deserialize_step2(
-    out: &mut dyn Write,
-    var_name_gen: &mut u32,
-    step1_name: &str,
-    ty: &parse::VkType,
-    registry: &parse::VkRegistry
-) -> u32 {
-    let type_def = if let parse::VkType::Ident(ty_name) = ty {
-        registry.type_defs.get(ty_name)
-    } else {
-        None
-    };
-
-    let var_name = *var_name_gen;
-    *var_name_gen += 1;
-
-    match (ty, type_def) {
-        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Struct { fields })) => {
-            let mut interm = Vec::new();
-            writeln!(interm, "let n{} = if let Some({}) = {} {{", var_name, step1_name, step1_name).unwrap();
-            writeln!(interm, "    Some({} {{", ty_name).unwrap();
-            for (field_off, (field_ty, field_name)) in fields.iter().enumerate() {
-                let n = write_param_deserialize_step2(out, var_name_gen, &format!("({}.{})", step1_name, field_off), &field_ty, registry);
-                write!(interm, "        r#{}: n{},", field_name, n).unwrap();
-            }
-            writeln!(interm, "    }})").unwrap();
-            writeln!(interm, "}} else {{ None }};").unwrap();
-            out.write_all(&interm).unwrap();
-        }
-        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Union { fields })) => {
-            writeln!(out, "let n{} = mem::zeroed::<{}>();", var_name, print_ty(ty)).unwrap();    // FIXME:
-        }
-        (parse::VkType::Ident(ty_name), _) => {
-            writeln!(out, "let n{} = {};", var_name, step1_name).unwrap();
-        },
-        (parse::VkType::ConstPointer(ty_name, _), _) if **ty_name == parse::VkType::Ident("void".to_string()) => {
-            // TODO: these pNext parameters :-/
-            writeln!(out, "let n{} = ptr::null::<{}>();", var_name, print_ty(ty)).unwrap()
-        }
-        (parse::VkType::ConstPointer(ty_name, parse::VkTypePtrLen::One), _) => {
-            let n = write_param_deserialize_step2(out, var_name_gen, step1_name, &ty_name, registry);
-            writeln!(out, "let n{} = n{}.as_ref().map(|p| p as *const _).unwrap_or(ptr::null());", var_name, n).unwrap();
-        }
-        (parse::VkType::ConstPointer(ty_name, parse::VkTypePtrLen::NullTerminated), _) |
-        (parse::VkType::ConstPointer(ty_name, parse::VkTypePtrLen::OtherField(_)), _) |
-        (parse::VkType::ConstPointer(ty_name, parse::VkTypePtrLen::RustExpr(_)), _) => {
-            writeln!(out, "let n{} = {}.as_ptr();", var_name, step1_name).unwrap();
-        }
-        (parse::VkType::MutPointer(ty_name, parse::VkTypePtrLen::One), _) => {
-            let second_var_name = *var_name_gen;
-            *var_name_gen += 1;
-            writeln!(out, "let n{}: {} = mem::zeroed();", second_var_name, print_ty(ty_name)).unwrap();
-            writeln!(out, "let n{} = &mut n{} as *mut _;", var_name, second_var_name).unwrap();
-        }
-        (parse::VkType::MutPointer(ty_name, parse::VkTypePtrLen::NullTerminated), _) |
-        (parse::VkType::MutPointer(ty_name, parse::VkTypePtrLen::OtherField(_)), _) |
-        (parse::VkType::MutPointer(ty_name, parse::VkTypePtrLen::RustExpr(_)), _) => {
-            writeln!(out, "let n{} = {}.as_mut_ptr();", var_name, step1_name).unwrap();
-        }
-        (parse::VkType::Array(ty_name, len), _) => {
-            // TODO: no
-            /*writeln!(out, "        for val in (0..{}).map(|n| {}[n]) {{", len, param_name).unwrap();
-            write_param_serialize(out, "val", &ty_name, registry);
-            writeln!(out, "        }}").unwrap();*/
-            writeln!(out, "let n{} = mem::zeroed::<[{}; {}]>();", var_name, print_ty(ty_name), len).unwrap();
-        }
-    }
-
-    var_name
 }
 
 fn write_get_instance_proc_addr(mut out: impl Write, registry: &parse::VkRegistry) {
