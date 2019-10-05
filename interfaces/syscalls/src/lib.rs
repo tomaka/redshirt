@@ -153,9 +153,9 @@ pub fn next_interface_message() -> InterfaceMessageFuture {
 /// Returns a future that is ready when a response to the given message comes back.
 ///
 /// The return value is the type the message decodes to.
-pub fn message_response_sync_raw(msg_id: u64) -> ResponseMessage {
+pub fn message_response_sync_raw(msg_id: u64) -> Vec<u8> {
     match block_on::next_message(&mut [msg_id], true).unwrap() {
-        Message::Response(m) => m,
+        Message::Response(m) => m.actual_data,
         _ => panic!()
     }
 }
