@@ -7,8 +7,8 @@ building it.
 # How to test
 
 ```
-# The example does an HTTP request to localhost:8000, so you should start one:
-python -m SimpleHTTPServer 8000
+# You need the WASI target installed:
+rustup target add wasm32-wasi
 
 # Then:
 cargo run

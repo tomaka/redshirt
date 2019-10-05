@@ -152,6 +152,7 @@ fn write_commands_wrappers(mut out: impl Write, registry: &parse::VkRegistry) {
                 &format!("r#{}", param_name),
                 param_ty,
                 registry,
+                &mut |handle| format!("{} as u32", handle),      // TODO: debug_assert! that we fit in u32?
                 &mut |fields| {
                     parse::gen_path_subfield_in_list(&command.params, registry, fields).map(|(n, ty)| (n, ty.clone())).unwrap()
                 }
@@ -160,6 +161,7 @@ fn write_commands_wrappers(mut out: impl Write, registry: &parse::VkRegistry) {
 
         writeln!(out, "    let msg_id = syscalls::emit_message_raw(&INTERFACE, &msg_buf, true).unwrap().unwrap();").unwrap();
         writeln!(out, "    let response = syscalls::message_response_sync_raw(msg_id);").unwrap();
+        writeln!(out, "    println!(\"got response: {{:?}}\", response);").unwrap();
 
         writeln!(out, "    let response_read = |mut msg_buf: &[u8]| -> Result<{}, parity_scale_codec::Error> {{", print_ty(&command.ret_ty)).unwrap();
         let ret_value_expr = write_deserialize(&command.ret_ty, registry, &mut |_, _| panic!());
@@ -255,9 +257,9 @@ fn write_redirect_handle(mut out: impl Write, registry: &parse::VkRegistry) {
         }  // TODO: same with physical devices, command buffers and queues
 
         writeln!(out, "    let mut msg_buf = Vec::new();").unwrap();     // TODO: with_capacity()?
-        write_serialize(out.by_ref(), true, "ret", &command.ret_ty, registry, &mut |_| panic!());
+        write_serialize(out.by_ref(), false, "ret", &command.ret_ty, registry, &mut |_| panic!(), &mut |_| panic!());
         for ((param_ty, _), param_var) in command.params.iter().zip(params_list.iter()) {
-            write_serialize(out.by_ref(), true, param_var, param_ty, registry, &mut |field| {
+            write_serialize(out.by_ref(), true, param_var, param_ty, registry, &mut |handle| format!("state.handles_host_to_vm.get(&{}).unwrap().1", handle), &mut |field| {
                 // TODO: there are some len="pAllocateInfo::descriptorSetCount" attributes
                 /*params_list[command.params.iter().position(|p| p.1 == field).unwrap()].clone()*/
                 (format!("panic!()"), parse::VkType::Ident("int".to_string()))
@@ -284,6 +286,7 @@ fn write_serialize(
     param_name: &str,
     param_ty: &parse::VkType,
     registry: &parse::VkRegistry,
+    serialize_handles: &mut dyn FnMut(&str) -> String,
     other_field: &mut dyn FnMut(&[String]) -> (String, parse::VkType)
 ) {
     let type_def = if let parse::VkType::Ident(ty_name) = param_ty {
@@ -325,12 +328,8 @@ fn write_serialize(
         (parse::VkType::Ident(ty_name), None, true) => {
         },
         (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::DispatchableHandle), _) => {
-            // TODO: hack
-            if !skip_const {
-                writeln!(out, "        <u32 as Encode>::encode_to(&({} as u32), &mut msg_buf);", param_name).unwrap();      // TODO: debug_assert! that we fit in u32?
-            } else {
-                writeln!(out, "        <u32 as Encode>::encode_to(&state.handles_host_to_vm.get(&{}).unwrap().1, &mut msg_buf);", param_name).unwrap();     // TODO: check PID?
-            }
+            let serialize = serialize_handles(param_name);
+            writeln!(out, "        <u32 as Encode>::encode_to(&({}), &mut msg_buf);", serialize).unwrap();
         }
         (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Struct { fields }), _) => {
             for (field_ty, field_name) in fields {
@@ -340,6 +339,7 @@ fn write_serialize(
                     &format!("{}.r#{}", param_name, field_name),
                     &field_ty,
                     registry,
+                    serialize_handles,
                     &mut |to_find| {
                         let mut ret = param_name.to_owned();
                         for f in to_find { ret.push_str(".r#"); ret.push_str(f); }
@@ -359,7 +359,7 @@ fn write_serialize(
             // TODO: only do this if parameter is optional?
             writeln!(out, "        if !{}.is_null() {{", param_name).unwrap();
             writeln!(out, "            <u32 as Encode>::encode_to(&1, &mut msg_buf);").unwrap();
-            write_serialize(out, false, &format!("(*{})", param_name), &ty_name, registry, other_field);
+            write_serialize(out, false, &format!("(*{})", param_name), &ty_name, registry, serialize_handles, other_field);
             writeln!(out, "        }} else {{").unwrap();
             writeln!(out, "            <u32 as Encode>::encode_to(&0, &mut msg_buf);").unwrap();
             writeln!(out, "        }}").unwrap();
@@ -370,7 +370,7 @@ fn write_serialize(
             writeln!(out, "            let len = (0isize..).find(|n| *{}.offset(*n) == 0).unwrap() as u32;", param_name).unwrap();
             writeln!(out, "            <u32 as Encode>::encode_to(&len, &mut msg_buf);").unwrap();
             writeln!(out, "            for n in 0..len {{").unwrap();
-            write_serialize(out, false, &format!("(*{}.offset(n as isize))", param_name), &ty_name, registry, other_field);
+            write_serialize(out, false, &format!("(*{}.offset(n as isize))", param_name), &ty_name, registry, serialize_handles, other_field);
             writeln!(out, "            }}").unwrap();
             writeln!(out, "        }} else {{").unwrap();
             writeln!(out, "            <u32 as Encode>::encode_to(&0, &mut msg_buf);").unwrap();
@@ -382,10 +382,10 @@ fn write_serialize(
             let other_field_name = other_field_ty.gen_deref_expr(&other_field_name);
 
             writeln!(out, "        if !{}.is_null() {{", param_name).unwrap();      // TODO: remove?
-            writeln!(out, "            let len = 0;//{}{}{};", before_other_field, other_field_name, after_other_field).unwrap();       // FIXME:
+            writeln!(out, "            let len = {}{}{};", before_other_field, other_field_name, after_other_field).unwrap();
             writeln!(out, "            <u32 as Encode>::encode_to(&(len as u32), &mut msg_buf);").unwrap();      // TODO: remove?
             writeln!(out, "            for m in 0..len {{").unwrap();       // TODO: might conflict with other variable name
-            write_serialize(out, false, &format!("(*{}.offset(m as isize))", param_name), &ty_name, registry, other_field);
+            write_serialize(out, false, &format!("(*{}.offset(m as isize))", param_name), &ty_name, registry, serialize_handles, other_field);
             writeln!(out, "            }}").unwrap();
             writeln!(out, "        }} else {{").unwrap();
             writeln!(out, "            <u32 as Encode>::encode_to(&0, &mut msg_buf);").unwrap();
@@ -393,7 +393,7 @@ fn write_serialize(
         }
         (parse::VkType::Array(ty_name, len), _, _) => {
             writeln!(out, "        for val in (0..{}).map(|n| {}[n]) {{", len, param_name).unwrap();
-            write_serialize(out, skip_const, "val", &ty_name, registry, other_field);
+            write_serialize(out, skip_const, "val", &ty_name, registry, serialize_handles, other_field);
             writeln!(out, "        }}").unwrap();
         },
         _ => {}     // TODO: remove default fallback so that we're explicit
@@ -459,7 +459,9 @@ fn write_deserialize(
             format!("<{} as Decode>::decode(&mut msg_buf)?", print_ty(ty))
         },
         (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::DispatchableHandle)) => {
-            format!("*state.handles_vm_to_host.get(&(emitter_pid, <u32 as Decode>::decode(&mut msg_buf)?)).unwrap()")
+            // We need to be tolerant on the lack on value in `handles_vm_to_host`, as the call
+            // might happen before the handle is created.
+            format!("if let Some(val) = state.handles_vm_to_host.get(&(emitter_pid, <u32 as Decode>::decode(&mut msg_buf)?)) {{ *val }} else {{ 0 }}")
         },
 
         (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Struct { fields })) => {
@@ -710,6 +712,35 @@ fn write_deserialize_response_into(
             // make sense. If this path is reached, there is either a mistake in the Vulkan API
             // definition, or a new way to call functions has been introduced.
             panic!()
+        }
+
+        (parse::VkType::MutPointer(ty_name, parse::VkTypePtrLen::OtherField { .. }), _) => {
+            if let parse::VkType::Ident(t) = &**ty_name {
+                match registry.type_defs.get(t) {
+                    Some(parse::VkTypeDef::Enum) | Some(parse::VkTypeDef::Bitmask) | Some(parse::VkTypeDef::NonDispatchableHandle) => {
+                        format!("{{ \
+                            let len = <u32 as Decode>::decode(&mut msg_buf)? as usize; \
+                            for n in 0..len {{ \
+                                *({}.offset(n as isize)) = <{} as Decode>::decode(&mut msg_buf)?; \
+                            }} \
+                        }}", out_var_name, print_ty(ty_name))
+                    },
+                    Some(parse::VkTypeDef::DispatchableHandle) => {
+                        format!("{{ \
+                            let len = <u32 as Decode>::decode(&mut msg_buf)? as usize; \
+                            for n in 0..len {{ \
+                                *({}.offset(n as isize)) = <u32 as Decode>::decode(&mut msg_buf)? as usize; \
+                            }} \
+                        }}", out_var_name)
+                    },
+                    _ => String::new()       // TODO: not implemented
+                }
+
+            } else {
+                // This is to avoid situations where we might have pointers within the returned
+                // type.
+                panic!()
+            }
         }
 
         // TODO: MutPointer with non-one length
