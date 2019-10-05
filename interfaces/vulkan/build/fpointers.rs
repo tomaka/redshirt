@@ -33,6 +33,7 @@ fn write_pointers(out: &mut dyn Write, registry: &parse::VkRegistry, struct_name
     writeln!(out, "")?;
     writeln!(out, "impl {} {{", struct_name)?;
     writeln!(out, "    unsafe fn load_with(mut loader: impl FnMut(&std::ffi::CStr) -> PFN_vkVoidFunction) -> Self {{")?;
+    writeln!(out, "        #![allow(non_snake_case)]").unwrap();
     for command in &registry.commands {
         if !filter(command) { continue; }
         writeln!(out, "        let r#{n} = loader(std::ffi::CStr::from_bytes_with_nul_unchecked(b\"{n}\\0\"));", n = command.name)?;
