@@ -95,30 +95,34 @@ pub enum VkTypePtrLen {
     },
 }
 
-impl VkCommand {
-    /// Finds the type of a field of the list of parameters of this command.
-    ///
-    /// The registry must be passed in order to look up the definition of structs.
-    pub fn find_param_field_ty<'b>(&'b self, registry: &'b VkRegistry, subfields: impl IntoIterator<Item = impl AsRef<str>>) -> Option<&'b VkType> {
-        find_subfield_in_list(&self.params, registry, subfields)
+/// Finds the type of a subfield of the list of fields.
+///
+/// The registry must be passed in order to look up the definition of structs.
+// TODO: better description
+pub fn gen_path_subfield_in_list<'b>(fields: &'b [(VkType, String)], registry: &'b VkRegistry, subfields: impl IntoIterator<Item = impl AsRef<str>>) -> Option<(String, &'b VkType)> {
+    let mut subfields = subfields.into_iter();
+    let first = subfields.next().unwrap();
+    let mut path = String::new();
+    path.push_str(first.as_ref());
+    let mut ty = fields.iter().find(|(_, n)| n == first.as_ref()).map(|(t, _)| t)?;
+    while let Some(next) = subfields.next() {
+        path = ty.gen_deref_expr(&path);
+        if let VkTypeDef::Struct { fields } = registry.type_defs.get(ty.derefed_type().as_ident().unwrap()).unwrap() {
+            ty = fields.iter().find(|(_, n)| n == next.as_ref()).map(|(t, _)| t)?;
+            path.push_str(".r#");
+            path.push_str(next.as_ref());
+        } else {
+            return None;
+        }
     }
+    Some((path, ty))
 }
 
 /// Finds the type of a subfield of the list of fields.
 ///
 /// The registry must be passed in order to look up the definition of structs.
 pub fn find_subfield_in_list<'b>(fields: &'b [(VkType, String)], registry: &'b VkRegistry, subfields: impl IntoIterator<Item = impl AsRef<str>>) -> Option<&'b VkType> {
-    let mut subfields = subfields.into_iter();
-    let first = subfields.next().unwrap();
-    let mut ty = fields.iter().find(|(_, n)| n == first.as_ref()).map(|(t, _)| t)?;
-    while let Some(next) = subfields.next() {
-        if let VkTypeDef::Struct { fields } = registry.type_defs.get(ty.derefed_type().as_ident().unwrap()).unwrap() {
-            ty = fields.iter().find(|(_, n)| n == next.as_ref()).map(|(t, _)| t)?;
-        } else {
-            return None;
-        }
-    }
-    Some(ty)
+    gen_path_subfield_in_list(fields, registry, subfields).map(|r| r.1)
 }
 
 impl VkType {
@@ -126,8 +130,8 @@ impl VkType {
     /// a plain value.
     pub fn gen_deref_expr(&self, expr: &str) -> String {
         match self {
-            VkType::MutPointer(t, _) => t.gen_deref_expr(&format!("*{}", expr)),
-            VkType::ConstPointer(t, _) => t.gen_deref_expr(&format!("*{}", expr)),
+            VkType::MutPointer(t, _) => t.gen_deref_expr(&format!("(*{})", expr)),
+            VkType::ConstPointer(t, _) => t.gen_deref_expr(&format!("(*{})", expr)),
             _ => expr.to_owned()
         }
     }
