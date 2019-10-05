@@ -45,6 +45,7 @@
 //!
 
 use core::{ffi::c_void, mem, ptr};
+use hashbrown::HashMap;
 use parity_scale_codec::{Decode, Encode};
 use std::ffi::CStr;
 
@@ -73,7 +74,10 @@ pub type PFN_vkVoidFunction = extern "system" fn() -> ();
 
 /// Leverages an existing Vulkan implementation to handle [`VulkanMessage`]s.
 pub struct VulkanRedirect {
-    instance_pointers: InstancePtrs,
+    get_instance_proc_addr: unsafe extern "system" fn(usize, *const u8) -> PFN_vkVoidFunction,
+    static_pointers: StaticPtrs,
+    instance_pointers: HashMap<u32, InstancePtrs>,
+    device_pointers: HashMap<u32, DevicePtrs>,
 }
 
 impl VulkanRedirect {
@@ -81,9 +85,12 @@ impl VulkanRedirect {
     pub fn new(get_instance_proc_addr: unsafe extern "system" fn(usize, *const u8) -> PFN_vkVoidFunction) -> VulkanRedirect {
         unsafe {
             VulkanRedirect {
-                instance_pointers: InstancePtrs::load_with(|name: &std::ffi::CStr| {
+                get_instance_proc_addr,
+                static_pointers: StaticPtrs::load_with(|name: &std::ffi::CStr| {
                     get_instance_proc_addr(0, name.as_ptr() as *const _)
                 }),
+                instance_pointers: HashMap::default(),
+                device_pointers: HashMap::default(),
             }
         }
     }

@@ -8,6 +8,7 @@ use std::path::Path;
 
 const VK_XML: &[u8] = include_bytes!("../vk.xml");
 
+mod fpointers;
 mod parse;
 
 fn main() {
@@ -37,7 +38,7 @@ fn main() {
     writeln!(out, "}}").unwrap();
     writeln!(out, "").unwrap();
 
-    write_instance_pointers(out.by_ref(), &registry);
+    fpointers::write_pointers_structs(out.by_ref(), &registry).unwrap();
     writeln!(out, "").unwrap();
 }
 
@@ -163,35 +164,6 @@ fn write_commands_wrappers(mut out: impl Write, registry: &parse::VkRegistry) {
     }
 }
 
-fn write_instance_pointers(mut out: impl Write, registry: &parse::VkRegistry) {
-    writeln!(out, "struct InstancePtrs {{").unwrap();
-
-    for command in &registry.commands {
-        write!(out, "    r#{}: Option<extern \"system\" fn(", command.name).unwrap();
-        for (param_off, (param_ty, _)) in command.params.iter().enumerate() {
-            // TODO: skip device pointers
-            if param_off != 0 { write!(out, ", ").unwrap(); }
-            write!(out, "{}", print_ty(&param_ty)).unwrap();
-        }
-        writeln!(out, ") -> {}>,", print_ty(&command.ret_ty)).unwrap();
-    }
-
-    writeln!(out, "}}").unwrap();
-    writeln!(out, "").unwrap();
-    writeln!(out, "impl InstancePtrs {{").unwrap();
-    writeln!(out, "    unsafe fn load_with(mut loader: impl FnMut(&std::ffi::CStr) -> PFN_vkVoidFunction) -> Self {{").unwrap();
-    for command in &registry.commands {
-        writeln!(out, "        let r#{n} = loader(std::ffi::CStr::from_bytes_with_nul_unchecked(b\"{n}\\0\"));", n = command.name).unwrap();
-    }
-    writeln!(out, "        InstancePtrs {{").unwrap();
-    for command in &registry.commands {
-        writeln!(out, "            r#{n}: mem::transmute(r#{n}),", n = command.name).unwrap();
-    }
-    writeln!(out, "        }}").unwrap();
-    writeln!(out, "    }}").unwrap();
-    writeln!(out, "}}").unwrap();
-}
-
 fn write_redirect_handle(mut out: impl Write, registry: &parse::VkRegistry) {
     writeln!(out, "#![allow(unused_parens)]").unwrap();
     writeln!(out, "match <u16 as Decode>::decode(&mut msg_buf)? {{").unwrap();
@@ -205,7 +177,9 @@ fn write_redirect_handle(mut out: impl Write, registry: &parse::VkRegistry) {
 
         let mut var_name_gen = 0;
         let mut params = String::new();
-        for (param_ty, param_name) in &command.params {
+        let mut first_param = String::new();
+        let mut last_param = String::new();
+        for (param_num, (param_ty, param_name)) in command.params.iter().enumerate() {
             let expr = write_param_deserialize(param_ty, registry, &mut |interm, mutable| {
                 let v_name = format!("n{}", var_name_gen);
                 var_name_gen += 1;
@@ -219,16 +193,40 @@ fn write_redirect_handle(mut out: impl Write, registry: &parse::VkRegistry) {
             writeln!(out, "        let {} = {};", v_name, expr).unwrap();
             if !params.is_empty() { params.push_str(", "); }
             params.push_str(&v_name);
+
+            if param_num == 0 {
+                first_param = v_name.clone();
+            }
+            if param_num == command.params.len() - 1 {
+                last_param = v_name;
+            }
         }
 
+        let f_ptr = match fpointers::command_ty(&command) {
+            fpointers::CommandTy::Static => format!("(state.static_pointers.r#{}.unwrap())", command.name),
+            fpointers::CommandTy::Instance => format!("(state.instance_pointers.get(&{}).unwrap().r#{}.unwrap())", first_param, command.name),
+            fpointers::CommandTy::Device => format!("(state.device_pointers.get(&{}).unwrap().r#{}.unwrap())", first_param, command.name),
+        };
+
         writeln!(out, "        assert!(msg_buf.is_empty());").unwrap();     // TODO: return Error
-        writeln!(out, "        let ret = (state.instance_pointers.r#{}.unwrap())({});", command.name, params).unwrap();
+        writeln!(out, "        let ret = {}({});", f_ptr, params).unwrap();
         writeln!(out, "        let mut msg_buf = Vec::new();").unwrap();     // TODO: with_capacity()?
         write_param_serialize(out.by_ref(), true, "ret", &command.ret_ty, registry);
         writeln!(out, "        println!(\"{{:?}}\", ret);").unwrap();
         /*for ((param_ty, _), param_name) in command.params.iter().zip(params) {
             write_param_serialize(out.by_ref(), true, &format!("r#{}", param_name), param_ty, registry);
         }*/
+
+        // As special additions, if this is `vkCreateInstance`, `vkDestroyInstance`,
+        // `vkCreateDevice`, or `vkDestroyDevice`, we need to load or unload function pointers.
+        if command.name == "vkCreateInstance" {
+            writeln!(out, "        state.instance_pointers.insert(*{}, InstancePtrs::load_with(|name: &std::ffi::CStr| {{", last_param).unwrap();
+            writeln!(out, "            (state.get_instance_proc_addr)({} as usize, name.as_ptr() as *const _)", last_param).unwrap();       // TODO: ` as usize`? check type of VkInstance
+            writeln!(out, "        }}));").unwrap();
+        } else if command.name == "vkDestroyInstance" {
+            writeln!(out, "        state.instance_pointers.remove(&{});", first_param).unwrap();
+        }  // TODO: same with device
+
         writeln!(out, "        if !msg_buf.is_empty() {{").unwrap();
         writeln!(out, "            Ok(Some(msg_buf))").unwrap();
         writeln!(out, "        }} else {{").unwrap();
@@ -489,8 +487,8 @@ fn write_param_deserialize(
         }
 
         (parse::VkType::MutPointer(ty_name, parse::VkTypePtrLen::One), _) => {
-            let var = interm_step_gen(format!("mem::MaybeUninit::uninit()"), true);
-            format!("{}.as_mut_ptr()", var)
+            let var = interm_step_gen(format!("mem::zeroed::<{}>()", print_ty(ty_name)), true);
+            format!("&mut {} as *mut _", var)
         }
 
         (parse::VkType::MutPointer(ty_name, parse::VkTypePtrLen::NullTerminated), _) => {
@@ -502,8 +500,8 @@ fn write_param_deserialize(
 
         (parse::VkType::MutPointer(ty_name, _), _) => {
             // TODO: draft
-            let var = interm_step_gen(format!("mem::MaybeUninit::uninit()"), true);
-            format!("{}.as_mut_ptr()", var)
+            let var = interm_step_gen(format!("mem::zeroed::<{}>()", print_ty(ty_name)), true);
+            format!("&mut {} as *mut _", var)
         }
     }
 }
