@@ -168,7 +168,7 @@ fn write_commands_wrappers(mut out: impl Write, registry: &parse::VkRegistry) {
         writeln!(out, "        let ret = {};", ret_value_expr).unwrap();
         for (param_ty, param_name) in &command.params {
             assert_ne!(param_name, "ret");      // TODO: rename parameters instead
-            let write_back = write_deserialize_response_into(param_ty, registry, param_name);
+            let write_back = write_deserialize_response_into(param_ty, registry, param_name, false);
             writeln!(out, "        {}", write_back).unwrap();
         }
         // TODO: writeln!(out, "            assert!(msg_buf.is_empty());").unwrap();     // TODO: return Error
@@ -599,6 +599,7 @@ fn write_deserialize_response_into(
     ty: &parse::VkType,
     registry: &parse::VkRegistry,
     out_var_name: &str,
+    force_write: bool,
 ) -> String {
     let type_def = if let parse::VkType::Ident(ty_name) = ty {
         registry.type_defs.get(ty_name)
@@ -606,38 +607,58 @@ fn write_deserialize_response_into(
         None
     };
 
-    match (ty, type_def) {
-        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Enum)) |
-        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Bitmask)) |
-        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::NonDispatchableHandle)) |
-        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::DispatchableHandle)) |
-        (parse::VkType::Ident(ty_name), None) => String::new(),
+    match (ty, type_def, force_write) {
+        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Enum), false) |
+        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Bitmask), false) |
+        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::NonDispatchableHandle), false) |
+        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::DispatchableHandle), false) |
+        (parse::VkType::Ident(ty_name), None, false) => String::new(),
 
-        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Struct { fields })) => {
+        (parse::VkType::Ident(ty_name), _, true) if ty_name == "size_t" => {
+            // A `size_t` is platform-specific, but by using the `Compact` we can make it the same size everywhere.
+            format!("{} = <Compact<u128> as Decode>::decode(&mut msg_buf)?.0 as usize;", out_var_name)
+        },
+        (parse::VkType::Ident(ty_name), _, true) if ty_name == "float" => {
+            format!("{} = mem::transmute::<u32, f32>(<u32 as Decode>::decode(&mut msg_buf)?);", out_var_name)
+        },
+
+        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Enum), true) |
+        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Bitmask), true) |
+        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::NonDispatchableHandle), true) |
+        (parse::VkType::Ident(ty_name), None, true) => {
+            format!("{} = <{} as Decode>::decode(&mut msg_buf)?;", out_var_name, print_ty(ty))
+        },
+
+        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::DispatchableHandle), true) => {
+            format!("{} = <u32 as Decode>::decode(&mut msg_buf)? as usize;", out_var_name)
+        },
+
+        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Struct { fields }), _) => {
             let mut out = String::new();
             for (field_ty, field_name) in fields {
                 out.push_str(&write_deserialize_response_into(
                     field_ty,
                     registry,
-                    &format!("{}.r#{}", out_var_name, field_name)
+                    &format!("{}.r#{}", out_var_name, field_name),
+                    force_write
                 ));
             }
             out
         }
 
-        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Union { fields })) => {
+        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Union { fields }), _) => {
             // TODO: implement?
             String::new()
         }
 
-        (parse::VkType::MutPointer(ty_name, _), _) |
-        (parse::VkType::ConstPointer(ty_name, _), _) if **ty_name == parse::VkType::Ident("void".to_string()) => {
+        (parse::VkType::MutPointer(ty_name, _), _, _) |
+        (parse::VkType::ConstPointer(ty_name, _), _, _) if print_ty(ty).contains("void") => {
             // TODO: what to do here?
             String::new()
         }
 
-        (parse::VkType::ConstPointer(ty_name, parse::VkTypePtrLen::One), _) => {
-            write_deserialize_response_into(ty_name, registry, &format!("(*{})", out_var_name))
+        (parse::VkType::ConstPointer(ty_name, parse::VkTypePtrLen::One), _, _) => {
+            write_deserialize_response_into(ty_name, registry, &format!("(*{})", out_var_name), force_write)
         }
 
         // TODO: is that implemented?
@@ -679,71 +700,32 @@ fn write_deserialize_response_into(
             format!("if !{var}.is_empty() {{ {var}.as_ptr() }} else {{ ptr::null() }}", var=var)
         }*/
 
-        (parse::VkType::Array(ty_name, len), _) => {
-            let inner = write_deserialize_response_into(ty_name, registry, &format!("{}[n]", out_var_name));
-            format!("for n in 0..{} {{ {} }}", len, inner)
-        }
-
-        (parse::VkType::MutPointer(ty_name, parse::VkTypePtrLen::One), _) => {
-            if let parse::VkType::Ident(t) = &**ty_name {
-                match registry.type_defs.get(t) {
-                    Some(parse::VkTypeDef::Enum) | Some(parse::VkTypeDef::Bitmask) | Some(parse::VkTypeDef::NonDispatchableHandle) => {
-                        format!("if <u32 as Decode>::decode(&mut msg_buf)? != 0 {{ \
-                            *{} = <{} as Decode>::decode(&mut msg_buf)?; \
-                        }}", out_var_name, print_ty(ty_name))
-                    },
-                    Some(parse::VkTypeDef::DispatchableHandle) => {
-                        format!("if <u32 as Decode>::decode(&mut msg_buf)? != 0 {{ \
-                            *{} = <u32 as Decode>::decode(&mut msg_buf)? as usize; \
-                        }}", out_var_name)
-                    },
-                    _ => String::new()       // TODO: not implemented
-                }
-
+        (parse::VkType::Array(ty_name, len), _, _) => {
+            let inner = write_deserialize_response_into(ty_name, registry, &format!("{}[n]", out_var_name), force_write);
+            if inner.is_empty() {
+                String::new()
             } else {
-                // This is to avoid situations where we might have pointers within the returned
-                // type.
-                panic!()
+                format!("for n in 0..{} {{ {} }}", len, inner)
             }
         }
 
-        (parse::VkType::MutPointer(ty_name, parse::VkTypePtrLen::NullTerminated), _) => {
+        (parse::VkType::MutPointer(ty_name, parse::VkTypePtrLen::NullTerminated), _, _) => {
             // Passing a pointer to null-terminated buffer whose content is uninitialized doesn't
             // make sense. If this path is reached, there is either a mistake in the Vulkan API
             // definition, or a new way to call functions has been introduced.
             panic!()
         }
 
-        (parse::VkType::MutPointer(ty_name, parse::VkTypePtrLen::OtherField { .. }), _) => {
-            if let parse::VkType::Ident(t) = &**ty_name {
-                match registry.type_defs.get(t) {
-                    Some(parse::VkTypeDef::Enum) | Some(parse::VkTypeDef::Bitmask) | Some(parse::VkTypeDef::NonDispatchableHandle) => {
-                        format!("{{ \
-                            let len = <u32 as Decode>::decode(&mut msg_buf)? as usize; \
-                            for n in 0..len {{ \
-                                *({}.offset(n as isize)) = <{} as Decode>::decode(&mut msg_buf)?; \
-                            }} \
-                        }}", out_var_name, print_ty(ty_name))
-                    },
-                    Some(parse::VkTypeDef::DispatchableHandle) => {
-                        format!("{{ \
-                            let len = <u32 as Decode>::decode(&mut msg_buf)? as usize; \
-                            for n in 0..len {{ \
-                                *({}.offset(n as isize)) = <u32 as Decode>::decode(&mut msg_buf)? as usize; \
-                            }} \
-                        }}", out_var_name)
-                    },
-                    _ => String::new()       // TODO: not implemented
-                }
-
-            } else {
-                // This is to avoid situations where we might have pointers within the returned
-                // type.
-                panic!()
-            }
+        (parse::VkType::MutPointer(ty_name, parse::VkTypePtrLen::One), _, _) |
+        (parse::VkType::MutPointer(ty_name, parse::VkTypePtrLen::OtherField { .. }), _, _) => {
+            let inner = write_deserialize_response_into(ty_name, registry, &format!("(*({}.offset(n as isize)))", out_var_name), true);
+            format!("{{ \
+                let len = <u32 as Decode>::decode(&mut msg_buf)? as usize; \
+                for n in 0..len {{ \
+                    {} \
+                }} \
+            }}", inner)
         }
-
-        // TODO: MutPointer with non-one length
 
         _ => String::new()
     }
