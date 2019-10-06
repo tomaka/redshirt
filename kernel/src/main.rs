@@ -138,9 +138,9 @@ async fn async_main(
                     win_open_rq.unbounded_send(tx).unwrap();
                     let window = rx.await.unwrap().unwrap();
                     windows.push(window);
-                    /*if let Some(response) = vk.handle(0, &message) {
-                        system.answer_message(message_id.unwrap(), &response);
-                    }*/
+                    system.answer_message(message_id.unwrap(), &window::ffi::WindowOpenResponse {
+                        result: Ok(0),      // TODO: correct ID
+                    }.encode());
                     continue;
                 }
                 kernel_core::system::SystemRunOutcome::Idle => false,
