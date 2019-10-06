@@ -13,7 +13,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#![feature(never_type)]
 #![deny(intra_doc_link_resolution_failure)]
 
 use byteorder::{ByteOrder as _, LittleEndian};
