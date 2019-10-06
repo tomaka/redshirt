@@ -161,7 +161,7 @@ fn write_commands_wrappers(mut out: impl Write, registry: &parse::VkRegistry) {
 
         writeln!(out, "    let msg_id = syscalls::emit_message_raw(&INTERFACE, &msg_buf, true).unwrap().unwrap();").unwrap();
         writeln!(out, "    let response = syscalls::message_response_sync_raw(msg_id);").unwrap();
-        writeln!(out, "    println!(\"got response: {{:?}}\", response);").unwrap();
+        //writeln!(out, "    println!(\"got response: {{:?}}\", response);").unwrap();
 
         writeln!(out, "    let response_read = |mut msg_buf: &[u8]| -> Result<{}, parity_scale_codec::Error> {{", print_ty(&command.ret_ty)).unwrap();
         let ret_value_expr = write_deserialize(&command.ret_ty, registry, &mut |_, _| panic!());
@@ -241,7 +241,7 @@ fn write_redirect_handle(mut out: impl Write, registry: &parse::VkRegistry) {
         };
 
         writeln!(out, "    assert!(msg_buf.is_empty(), \"Remaining: {{:?}}\", msg_buf.len());").unwrap();     // TODO: return Error
-        writeln!(out, "    println!(\"calling vk function\");").unwrap();
+        //writeln!(out, "    println!(\"calling vk function\");").unwrap();
         writeln!(out, "    let ret = {}({});", f_ptr, params).unwrap();
 
         // As special additions, if this is `vkCreateInstance`, `vkDestroyInstance`,
@@ -286,11 +286,12 @@ fn write_redirect_handle(mut out: impl Write, registry: &parse::VkRegistry) {
             });
         }
 
-        writeln!(out, "    if !msg_buf.is_empty() {{").unwrap();
+        // TODO: for now the caller always expects a response
+        //writeln!(out, "    if !msg_buf.is_empty() {{").unwrap();
         writeln!(out, "        Ok(Some(msg_buf))").unwrap();
-        writeln!(out, "    }} else {{").unwrap();
-        writeln!(out, "        Ok(None)").unwrap();
-        writeln!(out, "    }}").unwrap();
+        //writeln!(out, "    }} else {{").unwrap();
+        //writeln!(out, "        Ok(None)").unwrap();
+        //writeln!(out, "    }}").unwrap();
         writeln!(out, "}}").unwrap();
         writeln!(out, "").unwrap();
     }

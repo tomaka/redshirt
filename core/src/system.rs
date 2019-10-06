@@ -221,7 +221,7 @@ impl<TExtEx: Clone> System<TExtEx> {
 
     // TODO: better API
     pub fn answer_message(&mut self, message_id: u64, response: &[u8]) {
-        println!("answered event {:?}", message_id);
+        //println!("answered event {:?}", message_id);
         self.core.answer_message(message_id, response)
     }
 }
