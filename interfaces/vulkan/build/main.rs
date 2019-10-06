@@ -168,7 +168,8 @@ fn write_commands_wrappers(mut out: impl Write, registry: &parse::VkRegistry) {
         writeln!(out, "        let ret = {};", ret_value_expr).unwrap();
         for (param_ty, param_name) in &command.params {
             assert_ne!(param_name, "ret");      // TODO: rename parameters instead
-            let write_back = write_deserialize_response_into(param_ty, registry, param_name, false);
+            let mut var_name = 0;       // TODO: generalize to whole function
+            let write_back = write_deserialize_response_into(param_ty, registry, &mut || { let n = var_name; var_name += 1; format!("n{}", n) }, param_name, false);
             writeln!(out, "        {}", write_back).unwrap();
         }
         writeln!(out, "            assert!(msg_buf.is_empty(), \"Remaining after response: {{:?}}\", msg_buf.len());").unwrap();     // TODO: return Error
@@ -227,9 +228,16 @@ fn write_redirect_handle(mut out: impl Write, registry: &parse::VkRegistry) {
         let f_ptr = match fpointers::command_ty(&command) {
             fpointers::CommandTy::Static => format!("(state.static_pointers.r#{}.unwrap())", command.name),
             // TODO: this is wrong if the first parameter is a PhysicalDevice
-            fpointers::CommandTy::Instance => format!("(state.instance_pointers.get(&({} as usize)).unwrap().r#{}.unwrap())", params_list[0], command.name),       // TODO: remove as usize?
+            fpointers::CommandTy::Instance => format!("(state.instance_pointers.get(&{}).unwrap().r#{}.unwrap())", params_list[0], command.name),
+            fpointers::CommandTy::PhysicalDevice => format!("{{ \
+                let instance = state.instance_of_physical_devices.get(&{}).unwrap(); \
+                let ptrs = state.instance_pointers.get(&instance).unwrap(); \
+                ptrs.r#{}.unwrap() \
+            }}", params_list[0], command.name),
             // TODO: this is wrong if the first parameter is a CommandBuffer or Queue
-            fpointers::CommandTy::Device => format!("(state.device_pointers.get(&({} as usize)).unwrap().r#{}.unwrap())", params_list[0], command.name),       // TODO: remove as usize?
+            fpointers::CommandTy::Device => format!("(state.device_pointers.get(&{}).unwrap().r#{}.unwrap())", params_list[0], command.name),
+            fpointers::CommandTy::Queue => format!("(state.device_pointers.get(&{}).unwrap().r#{}.unwrap())", params_list[0], command.name),
+            fpointers::CommandTy::CommandBuffer => format!("(state.device_pointers.get(&{}).unwrap().r#{}.unwrap())", params_list[0], command.name),
         };
 
         writeln!(out, "    assert!(msg_buf.is_empty(), \"Remaining: {{:?}}\", msg_buf.len());").unwrap();     // TODO: return Error
@@ -259,6 +267,7 @@ fn write_redirect_handle(mut out: impl Write, registry: &parse::VkRegistry) {
             writeln!(out, "    debug_assert!(!{}.is_null());", params_list[1]).unwrap();
             writeln!(out, "    if !{}.is_null() {{", params_list[2]).unwrap();
             writeln!(out, "        for n in 0..(*{}) {{", params_list[1]).unwrap();
+            writeln!(out, "            state.instance_of_physical_devices.insert(*({}.offset(n as isize)), {});", params_list[2], params_list[0]).unwrap();
             writeln!(out, "            state.assign_handle_to_pid(*({}.offset(n as isize)), emitter_pid);", params_list[2]).unwrap();
             writeln!(out, "        }}").unwrap();
             writeln!(out, "    }}").unwrap();
@@ -620,6 +629,7 @@ fn write_deserialize(
 fn write_deserialize_response_into(
     ty: &parse::VkType,
     registry: &parse::VkRegistry,
+    var_name_assign: &mut dyn FnMut() -> String,
     out_var_name: &str,
     force_write: bool,
 ) -> String {
@@ -661,9 +671,11 @@ fn write_deserialize_response_into(
                 out.push_str(&write_deserialize_response_into(
                     field_ty,
                     registry,
+                    var_name_assign,
                     &format!("{}.r#{}", out_var_name, field_name),
                     force_write
                 ));
+                out.push_str("\r");
             }
             out
         }
@@ -680,7 +692,7 @@ fn write_deserialize_response_into(
         }
 
         (parse::VkType::ConstPointer(ty_name, parse::VkTypePtrLen::One), _, _) => {
-            write_deserialize_response_into(ty_name, registry, &format!("(*{})", out_var_name), force_write)
+            write_deserialize_response_into(ty_name, registry, var_name_assign, &format!("(*{})", out_var_name), force_write)
         }
 
         // TODO: is that implemented?
@@ -723,11 +735,12 @@ fn write_deserialize_response_into(
         }*/
 
         (parse::VkType::Array(ty_name, len), _, _) => {
-            let inner = write_deserialize_response_into(ty_name, registry, &format!("{}[n]", out_var_name), force_write);
+            let iter_var = var_name_assign();
+            let inner = write_deserialize_response_into(ty_name, registry, var_name_assign, &format!("{}[{}]", out_var_name, iter_var), force_write);
             if inner.is_empty() {
                 String::new()
             } else {
-                format!("for n in 0..{} {{ {} }}", len, inner)
+                format!("for {} in 0..{} {{ {} }}", iter_var, len, inner)
             }
         }
 
@@ -740,13 +753,14 @@ fn write_deserialize_response_into(
 
         (parse::VkType::MutPointer(ty_name, parse::VkTypePtrLen::One), _, _) |
         (parse::VkType::MutPointer(ty_name, parse::VkTypePtrLen::OtherField { .. }), _, _) => {
-            let inner = write_deserialize_response_into(ty_name, registry, &format!("(*({}.offset(n as isize)))", out_var_name), true);
+            let iter_var = var_name_assign();
+            let inner = write_deserialize_response_into(ty_name, registry, var_name_assign, &format!("(*({}.offset({} as isize)))", out_var_name, iter_var), true);
             format!("{{ \
                 let len = <u32 as Decode>::decode(&mut msg_buf)? as usize; \
-                for n in 0..len {{ \
+                for {} in 0..len {{ \
                     {} \
                 }} \
-            }}", inner)
+            }}", iter_var, inner)
         }
 
         _ => String::new()

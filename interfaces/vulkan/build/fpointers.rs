@@ -9,9 +9,9 @@ use std::io::{self, Write};
 pub fn write_pointers_structs(out: &mut dyn Write, registry: &parse::VkRegistry) -> Result<(), io::Error> {
     write_pointers(out, registry, "StaticPtrs", |cmd| command_ty(cmd) == CommandTy::Static)?;
     writeln!(out, "")?;
-    write_pointers(out, registry, "InstancePtrs", |cmd| command_ty(cmd) == CommandTy::Instance)?;
+    write_pointers(out, registry, "InstancePtrs", |cmd| command_ty(cmd).is_get_instance_proc_addr())?;
     writeln!(out, "")?;
-    write_pointers(out, registry, "DevicePtrs", |cmd| command_ty(cmd) == CommandTy::Device)?;
+    write_pointers(out, registry, "DevicePtrs", |cmd| command_ty(cmd).is_get_device_proc_addr())?;
     Ok(())
 }
 
@@ -56,8 +56,38 @@ pub enum CommandTy {
     Static,
     /// The command operates on an `Instance` and must be loaded using `vkGetInstanceProcAddr`.
     Instance,
+    /// The command operates on an `PhysicalDevice` and must be loaded using `vkGetInstanceProcAddr`.
+    PhysicalDevice,
     /// The command operates on a `Device` and must be loaded using `vkGetDeviceProcAddr`.
     Device,
+    /// The command operates on a `Queue` and must be loaded using `vkGetDeviceProcAddr`.
+    Queue,
+    /// The command operates on a `CommandBuffer` and must be loaded using `vkGetDeviceProcAddr`.
+    CommandBuffer,
+}
+
+impl CommandTy {
+    pub fn is_get_instance_proc_addr(&self) -> bool {
+        match self {
+            CommandTy::Static => false,
+            CommandTy::Instance => true,
+            CommandTy::PhysicalDevice => true,
+            CommandTy::Device => false,
+            CommandTy::Queue => false,
+            CommandTy::CommandBuffer => false,
+        }
+    }
+
+    pub fn is_get_device_proc_addr(&self) -> bool {
+        match self {
+            CommandTy::Static => false,
+            CommandTy::Instance => false,
+            CommandTy::PhysicalDevice => false,
+            CommandTy::Device => true,
+            CommandTy::Queue => true,
+            CommandTy::CommandBuffer => true,
+        }
+    }
 }
 
 /// Determines the type of a command.
@@ -65,10 +95,10 @@ pub fn command_ty(command: &parse::VkCommand) -> CommandTy {
     let (first_param_ty, _) = command.params.first().unwrap();
     match first_param_ty {
         parse::VkType::Ident(ident) if ident == "VkInstance" => CommandTy::Instance,
-        parse::VkType::Ident(ident) if ident == "VkPhysicalDevice" => CommandTy::Instance,
+        parse::VkType::Ident(ident) if ident == "VkPhysicalDevice" => CommandTy::PhysicalDevice,
         parse::VkType::Ident(ident) if ident == "VkDevice" => CommandTy::Device,
-        parse::VkType::Ident(ident) if ident == "VkQueue" => CommandTy::Device,
-        parse::VkType::Ident(ident) if ident == "VkCommandBuffer" => CommandTy::Device,
+        parse::VkType::Ident(ident) if ident == "VkQueue" => CommandTy::Queue,
+        parse::VkType::Ident(ident) if ident == "VkCommandBuffer" => CommandTy::CommandBuffer,
         _ => {
             // In order to make sure that this function doesn't silently break if a new type
             // of function is introduced, we hardcode the list of static functions here and panic

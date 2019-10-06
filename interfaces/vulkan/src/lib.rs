@@ -80,6 +80,8 @@ pub struct VulkanRedirect {
     device_pointers: HashMap<usize, DevicePtrs>,
     handles_host_to_vm: HashMap<usize, (u64, u32)>,
     handles_vm_to_host: HashMap<(u64, u32), usize>,
+    /// For each physical device, the corresponding instance.
+    instance_of_physical_devices: HashMap<usize, usize>,
     // TODO: store physical devices of instance and queues and command buffers of devices
     // TODO: also, handle values might overlap between multiple types of handlers? so we need a `HandleTy` enum to put in the hashmaps?
 }
@@ -97,6 +99,7 @@ impl VulkanRedirect {
                 device_pointers: HashMap::default(),
                 handles_host_to_vm: HashMap::default(),
                 handles_vm_to_host: HashMap::default(),
+                instance_of_physical_devices: HashMap::default(),
             }
         }
     }
