@@ -25,6 +25,8 @@ jobs:
         echo "deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-9 main" >> /etc/apt/sources.list
         apt-get update
         apt-get install -y clang-9
+    - name: Install other dependencies
+      run: apt-get install -y cmake
     - name: Build
       run: cargo +nightly build --verbose
     - name: Run tests
