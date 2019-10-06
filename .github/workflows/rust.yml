@@ -4,7 +4,7 @@ on: [push, pull_request]
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-18.04
 
     steps:
     - uses: actions/checkout@v1
@@ -14,6 +14,11 @@ jobs:
         toolchain: nightly
         target: wasm32-wasi
         override: true
+    - name: Install a recent version of Clang
+      run: |
+        echo "deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-9 main" >> /etc/apt/sources.list
+        apt-get update
+        apt-get install -y clang-8
     - name: Build
       run: cargo +nightly build --verbose
     - name: Run tests
