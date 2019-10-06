@@ -14,10 +14,13 @@ fnv = "1.0"
 futures-preview = { version = "0.3.0-alpha.18", features = ["async-await", "nightly"] }
 kernel-core = { path = "../core" }
 parity-scale-codec = "1.0.5"
+pin-utils = "0.1.0-alpha.4"
 rand = "0.7"
 tcp = { path = "../interfaces/tcp" }
 vulkan = { path = "../interfaces/vulkan" }
 wasi = "0.7.0"
+window = { path = "../interfaces/window" }
+winit = "0.20.0-alpha3"
 
 # TODO: remove
 wasmi = { git = "https://github.com/paritytech/wasmi", default-features = false, features = ["core"] }

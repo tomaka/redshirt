@@ -16,14 +16,60 @@
 #![deny(intra_doc_link_resolution_failure)]
 
 use byteorder::{ByteOrder as _, LittleEndian};
-use futures::prelude::*;
+use futures::{channel::mpsc, channel::oneshot, prelude::*};
 use parity_scale_codec::{DecodeAll, Encode as _};
-use std::io::Write as _;
+use std::{io::Write as _, sync::Arc, sync::Mutex, task::Context, task::Poll};
 
 mod tcp_interface;
 mod wasi;
 
 fn main() {
+    let event_loop = winit::event_loop::EventLoop::with_user_event();
+    // TODO: don't use channels, that's crap; use a state machine for async_main instead
+    let (events_tx, events_rx) = mpsc::unbounded();
+    let (win_open_tx, mut win_open_rx) = mpsc::unbounded();
+    let mut async_main_future = Box::pin(async_main(events_rx, win_open_tx));
+
+    let waker = {
+        struct MyWaker(Mutex<winit::event_loop::EventLoopProxy<()>>);
+        impl futures::task::ArcWake for MyWaker {
+            fn wake_by_ref(arc_self: &Arc<Self>) {
+                let _ = arc_self.0.lock().unwrap().send_event(());
+            }
+        }
+        Arc::new(MyWaker(Mutex::new(event_loop.create_proxy())))
+    };
+
+    event_loop.run(move |event, window_creation, control_flow| {
+        match event {
+            winit::event::Event::UserEvent(()) => {}
+            winit::event::Event::LoopDestroyed => return,
+            ev => {
+                let _ = events_tx.unbounded_send(ev);
+            }
+        }
+
+        while let Ok(Some(rq)) = win_open_rx.try_next() {
+            let result = winit::window::Window::new(&window_creation);
+            let _ = rq.send(result);
+        }
+
+        match Future::poll(
+            async_main_future.as_mut(),
+            &mut Context::from_waker(&futures::task::waker(waker.clone())),
+        ) {
+            Poll::Ready(_) => *control_flow = winit::event_loop::ControlFlow::Exit,
+            Poll::Pending => *control_flow = winit::event_loop::ControlFlow::Wait,
+        }
+    })
+}
+
+async fn async_main(
+    mut events_rx: mpsc::UnboundedReceiver<winit::event::Event<()>>,
+    win_open_rq: mpsc::UnboundedSender<
+        oneshot::Sender<Result<winit::window::Window, winit::error::OsError>>,
+    >,
+) {
     let module = kernel_core::module::Module::from_bytes(
         &include_bytes!("../../modules/target/wasm32-wasi/debug/vulkan-triangle.wasm")[..],
     );
@@ -31,6 +77,7 @@ fn main() {
     let mut system = wasi::register_extrinsics(kernel_core::system::System::new())
         .with_interface_handler(tcp::ffi::INTERFACE)
         .with_interface_handler(vulkan::INTERFACE)
+        .with_interface_handler(window::ffi::INTERFACE)
         .with_main_program(module)
         .build();
 
@@ -45,64 +92,81 @@ fn main() {
         }
         vulkan::VulkanRedirect::new(vkGetInstanceProcAddr)
     };
+    let mut windows = Vec::new();
 
     loop {
-        let result = futures::executor::block_on(async {
-            loop {
-                let only_poll = match system.run() {
-                    kernel_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
-                        pid,
-                        thread_id,
-                        extrinsic,
-                        params,
-                    } => {
-                        wasi::handle_wasi(&mut system, extrinsic, pid, thread_id, params);
-                        true
+        let result = loop {
+            let only_poll = match system.run() {
+                kernel_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
+                    pid,
+                    thread_id,
+                    extrinsic,
+                    params,
+                } => {
+                    wasi::handle_wasi(&mut system, extrinsic, pid, thread_id, params);
+                    true
+                }
+                kernel_core::system::SystemRunOutcome::InterfaceMessage {
+                    message_id,
+                    interface,
+                    message,
+                } if interface == tcp::ffi::INTERFACE => {
+                    let message: tcp::ffi::TcpMessage = DecodeAll::decode_all(&message).unwrap();
+                    tcp.handle_message(message_id, message);
+                    continue;
+                }
+                kernel_core::system::SystemRunOutcome::InterfaceMessage {
+                    message_id,
+                    interface,
+                    message,
+                } if interface == vulkan::INTERFACE => {
+                    // TODO:
+                    println!("received vk message: {:?}", message);
+                    if let Some(response) = vk.handle(0, &message) {
+                        // TODO: proper PID
+                        system.answer_message(message_id.unwrap(), &response);
                     }
-                    kernel_core::system::SystemRunOutcome::InterfaceMessage {
-                        message_id,
-                        interface,
-                        message,
-                    } if interface == tcp::ffi::INTERFACE => {
-                        let message: tcp::ffi::TcpMessage =
-                            DecodeAll::decode_all(&message).unwrap();
-                        tcp.handle_message(message_id, message);
-                        continue;
-                    }
-                    kernel_core::system::SystemRunOutcome::InterfaceMessage {
-                        message_id,
-                        interface,
-                        message,
-                    } if interface == vulkan::INTERFACE => {
-                        // TODO:
-                        println!("received vk message: {:?}", message);
-                        if let Some(response) = vk.handle(0, &message) {
-                            // TODO: proper PID
-                            system.answer_message(message_id.unwrap(), &response);
-                        }
-                        continue;
-                    }
-                    kernel_core::system::SystemRunOutcome::Idle => false,
-                    other => break other,
-                };
+                    continue;
+                }
+                kernel_core::system::SystemRunOutcome::InterfaceMessage {
+                    message_id,
+                    interface,
+                    message,
+                } if interface == window::ffi::INTERFACE => {
+                    println!("received window message: {:?}", message);
+                    let (tx, rx) = oneshot::channel();
+                    win_open_rq.unbounded_send(tx).unwrap();
+                    let window = rx.await.unwrap().unwrap();
+                    windows.push(window);
+                    /*if let Some(response) = vk.handle(0, &message) {
+                        system.answer_message(message_id.unwrap(), &response);
+                    }*/
+                    continue;
+                }
+                kernel_core::system::SystemRunOutcome::Idle => false,
+                other => break other,
+            };
 
-                let event = if only_poll {
-                    match tcp.next_event().now_or_never() {
-                        Some(e) => e,
-                        None => continue,
-                    }
-                } else {
-                    tcp.next_event().await
-                };
-
-                let (msg_to_respond, response_bytes) = match event {
-                    tcp_interface::TcpResponse::Open(msg_id, msg) => (msg_id, msg.encode()),
-                    tcp_interface::TcpResponse::Read(msg_id, msg) => (msg_id, msg.encode()),
-                    tcp_interface::TcpResponse::Write(msg_id, msg) => (msg_id, msg.encode()),
-                };
-                system.answer_message(msg_to_respond, &response_bytes);
+            while let Ok(Some(event)) = events_rx.try_next() {
+                println!("windowing event: {:?}", event);
             }
-        });
+
+            let event = if only_poll {
+                match tcp.next_event().now_or_never() {
+                    Some(e) => e,
+                    None => continue,
+                }
+            } else {
+                tcp.next_event().await
+            };
+
+            let (msg_to_respond, response_bytes) = match event {
+                tcp_interface::TcpResponse::Open(msg_id, msg) => (msg_id, msg.encode()),
+                tcp_interface::TcpResponse::Read(msg_id, msg) => (msg_id, msg.encode()),
+                tcp_interface::TcpResponse::Write(msg_id, msg) => (msg_id, msg.encode()),
+            };
+            system.answer_message(msg_to_respond, &response_bytes);
+        };
 
         match result {
             kernel_core::system::SystemRunOutcome::ProgramFinished { pid, return_value } => {

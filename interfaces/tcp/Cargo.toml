@@ -9,4 +9,3 @@ edition = "2018"
 futures-preview = "0.3.0-alpha.18"
 parity-scale-codec = { version = "1.0.5", features = ["derive"] }
 syscalls = { path = "../syscalls" }
-threads = { path = "../threads" }

@@ -86,6 +86,7 @@ fn main() {
     let mut events_loop = EventsLoop::new();
     let surface = WindowBuilder::new().build_vk_surface(&events_loop, instance.clone()).unwrap();
     let window = surface.window();*/
+    let window = syscalls::block_on(window::Window::open()).unwrap();
 
     // The next step is to choose which GPU queue will execute our draw commands.
     //
