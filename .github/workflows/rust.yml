@@ -30,6 +30,6 @@ jobs:
     - name: Install Vulkan
       run: apt-get install -y libvulkan-dev
     - name: Build
-      run: cargo +nightly build --verbose
+      run: cargo +nightly build --locked --verbose
     - name: Run tests
-      run: cargo +nightly test --verbose
+      run: cargo +nightly test --locked --verbose
