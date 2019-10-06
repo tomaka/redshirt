@@ -85,7 +85,7 @@ fn main() {
     // window and a cross-platform Vulkan surface that represents the surface of the window.
     let mut events_loop = EventsLoop::new();
     let surface = WindowBuilder::new().build_vk_surface(&events_loop, instance.clone()).unwrap();
-    let window = surface.window();
+    let window = surface.window();*/
 
     // The next step is to choose which GPU queue will execute our draw commands.
     //
@@ -99,7 +99,7 @@ fn main() {
     // We have to choose which queues to use early on, because we will need this info very soon.
     let queue_family = physical.queue_families().find(|&q| {
         // We take the first queue that supports drawing to our window.
-        q.supports_graphics() && surface.is_supported(q).unwrap_or(false)
+        q.supports_graphics()// && surface.is_supported(q).unwrap_or(false)
     }).unwrap();
 
     // Now initializing the device. This is probably the most important object of Vulkan.
@@ -130,7 +130,7 @@ fn main() {
     // iterator and throw it away.
     let queue = queues.next().unwrap();
 
-    // Before we can draw on the surface, we have to create what is called a swapchain. Creating
+/*    // Before we can draw on the surface, we have to create what is called a swapchain. Creating
     // a swapchain allocates the color buffers that will contain the image that will ultimately
     // be visible on the screen. These images are returned alongside with the swapchain.
     let (mut swapchain, images) = {

@@ -161,7 +161,7 @@ fn write_commands_wrappers(mut out: impl Write, registry: &parse::VkRegistry) {
 
         writeln!(out, "    let msg_id = syscalls::emit_message_raw(&INTERFACE, &msg_buf, true).unwrap().unwrap();").unwrap();
         writeln!(out, "    let response = syscalls::message_response_sync_raw(msg_id);").unwrap();
-        //writeln!(out, "    println!(\"got response: {{:?}}\", response);").unwrap();
+        writeln!(out, "    println!(\"got response: {{:?}}\", response);").unwrap();
 
         writeln!(out, "    let response_read = |mut msg_buf: &[u8]| -> Result<{}, parity_scale_codec::Error> {{", print_ty(&command.ret_ty)).unwrap();
         let ret_value_expr = write_deserialize(&command.ret_ty, registry, &mut |_, _| panic!());
@@ -233,7 +233,16 @@ fn write_redirect_handle(mut out: impl Write, registry: &parse::VkRegistry) {
                 let ptrs = state.instance_pointers.get(&instance).unwrap(); \
                 ptrs.r#{}.unwrap() \
             }}", params_list[0], command.name),
-            fpointers::CommandTy::Device => format!("(state.device_pointers.get(&{}).unwrap().r#{}.unwrap())", params_list[0], command.name),
+            fpointers::CommandTy::Device => format!("{{ \
+                let ptrs = match state.device_pointers.get(&{dev}) {{ \
+                    Some(p) => p, \
+                    None => panic!(\"No pointers for device {{:?}}\", {dev}), \
+                }}; \
+                match ptrs.r#{cmd} {{
+                    Some(p) => p,
+                    None => panic!(\"No pointer for {cmd}\")
+                }} \
+            }}", dev = params_list[0], cmd = command.name),
             fpointers::CommandTy::Queue => format!("{{ \
                 let instance = state.device_of_queues.get(&{}).unwrap(); \
                 let ptrs = state.device_pointers.get(&instance).unwrap(); \
@@ -247,7 +256,7 @@ fn write_redirect_handle(mut out: impl Write, registry: &parse::VkRegistry) {
         };
 
         writeln!(out, "    assert!(msg_buf.is_empty(), \"Remaining: {{:?}}\", msg_buf.len());").unwrap();     // TODO: return Error
-        //writeln!(out, "    println!(\"calling vk function\");").unwrap();
+        writeln!(out, "    println!(\"calling vk function\");").unwrap();
         writeln!(out, "    let ret = {}({});", f_ptr, params).unwrap();
 
         // As special additions, if this is `vkCreateInstance`, `vkDestroyInstance`,
@@ -264,9 +273,14 @@ fn write_redirect_handle(mut out: impl Write, registry: &parse::VkRegistry) {
             writeln!(out, "    state.instance_pointers.remove(&{});", params_list[0]).unwrap();
         } else if command.name == "vkCreateDevice" {
             writeln!(out, "    state.assign_handle_to_pid(*{}, emitter_pid);", params_list[3]).unwrap();
-            writeln!(out, "    state.device_pointers.insert(*{}, DevicePtrs::load_with(|name: &std::ffi::CStr| {{", params_list[3]).unwrap();
-            writeln!(out, "        (state.get_instance_proc_addr)(*{}, name.as_ptr() as *const _)", params_list[3]).unwrap();
-            writeln!(out, "    }}));").unwrap();
+            writeln!(out, "    state.device_pointers.insert(*{}, {{", params_list[3]).unwrap();
+            writeln!(out, "        let instance = state.instance_of_physical_devices.get(&{}).unwrap();", params_list[0]).unwrap();
+            writeln!(out, "        let instance_ptrs = state.instance_pointers.get(&instance).unwrap();").unwrap();
+            writeln!(out, "        let dev_get = instance_ptrs.vkGetDeviceProcAddr.unwrap();").unwrap();
+            writeln!(out, "        DevicePtrs::load_with(|name: &std::ffi::CStr| {{").unwrap();
+            writeln!(out, "            dev_get(*{}, name.as_ptr() as *const _)", params_list[3]).unwrap();
+            writeln!(out, "        }})").unwrap();
+            writeln!(out, "    }});").unwrap();
         } else if command.name == "vkDestroyDevice" {
             // TODO: also deassign all the queues and command buffers
             writeln!(out, "    state.deassign_handle({});", params_list[0]).unwrap();
@@ -789,7 +803,7 @@ fn write_deserialize_response_into(
 }
 
 fn write_get_instance_proc_addr(mut out: impl Write, registry: &parse::VkRegistry) {
-    writeln!(out, "pub unsafe extern \"C\" fn vkGetInstanceProcAddr(_instance: usize, name: *const u8) -> PFN_vkVoidFunction {{").unwrap();
+    writeln!(out, "pub unsafe extern \"system\" fn vkGetInstanceProcAddr(_instance: usize, name: *const u8) -> PFN_vkVoidFunction {{").unwrap();
     writeln!(out, "    #![allow(non_snake_case)]").unwrap();
     writeln!(out, "    let name = match CStr::from_ptr(name as *const _).to_str() {{").unwrap();
     writeln!(out, "        Ok(n) => n,").unwrap();
@@ -799,7 +813,7 @@ fn write_get_instance_proc_addr(mut out: impl Write, registry: &parse::VkRegistr
     writeln!(out, "    match name {{").unwrap();
 
     for command in &registry.commands {
-        if command.name == "vkGetDeviceProcAddr" || command.name == "vkGetInstanceProcAddr" {
+        if command.name == "vkGetInstanceProcAddr" {
             continue;
         }
 
@@ -824,6 +838,11 @@ fn write_get_instance_proc_addr(mut out: impl Write, registry: &parse::VkRegistr
     writeln!(out, "        _ => mem::transmute(ptr::null::<c_void>())").unwrap();
     writeln!(out, "    }}").unwrap();
     writeln!(out, "}}").unwrap();
+    writeln!(out, "").unwrap();
+    writeln!(out, "unsafe extern \"system\" fn wrapper_vkGetDeviceProcAddr(_device: usize, name: *const u8) -> PFN_vkVoidFunction {{").unwrap();
+    writeln!(out, "    vkGetInstanceProcAddr(0, name)").unwrap();       // TODO: do more properly?
+    writeln!(out, "}}").unwrap();
+    writeln!(out, "").unwrap();
 }
 
 fn print_ty(ty: &parse::VkType) -> String {

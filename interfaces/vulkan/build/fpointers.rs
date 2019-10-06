@@ -7,9 +7,9 @@ use std::io::{self, Write};
 
 /// Writes to `out` the code of Rust structs that contain Vulkan pointers.
 pub fn write_pointers_structs(out: &mut dyn Write, registry: &parse::VkRegistry) -> Result<(), io::Error> {
-    write_pointers(out, registry, "StaticPtrs", |cmd| command_ty(cmd) == CommandTy::Static)?;
+    write_pointers(out, registry, "StaticPtrs", |cmd| cmd.name == "vkGetInstanceProcAddr" || command_ty(cmd) == CommandTy::Static)?;
     writeln!(out, "")?;
-    write_pointers(out, registry, "InstancePtrs", |cmd| command_ty(cmd).is_get_instance_proc_addr())?;
+    write_pointers(out, registry, "InstancePtrs", |cmd| cmd.name == "vkGetDeviceProcAddr" || command_ty(cmd).is_get_instance_proc_addr())?;
     writeln!(out, "")?;
     write_pointers(out, registry, "DevicePtrs", |cmd| command_ty(cmd).is_get_device_proc_addr())?;
     Ok(())
@@ -51,6 +51,7 @@ fn write_pointers(out: &mut dyn Write, registry: &parse::VkRegistry, struct_name
 }
 
 /// Type of a command.
+// TODO: how to handle vkGetDeviceProcAddr and vkGetInstanceProcAddr? there are some exceptions in `write_pointers_structs` and it's confusing
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum CommandTy {
     Static,
