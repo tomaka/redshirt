@@ -1340,15 +1340,6 @@ dependencies = [
  "futures-preview 0.3.0-alpha.19 (registry+https://github.com/rust-lang/crates.io-index)",
  "parity-scale-codec 1.0.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "syscalls 0.1.0",
- "threads 0.1.0",
-]
-
-[[package]]
-name = "threads"
-version = "0.1.0"
-dependencies = [
- "parity-scale-codec 1.0.6 (registry+https://github.com/rust-lang/crates.io-index)",
- "syscalls 0.1.0",
 ]
 
 [[package]]
@@ -1506,10 +1497,12 @@ dependencies = [
 name = "vulkan-triangle"
 version = "0.1.0"
 dependencies = [
+ "syscalls 0.1.0",
  "vk-sys 0.4.0 (git+https://github.com/tomaka/vulkano?branch=wasm)",
  "vulkan 0.1.0",
  "vulkano 0.14.0 (git+https://github.com/tomaka/vulkano?branch=wasm)",
  "vulkano-shaders 0.14.0 (git+https://github.com/tomaka/vulkano?branch=wasm)",
+ "window 0.1.0",
 ]
 
 [[package]]
@@ -1662,6 +1655,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 name = "winapi-x86_64-pc-windows-gnu"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "window"
+version = "0.1.0"
+dependencies = [
+ "futures-preview 0.3.0-alpha.19 (registry+https://github.com/rust-lang/crates.io-index)",
+ "parity-scale-codec 1.0.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "syscalls 0.1.0",
+]
 
 [[package]]
 name = "xml-rs"

@@ -1,15 +1,11 @@
 [package]
-name = "vulkan"
+name = "window"
 version = "0.1.0"
 license = "GPL-3.0-or-later"
 authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
 edition = "2018"
-build = "build/main.rs"
 
 [dependencies]
-hashbrown = "0.6.0"
-parity-scale-codec = "1.0.5"
+futures-preview = "0.3.0-alpha.18"
+parity-scale-codec = { version = "1.0.5", features = ["derive"] }
 syscalls = { path = "../syscalls" }
-
-[build-dependencies]
-xml-rs = "0.8.0"

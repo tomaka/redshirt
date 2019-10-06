@@ -18,6 +18,8 @@ rand = "0.7"
 tcp = { path = "../interfaces/tcp" }
 vulkan = { path = "../interfaces/vulkan" }
 wasi = "0.7.0"
+window = { path = "../interfaces/window" }
+winit = "0.20.0-alpha3"
 
 # TODO: remove
 wasmi = { git = "https://github.com/paritytech/wasmi", default-features = false, features = ["core"] }
