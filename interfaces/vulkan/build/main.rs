@@ -171,7 +171,7 @@ fn write_commands_wrappers(mut out: impl Write, registry: &parse::VkRegistry) {
             let write_back = write_deserialize_response_into(param_ty, registry, param_name, false);
             writeln!(out, "        {}", write_back).unwrap();
         }
-        // TODO: writeln!(out, "            assert!(msg_buf.is_empty());").unwrap();     // TODO: return Error
+        writeln!(out, "            assert!(msg_buf.is_empty(), \"Remaining after response: {{:?}}\", msg_buf.len());").unwrap();     // TODO: return Error
         writeln!(out, "        Ok(ret)").unwrap();
         writeln!(out, "    }};").unwrap();
         writeln!(out, "    response_read(&response).unwrap()").unwrap();
@@ -232,7 +232,8 @@ fn write_redirect_handle(mut out: impl Write, registry: &parse::VkRegistry) {
             fpointers::CommandTy::Device => format!("(state.device_pointers.get(&({} as usize)).unwrap().r#{}.unwrap())", params_list[0], command.name),       // TODO: remove as usize?
         };
 
-        writeln!(out, "    assert!(msg_buf.is_empty());").unwrap();     // TODO: return Error
+        writeln!(out, "    assert!(msg_buf.is_empty(), \"Remaining: {{:?}}\", msg_buf.len());").unwrap();     // TODO: return Error
+        writeln!(out, "    println!(\"calling vk function\");").unwrap();
         writeln!(out, "    let ret = {}({});", f_ptr, params).unwrap();
 
         // As special additions, if this is `vkCreateInstance`, `vkDestroyInstance`,
@@ -332,15 +333,16 @@ fn write_serialize(
         (parse::VkType::Ident(ty_name), None, false) => {
             writeln!(out, "        <{} as Encode>::encode_to(&{}, &mut msg_buf);", print_ty(param_ty), param_name).unwrap();
         },
-        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Enum), true) |
-        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Bitmask), true) |
-        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::NonDispatchableHandle), true) |
-        (parse::VkType::Ident(ty_name), None, true) => {
-        },
-        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::DispatchableHandle), _) => {
+        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::DispatchableHandle), false) => {
             let serialize = serialize_handles(param_name);
             writeln!(out, "        <u32 as Encode>::encode_to(&({}), &mut msg_buf);", serialize).unwrap();
         }
+        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Enum), true) |
+        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Bitmask), true) |
+        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::NonDispatchableHandle), true) |
+        (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::DispatchableHandle), true) |
+        (parse::VkType::Ident(ty_name), None, true) => {
+        },
         (parse::VkType::Ident(ty_name), Some(parse::VkTypeDef::Struct { fields }), _) => {
             for (field_ty, field_name) in fields {
                 write_serialize(
@@ -583,11 +585,21 @@ fn write_deserialize(
         }
 
         (parse::VkType::Array(ty_name, len), _) => {
-            // TODO: no
-            /*writeln!(out, "        for val in (0..{}).map(|n| {}[n]) {{", len, param_name).unwrap();
-            write_serialize(out, "val", &ty_name, registry);
-            writeln!(out, "        }}").unwrap();*/
-            format!("mem::zeroed::<[{}; {}]>()", print_ty(ty_name), len)
+            // TODO: MaybeUninit isn't used correctly, but ¯\_(ツ)_/¯
+            let inner = write_deserialize(&ty_name, registry, &mut |f, mutable| {
+                let var = interm_step_gen(format!("{{ \
+                    let mut array = mem::MaybeUninit::<[_; {len}]>::uninit(); \
+                    for _n in 0..{len} {{ (&mut *array.as_mut_ptr())[_n as usize] = ({inner}); }} \
+                    array.assume_init() \
+                }}", inner=f, len=len), mutable);
+                format!("{}[_n]", var)
+            });
+
+            format!("{{ \
+                let mut array = mem::MaybeUninit::<[_; {len}]>::uninit(); \
+                for _n in 0..{len} {{ (&mut *array.as_mut_ptr())[_n as usize] = ({inner}); }} \
+                array.assume_init() \
+            }}", inner=inner, len=len)
         }
     }
 }
