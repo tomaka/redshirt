@@ -19,24 +19,42 @@ use crate::{parse, print_ty};
 use std::io::{self, Write};
 
 /// Writes to `out` the code of Rust structs that contain Vulkan pointers.
-pub fn write_pointers_structs(out: &mut dyn Write, registry: &parse::VkRegistry) -> Result<(), io::Error> {
-    write_pointers(out, registry, "StaticPtrs", |cmd| cmd.name == "vkGetInstanceProcAddr" || command_ty(cmd) == CommandTy::Static)?;
+pub fn write_pointers_structs(
+    out: &mut dyn Write,
+    registry: &parse::VkRegistry,
+) -> Result<(), io::Error> {
+    write_pointers(out, registry, "StaticPtrs", |cmd| {
+        cmd.name == "vkGetInstanceProcAddr" || command_ty(cmd) == CommandTy::Static
+    })?;
     writeln!(out, "")?;
-    write_pointers(out, registry, "InstancePtrs", |cmd| cmd.name == "vkGetDeviceProcAddr" || command_ty(cmd).is_get_instance_proc_addr())?;
+    write_pointers(out, registry, "InstancePtrs", |cmd| {
+        cmd.name == "vkGetDeviceProcAddr" || command_ty(cmd).is_get_instance_proc_addr()
+    })?;
     writeln!(out, "")?;
-    write_pointers(out, registry, "DevicePtrs", |cmd| command_ty(cmd).is_get_device_proc_addr())?;
+    write_pointers(out, registry, "DevicePtrs", |cmd| {
+        command_ty(cmd).is_get_device_proc_addr()
+    })?;
     Ok(())
 }
 
-fn write_pointers(out: &mut dyn Write, registry: &parse::VkRegistry, struct_name: &str, mut filter: impl FnMut(&parse::VkCommand) -> bool) -> Result<(), io::Error> {
+fn write_pointers(
+    out: &mut dyn Write,
+    registry: &parse::VkRegistry,
+    struct_name: &str,
+    mut filter: impl FnMut(&parse::VkCommand) -> bool,
+) -> Result<(), io::Error> {
     writeln!(out, "struct {} {{", struct_name)?;
 
     for command in &registry.commands {
-        if !filter(command) { continue; }
+        if !filter(command) {
+            continue;
+        }
         write!(out, "    r#{}: Option<extern \"system\" fn(", command.name)?;
         for (param_off, (param_ty, _)) in command.params.iter().enumerate() {
             // TODO: skip device pointers
-            if param_off != 0 { write!(out, ", ")?; }
+            if param_off != 0 {
+                write!(out, ", ")?;
+            }
             write!(out, "{}", print_ty(&param_ty))?;
         }
         writeln!(out, ") -> {}>,", print_ty(&command.ret_ty))?;
@@ -48,13 +66,21 @@ fn write_pointers(out: &mut dyn Write, registry: &parse::VkRegistry, struct_name
     writeln!(out, "    unsafe fn load_with(mut loader: impl FnMut(&std::ffi::CStr) -> PFN_vkVoidFunction) -> Self {{")?;
     writeln!(out, "        #![allow(non_snake_case)]").unwrap();
     for command in &registry.commands {
-        if !filter(command) { continue; }
+        if !filter(command) {
+            continue;
+        }
         writeln!(out, "        let r#{n} = loader(std::ffi::CStr::from_bytes_with_nul_unchecked(b\"{n}\\0\"));", n = command.name)?;
     }
     writeln!(out, "        {} {{", struct_name)?;
     for command in &registry.commands {
-        if !filter(command) { continue; }
-        writeln!(out, "            r#{n}: mem::transmute(r#{n}),", n = command.name)?;
+        if !filter(command) {
+            continue;
+        }
+        writeln!(
+            out,
+            "            r#{n}: mem::transmute(r#{n}),",
+            n = command.name
+        )?;
     }
     writeln!(out, "        }}")?;
     writeln!(out, "    }}")?;
@@ -118,14 +144,14 @@ pub fn command_ty(command: &parse::VkCommand) -> CommandTy {
             // of function is introduced, we hardcode the list of static functions here and panic
             // if there's an unknown one.
             match command.name.as_str() {
-                "vkCreateInstance" => {},
-                "vkEnumerateInstanceVersion" => {},
-                "vkEnumerateInstanceLayerProperties" => {},
-                "vkEnumerateInstanceExtensionProperties" => {},
-                _ => panic!()
+                "vkCreateInstance" => {}
+                "vkEnumerateInstanceVersion" => {}
+                "vkEnumerateInstanceLayerProperties" => {}
+                "vkEnumerateInstanceExtensionProperties" => {}
+                _ => panic!(),
             }
 
             CommandTy::Static
-        },
+        }
     }
 }

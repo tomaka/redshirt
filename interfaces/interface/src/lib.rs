@@ -35,7 +35,9 @@ pub async fn register_interface(hash: [u8; 32]) -> Result<(), InterfaceRegisterE
     let msg = ffi::InterfaceMessage::Register(hash);
     // TODO: we unwrap cause there's always something that handles interface registration; is that correct?
     let rep: ffi::InterfaceRegisterResponse =
-        syscalls::emit_message_with_response(ffi::INTERFACE, msg).await.unwrap();
+        syscalls::emit_message_with_response(ffi::INTERFACE, msg)
+            .await
+            .unwrap();
     rep.result
 }
 

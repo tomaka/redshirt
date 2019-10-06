@@ -638,7 +638,8 @@ mod tests {
         )
         .unwrap();
 
-        let _state_machine = ProcessStateMachine::new(&module, (), |_, _, _| unreachable!()).unwrap();
+        let _state_machine =
+            ProcessStateMachine::new(&module, (), |_, _, _| unreachable!()).unwrap();
     }
 
     #[test]
@@ -672,7 +673,10 @@ mod tests {
         let mut state_machine =
             ProcessStateMachine::new(&module, (), |_, _, _| unreachable!()).unwrap();
         match state_machine.thread(0).unwrap().run(None) {
-            Ok(ExecOutcome::ThreadFinished { return_value: Some(wasmi::RuntimeValue::I32(5)), .. }) => {}
+            Ok(ExecOutcome::ThreadFinished {
+                return_value: Some(wasmi::RuntimeValue::I32(5)),
+                ..
+            }) => {}
             _ => panic!(),
         }
         assert!(state_machine.thread(0).is_none());
@@ -705,7 +709,10 @@ mod tests {
             .unwrap()
             .run(Some(wasmi::RuntimeValue::I32(2227)))
         {
-            Ok(ExecOutcome::ThreadFinished { return_value: Some(wasmi::RuntimeValue::I32(2227)), .. }) => {}
+            Ok(ExecOutcome::ThreadFinished {
+                return_value: Some(wasmi::RuntimeValue::I32(2227)),
+                ..
+            }) => {}
             _ => panic!(),
         }
         assert!(state_machine.thread(0).is_none());

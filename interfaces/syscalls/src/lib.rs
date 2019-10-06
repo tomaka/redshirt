@@ -25,7 +25,7 @@
 //! there is no possibility of having multiple threads, the only moment when the `Waker` can be
 //! invoked is when we explicitly call a function whose role is to do that. The only reasonable
 //! choice for such function is the [`block_on`] function, or similar functions.
-//! 
+//!
 //! For the same reason, it is also challenging to write an implementation of [`block_on`].
 //! Putting the current thread to sleep is not enough, because the lack of background threads
 //! makes it impossible for the `Waker` to be invoked. An implementation of [`block_on`] **must**
@@ -110,7 +110,7 @@ pub fn emit_message_raw(
         }
 
         if needs_answer {
-            debug_assert_ne!(message_id_out, 0xdeadbeefu64);      // TODO: what if written message_id is actually deadbeef?
+            debug_assert_ne!(message_id_out, 0xdeadbeefu64); // TODO: what if written message_id is actually deadbeef?
             Ok(Some(message_id_out))
         } else {
             Ok(None)
@@ -158,9 +158,7 @@ pub fn cancel_message(message_id: u64) -> Result<(), ()> {
 ///
 // TODO: move to interface interface?
 pub fn next_interface_message() -> InterfaceMessageFuture {
-    InterfaceMessageFuture {
-        finished: false,
-    }
+    InterfaceMessageFuture { finished: false }
 }
 
 /// Returns a future that is ready when a response to the given message comes back.
@@ -169,7 +167,7 @@ pub fn next_interface_message() -> InterfaceMessageFuture {
 pub fn message_response_sync_raw(msg_id: u64) -> Vec<u8> {
     match block_on::next_message(&mut [msg_id], true).unwrap() {
         Message::Response(m) => m.actual_data,
-        _ => panic!()
+        _ => panic!(),
     }
 }
 
@@ -196,7 +194,7 @@ pub struct MessageResponseFuture<T> {
 #[cfg(target_arch = "wasm32")] // TODO: bad
 impl<T> Future for MessageResponseFuture<T>
 where
-    T: DecodeAll
+    T: DecodeAll,
 {
     type Output = T;
 
@@ -221,8 +219,7 @@ impl<T> Future for MessageResponseFuture<T> {
     }
 }
 
-impl<T> Unpin for MessageResponseFuture<T> {
-}
+impl<T> Unpin for MessageResponseFuture<T> {}
 
 #[must_use]
 pub struct InterfaceMessageFuture {
@@ -254,5 +251,4 @@ impl Future for InterfaceMessageFuture {
     }
 }
 
-impl Unpin for InterfaceMessageFuture {
-}
+impl Unpin for InterfaceMessageFuture {}

@@ -65,23 +65,54 @@ use std::ffi::CStr;
 // TODO: this has been randomly generated; instead should be a hash or something
 pub const INTERFACE: [u8; 32] = [
     0x30, 0xc1, 0xd8, 0x90, 0x74, 0x2f, 0x9b, 0x1a, 0x11, 0xfc, 0xcb, 0x53, 0x35, 0xc0, 0x6f, 0xe6,
-    0x5c, 0x82, 0x13, 0xe3, 0xcc, 0x04, 0x7b, 0xb7, 0xf6, 0x88, 0x74, 0x1e, 0x7a, 0xf2, 0x84, 0x75, 
+    0x5c, 0x82, 0x13, 0xe3, 0xcc, 0x04, 0x7b, 0xb7, 0xf6, 0x88, 0x74, 0x1e, 0x7a, 0xf2, 0x84, 0x75,
 ];
 
 #[allow(non_camel_case_types)]
-type PFN_vkAllocationFunction = extern "system" fn(*mut c_void, usize, usize, VkSystemAllocationScope) -> *mut c_void;
+type PFN_vkAllocationFunction =
+    extern "system" fn(*mut c_void, usize, usize, VkSystemAllocationScope) -> *mut c_void;
 #[allow(non_camel_case_types)]
-type PFN_vkReallocationFunction = extern "system" fn(*mut c_void, *mut c_void, usize, usize, VkSystemAllocationScope) -> *mut c_void;
+type PFN_vkReallocationFunction = extern "system" fn(
+    *mut c_void,
+    *mut c_void,
+    usize,
+    usize,
+    VkSystemAllocationScope,
+) -> *mut c_void;
 #[allow(non_camel_case_types)]
 type PFN_vkFreeFunction = extern "system" fn(*mut c_void, *mut c_void);
 #[allow(non_camel_case_types)]
-type PFN_vkInternalAllocationNotification = extern "system" fn(*mut c_void, usize, VkInternalAllocationType, VkSystemAllocationScope) -> *mut c_void;
+type PFN_vkInternalAllocationNotification = extern "system" fn(
+    *mut c_void,
+    usize,
+    VkInternalAllocationType,
+    VkSystemAllocationScope,
+) -> *mut c_void;
 #[allow(non_camel_case_types)]
-type PFN_vkInternalFreeNotification = extern "system" fn(*mut c_void, usize, VkInternalAllocationType, VkSystemAllocationScope) -> *mut c_void;
+type PFN_vkInternalFreeNotification = extern "system" fn(
+    *mut c_void,
+    usize,
+    VkInternalAllocationType,
+    VkSystemAllocationScope,
+) -> *mut c_void;
 #[allow(non_camel_case_types)]
-type PFN_vkDebugReportCallbackEXT = extern "system" fn(VkDebugReportFlagsEXT, VkDebugReportObjectTypeEXT, u64, usize, i32, *const i8, *const i8, *mut c_void) -> u32;
+type PFN_vkDebugReportCallbackEXT = extern "system" fn(
+    VkDebugReportFlagsEXT,
+    VkDebugReportObjectTypeEXT,
+    u64,
+    usize,
+    i32,
+    *const i8,
+    *const i8,
+    *mut c_void,
+) -> u32;
 #[allow(non_camel_case_types)]
-type PFN_vkDebugUtilsMessengerCallbackEXT = extern "system" fn(VkDebugUtilsMessageSeverityFlagBitsEXT, VkDebugUtilsMessageTypeFlagsEXT, *const VkDebugUtilsMessengerCallbackDataEXT, *mut c_void) -> u32;
+type PFN_vkDebugUtilsMessengerCallbackEXT = extern "system" fn(
+    VkDebugUtilsMessageSeverityFlagBitsEXT,
+    VkDebugUtilsMessageTypeFlagsEXT,
+    *const VkDebugUtilsMessengerCallbackDataEXT,
+    *mut c_void,
+) -> u32;
 #[allow(non_camel_case_types)]
 pub type PFN_vkVoidFunction = extern "system" fn() -> ();
 
@@ -91,7 +122,10 @@ pub type PFN_vkVoidFunction = extern "system" fn() -> ();
 /// them over the interface.
 ///
 /// Conforms to the `vkGetInstanceProcAddr` of the Vulkan specifications.
-pub unsafe extern "system" fn vkGetInstanceProcAddr(instance: usize, name: *const u8) -> PFN_vkVoidFunction {
+pub unsafe extern "system" fn vkGetInstanceProcAddr(
+    instance: usize,
+    name: *const u8,
+) -> PFN_vkVoidFunction {
     wrapper_vkGetInstanceProcAddr(instance, name)
 }
 
@@ -114,7 +148,9 @@ pub struct VulkanRedirect {
 
 impl VulkanRedirect {
     // TODO: should function be unsafe? I guess yes
-    pub fn new(get_instance_proc_addr: unsafe extern "system" fn(usize, *const u8) -> PFN_vkVoidFunction) -> VulkanRedirect {
+    pub fn new(
+        get_instance_proc_addr: unsafe extern "system" fn(usize, *const u8) -> PFN_vkVoidFunction,
+    ) -> VulkanRedirect {
         unsafe {
             VulkanRedirect {
                 get_instance_proc_addr,
@@ -137,9 +173,7 @@ impl VulkanRedirect {
     ///
     /// The `emitter_pid` is used to isolate resources used by processes.
     pub fn handle(&mut self, emitter_pid: u64, message: &[u8]) -> Option<Vec<u8>> {
-        unsafe {
-            redirect_handle_inner(self, emitter_pid, message).unwrap()
-        }
+        unsafe { redirect_handle_inner(self, emitter_pid, message).unwrap() }
     }
 
     fn assign_handle_to_pid(&mut self, handle: usize, emitter_pid: u64) {
@@ -149,8 +183,10 @@ impl VulkanRedirect {
             new_id += 1;
         }
 
-        self.handles_vm_to_host.insert((emitter_pid, new_id), handle);
-        self.handles_host_to_vm.insert(handle, (emitter_pid, new_id));
+        self.handles_vm_to_host
+            .insert((emitter_pid, new_id), handle);
+        self.handles_host_to_vm
+            .insert(handle, (emitter_pid, new_id));
     }
 
     fn deassign_handle(&mut self, handle: usize) {

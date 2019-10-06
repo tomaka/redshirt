@@ -175,7 +175,7 @@ pub fn handle_wasi(
             let buf = params[0].try_into::<i32>().unwrap() as u32;
             let len = params[1].try_into::<i32>().unwrap() as u32;
             let mut randomness = Vec::<u8>::new();
-            for _ in 0 .. len {
+            for _ in 0..len {
                 randomness.push(rand::random());
             }
             system.write_memory(pid, buf, &randomness).unwrap();

@@ -119,9 +119,14 @@ impl<TExtEx: Clone> System<TExtEx> {
                     };
                 }
 
-                CoreRunOutcome::MessageResponse { message_id, response, .. } => {
+                CoreRunOutcome::MessageResponse {
+                    message_id,
+                    response,
+                    ..
+                } => {
                     if self.loading_programs.remove(&message_id) {
-                        let loader::ffi::LoadResponse { result } = DecodeAll::decode_all(&response).unwrap();
+                        let loader::ffi::LoadResponse { result } =
+                            DecodeAll::decode_all(&response).unwrap();
                         let module = Module::from_bytes(&result.unwrap());
                         self.core.execute(&module).unwrap();
                     }
@@ -185,7 +190,9 @@ impl<TExtEx: Clone> System<TExtEx> {
                     println!("interface message: {:?}", msg);
                     match msg {
                         interface::ffi::InterfaceMessage::Register(interface_hash) => {
-                            self.core.set_interface_handler(interface_hash, pid).unwrap();
+                            self.core
+                                .set_interface_handler(interface_hash, pid)
+                                .unwrap();
                             let response =
                                 interface::ffi::InterfaceRegisterResponse { result: Ok(()) };
                             self.core
@@ -195,7 +202,10 @@ impl<TExtEx: Clone> System<TExtEx> {
 
                     // TODO: temporary, for testing purposes
                     let msg = loader::ffi::LoaderMessage::Load([0; 32]);
-                    let id = self.core.emit_interface_message_answer(loader::ffi::INTERFACE, msg).unwrap();
+                    let id = self
+                        .core
+                        .emit_interface_message_answer(loader::ffi::INTERFACE, msg)
+                        .unwrap();
                     self.loading_programs.insert(id);
                 }
                 CoreRunOutcome::InterfaceMessage {
@@ -247,9 +257,9 @@ impl<TExtEx> SystemBuilder<TExtEx> {
         signature: Signature,
         token: TExtEx,
     ) -> Self {
-        self.core =
-            self.core
-                .with_extrinsic(interface, f_name, signature, token);
+        self.core = self
+            .core
+            .with_extrinsic(interface, f_name, signature, token);
         self
     }
 
