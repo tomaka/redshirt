@@ -227,17 +227,23 @@ fn write_redirect_handle(mut out: impl Write, registry: &parse::VkRegistry) {
         // TODO: shouldn't panic but return an error instead
         let f_ptr = match fpointers::command_ty(&command) {
             fpointers::CommandTy::Static => format!("(state.static_pointers.r#{}.unwrap())", command.name),
-            // TODO: this is wrong if the first parameter is a PhysicalDevice
             fpointers::CommandTy::Instance => format!("(state.instance_pointers.get(&{}).unwrap().r#{}.unwrap())", params_list[0], command.name),
             fpointers::CommandTy::PhysicalDevice => format!("{{ \
                 let instance = state.instance_of_physical_devices.get(&{}).unwrap(); \
                 let ptrs = state.instance_pointers.get(&instance).unwrap(); \
                 ptrs.r#{}.unwrap() \
             }}", params_list[0], command.name),
-            // TODO: this is wrong if the first parameter is a CommandBuffer or Queue
             fpointers::CommandTy::Device => format!("(state.device_pointers.get(&{}).unwrap().r#{}.unwrap())", params_list[0], command.name),
-            fpointers::CommandTy::Queue => format!("(state.device_pointers.get(&{}).unwrap().r#{}.unwrap())", params_list[0], command.name),
-            fpointers::CommandTy::CommandBuffer => format!("(state.device_pointers.get(&{}).unwrap().r#{}.unwrap())", params_list[0], command.name),
+            fpointers::CommandTy::Queue => format!("{{ \
+                let instance = state.device_of_queues.get(&{}).unwrap(); \
+                let ptrs = state.device_pointers.get(&instance).unwrap(); \
+                ptrs.r#{}.unwrap() \
+            }}", params_list[0], command.name),
+            fpointers::CommandTy::CommandBuffer => format!("{{ \
+                let instance = state.device_of_command_buffers.get(&{}).unwrap(); \
+                let ptrs = state.device_pointers.get(&instance).unwrap(); \
+                ptrs.r#{}.unwrap() \
+            }}", params_list[0], command.name),
         };
 
         writeln!(out, "    assert!(msg_buf.is_empty(), \"Remaining: {{:?}}\", msg_buf.len());").unwrap();     // TODO: return Error
@@ -253,6 +259,7 @@ fn write_redirect_handle(mut out: impl Write, registry: &parse::VkRegistry) {
             writeln!(out, "        (state.get_instance_proc_addr)(*{}, name.as_ptr() as *const _)", params_list[2]).unwrap();
             writeln!(out, "    }}));").unwrap();
         } else if command.name == "vkDestroyInstance" {
+            // TODO: also deassign all the devices, queues, command buffers, and physical devices
             writeln!(out, "    state.deassign_handle({});", params_list[0]).unwrap();
             writeln!(out, "    state.instance_pointers.remove(&{});", params_list[0]).unwrap();
         } else if command.name == "vkCreateDevice" {
@@ -261,6 +268,7 @@ fn write_redirect_handle(mut out: impl Write, registry: &parse::VkRegistry) {
             writeln!(out, "        (state.get_instance_proc_addr)(*{}, name.as_ptr() as *const _)", params_list[3]).unwrap();
             writeln!(out, "    }}));").unwrap();
         } else if command.name == "vkDestroyDevice" {
+            // TODO: also deassign all the queues and command buffers
             writeln!(out, "    state.deassign_handle({});", params_list[0]).unwrap();
             writeln!(out, "    state.device_pointers.remove(&{});", params_list[0]).unwrap();
         } else if command.name == "vkEnumeratePhysicalDevices" {
@@ -271,7 +279,19 @@ fn write_redirect_handle(mut out: impl Write, registry: &parse::VkRegistry) {
             writeln!(out, "            state.assign_handle_to_pid(*({}.offset(n as isize)), emitter_pid);", params_list[2]).unwrap();
             writeln!(out, "        }}").unwrap();
             writeln!(out, "    }}").unwrap();
-        }  // TODO: same with physical devices, command buffers and queues
+        } else if command.name == "vkAllocateCommandBuffers" {
+            writeln!(out, "    debug_assert!(!{}.is_null());", params_list[1]).unwrap();
+            writeln!(out, "    for n in 0..(*{}).commandBufferCount {{", params_list[1]).unwrap();
+            writeln!(out, "        state.device_of_command_buffers.insert(*({}.offset(n as isize)), {});", params_list[2], params_list[0]).unwrap();
+            writeln!(out, "        state.assign_handle_to_pid(*({}.offset(n as isize)), emitter_pid);", params_list[2]).unwrap();
+            writeln!(out, "    }}").unwrap();
+        } else if command.name == "vkGetDeviceQueue" {
+            writeln!(out, "    state.assign_handle_to_pid(*{}, emitter_pid);", params_list[3]).unwrap();
+            writeln!(out, "    state.device_of_queues.insert(*{}, {});", params_list[3], params_list[0]).unwrap();
+        } else if command.name == "vkGetDeviceQueue2" {
+            writeln!(out, "    state.assign_handle_to_pid(*{}, emitter_pid);", params_list[2]).unwrap();
+            writeln!(out, "    state.device_of_queues.insert(*{}, {});", params_list[2], params_list[0]).unwrap();
+        }  // TODO: handle vkFreeComandBuffers
 
         writeln!(out, "    let mut msg_buf = Vec::new();").unwrap();     // TODO: with_capacity()?
         write_serialize(out.by_ref(), false, "ret", &command.ret_ty, registry, &mut |_| panic!(), &mut |_| panic!());
