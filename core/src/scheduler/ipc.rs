@@ -940,7 +940,7 @@ mod tests {
         )
         .unwrap();
 
-        let mut core = Core::<!>::new().build();
+        let mut core = Core::<()>::new().build();
         let expected_pid = core.execute(&module).unwrap().pid();
 
         match core.run() {
@@ -967,7 +967,7 @@ mod tests {
         )
         .unwrap();
 
-        let mut core = Core::<!>::new().build();
+        let mut core = Core::<()>::new().build();
         let expected_pid = core.execute(&module).unwrap().pid();
 
         match core.run() {
