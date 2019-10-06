@@ -254,15 +254,25 @@ fn write_redirect_handle(mut out: impl Write, registry: &parse::VkRegistry) {
         } else if command.name == "vkDestroyDevice" {
             writeln!(out, "    state.deassign_handle({});", params_list[0]).unwrap();
             writeln!(out, "    state.device_pointers.remove(&{});", params_list[0]).unwrap();
+        } else if command.name == "vkEnumeratePhysicalDevices" {
+            writeln!(out, "    debug_assert!(!{}.is_null());", params_list[1]).unwrap();
+            writeln!(out, "    if !{}.is_null() {{", params_list[2]).unwrap();
+            writeln!(out, "        for n in 0..(*{}) {{", params_list[1]).unwrap();
+            writeln!(out, "            state.assign_handle_to_pid(*({}.offset(n as isize)), emitter_pid);", params_list[2]).unwrap();
+            writeln!(out, "        }}").unwrap();
+            writeln!(out, "    }}").unwrap();
         }  // TODO: same with physical devices, command buffers and queues
 
         writeln!(out, "    let mut msg_buf = Vec::new();").unwrap();     // TODO: with_capacity()?
         write_serialize(out.by_ref(), false, "ret", &command.ret_ty, registry, &mut |_| panic!(), &mut |_| panic!());
         for ((param_ty, _), param_var) in command.params.iter().zip(params_list.iter()) {
-            write_serialize(out.by_ref(), true, param_var, param_ty, registry, &mut |handle| format!("state.handles_host_to_vm.get(&{}).unwrap().1", handle), &mut |field| {
-                // TODO: there are some len="pAllocateInfo::descriptorSetCount" attributes
-                /*params_list[command.params.iter().position(|p| p.1 == field).unwrap()].clone()*/
-                (format!("panic!()"), parse::VkType::Ident("int".to_string()))
+            write_serialize(out.by_ref(), true, param_var, param_ty, registry, &mut |handle| format!("state.handles_host_to_vm.get(&{}).unwrap().1", handle), &mut |fields| {
+                if fields.len() >= 2 {
+                    (format!("panic!()"), parse::VkType::Ident("int".to_string()))       // TODO:
+                } else {
+                    let field_num = command.params.iter().position(|p| p.1 == fields[0]).unwrap();
+                    (params_list[field_num].clone(), command.params[field_num].0.clone())
+                }
             });
         }
 

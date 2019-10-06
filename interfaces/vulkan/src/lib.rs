@@ -81,6 +81,7 @@ pub struct VulkanRedirect {
     handles_host_to_vm: HashMap<usize, (u64, u32)>,
     handles_vm_to_host: HashMap<(u64, u32), usize>,
     // TODO: store physical devices of instance and queues and command buffers of devices
+    // TODO: also, handle values might overlap between multiple types of handlers? so we need a `HandleTy` enum to put in the hashmaps?
 }
 
 impl VulkanRedirect {
