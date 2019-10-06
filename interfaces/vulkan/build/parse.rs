@@ -16,7 +16,9 @@
 //! Parsing of the XML definitions file.
 
 use std::{collections::HashMap, io::Read};
-use xml::{EventReader, attribute::OwnedAttribute, name::OwnedName, reader::Events, reader::XmlEvent};
+use xml::{
+    attribute::OwnedAttribute, name::OwnedName, reader::Events, reader::XmlEvent, EventReader,
+};
 
 /// Successfully-parsed Vulkan registry definitions.
 ///
@@ -39,12 +41,8 @@ pub enum VkTypeDef {
     Bitmask,
     DispatchableHandle,
     NonDispatchableHandle,
-    Struct {
-        fields: Vec<(VkType, String)>,
-    },
-    Union {
-        fields: Vec<(VkType, String)>,
-    },
+    Struct { fields: Vec<(VkType, String)> },
+    Union { fields: Vec<(VkType, String)> },
 }
 
 /// Successfully-parsed Vulkan command definition.
@@ -55,7 +53,7 @@ pub struct VkCommand {
     /// Return type of the function.
     pub ret_ty: VkType,
     /// List of parameters of the function, with their type and name.
-    pub params: Vec<(VkType, String)>
+    pub params: Vec<(VkType, String)>,
 }
 
 /// Successfully-parsed Vulkan type.
@@ -112,16 +110,30 @@ pub enum VkTypePtrLen {
 ///
 /// The registry must be passed in order to look up the definition of structs.
 // TODO: better description
-pub fn gen_path_subfield_in_list<'b>(fields: &'b [(VkType, String)], registry: &'b VkRegistry, subfields: impl IntoIterator<Item = impl AsRef<str>>) -> Option<(String, &'b VkType)> {
+pub fn gen_path_subfield_in_list<'b>(
+    fields: &'b [(VkType, String)],
+    registry: &'b VkRegistry,
+    subfields: impl IntoIterator<Item = impl AsRef<str>>,
+) -> Option<(String, &'b VkType)> {
     let mut subfields = subfields.into_iter();
     let first = subfields.next().unwrap();
     let mut path = String::new();
     path.push_str(first.as_ref());
-    let mut ty = fields.iter().find(|(_, n)| n == first.as_ref()).map(|(t, _)| t)?;
+    let mut ty = fields
+        .iter()
+        .find(|(_, n)| n == first.as_ref())
+        .map(|(t, _)| t)?;
     while let Some(next) = subfields.next() {
         path = ty.gen_deref_expr(&path);
-        if let VkTypeDef::Struct { fields } = registry.type_defs.get(ty.derefed_type().as_ident().unwrap()).unwrap() {
-            ty = fields.iter().find(|(_, n)| n == next.as_ref()).map(|(t, _)| t)?;
+        if let VkTypeDef::Struct { fields } = registry
+            .type_defs
+            .get(ty.derefed_type().as_ident().unwrap())
+            .unwrap()
+        {
+            ty = fields
+                .iter()
+                .find(|(_, n)| n == next.as_ref())
+                .map(|(t, _)| t)?;
             path.push_str(".r#");
             path.push_str(next.as_ref());
         } else {
@@ -134,7 +146,11 @@ pub fn gen_path_subfield_in_list<'b>(fields: &'b [(VkType, String)], registry: &
 /// Finds the type of a subfield of the list of fields.
 ///
 /// The registry must be passed in order to look up the definition of structs.
-pub fn find_subfield_in_list<'b>(fields: &'b [(VkType, String)], registry: &'b VkRegistry, subfields: impl IntoIterator<Item = impl AsRef<str>>) -> Option<&'b VkType> {
+pub fn find_subfield_in_list<'b>(
+    fields: &'b [(VkType, String)],
+    registry: &'b VkRegistry,
+    subfields: impl IntoIterator<Item = impl AsRef<str>>,
+) -> Option<&'b VkType> {
     gen_path_subfield_in_list(fields, registry, subfields).map(|r| r.1)
 }
 
@@ -145,7 +161,7 @@ impl VkType {
         match self {
             VkType::MutPointer(t, _) => t.gen_deref_expr(&format!("(*{})", expr)),
             VkType::ConstPointer(t, _) => t.gen_deref_expr(&format!("(*{})", expr)),
-            _ => expr.to_owned()
+            _ => expr.to_owned(),
         }
     }
 
@@ -177,7 +193,7 @@ impl VkTypeDef {
                 } else {
                     None
                 }
-            },
+            }
             _ => None,
         }
     }
@@ -189,27 +205,28 @@ pub fn parse(source: impl Read) -> VkRegistry {
     let mut events_source = EventReader::new(source).into_iter();
 
     match events_source.next() {
-        Some(Ok(XmlEvent::StartDocument { .. })) => {},
-        ev => panic!("Unexpected: {:?}", ev)
+        Some(Ok(XmlEvent::StartDocument { .. })) => {}
+        ev => panic!("Unexpected: {:?}", ev),
     }
 
     let registry = match events_source.next() {
-        Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "registry") =>
-            parse_registry(&mut events_source),
-        ev => panic!("Unexpected: {:?}", ev)
+        Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "registry") => {
+            parse_registry(&mut events_source)
+        }
+        ev => panic!("Unexpected: {:?}", ev),
     };
 
     loop {
         match events_source.next() {
             Some(Ok(XmlEvent::EndDocument { .. })) => break,
-            Some(Ok(XmlEvent::Whitespace(..))) => {},
-            ev => panic!("Unexpected: {:?}", ev)
+            Some(Ok(XmlEvent::Whitespace(..))) => {}
+            ev => panic!("Unexpected: {:?}", ev),
         }
     }
 
     match events_source.next() {
         None => return registry,
-        ev => panic!("Unexpected: {:?}", ev)
+        ev => panic!("Unexpected: {:?}", ev),
     }
 }
 
@@ -238,40 +255,45 @@ fn parse_registry(events_source: &mut Events<impl Read>) -> VkRegistry {
                 let type_defs = parse_types(events_source);
                 assert!(out.type_defs.is_empty());
                 out.type_defs = type_defs;
-            },
+            }
             Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "commands") => {
                 let commands = parse_commands(events_source);
                 assert!(out.commands.is_empty());
                 out.commands = commands;
-            },
+            }
             Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "enums") => {
                 for (name, value) in parse_enums(events_source) {
                     let _prev_val = out.enums.insert(name.clone(), value);
                     assert!(_prev_val.is_none(), "Duplicate value for {:?}", name);
                 }
-            },
+            }
 
             // Other things we don't care about.
-            Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "comment") =>
-                advance_until_elem_end(events_source, &name),
-            Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "platforms") =>
-                advance_until_elem_end(events_source, &name),
-            Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "tags") =>
-                advance_until_elem_end(events_source, &name),
-            Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "feature") =>
-                advance_until_elem_end(events_source, &name),
-            Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "extensions") =>
-                advance_until_elem_end(events_source, &name),
+            Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "comment") => {
+                advance_until_elem_end(events_source, &name)
+            }
+            Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "platforms") => {
+                advance_until_elem_end(events_source, &name)
+            }
+            Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "tags") => {
+                advance_until_elem_end(events_source, &name)
+            }
+            Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "feature") => {
+                advance_until_elem_end(events_source, &name)
+            }
+            Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "extensions") => {
+                advance_until_elem_end(events_source, &name)
+            }
 
             Some(Ok(XmlEvent::EndElement { .. })) => {
                 assert!(!out.commands.is_empty());
                 assert!(!out.type_defs.is_empty());
                 return out;
-            },
-            Some(Ok(XmlEvent::CData(..))) |
-            Some(Ok(XmlEvent::Comment(..))) |
-            Some(Ok(XmlEvent::Characters(..))) |
-            Some(Ok(XmlEvent::Whitespace(..))) => {},
+            }
+            Some(Ok(XmlEvent::CData(..)))
+            | Some(Ok(XmlEvent::Comment(..)))
+            | Some(Ok(XmlEvent::Characters(..)))
+            | Some(Ok(XmlEvent::Whitespace(..))) => {}
             ev => panic!("Unexpected: {:?}", ev),
         }
     }
@@ -284,24 +306,28 @@ fn parse_types(events_source: &mut Events<impl Read>) -> HashMap<String, VkTypeD
 
     loop {
         match events_source.next() {
-            Some(Ok(XmlEvent::StartElement { name, attributes, .. })) if name_equals(&name, "type") => {
+            Some(Ok(XmlEvent::StartElement {
+                name, attributes, ..
+            })) if name_equals(&name, "type") => {
                 if let Some((name, ty)) = parse_type(events_source, attributes) {
-                    if !name.is_empty() {        // TODO: shouldn't be there; find the bug
+                    if !name.is_empty() {
+                        // TODO: shouldn't be there; find the bug
                         let _prev_val = out.insert(name.clone(), ty);
                         assert!(_prev_val.is_none(), "Duplicate value for {:?}", name);
                     }
                 }
-            },
-            Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "comment") =>
-                advance_until_elem_end(events_source, &name),
+            }
+            Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "comment") => {
+                advance_until_elem_end(events_source, &name)
+            }
             Some(Ok(XmlEvent::EndElement { name, .. })) => {
                 assert!(name_equals(&name, "types"));
-                return out
-            },
-            Some(Ok(XmlEvent::CData(..))) |
-            Some(Ok(XmlEvent::Comment(..))) |
-            Some(Ok(XmlEvent::Characters(..))) |
-            Some(Ok(XmlEvent::Whitespace(..))) => {},
+                return out;
+            }
+            Some(Ok(XmlEvent::CData(..)))
+            | Some(Ok(XmlEvent::Comment(..)))
+            | Some(Ok(XmlEvent::Characters(..)))
+            | Some(Ok(XmlEvent::Whitespace(..))) => {}
             ev => panic!("Unexpected: {:?}", ev),
         }
     }
@@ -309,21 +335,24 @@ fn parse_types(events_source: &mut Events<impl Read>) -> HashMap<String, VkTypeD
 
 /// Call this function right after finding a `StartElement` with the name `type`. This
 /// function parses the content of the element.
-fn parse_type(events_source: &mut Events<impl Read>, attributes: Vec<OwnedAttribute>) -> Option<(String, VkTypeDef)> {
+fn parse_type(
+    events_source: &mut Events<impl Read>,
+    attributes: Vec<OwnedAttribute>,
+) -> Option<(String, VkTypeDef)> {
     match find_attr(&attributes, "category") {
         Some("enum") => {
             let name = find_attr(&attributes, "name").unwrap().to_owned();
             advance_until_elem_end(events_source, &"type".parse().unwrap());
             Some((name, VkTypeDef::Enum))
-        },
+        }
         Some("bitmask") => {
             let (_, name) = parse_ty_name(events_source, attributes);
             Some((name, VkTypeDef::Bitmask))
-        },
+        }
         Some("include") | Some("define") | Some("basetype") => {
             advance_until_elem_end(events_source, &"type".parse().unwrap());
             None
-        },
+        }
         Some("handle") => {
             let (ty, name) = parse_ty_name(events_source, attributes.clone());
             if ty == VkType::Ident("VK_DEFINE_HANDLE".to_owned()) {
@@ -335,65 +364,78 @@ fn parse_type(events_source: &mut Events<impl Read>, attributes: Vec<OwnedAttrib
             } else {
                 panic!("Unknown handle type: {:?} for {:?}", ty, name)
             }
-        },
+        }
         Some("funcpointer") => {
             // We deliberately ignore function pointers, and manually generate their definitions.
             advance_until_elem_end(events_source, &"type".parse().unwrap());
             None
-        },
+        }
         Some("union") => {
             let name = find_attr(&attributes, "name").unwrap().to_owned();
             let mut fields = Vec::new();
 
             loop {
                 match events_source.next() {
-                    Some(Ok(XmlEvent::StartElement { name, attributes, .. })) if name_equals(&name, "member") =>{
+                    Some(Ok(XmlEvent::StartElement {
+                        name, attributes, ..
+                    })) if name_equals(&name, "member") => {
                         fields.push(parse_ty_name(events_source, attributes));
-                    },
-                    Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "comment") =>
-                        advance_until_elem_end(events_source, &name),
+                    }
+                    Some(Ok(XmlEvent::StartElement { name, .. }))
+                        if name_equals(&name, "comment") =>
+                    {
+                        advance_until_elem_end(events_source, &name)
+                    }
                     Some(Ok(XmlEvent::EndElement { .. })) => break,
-                    Some(Ok(XmlEvent::CData(..))) |
-                    Some(Ok(XmlEvent::Comment(..))) |
-                    Some(Ok(XmlEvent::Characters(..))) |
-                    Some(Ok(XmlEvent::Whitespace(..))) => {},
+                    Some(Ok(XmlEvent::CData(..)))
+                    | Some(Ok(XmlEvent::Comment(..)))
+                    | Some(Ok(XmlEvent::Characters(..)))
+                    | Some(Ok(XmlEvent::Whitespace(..))) => {}
                     ev => panic!("Unexpected: {:?}", ev),
                 }
             }
 
             Some((name, VkTypeDef::Union { fields }))
-        },
+        }
         Some("struct") => {
             let name = find_attr(&attributes, "name").unwrap().to_owned();
             let mut fields = Vec::new();
 
             loop {
                 match events_source.next() {
-                    Some(Ok(XmlEvent::StartElement { name, attributes, .. })) if name_equals(&name, "member") =>{
+                    Some(Ok(XmlEvent::StartElement {
+                        name, attributes, ..
+                    })) if name_equals(&name, "member") => {
                         fields.push(parse_ty_name(events_source, attributes));
-                    },
-                    Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "comment") =>
-                        advance_until_elem_end(events_source, &name),
+                    }
+                    Some(Ok(XmlEvent::StartElement { name, .. }))
+                        if name_equals(&name, "comment") =>
+                    {
+                        advance_until_elem_end(events_source, &name)
+                    }
                     Some(Ok(XmlEvent::EndElement { .. })) => break,
-                    Some(Ok(XmlEvent::CData(..))) |
-                    Some(Ok(XmlEvent::Comment(..))) |
-                    Some(Ok(XmlEvent::Characters(..))) |
-                    Some(Ok(XmlEvent::Whitespace(..))) => {},
+                    Some(Ok(XmlEvent::CData(..)))
+                    | Some(Ok(XmlEvent::Comment(..)))
+                    | Some(Ok(XmlEvent::Characters(..)))
+                    | Some(Ok(XmlEvent::Whitespace(..))) => {}
                     ev => panic!("Unexpected: {:?}", ev),
                 }
             }
 
             Some((name, VkTypeDef::Struct { fields }))
-        },
+        }
         None if find_attr(&attributes, "requires").is_some() => {
             advance_until_elem_end(events_source, &"type".parse().unwrap());
             None
-        },
+        }
         None if find_attr(&attributes, "name") == Some("int") => {
             advance_until_elem_end(events_source, &"type".parse().unwrap());
             None
-        },
-        cat => panic!("Unexpected type category: {:?} with attrs {:?}", cat, attributes),
+        }
+        cat => panic!(
+            "Unexpected type category: {:?} with attrs {:?}",
+            cat, attributes
+        ),
     }
 }
 
@@ -404,25 +446,29 @@ fn parse_enums(events_source: &mut Events<impl Read>) -> HashMap<String, String>
 
     loop {
         match events_source.next() {
-            Some(Ok(XmlEvent::StartElement { name, attributes, .. })) if name_equals(&name, "enum") => {
+            Some(Ok(XmlEvent::StartElement {
+                name, attributes, ..
+            })) if name_equals(&name, "enum") => {
                 if let Some((name, value)) = parse_enum(events_source, attributes) {
                     let _prev_val = out.insert(name.clone(), value);
                     assert!(_prev_val.is_none(), "Duplicate value for {:?}", name);
                 }
-            },
+            }
 
-            Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "comment") =>
-                advance_until_elem_end(events_source, &name),
-            Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "unused") =>
-                advance_until_elem_end(events_source, &name),
+            Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "comment") => {
+                advance_until_elem_end(events_source, &name)
+            }
+            Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "unused") => {
+                advance_until_elem_end(events_source, &name)
+            }
             Some(Ok(XmlEvent::EndElement { name, .. })) => {
                 assert!(name_equals(&name, "enums"));
-                return out
-            },
-            Some(Ok(XmlEvent::CData(..))) |
-            Some(Ok(XmlEvent::Comment(..))) |
-            Some(Ok(XmlEvent::Characters(..))) |
-            Some(Ok(XmlEvent::Whitespace(..))) => {},
+                return out;
+            }
+            Some(Ok(XmlEvent::CData(..)))
+            | Some(Ok(XmlEvent::Comment(..)))
+            | Some(Ok(XmlEvent::Characters(..)))
+            | Some(Ok(XmlEvent::Whitespace(..))) => {}
             ev => panic!("Unexpected: {:?}", ev),
         }
     }
@@ -430,7 +476,10 @@ fn parse_enums(events_source: &mut Events<impl Read>) -> HashMap<String, String>
 
 /// Call this function right after finding a `StartElement` with the name `enum`. This
 /// function parses the content of the element.
-fn parse_enum(events_source: &mut Events<impl Read>, attributes: Vec<OwnedAttribute>) -> Option<(String, String)> {
+fn parse_enum(
+    events_source: &mut Events<impl Read>,
+    attributes: Vec<OwnedAttribute>,
+) -> Option<(String, String)> {
     let name = find_attr(&attributes, "name").unwrap().to_owned();
 
     let value = if let Some(value) = find_attr(&attributes, "value") {
@@ -454,18 +503,21 @@ fn parse_commands(events_source: &mut Events<impl Read>) -> Vec<VkCommand> {
 
     loop {
         match events_source.next() {
-            Some(Ok(XmlEvent::StartElement { name, attributes, .. })) if name_equals(&name, "command") => {
+            Some(Ok(XmlEvent::StartElement {
+                name, attributes, ..
+            })) if name_equals(&name, "command") => {
                 if let Some(cmd) = parse_command(events_source, attributes) {
                     out.push(cmd);
                 }
-            },
-            Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "comment") =>
-                advance_until_elem_end(events_source, &name),
+            }
+            Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "comment") => {
+                advance_until_elem_end(events_source, &name)
+            }
             Some(Ok(XmlEvent::EndElement { .. })) => return out,
-            Some(Ok(XmlEvent::CData(..))) |
-            Some(Ok(XmlEvent::Comment(..))) |
-            Some(Ok(XmlEvent::Characters(..))) |
-            Some(Ok(XmlEvent::Whitespace(..))) => {},
+            Some(Ok(XmlEvent::CData(..)))
+            | Some(Ok(XmlEvent::Comment(..)))
+            | Some(Ok(XmlEvent::Characters(..)))
+            | Some(Ok(XmlEvent::Whitespace(..))) => {}
             ev => panic!("Unexpected: {:?}", ev),
         }
     }
@@ -473,7 +525,10 @@ fn parse_commands(events_source: &mut Events<impl Read>) -> Vec<VkCommand> {
 
 /// Call this function right after finding a `StartElement` with the name `command`. This
 /// function parses the content of the element.
-fn parse_command(events_source: &mut Events<impl Read>, attributes: Vec<OwnedAttribute>) -> Option<VkCommand> {
+fn parse_command(
+    events_source: &mut Events<impl Read>,
+    attributes: Vec<OwnedAttribute>,
+) -> Option<VkCommand> {
     let mut out = VkCommand {
         name: String::new(),
         ret_ty: VkType::Ident(String::new()),
@@ -482,23 +537,30 @@ fn parse_command(events_source: &mut Events<impl Read>, attributes: Vec<OwnedAtt
 
     loop {
         match events_source.next() {
-            Some(Ok(XmlEvent::StartElement { name, attributes, .. })) if name_equals(&name, "proto") => {
+            Some(Ok(XmlEvent::StartElement {
+                name, attributes, ..
+            })) if name_equals(&name, "proto") => {
                 let (ret_ty, f_name) = parse_ty_name(events_source, attributes);
                 out.name = f_name;
                 out.ret_ty = ret_ty;
-            },
+            }
 
-            Some(Ok(XmlEvent::StartElement { name, attributes, .. })) if name_equals(&name, "param") =>{
+            Some(Ok(XmlEvent::StartElement {
+                name, attributes, ..
+            })) if name_equals(&name, "param") => {
                 out.params.push(parse_ty_name(events_source, attributes));
-            },
+            }
 
-            Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "implicitexternsyncparams") =>
-                advance_until_elem_end(events_source, &name),
+            Some(Ok(XmlEvent::StartElement { name, .. }))
+                if name_equals(&name, "implicitexternsyncparams") =>
+            {
+                advance_until_elem_end(events_source, &name)
+            }
             Some(Ok(XmlEvent::EndElement { .. })) => break,
-            Some(Ok(XmlEvent::CData(..))) |
-            Some(Ok(XmlEvent::Comment(..))) |
-            Some(Ok(XmlEvent::Characters(..))) |
-            Some(Ok(XmlEvent::Whitespace(..))) => {},
+            Some(Ok(XmlEvent::CData(..)))
+            | Some(Ok(XmlEvent::Comment(..)))
+            | Some(Ok(XmlEvent::Characters(..)))
+            | Some(Ok(XmlEvent::Whitespace(..))) => {}
             ev => panic!("Unexpected: {:?}", ev),
         }
     }
@@ -515,7 +577,10 @@ fn parse_command(events_source: &mut Events<impl Read>, attributes: Vec<OwnedAtt
 /// Call this function right after finding a `StartElement`. This function parses the content of
 /// the element and expects a single `<type>` tag and a single `<name>` tag. It returns the type
 /// and the name.
-fn parse_ty_name(events_source: &mut Events<impl Read>, attributes: Vec<OwnedAttribute>) -> (VkType, String) {
+fn parse_ty_name(
+    events_source: &mut Events<impl Read>,
+    attributes: Vec<OwnedAttribute>,
+) -> (VkType, String) {
     let mut ret_ty_out = String::new();
     let mut name_out = String::new();
     let mut enum_content = String::new();
@@ -525,14 +590,18 @@ fn parse_ty_name(events_source: &mut Events<impl Read>, attributes: Vec<OwnedAtt
 
     loop {
         match events_source.next() {
-            Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "name") =>
-                name_out = expect_characters_elem(events_source),
-            Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "type") =>
-                ret_ty_out = expect_characters_elem(events_source),
-            Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "enum") =>
-                enum_content = expect_characters_elem(events_source),
-            Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "comment") =>
-                advance_until_elem_end(events_source, &name),
+            Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "name") => {
+                name_out = expect_characters_elem(events_source)
+            }
+            Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "type") => {
+                ret_ty_out = expect_characters_elem(events_source)
+            }
+            Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "enum") => {
+                enum_content = expect_characters_elem(events_source)
+            }
+            Some(Ok(XmlEvent::StartElement { name, .. })) if name_equals(&name, "comment") => {
+                advance_until_elem_end(events_source, &name)
+            }
             Some(Ok(XmlEvent::EndElement { .. })) => break,
             Some(Ok(XmlEvent::CData(s))) => white_spaces.push_str(&s),
             Some(Ok(XmlEvent::Comment(s))) => white_spaces.push_str(&s),
@@ -549,7 +618,9 @@ fn parse_ty_name(events_source: &mut Events<impl Read>, attributes: Vec<OwnedAtt
             for elem in len.split(',').rev() {
                 let len = if elem == "null-terminated" {
                     VkTypePtrLen::NullTerminated
-                } else if elem == r#"latexmath:[\lceil{\mathit{rasterizationSamples} \over 32}\rceil]"# {
+                } else if elem
+                    == r#"latexmath:[\lceil{\mathit{rasterizationSamples} \over 32}\rceil]"#
+                {
                     VkTypePtrLen::OtherField {
                         before_other_field: "(".to_owned(),
                         other_field: vec!["rasterizationSamples".to_owned()],
@@ -564,8 +635,11 @@ fn parse_ty_name(events_source: &mut Events<impl Read>, attributes: Vec<OwnedAtt
                 } else {
                     // If `altlen` is something, then this is likely a mathematical expression
                     // that needs to be hardcoded similar to the ones above.
-                    assert!(find_attr(&attributes, "altlen").is_none(),
-                        "Field runtime length might have to be hardcoded: {:?}", len);
+                    assert!(
+                        find_attr(&attributes, "altlen").is_none(),
+                        "Field runtime length might have to be hardcoded: {:?}",
+                        len
+                    );
                     VkTypePtrLen::OtherField {
                         before_other_field: "".to_owned(),
                         other_field: elem.split("::").map(|v| v.to_owned()).collect(),
@@ -580,7 +654,6 @@ fn parse_ty_name(events_source: &mut Events<impl Read>, attributes: Vec<OwnedAtt
                 }
             }
             ty_out
-
         } else {
             if white_spaces.contains("const") {
                 VkType::ConstPointer(Box::new(VkType::Ident(ret_ty_out)), VkTypePtrLen::One)
@@ -588,7 +661,6 @@ fn parse_ty_name(events_source: &mut Events<impl Read>, attributes: Vec<OwnedAtt
                 VkType::MutPointer(Box::new(VkType::Ident(ret_ty_out)), VkTypePtrLen::One)
             }
         }
-
     } else {
         assert!(len_attr.is_none());
 
@@ -621,12 +693,14 @@ fn parse_ty_name(events_source: &mut Events<impl Read>, attributes: Vec<OwnedAtt
 fn advance_until_elem_end(events_source: &mut Events<impl Read>, elem: &OwnedName) {
     loop {
         match events_source.next() {
-            Some(Ok(XmlEvent::StartElement { name, .. })) => advance_until_elem_end(events_source, &name),
+            Some(Ok(XmlEvent::StartElement { name, .. })) => {
+                advance_until_elem_end(events_source, &name)
+            }
             Some(Ok(XmlEvent::EndElement { name })) if &name == elem => return,
-            Some(Ok(XmlEvent::CData(..))) |
-            Some(Ok(XmlEvent::Comment(..))) |
-            Some(Ok(XmlEvent::Characters(..))) |
-            Some(Ok(XmlEvent::Whitespace(..))) => {},
+            Some(Ok(XmlEvent::CData(..)))
+            | Some(Ok(XmlEvent::Comment(..)))
+            | Some(Ok(XmlEvent::Characters(..)))
+            | Some(Ok(XmlEvent::Whitespace(..))) => {}
             ev => panic!("Unexpected: {:?}", ev),
         }
     }
@@ -657,5 +731,7 @@ fn name_equals(name: &OwnedName, expected: &str) -> bool {
 
 /// Find an attribute value in the list.
 fn find_attr<'a>(list: &'a [OwnedAttribute], name: &str) -> Option<&'a str> {
-    list.iter().find(|a| name_equals(&a.name, name)).map(|a| a.value.as_str())
+    list.iter()
+        .find(|a| name_equals(&a.name, name))
+        .map(|a| a.value.as_str())
 }

@@ -15,7 +15,7 @@
 
 use crate::id_pool::IdPool;
 use crate::module::Module;
-use crate::scheduler::{Pid, vm};
+use crate::scheduler::{vm, Pid};
 use alloc::vec::Vec;
 use core::fmt;
 use hashbrown::{
@@ -193,7 +193,7 @@ impl<TPud, TTud> ProcessesCollection<TPud, TTud> {
         main_thread_user_data: TTud,
         symbols: impl FnMut(&str, &str, &wasmi::Signature) -> Result<usize, ()>,
     ) -> Result<ProcessesCollectionProc<TPud, TTud>, vm::NewErr> {
-        let main_thread_id = self.thread_id_pool.assign();  // TODO: check for duplicates
+        let main_thread_id = self.thread_id_pool.assign(); // TODO: check for duplicates
         let main_thread_data = Thread {
             user_data: main_thread_user_data,
             thread_id: main_thread_id,
@@ -418,7 +418,7 @@ impl<'a, TPud, TTud> ProcessesCollectionProc<'a, TPud, TTud> {
         params: Vec<wasmi::RuntimeValue>,
         user_data: TTud,
     ) -> Result<ProcessesCollectionThread<'a, TPud, TTud>, vm::StartErr> {
-        let thread_id = self.thread_id_pool.assign();       // TODO: check for duplicates
+        let thread_id = self.thread_id_pool.assign(); // TODO: check for duplicates
         let thread_data = Thread {
             user_data,
             thread_id,

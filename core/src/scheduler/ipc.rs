@@ -22,7 +22,7 @@ use crate::signature::Signature;
 use alloc::{borrow::Cow, collections::VecDeque, vec, vec::Vec};
 use byteorder::{ByteOrder as _, LittleEndian};
 use core::{convert::TryFrom, marker::PhantomData};
-use hashbrown::{HashMap, hash_map::Entry};
+use hashbrown::{hash_map::Entry, HashMap};
 use parity_scale_codec::Encode;
 
 /// Handles scheduling processes and inter-process communications.
@@ -319,7 +319,9 @@ impl<T> Core<T> {
                     return_value: value,
                 };
             }
-            processes::RunOneOutcome::ThreadFinished { .. } => { println!("thread finished"); }
+            processes::RunOneOutcome::ThreadFinished { .. } => {
+                println!("thread finished");
+            }
             processes::RunOneOutcome::Interrupted {
                 mut thread,
                 id,
@@ -364,10 +366,14 @@ impl<T> Core<T> {
                             let message_id_write = params[4].try_into::<i32>().unwrap() as u32;
                             let new_message_id = loop {
                                 let id = self.message_id_pool.assign();
-                                if id == 0 || id == 1 { continue; }
+                                if id == 0 || id == 1 {
+                                    continue;
+                                }
                                 match self.messages_to_answer.entry(id) {
                                     Entry::Occupied(_) => continue,
-                                    Entry::Vacant(e) => e.insert(MessageEmitter::Process(emitter_pid)),
+                                    Entry::Vacant(e) => {
+                                        e.insert(MessageEmitter::Process(emitter_pid))
+                                    }
                                 };
                                 break id;
                             };
@@ -385,18 +391,18 @@ impl<T> Core<T> {
                             .expect("Interface handler not found")
                         {
                             InterfaceHandler::Process(pid) => {
-                                let message = syscalls::ffi::Message::Interface(syscalls::ffi::InterfaceMessage {
-                                    interface,
-                                    index_in_list: 0,
-                                    message_id,
-                                    emitter_pid: Some(emitter_pid.into()),
-                                    actual_data: message,
-                                });
+                                let message = syscalls::ffi::Message::Interface(
+                                    syscalls::ffi::InterfaceMessage {
+                                        interface,
+                                        index_in_list: 0,
+                                        message_id,
+                                        emitter_pid: Some(emitter_pid.into()),
+                                        actual_data: message,
+                                    },
+                                );
 
                                 let mut process = self.processes.process_by_id(*pid).unwrap();
-                                process.user_data()
-                                    .messages_queue
-                                    .push_back(message);
+                                process.user_data().messages_queue.push_back(message);
 
                                 let mut thread = process.main_thread();
                                 loop {
@@ -406,7 +412,7 @@ impl<T> Core<T> {
                                         None => break,
                                     };
                                 }
-                            },
+                            }
                             InterfaceHandler::External => {
                                 thread.resume(Some(wasmi::RuntimeValue::I32(0)));
                                 return CoreRunOutcomeInner::InterfaceMessage {
@@ -434,7 +440,8 @@ impl<T> Core<T> {
                         };
                         let pid = thread.pid();
                         drop(thread);
-                        return self.answer_message_inner(msg_id, &message, Some(pid))
+                        return self
+                            .answer_message_inner(msg_id, &message, Some(pid))
                             .unwrap_or(CoreRunOutcomeInner::LoopAgain);
                     }
 
@@ -488,7 +495,11 @@ impl<T> Core<T> {
     ///
     /// The message doesn't expect any answer.
     // TODO: better API
-    pub fn emit_interface_message_no_answer(&mut self, interface: [u8; 32], message: impl Encode) -> Result<(), ()> {
+    pub fn emit_interface_message_no_answer(
+        &mut self,
+        interface: [u8; 32],
+        message: impl Encode,
+    ) -> Result<(), ()> {
         let message = syscalls::ffi::Message::Interface(syscalls::ffi::InterfaceMessage {
             interface,
             message_id: None,
@@ -499,13 +510,11 @@ impl<T> Core<T> {
 
         let pid = match self.interfaces.get(&interface).ok_or(())? {
             InterfaceHandler::Process(pid) => *pid,
-            InterfaceHandler::External => return Err(()),       // TODO: explain that explicitely
+            InterfaceHandler::External => return Err(()), // TODO: explain that explicitely
         };
 
         let mut process = self.processes.process_by_id(pid).unwrap();
-        process.user_data()
-            .messages_queue
-            .push_back(message);
+        process.user_data().messages_queue.push_back(message);
 
         let mut thread = process.main_thread();
         loop {
@@ -524,10 +533,16 @@ impl<T> Core<T> {
     /// The message does expect an answer. The answer will be sent back as
     /// [`MessageResponse`](CoreRunOutcome::MessageResponse) event.
     // TODO: better API
-    pub fn emit_interface_message_answer(&mut self, interface: [u8; 32], message: impl Encode) -> Result<u64, ()> {
+    pub fn emit_interface_message_answer(
+        &mut self,
+        interface: [u8; 32],
+        message: impl Encode,
+    ) -> Result<u64, ()> {
         let (message_id, messages_to_answer_entry) = loop {
             let id = self.message_id_pool.assign();
-            if id == 0 || id == 1 { continue; }
+            if id == 0 || id == 1 {
+                continue;
+            }
             match self.messages_to_answer.entry(id) {
                 Entry::Vacant(e) => break (id, e),
                 Entry::Occupied(_) => continue,
@@ -544,13 +559,11 @@ impl<T> Core<T> {
 
         let pid = match self.interfaces.get(&interface).ok_or(())? {
             InterfaceHandler::Process(pid) => *pid,
-            InterfaceHandler::External => return Err(()),       // TODO: explain that explicitely
+            InterfaceHandler::External => return Err(()), // TODO: explain that explicitely
         };
 
         let mut process = self.processes.process_by_id(pid).unwrap();
-        process.user_data()
-            .messages_queue
-            .push_back(message);
+        process.user_data().messages_queue.push_back(message);
 
         let mut thread = process.main_thread();
         loop {
@@ -577,7 +590,12 @@ impl<T> Core<T> {
     }
 
     // TODO: better API
-    fn answer_message_inner(&mut self, message_id: u64, response: &[u8], answerer_pid: Option<Pid>) -> Option<CoreRunOutcomeInner> {
+    fn answer_message_inner(
+        &mut self,
+        message_id: u64,
+        response: &[u8],
+        answerer_pid: Option<Pid>,
+    ) -> Option<CoreRunOutcomeInner> {
         let actual_message = syscalls::ffi::Message::Response(syscalls::ffi::ResponseMessage {
             message_id,
             // We a dummy value here and fill it up later when actually delivering the message.
@@ -603,7 +621,7 @@ impl<T> Core<T> {
             }
             (Some(MessageEmitter::External), Some(answerer_pid)) => {
                 Some(CoreRunOutcomeInner::MessageResponse {
-                    pid: answerer_pid, 
+                    pid: answerer_pid,
                     message_id,
                     response: response.to_vec(),
                 })
@@ -638,7 +656,10 @@ impl<T> Core<T> {
                     } else {
                         // TODO: remove this println?
                         // TODO: way to report the signature mismatch?
-                        println!("signature mismatch for {:?}:{:?}; expected={:?}; obtained={:?}", interface, function, expected_signature, obtained_signature);
+                        println!(
+                            "signature mismatch for {:?}:{:?}; expected={:?}; obtained={:?}",
+                            interface, function, expected_signature, obtained_signature
+                        );
                     }
                 }
 
@@ -816,7 +837,11 @@ fn extrinsic_next_message(
     try_resume_message_wait(process);
 
     if !block && *process.user_data() != Thread::ReadyToRun {
-        debug_assert!(if let Thread::MessageWait(_) = process.user_data() { true } else { false });
+        debug_assert!(if let Thread::MessageWait(_) = process.user_data() {
+            true
+        } else {
+            false
+        });
         *process.user_data() = Thread::ReadyToRun;
         process.resume(Some(wasmi::RuntimeValue::I32(0)));
     }
@@ -885,7 +910,10 @@ fn try_resume_message_wait(thread: &mut processes::ProcessesCollectionThread<Pro
             .write_memory(msg_wait.msg_ids_ptr + index_in_msg_ids * 8, &[0; 8])
             .unwrap();
         // Pop the message from the queue, so that we don't deliver it twice.
-        thread.process_user_data().messages_queue.remove(index_in_queue);
+        thread
+            .process_user_data()
+            .messages_queue
+            .remove(index_in_queue);
     }
 
     *thread.user_data() = Thread::ReadyToRun;
@@ -895,7 +923,10 @@ fn try_resume_message_wait(thread: &mut processes::ProcessesCollectionThread<Pro
 #[cfg(test)]
 mod tests {
     use super::{Core, CoreRunOutcome};
-    use crate::{module::Module, signature::{Signature, ValueType}};
+    use crate::{
+        module::Module,
+        signature::{Signature, ValueType},
+    };
     use core::iter;
 
     #[test]
@@ -960,7 +991,12 @@ mod tests {
         .unwrap();
 
         let mut core = Core::<u32>::new()
-            .with_extrinsic("foo", "test", Signature::new(iter::empty(), Some(ValueType::I32)), 639u32)
+            .with_extrinsic(
+                "foo",
+                "test",
+                Signature::new(iter::empty(), Some(ValueType::I32)),
+                639u32,
+            )
             .build();
 
         let expected_pid = core.execute(&module).unwrap().pid();

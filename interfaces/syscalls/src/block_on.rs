@@ -13,11 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::{emit_message, Message, ResponseMessage, InterfaceMessage};
-use alloc::{
-    collections::VecDeque,
-    sync::Arc,
-};
+use crate::{emit_message, InterfaceMessage, Message, ResponseMessage};
+use alloc::{collections::VecDeque, sync::Arc};
 use core::{
     cell::RefCell,
     mem,
@@ -83,9 +80,9 @@ pub fn block_on<T>(future: impl Future<Output = T>) -> T {
             // If the waker has been used during the polling of this future, then we have to pol
             // again.
             if woken_up.swap(false, Ordering::SeqCst) {
-                continue
+                continue;
             } else {
-                break
+                break;
             }
         }
 
@@ -110,7 +107,7 @@ pub fn block_on<T>(future: impl Future<Output = T>) -> T {
 
                     let _was_in = state.pending_messages.insert(msg.message_id, msg);
                     debug_assert!(_was_in.is_none());
-                },
+                }
                 Message::Interface(msg) => {
                     let _was_in = state.message_ids.remove(msg.index_in_list as usize);
                     debug_assert_eq!(_was_in, 0);
@@ -119,7 +116,7 @@ pub fn block_on<T>(future: impl Future<Output = T>) -> T {
                     waker.wake();
 
                     state.interface_messages_queue.push_back(msg);
-                },
+                }
             };
         }
 

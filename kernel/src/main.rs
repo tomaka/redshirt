@@ -38,7 +38,10 @@ fn main() {
     let mut vk = {
         #[link(name = "vulkan")]
         extern "system" {
-            fn vkGetInstanceProcAddr(instance: usize, pName: *const u8) -> vulkan::PFN_vkVoidFunction;
+            fn vkGetInstanceProcAddr(
+                instance: usize,
+                pName: *const u8,
+            ) -> vulkan::PFN_vkVoidFunction;
         }
         vulkan::VulkanRedirect::new(vkGetInstanceProcAddr)
     };
@@ -73,7 +76,8 @@ fn main() {
                     } if interface == vulkan::INTERFACE => {
                         // TODO:
                         println!("received vk message: {:?}", message);
-                        if let Some(response) = vk.handle(0, &message) {        // TODO: proper PID
+                        if let Some(response) = vk.handle(0, &message) {
+                            // TODO: proper PID
                             system.answer_message(message_id.unwrap(), &response);
                         }
                         continue;

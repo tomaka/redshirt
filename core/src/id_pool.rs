@@ -47,7 +47,7 @@ impl IdPool {
 
     /// Generates a new `ChaCha20Rng`.
     fn gen_new_rng(&self) -> ChaCha20Rng {
-        let core = ChaCha20Core::from_seed([0; 32]);        // TODO:
+        let core = ChaCha20Core::from_seed([0; 32]); // TODO:
         core.into()
     }
 }
