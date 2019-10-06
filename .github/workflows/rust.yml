@@ -4,6 +4,7 @@ on: [push, pull_request]
 
 jobs:
   build:
+    name: Build and check
     runs-on: ubuntu-latest
     container:
       image: rust
@@ -20,6 +21,7 @@ jobs:
         override: true
     - name: Install a recent version of Clang
       run: |
+        wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key|sudo apt-key add -
         echo "deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-9 main" >> /etc/apt/sources.list
         apt-get update
         apt-get install -y clang-9
