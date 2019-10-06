@@ -5,6 +5,8 @@ on: [push, pull_request]
 jobs:
   build:
     runs-on: ubuntu-18.04
+    env:
+      CC: clang-9
 
     steps:
     - uses: actions/checkout@v1
@@ -18,7 +20,7 @@ jobs:
       run: |
         echo "deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-9 main" >> /etc/apt/sources.list
         apt-get update
-        apt-get install -y clang-8
+        apt-get install -y clang-9
     - name: Build
       run: cargo +nightly build --verbose
     - name: Run tests
