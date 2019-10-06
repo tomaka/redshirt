@@ -4,9 +4,10 @@ on: [push, pull_request]
 
 jobs:
   build:
-    runs-on: ubuntu-18.04
-    env:
-      CC: clang-9
+    container:
+      image: rust
+      env:
+        CC: clang-9
 
     steps:
     - uses: actions/checkout@v1
