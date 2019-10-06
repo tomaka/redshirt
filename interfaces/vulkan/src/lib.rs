@@ -72,6 +72,16 @@ type PFN_vkDebugUtilsMessengerCallbackEXT = extern "system" fn(VkDebugUtilsMessa
 #[allow(non_camel_case_types)]
 pub type PFN_vkVoidFunction = extern "system" fn() -> ();
 
+/// Main Vulkan entry point on the client side.
+///
+/// This returns function pointers to a Vulkan implementation that serializes calls and dispatches
+/// them over the interface.
+///
+/// Conforms to the `vkGetInstanceProcAddr` of the Vulkan specifications.
+pub unsafe extern "system" fn vkGetInstanceProcAddr(instance: usize, name: *const u8) -> PFN_vkVoidFunction {
+    wrapper_vkGetInstanceProcAddr(instance, name)
+}
+
 /// Leverages an existing Vulkan implementation to handle [`VulkanMessage`]s.
 pub struct VulkanRedirect {
     get_instance_proc_addr: unsafe extern "system" fn(usize, *const u8) -> PFN_vkVoidFunction,

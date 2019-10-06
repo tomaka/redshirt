@@ -803,7 +803,7 @@ fn write_deserialize_response_into(
 }
 
 fn write_get_instance_proc_addr(mut out: impl Write, registry: &parse::VkRegistry) {
-    writeln!(out, "pub unsafe extern \"system\" fn vkGetInstanceProcAddr(_instance: usize, name: *const u8) -> PFN_vkVoidFunction {{").unwrap();
+    writeln!(out, "unsafe extern \"system\" fn wrapper_vkGetInstanceProcAddr(_instance: usize, name: *const u8) -> PFN_vkVoidFunction {{").unwrap();
     writeln!(out, "    #![allow(non_snake_case)]").unwrap();
     writeln!(out, "    let name = match CStr::from_ptr(name as *const _).to_str() {{").unwrap();
     writeln!(out, "        Ok(n) => n,").unwrap();
@@ -840,7 +840,7 @@ fn write_get_instance_proc_addr(mut out: impl Write, registry: &parse::VkRegistr
     writeln!(out, "}}").unwrap();
     writeln!(out, "").unwrap();
     writeln!(out, "unsafe extern \"system\" fn wrapper_vkGetDeviceProcAddr(_device: usize, name: *const u8) -> PFN_vkVoidFunction {{").unwrap();
-    writeln!(out, "    vkGetInstanceProcAddr(0, name)").unwrap();       // TODO: do more properly?
+    writeln!(out, "    wrapper_vkGetInstanceProcAddr(0, name)").unwrap();       // TODO: do more properly?
     writeln!(out, "}}").unwrap();
     writeln!(out, "").unwrap();
 }

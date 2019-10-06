@@ -171,7 +171,7 @@ fn main() {
             initial_dimensions, 1, usage, &queue, SurfaceTransform::Identity, alpha,
             PresentMode::Fifo, true, None).unwrap()
 
-    };
+    };*/
 
     // We now create a buffer that will store the shape of our triangle.
     let vertex_buffer = {
@@ -225,7 +225,7 @@ void main() {
 
     let vs = vs::Shader::load(device.clone()).unwrap();
     let fs = fs::Shader::load(device.clone()).unwrap();
-
+/*
     // At this point, OpenGL initialization would be finished. However in Vulkan it is not. OpenGL
     // implicitly does a lot of computation whenever you draw. In Vulkan, you have to do all this
     // manually.
