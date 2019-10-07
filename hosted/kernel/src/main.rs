@@ -15,13 +15,9 @@
 
 #![deny(intra_doc_link_resolution_failure)]
 
-use byteorder::{ByteOrder as _, LittleEndian};
 use futures::{channel::mpsc, channel::oneshot, prelude::*};
 use parity_scale_codec::{DecodeAll, Encode as _};
-use std::{io::Write as _, sync::Arc, sync::Mutex, task::Context, task::Poll};
-
-mod tcp_interface;
-mod wasi;
+use std::{sync::Arc, sync::Mutex, task::Context, task::Poll};
 
 fn main() {
     let event_loop = winit::event_loop::EventLoop::with_user_event();
@@ -74,14 +70,14 @@ async fn async_main(
         &include_bytes!("../../../modules/target/wasm32-wasi/debug/vulkan-triangle.wasm")[..],
     );
 
-    let mut system = wasi::register_extrinsics(kernel_core::system::System::new())
+    let mut system = hosted_wasi::register_extrinsics(kernel_core::system::System::new())
         .with_interface_handler(tcp::ffi::INTERFACE)
         .with_interface_handler(vulkan::INTERFACE)
         .with_interface_handler(window::ffi::INTERFACE)
         .with_main_program(module)
         .build();
 
-    let mut tcp = tcp_interface::TcpState::new();
+    let mut tcp = hosted_tcp::TcpState::new();
     let mut vk = {
         #[link(name = "vulkan")]
         extern "system" {
@@ -103,7 +99,7 @@ async fn async_main(
                     extrinsic,
                     params,
                 } => {
-                    wasi::handle_wasi(&mut system, extrinsic, pid, thread_id, params);
+                    hosted_wasi::handle_wasi(&mut system, extrinsic, pid, thread_id, params);
                     true
                 }
                 kernel_core::system::SystemRunOutcome::InterfaceMessage {
@@ -161,9 +157,9 @@ async fn async_main(
             };
 
             let (msg_to_respond, response_bytes) = match event {
-                tcp_interface::TcpResponse::Open(msg_id, msg) => (msg_id, msg.encode()),
-                tcp_interface::TcpResponse::Read(msg_id, msg) => (msg_id, msg.encode()),
-                tcp_interface::TcpResponse::Write(msg_id, msg) => (msg_id, msg.encode()),
+                hosted_tcp::TcpResponse::Open(msg_id, msg) => (msg_id, msg.encode()),
+                hosted_tcp::TcpResponse::Read(msg_id, msg) => (msg_id, msg.encode()),
+                hosted_tcp::TcpResponse::Write(msg_id, msg) => (msg_id, msg.encode()),
             };
             system.answer_message(msg_to_respond, &response_bytes);
         };
