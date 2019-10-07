@@ -19,6 +19,11 @@ use rand_chacha::{ChaCha20Core, ChaCha20Rng};
 use rand_core::SeedableRng as _;
 use rand_distr::{Distribution as _, Uniform};
 
+// Maths note: after 3 billion iterations, there's a 2% chance of a collision
+//
+// Chance of collision is approximately: 1 - exp(-n^2 / 2^(b+1))
+// where `n` is the number of generated IDs, `b` number of bits in the ID (64 here)
+
 /// Lock-free pool of identifiers. Can assign new identifiers from it.
 pub struct IdPool {
     /// Queue of RNG objects. Since generating a value requires an exclusive reference to the
@@ -65,7 +70,6 @@ mod tests {
         let mut ids = hashbrown::HashSet::<u64>::new();
         let pool = super::IdPool::new();
         for _ in 0..5000 {
-            // TODO: since it's random, there's a small chance that this fails?
             assert!(ids.insert(pool.assign()));
         }
     }
