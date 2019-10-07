@@ -14,10 +14,17 @@ rustup target add wasm32-wasi
 cargo run
 ```
 
-> **Note**: At the time of writing, compiling with `--release` freezes the Rust compiler forever.
+# Repository structure
 
-> **Note**: `cargo build` might have compilation errors. Only the main binary is guaranteed to
->           build.
+Short overview of the structure of the repository:
+
+- `core` is a crate containing all the core infrastructure of interpreting WASM and inter-process
+  communication. It is meant to become `#![no_std]`-compatible.
+- `interfaces` contains crates that provide definitions and helpers for WASM programs to use
+  (examples: `tcp` for TCP/IP, `window` for windowing).
+- `hosted` contains crates that implement interfaces using the host's environment (examples:
+  implements the `tcp` interface using Linux's or Window's TCP/IP).
+- `modules` contains WASM programs.
 
 # Contributing
 

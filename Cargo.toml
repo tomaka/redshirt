@@ -1,7 +1,9 @@
 [workspace]
 members = [
     "core",
-    "kernel",
+    "hosted/kernel",
+    "hosted/tcp",
+    "hosted/wasi",
     "interfaces/interface",
     "interfaces/loader",
     "interfaces/syscalls",
