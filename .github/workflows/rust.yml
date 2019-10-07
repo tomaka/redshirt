@@ -33,3 +33,21 @@ jobs:
       run: cargo +nightly build --locked --verbose
     - name: Run tests
       run: cargo +nightly test --locked --verbose
+
+  build-unikernel:
+    name: Check that building as a unikernel works
+    runs-on: ubuntu-latest
+    container:
+      image: rwthos/hermitcore-rs
+      env:
+        CC: clang-9
+    steps:
+    - uses: actions/checkout@v1
+    - name: Install a recent version of Clang
+      run: |
+        wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
+        #echo "deb http://apt.llvm.org/buster/ llvm-toolchain-buster-9 main" >> /etc/apt/sources.list
+        #apt-get update
+        #apt-get install -y clang-9
+    - name: Build
+      run: cargo build --locked --target x86_64-unknown-hermit
