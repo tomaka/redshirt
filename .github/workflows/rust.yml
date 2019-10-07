@@ -39,8 +39,8 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: rwthos/hermitcore-rs
-      env:
-        CC: clang-9
+      #env:
+      #  CC: clang-9
     steps:
     - uses: actions/checkout@v1
     - name: Install a recent version of Clang
