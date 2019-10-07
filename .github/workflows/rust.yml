@@ -35,7 +35,7 @@ jobs:
       run: cargo +nightly test --locked --verbose
 
   build-unikernel:
-    name: Check that building as a unikernel works
+    name: Check hermitcore build
     runs-on: ubuntu-latest
     container:
       image: rwthos/hermitcore-rs
@@ -50,4 +50,4 @@ jobs:
         #apt-get update
         #apt-get install -y clang-9
     - name: Build
-      run: cargo build --locked --target x86_64-unknown-hermit
+      run: cargo build --locked --package kernel-core --target x86_64-unknown-hermit
