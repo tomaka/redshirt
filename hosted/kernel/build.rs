@@ -23,7 +23,7 @@ fn main() {
         .args(&["--target", "wasm32-wasi"])
         .args(&["--package", "vulkan-triangle"])
         .args(&["--bin", "vulkan-triangle"])
-        .args(&["--manifest-path", "../modules/vulkan-triangle/Cargo.toml"])
+        .args(&["--manifest-path", "../../modules/vulkan-triangle/Cargo.toml"])
         .arg("--")
         .args(&["-C", "link-arg=--export-table"])
         .status()
@@ -31,10 +31,10 @@ fn main() {
     assert!(status.success());
 
     // TODO: not a great solution
-    for entry in walkdir::WalkDir::new("../modules/") {
+    for entry in walkdir::WalkDir::new("../../modules/") {
         println!("cargo:rerun-if-changed={}", entry.unwrap().path().display());
     }
-    for entry in walkdir::WalkDir::new("../interfaces/") {
+    for entry in walkdir::WalkDir::new("../../interfaces/") {
         println!("cargo:rerun-if-changed={}", entry.unwrap().path().display());
     }
 }

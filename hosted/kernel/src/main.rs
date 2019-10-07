@@ -71,7 +71,7 @@ async fn async_main(
     >,
 ) {
     let module = kernel_core::module::Module::from_bytes(
-        &include_bytes!("../../modules/target/wasm32-wasi/debug/vulkan-triangle.wasm")[..],
+        &include_bytes!("../../../modules/target/wasm32-wasi/debug/vulkan-triangle.wasm")[..],
     );
 
     let mut system = wasi::register_extrinsics(kernel_core::system::System::new())
