@@ -1,5 +1,5 @@
 [package]
-name = "vulkan"
+name = "nametbd-vulkan-interface"
 version = "0.1.0"
 license = "GPL-3.0-or-later"
 authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
@@ -8,8 +8,8 @@ build = "build/main.rs"
 
 [dependencies]
 hashbrown = "0.6.0"
+nametbd-syscalls-interface = { path = "../syscalls" }
 parity-scale-codec = "1.0.5"
-syscalls = { path = "../syscalls" }
 
 [build-dependencies]
 xml-rs = "0.8.0"

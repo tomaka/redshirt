@@ -44,7 +44,7 @@ impl TcpConfig {
 }
 
 impl Transport for TcpConfig {
-    type Output = Compat<tcp::TcpStream>;
+    type Output = Compat<nametbd_tcp_interface::TcpStream>;
     type Error = io::Error;
     type Listener = Box<dyn futures01::Stream<Item = ListenerEvent<Self::ListenerUpgrade>, Error = Self::Error> + Send>;
     type ListenerUpgrade = futures01::future::FutureResult<Self::Output, Self::Error>;
@@ -67,7 +67,7 @@ impl Transport for TcpConfig {
             };
 
         debug!("Dialing {}", addr);
-        Ok(Box::new(Future::map(Compat::new(Box::pin(tcp::TcpStream::connect(&socket_addr).map(Ok))), |f| Compat::new(f))))
+        Ok(Box::new(Future::map(Compat::new(Box::pin(nametbd_tcp_interface::TcpStream::connect(&socket_addr).map(Ok))), |f| Compat::new(f))))
     }
 }
 

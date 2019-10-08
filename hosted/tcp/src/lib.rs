@@ -33,9 +33,9 @@ pub struct TcpState {
 
 #[derive(Debug)]
 pub enum TcpResponse {
-    Open(u64, tcp::ffi::TcpOpenResponse),
-    Read(u64, tcp::ffi::TcpReadResponse),
-    Write(u64, tcp::ffi::TcpWriteResponse),
+    Open(u64, nametbd_tcp_interface::ffi::TcpOpenResponse),
+    Read(u64, nametbd_tcp_interface::ffi::TcpReadResponse),
+    Write(u64, nametbd_tcp_interface::ffi::TcpWriteResponse),
 }
 
 impl TcpState {
@@ -46,9 +46,9 @@ impl TcpState {
         }
     }
 
-    pub fn handle_message(&mut self, message_id: Option<u64>, message: tcp::ffi::TcpMessage) {
+    pub fn handle_message(&mut self, message_id: Option<u64>, message: nametbd_tcp_interface::ffi::TcpMessage) {
         match message {
-            tcp::ffi::TcpMessage::Open(open) => {
+            nametbd_tcp_interface::ffi::TcpMessage::Open(open) => {
                 let message_id = message_id.unwrap();
                 let ip_addr = Ipv6Addr::from(open.ip);
                 let socket_addr = if let Some(ip_addr) = ip_addr.to_ipv4() {
@@ -64,17 +64,17 @@ impl TcpState {
                     TcpConnec::Connecting(socket_id, message_id, Box::pin(socket)),
                 );
             }
-            tcp::ffi::TcpMessage::Close(close) => {
+            nametbd_tcp_interface::ffi::TcpMessage::Close(close) => {
                 let _ = self.sockets.remove(&close.socket_id);
             }
-            tcp::ffi::TcpMessage::Read(read) => {
+            nametbd_tcp_interface::ffi::TcpMessage::Read(read) => {
                 let message_id = message_id.unwrap();
                 self.sockets
                     .get_mut(&read.socket_id)
                     .unwrap()
                     .start_read(message_id);
             }
-            tcp::ffi::TcpMessage::Write(write) => {
+            nametbd_tcp_interface::ffi::TcpMessage::Write(write) => {
                 let message_id = message_id.unwrap();
                 self.sockets
                     .get_mut(&write.socket_id)
@@ -147,7 +147,7 @@ impl TcpConnec {
                         Ok(socket) => {
                             let ev = TcpResponse::Open(
                                 *message_id,
-                                tcp::ffi::TcpOpenResponse { result: Ok(*id) },
+                                nametbd_tcp_interface::ffi::TcpOpenResponse { result: Ok(*id) },
                             );
                             (
                                 TcpConnec::Socket {
@@ -162,7 +162,7 @@ impl TcpConnec {
                         Err(_) => {
                             let ev = TcpResponse::Open(
                                 *message_id,
-                                tcp::ffi::TcpOpenResponse { result: Err(()) },
+                                nametbd_tcp_interface::ffi::TcpOpenResponse { result: Err(()) },
                             );
                             (TcpConnec::Poisoned, ev)
                         }
@@ -200,7 +200,7 @@ impl TcpConnec {
                         *pending_write = None;
                         return Poll::Ready(TcpResponse::Write(
                             msg_id,
-                            tcp::ffi::TcpWriteResponse { result: Ok(()) },
+                            nametbd_tcp_interface::ffi::TcpWriteResponse { result: Ok(()) },
                         ));
                     }
 
@@ -212,7 +212,7 @@ impl TcpConnec {
                         *pending_read = None;
                         return Poll::Ready(TcpResponse::Read(
                             msg_id,
-                            tcp::ffi::TcpReadResponse {
+                            nametbd_tcp_interface::ffi::TcpReadResponse {
                                 result: Ok(buf[..num_read].to_vec()),
                             },
                         ));

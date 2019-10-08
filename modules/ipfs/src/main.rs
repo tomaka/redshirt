@@ -17,17 +17,17 @@ use futures::prelude::*;
 use parity_scale_codec::DecodeAll;
 
 fn main() {
-    syscalls::block_on(async move {
-        interface::register_interface(loader::ffi::INTERFACE).await.unwrap();
+    nametbd_syscalls_interface::block_on(async move {
+        nametbd_interface_interface::register_interface(nametbd_loader_interface::ffi::INTERFACE).await.unwrap();
 
         loop {
-            let msg = syscalls::next_interface_message().await;
-            assert_eq!(msg.interface, loader::ffi::INTERFACE);
-            let msg_data = loader::ffi::LoaderMessage::decode_all(&msg.actual_data).unwrap();
-            let loader::ffi::LoaderMessage::Load(hash_to_load) = msg_data;
+            let msg = nametbd_syscalls_interface::next_interface_message().await;
+            assert_eq!(msg.interface, nametbd_loader_interface::ffi::INTERFACE);
+            let msg_data = nametbd_loader_interface::ffi::LoaderMessage::decode_all(&msg.actual_data).unwrap();
+            let nametbd_loader_interface::ffi::LoaderMessage::Load(hash_to_load) = msg_data;
             println!("received message: {:?}", hash_to_load);
             let data = include_bytes!("../../target/wasm32-wasi/release/preloaded.wasm");
-            syscalls::emit_answer(msg.message_id.unwrap(), &loader::ffi::LoadResponse {
+            nametbd_syscalls_interface::emit_answer(msg.message_id.unwrap(), &nametbd_loader_interface::ffi::LoadResponse {
                 result: Ok(data.to_vec())
             });
         }
