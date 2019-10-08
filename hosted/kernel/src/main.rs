@@ -99,7 +99,13 @@ async fn async_main(
                     extrinsic,
                     params,
                 } => {
-                    nametbd_wasi_hosted::handle_wasi(&mut system, extrinsic, pid, thread_id, params);
+                    nametbd_wasi_hosted::handle_wasi(
+                        &mut system,
+                        extrinsic,
+                        pid,
+                        thread_id,
+                        params,
+                    );
                     true
                 }
                 nametbd_core::system::SystemRunOutcome::InterfaceMessage {
@@ -107,7 +113,8 @@ async fn async_main(
                     interface,
                     message,
                 } if interface == nametbd_tcp_interface::ffi::INTERFACE => {
-                    let message: nametbd_tcp_interface::ffi::TcpMessage = DecodeAll::decode_all(&message).unwrap();
+                    let message: nametbd_tcp_interface::ffi::TcpMessage =
+                        DecodeAll::decode_all(&message).unwrap();
                     tcp.handle_message(message_id, message);
                     continue;
                 }
@@ -134,9 +141,13 @@ async fn async_main(
                     win_open_rq.unbounded_send(tx).unwrap();
                     let window = rx.await.unwrap().unwrap();
                     windows.push(window);
-                    system.answer_message(message_id.unwrap(), &nametbd_window_interface::ffi::WindowOpenResponse {
-                        result: Ok(0),      // TODO: correct ID
-                    }.encode());
+                    system.answer_message(
+                        message_id.unwrap(),
+                        &nametbd_window_interface::ffi::WindowOpenResponse {
+                            result: Ok(0), // TODO: correct ID
+                        }
+                        .encode(),
+                    );
                     continue;
                 }
                 nametbd_core::system::SystemRunOutcome::Idle => false,

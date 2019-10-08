@@ -43,7 +43,13 @@ async fn async_main() {
                     extrinsic,
                     params,
                 } => {
-                    nametbd_wasi_hosted::handle_wasi(&mut system, extrinsic, pid, thread_id, params);
+                    nametbd_wasi_hosted::handle_wasi(
+                        &mut system,
+                        extrinsic,
+                        pid,
+                        thread_id,
+                        params,
+                    );
                     true
                 }
                 nametbd_core::system::SystemRunOutcome::InterfaceMessage {
@@ -51,7 +57,8 @@ async fn async_main() {
                     interface,
                     message,
                 } if interface == nametbd_tcp_interface::ffi::INTERFACE => {
-                    let message: nametbd_tcp_interface::ffi::TcpMessage = DecodeAll::decode_all(&message).unwrap();
+                    let message: nametbd_tcp_interface::ffi::TcpMessage =
+                        DecodeAll::decode_all(&message).unwrap();
                     tcp.handle_message(message_id, message);
                     continue;
                 }

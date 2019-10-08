@@ -29,7 +29,8 @@ pub mod ffi;
 #[cfg(target_arch = "wasm32")] // TODO: bad
 pub async fn load(hash: [u8; 32]) -> Result<Vec<u8>, ()> {
     let msg = ffi::LoaderMessage::Load(hash);
-    let rep: ffi::LoadResponse = nametbd_syscalls_interface::emit_message_with_response(ffi::INTERFACE, msg).await?;
+    let rep: ffi::LoadResponse =
+        nametbd_syscalls_interface::emit_message_with_response(ffi::INTERFACE, msg).await?;
     rep.result
 }
 

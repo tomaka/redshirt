@@ -53,7 +53,8 @@ impl TcpStream {
             .unwrap();
 
         async move {
-            let message: ffi::TcpOpenResponse = nametbd_syscalls_interface::message_response(msg_id).await;
+            let message: ffi::TcpOpenResponse =
+                nametbd_syscalls_interface::message_response(msg_id).await;
             let handle = message.result.unwrap();
 
             TcpStream {
@@ -89,7 +90,9 @@ impl AsyncRead for TcpStream {
             let msg_id = nametbd_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_read, true)
                 .unwrap()
                 .unwrap();
-            self.pending_read = Some(Box::pin(nametbd_syscalls_interface::message_response(msg_id)));
+            self.pending_read = Some(Box::pin(nametbd_syscalls_interface::message_response(
+                msg_id,
+            )));
         }
     }
 
@@ -116,7 +119,9 @@ impl AsyncWrite for TcpStream {
         let msg_id = nametbd_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_write, true)
             .unwrap()
             .unwrap();
-        self.pending_write = Some(Box::pin(nametbd_syscalls_interface::message_response(msg_id)));
+        self.pending_write = Some(Box::pin(nametbd_syscalls_interface::message_response(
+            msg_id,
+        )));
         Poll::Ready(Ok(buf.len()))
     }
 
