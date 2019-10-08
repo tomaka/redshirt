@@ -46,7 +46,11 @@ impl TcpState {
         }
     }
 
-    pub fn handle_message(&mut self, message_id: Option<u64>, message: nametbd_tcp_interface::ffi::TcpMessage) {
+    pub fn handle_message(
+        &mut self,
+        message_id: Option<u64>,
+        message: nametbd_tcp_interface::ffi::TcpMessage,
+    ) {
         match message {
             nametbd_tcp_interface::ffi::TcpMessage::Open(open) => {
                 let message_id = message_id.unwrap();

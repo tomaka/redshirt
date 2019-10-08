@@ -500,13 +500,15 @@ impl<T> Core<T> {
         interface: [u8; 32],
         message: impl Encode,
     ) -> Result<(), ()> {
-        let message = nametbd_syscalls_interface::ffi::Message::Interface(nametbd_syscalls_interface::ffi::InterfaceMessage {
-            interface,
-            message_id: None,
-            emitter_pid: None,
-            index_in_list: 0,
-            actual_data: message.encode(),
-        });
+        let message = nametbd_syscalls_interface::ffi::Message::Interface(
+            nametbd_syscalls_interface::ffi::InterfaceMessage {
+                interface,
+                message_id: None,
+                emitter_pid: None,
+                index_in_list: 0,
+                actual_data: message.encode(),
+            },
+        );
 
         let pid = match self.interfaces.get(&interface).ok_or(())? {
             InterfaceHandler::Process(pid) => *pid,
@@ -549,13 +551,15 @@ impl<T> Core<T> {
             };
         };
 
-        let message = nametbd_syscalls_interface::ffi::Message::Interface(nametbd_syscalls_interface::ffi::InterfaceMessage {
-            interface,
-            message_id: Some(message_id),
-            emitter_pid: None,
-            index_in_list: 0,
-            actual_data: message.encode(),
-        });
+        let message = nametbd_syscalls_interface::ffi::Message::Interface(
+            nametbd_syscalls_interface::ffi::InterfaceMessage {
+                interface,
+                message_id: Some(message_id),
+                emitter_pid: None,
+                index_in_list: 0,
+                actual_data: message.encode(),
+            },
+        );
 
         let pid = match self.interfaces.get(&interface).ok_or(())? {
             InterfaceHandler::Process(pid) => *pid,
@@ -596,12 +600,14 @@ impl<T> Core<T> {
         response: &[u8],
         answerer_pid: Option<Pid>,
     ) -> Option<CoreRunOutcomeInner> {
-        let actual_message = nametbd_syscalls_interface::ffi::Message::Response(nametbd_syscalls_interface::ffi::ResponseMessage {
-            message_id,
-            // We a dummy value here and fill it up later when actually delivering the message.
-            index_in_list: 0,
-            actual_data: response.to_vec(),
-        });
+        let actual_message = nametbd_syscalls_interface::ffi::Message::Response(
+            nametbd_syscalls_interface::ffi::ResponseMessage {
+                message_id,
+                // We a dummy value here and fill it up later when actually delivering the message.
+                index_in_list: 0,
+                actual_data: response.to_vec(),
+            },
+        );
 
         match (self.messages_to_answer.remove(&message_id), answerer_pid) {
             (Some(MessageEmitter::Process(emitter_pid)), _) => {

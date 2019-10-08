@@ -23,7 +23,10 @@ fn main() {
         .args(&["--target", "wasm32-wasi"])
         .args(&["--package", "vulkan-triangle"])
         .args(&["--bin", "vulkan-triangle"])
-        .args(&["--manifest-path", "../../modules/vulkan-triangle/Cargo.toml"])
+        .args(&[
+            "--manifest-path",
+            "../../modules/vulkan-triangle/Cargo.toml",
+        ])
         .arg("--")
         .args(&["-C", "link-arg=--export-table"])
         .status()
