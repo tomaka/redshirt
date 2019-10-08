@@ -1,0 +1,19 @@
+[package]
+name = "nametbd-cli-kernel"
+version = "0.1.0"
+license = "GPL-3.0-or-later"
+authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
+edition = "2018"
+publish = false
+
+[dependencies]
+futures-preview = { version = "0.3.0-alpha.18", features = ["async-await", "nightly"] }
+nametbd-core = { path = "../../core" }
+nametbd-tcp-hosted = { path = "../tcp" }
+nametbd-tcp-interface = { path = "../../interfaces/tcp" }
+nametbd-wasi-hosted = { path = "../wasi" }
+parity-scale-codec = "1.0.5"
+wasi = "0.7.0"
+
+[build-dependencies]
+walkdir = "2.2.9"

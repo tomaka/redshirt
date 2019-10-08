@@ -733,6 +733,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "nametbd-cli-kernel"
+version = "0.1.0"
+dependencies = [
+ "futures-preview 0.3.0-alpha.18 (registry+https://github.com/rust-lang/crates.io-index)",
+ "nametbd-core 0.1.0",
+ "nametbd-tcp-hosted 0.1.0",
+ "nametbd-tcp-interface 0.1.0",
+ "nametbd-wasi-hosted 0.1.0",
+ "parity-scale-codec 1.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "walkdir 2.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
+ "wasi 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "nametbd-core"
 version = "0.1.0"
 dependencies = [

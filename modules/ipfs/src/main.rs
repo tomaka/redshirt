@@ -26,7 +26,7 @@ fn main() {
             let msg_data = nametbd_loader_interface::ffi::LoaderMessage::decode_all(&msg.actual_data).unwrap();
             let nametbd_loader_interface::ffi::LoaderMessage::Load(hash_to_load) = msg_data;
             println!("received message: {:?}", hash_to_load);
-            let data = include_bytes!("../../target/wasm32-wasi/release/preloaded.wasm");
+            let data = vec![];// include_bytes!("../../target/wasm32-wasi/release/preloaded.wasm");
             nametbd_syscalls_interface::emit_answer(msg.message_id.unwrap(), &nametbd_loader_interface::ffi::LoadResponse {
                 result: Ok(data.to_vec())
             });
