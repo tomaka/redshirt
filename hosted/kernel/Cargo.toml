@@ -1,11 +1,11 @@
 [package]
-name = "kernel"
+name = "nametbd-gui-kernel"
 version = "0.1.0"
 license = "GPL-3.0-or-later"
 authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
 edition = "2018"
 publish = false
-default-run = "kernel"
+default-run = "nametbd-gui-kernel"
 
 [dependencies]
 futures-preview = { version = "0.3.0-alpha.18", features = ["async-await", "nightly"] }
