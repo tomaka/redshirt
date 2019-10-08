@@ -15,9 +15,8 @@
 
 #![deny(intra_doc_link_resolution_failure)]
 
-use futures::{channel::mpsc, channel::oneshot, prelude::*};
+use futures::prelude::*;
 use parity_scale_codec::{DecodeAll, Encode as _};
-use std::{sync::Arc, sync::Mutex, task::Context, task::Poll};
 
 fn main() {
     futures::executor::block_on(async_main());
