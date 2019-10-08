@@ -1,5 +1,5 @@
 [package]
-name = "hosted-wasi"
+name = "nametbd-wasi-hosted"
 version = "0.1.0"
 license = "GPL-3.0-or-later"
 authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
@@ -8,7 +8,7 @@ publish = false
 
 [dependencies]
 byteorder = { version = "1.3.2", default-features = false }
-kernel-core = { path = "../../core" }
+nametbd-core = { path = "../../core" }
 rand = "0.7"
 
 # TODO: remove

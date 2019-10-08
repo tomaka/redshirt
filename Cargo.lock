@@ -540,34 +540,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "hosted-tcp"
-version = "0.1.0"
-dependencies = [
- "async-std 0.99.6 (registry+https://github.com/rust-lang/crates.io-index)",
- "fnv 1.0.6 (registry+https://github.com/rust-lang/crates.io-index)",
- "futures-preview 0.3.0-alpha.18 (registry+https://github.com/rust-lang/crates.io-index)",
- "tcp 0.1.0",
-]
-
-[[package]]
-name = "hosted-wasi"
-version = "0.1.0"
-dependencies = [
- "byteorder 1.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "kernel-core 0.1.0",
- "rand 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "wasmi 0.5.1 (git+https://github.com/paritytech/wasmi)",
-]
-
-[[package]]
-name = "interface"
-version = "0.1.0"
-dependencies = [
- "parity-scale-codec 1.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
- "syscalls 0.1.0",
-]
-
-[[package]]
 name = "iovec"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -580,48 +552,6 @@ dependencies = [
 name = "itoa"
 version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-
-[[package]]
-name = "kernel"
-version = "0.1.0"
-dependencies = [
- "futures-preview 0.3.0-alpha.18 (registry+https://github.com/rust-lang/crates.io-index)",
- "hosted-tcp 0.1.0",
- "hosted-wasi 0.1.0",
- "kernel-core 0.1.0",
- "parity-scale-codec 1.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
- "tcp 0.1.0",
- "vulkan 0.1.0",
- "walkdir 2.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
- "wasi 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "window 0.1.0",
- "winit 0.20.0-alpha3 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "kernel-core"
-version = "0.1.0"
-dependencies = [
- "bs58 0.2.5 (registry+https://github.com/rust-lang/crates.io-index)",
- "byteorder 1.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "crossbeam 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "err-derive 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
- "futures-preview 0.3.0-alpha.18 (registry+https://github.com/rust-lang/crates.io-index)",
- "hashbrown 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "interface 0.1.0",
- "loader 0.1.0",
- "parity-scale-codec 1.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
- "rand 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "rand_chacha 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "rand_core 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "rand_distr 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "sha2 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "smallvec 0.6.10 (registry+https://github.com/rust-lang/crates.io-index)",
- "syscalls 0.1.0",
- "threads 0.1.0",
- "wabt 0.9.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "wasmi 0.5.1 (git+https://github.com/paritytech/wasmi)",
-]
 
 [[package]]
 name = "kernel32-sys"
@@ -678,14 +608,6 @@ version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "num-traits 0.2.8 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "loader"
-version = "0.1.0"
-dependencies = [
- "parity-scale-codec 1.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
- "syscalls 0.1.0",
 ]
 
 [[package]]
@@ -791,6 +713,133 @@ dependencies = [
  "net2 0.2.33 (registry+https://github.com/rust-lang/crates.io-index)",
  "winapi 0.2.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "ws2_32-sys 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "nametbd-core"
+version = "0.1.0"
+dependencies = [
+ "bs58 0.2.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "byteorder 1.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "crossbeam 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "err-derive 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "futures-preview 0.3.0-alpha.18 (registry+https://github.com/rust-lang/crates.io-index)",
+ "hashbrown 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "nametbd-interface-interface 0.1.0",
+ "nametbd-loader-interface 0.1.0",
+ "nametbd-syscalls-interface 0.1.0",
+ "nametbd-threads-interface 0.1.0",
+ "parity-scale-codec 1.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rand 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rand_chacha 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rand_core 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rand_distr 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "sha2 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "smallvec 0.6.10 (registry+https://github.com/rust-lang/crates.io-index)",
+ "wabt 0.9.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "wasmi 0.5.1 (git+https://github.com/paritytech/wasmi)",
+]
+
+[[package]]
+name = "nametbd-gui-kernel"
+version = "0.1.0"
+dependencies = [
+ "futures-preview 0.3.0-alpha.18 (registry+https://github.com/rust-lang/crates.io-index)",
+ "nametbd-core 0.1.0",
+ "nametbd-tcp-hosted 0.1.0",
+ "nametbd-tcp-interface 0.1.0",
+ "nametbd-vulkan-interface 0.1.0",
+ "nametbd-wasi-hosted 0.1.0",
+ "nametbd-window-interface 0.1.0",
+ "parity-scale-codec 1.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "walkdir 2.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
+ "wasi 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "winit 0.20.0-alpha3 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "nametbd-interface-interface"
+version = "0.1.0"
+dependencies = [
+ "nametbd-syscalls-interface 0.1.0",
+ "parity-scale-codec 1.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "nametbd-loader-interface"
+version = "0.1.0"
+dependencies = [
+ "nametbd-syscalls-interface 0.1.0",
+ "parity-scale-codec 1.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "nametbd-syscalls-interface"
+version = "0.1.0"
+dependencies = [
+ "crossbeam 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "futures-preview 0.3.0-alpha.18 (registry+https://github.com/rust-lang/crates.io-index)",
+ "hashbrown 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "lazy_static 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "parity-scale-codec 1.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "pin-utils 0.1.0-alpha.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "send_wrapper 0.2.0 (git+https://github.com/tomaka/send_wrapper?branch=patch-1)",
+]
+
+[[package]]
+name = "nametbd-tcp-hosted"
+version = "0.1.0"
+dependencies = [
+ "async-std 0.99.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "fnv 1.0.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "futures-preview 0.3.0-alpha.18 (registry+https://github.com/rust-lang/crates.io-index)",
+ "nametbd-tcp-interface 0.1.0",
+]
+
+[[package]]
+name = "nametbd-tcp-interface"
+version = "0.1.0"
+dependencies = [
+ "futures-preview 0.3.0-alpha.18 (registry+https://github.com/rust-lang/crates.io-index)",
+ "nametbd-syscalls-interface 0.1.0",
+ "parity-scale-codec 1.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "nametbd-threads-interface"
+version = "0.1.0"
+dependencies = [
+ "nametbd-syscalls-interface 0.1.0",
+ "parity-scale-codec 1.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "nametbd-vulkan-interface"
+version = "0.1.0"
+dependencies = [
+ "hashbrown 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "nametbd-syscalls-interface 0.1.0",
+ "parity-scale-codec 1.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "xml-rs 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "nametbd-wasi-hosted"
+version = "0.1.0"
+dependencies = [
+ "byteorder 1.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "nametbd-core 0.1.0",
+ "rand 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "wasmi 0.5.1 (git+https://github.com/paritytech/wasmi)",
+]
+
+[[package]]
+name = "nametbd-window-interface"
+version = "0.1.0"
+dependencies = [
+ "futures-preview 0.3.0-alpha.18 (registry+https://github.com/rust-lang/crates.io-index)",
+ "nametbd-syscalls-interface 0.1.0",
+ "parity-scale-codec 1.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -1241,36 +1290,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "syscalls"
-version = "0.1.0"
-dependencies = [
- "crossbeam 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "futures-preview 0.3.0-alpha.18 (registry+https://github.com/rust-lang/crates.io-index)",
- "hashbrown 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "lazy_static 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "parity-scale-codec 1.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
- "pin-utils 0.1.0-alpha.4 (registry+https://github.com/rust-lang/crates.io-index)",
- "send_wrapper 0.2.0 (git+https://github.com/tomaka/send_wrapper?branch=patch-1)",
-]
-
-[[package]]
-name = "tcp"
-version = "0.1.0"
-dependencies = [
- "futures-preview 0.3.0-alpha.18 (registry+https://github.com/rust-lang/crates.io-index)",
- "parity-scale-codec 1.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
- "syscalls 0.1.0",
-]
-
-[[package]]
-name = "threads"
-version = "0.1.0"
-dependencies = [
- "parity-scale-codec 1.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
- "syscalls 0.1.0",
-]
-
-[[package]]
 name = "toml"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1297,16 +1316,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 name = "void"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-
-[[package]]
-name = "vulkan"
-version = "0.1.0"
-dependencies = [
- "hashbrown 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "parity-scale-codec 1.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
- "syscalls 0.1.0",
- "xml-rs 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
-]
 
 [[package]]
 name = "wabt"
@@ -1457,15 +1466,6 @@ dependencies = [
 name = "winapi-x86_64-pc-windows-gnu"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-
-[[package]]
-name = "window"
-version = "0.1.0"
-dependencies = [
- "futures-preview 0.3.0-alpha.18 (registry+https://github.com/rust-lang/crates.io-index)",
- "parity-scale-codec 1.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
- "syscalls 0.1.0",
-]
 
 [[package]]
 name = "winit"

@@ -1,22 +1,22 @@
 [package]
-name = "kernel"
+name = "nametbd-gui-kernel"
 version = "0.1.0"
 license = "GPL-3.0-or-later"
 authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
 edition = "2018"
 publish = false
-default-run = "kernel"
+default-run = "nametbd-gui-kernel"
 
 [dependencies]
 futures-preview = { version = "0.3.0-alpha.18", features = ["async-await", "nightly"] }
-hosted-tcp = { path = "../tcp" }
-hosted-wasi = { path = "../wasi" }
-kernel-core = { path = "../../core" }
+nametbd-core = { path = "../../core" }
+nametbd-tcp-hosted = { path = "../tcp" }
+nametbd-tcp-interface = { path = "../../interfaces/tcp" }
+nametbd-vulkan-interface = { path = "../../interfaces/vulkan" }
+nametbd-wasi-hosted = { path = "../wasi" }
+nametbd-window-interface = { path = "../../interfaces/window" }
 parity-scale-codec = "1.0.5"
-tcp = { path = "../../interfaces/tcp" }
-vulkan = { path = "../../interfaces/vulkan" }
 wasi = "0.7.0"
-window = { path = "../../interfaces/window" }
 winit = "0.20.0-alpha3"
 
 [build-dependencies]

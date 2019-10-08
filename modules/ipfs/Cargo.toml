@@ -8,15 +8,15 @@ publish = false
 [dependencies]
 futures-preview = { version = "0.3.0-alpha.18", features = ["compat", "io-compat"] }
 futures01 = { package = "futures", version = "0.1" }
-interface = { path = "../../interfaces/interface" }
 libp2p-core = { git = "https://github.com/tomaka/libp2p-rs", branch = "wasi" }
 libp2p-kad = { git = "https://github.com/tomaka/libp2p-rs", branch = "wasi" }
 libp2p-mplex = { git = "https://github.com/tomaka/libp2p-rs", branch = "wasi" }
 #libp2p-secio = { git = "https://github.com/tomaka/libp2p-rs", branch = "wasi" }
 libp2p-plaintext = { git = "https://github.com/tomaka/libp2p-rs", branch = "wasi" }
 libp2p-swarm = { git = "https://github.com/tomaka/libp2p-rs", branch = "wasi" }
-loader = { path = "../../interfaces/loader" }
 log = "0.4"
+nametbd-interface-interface = { path = "../../interfaces/interface" }
+nametbd-loader-interface = { path = "../../interfaces/loader" }
+nametbd-syscalls-interface = { path = "../../interfaces/syscalls" }
+nametbd-tcp-interface = { path = "../../interfaces/tcp" }
 parity-scale-codec = "1.0.5"
-syscalls = { path = "../../interfaces/syscalls" }
-tcp = { path = "../../interfaces/tcp" }

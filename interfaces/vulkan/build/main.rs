@@ -182,10 +182,10 @@ fn write_commands_wrappers(mut out: impl Write, registry: &parse::VkRegistry) {
             );
         }
 
-        writeln!(out, "    let msg_id = syscalls::emit_message_raw(&INTERFACE, &msg_buf, true).unwrap().unwrap();").unwrap();
+        writeln!(out, "    let msg_id = nametbd_syscalls_interface::emit_message_raw(&INTERFACE, &msg_buf, true).unwrap().unwrap();").unwrap();
         writeln!(
             out,
-            "    let response = syscalls::message_response_sync_raw(msg_id);"
+            "    let response = nametbd_syscalls_interface::message_response_sync_raw(msg_id);"
         )
         .unwrap();
         writeln!(out, "    println!(\"got response: {{:?}}\", response);").unwrap();

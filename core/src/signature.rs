@@ -27,7 +27,7 @@ pub struct Signature {
 /// # Example
 ///
 /// ```
-/// let _sig: kernel_core::signature::Signature = kernel_core::sig!((I32, I64) -> I32);
+/// let _sig: nametbd_core::signature::Signature = nametbd_core::sig!((I32, I64) -> I32);
 /// ```
 #[macro_export]
 macro_rules! sig {

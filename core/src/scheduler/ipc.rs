@@ -158,11 +158,11 @@ enum CoreRunOutcomeInner {
 struct Process {
     /// Messages available for retrieval by the process by calling `next_message`.
     ///
-    /// Note that the [`ResponseMessage::index_in_list`](syscalls::ffi::ResponseMessage::index_in_list)
-    /// and [`InterfaceMessage::index_in_list`](syscalls::ffi::InterfaceMessage::index_in_list) fields are
+    /// Note that the [`ResponseMessage::index_in_list`](nametbd_syscalls_interface::ffi::ResponseMessage::index_in_list)
+    /// and [`InterfaceMessage::index_in_list`](nametbd_syscalls_interface::ffi::InterfaceMessage::index_in_list) fields are
     /// set to a dummy value, and must be filled before actually delivering the message.
     // TODO: call shrink_to_fit from time to time
-    messages_queue: VecDeque<syscalls::ffi::Message>,
+    messages_queue: VecDeque<nametbd_syscalls_interface::ffi::Message>,
 }
 
 /// Additional information about a thread.
@@ -391,8 +391,8 @@ impl<T> Core<T> {
                             .expect("Interface handler not found")
                         {
                             InterfaceHandler::Process(pid) => {
-                                let message = syscalls::ffi::Message::Interface(
-                                    syscalls::ffi::InterfaceMessage {
+                                let message = nametbd_syscalls_interface::ffi::Message::Interface(
+                                    nametbd_syscalls_interface::ffi::InterfaceMessage {
                                         interface,
                                         index_in_list: 0,
                                         message_id,
@@ -500,7 +500,7 @@ impl<T> Core<T> {
         interface: [u8; 32],
         message: impl Encode,
     ) -> Result<(), ()> {
-        let message = syscalls::ffi::Message::Interface(syscalls::ffi::InterfaceMessage {
+        let message = nametbd_syscalls_interface::ffi::Message::Interface(nametbd_syscalls_interface::ffi::InterfaceMessage {
             interface,
             message_id: None,
             emitter_pid: None,
@@ -549,7 +549,7 @@ impl<T> Core<T> {
             };
         };
 
-        let message = syscalls::ffi::Message::Interface(syscalls::ffi::InterfaceMessage {
+        let message = nametbd_syscalls_interface::ffi::Message::Interface(nametbd_syscalls_interface::ffi::InterfaceMessage {
             interface,
             message_id: Some(message_id),
             emitter_pid: None,
@@ -596,7 +596,7 @@ impl<T> Core<T> {
         response: &[u8],
         answerer_pid: Option<Pid>,
     ) -> Option<CoreRunOutcomeInner> {
-        let actual_message = syscalls::ffi::Message::Response(syscalls::ffi::ResponseMessage {
+        let actual_message = nametbd_syscalls_interface::ffi::Message::Response(nametbd_syscalls_interface::ffi::ResponseMessage {
             message_id,
             // We a dummy value here and fill it up later when actually delivering the message.
             index_in_list: 0,
@@ -869,8 +869,8 @@ fn try_resume_message_wait(thread: &mut processes::ProcessesCollectionThread<Pro
 
         // For that message in queue, grab the value that must be in `msg_ids` in order to match.
         let msg_id = match &thread.process_user_data().messages_queue[index_in_queue] {
-            syscalls::ffi::Message::Interface(_) => 1,
-            syscalls::ffi::Message::Response(response) => {
+            nametbd_syscalls_interface::ffi::Message::Interface(_) => 1,
+            nametbd_syscalls_interface::ffi::Message::Response(response) => {
                 debug_assert!(response.message_id >= 2);
                 response.message_id
             }
@@ -887,10 +887,10 @@ fn try_resume_message_wait(thread: &mut processes::ProcessesCollectionThread<Pro
 
     // Adjust the `index_in_list` field of the message to match what we have.
     match thread.process_user_data().messages_queue[index_in_queue] {
-        syscalls::ffi::Message::Response(ref mut response) => {
+        nametbd_syscalls_interface::ffi::Message::Response(ref mut response) => {
             response.index_in_list = index_in_msg_ids;
         }
-        syscalls::ffi::Message::Interface(ref mut interface) => {
+        nametbd_syscalls_interface::ffi::Message::Interface(ref mut interface) => {
             interface.index_in_list = index_in_msg_ids;
         }
     }

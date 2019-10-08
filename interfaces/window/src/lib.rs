@@ -29,7 +29,7 @@ impl Window {
     pub async fn open() -> Result<Window, ()> {
         let open = ffi::WindowMessage::Open(ffi::WindowOpen {});
         let response: ffi::WindowOpenResponse =
-            syscalls::emit_message_with_response(ffi::INTERFACE, open).await?;
+            nametbd_syscalls_interface::emit_message_with_response(ffi::INTERFACE, open).await?;
         Ok(Window {
             handle: response.result?,
         })
@@ -42,6 +42,6 @@ impl Drop for Window {
             window_id: self.handle,
         });
 
-        let _ = syscalls::emit_message(&ffi::INTERFACE, &close, false);
+        let _ = nametbd_syscalls_interface::emit_message(&ffi::INTERFACE, &close, false);
     }
 }

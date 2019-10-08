@@ -38,7 +38,7 @@ fn main() {
         unsafe impl vulkano::instance::loader::Loader for MyLoader {
             fn get_instance_proc_addr(&self, instance: vk_sys::Instance, name: *const std::os::raw::c_char) -> extern "system" fn() {
                 unsafe {
-                    vulkan::vkGetInstanceProcAddr(instance, name as *const _)
+                    nametbd_vulkan_interface::vkGetInstanceProcAddr(instance, name as *const _)
                 }
             }
         }
@@ -86,7 +86,7 @@ fn main() {
     let mut events_loop = EventsLoop::new();
     let surface = WindowBuilder::new().build_vk_surface(&events_loop, instance.clone()).unwrap();
     let window = surface.window();*/
-    let window = syscalls::block_on(window::Window::open()).unwrap();
+    let window = nametbd_syscalls_interface::block_on(nametbd_window_interface::Window::open()).unwrap();
 
     // The next step is to choose which GPU queue will execute our draw commands.
     //

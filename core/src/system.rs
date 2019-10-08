@@ -26,7 +26,7 @@ pub struct System<TExtEx> {
     futex_waits: HashMap<(Pid, u32), SmallVec<[u64; 4]>>,
 
     /// Set of messages that we emitted of requests to load a program from the loader interface.
-    /// All these messages expect a `loader::ffi::LoadResponse` as answer.
+    /// All these messages expect a `nametbd_loader_interface::ffi::LoadResponse` as answer.
     // TODO: call shink_to_fit from time to time
     loading_programs: HashSet<u64>,
 }
@@ -65,8 +65,8 @@ impl<TExtEx: Clone> System<TExtEx> {
     pub fn new() -> SystemBuilder<TExtEx> {
         // We handle some low-level interfaces here.
         let core = Core::new()
-            .with_interface_handler(interface::ffi::INTERFACE)
-            .with_interface_handler(threads::ffi::INTERFACE);
+            .with_interface_handler(nametbd_interface_interface::ffi::INTERFACE)
+            .with_interface_handler(nametbd_threads_interface::ffi::INTERFACE);
 
         SystemBuilder {
             core,
@@ -125,7 +125,7 @@ impl<TExtEx: Clone> System<TExtEx> {
                     ..
                 } => {
                     if self.loading_programs.remove(&message_id) {
-                        let loader::ffi::LoadResponse { result } =
+                        let nametbd_loader_interface::ffi::LoadResponse { result } =
                             DecodeAll::decode_all(&response).unwrap();
                         let module = Module::from_bytes(&result.unwrap());
                         self.core.execute(&module).unwrap();
@@ -137,18 +137,18 @@ impl<TExtEx: Clone> System<TExtEx> {
                     message_id,
                     interface,
                     message,
-                } if interface == threads::ffi::INTERFACE => {
-                    let msg: threads::ffi::ThreadsMessage =
+                } if interface == nametbd_threads_interface::ffi::INTERFACE => {
+                    let msg: nametbd_threads_interface::ffi::ThreadsMessage =
                         DecodeAll::decode_all(&message).unwrap();
                     match msg {
-                        threads::ffi::ThreadsMessage::New(new_thread) => {
+                        nametbd_threads_interface::ffi::ThreadsMessage::New(new_thread) => {
                             assert!(message_id.is_none());
                             self.core.process_by_id(pid).unwrap().start_thread(
                                 new_thread.fn_ptr,
                                 vec![wasmi::RuntimeValue::I32(new_thread.user_data as i32)],
                             );
                         }
-                        threads::ffi::ThreadsMessage::FutexWake(mut wake) => {
+                        nametbd_threads_interface::ffi::ThreadsMessage::FutexWake(mut wake) => {
                             assert!(message_id.is_none());
                             if let Some(list) = self.futex_waits.get_mut(&(pid, wake.addr)) {
                                 while wake.nwake > 0 && !list.is_empty() {
@@ -163,7 +163,7 @@ impl<TExtEx: Clone> System<TExtEx> {
                             }
                             // TODO: implement
                         }
-                        threads::ffi::ThreadsMessage::FutexWait(wait) => {
+                        nametbd_threads_interface::ffi::ThreadsMessage::FutexWait(wait) => {
                             let message_id = message_id.unwrap();
                             // TODO: val_cmp
                             match self.futex_waits.entry((pid, wait.addr)) {
@@ -184,27 +184,27 @@ impl<TExtEx: Clone> System<TExtEx> {
                     message_id,
                     interface,
                     message,
-                } if interface == interface::ffi::INTERFACE => {
-                    let msg: interface::ffi::InterfaceMessage =
+                } if interface == nametbd_interface_interface::ffi::INTERFACE => {
+                    let msg: nametbd_interface_interface::ffi::InterfaceMessage =
                         DecodeAll::decode_all(&message).unwrap();
                     println!("interface message: {:?}", msg);
                     match msg {
-                        interface::ffi::InterfaceMessage::Register(interface_hash) => {
+                        nametbd_interface_interface::ffi::InterfaceMessage::Register(interface_hash) => {
                             self.core
                                 .set_interface_handler(interface_hash, pid)
                                 .unwrap();
                             let response =
-                                interface::ffi::InterfaceRegisterResponse { result: Ok(()) };
+                                nametbd_interface_interface::ffi::InterfaceRegisterResponse { result: Ok(()) };
                             self.core
                                 .answer_message(message_id.unwrap(), &response.encode());
                         }
                     }
 
                     // TODO: temporary, for testing purposes
-                    let msg = loader::ffi::LoaderMessage::Load([0; 32]);
+                    let msg = nametbd_loader_interface::ffi::LoaderMessage::Load([0; 32]);
                     let id = self
                         .core
-                        .emit_interface_message_answer(loader::ffi::INTERFACE, msg)
+                        .emit_interface_message_answer(nametbd_loader_interface::ffi::INTERFACE, msg)
                         .unwrap();
                     self.loading_programs.insert(id);
                 }

@@ -14,8 +14,8 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use byteorder::{ByteOrder as _, LittleEndian};
-use kernel_core::scheduler::{Pid, ThreadId};
-use kernel_core::system::{System, SystemBuilder};
+use nametbd_core::scheduler::{Pid, ThreadId};
+use nametbd_core::system::{System, SystemBuilder};
 use std::io::Write as _;
 
 // TODO: lots of unwraps as `as` conversions in this module
@@ -46,74 +46,74 @@ pub fn register_extrinsics<T: From<WasiExtrinsic>>(system: SystemBuilder<T>) -> 
         .with_extrinsic(
             "wasi_unstable",
             "args_get",
-            kernel_core::sig!((I32, I32) -> I32),
+            nametbd_core::sig!((I32, I32) -> I32),
             WasiExtrinsic(WasiExtrinsicInner::ArgsGet).into(),
         )
         .with_extrinsic(
             "wasi_unstable",
             "args_sizes_get",
-            kernel_core::sig!((I32, I32) -> I32),
+            nametbd_core::sig!((I32, I32) -> I32),
             WasiExtrinsic(WasiExtrinsicInner::ArgsSizesGet).into(),
         )
         .with_extrinsic(
             "wasi_unstable",
             "clock_time_get",
             // TODO: bad signature
-            kernel_core::sig!((I32, I64) -> I64),
+            nametbd_core::sig!((I32, I64) -> I64),
             WasiExtrinsic(WasiExtrinsicInner::ClockTimeGet).into(),
         )
         .with_extrinsic(
             "wasi_unstable",
             "environ_get",
-            kernel_core::sig!((I32, I32) -> I32),
+            nametbd_core::sig!((I32, I32) -> I32),
             WasiExtrinsic(WasiExtrinsicInner::EnvironGet).into(),
         )
         .with_extrinsic(
             "wasi_unstable",
             "environ_sizes_get",
-            kernel_core::sig!((I32, I32) -> I32),
+            nametbd_core::sig!((I32, I32) -> I32),
             WasiExtrinsic(WasiExtrinsicInner::EnvironSizesGet).into(),
         )
         .with_extrinsic(
             "wasi_unstable",
             "fd_prestat_get",
-            kernel_core::sig!((I32, I32) -> I32),
+            nametbd_core::sig!((I32, I32) -> I32),
             WasiExtrinsic(WasiExtrinsicInner::FdPrestatGet).into(),
         )
         .with_extrinsic(
             "wasi_unstable",
             "fd_prestat_dir_name",
-            kernel_core::sig!((I32, I32, I32) -> I32),
+            nametbd_core::sig!((I32, I32, I32) -> I32),
             WasiExtrinsic(WasiExtrinsicInner::FdPrestatDirName).into(),
         )
         .with_extrinsic(
             "wasi_unstable",
             "fd_fdstat_get",
-            kernel_core::sig!((I32, I32) -> I32),
+            nametbd_core::sig!((I32, I32) -> I32),
             WasiExtrinsic(WasiExtrinsicInner::FdFdstatGet).into(),
         )
         .with_extrinsic(
             "wasi_unstable",
             "fd_write",
-            kernel_core::sig!((I32, I32, I32, I32) -> I32),
+            nametbd_core::sig!((I32, I32, I32, I32) -> I32),
             WasiExtrinsic(WasiExtrinsicInner::FdWrite).into(),
         )
         .with_extrinsic(
             "wasi_unstable",
             "proc_exit",
-            kernel_core::sig!((I32)),
+            nametbd_core::sig!((I32)),
             WasiExtrinsic(WasiExtrinsicInner::ProcExit).into(),
         )
         .with_extrinsic(
             "wasi_unstable",
             "random_get",
-            kernel_core::sig!((I32, I32) -> I32),
+            nametbd_core::sig!((I32, I32) -> I32),
             WasiExtrinsic(WasiExtrinsicInner::RandomGet).into(),
         )
         .with_extrinsic(
             "wasi_unstable",
             "sched_yield",
-            kernel_core::sig!(()),
+            nametbd_core::sig!(()),
             WasiExtrinsic(WasiExtrinsicInner::SchedYield).into(),
         )
 }
@@ -189,9 +189,9 @@ pub fn handle_wasi(
 }
 
 fn fd_write(
-    system: &mut kernel_core::system::System<impl Clone>,
-    pid: kernel_core::scheduler::Pid,
-    thread_id: kernel_core::scheduler::ThreadId,
+    system: &mut nametbd_core::system::System<impl Clone>,
+    pid: nametbd_core::scheduler::Pid,
+    thread_id: nametbd_core::scheduler::ThreadId,
     params: Vec<wasmi::RuntimeValue>,
 ) {
     assert_eq!(params.len(), 4); // TODO: what to do when it's not the case?
