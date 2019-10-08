@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "core",
+    "hosted/cli",
     "hosted/kernel",
     "hosted/tcp",
     "hosted/wasi",
