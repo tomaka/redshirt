@@ -187,16 +187,6 @@ pub enum RunOneOutcome<'a, TExtr, TPud, TTud> {
 /// to grow again in the future. We therefore avoid that situation.
 const PROCESSES_MIN_CAPACITY: usize = 128;
 
-impl<TExtr> ProcessesCollection<TExtr, (), ()> {
-    /// Creates a new builder.
-    pub fn builder() -> ProcessesCollectionBuilder<TExtr> {
-        ProcessesCollectionBuilder {
-            extrinsics: Default::default(),
-            extrinsics_id_assign: Default::default(),
-        }
-    }
-}
-
 impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
     /// Creates a new process state machine from the given module.
     ///
@@ -419,9 +409,29 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
     }
 }
 
+impl<TExtr> Default for ProcessesCollectionBuilder<TExtr> {
+    fn default() -> ProcessesCollectionBuilder<TExtr> {
+        ProcessesCollectionBuilder {
+            extrinsics: Default::default(),
+            extrinsics_id_assign: Default::default(),
+        }
+    }
+}
+
 impl<TExtr> ProcessesCollectionBuilder<TExtr> {
-    /// Registers a function that processes can call.
-    // TODO: more docs
+    /// Registers a function that is available for processes to call.
+    ///
+    /// The function is registered under the given interface and function name. If a WASM module
+    /// imports a function with the corresponding interface and function name combination and
+    /// calls it, a [`RunOneOutcome::Interrupted`] event will be generated, containing the token
+    /// passed as parameter.
+    ///
+    /// The function signature passed as parameter is enforced when the process is created.
+    ///
+    /// # Panic
+    ///
+    /// Panics if an extrinsic with this interface/name combination has already been registered.
+    ///
     pub fn with_extrinsic(
         mut self,
         interface: impl Into<Cow<'static, str>>,
@@ -429,14 +439,15 @@ impl<TExtr> ProcessesCollectionBuilder<TExtr> {
         signature: Signature,
         token: impl Into<TExtr>,
     ) -> Self {
-        // TODO: panic if we already have it
         let interface = interface.into();
         let f_name = f_name.into();
 
         let index = self.extrinsics.len();
         debug_assert!(!self.extrinsics.contains_key(&index));
-        self.extrinsics_id_assign
-            .insert((interface, f_name), (index, signature));
+        match self.extrinsics_id_assign.entry((interface, f_name)) {
+            Entry::Occupied(_) => panic!(),
+            Entry::Vacant(e) => e.insert((index, signature)),
+        };
         self.extrinsics.insert(index, token.into());
         self
     }
@@ -660,5 +671,19 @@ where
             //.field("user_data", self.user_data())
             //.field("ready_to_run", &ready_to_run)
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::sig;
+    use super::ProcessesCollectionBuilder;
+
+    #[test]
+    #[should_panic]
+    fn panic_duplicate_extrinsic() {
+        ProcessesCollectionBuilder::<()>::default()
+            .with_extrinsic("foo", "test", sig!(()), ())
+            .with_extrinsic("foo", "test", sig!(()), ());
     }
 }

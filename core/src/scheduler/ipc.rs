@@ -206,7 +206,7 @@ impl<T: Clone> Core<T> {
 
         CoreBuilder {
             interfaces: Default::default(),
-            inner_builder: processes::ProcessesCollection::builder()
+            inner_builder: processes::ProcessesCollectionBuilder::default()
                 .with_extrinsic(
                     root_interface_id.clone(),
                     "next_message",
