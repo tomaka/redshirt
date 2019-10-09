@@ -107,14 +107,14 @@ impl<TExtEx: Clone> System<TExtEx> {
                 }
                 CoreRunOutcome::ThreadWaitExtrinsic {
                     ref mut thread,
-                    extrinsic: external_token,
+                    ref extrinsic,
                     ref params,
                 } => {
                     let pid = thread.pid();
                     return SystemRunOutcome::ThreadWaitExtrinsic {
                         pid,
                         thread_id: thread.id(),
-                        extrinsic: external_token.clone(),
+                        extrinsic: extrinsic.clone(),
                         params: params.clone(),
                     };
                 }
@@ -256,7 +256,8 @@ impl<TExtEx: Clone> System<TExtEx> {
     }
 }
 
-impl<TExtEx> SystemBuilder<TExtEx> {
+impl<TExtEx: Clone> SystemBuilder<TExtEx> {
+    // TODO: remove Clone once possible
     pub fn with_extrinsic(
         mut self,
         interface: impl Into<Cow<'static, str>>,

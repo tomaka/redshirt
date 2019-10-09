@@ -28,22 +28,10 @@ use parity_scale_codec::Encode;
 /// Handles scheduling processes and inter-process communications.
 pub struct Core<T> {
     /// List of running processes.
-    processes: processes::ProcessesCollection<Process, Thread>,
+    processes: processes::ProcessesCollection<Extrinsic<T>, Process, Thread>,
 
     /// For each interface, which program is fulfilling it.
     interfaces: HashMap<[u8; 32], InterfaceHandler>,
-
-    /// List of functions that processes can call.
-    /// The key of this map is an arbitrary `usize` that we pass to the WASM interpreter.
-    /// This field is never modified after the `Core` is created.
-    // TODO: move extrinsics system somewhere else? it's not really IPC
-    extrinsics: HashMap<usize, Extrinsic<T>>,
-
-    /// Map used to resolve imports when starting a process.
-    /// For each module and function name, stores the signature and an arbitrary usize that
-    /// corresponds to the entry in `extrinsics`.
-    /// This field is never modified after the `Core` is created.
-    extrinsics_id_assign: HashMap<(Cow<'static, str>, Cow<'static, str>), (usize, Signature)>,
 
     /// Pool of identifiers for messages.
     message_id_pool: IdPool,
@@ -84,10 +72,8 @@ enum Extrinsic<T> {
 pub struct CoreBuilder<T> {
     /// See the corresponding field in `Core`.
     interfaces: HashMap<[u8; 32], InterfaceHandler>,
-    /// See the corresponding field in `Core`.
-    extrinsics: HashMap<usize, Extrinsic<T>>,
-    /// See the corresponding field in `Core`.
-    extrinsics_id_assign: HashMap<(Cow<'static, str>, Cow<'static, str>), (usize, Signature)>,
+    /// Builder for the [`processes`][Core::processes] field in `Core`.
+    inner_builder: processes::ProcessesCollectionBuilder<Extrinsic<T>>,
 }
 
 /// Outcome of calling [`run`](Core::run).
@@ -103,7 +89,7 @@ pub enum CoreRunOutcome<'a, T> {
     },
     ThreadWaitExtrinsic {
         thread: CoreThread<'a, T>,
-        extrinsic: &'a T,
+        extrinsic: T,
         params: Vec<wasmi::RuntimeValue>,
     },
     InterfaceMessage {
@@ -123,7 +109,7 @@ pub enum CoreRunOutcome<'a, T> {
 
 /// Because of lifetime issues, this is the same as `CoreRunOutcome` but that holds `Pid`s instead
 /// of `CoreProcess`es.
-enum CoreRunOutcomeInner {
+enum CoreRunOutcomeInner<T> {
     ProgramFinished {
         process: Pid,
         return_value: Option<wasmi::RuntimeValue>, // TODO: force to i32?
@@ -134,7 +120,7 @@ enum CoreRunOutcomeInner {
     },
     ThreadWaitExtrinsic {
         thread: ThreadId,
-        extrinsic: usize,
+        extrinsic: T,
         params: Vec<wasmi::RuntimeValue>,
     },
     InterfaceMessage {
@@ -212,42 +198,40 @@ pub struct CoreThread<'a, T> {
     marker: PhantomData<T>,
 }
 
-impl<T> Core<T> {
+impl<T: Clone> Core<T> {
+    // TODO: figure out borrowing issues and remove that Clone
     /// Initialies a new `Core`.
     pub fn new() -> CoreBuilder<T> {
-        let builder = CoreBuilder {
-            interfaces: Default::default(),
-            extrinsics: Default::default(),
-            extrinsics_id_assign: Default::default(),
-        };
-
         let root_interface_id = "";
 
-        builder
-            .with_extrinsic_inner(
-                root_interface_id.clone(),
-                "next_message",
-                sig!((I32, I32, I32, I32, I32) -> I32),
-                Extrinsic::NextMessage,
-            )
-            .with_extrinsic_inner(
-                root_interface_id.clone(),
-                "emit_message",
-                sig!((I32, I32, I32, I32, I32) -> I32),
-                Extrinsic::EmitMessage,
-            )
-            .with_extrinsic_inner(
-                root_interface_id.clone(),
-                "emit_answer",
-                sig!((I32, I32, I32) -> I32),
-                Extrinsic::EmitAnswer,
-            )
-            .with_extrinsic_inner(
-                root_interface_id.clone(),
-                "cancel_message",
-                sig!((I32) -> I32),
-                Extrinsic::CancelMessage,
-            )
+        CoreBuilder {
+            interfaces: Default::default(),
+            inner_builder: processes::ProcessesCollection::builder()
+                .with_extrinsic(
+                    root_interface_id.clone(),
+                    "next_message",
+                    sig!((I32, I32, I32, I32, I32) -> I32),
+                    Extrinsic::NextMessage,
+                )
+                .with_extrinsic(
+                    root_interface_id.clone(),
+                    "emit_message",
+                    sig!((I32, I32, I32, I32, I32) -> I32),
+                    Extrinsic::EmitMessage,
+                )
+                .with_extrinsic(
+                    root_interface_id.clone(),
+                    "emit_answer",
+                    sig!((I32, I32, I32) -> I32),
+                    Extrinsic::EmitAnswer,
+                )
+                .with_extrinsic(
+                    root_interface_id.clone(),
+                    "cancel_message",
+                    sig!((I32) -> I32),
+                    Extrinsic::CancelMessage,
+                ),
+        }
     }
 
     /// Run the core once.
@@ -276,10 +260,7 @@ impl<T> Core<T> {
                         thread: self.processes.thread_by_id(thread).unwrap(),
                         marker: PhantomData,
                     },
-                    extrinsic: match self.extrinsics.get(&extrinsic).unwrap() {
-                        Extrinsic::External(ref token) => token,
-                        _ => panic!(),
-                    },
+                    extrinsic,
                     params,
                 },
                 CoreRunOutcomeInner::InterfaceMessage {
@@ -309,7 +290,7 @@ impl<T> Core<T> {
     /// Because of lifetime issues, we return an enum that holds `Pid`s instead of `CoreProcess`es.
     /// Then `run` does the conversion in order to have a good API.
     // TODO: make multithreaded
-    fn run_inner(&mut self) -> CoreRunOutcomeInner {
+    fn run_inner(&mut self) -> CoreRunOutcomeInner<T> {
         match self.processes.run() {
             processes::RunOneOutcome::ProcessFinished { pid, value, .. } => {
                 // TODO: must clean up all the interfaces stuff
@@ -328,14 +309,12 @@ impl<T> Core<T> {
                 params,
             } => {
                 debug_assert_eq!(*thread.user_data(), Thread::ReadyToRun);
-
-                // TODO: check params against signature with a debug_assert
-                match self.extrinsics.get(&id).unwrap() {
-                    Extrinsic::External(_) => {
+                match id {
+                    Extrinsic::External(ext) => {
                         *thread.user_data() = Thread::ExtrinsicWait;
                         return CoreRunOutcomeInner::ThreadWaitExtrinsic {
                             thread: thread.id(),
-                            extrinsic: id,
+                            extrinsic: ext.clone(),
                             params,
                         };
                     }
@@ -599,7 +578,7 @@ impl<T> Core<T> {
         message_id: u64,
         response: &[u8],
         answerer_pid: Option<Pid>,
-    ) -> Option<CoreRunOutcomeInner> {
+    ) -> Option<CoreRunOutcomeInner<T>> {
         let actual_message = nametbd_syscalls_interface::ffi::Message::Response(
             nametbd_syscalls_interface::ffi::ResponseMessage {
                 message_id,
@@ -647,31 +626,9 @@ impl<T> Core<T> {
             messages_queue: VecDeque::new(),
         };
 
-        let extrinsics_id_assign = &mut self.extrinsics_id_assign;
-
-        let process = self.processes.execute(
-            module,
-            proc_metadata,
-            Thread::ReadyToRun,
-            move |interface, function, obtained_signature| {
-                if let Some((index, expected_signature)) =
-                    extrinsics_id_assign.get(&(interface.into(), function.into()))
-                {
-                    if expected_signature.matches_wasmi(obtained_signature) {
-                        return Ok(*index);
-                    } else {
-                        // TODO: remove this println?
-                        // TODO: way to report the signature mismatch?
-                        println!(
-                            "signature mismatch for {:?}:{:?}; expected={:?}; obtained={:?}",
-                            interface, function, expected_signature, obtained_signature
-                        );
-                    }
-                }
-
-                Err(())
-            },
-        )?;
+        let process = self
+            .processes
+            .execute(module, proc_metadata, Thread::ReadyToRun)?;
 
         Ok(CoreProcess {
             process,
@@ -746,37 +703,18 @@ impl<T> CoreBuilder<T> {
     /// Registers a function that processes can call.
     // TODO: more docs
     pub fn with_extrinsic(
-        self,
+        mut self,
         interface: impl Into<Cow<'static, str>>,
         f_name: impl Into<Cow<'static, str>>,
         signature: Signature,
         token: impl Into<T>,
     ) -> Self {
-        self.with_extrinsic_inner(
+        self.inner_builder = self.inner_builder.with_extrinsic(
             interface,
             f_name,
             signature,
             Extrinsic::External(token.into()),
-        )
-    }
-
-    /// Inner implementation of `with_extrinsic`.
-    fn with_extrinsic_inner(
-        mut self,
-        interface: impl Into<Cow<'static, str>>,
-        f_name: impl Into<Cow<'static, str>>,
-        signature: Signature,
-        extrinsic: Extrinsic<T>,
-    ) -> Self {
-        // TODO: panic if we already have it
-        let interface = interface.into();
-        let f_name = f_name.into();
-
-        let index = self.extrinsics.len();
-        debug_assert!(!self.extrinsics.contains_key(&index));
-        self.extrinsics_id_assign
-            .insert((interface, f_name), (index, signature));
-        self.extrinsics.insert(index, extrinsic);
+        );
         self
     }
 
@@ -792,17 +730,10 @@ impl<T> CoreBuilder<T> {
     }
 
     /// Turns the builder into a [`Core`].
-    pub fn build(mut self) -> Core<T> {
-        // We're not going to modify these fields ever again, so let's free some memory.
-        self.extrinsics.shrink_to_fit();
-        self.extrinsics_id_assign.shrink_to_fit();
-        debug_assert_eq!(self.extrinsics.len(), self.extrinsics_id_assign.len());
-
+    pub fn build(self) -> Core<T> {
         Core {
-            processes: processes::ProcessesCollection::new(),
+            processes: self.inner_builder.build(),
             interfaces: self.interfaces,
-            extrinsics: self.extrinsics,
-            extrinsics_id_assign: self.extrinsics_id_assign,
             message_id_pool: IdPool::new(),
             messages_to_answer: HashMap::default(),
         }
@@ -1014,7 +945,7 @@ mod tests {
                 params,
             } => {
                 assert_eq!(thread.pid(), expected_pid);
-                assert_eq!(*extrinsic, 639);
+                assert_eq!(extrinsic, 639);
                 assert!(params.is_empty());
                 thread.id()
             }

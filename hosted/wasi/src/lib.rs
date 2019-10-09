@@ -41,7 +41,10 @@ enum WasiExtrinsicInner {
 }
 
 /// Adds to the `SystemBuilder` the extrinsics required by WASI.
-pub fn register_extrinsics<T: From<WasiExtrinsic>>(system: SystemBuilder<T>) -> SystemBuilder<T> {
+pub fn register_extrinsics<T: From<WasiExtrinsic> + Clone>(
+    system: SystemBuilder<T>,
+) -> SystemBuilder<T> {
+    // TODO: remove Clone
     system
         .with_extrinsic(
             "wasi_unstable",
