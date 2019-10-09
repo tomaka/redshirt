@@ -144,7 +144,7 @@ async fn async_main(
                     system.answer_message(
                         message_id.unwrap(),
                         &nametbd_window_interface::ffi::WindowOpenResponse {
-                            result: Ok(0), // TODO: correct ID
+                            result: Ok(0), // TODO: correct ID; has to be a Vulkan surface
                         }
                         .encode(),
                     );

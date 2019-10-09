@@ -22,17 +22,23 @@
 pub mod ffi;
 
 pub struct Window {
-    handle: u32,
+    handle: u64,
 }
 
 impl Window {
-    pub async fn open() -> Result<Window, ()> {
-        let open = ffi::WindowMessage::Open(ffi::WindowOpen {});
+    // TODO: unsafe? what's the lifetime of the window compared to the instance?
+    pub async fn open(vk_instance: usize) -> Result<Window, ()> {
+        // TODO: properly check that instance fits in u32; this is the vulkan hack where we translate dispatchable handles
+        let open = ffi::WindowMessage::Open(ffi::WindowOpen { vk_instance: vk_instance as u32 });
         let response: ffi::WindowOpenResponse =
             nametbd_syscalls_interface::emit_message_with_response(ffi::INTERFACE, open).await?;
         Ok(Window {
             handle: response.result?,
         })
+    }
+
+    pub fn as_vulkan_surface(&self) -> u64 {
+        self.handle
     }
 }
 

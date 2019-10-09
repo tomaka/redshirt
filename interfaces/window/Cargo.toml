@@ -8,4 +8,5 @@ edition = "2018"
 [dependencies]
 futures-preview = "0.3.0-alpha.18"
 nametbd-syscalls-interface = { path = "../syscalls" }
+nametbd-vulkan-interface = { path = "../vulkan" }
 parity-scale-codec = { version = "1.0.5", features = ["derive"] }

@@ -31,16 +31,18 @@ pub enum WindowMessage {
 }
 
 #[derive(Debug, Encode, Decode)]
-pub struct WindowOpen {}
+pub struct WindowOpen {
+    pub vk_instance: u32,
+}
 
 #[derive(Debug, Encode, Decode)]
 pub struct WindowOpenResponse {
-    pub result: Result<u32, ()>,
+    pub result: Result<u64, ()>,
 }
 
 #[derive(Debug, Encode, Decode)]
 pub struct WindowClose {
-    pub window_id: u32,
+    pub window_id: u64,
 }
 
 #[derive(Debug, Encode, Decode)]

@@ -28,6 +28,7 @@ use vulkano::swapchain::{AcquireError, PresentMode, SurfaceTransform, Swapchain,
 use vulkano::swapchain;
 use vulkano::sync::{GpuFuture, FlushError};
 use vulkano::sync;
+use vulkano::VulkanObject;
 
 use std::sync::Arc;
 
@@ -86,7 +87,10 @@ fn main() {
     let mut events_loop = EventsLoop::new();
     let surface = WindowBuilder::new().build_vk_surface(&events_loop, instance.clone()).unwrap();
     let window = surface.window();*/
-    let window = nametbd_syscalls_interface::block_on(nametbd_window_interface::Window::open()).unwrap();
+    let window = nametbd_syscalls_interface::block_on(nametbd_window_interface::Window::open(instance.internal_object())).unwrap();
+    let surface = unsafe {
+        vulkano::swapchain::Surface::from_raw_surface(instance.clone(), window.as_vulkan_surface(), ())      // TODO: super unsafe
+    };
 
     // The next step is to choose which GPU queue will execute our draw commands.
     //

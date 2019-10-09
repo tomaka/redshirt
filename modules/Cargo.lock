@@ -805,6 +805,7 @@ version = "0.1.0"
 dependencies = [
  "futures-preview 0.3.0-alpha.19 (registry+https://github.com/rust-lang/crates.io-index)",
  "nametbd-syscalls-interface 0.1.0",
+ "nametbd-vulkan-interface 0.1.0",
  "parity-scale-codec 1.0.6 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
