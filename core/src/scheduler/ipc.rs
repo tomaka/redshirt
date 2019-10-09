@@ -198,7 +198,8 @@ pub struct CoreThread<'a, T> {
     marker: PhantomData<T>,
 }
 
-impl<T: Clone> Core<T> {        // TODO: figure out borrowing issues and remove that Clone
+impl<T: Clone> Core<T> {
+    // TODO: figure out borrowing issues and remove that Clone
     /// Initialies a new `Core`.
     pub fn new() -> CoreBuilder<T> {
         let root_interface_id = "";
@@ -625,7 +626,9 @@ impl<T: Clone> Core<T> {        // TODO: figure out borrowing issues and remove 
             messages_queue: VecDeque::new(),
         };
 
-        let process = self.processes.execute(module, proc_metadata, Thread::ReadyToRun)?;
+        let process = self
+            .processes
+            .execute(module, proc_metadata, Thread::ReadyToRun)?;
 
         Ok(CoreProcess {
             process,

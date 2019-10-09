@@ -224,7 +224,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
             let extrinsics_id_assign = &mut self.extrinsics_id_assign;
             vm::ProcessStateMachine::new(
                 module,
-                main_thread_data, 
+                main_thread_data,
                 move |interface, function, obtained_signature| {
                     if let Some((index, expected_signature)) =
                         extrinsics_id_assign.get(&(interface.into(), function.into()))
@@ -242,7 +242,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
                     }
 
                     Err(())
-                }
+                },
             )?
         };
 
@@ -354,7 +354,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
                     id: extrinsic,
                     params,
                 }
-            },
+            }
             Ok(vm::ExecOutcome::Errored { error, .. }) => {
                 let (
                     pid,
@@ -418,7 +418,6 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
         })
     }
 }
-
 
 impl<TExtr> ProcessesCollectionBuilder<TExtr> {
     /// Registers a function that processes can call.

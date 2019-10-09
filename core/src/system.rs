@@ -256,7 +256,8 @@ impl<TExtEx: Clone> System<TExtEx> {
     }
 }
 
-impl<TExtEx: Clone> SystemBuilder<TExtEx> {     // TODO: remove Clone once possible
+impl<TExtEx: Clone> SystemBuilder<TExtEx> {
+    // TODO: remove Clone once possible
     pub fn with_extrinsic(
         mut self,
         interface: impl Into<Cow<'static, str>>,
