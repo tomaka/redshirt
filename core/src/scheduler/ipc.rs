@@ -945,7 +945,7 @@ mod tests {
                 params,
             } => {
                 assert_eq!(thread.pid(), expected_pid);
-                assert_eq!(*extrinsic, 639);
+                assert_eq!(extrinsic, 639);
                 assert!(params.is_empty());
                 thread.id()
             }
