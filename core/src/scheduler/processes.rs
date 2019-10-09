@@ -676,8 +676,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::sig;
     use super::ProcessesCollectionBuilder;
+    use crate::sig;
 
     #[test]
     #[should_panic]
