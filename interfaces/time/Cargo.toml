@@ -1,0 +1,10 @@
+[package]
+name = "nametbd-time-interface"
+version = "0.1.0"
+license = "GPL-3.0-or-later"
+authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+nametbd-syscalls-interface = { path = "../syscalls" }
+parity-scale-codec = { version = "1.0.5", features = ["derive"] }

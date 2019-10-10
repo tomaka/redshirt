@@ -56,6 +56,15 @@ async fn async_main() {
                     message_id,
                     interface,
                     message,
+                } if interface == nametbd_time_interface::ffi::INTERFACE => {
+                    let answer = nametbd_time_hosted::time_message(&message);
+                    system.answer_message(message_id.unwrap(), &answer);
+                    continue;
+                }
+                nametbd_core::system::SystemRunOutcome::InterfaceMessage {
+                    message_id,
+                    interface,
+                    message,
                 } if interface == nametbd_tcp_interface::ffi::INTERFACE => {
                     let message: nametbd_tcp_interface::ffi::TcpMessage =
                         DecodeAll::decode_all(&message).unwrap();
