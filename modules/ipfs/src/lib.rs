@@ -13,13 +13,21 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-// TODO: uncommenting causes linking errors
-//mod tcp_transport;
+mod tcp_transport;
 
-use futures::prelude::*;
+use futures::{prelude::*, compat::Compat01As03};
+use futures01::Stream as _;
+use libp2p_core::{identity, upgrade, PeerId, muxing::StreamMuxerBox, nodes::node::Substream};
+use libp2p_core::transport::{Transport, boxed::Boxed};
+use libp2p_kad::{Kademlia, Quorum, record::Key, record::store::MemoryStore};
+use libp2p_mplex::MplexConfig;
+use libp2p_plaintext::PlainText2Config;
+use libp2p_swarm::Swarm;
+use std::io;
 
 /// Active set of connections to the network.
 pub struct Network<T> {
+    swarm: Swarm<Boxed<(PeerId, StreamMuxerBox), io::Error>, Kademlia<Substream<StreamMuxerBox>, MemoryStore>>,
     active_fetches: Vec<([u8; 32], T)>,
 }
 
@@ -44,7 +52,27 @@ pub enum NetworkEvent<T> {
 impl<T> Network<T> {
     /// Initializes the network.
     pub fn start() -> Network<T> {
+        let local_keypair = identity::Keypair::generate_ed25519();
+        let local_peer_id = local_keypair.public().into_peer_id();
+
+        let transport = tcp_transport::TcpConfig::default()
+            .upgrade(upgrade::Version::V1)
+            .authenticate(PlainText2Config {
+                pubkey: local_keypair.public(),
+            })
+            .multiplex(MplexConfig::default())
+            // TODO: timeout
+            .map(|(id, muxer), _| (id, StreamMuxerBox::new(muxer)))
+            .map_err(|err| io::Error::new(io::ErrorKind::Other, err))
+            .boxed();
+
+        let kademlia = Kademlia::new(local_peer_id.clone(), MemoryStore::new(local_peer_id.clone()));
+
+        let mut swarm = Swarm::new(transport, kademlia, local_peer_id);
+        swarm.bootstrap();
+
         Network {
+            swarm,
             active_fetches: Vec::new(),
         }
     }
@@ -53,11 +81,15 @@ impl<T> Network<T> {
     ///
     /// The `user_data` is an opaque value that is passed back when the fetch succeeds or fails.
     pub fn start_fetch(&mut self, hash: &[u8; 32], user_data: T) {
+        self.swarm.get_record(&Key::new(hash), Quorum::One);
         self.active_fetches.push((*hash, user_data));
     }
 
     /// Returns a future that returns the next event that happens on the network.
     pub async fn next_event(&mut self) -> NetworkEvent<T> {
+        Compat01As03::new(futures01::future::poll_fn(|| self.swarm.poll())).await;
+        // TODO: unfinished
+
         if !self.active_fetches.is_empty() {
             let (_, user_data) = self.active_fetches.remove(0);
             return NetworkEvent::FetchFail { user_data };
