@@ -48,6 +48,6 @@ pub async fn register_interface(hash: [u8; 32]) -> Result<(), InterfaceRegisterE
 ///
 /// Returns an error if there was already a program registered for that interface.
 #[cfg(not(target_arch = "wasm32"))]
-pub async fn register_interface(hash: &[u8; 32]) -> Result<(), InterfaceRegisterError> {
+pub async fn register_interface(hash: [u8; 32]) -> Result<(), InterfaceRegisterError> {
     unimplemented!()
 }
