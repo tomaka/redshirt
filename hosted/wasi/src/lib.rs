@@ -116,7 +116,7 @@ pub fn register_extrinsics<T: From<WasiExtrinsic> + Clone>(
         .with_extrinsic(
             "wasi_unstable",
             "sched_yield",
-            nametbd_core::sig!(()),
+            nametbd_core::sig!(() -> I32),
             WasiExtrinsic(WasiExtrinsicInner::SchedYield).into(),
         )
 }
