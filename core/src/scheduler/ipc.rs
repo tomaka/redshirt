@@ -92,6 +92,13 @@ pub enum CoreRunOutcome<'a, T> {
         extrinsic: T,
         params: Vec<wasmi::RuntimeValue>,
     },
+    /// Thread has tried to emit a message on an interface that isn't registered. The thread is
+    /// now in sleep mode. You can either wake it up by calling [`set_interface_handler`], or
+    /// crash the process entirely.
+    ThreadWaitUnavailableInterface {
+        thread: CoreThread<'a, T>,
+        interface: [u8; 32],
+    },
     InterfaceMessage {
         pid: Pid,
         message_id: Option<u64>,
@@ -122,6 +129,10 @@ enum CoreRunOutcomeInner<T> {
         thread: ThreadId,
         extrinsic: T,
         params: Vec<wasmi::RuntimeValue>,
+    },
+    ThreadWaitUnavailableInterface {
+        thread: ThreadId,
+        interface: [u8; 32],
     },
     InterfaceMessage {
         // TODO: `pid` is redundant with `message_id`; should just be a better API with an `Event` handle struct
@@ -162,6 +173,16 @@ enum Thread {
     /// Note that this can be set even if the `messages_queue` is not empty, in the case where
     /// the thread is waiting only on messages that aren't in the queue.
     MessageWait(MessageWait),
+
+    /// The thread wants to emit a message on an interface, but no handler was available.
+    InterfaceNotAvailableWait {
+        /// Interface we want to emit the message on.
+        interface: [u8; 32],
+        /// Identifier of the message.
+        message_id: Option<u64>,
+        /// Message itself.
+        message: Vec<u8>,
+    },
 
     /// The thread is sleeping and waiting for an extrinsic.
     ExtrinsicWait,
@@ -263,6 +284,15 @@ impl<T: Clone> Core<T> {
                     extrinsic,
                     params,
                 },
+                CoreRunOutcomeInner::ThreadWaitUnavailableInterface { thread, interface } => {
+                    CoreRunOutcome::ThreadWaitUnavailableInterface {
+                        thread: CoreThread {
+                            thread: self.processes.thread_by_id(thread).unwrap(),
+                            marker: PhantomData,
+                        },
+                        interface,
+                    }
+                }
                 CoreRunOutcomeInner::InterfaceMessage {
                     pid,
                     message_id,
@@ -367,6 +397,7 @@ impl<T: Clone> Core<T> {
                         match self
                             .interfaces
                             .get(&interface)
+                            // TODO: set to InterfaceNotAvailableWait instead
                             .expect("Interface handler not found")
                         {
                             InterfaceHandler::Process(pid) => {
@@ -466,6 +497,8 @@ impl<T: Clone> Core<T> {
             Entry::Occupied(_) => return Err(()),
             Entry::Vacant(e) => e.insert(InterfaceHandler::Process(process)),
         };
+
+        // TODO: resume threads that are waiting for interface resolution
 
         Ok(())
     }
