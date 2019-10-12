@@ -30,7 +30,7 @@ async fn async_main() {
     let mut system = nametbd_wasi_hosted::register_extrinsics(nametbd_core::system::System::new())
         .with_interface_handler(nametbd_tcp_interface::ffi::INTERFACE)
         .with_startup_process(module)
-        .with_main_program([0; 32])     // TODO: just a test
+        .with_main_program([0; 32]) // TODO: just a test
         .build();
 
     let mut tcp = nametbd_tcp_hosted::TcpState::new();
