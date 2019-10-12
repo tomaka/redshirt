@@ -103,6 +103,8 @@ extern "C" {
 pub enum Message {
     Interface(InterfaceMessage),
     Response(ResponseMessage),
+    
+    ProcessDestroyed(u64),
 }
 
 #[derive(Debug, Encode, Decode)]

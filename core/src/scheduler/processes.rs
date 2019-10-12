@@ -111,7 +111,7 @@ pub struct ProcessesCollectionThread<'a, TPud, TTud> {
 /// Outcome of the [`run`](ProcessesCollection::run) function.
 #[derive(Debug)]
 pub enum RunOneOutcome<'a, TExtr, TPud, TTud> {
-    /// The main thread of a process has finished.
+    /// Either the main thread of a process has finished, or a fatal error was encountered.
     ///
     /// The process no longer exists.
     ProcessFinished {
@@ -126,8 +126,8 @@ pub enum RunOneOutcome<'a, TExtr, TPud, TTud> {
         /// These threads no longer exist.
         dead_threads: Vec<(ThreadId, TTud)>,
 
-        /// Value returned by the main thread that has finished.
-        value: Option<wasmi::RuntimeValue>,
+        /// Value returned by the main thread that has finished, or error that happened.
+        outcome: Result<Option<wasmi::RuntimeValue>, wasmi::Trap>,
     },
 
     /// A thread in a process has finished.
@@ -157,24 +157,6 @@ pub enum RunOneOutcome<'a, TExtr, TPud, TTud> {
 
         /// Parameters of the function call.
         params: Vec<wasmi::RuntimeValue>,
-    },
-
-    /// The currently-executed function has finished with an error. The process has been destroyed.
-    Errored {
-        /// Pid of the process that has been destroyed.
-        pid: Pid,
-
-        /// User data that belonged to the process.
-        user_data: TPud,
-
-        /// Id and user datas of all the threads of the process. The first element is the main
-        /// thread's.
-        /// These threads no longer exist.
-        dead_threads: Vec<(ThreadId, TTud)>,
-
-        /// Error that happened.
-        // TODO: error type should change here
-        error: wasmi::Trap,
     },
 
     /// No thread is ready to run. Nothing was done.
@@ -318,7 +300,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
                     pid,
                     user_data,
                     dead_threads,
-                    value: return_value,
+                    outcome: Ok(return_value),
                 }
             }
             Ok(vm::ExecOutcome::ThreadFinished {
@@ -357,11 +339,11 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
                     .into_user_datas()
                     .map(|t| (t.thread_id, t.user_data))
                     .collect::<Vec<_>>();
-                RunOneOutcome::Errored {
+                RunOneOutcome::ProcessFinished {
                     pid,
                     user_data,
                     dead_threads,
-                    error,
+                    outcome: Err(error),
                 }
             }
         }
@@ -558,7 +540,7 @@ impl<'a, TPud, TTud> ProcessesCollectionProc<'a, TPud, TTud> {
     }
 
     /// Aborts the process and returns the associated user data.
-    pub fn abort(self) -> TPud {
+    pub fn abort(self) -> TPud {        // TODO: return thread user datas as well
         let (_, Process { user_data, .. }) = self.process.remove_entry();
         user_data
     }
