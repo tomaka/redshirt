@@ -15,7 +15,8 @@ jobs:
     - name: Install Rust nightly
       uses: actions-rs/toolchain@v1
       with:
-        toolchain: nightly
+        # TODO: put back `nightly` after https://github.com/rust-lang/rust/issues/65335 is fixed
+        toolchain: nightly-2019-09-30
         target: wasm32-wasi
         override: true
     - name: Install a recent version of Clang
