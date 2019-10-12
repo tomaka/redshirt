@@ -145,7 +145,7 @@ fn write_commands_wrappers(mut out: impl Write, registry: &parse::VkRegistry) {
             continue;
         }
 
-        writeln!(out, "#[allow(non_snake_case)]").unwrap();
+        writeln!(out, "#[allow(unused_parens, non_snake_case)]").unwrap();
         writeln!(out, "unsafe extern \"system\" fn wrapper_{}(", command.name).unwrap();
         for (ty, n) in &command.params {
             writeln!(out, "    r#{}: {},", n, print_ty(ty)).unwrap();
@@ -221,7 +221,6 @@ fn write_commands_wrappers(mut out: impl Write, registry: &parse::VkRegistry) {
 
 fn write_redirect_handle(mut out: impl Write, registry: &parse::VkRegistry) {
     writeln!(out, "unsafe fn redirect_handle_inner(state: &mut VulkanRedirect, emitter_pid: u64, mut msg_buf: &[u8]) -> Result<Option<Vec<u8>>, parity_scale_codec::Error> {{").unwrap();
-    writeln!(out, "    #![allow(unused_parens)]").unwrap();
     writeln!(out, "    match <u16 as Decode>::decode(&mut msg_buf)? {{").unwrap();
     for (command_id, command) in registry.commands.iter().enumerate() {
         if command.name == "vkGetDeviceProcAddr" || command.name == "vkGetInstanceProcAddr" {
@@ -245,6 +244,7 @@ fn write_redirect_handle(mut out: impl Write, registry: &parse::VkRegistry) {
         }
 
         writeln!(out, "unsafe fn handle_{}(state: &mut VulkanRedirect, emitter_pid: u64, mut msg_buf: &[u8]) -> Result<Option<Vec<u8>>, parity_scale_codec::Error> {{", command.name).unwrap();
+        writeln!(out, "    #![allow(unused_parens, non_snake_case)]").unwrap();
 
         let mut var_name_gen = 0;
         let mut params_list = Vec::new();
