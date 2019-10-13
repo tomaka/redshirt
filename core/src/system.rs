@@ -25,6 +25,10 @@ pub struct System<TExtEx> {
     core: Core<TExtEx>,
     futex_waits: HashMap<(Pid, u32), SmallVec<[u64; 4]>>,
 
+    /// List of programs to load as soon as the loader interface is available.
+    // TODO: add timeout for loader interface availability
+    main_programs: SmallVec<[[u8; 32]; 1]>,
+
     /// Set of messages that we emitted of requests to load a program from the loader interface.
     /// All these messages expect a `nametbd_loader_interface::ffi::LoadResponse` as answer.
     // TODO: call shink_to_fit from time to time
@@ -33,7 +37,9 @@ pub struct System<TExtEx> {
 
 pub struct SystemBuilder<TExtEx> {
     core: CoreBuilder<TExtEx>,
-    main_programs: SmallVec<[Module; 1]>,
+    startup_processes: Vec<Module>,
+    /// List of programs to load as soon as the loader interface is available.
+    main_programs: SmallVec<[[u8; 32]; 1]>,
 }
 
 #[derive(Debug)]
@@ -70,6 +76,7 @@ impl<TExtEx: Clone> System<TExtEx> {
 
         SystemBuilder {
             core,
+            startup_processes: Vec::new(),
             main_programs: SmallVec::new(),
         }
     }
@@ -179,6 +186,7 @@ impl<TExtEx: Clone> System<TExtEx> {
                         }
                     }
                 }
+
                 CoreRunOutcome::InterfaceMessage {
                     pid,
                     message_id,
@@ -192,6 +200,21 @@ impl<TExtEx: Clone> System<TExtEx> {
                         nametbd_interface_interface::ffi::InterfaceMessage::Register(
                             interface_hash,
                         ) => {
+                            if interface_hash == nametbd_loader_interface::ffi::INTERFACE {
+                                for hash in self.main_programs.drain() {
+                                    let msg =
+                                        nametbd_loader_interface::ffi::LoaderMessage::Load(hash);
+                                    let id = self
+                                        .core
+                                        .emit_interface_message_answer(
+                                            nametbd_loader_interface::ffi::INTERFACE,
+                                            msg,
+                                        )
+                                        .unwrap();
+                                    self.loading_programs.insert(id);
+                                }
+                            }
+
                             self.core
                                 .set_interface_handler(interface_hash, pid)
                                 .unwrap();
@@ -203,18 +226,8 @@ impl<TExtEx: Clone> System<TExtEx> {
                                 .answer_message(message_id.unwrap(), &response.encode());
                         }
                     }
-
-                    // TODO: temporary, for testing purposes
-                    let msg = nametbd_loader_interface::ffi::LoaderMessage::Load([0; 32]);
-                    let id = self
-                        .core
-                        .emit_interface_message_answer(
-                            nametbd_loader_interface::ffi::INTERFACE,
-                            msg,
-                        )
-                        .unwrap();
-                    self.loading_programs.insert(id);
                 }
+
                 CoreRunOutcome::InterfaceMessage {
                     pid,
                     message_id,
@@ -227,6 +240,7 @@ impl<TExtEx: Clone> System<TExtEx> {
                         message,
                     };
                 }
+
                 CoreRunOutcome::Idle => return SystemRunOutcome::Idle,
             }
         }
@@ -276,10 +290,27 @@ impl<TExtEx: Clone> SystemBuilder<TExtEx> {
         self
     }
 
-    /// Adds a program that the [`System`] must execute on startup. Can be called multiple times
+    /// Adds a process to the list of processes that the [`System`] must start as part of the
+    /// startup process.
+    ///
+    /// The startup processes are started in the order in which they are added here.
+    ///
+    /// By default, the list is empty. Should at least contain a process that handles the `loader`
+    /// interface.
+    pub fn with_startup_process(mut self, process: impl Into<Module>) -> Self {
+        let process = process.into();
+        self.startup_processes.push(process);
+        self
+    }
+
+    /// Adds a program that the [`System`] must execute after startup. Can be called multiple times
     /// to add multiple programs.
-    pub fn with_main_program(mut self, module: Module) -> Self {
-        self.main_programs.push(module);
+    ///
+    /// The program will be loaded through the `loader` interface. The loading starts as soon as
+    /// the `loader` interface has been registered by one of the processes passed to
+    /// [`with_startup_process`](SystemBuilder::with_startup_process).
+    pub fn with_main_program(mut self, hash: [u8; 32]) -> Self {
+        self.main_programs.push(hash);
         self
     }
 
@@ -287,15 +318,16 @@ impl<TExtEx: Clone> SystemBuilder<TExtEx> {
     pub fn build(mut self) -> System<TExtEx> {
         let mut core = self.core.build();
 
-        for program in self.main_programs.drain() {
+        for program in self.startup_processes {
             core.execute(&program)
-                .expect("failed to start main program"); // TODO:
+                .expect("failed to start startup program"); // TODO:
         }
 
         System {
             core,
             futex_waits: Default::default(),
             loading_programs: Default::default(),
+            main_programs: self.main_programs,
         }
     }
 }
