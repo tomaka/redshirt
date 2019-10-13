@@ -202,31 +202,29 @@ impl<T: Clone> Core<T> {
     // TODO: figure out borrowing issues and remove that Clone
     /// Initialies a new `Core`.
     pub fn new() -> CoreBuilder<T> {
-        let root_interface_id = "";
-
         CoreBuilder {
             interfaces: Default::default(),
             inner_builder: processes::ProcessesCollectionBuilder::default()
                 .with_extrinsic(
-                    root_interface_id.clone(),
+                    "nametbd",
                     "next_message",
                     sig!((I32, I32, I32, I32, I32) -> I32),
                     Extrinsic::NextMessage,
                 )
                 .with_extrinsic(
-                    root_interface_id.clone(),
+                    "nametbd",
                     "emit_message",
                     sig!((I32, I32, I32, I32, I32) -> I32),
                     Extrinsic::EmitMessage,
                 )
                 .with_extrinsic(
-                    root_interface_id.clone(),
+                    "nametbd",
                     "emit_answer",
                     sig!((I32, I32, I32) -> I32),
                     Extrinsic::EmitAnswer,
                 )
                 .with_extrinsic(
-                    root_interface_id.clone(),
+                    "nametbd",
                     "cancel_message",
                     sig!((I32) -> I32),
                     Extrinsic::CancelMessage,

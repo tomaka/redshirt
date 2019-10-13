@@ -16,7 +16,7 @@
 use core::ffi::c_void;
 use parity_scale_codec::{Decode, Encode};
 
-#[link(wasm_import_module = "")]
+#[link(wasm_import_module = "nametbd")]
 extern "C" {
     /// Asks for the next message.
     ///
