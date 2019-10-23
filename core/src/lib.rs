@@ -23,7 +23,11 @@
 
 extern crate alloc;
 
+pub use self::module::Module;
+pub use self::system::{System, SystemBuilder, SystemRunOutcome};
+
 mod id_pool;
+
 pub mod module;
 pub mod scheduler;
 pub mod signature;
