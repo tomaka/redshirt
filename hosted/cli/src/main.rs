@@ -27,11 +27,12 @@ async fn async_main() {
         &include_bytes!("../../../modules/target/wasm32-wasi/debug/ipfs.wasm")[..],
     );
 
-    let mut system = nametbd_wasi_hosted::register_extrinsics(nametbd_core::system::SystemBuilder::new())
-        .with_interface_handler(nametbd_tcp_interface::ffi::INTERFACE)
-        .with_startup_process(module)
-        .with_main_program([0; 32]) // TODO: just a test
-        .build();
+    let mut system =
+        nametbd_wasi_hosted::register_extrinsics(nametbd_core::system::SystemBuilder::new())
+            .with_interface_handler(nametbd_tcp_interface::ffi::INTERFACE)
+            .with_startup_process(module)
+            .with_main_program([0; 32]) // TODO: just a test
+            .build();
 
     let mut tcp = nametbd_tcp_hosted::TcpState::new();
 

@@ -70,13 +70,14 @@ async fn async_main(
         &include_bytes!("../../../modules/target/wasm32-wasi/debug/vulkan-triangle.wasm")[..],
     );
 
-    let mut system = nametbd_wasi_hosted::register_extrinsics(nametbd_core::system::SystemBuilder::new())
-        .with_interface_handler(nametbd_time_interface::ffi::INTERFACE)
-        .with_interface_handler(nametbd_tcp_interface::ffi::INTERFACE)
-        .with_interface_handler(nametbd_vulkan_interface::INTERFACE)
-        .with_interface_handler(nametbd_window_interface::ffi::INTERFACE)
-        .with_startup_process(module)
-        .build();
+    let mut system =
+        nametbd_wasi_hosted::register_extrinsics(nametbd_core::system::SystemBuilder::new())
+            .with_interface_handler(nametbd_time_interface::ffi::INTERFACE)
+            .with_interface_handler(nametbd_tcp_interface::ffi::INTERFACE)
+            .with_interface_handler(nametbd_vulkan_interface::INTERFACE)
+            .with_interface_handler(nametbd_window_interface::ffi::INTERFACE)
+            .with_startup_process(module)
+            .build();
 
     let mut tcp = nametbd_tcp_hosted::TcpState::new();
     let mut vk = {
