@@ -143,30 +143,36 @@ pub fn handle_wasi(
             // Note: precision is ignored
             let clock_ty = params[0].try_into::<i32>().unwrap();
             let write_back = match clock_ty {
-                0 => {  // CLOCK_REALTIME
+                0 => {
+                    // CLOCK_REALTIME
                     unimplemented!()
                 }
-                1 => {  // CLOCK_MONOTONIC
+                1 => {
+                    // CLOCK_MONOTONIC
                     lazy_static::lazy_static! {
                         static ref CLOCK_START: Instant = Instant::now();
                     }
                     let dur = CLOCK_START.elapsed();
-                    dur.as_secs().saturating_mul(1_000_000_000).saturating_add(u64::from(dur.subsec_nanos()))
+                    dur.as_secs()
+                        .saturating_mul(1_000_000_000)
+                        .saturating_add(u64::from(dur.subsec_nanos()))
                 }
-                2 => {  // CLOCK_PROCESS_CPUTIME_ID
+                2 => {
+                    // CLOCK_PROCESS_CPUTIME_ID
                     unimplemented!()
                 }
-                3 => {  // CLOCK_THREAD_CPUTIME_ID
+                3 => {
+                    // CLOCK_THREAD_CPUTIME_ID
                     unimplemented!()
                 }
-                _ => panic!()
+                _ => panic!(),
             };
             let mut buf = [0; 8];
             LittleEndian::write_u64(&mut buf, write_back);
             let buf_ptr = params[2].try_into::<i32>().unwrap() as u32;
             system.write_memory(pid, buf_ptr, &buf).unwrap();
             system.resolve_extrinsic_call(thread_id, Some(wasmi::RuntimeValue::I32(0)));
-        },
+        }
         WasiExtrinsicInner::EnvironGet => {
             assert_eq!(params.len(), 2);
             let ptrs_ptr = params[0].try_into::<i32>().unwrap() as u32;

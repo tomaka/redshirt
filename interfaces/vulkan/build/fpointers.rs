@@ -43,6 +43,7 @@ fn write_pointers(
     struct_name: &str,
     mut filter: impl FnMut(&parse::VkCommand) -> bool,
 ) -> Result<(), io::Error> {
+    writeln!(out, "#[allow(non_snake_case)]").unwrap();
     writeln!(out, "struct {} {{", struct_name)?;
 
     for command in &registry.commands {
