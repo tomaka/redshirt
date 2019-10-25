@@ -16,7 +16,10 @@
 use byteorder::{ByteOrder as _, LittleEndian};
 use nametbd_core::scheduler::{Pid, ThreadId};
 use nametbd_core::system::{System, SystemBuilder};
-use std::{io::Write as _, time::{Instant, SystemTime}};
+use std::{
+    io::Write as _,
+    time::{Instant, SystemTime},
+};
 
 // TODO: lots of unwraps as `as` conversions in this module
 
@@ -165,7 +168,8 @@ pub fn handle_wasi(
                 }
                 _ => panic!(),
             };
-            let write_back = dur.as_secs()
+            let write_back = dur
+                .as_secs()
                 .saturating_mul(1_000_000_000)
                 .saturating_add(u64::from(dur.subsec_nanos()));
             let mut buf = [0; 8];
