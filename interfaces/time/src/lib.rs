@@ -13,22 +13,24 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#![warn(missing_docs)]
-#![deny(unsafe_code)]
+//! Time.
+
 #![deny(intra_doc_link_resolution_failure)]
-#![allow(dead_code)] // TODO: temporary during development
 
-// TODO: futures and std::error::Error don't work in #![no_std] :-/
-// #![no_std]
+pub mod ffi;
 
-extern crate alloc;
+/// Returns the number of nanoseconds since an arbitrary point in time in the past.
+pub async fn monotonic_clock() -> u128 {
+    let msg = ffi::TimeMessage::GetMonotonic;
+    nametbd_syscalls_interface::emit_message_with_response(ffi::INTERFACE, msg)
+        .await
+        .unwrap()
+}
 
-pub use self::module::Module;
-pub use self::system::{System, SystemBuilder, SystemRunOutcome};
-
-mod id_pool;
-
-pub mod module;
-pub mod scheduler;
-pub mod signature;
-pub mod system;
+/// Returns the number of nanoseconds since the Epoch (January 1st, 1970 at midnight UTC).
+pub async fn system_clock() -> u128 {
+    let msg = ffi::TimeMessage::GetSystem;
+    nametbd_syscalls_interface::emit_message_with_response(ffi::INTERFACE, msg)
+        .await
+        .unwrap()
+}

@@ -16,7 +16,10 @@
 use byteorder::{ByteOrder as _, LittleEndian};
 use nametbd_core::scheduler::{Pid, ThreadId};
 use nametbd_core::system::{System, SystemBuilder};
-use std::io::Write as _;
+use std::{
+    io::Write as _,
+    time::{Instant, SystemTime},
+};
 
 // TODO: lots of unwraps as `as` conversions in this module
 
@@ -41,7 +44,10 @@ enum WasiExtrinsicInner {
 }
 
 /// Adds to the `SystemBuilder` the extrinsics required by WASI.
-pub fn register_extrinsics<T: From<WasiExtrinsic>>(system: SystemBuilder<T>) -> SystemBuilder<T> {
+pub fn register_extrinsics<T: From<WasiExtrinsic> + Clone>(
+    system: SystemBuilder<T>,
+) -> SystemBuilder<T> {
+    // TODO: remove Clone
     system
         .with_extrinsic(
             "wasi_unstable",
@@ -58,8 +64,7 @@ pub fn register_extrinsics<T: From<WasiExtrinsic>>(system: SystemBuilder<T>) -> 
         .with_extrinsic(
             "wasi_unstable",
             "clock_time_get",
-            // TODO: bad signature
-            nametbd_core::sig!((I32, I64) -> I64),
+            nametbd_core::sig!((I32, I64, I32) -> I32),
             WasiExtrinsic(WasiExtrinsicInner::ClockTimeGet).into(),
         )
         .with_extrinsic(
@@ -113,7 +118,7 @@ pub fn register_extrinsics<T: From<WasiExtrinsic>>(system: SystemBuilder<T>) -> 
         .with_extrinsic(
             "wasi_unstable",
             "sched_yield",
-            nametbd_core::sig!(()),
+            nametbd_core::sig!(() -> I32),
             WasiExtrinsic(WasiExtrinsicInner::SchedYield).into(),
         )
 }
@@ -136,7 +141,43 @@ pub fn handle_wasi(
             system.write_memory(pid, num_ptr, &[0, 0, 0, 0]).unwrap();
             system.resolve_extrinsic_call(thread_id, Some(wasmi::RuntimeValue::I32(0)));
         }
-        WasiExtrinsicInner::ClockTimeGet => unimplemented!(),
+        WasiExtrinsicInner::ClockTimeGet => {
+            assert_eq!(params.len(), 3);
+            // Note: precision is ignored
+            let clock_ty = params[0].try_into::<i32>().unwrap();
+            let dur = match clock_ty {
+                0 => {
+                    // CLOCK_REALTIME
+                    // Note: `elapsed()` errors if `now() > &self`, which should never happen here.
+                    SystemTime::UNIX_EPOCH.elapsed().unwrap()
+                }
+                1 => {
+                    // CLOCK_MONOTONIC
+                    lazy_static::lazy_static! {
+                        static ref CLOCK_START: Instant = Instant::now();
+                    }
+                    CLOCK_START.elapsed()
+                }
+                2 => {
+                    // CLOCK_PROCESS_CPUTIME_ID
+                    unimplemented!()
+                }
+                3 => {
+                    // CLOCK_THREAD_CPUTIME_ID
+                    unimplemented!()
+                }
+                _ => panic!(),
+            };
+            let write_back = dur
+                .as_secs()
+                .saturating_mul(1_000_000_000)
+                .saturating_add(u64::from(dur.subsec_nanos()));
+            let mut buf = [0; 8];
+            LittleEndian::write_u64(&mut buf, write_back);
+            let buf_ptr = params[2].try_into::<i32>().unwrap() as u32;
+            system.write_memory(pid, buf_ptr, &buf).unwrap();
+            system.resolve_extrinsic_call(thread_id, Some(wasmi::RuntimeValue::I32(0)));
+        }
         WasiExtrinsicInner::EnvironGet => {
             assert_eq!(params.len(), 2);
             let ptrs_ptr = params[0].try_into::<i32>().unwrap() as u32;

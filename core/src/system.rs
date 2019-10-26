@@ -21,9 +21,35 @@ use hashbrown::{hash_map::Entry, HashMap, HashSet};
 use parity_scale_codec::{DecodeAll, Encode};
 use smallvec::SmallVec;
 
+/// Main struct that handles a system, including the scheduler, program loader,
+/// inter-process communication, and so on.
+///
+/// Natively handles the "interface" and "threads" interfaces.  TODO: indicate hashes
 pub struct System<TExtEx> {
+    /// Inner system with inter-process communications.
     core: Core<TExtEx>,
+
+    /// List of active futexes. The keys of this hashmap are process IDs and memory addresses, and
+    /// the values of this hashmap are a list of "wait" messages to answer once the corresponding
+    /// futex is woken up.
+    ///
+    /// Lists of messages must never be empty.
+    ///
+    /// Messages are always pushed at the back of the list. Therefore the first element is the
+    /// oldest message.
+    ///
+    /// See the "threads" interface for documentation about what a futex is.
     futex_waits: HashMap<(Pid, u32), SmallVec<[u64; 4]>>,
+
+    /// List of programs to load as soon as a loader interface handler is available.
+    ///
+    /// As soon as a handler for the "loader" interface is registered, we start loading the
+    /// programs in this list. Afterwards, the list will always be empty.
+    ///
+    /// Because this list is only filled at initialization, emptied at once, and then never filled
+    /// again, the most straight-forward container is a `Vec`.
+    // TODO: add timeout for loader interface availability
+    main_programs: Vec<[u8; 32]>,
 
     /// Set of messages that we emitted of requests to load a program from the loader interface.
     /// All these messages expect a `nametbd_loader_interface::ffi::LoadResponse` as answer.
@@ -31,51 +57,68 @@ pub struct System<TExtEx> {
     loading_programs: HashSet<u64>,
 }
 
+/// Prototype for a [`System`].
 pub struct SystemBuilder<TExtEx> {
+    /// Builder for the inner core.
     core: CoreBuilder<TExtEx>,
-    main_programs: SmallVec<[Module; 1]>,
+
+    /// List of programs to start executing immediately after construction.
+    startup_processes: Vec<Module>,
+
+    /// Same field as [`System::main_programs`].
+    main_programs: Vec<[u8; 32]>,
 }
 
+/// Outcome of running the [`System`] once.
 #[derive(Debug)]
 pub enum SystemRunOutcome<TExtEx> {
+    /// A program has ended, either successfully or after an error.
     ProgramFinished {
+        /// Identifier of the process that has stopped.
         pid: Pid,
-        return_value: Option<wasmi::RuntimeValue>, // TODO: force to i32?
+        /// Either `Ok(())` if the main thread has ended, or the error that happened in the
+        /// process.
+        // TODO: change error type
+        outcome: Result<(), wasmi::Error>,
     },
-    ProgramCrashed {
-        pid: Pid,
-        error: wasmi::Error,
-    },
+
+    /// A thread has called an extrinsic that was registered using
+    /// [`SystemBuilder::with_extrinsic`].
     ThreadWaitExtrinsic {
+        // TODO: return an object representing the thread
+        /// Process that called the extrinsic.
         pid: Pid,
+        /// Thread that called the extrinsic.
         thread_id: ThreadId,
+        /// Identifier of the extrinsic. Matches what was passed to
+        /// [`SystemBuilder::with_extrinsic`].
         extrinsic: TExtEx,
+        /// Parameters passed to the extrinsic.
         params: Vec<wasmi::RuntimeValue>,
     },
+
+    /// A thread has sent a message on an interface that was registered using
+    /// [`SystemBuilder::with_interface_handler`].
     InterfaceMessage {
+        // TODO: return an object representing the process or message
+        /// If `Some`, identifier of the message to use to send the answer. If `None`, the message
+        /// doesn't expect any answer.
         message_id: Option<u64>,
+        /// Interface the message was emitted on. Matches what was passed to
+        /// [`SystemBuilder::with_interface_handler`].
         interface: [u8; 32],
+        /// The bytes of the message.
         message: Vec<u8>,
     },
+
+    /// No thread is ready to run. Nothing to do.
     Idle,
 }
 
 // TODO: we require Clone because of stupid borrowing issues; remove
 impl<TExtEx: Clone> System<TExtEx> {
-    pub fn new() -> SystemBuilder<TExtEx> {
-        // We handle some low-level interfaces here.
-        let core = Core::new()
-            .with_interface_handler(nametbd_interface_interface::ffi::INTERFACE)
-            .with_interface_handler(nametbd_threads_interface::ffi::INTERFACE);
-
-        SystemBuilder {
-            core,
-            main_programs: SmallVec::new(),
-        }
-    }
-
-    /// After `ThreadWaitExtrinsic` has been returned, you have to call this method in order to
-    /// inject back the result of the extrinsic call.
+    /// After [`SystemRunOutcome::ThreadWaitExtrinsic`] has been returned, call this method in
+    /// order to inject back the result of the extrinsic call.
     // TODO: don't expose wasmi::RuntimeValue
     pub fn resolve_extrinsic_call(
         &mut self,
@@ -89,32 +132,36 @@ impl<TExtEx: Clone> System<TExtEx> {
             .resolve_extrinsic_call(return_value);
     }
 
+    /// Runs the [`System`] once and returns the outcome.
     pub fn run(&mut self) -> SystemRunOutcome<TExtEx> {
         // TODO: remove loop?
         loop {
             match self.core.run() {
                 CoreRunOutcome::ProgramFinished {
                     process,
-                    return_value,
+                    return_value: _,
                 } => {
                     return SystemRunOutcome::ProgramFinished {
                         pid: process,
-                        return_value,
+                        outcome: Ok(()),
                     }
                 }
                 CoreRunOutcome::ProgramCrashed { pid, error } => {
-                    return SystemRunOutcome::ProgramCrashed { pid, error }
+                    return SystemRunOutcome::ProgramFinished {
+                        pid,
+                        outcome: Err(error),
+                    }
                 }
                 CoreRunOutcome::ThreadWaitExtrinsic {
                     ref mut thread,
-                    extrinsic: external_token,
+                    ref extrinsic,
                     ref params,
                 } => {
                     let pid = thread.pid();
                     return SystemRunOutcome::ThreadWaitExtrinsic {
                         pid,
                         thread_id: thread.id(),
-                        extrinsic: external_token.clone(),
+                        extrinsic: extrinsic.clone(),
                         params: params.clone(),
                     };
                 }
@@ -179,6 +226,7 @@ impl<TExtEx: Clone> System<TExtEx> {
                         }
                     }
                 }
+
                 CoreRunOutcome::InterfaceMessage {
                     pid,
                     message_id,
@@ -192,6 +240,21 @@ impl<TExtEx: Clone> System<TExtEx> {
                         nametbd_interface_interface::ffi::InterfaceMessage::Register(
                             interface_hash,
                         ) => {
+                            if interface_hash == nametbd_loader_interface::ffi::INTERFACE {
+                                for hash in self.main_programs.drain(..) {
+                                    let msg =
+                                        nametbd_loader_interface::ffi::LoaderMessage::Load(hash);
+                                    let id = self
+                                        .core
+                                        .emit_interface_message_answer(
+                                            nametbd_loader_interface::ffi::INTERFACE,
+                                            msg,
+                                        )
+                                        .unwrap();
+                                    self.loading_programs.insert(id);
+                                }
+                            }
+
                             self.core
                                 .set_interface_handler(interface_hash, pid)
                                 .unwrap();
@@ -203,18 +266,8 @@ impl<TExtEx: Clone> System<TExtEx> {
                                 .answer_message(message_id.unwrap(), &response.encode());
                         }
                     }
-
-                    // TODO: temporary, for testing purposes
-                    let msg = nametbd_loader_interface::ffi::LoaderMessage::Load([0; 32]);
-                    let id = self
-                        .core
-                        .emit_interface_message_answer(
-                            nametbd_loader_interface::ffi::INTERFACE,
-                            msg,
-                        )
-                        .unwrap();
-                    self.loading_programs.insert(id);
                 }
+
                 CoreRunOutcome::InterfaceMessage {
                     pid,
                     message_id,
@@ -227,6 +280,7 @@ impl<TExtEx: Clone> System<TExtEx> {
                         message,
                     };
                 }
+
                 CoreRunOutcome::Idle => return SystemRunOutcome::Idle,
             }
         }
@@ -249,6 +303,8 @@ impl<TExtEx: Clone> System<TExtEx> {
             .write_memory(offset, data)
     }
 
+    /// After [`SystemRunOutcome::InterfaceMessage`] has been returned, call this method in order
+    /// to send back an answer to the message.
     // TODO: better API
     pub fn answer_message(&mut self, message_id: u64, response: &[u8]) {
         //println!("answered event {:?}", message_id);
@@ -256,7 +312,31 @@ impl<TExtEx: Clone> System<TExtEx> {
     }
 }
 
-impl<TExtEx> SystemBuilder<TExtEx> {
+impl<TExtEx: Clone> SystemBuilder<TExtEx> {
+    // TODO: remove Clone if possible
+    /// Starts a new builder.
+    pub fn new() -> SystemBuilder<TExtEx> {
+        // We handle some low-level interfaces here.
+        let core = Core::new()
+            .with_interface_handler(nametbd_interface_interface::ffi::INTERFACE)
+            .with_interface_handler(nametbd_threads_interface::ffi::INTERFACE);
+
+        SystemBuilder {
+            core,
+            startup_processes: Vec::new(),
+            main_programs: Vec::new(),
+        }
+    }
+
+    /// Registers an extrinsic function as available.
+    ///
+    /// If a program calls this extrinsic, a [`SystemRunOutcome::ThreadWaitExtrinsic`] event will
+    /// be generated for the user to handle.
+    ///
+    /// # Panic
+    ///
+    /// Panics if the extrinsic has already been registered, or if the extrinsic conflicts with
+    /// one of the extrinsics natively handled by the [`System`].
     pub fn with_extrinsic(
         mut self,
         interface: impl Into<Cow<'static, str>>,
@@ -270,15 +350,41 @@ impl<TExtEx> SystemBuilder<TExtEx> {
         self
     }
 
+    /// Registers an interface as available.
+    ///
+    /// If a program sends a message to this interface, a [`SystemRunOutcome::InterfaceMessage`]
+    /// event will be generated for the user to handle.
+    ///
+    /// # Panic
+    ///
+    /// Panics if the interface has already been registered, or if the interface conflicts with
+    /// one of the interfaces natively handled by the [`System`].
     pub fn with_interface_handler(mut self, interface: impl Into<[u8; 32]>) -> Self {
         self.core = self.core.with_interface_handler(interface);
         self
     }
 
-    /// Adds a program that the [`System`] must execute on startup. Can be called multiple times
+    /// Adds a process to the list of processes that the [`System`] must start as part of the
+    /// startup process.
+    ///
+    /// The startup processes are started in the order in which they are added here.
+    ///
+    /// By default, the list is empty. Should at least contain a process that handles the `loader`
+    /// interface.
+    pub fn with_startup_process(mut self, process: impl Into<Module>) -> Self {
+        let process = process.into();
+        self.startup_processes.push(process);
+        self
+    }
+
+    /// Adds a program that the [`System`] must execute after startup. Can be called multiple times
     /// to add multiple programs.
-    pub fn with_main_program(mut self, module: Module) -> Self {
-        self.main_programs.push(module);
+    ///
+    /// The program will be loaded through the `loader` interface. The loading starts as soon as
+    /// the `loader` interface has been registered by one of the processes passed to
+    /// [`with_startup_process`](SystemBuilder::with_startup_process).
+    pub fn with_main_program(mut self, hash: [u8; 32]) -> Self {
+        self.main_programs.push(hash);
         self
     }
 
@@ -286,15 +392,25 @@ impl<TExtEx> SystemBuilder<TExtEx> {
     pub fn build(mut self) -> System<TExtEx> {
         let mut core = self.core.build();
 
-        for program in self.main_programs.drain() {
+        for program in self.startup_processes {
             core.execute(&program)
-                .expect("failed to start main program"); // TODO:
+                .expect("failed to start startup program"); // TODO:
         }
+
+        self.main_programs.shrink_to_fit();
 
         System {
             core,
             futex_waits: Default::default(),
             loading_programs: Default::default(),
+            main_programs: self.main_programs,
         }
+    }
+}
+
+impl<TExtEx: Clone> Default for SystemBuilder<TExtEx> {
+    // TODO: remove Clone if possible
+    fn default() -> Self {
+        SystemBuilder::new()
     }
 }

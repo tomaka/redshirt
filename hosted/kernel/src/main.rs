@@ -70,12 +70,14 @@ async fn async_main(
         &include_bytes!("../../../modules/target/wasm32-wasi/debug/vulkan-triangle.wasm")[..],
     );
 
-    let mut system = nametbd_wasi_hosted::register_extrinsics(nametbd_core::system::System::new())
-        .with_interface_handler(nametbd_tcp_interface::ffi::INTERFACE)
-        .with_interface_handler(nametbd_vulkan_interface::INTERFACE)
-        .with_interface_handler(nametbd_window_interface::ffi::INTERFACE)
-        .with_main_program(module)
-        .build();
+    let mut system =
+        nametbd_wasi_hosted::register_extrinsics(nametbd_core::system::SystemBuilder::new())
+            .with_interface_handler(nametbd_time_interface::ffi::INTERFACE)
+            .with_interface_handler(nametbd_tcp_interface::ffi::INTERFACE)
+            .with_interface_handler(nametbd_vulkan_interface::INTERFACE)
+            .with_interface_handler(nametbd_window_interface::ffi::INTERFACE)
+            .with_startup_process(module)
+            .build();
 
     let mut tcp = nametbd_tcp_hosted::TcpState::new();
     let mut vk = {
@@ -116,6 +118,15 @@ async fn async_main(
                     let message: nametbd_tcp_interface::ffi::TcpMessage =
                         DecodeAll::decode_all(&message).unwrap();
                     tcp.handle_message(message_id, message);
+                    continue;
+                }
+                nametbd_core::system::SystemRunOutcome::InterfaceMessage {
+                    message_id,
+                    interface,
+                    message,
+                } if interface == nametbd_time_interface::ffi::INTERFACE => {
+                    let answer = nametbd_time_hosted::time_message(&message);
+                    system.answer_message(message_id.unwrap(), &answer);
                     continue;
                 }
                 nametbd_core::system::SystemRunOutcome::InterfaceMessage {
@@ -176,11 +187,8 @@ async fn async_main(
         };
 
         match result {
-            nametbd_core::system::SystemRunOutcome::ProgramFinished { pid, return_value } => {
-                println!("Program finished {:?} => {:?}", pid, return_value);
-            }
-            nametbd_core::system::SystemRunOutcome::ProgramCrashed { pid, error } => {
-                println!("Program crashed {:?} => {:?}", pid, error);
+            nametbd_core::system::SystemRunOutcome::ProgramFinished { pid, outcome } => {
+                println!("Program finished {:?} => {:?}", pid, outcome);
             }
             _ => panic!(),
         }
