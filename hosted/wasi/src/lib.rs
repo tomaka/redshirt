@@ -16,7 +16,10 @@
 use byteorder::{ByteOrder as _, LittleEndian};
 use nametbd_core::scheduler::{Pid, ThreadId};
 use nametbd_core::system::{System, SystemBuilder};
-use std::{io::Write as _, time::Instant};
+use std::{
+    io::Write as _,
+    time::{Instant, SystemTime},
+};
 
 // TODO: lots of unwraps as `as` conversions in this module
 
@@ -142,20 +145,18 @@ pub fn handle_wasi(
             assert_eq!(params.len(), 3);
             // Note: precision is ignored
             let clock_ty = params[0].try_into::<i32>().unwrap();
-            let write_back = match clock_ty {
+            let dur = match clock_ty {
                 0 => {
                     // CLOCK_REALTIME
-                    unimplemented!()
+                    // Note: `elapsed()` errors if `now() > &self`, which should never happen here.
+                    SystemTime::UNIX_EPOCH.elapsed().unwrap()
                 }
                 1 => {
                     // CLOCK_MONOTONIC
                     lazy_static::lazy_static! {
                         static ref CLOCK_START: Instant = Instant::now();
                     }
-                    let dur = CLOCK_START.elapsed();
-                    dur.as_secs()
-                        .saturating_mul(1_000_000_000)
-                        .saturating_add(u64::from(dur.subsec_nanos()))
+                    CLOCK_START.elapsed()
                 }
                 2 => {
                     // CLOCK_PROCESS_CPUTIME_ID
@@ -167,6 +168,10 @@ pub fn handle_wasi(
                 }
                 _ => panic!(),
             };
+            let write_back = dur
+                .as_secs()
+                .saturating_mul(1_000_000_000)
+                .saturating_add(u64::from(dur.subsec_nanos()));
             let mut buf = [0; 8];
             LittleEndian::write_u64(&mut buf, write_back);
             let buf_ptr = params[2].try_into::<i32>().unwrap() as u32;
