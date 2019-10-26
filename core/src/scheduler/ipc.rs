@@ -1064,7 +1064,11 @@ mod tests {
         let expected_pid = core.execute(&module).unwrap().pid();
 
         match core.run() {
-            CoreRunOutcome::ProgramFinished { process, outcome: Err(_), .. } => {
+            CoreRunOutcome::ProgramFinished {
+                process,
+                outcome: Err(_),
+                ..
+            } => {
                 assert_eq!(process, expected_pid);
             }
             _ => panic!(),
