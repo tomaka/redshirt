@@ -508,12 +508,14 @@ impl<T: Clone> Core<T> {
                             },
                         );
 
+                        *thread.user_data() = Thread::ReadyToRun;
                         thread.resume(Some(wasmi::RuntimeValue::I32(0)));
                         let mut process = self.processes.process_by_id(*pid).unwrap();
                         process.user_data().messages_queue.push_back(message);
                         CoreRunOutcomeInner::LoopAgain
                     }
                     Some(InterfaceHandler::External) => {
+                        *thread.user_data() = Thread::ReadyToRun;
                         thread.resume(Some(wasmi::RuntimeValue::I32(0)));
                         CoreRunOutcomeInner::InterfaceMessage {
                             pid: thread.pid(),
