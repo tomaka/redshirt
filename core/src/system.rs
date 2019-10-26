@@ -138,9 +138,7 @@ impl<TExtEx: Clone> System<TExtEx> {
         loop {
             match self.core.run() {
                 CoreRunOutcome::ProgramFinished {
-                    process,
-                    outcome,
-                    ..
+                    process, outcome, ..
                 } => {
                     return SystemRunOutcome::ProgramFinished {
                         pid: process,

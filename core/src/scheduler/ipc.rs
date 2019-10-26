@@ -377,11 +377,16 @@ impl<T: Clone> Core<T> {
     // TODO: make multithreaded
     fn run_inner(&mut self) -> CoreRunOutcomeInner<T> {
         match self.processes.run() {
-            processes::RunOneOutcome::ProcessFinished { pid, outcome, dead_threads, user_data } => {
+            processes::RunOneOutcome::ProcessFinished {
+                pid,
+                outcome,
+                dead_threads,
+                user_data,
+            } => {
                 debug_assert_eq!(dead_threads[0].1, Thread::ReadyToRun);
                 for (dead_thread_id, dead_thread_state) in dead_threads {
                     match dead_thread_state {
-                        _ => {}      // TODO:
+                        _ => {} // TODO:
                     }
                 }
 
@@ -408,7 +413,7 @@ impl<T: Clone> Core<T> {
                     process: pid,
                     unregistered_interfaces,
                     // TODO: this only handles messages emitted through the external API
-                    unhandled_messages: user_data.messages_to_answer.to_vec(),      // TODO: to_vec overhead
+                    unhandled_messages: user_data.messages_to_answer.to_vec(), // TODO: to_vec overhead
                     cancelled_messages,
                     outcome,
                 }
@@ -431,7 +436,7 @@ impl<T: Clone> Core<T> {
                 CoreRunOutcomeInner::ThreadWaitExtrinsic {
                     thread: thread.id(),
                     extrinsic: ext.clone(),
-                    params: params.clone(),     // TODO: there's some weird borrowck error in the match block
+                    params: params.clone(), // TODO: there's some weird borrowck error in the match block
                 }
             }
 
@@ -477,9 +482,7 @@ impl<T: Clone> Core<T> {
                         }
                         match self.messages_to_answer.entry(id) {
                             Entry::Occupied(_) => continue,
-                            Entry::Vacant(e) => {
-                                e.insert(MessageEmitter::Process(emitter_pid))
-                            }
+                            Entry::Vacant(e) => e.insert(MessageEmitter::Process(emitter_pid)),
                         };
                         break id;
                     };
@@ -548,8 +551,7 @@ impl<T: Clone> Core<T> {
                 };
                 let pid = thread.pid();
                 drop(thread);
-                self
-                    .answer_message_inner(msg_id, &message, Some(pid))
+                self.answer_message_inner(msg_id, &message, Some(pid))
                     .unwrap_or(CoreRunOutcomeInner::LoopAgain)
             }
 
@@ -559,7 +561,7 @@ impl<T: Clone> Core<T> {
                 params,
             } => unimplemented!(),
 
-            processes::RunOneOutcome::Idle => CoreRunOutcomeInner::Idle
+            processes::RunOneOutcome::Idle => CoreRunOutcomeInner::Idle,
         }
     }
 
@@ -592,9 +594,13 @@ impl<T: Clone> Core<T> {
             Entry::Vacant(e) => e.insert(InterfaceHandler::Process(process)),
         };
 
-        for thread_id in self.interface_waits.remove(&interface).unwrap_or(SmallVec::new()) {
+        for thread_id in self
+            .interface_waits
+            .remove(&interface)
+            .unwrap_or(SmallVec::new())
+        {
             //let thread = self.processes.thread_by_id(thread_id);
-            unimplemented!()        // TODO:
+            unimplemented!() // TODO:
         }
 
         Ok(())
@@ -705,7 +711,10 @@ impl<T: Clone> Core<T> {
             (Some(MessageEmitter::Process(emitter_pid)), _) => {
                 let mut process = self.processes.process_by_id(emitter_pid).unwrap();
                 process.user_data().messages_queue.push_back(actual_message);
-                process.user_data().emitted_messages.retain(|m| *m != message_id);
+                process
+                    .user_data()
+                    .emitted_messages
+                    .retain(|m| *m != message_id);
                 try_resume_message_wait(process);
                 None
             }
@@ -781,7 +790,7 @@ impl<'a, T> CoreProcess<'a, T> {
 
     /// Kills the process immediately.
     pub fn abort(self) {
-        self.process.abort();   // TODO: clean up
+        self.process.abort(); // TODO: clean up
     }
 }
 
@@ -928,7 +937,9 @@ fn try_resume_message_wait(process: processes::ProcessesCollectionProc<Process, 
 /// said thread.
 // TODO: in order to call this function, we essentially have to put the state machine in a "bad"
 // state (message in queue and thread would accept said message); not great
-fn try_resume_message_wait_thread(thread: &mut processes::ProcessesCollectionThread<Process, Thread>) {
+fn try_resume_message_wait_thread(
+    thread: &mut processes::ProcessesCollectionThread<Process, Thread>,
+) {
     if thread.process_user_data().messages_queue.is_empty() {
         return;
     }

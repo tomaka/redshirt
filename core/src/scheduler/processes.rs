@@ -540,7 +540,8 @@ impl<'a, TPud, TTud> ProcessesCollectionProc<'a, TPud, TTud> {
     }
 
     /// Aborts the process and returns the associated user data.
-    pub fn abort(self) -> TPud {        // TODO: return thread user datas as well
+    pub fn abort(self) -> TPud {
+        // TODO: return thread user datas as well
         let (_, Process { user_data, .. }) = self.process.remove_entry();
         user_data
     }
