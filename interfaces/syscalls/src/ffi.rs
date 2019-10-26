@@ -103,8 +103,9 @@ extern "C" {
 pub enum Message {
     Interface(InterfaceMessage),
     Response(ResponseMessage),
-    
-    ProcessDestroyed(u64),
+    /* TODO: implement /// Whenever a process that has emitted events on one of our interfaces stops, a
+    /// `ProcessDestroyed` message is sent.
+    ProcessDestroyed(u64),*/
 }
 
 #[derive(Debug, Encode, Decode)]

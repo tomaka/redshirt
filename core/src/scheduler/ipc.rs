@@ -50,7 +50,9 @@ pub struct Core<T> {
 /// Which way an interface is handled.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum InterfaceHandler {
+    /// Interface has been registered using [`Core::set_interface_handler`].
     Process(Pid),
+    /// Interface has been registered using [`CoreBuilder::with_interface_handler`].
     External,
 }
 
@@ -211,10 +213,10 @@ struct Process {
     messages_to_answer: SmallVec<[u64; 8]>,
 }
 
-/// Additional information about a thread.
+/// Additional information about a thread. Must be consistent with the actual state of the thread.
 #[derive(Debug, PartialEq, Eq)]
 enum Thread {
-    /// Thread is ready to run. Must be consistent with the actual state of the thread.
+    /// Thread is ready to run.
     ReadyToRun,
 
     /// The thread is sleeping and waiting for a message to come.
@@ -227,14 +229,17 @@ enum Thread {
     InterfaceNotAvailableWait {
         /// Interface we want to emit the message on.
         interface: [u8; 32],
-        /// Identifier of the message.
+        /// Identifier of the message if it expects an answer.
         message_id: Option<u64>,
         /// Message itself.
         message: Vec<u8>,
     },
 
-    /// The thread is sleeping and waiting for an extrinsic.
+    /// The thread is sleeping and waiting for an external extrinsic.
     ExtrinsicWait,
+
+    /// Thread has been interrupted, and the call is being processed right now.
+    InProcess,
 }
 
 /// How a process is waiting for messages.
@@ -372,7 +377,6 @@ impl<T: Clone> Core<T> {
     // TODO: make multithreaded
     fn run_inner(&mut self) -> CoreRunOutcomeInner<T> {
         match self.processes.run() {
-
             processes::RunOneOutcome::ProcessFinished { pid, outcome, dead_threads, user_data } => {
                 debug_assert_eq!(dead_threads[0].1, Thread::ReadyToRun);
                 for (dead_thread_id, dead_thread_state) in dead_threads {
@@ -437,6 +441,7 @@ impl<T: Clone> Core<T> {
                 params,
             } => {
                 debug_assert_eq!(*thread.user_data(), Thread::ReadyToRun);
+                *thread.user_data() = Thread::InProcess;
                 // TODO: refactor a bit to first parse the parameters and then update `self`
                 extrinsic_next_message(&mut thread, params);
                 CoreRunOutcomeInner::LoopAgain
@@ -448,6 +453,7 @@ impl<T: Clone> Core<T> {
                 params,
             } => {
                 debug_assert_eq!(*thread.user_data(), Thread::ReadyToRun);
+                *thread.user_data() = Thread::InProcess;
 
                 // TODO: lots of unwraps here
                 assert_eq!(params.len(), 5);
@@ -526,6 +532,8 @@ impl<T: Clone> Core<T> {
                 params,
             } => {
                 debug_assert_eq!(*thread.user_data(), Thread::ReadyToRun);
+                *thread.user_data() = Thread::InProcess;
+
                 // TODO: lots of unwraps here
                 assert_eq!(params.len(), 3);
                 let msg_id = {
@@ -850,9 +858,9 @@ impl<T> CoreBuilder<T> {
     }
 }
 
-/// Called when a process calls the `next_message` extrinsic.
+/// Called when a thread calls the `next_message` extrinsic.
 ///
-/// Tries to resume the process by fetching a message from the queue.
+/// Tries to resume the thread by fetching a message from the queue.
 ///
 /// Returns an error if the extrinsic call was invalid.
 fn extrinsic_next_message(
@@ -876,7 +884,7 @@ fn extrinsic_next_message(
     let out_size = params[3].try_into::<i32>().ok_or(())? as u32;
     let block = params[4].try_into::<i32>().ok_or(())? != 0;
 
-    assert!(*thread.user_data() == Thread::ReadyToRun);
+    assert!(*thread.user_data() == Thread::InProcess);
     *thread.user_data() = Thread::MessageWait(MessageWait {
         msg_ids,
         msg_ids_ptr,
@@ -918,6 +926,8 @@ fn try_resume_message_wait(process: processes::ProcessesCollectionProc<Process, 
 
 /// If the given thread is waiting for a message to arrive, checks the queue and tries to resume
 /// said thread.
+// TODO: in order to call this function, we essentially have to put the state machine in a "bad"
+// state (message in queue and thread would accept said message); not great
 fn try_resume_message_wait_thread(thread: &mut processes::ProcessesCollectionThread<Process, Thread>) {
     if thread.process_user_data().messages_queue.is_empty() {
         return;
