@@ -138,18 +138,11 @@ impl<TExtEx: Clone> System<TExtEx> {
         loop {
             match self.core.run() {
                 CoreRunOutcome::ProgramFinished {
-                    process,
-                    return_value: _,
+                    process, outcome, ..
                 } => {
                     return SystemRunOutcome::ProgramFinished {
                         pid: process,
-                        outcome: Ok(()),
-                    }
-                }
-                CoreRunOutcome::ProgramCrashed { pid, error } => {
-                    return SystemRunOutcome::ProgramFinished {
-                        pid,
-                        outcome: Err(error),
+                        outcome: outcome.map(|_| ()).map_err(|err| err.into()),
                     }
                 }
                 CoreRunOutcome::ThreadWaitExtrinsic {
@@ -165,6 +158,7 @@ impl<TExtEx: Clone> System<TExtEx> {
                         params: params.clone(),
                     };
                 }
+                CoreRunOutcome::ThreadWaitUnavailableInterface { .. } => unimplemented!(),
 
                 CoreRunOutcome::MessageResponse {
                     message_id,
