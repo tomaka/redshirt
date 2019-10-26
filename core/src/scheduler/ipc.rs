@@ -1038,10 +1038,11 @@ mod tests {
         match core.run() {
             CoreRunOutcome::ProgramFinished {
                 process,
-                return_value,
+                outcome: Ok(ret_val),
+                ..
             } => {
                 assert_eq!(process, expected_pid);
-                assert_eq!(return_value, Some(wasmi::RuntimeValue::I32(5)));
+                assert_eq!(ret_val, Some(wasmi::RuntimeValue::I32(5)));
             }
             _ => panic!(),
         }
@@ -1063,8 +1064,8 @@ mod tests {
         let expected_pid = core.execute(&module).unwrap().pid();
 
         match core.run() {
-            CoreRunOutcome::ProgramCrashed { pid, .. } => {
-                assert_eq!(pid, expected_pid);
+            CoreRunOutcome::ProgramFinished { process, outcome: Err(_), .. } => {
+                assert_eq!(process, expected_pid);
             }
             _ => panic!(),
         }
@@ -1114,10 +1115,11 @@ mod tests {
         match core.run() {
             CoreRunOutcome::ProgramFinished {
                 process,
-                return_value,
+                outcome: Ok(ret_val),
+                ..
             } => {
                 assert_eq!(process, expected_pid);
-                assert_eq!(return_value, Some(wasmi::RuntimeValue::I32(713)));
+                assert_eq!(ret_val, Some(wasmi::RuntimeValue::I32(713)));
             }
             _ => panic!(),
         }
