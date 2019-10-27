@@ -40,8 +40,8 @@ impl Module {
     }
 
     /// Turns some WASM text source into a `Module`.
-    pub fn from_wat(source: impl AsRef<[u8]>) -> Result<Self, wabt::Error> {
-        let wasm = wabt::wat2wasm(source)?;
+    pub fn from_wat(source: impl AsRef<[u8]>) -> Result<Self, wat::Error> {
+        let wasm = wat::parse_bytes(source.as_ref())?;
         Ok(Self::from_bytes(wasm))
     }
 
