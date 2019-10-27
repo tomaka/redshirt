@@ -1107,7 +1107,7 @@ mod tests {
                 assert_eq!(thread.pid(), expected_pid);
                 assert_eq!(extrinsic, 639);
                 assert!(params.is_empty());
-                thread.id()
+                thread.tid()
             }
             _ => panic!(),
         };
