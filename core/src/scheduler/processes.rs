@@ -37,7 +37,7 @@ pub struct ProcessesCollection<TExtr, TPud, TTud> {
     pid_pool: IdPool,
 
     /// Allocation of thread IDs.
-    thread_id_pool: IdPool,
+    tid_pool: IdPool,
 
     /// List of running processes.
     processes: HashMap<Pid, Process<TPud, TTud>>,
@@ -96,7 +96,7 @@ pub struct ProcessesCollectionProc<'a, TPud, TTud> {
     process: OccupiedEntry<'a, Pid, Process<TPud, TTud>, DefaultHashBuilder>,
 
     /// Reference to the same field in [`ProcessesCollection`].
-    thread_id_pool: &'a mut IdPool,
+    tid_pool: &'a mut IdPool,
 }
 
 /// Access to a thread within the collection.
@@ -185,7 +185,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
         proc_user_data: TPud,
         main_thread_user_data: TTud,
     ) -> Result<ProcessesCollectionProc<TPud, TTud>, vm::NewErr> {
-        let main_thread_id = self.thread_id_pool.assign(); // TODO: check for duplicates
+        let main_thread_id = self.tid_pool.assign(); // TODO: check for duplicates
         let main_thread_data = Thread {
             user_data: main_thread_user_data,
             thread_id: main_thread_id,
@@ -310,7 +310,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
             }) => RunOneOutcome::ThreadFinished {
                 process: ProcessesCollectionProc {
                     process,
-                    thread_id_pool: &mut self.thread_id_pool,
+                    tid_pool: &mut self.tid_pool,
                 },
                 user_data: user_data.user_data,
                 value: return_value,
@@ -359,7 +359,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
         match self.processes.entry(pid) {
             Entry::Occupied(e) => Some(ProcessesCollectionProc {
                 process: e,
-                thread_id_pool: &mut self.thread_id_pool,
+                tid_pool: &mut self.tid_pool,
             }),
             Entry::Vacant(_) => None,
         }
@@ -443,7 +443,7 @@ impl<TExtr> ProcessesCollectionBuilder<TExtr> {
 
         ProcessesCollection {
             pid_pool: IdPool::new(),
-            thread_id_pool: IdPool::new(),
+            tid_pool: IdPool::new(),
             processes: HashMap::with_capacity(PROCESSES_MIN_CAPACITY),
             extrinsics: self.extrinsics,
             extrinsics_id_assign: self.extrinsics_id_assign,
@@ -492,7 +492,7 @@ impl<'a, TPud, TTud> ProcessesCollectionProc<'a, TPud, TTud> {
         params: Vec<wasmi::RuntimeValue>,
         user_data: TTud,
     ) -> Result<ProcessesCollectionThread<'a, TPud, TTud>, vm::StartErr> {
-        let thread_id = self.thread_id_pool.assign(); // TODO: check for duplicates
+        let thread_id = self.tid_pool.assign(); // TODO: check for duplicates
         let thread_data = Thread {
             user_data,
             thread_id,
@@ -574,7 +574,7 @@ impl<'a, TPud, TTud> ProcessesCollectionThread<'a, TPud, TTud> {
     /// [`thread_by_id`](ProcessesCollection::thread_by_id).
     ///
     /// [`ThreadId`]s are unique within a [`ProcessesCollection`], independently from the process.
-    pub fn id(&mut self) -> ThreadId {
+    pub fn tid(&mut self) -> ThreadId {
         self.inner().into_user_data().thread_id
     }
 

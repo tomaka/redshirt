@@ -434,7 +434,7 @@ impl<T: Clone> Core<T> {
                 debug_assert_eq!(*thread.user_data(), Thread::ReadyToRun);
                 *thread.user_data() = Thread::ExtrinsicWait;
                 CoreRunOutcomeInner::ThreadWaitExtrinsic {
-                    thread: thread.id(),
+                    thread: thread.tid(),
                     extrinsic: ext.clone(),
                     params: params.clone(), // TODO: there's some weird borrowck error in the match block
                 }
@@ -798,8 +798,8 @@ impl<'a, T> CoreProcess<'a, T> {
 
 impl<'a, T> CoreThread<'a, T> {
     /// Returns the [`ThreadId`] of the thread.
-    pub fn id(&mut self) -> ThreadId {
-        self.thread.id()
+    pub fn tid(&mut self) -> ThreadId {
+        self.thread.tid()
     }
 
     /// Returns the [`Pid`] of the process associated to this thread.

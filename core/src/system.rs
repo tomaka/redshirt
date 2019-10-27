@@ -153,7 +153,7 @@ impl<TExtEx: Clone> System<TExtEx> {
                     let pid = thread.pid();
                     return SystemRunOutcome::ThreadWaitExtrinsic {
                         pid,
-                        thread_id: thread.id(),
+                        thread_id: thread.tid(),
                         extrinsic: extrinsic.clone(),
                         params: params.clone(),
                     };
