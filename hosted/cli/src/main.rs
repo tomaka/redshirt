@@ -34,7 +34,7 @@ async fn async_main() {
             .with_main_program([0; 32]) // TODO: just a test
             .build();
 
-    let mut tcp = nametbd_tcp_hosted::TcpState::new();
+    let tcp = nametbd_tcp_hosted::TcpState::new();
 
     loop {
         let result = loop {
@@ -70,7 +70,7 @@ async fn async_main() {
                 } if interface == nametbd_tcp_interface::ffi::INTERFACE => {
                     let message: nametbd_tcp_interface::ffi::TcpMessage =
                         DecodeAll::decode_all(&message).unwrap();
-                    tcp.handle_message(message_id, message);
+                    tcp.handle_message(message_id, message).await;
                     continue;
                 }
                 nametbd_core::system::SystemRunOutcome::Idle => false,

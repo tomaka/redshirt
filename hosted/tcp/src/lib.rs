@@ -15,20 +15,39 @@
 
 //! Implements the TCP interface.
 
-use async_std::net::TcpStream;
+use async_std::{net::TcpStream, sync::Mutex, task};
 use fnv::FnvHashMap;
-use futures::{prelude::*, ready};
+use futures::{channel::mpsc, prelude::*};
 use std::{
-    io,
+    collections::hash_map::Entry,
+    fmt,
     net::{Ipv6Addr, SocketAddr},
-    pin::Pin,
-    task::Context,
-    task::Poll,
 };
 
+/// State machine for all TCP/IP connections that use the host operating system.
+///
+/// # Usage
+///
+/// Create a new [`TcpState`] using [`TcpState::new`]. Call [`TcpState::handle_message`] for each
+/// message that a process sends on the TCP interface. In parallel, call [`TcpState::next_event`]
+/// in order to receive answers to send back to processes.
+///
 pub struct TcpState {
-    next_socket_id: u32,
-    sockets: FnvHashMap<u32, TcpConnec>,
+    /// Receives messages from the sockets background tasks.
+    receiver: Mutex<mpsc::Receiver<BackToFront>>,
+
+    /// List of all active sockets. Contains both open and non-open sockets.
+    sockets: Mutex<FnvHashMap<u32, FrontSocketState>>,
+
+    /// Sending side of `receiver`. Meant to be cloned and sent to background tasks.
+    sender: mpsc::Sender<BackToFront>,
+}
+
+/// State of a socket known from the front state.
+struct FrontSocketState {
+    /// If the socket is connected, a sender to send commands to the background task. `None` if
+    /// the socket is not connected yet.
+    sender: Option<mpsc::Sender<FrontToBack>>,
 }
 
 #[derive(Debug)]
@@ -38,198 +57,257 @@ pub enum TcpResponse {
     Write(u64, nametbd_tcp_interface::ffi::TcpWriteResponse),
 }
 
+/// Message sent from the main task to the background task.
+enum FrontToBack {
+    Read { message_id: u64 },
+    Write { message_id: u64, data: Vec<u8> },
+}
+
+/// Message sent from a background socket task to the main task.
+enum BackToFront {
+    OpenOk {
+        open_message_id: u64,
+        socket_id: u32,
+        sender: mpsc::Sender<FrontToBack>,
+    },
+    OpenErr {
+        open_message_id: u64,
+        socket_id: u32,
+    },
+    Read {
+        message_id: u64,
+        result: Result<Vec<u8>, ()>,
+    },
+    Write {
+        message_id: u64,
+        result: Result<(), ()>,
+    },
+}
+
 impl TcpState {
+    /// Initializes a new empty [`TcpState`].
     pub fn new() -> TcpState {
+        let (sender, receiver) = mpsc::channel(32);
+
         TcpState {
-            next_socket_id: 1,
-            sockets: FnvHashMap::default(),
+            sockets: Mutex::new(FnvHashMap::default()),
+            receiver: Mutex::new(receiver),
+            sender,
         }
     }
 
-    pub fn handle_message(
-        &mut self,
+    /// Injects a message from a process into the state machine.
+    ///
+    /// Call [`TcpState::next_event`] in order to receive a response (if relevant).
+    pub async fn handle_message(
+        &self,
+        //emitter_pid: u64,     // TODO: also notify the TcpState when a process exits, for clean up
         message_id: Option<u64>,
         message: nametbd_tcp_interface::ffi::TcpMessage,
     ) {
+        let mut sockets = self.sockets.lock().await;
+
         match message {
             nametbd_tcp_interface::ffi::TcpMessage::Open(open) => {
-                let message_id = message_id.unwrap();
-                let ip_addr = Ipv6Addr::from(open.ip);
-                let socket_addr = if let Some(ip_addr) = ip_addr.to_ipv4() {
-                    SocketAddr::new(ip_addr.into(), open.port)
-                } else {
-                    SocketAddr::new(ip_addr.into(), open.port)
+                let message_id = message_id.unwrap(); // TODO: don't unwrap; but what to do?
+                let socket_addr = {
+                    let ip_addr = Ipv6Addr::from(open.ip);
+                    if let Some(ip_addr) = ip_addr.to_ipv4() {
+                        SocketAddr::new(ip_addr.into(), open.port)
+                    } else {
+                        SocketAddr::new(ip_addr.into(), open.port)
+                    }
                 };
-                let socket_id = self.next_socket_id;
-                self.next_socket_id += 1;
-                let socket = TcpStream::connect(socket_addr);
-                self.sockets.insert(
-                    socket_id,
-                    TcpConnec::Connecting(socket_id, message_id, Box::pin(socket)),
-                );
+
+                // Find a vacant entry in `self.sockets`, spawn the task, and insert.
+                let mut tentative_socket_id = rand::random();
+                loop {
+                    match sockets.entry(tentative_socket_id) {
+                        Entry::Occupied(_) => {
+                            tentative_socket_id = tentative_socket_id.wrapping_add(1);
+                            continue;
+                        }
+                        Entry::Vacant(e) => {
+                            task::spawn(socket_task(
+                                tentative_socket_id,
+                                message_id,
+                                socket_addr,
+                                self.sender.clone(),
+                            ));
+                            e.insert(FrontSocketState { sender: None });
+                            break;
+                        }
+                    }
+                }
             }
+
             nametbd_tcp_interface::ffi::TcpMessage::Close(close) => {
-                let _ = self.sockets.remove(&close.socket_id);
+                let _ = sockets.remove(&close.socket_id);
             }
+
             nametbd_tcp_interface::ffi::TcpMessage::Read(read) => {
-                let message_id = message_id.unwrap();
-                self.sockets
+                let message_id = message_id.unwrap(); // TODO: don't unwrap; but what to do?
+                sockets
                     .get_mut(&read.socket_id)
+                    .unwrap() // TODO: don't unwrap; but what to do?
+                    .sender
+                    .as_mut()
                     .unwrap()
-                    .start_read(message_id);
+                    .send(FrontToBack::Read { message_id })
+                    .await
+                    .unwrap(); // TODO: don't unwrap; but what to do?
             }
+
             nametbd_tcp_interface::ffi::TcpMessage::Write(write) => {
-                let message_id = message_id.unwrap();
-                self.sockets
+                let message_id = message_id.unwrap(); // TODO: don't unwrap; but what to do?
+                sockets
                     .get_mut(&write.socket_id)
+                    .unwrap() // TODO: don't unwrap; but what to do?
+                    .sender
+                    .as_mut()
                     .unwrap()
-                    .start_write(message_id, write.data);
+                    .send(FrontToBack::Write {
+                        message_id,
+                        data: write.data,
+                    })
+                    .await
+                    .unwrap(); // TODO: don't unwrap; but what to do?
             }
         }
     }
 
     /// Returns the next message to respond to, and the response.
-    pub async fn next_event(&mut self) -> TcpResponse {
-        // `select_all` panics if the list passed to it is empty, so we have to account for that.
-        while self.sockets.is_empty() {
-            futures::pending!()
+    pub async fn next_event(&self) -> TcpResponse {
+        let message = {
+            let mut receiver = self.receiver.lock().await;
+            receiver.next().await.unwrap()
+        };
+
+        match message {
+            BackToFront::OpenOk {
+                open_message_id,
+                socket_id,
+                sender,
+            } => {
+                let mut sockets = self.sockets.lock().await;
+                let mut front_state = sockets.get_mut(&socket_id).unwrap();
+                debug_assert!(front_state.sender.is_none());
+                front_state.sender = Some(sender);
+
+                TcpResponse::Open(
+                    open_message_id,
+                    nametbd_tcp_interface::ffi::TcpOpenResponse {
+                        result: Ok(socket_id),
+                    },
+                )
+            }
+
+            BackToFront::OpenErr {
+                open_message_id,
+                socket_id,
+            } => {
+                let mut sockets = self.sockets.lock().await;
+                let _front_state = sockets.remove(&socket_id);
+                debug_assert!(match _front_state {
+                    Some(s) if s.sender.is_none() => true,
+                    _ => false,
+                });
+
+                TcpResponse::Open(
+                    open_message_id,
+                    nametbd_tcp_interface::ffi::TcpOpenResponse { result: Err(()) },
+                )
+            }
+
+            BackToFront::Read { message_id, result } => TcpResponse::Read(
+                message_id,
+                nametbd_tcp_interface::ffi::TcpReadResponse { result },
+            ),
+
+            BackToFront::Write { message_id, result } => TcpResponse::Write(
+                message_id,
+                nametbd_tcp_interface::ffi::TcpWriteResponse { result },
+            ),
         }
-
-        let (ev, _, _) =
-            future::select_all(self.sockets.values_mut().map(|tcp| tcp.next_event())).await;
-        ev
     }
 }
 
-enum TcpConnec {
-    Connecting(
-        u32,
-        u64,
-        Pin<Box<dyn Future<Output = Result<TcpStream, io::Error>> + Send>>,
-    ),
-    Socket {
-        socket_id: u32,
-        tcp_stream: TcpStream,
-        pending_read: Option<u64>,
-        pending_write: Option<(u64, Vec<u8>)>,
-    },
-    Poisoned,
+impl Default for TcpState {
+    fn default() -> Self {
+        TcpState::new()
+    }
 }
 
-impl TcpConnec {
-    pub fn start_read(&mut self, message_id: u64) {
-        let pending_read = match self {
-            TcpConnec::Socket {
-                ref mut pending_read,
-                ..
-            } => pending_read,
-            _ => panic!(),
-        };
-
-        assert!(pending_read.is_none());
-        *pending_read = Some(message_id);
+impl fmt::Debug for TcpState {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_tuple("TcpState").finish()
     }
+}
 
-    pub fn start_write(&mut self, message_id: u64, data: Vec<u8>) {
-        let pending_write = match self {
-            TcpConnec::Socket {
-                ref mut pending_write,
-                ..
-            } => pending_write,
-            _ => panic!(),
-        };
-
-        assert!(pending_write.is_none());
-        *pending_write = Some((message_id, data));
-    }
-
-    pub fn next_event<'a>(&'a mut self) -> impl Future<Output = TcpResponse> + 'a {
-        future::poll_fn(move |cx| {
-            let (new_self, event) = match self {
-                TcpConnec::Connecting(id, message_id, ref mut fut) => {
-                    match ready!(Future::poll(Pin::new(fut), cx)) {
-                        Ok(socket) => {
-                            let ev = TcpResponse::Open(
-                                *message_id,
-                                nametbd_tcp_interface::ffi::TcpOpenResponse { result: Ok(*id) },
-                            );
-                            (
-                                TcpConnec::Socket {
-                                    socket_id: *id,
-                                    tcp_stream: socket,
-                                    pending_write: None,
-                                    pending_read: None,
-                                },
-                                ev,
-                            )
-                        }
-                        Err(_) => {
-                            let ev = TcpResponse::Open(
-                                *message_id,
-                                nametbd_tcp_interface::ffi::TcpOpenResponse { result: Err(()) },
-                            );
-                            (TcpConnec::Poisoned, ev)
-                        }
-                    }
-                }
-
-                TcpConnec::Socket {
-                    socket_id,
-                    tcp_stream,
-                    pending_read,
-                    pending_write,
-                } => {
-                    let write_finished = if let Some((msg_id, data_to_write)) = pending_write {
-                        if !data_to_write.is_empty() {
-                            let num_written = ready!(AsyncWrite::poll_write(
-                                Pin::new(tcp_stream),
-                                cx,
-                                &data_to_write
-                            ))
-                            .unwrap();
-                            for _ in 0..num_written {
-                                data_to_write.remove(0);
-                            }
-                        }
-                        if data_to_write.is_empty() {
-                            ready!(AsyncWrite::poll_flush(Pin::new(tcp_stream), cx)).unwrap();
-                            Some(*msg_id)
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    };
-                    if let Some(msg_id) = write_finished {
-                        *pending_write = None;
-                        return Poll::Ready(TcpResponse::Write(
-                            msg_id,
-                            nametbd_tcp_interface::ffi::TcpWriteResponse { result: Ok(()) },
-                        ));
-                    }
-
-                    if let Some(msg_id) = pending_read.clone() {
-                        let mut buf = [0; 1024];
-                        let num_read =
-                            ready!(AsyncRead::poll_read(Pin::new(tcp_stream), cx, &mut buf))
-                                .unwrap();
-                        *pending_read = None;
-                        return Poll::Ready(TcpResponse::Read(
-                            msg_id,
-                            nametbd_tcp_interface::ffi::TcpReadResponse {
-                                result: Ok(buf[..num_read].to_vec()),
-                            },
-                        ));
-                    }
-
-                    return Poll::Pending;
-                }
-
-                TcpConnec::Poisoned => panic!(),
+/// Function executed in the background for each TCP socket.
+async fn socket_task(
+    socket_id: u32,
+    open_message_id: u64,
+    socket_addr: SocketAddr,
+    mut back_to_front: mpsc::Sender<BackToFront>,
+) {
+    // First step is to try connect to the destination.
+    let (mut socket, mut commands_rx) = match TcpStream::connect(socket_addr).await {
+        Ok(s) => {
+            let (tx, rx) = mpsc::channel(2);
+            let msg_to_front = BackToFront::OpenOk {
+                socket_id,
+                open_message_id,
+                sender: tx,
             };
 
-            *self = new_self;
-            Poll::Ready(event)
-        })
+            if back_to_front.send(msg_to_front).await.is_err() {
+                return;
+            }
+
+            (s, rx)
+        }
+        Err(_) => {
+            let msg_to_front = BackToFront::OpenErr {
+                socket_id,
+                open_message_id,
+            };
+            let _ = back_to_front.send(msg_to_front).await;
+            return;
+        }
+    };
+
+    // Now that we're connected and we have a `socket` and `commands_rx`, we can start reading
+    // and writing.
+    loop {
+        // TODO: should read and write asynchronously, but that's hard because of borrowing question
+        match commands_rx.next().await {
+            Some(FrontToBack::Read { message_id }) => {
+                let mut read_buf = vec![0; 1024];
+                let result = socket
+                    .read(&mut read_buf)
+                    .await
+                    .map(|n| {
+                        read_buf.truncate(n);
+                        read_buf
+                    })
+                    .map_err(|_| ());
+                let msg_to_front = BackToFront::Read { message_id, result };
+                if back_to_front.send(msg_to_front).await.is_err() {
+                    return;
+                }
+            }
+            Some(FrontToBack::Write { message_id, data }) => {
+                let result = socket.write_all(&data).await.map_err(|_| ());
+                let msg_to_front = BackToFront::Write { message_id, result };
+                if back_to_front.send(msg_to_front).await.is_err() {
+                    return;
+                }
+            }
+            None => {
+                // `commands_rx` is closed, so let's stop the task.
+                return;
+            }
+        }
     }
 }

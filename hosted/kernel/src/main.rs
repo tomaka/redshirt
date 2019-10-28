@@ -79,7 +79,7 @@ async fn async_main(
             .with_startup_process(module)
             .build();
 
-    let mut tcp = nametbd_tcp_hosted::TcpState::new();
+    let tcp = nametbd_tcp_hosted::TcpState::new();
     let mut vk = {
         #[link(name = "vulkan")]
         extern "system" {
@@ -117,7 +117,7 @@ async fn async_main(
                 } if interface == nametbd_tcp_interface::ffi::INTERFACE => {
                     let message: nametbd_tcp_interface::ffi::TcpMessage =
                         DecodeAll::decode_all(&message).unwrap();
-                    tcp.handle_message(message_id, message);
+                    tcp.handle_message(message_id, message).await;
                     continue;
                 }
                 nametbd_core::system::SystemRunOutcome::InterfaceMessage {
