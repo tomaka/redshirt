@@ -15,11 +15,7 @@
 
 //! Implements the TCP interface.
 
-use async_std::{
-    net::TcpStream,
-    sync::Mutex,
-    task,
-};
+use async_std::{net::TcpStream, sync::Mutex, task};
 use fnv::FnvHashMap;
 use futures::{channel::mpsc, prelude::*};
 use std::{
