@@ -1,7 +1,6 @@
 [workspace]
 members = [
     "ipfs",
-    "preloaded",
     "vulkan-triangle",
 ]
 
