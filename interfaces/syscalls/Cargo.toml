@@ -7,7 +7,7 @@ edition = "2018"
 
 [dependencies]
 crossbeam = "0.7.2"
-futures-preview = "0.3.0-alpha.18"
+futures = "0.3.1"
 hashbrown = "0.6.0"
 lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
 parity-scale-codec = { version = "1.0.5", features = ["derive"] }
