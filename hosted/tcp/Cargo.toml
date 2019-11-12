@@ -7,8 +7,8 @@ edition = "2018"
 publish = false
 
 [dependencies]
-async-std = "0.99.5"
+async-std = "1.0"
 fnv = "1.0"
-futures-preview = { version = "0.3.0-alpha.18", features = ["async-await", "nightly"] }
+futures = "0.3.1"
 nametbd-tcp-interface = { path = "../../interfaces/tcp" }
 rand = "0.7"

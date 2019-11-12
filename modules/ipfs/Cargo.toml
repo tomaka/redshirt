@@ -6,7 +6,7 @@ edition = "2018"
 publish = false
 
 [dependencies]
-futures-preview = { version = "0.3.0-alpha.18", features = ["async-await", "compat", "io-compat"] }
+futures = { version = "0.3.1", features = ["compat", "io-compat"] }
 futures01 = { package = "futures", version = "0.1" }
 libp2p-core = { git = "https://github.com/tomaka/libp2p-rs", branch = "wasi" }
 libp2p-kad = { git = "https://github.com/tomaka/libp2p-rs", branch = "wasi" }
