@@ -628,7 +628,7 @@ mod tests {
     use crate::module::Module;
 
     #[test]
-    fn start_in_paused_if_main() {
+    fn starts_if_main() {
         let module = Module::from_wat(
             r#"(module
             (func $_start (result i32)
@@ -643,7 +643,7 @@ mod tests {
     }
 
     #[test]
-    fn start_stopped_if_no_main() {
+    fn error_if_no_main() {
         let module = Module::from_wat(
             r#"(module
             (func $_start (result i32)
@@ -740,4 +740,6 @@ mod tests {
 
         // TODO: start running another function and check that `Poisoned` error is returned
     }
+
+    // TODO: start mutiple threads
 }
