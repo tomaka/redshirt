@@ -67,7 +67,7 @@ async fn async_main(
     >,
 ) {
     let module = nametbd_core::module::Module::from_bytes(
-        &include_bytes!("../../../modules/target/wasm32-wasi/debug/vulkan-triangle.wasm")[..],
+        &include_bytes!("../../../modules/target/wasm32-wasi/release/vulkan-triangle.wasm")[..],
     );
 
     let mut system =

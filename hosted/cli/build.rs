@@ -16,10 +16,9 @@
 use std::process::Command;
 
 fn main() {
-    /*let status = Command::new("cargo")
-        //.arg("+nightly")
+    let status = Command::new("cargo")
         .arg("rustc")
-        //.arg("--release")
+        .arg("--release")
         .args(&["--target", "wasm32-wasi"])
         .args(&["--package", "ipfs"])
         .args(&["--bin", "ipfs"])
@@ -28,7 +27,6 @@ fn main() {
         .args(&["-C", "link-arg=--export-table"])
         .status()
         .unwrap();
-    assert!(status.success());
 
     // TODO: not a great solution
     for entry in walkdir::WalkDir::new("../../modules/") {
@@ -36,5 +34,5 @@ fn main() {
     }
     for entry in walkdir::WalkDir::new("../../interfaces/") {
         println!("cargo:rerun-if-changed={}", entry.unwrap().path().display());
-    }*/
+    }
 }
