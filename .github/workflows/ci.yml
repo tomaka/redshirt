@@ -43,7 +43,9 @@ jobs:
     steps:
     - uses: actions/checkout@v1
     - name: Install Vulkan
-      run: apt-get install -y libvulkan-dev
+      run: |
+        apt-get update
+        apt-get install -y libvulkan-dev
     - name: Download WASM modules
       uses: actions/download-artifact@v1
       with:
