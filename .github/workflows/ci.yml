@@ -26,6 +26,21 @@ jobs:
         apt-get install -y clang-9
     - name: Install CMake
       run: apt-get install -y cmake
+    - name: Cache cargo registry
+      uses: actions/cache@v1
+      with:
+        path: ~/.cargo/registry
+        key: cargo-registry-${{ hashFiles('modules/Cargo.lock') }}
+    - name: Cache cargo index
+      uses: actions/cache@v1
+      with:
+        path: ~/.cargo/git
+        key: cargo-index-${{ hashFiles('modules/Cargo.lock') }}
+    - name: Cache cargo build
+      uses: actions/cache@v1
+      with:
+        path: modules/target/wasm32-wasi
+        key: cargo-build-target-${{ hashFiles('modules/Cargo.lock') }}
     - name: Build modules
       run: cargo build --manifest-path ./modules/Cargo.toml --locked --verbose --release --target=wasm32-wasi
     - name: Upload WASM modules
@@ -50,6 +65,21 @@ jobs:
       uses: actions/download-artifact@v1
       with:
         name: wasm-modules
+    - name: Cache cargo registry
+      uses: actions/cache@v1
+      with:
+        path: ~/.cargo/registry
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('Cargo.lock') }}
+    - name: Cache cargo index
+      uses: actions/cache@v1
+      with:
+        path: ~/.cargo/git
+        key: ${{ runner.os }}-cargo-index-${{ hashFiles('Cargo.lock') }}
+    - name: Cache cargo build
+      uses: actions/cache@v1
+      with:
+        path: target
+        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('Cargo.lock') }}
     - name: Build
       run: cargo build --locked --verbose
     - name: Run tests
