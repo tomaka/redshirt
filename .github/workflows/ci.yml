@@ -114,8 +114,10 @@ jobs:
       with:
         path: target
         key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('Cargo.lock') }}
-    - name: Build
+    - name: Build core
       run: cargo build --locked --package nametbd-core --target x86_64-unknown-hermit
+    - name: Build CLI kernel
+      run: cargo build --locked --package nametbd-cli-kernel --target x86_64-unknown-hermit
 
   fmt:
     name: Rustfmt
