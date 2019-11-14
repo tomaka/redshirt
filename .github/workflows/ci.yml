@@ -65,6 +65,7 @@ jobs:
       uses: actions/download-artifact@v1
       with:
         name: wasm-modules
+        path: modules/target/wasm32-wasi/release
     - name: Cache cargo registry
       uses: actions/cache@v1
       with:
