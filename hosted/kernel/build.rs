@@ -16,7 +16,7 @@
 use std::process::Command;
 
 fn main() {
-    let status = Command::new("cargo")
+    /*let status = Command::new("cargo")
         //.arg("+nightly")
         .arg("rustc")
         //.arg("--release")
@@ -39,5 +39,5 @@ fn main() {
     }
     for entry in walkdir::WalkDir::new("../../interfaces/") {
         println!("cargo:rerun-if-changed={}", entry.unwrap().path().display());
-    }
+    }*/
 }
