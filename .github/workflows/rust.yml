@@ -32,7 +32,7 @@ jobs:
       uses: actions/upload-artifact@v1
       with:
         name: wasm-modules
-        path: ./modules/target/wasm32-wasi/release/*.wasm
+        path: modules/target/wasm32-wasi/release
 
   build-hosted:
     name: Build hosted kernel
