@@ -1,5 +1,5 @@
 [package]
-name = "syscalls"
+name = "nametbd-syscalls-interface"
 version = "0.1.0"
 license = "GPL-3.0-or-later"
 authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
@@ -7,9 +7,9 @@ edition = "2018"
 
 [dependencies]
 crossbeam = "0.7.2"
-futures-preview = "0.3.0-alpha.18"
+futures = "0.3.1"
 hashbrown = "0.6.0"
 lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
 parity-scale-codec = { version = "1.0.5", features = ["derive"] }
 pin-utils = "0.1.0-alpha.4"
-send_wrapper = { git = "https://github.com/tomaka/send_wrapper", branch = "patch-1" }
+send_wrapper = "0.3.0"

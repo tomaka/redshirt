@@ -13,22 +13,18 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#![warn(missing_docs)]
-#![deny(unsafe_code)]
-#![deny(intra_doc_link_resolution_failure)]
-#![allow(dead_code)] // TODO: temporary during development
+use parity_scale_codec::{Decode, Encode};
 
-// TODO: futures and std::error::Error don't work in #![no_std] :-/
-// #![no_std]
+// TODO: this has been randomly generated; instead should be a hash or something
+pub const INTERFACE: [u8; 32] = [
+    0x19, 0x97, 0x70, 0x2f, 0x6f, 0xd9, 0x52, 0xcd, 0xb2, 0xc3, 0x75, 0x1c, 0x11, 0xb4, 0x95, 0x41,
+    0x81, 0xa6, 0x4f, 0x91, 0x67, 0x63, 0xb5, 0xb1, 0x8d, 0x31, 0xdf, 0xb1, 0x47, 0x03, 0xa6, 0xbf,
+];
 
-extern crate alloc;
-
-pub use self::module::Module;
-pub use self::system::{System, SystemBuilder, SystemRunOutcome};
-
-mod id_pool;
-
-pub mod module;
-pub mod scheduler;
-pub mod signature;
-pub mod system;
+#[derive(Debug, Encode, Decode)]
+pub enum TimeMessage {
+    /// Must respond with a `u128`.
+    GetMonotonic,
+    /// Must respond with a `u128`.
+    GetSystem,
+}

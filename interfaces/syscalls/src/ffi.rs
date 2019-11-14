@@ -16,7 +16,7 @@
 use core::ffi::c_void;
 use parity_scale_codec::{Decode, Encode};
 
-#[link(wasm_import_module = "")]
+#[link(wasm_import_module = "nametbd")]
 extern "C" {
     /// Asks for the next message.
     ///
@@ -103,6 +103,9 @@ extern "C" {
 pub enum Message {
     Interface(InterfaceMessage),
     Response(ResponseMessage),
+    /* TODO: implement /// Whenever a process that has emitted events on one of our interfaces stops, a
+    /// `ProcessDestroyed` message is sent.
+    ProcessDestroyed(u64),*/
 }
 
 #[derive(Debug, Encode, Decode)]

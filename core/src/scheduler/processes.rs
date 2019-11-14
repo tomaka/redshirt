@@ -16,7 +16,8 @@
 use crate::id_pool::IdPool;
 use crate::module::Module;
 use crate::scheduler::{vm, Pid};
-use alloc::vec::Vec;
+use crate::signature::Signature;
+use alloc::{borrow::Cow, vec::Vec};
 use core::fmt;
 use hashbrown::{
     hash_map::{DefaultHashBuilder, Entry, OccupiedEntry},
@@ -29,17 +30,36 @@ use rand::seq::SliceRandom as _;
 ///
 /// This struct handles interleaving processes execution.
 ///
-/// The generic parameters are "user data"s that are stored per process and per thread, and allows
-/// the user to put extra information associated to a process or a thread.
-pub struct ProcessesCollection<TPud, TTud> {
+/// The generic parameters `TPud` and `TTud` are "user data"s that are stored per process and per
+/// thread, and allows the user to put extra information associated to a process or a thread.
+pub struct ProcessesCollection<TExtr, TPud, TTud> {
     /// Allocations of process IDs.
     pid_pool: IdPool,
 
     /// Allocation of thread IDs.
-    thread_id_pool: IdPool,
+    tid_pool: IdPool,
 
     /// List of running processes.
     processes: HashMap<Pid, Process<TPud, TTud>>,
+
+    /// List of functions that processes can call.
+    /// The key of this map is an arbitrary `usize` that we pass to the WASM interpreter.
+    /// This field is never modified after the `ProcessesCollection` is created.
+    extrinsics: HashMap<usize, TExtr>,
+
+    /// Map used to resolve imports when starting a process.
+    /// For each module and function name, stores the signature and an arbitrary usize that
+    /// corresponds to the entry in `extrinsics`.
+    /// This field is never modified after the `Core` is created.
+    extrinsics_id_assign: HashMap<(Cow<'static, str>, Cow<'static, str>), (usize, Signature)>,
+}
+
+/// Prototype for a `ProcessesCollection` under construction.
+pub struct ProcessesCollectionBuilder<TExtr> {
+    /// See the corresponding field in `ProcessesCollection`.
+    extrinsics: HashMap<usize, TExtr>,
+    /// See the corresponding field in `ProcessesCollection`.
+    extrinsics_id_assign: HashMap<(Cow<'static, str>, Cow<'static, str>), (usize, Signature)>,
 }
 
 /// Identifier of a thread within the [`ProcessesCollection`].
@@ -76,7 +96,7 @@ pub struct ProcessesCollectionProc<'a, TPud, TTud> {
     process: OccupiedEntry<'a, Pid, Process<TPud, TTud>, DefaultHashBuilder>,
 
     /// Reference to the same field in [`ProcessesCollection`].
-    thread_id_pool: &'a mut IdPool,
+    tid_pool: &'a mut IdPool,
 }
 
 /// Access to a thread within the collection.
@@ -90,8 +110,8 @@ pub struct ProcessesCollectionThread<'a, TPud, TTud> {
 
 /// Outcome of the [`run`](ProcessesCollection::run) function.
 #[derive(Debug)]
-pub enum RunOneOutcome<'a, TPud, TTud> {
-    /// The main thread of a process has finished.
+pub enum RunOneOutcome<'a, TExtr, TPud, TTud> {
+    /// Either the main thread of a process has finished, or a fatal error was encountered.
     ///
     /// The process no longer exists.
     ProcessFinished {
@@ -106,8 +126,8 @@ pub enum RunOneOutcome<'a, TPud, TTud> {
         /// These threads no longer exist.
         dead_threads: Vec<(ThreadId, TTud)>,
 
-        /// Value returned by the main thread that has finished.
-        value: Option<wasmi::RuntimeValue>,
+        /// Value returned by the main thread that has finished, or error that happened.
+        outcome: Result<Option<wasmi::RuntimeValue>, wasmi::Trap>,
     },
 
     /// A thread in a process has finished.
@@ -133,28 +153,10 @@ pub enum RunOneOutcome<'a, TPud, TTud> {
 
         /// Identifier of the function to call. Corresponds to the value provided at
         /// initialization when resolving imports.
-        id: usize,
+        id: &'a mut TExtr,
 
         /// Parameters of the function call.
         params: Vec<wasmi::RuntimeValue>,
-    },
-
-    /// The currently-executed function has finished with an error. The process has been destroyed.
-    Errored {
-        /// Pid of the process that has been destroyed.
-        pid: Pid,
-
-        /// User data that belonged to the process.
-        user_data: TPud,
-
-        /// Id and user datas of all the threads of the process. The first element is the main
-        /// thread's.
-        /// These threads no longer exist.
-        dead_threads: Vec<(ThreadId, TTud)>,
-
-        /// Error that happened.
-        // TODO: error type should change here
-        error: wasmi::Trap,
     },
 
     /// No thread is ready to run. Nothing was done.
@@ -167,16 +169,7 @@ pub enum RunOneOutcome<'a, TPud, TTud> {
 /// to grow again in the future. We therefore avoid that situation.
 const PROCESSES_MIN_CAPACITY: usize = 128;
 
-impl<TPud, TTud> ProcessesCollection<TPud, TTud> {
-    /// Creates a new empty collection.
-    pub fn new() -> Self {
-        ProcessesCollection {
-            pid_pool: IdPool::new(),
-            thread_id_pool: IdPool::new(),
-            processes: HashMap::with_capacity(PROCESSES_MIN_CAPACITY),
-        }
-    }
-
+impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
     /// Creates a new process state machine from the given module.
     ///
     /// The closure is called for each import that the module has. It must assign a number to each
@@ -191,16 +184,39 @@ impl<TPud, TTud> ProcessesCollection<TPud, TTud> {
         module: &Module,
         proc_user_data: TPud,
         main_thread_user_data: TTud,
-        symbols: impl FnMut(&str, &str, &wasmi::Signature) -> Result<usize, ()>,
     ) -> Result<ProcessesCollectionProc<TPud, TTud>, vm::NewErr> {
-        let main_thread_id = self.thread_id_pool.assign(); // TODO: check for duplicates
+        let main_thread_id = self.tid_pool.assign(); // TODO: check for duplicates
         let main_thread_data = Thread {
             user_data: main_thread_user_data,
             thread_id: main_thread_id,
             value_back: Some(None),
         };
 
-        let state_machine = vm::ProcessStateMachine::new(module, main_thread_data, symbols)?;
+        let state_machine = {
+            let extrinsics_id_assign = &mut self.extrinsics_id_assign;
+            vm::ProcessStateMachine::new(
+                module,
+                main_thread_data,
+                move |interface, function, obtained_signature| {
+                    if let Some((index, expected_signature)) =
+                        extrinsics_id_assign.get(&(interface.into(), function.into()))
+                    {
+                        if expected_signature.matches_wasmi(obtained_signature) {
+                            return Ok(*index);
+                        } else {
+                            // TODO: remove this println?
+                            // TODO: way to report the signature mismatch?
+                            println!(
+                                "signature mismatch for {:?}:{:?}; expected={:?}; obtained={:?}",
+                                interface, function, expected_signature, obtained_signature
+                            );
+                        }
+                    }
+
+                    Err(())
+                },
+            )?
+        };
 
         // We only modify `self` at the very end.
         let new_pid = self.pid_pool.assign();
@@ -221,7 +237,7 @@ impl<TPud, TTud> ProcessesCollection<TPud, TTud> {
     /// Runs one thread amongst the collection.
     ///
     /// Which thread is run is implementation-defined and no guarantee is made.
-    pub fn run(&mut self) -> RunOneOutcome<TPud, TTud> {
+    pub fn run(&mut self) -> RunOneOutcome<TExtr, TPud, TTud> {
         // We start by finding a thread in `self.processes` that is ready to run.
         let (mut process, thread_index): (OccupiedEntry<_, _, _>, usize) = {
             let mut entries = self.processes.iter_mut().collect::<Vec<_>>();
@@ -284,7 +300,7 @@ impl<TPud, TTud> ProcessesCollection<TPud, TTud> {
                     pid,
                     user_data,
                     dead_threads,
-                    value: return_value,
+                    outcome: Ok(return_value),
                 }
             }
             Ok(vm::ExecOutcome::ThreadFinished {
@@ -294,19 +310,23 @@ impl<TPud, TTud> ProcessesCollection<TPud, TTud> {
             }) => RunOneOutcome::ThreadFinished {
                 process: ProcessesCollectionProc {
                     process,
-                    thread_id_pool: &mut self.thread_id_pool,
+                    tid_pool: &mut self.tid_pool,
                 },
                 user_data: user_data.user_data,
                 value: return_value,
             },
-            Ok(vm::ExecOutcome::Interrupted { id, params, .. }) => RunOneOutcome::Interrupted {
-                thread: ProcessesCollectionThread {
-                    process,
-                    thread_index,
-                },
-                id,
-                params,
-            },
+            Ok(vm::ExecOutcome::Interrupted { id, params, .. }) => {
+                // TODO: check params against signature with a debug_assert
+                let extrinsic = self.extrinsics.get_mut(&id).unwrap();
+                RunOneOutcome::Interrupted {
+                    thread: ProcessesCollectionThread {
+                        process,
+                        thread_index,
+                    },
+                    id: extrinsic,
+                    params,
+                }
+            }
             Ok(vm::ExecOutcome::Errored { error, .. }) => {
                 let (
                     pid,
@@ -319,11 +339,11 @@ impl<TPud, TTud> ProcessesCollection<TPud, TTud> {
                     .into_user_datas()
                     .map(|t| (t.thread_id, t.user_data))
                     .collect::<Vec<_>>();
-                RunOneOutcome::Errored {
+                RunOneOutcome::ProcessFinished {
                     pid,
                     user_data,
                     dead_threads,
-                    error,
+                    outcome: Err(error),
                 }
             }
         }
@@ -339,7 +359,7 @@ impl<TPud, TTud> ProcessesCollection<TPud, TTud> {
         match self.processes.entry(pid) {
             Entry::Occupied(e) => Some(ProcessesCollectionProc {
                 process: e,
-                thread_id_pool: &mut self.thread_id_pool,
+                tid_pool: &mut self.tid_pool,
             }),
             Entry::Vacant(_) => None,
         }
@@ -371,9 +391,63 @@ impl<TPud, TTud> ProcessesCollection<TPud, TTud> {
     }
 }
 
-impl<TPud, TTud> Default for ProcessesCollection<TPud, TTud> {
-    fn default() -> Self {
-        Self::new()
+impl<TExtr> Default for ProcessesCollectionBuilder<TExtr> {
+    fn default() -> ProcessesCollectionBuilder<TExtr> {
+        ProcessesCollectionBuilder {
+            extrinsics: Default::default(),
+            extrinsics_id_assign: Default::default(),
+        }
+    }
+}
+
+impl<TExtr> ProcessesCollectionBuilder<TExtr> {
+    /// Registers a function that is available for processes to call.
+    ///
+    /// The function is registered under the given interface and function name. If a WASM module
+    /// imports a function with the corresponding interface and function name combination and
+    /// calls it, a [`RunOneOutcome::Interrupted`] event will be generated, containing the token
+    /// passed as parameter.
+    ///
+    /// The function signature passed as parameter is enforced when the process is created.
+    ///
+    /// # Panic
+    ///
+    /// Panics if an extrinsic with this interface/name combination has already been registered.
+    ///
+    pub fn with_extrinsic(
+        mut self,
+        interface: impl Into<Cow<'static, str>>,
+        f_name: impl Into<Cow<'static, str>>,
+        signature: Signature,
+        token: impl Into<TExtr>,
+    ) -> Self {
+        let interface = interface.into();
+        let f_name = f_name.into();
+
+        let index = self.extrinsics.len();
+        debug_assert!(!self.extrinsics.contains_key(&index));
+        match self.extrinsics_id_assign.entry((interface, f_name)) {
+            Entry::Occupied(_) => panic!(),
+            Entry::Vacant(e) => e.insert((index, signature)),
+        };
+        self.extrinsics.insert(index, token.into());
+        self
+    }
+
+    /// Turns the builder into a [`ProcessesCollection`].
+    pub fn build<TPud, TTud>(mut self) -> ProcessesCollection<TExtr, TPud, TTud> {
+        // We're not going to modify these fields ever again, so let's free some memory.
+        self.extrinsics.shrink_to_fit();
+        self.extrinsics_id_assign.shrink_to_fit();
+        debug_assert_eq!(self.extrinsics.len(), self.extrinsics_id_assign.len());
+
+        ProcessesCollection {
+            pid_pool: IdPool::new(),
+            tid_pool: IdPool::new(),
+            processes: HashMap::with_capacity(PROCESSES_MIN_CAPACITY),
+            extrinsics: self.extrinsics,
+            extrinsics_id_assign: self.extrinsics_id_assign,
+        }
     }
 }
 
@@ -418,7 +492,7 @@ impl<'a, TPud, TTud> ProcessesCollectionProc<'a, TPud, TTud> {
         params: Vec<wasmi::RuntimeValue>,
         user_data: TTud,
     ) -> Result<ProcessesCollectionThread<'a, TPud, TTud>, vm::StartErr> {
-        let thread_id = self.thread_id_pool.assign(); // TODO: check for duplicates
+        let thread_id = self.tid_pool.assign(); // TODO: check for duplicates
         let thread_data = Thread {
             user_data,
             thread_id,
@@ -467,6 +541,7 @@ impl<'a, TPud, TTud> ProcessesCollectionProc<'a, TPud, TTud> {
 
     /// Aborts the process and returns the associated user data.
     pub fn abort(self) -> TPud {
+        // TODO: return thread user datas as well
         let (_, Process { user_data, .. }) = self.process.remove_entry();
         user_data
     }
@@ -499,7 +574,7 @@ impl<'a, TPud, TTud> ProcessesCollectionThread<'a, TPud, TTud> {
     /// [`thread_by_id`](ProcessesCollection::thread_by_id).
     ///
     /// [`ThreadId`]s are unique within a [`ProcessesCollection`], independently from the process.
-    pub fn id(&mut self) -> ThreadId {
+    pub fn tid(&mut self) -> ThreadId {
         self.inner().into_user_data().thread_id
     }
 
@@ -579,5 +654,19 @@ where
             //.field("user_data", self.user_data())
             //.field("ready_to_run", &ready_to_run)
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ProcessesCollectionBuilder;
+    use crate::sig;
+
+    #[test]
+    #[should_panic]
+    fn panic_duplicate_extrinsic() {
+        ProcessesCollectionBuilder::<()>::default()
+            .with_extrinsic("foo", "test", sig!(()), ())
+            .with_extrinsic("foo", "test", sig!(()), ());
     }
 }

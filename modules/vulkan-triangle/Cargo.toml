@@ -6,10 +6,10 @@ edition = "2018"
 publish = false
 
 [dependencies]
+nametbd-syscalls-interface = { path = "../../interfaces/syscalls" }
+nametbd-vulkan-interface = { path = "../../interfaces/vulkan" }
+nametbd-window-interface = { path = "../../interfaces/window" }
 # TODO: upstream the changes
-syscalls = { path = "../../interfaces/syscalls" }
 vulkano = { git = "https://github.com/tomaka/vulkano", branch = "wasm" }
 vulkano-shaders = { git = "https://github.com/tomaka/vulkano", branch = "wasm" }
-vulkan = { path = "../../interfaces/vulkan" }
 vk-sys = { git = "https://github.com/tomaka/vulkano", branch = "wasm" }
-window = { path = "../../interfaces/window" }

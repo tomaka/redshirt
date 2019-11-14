@@ -20,12 +20,9 @@ fn main() {
         .arg("rustc")
         .arg("--release")
         .args(&["--target", "wasm32-wasi"])
-        .args(&["--package", "vulkan-triangle"])
-        .args(&["--bin", "vulkan-triangle"])
-        .args(&[
-            "--manifest-path",
-            "../../modules/vulkan-triangle/Cargo.toml",
-        ])
+        .args(&["--package", "ipfs"])
+        .args(&["--bin", "ipfs"])
+        .args(&["--manifest-path", "../../modules/ipfs/Cargo.toml"])
         .arg("--")
         .args(&["-C", "link-arg=--export-table"])
         .status()

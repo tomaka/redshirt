@@ -35,7 +35,7 @@ pub async fn register_interface(hash: [u8; 32]) -> Result<(), InterfaceRegisterE
     let msg = ffi::InterfaceMessage::Register(hash);
     // TODO: we unwrap cause there's always something that handles interface registration; is that correct?
     let rep: ffi::InterfaceRegisterResponse =
-        syscalls::emit_message_with_response(ffi::INTERFACE, msg)
+        nametbd_syscalls_interface::emit_message_with_response(ffi::INTERFACE, msg)
             .await
             .unwrap();
     rep.result
@@ -48,6 +48,6 @@ pub async fn register_interface(hash: [u8; 32]) -> Result<(), InterfaceRegisterE
 ///
 /// Returns an error if there was already a program registered for that interface.
 #[cfg(not(target_arch = "wasm32"))]
-pub async fn register_interface(hash: &[u8; 32]) -> Result<(), InterfaceRegisterError> {
+pub async fn register_interface(hash: [u8; 32]) -> Result<(), InterfaceRegisterError> {
     unimplemented!()
 }

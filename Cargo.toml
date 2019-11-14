@@ -1,14 +1,17 @@
 [workspace]
 members = [
     "core",
+    "hosted/cli",
     "hosted/kernel",
     "hosted/tcp",
+    "hosted/time",
     "hosted/wasi",
     "interfaces/interface",
     "interfaces/loader",
     "interfaces/syscalls",
     "interfaces/threads",
     "interfaces/tcp",
+    "interfaces/time",
     "interfaces/vulkan",
     "interfaces/window",
 ]

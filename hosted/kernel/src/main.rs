@@ -66,56 +66,74 @@ async fn async_main(
         oneshot::Sender<Result<winit::window::Window, winit::error::OsError>>,
     >,
 ) {
-    let module = kernel_core::module::Module::from_bytes(
-        &include_bytes!("../../../modules/target/wasm32-wasi/debug/vulkan-triangle.wasm")[..],
+    let module = nametbd_core::module::Module::from_bytes(
+        &include_bytes!("../../../modules/target/wasm32-wasi/release/vulkan-triangle.wasm")[..],
     );
 
-    let mut system = hosted_wasi::register_extrinsics(kernel_core::system::System::new())
-        .with_interface_handler(tcp::ffi::INTERFACE)
-        .with_interface_handler(vulkan::INTERFACE)
-        .with_interface_handler(window::ffi::INTERFACE)
-        .with_main_program(module)
-        .build();
+    let mut system =
+        nametbd_wasi_hosted::register_extrinsics(nametbd_core::system::SystemBuilder::new())
+            .with_interface_handler(nametbd_time_interface::ffi::INTERFACE)
+            .with_interface_handler(nametbd_tcp_interface::ffi::INTERFACE)
+            .with_interface_handler(nametbd_vulkan_interface::INTERFACE)
+            .with_interface_handler(nametbd_window_interface::ffi::INTERFACE)
+            .with_startup_process(module)
+            .build();
 
-    let mut tcp = hosted_tcp::TcpState::new();
+    let tcp = nametbd_tcp_hosted::TcpState::new();
     let mut vk = {
         #[link(name = "vulkan")]
         extern "system" {
             fn vkGetInstanceProcAddr(
                 instance: usize,
                 pName: *const u8,
-            ) -> vulkan::PFN_vkVoidFunction;
+            ) -> nametbd_vulkan_interface::PFN_vkVoidFunction;
         }
-        vulkan::VulkanRedirect::new(vkGetInstanceProcAddr)
+        nametbd_vulkan_interface::VulkanRedirect::new(vkGetInstanceProcAddr)
     };
     let mut windows = Vec::new();
 
     loop {
         let result = loop {
             let only_poll = match system.run() {
-                kernel_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
+                nametbd_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
                     pid,
                     thread_id,
                     extrinsic,
                     params,
                 } => {
-                    hosted_wasi::handle_wasi(&mut system, extrinsic, pid, thread_id, params);
+                    nametbd_wasi_hosted::handle_wasi(
+                        &mut system,
+                        extrinsic,
+                        pid,
+                        thread_id,
+                        params,
+                    );
                     true
                 }
-                kernel_core::system::SystemRunOutcome::InterfaceMessage {
+                nametbd_core::system::SystemRunOutcome::InterfaceMessage {
                     message_id,
                     interface,
                     message,
-                } if interface == tcp::ffi::INTERFACE => {
-                    let message: tcp::ffi::TcpMessage = DecodeAll::decode_all(&message).unwrap();
-                    tcp.handle_message(message_id, message);
+                } if interface == nametbd_tcp_interface::ffi::INTERFACE => {
+                    let message: nametbd_tcp_interface::ffi::TcpMessage =
+                        DecodeAll::decode_all(&message).unwrap();
+                    tcp.handle_message(message_id, message).await;
                     continue;
                 }
-                kernel_core::system::SystemRunOutcome::InterfaceMessage {
+                nametbd_core::system::SystemRunOutcome::InterfaceMessage {
                     message_id,
                     interface,
                     message,
-                } if interface == vulkan::INTERFACE => {
+                } if interface == nametbd_time_interface::ffi::INTERFACE => {
+                    let answer = nametbd_time_hosted::time_message(&message);
+                    system.answer_message(message_id.unwrap(), &answer);
+                    continue;
+                }
+                nametbd_core::system::SystemRunOutcome::InterfaceMessage {
+                    message_id,
+                    interface,
+                    message,
+                } if interface == nametbd_vulkan_interface::INTERFACE => {
                     // TODO:
                     println!("received vk message: {:?}", message);
                     if let Some(response) = vk.handle(0, &message) {
@@ -124,22 +142,26 @@ async fn async_main(
                     }
                     continue;
                 }
-                kernel_core::system::SystemRunOutcome::InterfaceMessage {
+                nametbd_core::system::SystemRunOutcome::InterfaceMessage {
                     message_id,
                     interface,
                     message,
-                } if interface == window::ffi::INTERFACE => {
+                } if interface == nametbd_window_interface::ffi::INTERFACE => {
                     println!("received window message: {:?}", message);
                     let (tx, rx) = oneshot::channel();
                     win_open_rq.unbounded_send(tx).unwrap();
                     let window = rx.await.unwrap().unwrap();
                     windows.push(window);
-                    system.answer_message(message_id.unwrap(), &window::ffi::WindowOpenResponse {
-                        result: Ok(0),      // TODO: correct ID
-                    }.encode());
+                    system.answer_message(
+                        message_id.unwrap(),
+                        &nametbd_window_interface::ffi::WindowOpenResponse {
+                            result: Ok(0), // TODO: correct ID
+                        }
+                        .encode(),
+                    );
                     continue;
                 }
-                kernel_core::system::SystemRunOutcome::Idle => false,
+                nametbd_core::system::SystemRunOutcome::Idle => false,
                 other => break other,
             };
 
@@ -157,19 +179,16 @@ async fn async_main(
             };
 
             let (msg_to_respond, response_bytes) = match event {
-                hosted_tcp::TcpResponse::Open(msg_id, msg) => (msg_id, msg.encode()),
-                hosted_tcp::TcpResponse::Read(msg_id, msg) => (msg_id, msg.encode()),
-                hosted_tcp::TcpResponse::Write(msg_id, msg) => (msg_id, msg.encode()),
+                nametbd_tcp_hosted::TcpResponse::Open(msg_id, msg) => (msg_id, msg.encode()),
+                nametbd_tcp_hosted::TcpResponse::Read(msg_id, msg) => (msg_id, msg.encode()),
+                nametbd_tcp_hosted::TcpResponse::Write(msg_id, msg) => (msg_id, msg.encode()),
             };
             system.answer_message(msg_to_respond, &response_bytes);
         };
 
         match result {
-            kernel_core::system::SystemRunOutcome::ProgramFinished { pid, return_value } => {
-                println!("Program finished {:?} => {:?}", pid, return_value);
-            }
-            kernel_core::system::SystemRunOutcome::ProgramCrashed { pid, error } => {
-                println!("Program crashed {:?} => {:?}", pid, error);
+            nametbd_core::system::SystemRunOutcome::ProgramFinished { pid, outcome } => {
+                println!("Program finished {:?} => {:?}", pid, outcome);
             }
             _ => panic!(),
         }

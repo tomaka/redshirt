@@ -1,0 +1,134 @@
+name: Continuous integration
+
+on: [push, pull_request]
+
+jobs:
+  build-modules:
+    name: Build WASM modules
+    runs-on: ubuntu-latest
+    container:
+      image: rust
+      env:
+        CC: clang-9
+    steps:
+    - uses: actions/checkout@v1
+    - name: Install Rust nightly
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: wasm32-wasi
+        override: true
+    - name: Install a recent version of Clang
+      run: |
+        wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
+        echo "deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-9 main" >> /etc/apt/sources.list
+        apt-get update
+        apt-get install -y clang-9
+    - name: Install CMake
+      run: apt-get install -y cmake
+    - name: Cache cargo registry
+      uses: actions/cache@v1
+      with:
+        path: ~/.cargo/registry
+        key: cargo-registry-${{ hashFiles('modules/Cargo.lock') }}
+    - name: Cache cargo index
+      uses: actions/cache@v1
+      with:
+        path: ~/.cargo/git
+        key: cargo-index-${{ hashFiles('modules/Cargo.lock') }}
+    - name: Cache cargo build
+      uses: actions/cache@v1
+      with:
+        path: modules/target
+        key: cargo-build-target-${{ hashFiles('modules/Cargo.lock') }}
+    - name: Build modules
+      run: cargo build --manifest-path ./modules/Cargo.toml --locked --verbose --release --target=wasm32-wasi
+    - name: Upload WASM modules
+      uses: actions/upload-artifact@v1
+      with:
+        name: wasm-modules
+        path: modules/target/wasm32-wasi/release
+
+  build-hosted:
+    name: Build hosted kernel
+    needs: build-modules
+    runs-on: ubuntu-latest
+    container:
+      image: rust
+    steps:
+    - uses: actions/checkout@v1
+    - name: Install Vulkan
+      run: |
+        apt-get update
+        apt-get install -y libvulkan-dev
+    - name: Download WASM modules
+      uses: actions/download-artifact@v1
+      with:
+        name: wasm-modules
+        path: modules/target/wasm32-wasi/release
+    - name: Cache cargo registry
+      uses: actions/cache@v1
+      with:
+        path: ~/.cargo/registry
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('Cargo.lock') }}
+    - name: Cache cargo index
+      uses: actions/cache@v1
+      with:
+        path: ~/.cargo/git
+        key: ${{ runner.os }}-cargo-index-${{ hashFiles('Cargo.lock') }}
+    - name: Cache cargo build
+      uses: actions/cache@v1
+      with:
+        path: target
+        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('Cargo.lock') }}
+    - name: Build
+      run: cargo build --locked --verbose
+    - name: Run tests
+      run: cargo test --locked --verbose
+
+  build-unikernel:
+    name: Check hermitcore kernel
+    runs-on: ubuntu-latest
+    container:
+      image: rwthos/hermitcore-rs
+    - name: Download WASM modules
+      uses: actions/download-artifact@v1
+      with:
+        name: wasm-modules
+        path: modules/target/wasm32-wasi/release
+    - name: Cache cargo registry
+      uses: actions/cache@v1
+      with:
+        path: ~/.cargo/registry
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('Cargo.lock') }}
+    - name: Cache cargo index
+      uses: actions/cache@v1
+      with:
+        path: ~/.cargo/git
+        key: ${{ runner.os }}-cargo-index-${{ hashFiles('Cargo.lock') }}
+    - name: Cache cargo build
+      uses: actions/cache@v1
+      with:
+        path: target
+        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('Cargo.lock') }}
+    - name: Build
+      run: cargo build --locked --package kernel-core --target x86_64-unknown-hermit
+
+  fmt:
+    name: Rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v1
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      - name: Install rustfmt
+        run: rustup component add rustfmt
+      - name: Run cargo fmt
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all -- --check

@@ -44,7 +44,7 @@ pub unsafe fn spawn_thread(function: impl FnOnce()) {
         user_data: Box::into_raw(function_box) as usize as u32,
     });
 
-    syscalls::emit_message(&ffi::INTERFACE, &thread_new, false).unwrap();
+    nametbd_syscalls_interface::emit_message(&ffi::INTERFACE, &thread_new, false).unwrap();
 }
 
 #[cfg(not(target_arch = "wasm32"))]
