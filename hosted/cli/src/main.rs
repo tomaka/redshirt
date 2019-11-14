@@ -24,7 +24,7 @@ fn main() {
 
 async fn async_main() {
     let module = nametbd_core::module::Module::from_bytes(
-        &include_bytes!("../../../modules/target/wasm32-wasi/debug/ipfs.wasm")[..],
+        &include_bytes!("../../../modules/target/wasm32-wasi/release/ipfs.wasm")[..],
     );
 
     let mut system =
