@@ -9,15 +9,13 @@ publish = false
 [dependencies]
 futures = "0.3.1"
 nametbd-core = { path = "../../core" }
+nametbd-tcp-hosted = { path = "../tcp" }
 nametbd-tcp-interface = { path = "../../interfaces/tcp" }
 nametbd-time-hosted = { path = "../time" }
 nametbd-time-interface = { path = "../../interfaces/time" }
 nametbd-wasi-hosted = { path = "../wasi" }
 parity-scale-codec = "1.0.5"
 wasi = "0.7.0"
-
-[target.'cfg(not(target_os = "hermit"))'.dependencies]
-nametbd-tcp-hosted = { path = "../tcp" }
 
 [build-dependencies]
 walkdir = "2.2.9"
