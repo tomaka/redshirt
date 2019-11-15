@@ -15,8 +15,9 @@
 
 #![deny(intra_doc_link_resolution_failure)]
 
-use futures::prelude::*;
-use parity_scale_codec::{DecodeAll, Encode as _};
+#[link(name = "m")]
+extern { 
+}
 
 fn main() {
     futures::executor::block_on(async_main());

@@ -9,5 +9,3 @@ publish = false
 [dependencies]
 futures = "0.3.1"
 nametbd-core = { path = "../core" }
-parity-scale-codec = "1.0.5"
-wasi = "0.7.0"
