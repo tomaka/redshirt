@@ -70,7 +70,7 @@ async fn async_main() {
                 } if interface == nametbd_tcp_interface::ffi::INTERFACE => {
                     let message: nametbd_tcp_interface::ffi::TcpMessage =
                         DecodeAll::decode_all(&message).unwrap();
-                    //tcp.handle_message(message_id, message).await;
+                    tcp.handle_message(message_id, message).await;
                     continue;
                 }
                 nametbd_core::system::SystemRunOutcome::Idle => false,
