@@ -34,7 +34,7 @@ async fn async_main() {
             .with_main_program([0; 32]) // TODO: just a test
             .build();
 
-    let tcp = nametbd_tcp_hosted::TcpState::new();
+    //let tcp = nametbd_tcp_hosted::TcpState::new();
 
     loop {
         let result = loop {
@@ -77,7 +77,8 @@ async fn async_main() {
                 other => break other,
             };
 
-            let event = if only_poll {
+            // TODO: restore
+            /*let event = if only_poll {
                 match tcp.next_event().now_or_never() {
                     Some(e) => e,
                     None => continue,
@@ -91,7 +92,7 @@ async fn async_main() {
                 nametbd_tcp_hosted::TcpResponse::Read(msg_id, msg) => (msg_id, msg.encode()),
                 nametbd_tcp_hosted::TcpResponse::Write(msg_id, msg) => (msg_id, msg.encode()),
             };
-            system.answer_message(msg_to_respond, &response_bytes);
+            system.answer_message(msg_to_respond, &response_bytes);*/
         };
 
         match result {
