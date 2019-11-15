@@ -16,8 +16,7 @@
 #![deny(intra_doc_link_resolution_failure)]
 
 #[link(name = "m")]
-extern { 
-}
+extern "C" {}
 
 fn main() {
     futures::executor::block_on(async_main());
