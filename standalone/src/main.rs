@@ -22,7 +22,7 @@ fn main() {
 async fn async_main() {
     let module = nametbd_core::module::Module::from_bytes(
         &include_bytes!("../../modules/target/wasm32-wasi/release/ipfs.wasm")[..],
-    );
+    ).unwrap();
 
     let mut system = nametbd_core::system::SystemBuilder::<()>::new() // TODO: `!` instead
         .with_startup_process(module)
