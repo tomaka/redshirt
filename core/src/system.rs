@@ -168,7 +168,7 @@ impl<TExtEx: Clone> System<TExtEx> {
                     if self.loading_programs.remove(&message_id) {
                         let nametbd_loader_interface::ffi::LoadResponse { result } =
                             DecodeAll::decode_all(&response).unwrap();
-                        let module = Module::from_bytes(&result.unwrap());
+                        let module = Module::from_bytes(&result.unwrap()).unwrap();
                         self.core.execute(&module).unwrap();
                     }
                 }

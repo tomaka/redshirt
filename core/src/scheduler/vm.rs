@@ -16,7 +16,6 @@
 use crate::module::Module;
 use alloc::{borrow::Cow, boxed::Box, format, vec::Vec};
 use core::{cell::RefCell, convert::TryInto, fmt};
-use err_derive::*;
 use smallvec::SmallVec;
 
 /// WASMI state machine dedicated to a process.
@@ -176,48 +175,48 @@ pub enum ExecOutcome<'a, T> {
 }
 
 /// Error that can happen when initializing a VM.
-#[derive(Debug, Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum NewErr {
     /// Error in the interpreter.
-    #[error(display = "Error in the interpreter")]
-    Interpreter(#[error(cause)] wasmi::Error),
+    #[error("Error in the interpreter")]
+    Interpreter(#[source] wasmi::Error),
     /// The "start" symbol doesn't exist.
-    #[error(display = "The \"start\" symbol doesn't exist")]
+    #[error("The \"start\" symbol doesn't exist")]
     StartNotFound,
     /// The "start" symbol must be a function.
-    #[error(display = "The \"start\" symbol must be a function")]
+    #[error("The \"start\" symbol must be a function")]
     StartIsntAFunction,
     /// If a "memory" symbol is provided, it must be a memory.
-    #[error(display = "If a \"memory\" symbol is provided, it must be a memory")]
+    #[error("If a \"memory\" symbol is provided, it must be a memory")]
     MemoryIsntMemory,
     /// If a "__indirect_function_table" symbol is provided, it must be a table.
-    #[error(display = "If a \"__indirect_function_table\" symbol is provided, it must be a table")]
+    #[error("If a \"__indirect_function_table\" symbol is provided, it must be a table")]
     IndirectTableIsntTable,
 }
 
 /// Error that can happen when starting a new thread.
-#[derive(Debug, Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum StartErr {
     /// The state machine is poisoned and cannot run anymore.
-    #[error(display = "State machine is in a poisoned state")]
+    #[error("State machine is in a poisoned state")]
     Poisoned,
     /// Couldn't find the requested function.
-    #[error(display = "Function to start was not found")]
+    #[error("Function to start was not found")]
     FunctionNotFound,
     /// The requested function has been found in the list of exports, but it is not a function.
-    #[error(display = "Symbol to start is not a function")]
+    #[error("Symbol to start is not a function")]
     NotAFunction,
 }
 
 /// Error that can happen when resuming the execution of a function.
-#[derive(Debug, Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum RunErr {
     /// The state machine is poisoned.
-    #[error(display = "State machine is poisoned")]
+    #[error("State machine is poisoned")]
     Poisoned,
     /// Passed a wrong value back.
     #[error(
-        display = "Expected value of type {:?} but got {:?} instead",
+        "Expected value of type {:?} but got {:?} instead",
         expected,
         obtained
     )]
