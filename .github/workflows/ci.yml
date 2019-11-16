@@ -117,7 +117,7 @@ jobs:
     - name: Build core
       run: cargo build --locked --package nametbd-core --target x86_64-unknown-hermit
     - name: Build kernel
-      run: cargo build --locked --package nametbd-standalone-kernel --target x86_64-unknown-hermit
+      run: cargo rustc --locked --package nametbd-standalone-kernel --target x86_64-unknown-hermit -- -Ctarget-feature=-soft-float
 
   fmt:
     name: Rustfmt
