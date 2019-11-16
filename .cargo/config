@@ -1,2 +1,2 @@
 [target.'x86_64-unknown-hermit']
-rustflags = ["-Ctarget-feature=-soft-float"]
+rustflags = ["-L/usr/lib/x86_64-linux-gnu/", "-Clink-args=-lm"]
