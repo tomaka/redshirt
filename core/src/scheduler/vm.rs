@@ -215,11 +215,7 @@ pub enum RunErr {
     #[error("State machine is poisoned")]
     Poisoned,
     /// Passed a wrong value back.
-    #[error(
-        "Expected value of type {:?} but got {:?} instead",
-        expected,
-        obtained
-    )]
+    #[error("Expected value of type {:?} but got {:?} instead", expected, obtained)]
     BadValueTy {
         /// Type of the value that was expected.
         expected: Option<wasmi::ValueType>,
