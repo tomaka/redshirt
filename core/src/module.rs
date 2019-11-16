@@ -29,20 +29,24 @@ pub struct Module {
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct ModuleHash([u8; 32]);
 
+/// Error that can happen when calling `from_bytes`.
+#[derive(Debug, thiserror::Error)]
+#[error("Eror while parsing WASM module")]
+pub struct FromBytesError {}
+
 impl Module {
     /// Parses a module from WASM bytes.
-    // TODO: rename
-    pub fn from_bytes(buffer: impl AsRef<[u8]>) -> Self {
-        let inner = wasmi::Module::from_buffer(buffer.as_ref()).unwrap(); // TODO: don't unwrap
+    pub fn from_bytes(buffer: impl AsRef<[u8]>) -> Result<Self, FromBytesError> {
+        let inner = wasmi::Module::from_buffer(buffer.as_ref()).map_err(|_| FromBytesError {})?;
         let hash = ModuleHash::from_bytes(buffer);
 
-        Module { inner, hash }
+        Ok(Module { inner, hash })
     }
 
     /// Turns some WASM text source into a `Module`.
     pub fn from_wat(source: impl AsRef<[u8]>) -> Result<Self, wat::Error> {
         let wasm = wat::parse_bytes(source.as_ref())?;
-        Ok(Self::from_bytes(wasm))
+        Ok(Self::from_bytes(wasm).unwrap())
     }
 
     /// Returns a reference to the internal module.
