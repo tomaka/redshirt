@@ -13,13 +13,16 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#![deny(intra_doc_link_resolution_failure)]
+//! This program is meant to be invoked in a non-hosted environment. It never finishes.
+
+// TODO: enable `#![no_std]` when possible: https://github.com/rust-lang/rust/issues/56974
+//#![no_std]
 
 fn main() {
     futures::executor::block_on(async_main());
 }
 
-async fn async_main() {
+async fn async_main() -> ! {
     let module = nametbd_core::module::Module::from_bytes(
         &include_bytes!("../../modules/target/wasm32-wasi/release/ipfs.wasm")[..],
     )
@@ -32,7 +35,12 @@ async fn async_main() {
 
     loop {
         match system.run() {
-            nametbd_core::system::SystemRunOutcome::Idle => {} // TODO: ? halt?
+            nametbd_core::system::SystemRunOutcome::Idle => {
+                // TODO: If we don't support any interface or extrinsic, then `Idle` shouldn't
+                // happen. In a normal situation, this is when we would check the status of the
+                // "externalities", such as the timer.
+                panic!()
+            }
             nametbd_core::system::SystemRunOutcome::ProgramFinished { pid, outcome } => {
                 println!("Program finished {:?} => {:?}", pid, outcome);
             }

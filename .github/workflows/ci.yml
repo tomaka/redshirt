@@ -92,6 +92,8 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: rwthos/hermitcore-rs
+    env:
+      RUSTFLAGS: "-L/usr/lib/x86_64-linux-gnu/ -Clink-args=-lm"
     steps:
     - uses: actions/checkout@v1
     - name: Download WASM modules
