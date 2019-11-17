@@ -85,7 +85,47 @@ jobs:
       run: cargo build --locked --verbose
     - name: Run tests
       run: cargo test --locked --verbose
-  
+
+  build-unikernel:
+    name: Build stand-alone kernel
+    needs: build-modules
+    runs-on: ubuntu-latest
+    container:
+      image: rwthos/hermitcore-rs
+    env:
+      RUSTFLAGS: "-L/usr/lib/x86_64-linux-gnu/ -Clink-args=-lm"
+    steps:
+    - uses: actions/checkout@v1
+    - name: Download WASM modules
+      uses: actions/download-artifact@v1
+      with:
+        name: wasm-modules
+        path: modules/target/wasm32-wasi/release
+    - name: Cache cargo registry
+      uses: actions/cache@v1
+      with:
+        path: ~/.cargo/registry
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('Cargo.lock') }}
+    - name: Cache cargo index
+      uses: actions/cache@v1
+      with:
+        path: ~/.cargo/git
+        key: ${{ runner.os }}-cargo-index-${{ hashFiles('Cargo.lock') }}
+    - name: Cache cargo build
+      uses: actions/cache@v1
+      with:
+        path: target
+        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('Cargo.lock') }}
+    - name: Build core
+      run: cargo build --locked --package nametbd-core --target x86_64-unknown-hermit
+    - name: Build kernel
+      run: cargo build --locked --package nametbd-standalone-kernel --target x86_64-unknown-hermit
+    - name: Upload generated kernel
+      uses: actions/upload-artifact@master
+      with:
+        name: kernel
+        path: target/x86_64-unknown-hermit/debug/nametbd-standalone-kernel
+
   fmt:
     name: Rustfmt
     runs-on: ubuntu-latest

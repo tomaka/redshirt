@@ -782,6 +782,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "nametbd-standalone-kernel"
+version = "0.1.0"
+dependencies = [
+ "futures 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "nametbd-core 0.1.0",
+]
+
+[[package]]
 name = "nametbd-syscalls-interface"
 version = "0.1.0"
 dependencies = [
