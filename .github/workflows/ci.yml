@@ -87,7 +87,7 @@ jobs:
       run: cargo test --locked --verbose
 
   build-unikernel:
-    name: Check hermitcore kernel
+    name: Build stand-alone kernel
     needs: build-modules
     runs-on: ubuntu-latest
     container:
