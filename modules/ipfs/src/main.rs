@@ -16,12 +16,15 @@
 use futures::prelude::*;
 use ipfs::{Network, NetworkEvent};
 use parity_scale_codec::DecodeAll;
+use std::time::Duration;
 
 fn main() {
     nametbd_syscalls_interface::block_on(async_main())
 }
 
 async fn async_main() {
+    nametbd_time_interface::monotonic_wait(Duration::from_secs(5)).await;
+
     nametbd_interface_interface::register_interface(nametbd_loader_interface::ffi::INTERFACE)
         .await
         .unwrap();
