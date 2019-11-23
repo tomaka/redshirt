@@ -15,11 +15,15 @@
 
 //! Implements the time interface.
 
-use futures::{prelude::*, channel::mpsc, lock::Mutex, stream::FuturesUnordered};
+use futures::{channel::mpsc, lock::Mutex, prelude::*, stream::FuturesUnordered};
 use futures_timer::Delay;
 use nametbd_time_interface::ffi::TimeMessage;
 use parity_scale_codec::{DecodeAll, Encode as _};
-use std::{convert::TryFrom, pin::Pin, time::{Duration, Instant, SystemTime}};
+use std::{
+    convert::TryFrom,
+    pin::Pin,
+    time::{Duration, Instant, SystemTime},
+};
 
 /// State machine for `time` interface messages handling.
 pub struct TimerHandler {
@@ -32,7 +36,7 @@ pub struct TimerHandler {
 /// Separate struct behind a mutex.
 struct TimerHandlerInner {
     /// Stream of message IDs to answer.
-    timers: FuturesUnordered<Pin<Box<dyn Future<Output = u64> + Send>>>,   // TODO: meh for boxing
+    timers: FuturesUnordered<Pin<Box<dyn Future<Output = u64> + Send>>>, // TODO: meh for boxing
     /// Receiving side of [`TimerHandler::new_timer_tx`].
     new_timer_rx: mpsc::UnboundedReceiver<(Delay, u64)>,
 }
@@ -45,9 +49,14 @@ impl TimerHandler {
         TimerHandler {
             inner: Mutex::new(TimerHandlerInner {
                 timers: {
-                    let timers = FuturesUnordered::<Pin<Box<dyn Future<Output = u64> + Send>>>::new();
+                    let timers =
+                        FuturesUnordered::<Pin<Box<dyn Future<Output = u64> + Send>>>::new();
                     // TODO: ugh; pushing a never-ending future, otherwise we get a permanent `None` when polling
-                    timers.push(Box::pin(async move { loop { futures::pending!() } }));
+                    timers.push(Box::pin(async move {
+                        loop {
+                            futures::pending!()
+                        }
+                    }));
                     timers
                 },
                 new_timer_rx,
@@ -63,14 +72,16 @@ impl TimerHandler {
             // TODO: don't unwrap
             TimeMessage::GetMonotonic => Some(monotonic_clock().encode()),
             TimeMessage::GetSystem => Some(system_clock().encode()),
-            TimeMessage::WaitMonotonic(until) => {
-                match until.checked_sub(monotonic_clock()) {
-                    None => Some(().encode()),
-                    Some(dur_from_now) => {
-                        let dur = Duration::from_nanos(u64::try_from(dur_from_now).unwrap_or(u64::max_value()));
-                        self.new_timer_tx.unbounded_send((Delay::new(dur), message_id.unwrap())).unwrap();
-                        None
-                    }
+            TimeMessage::WaitMonotonic(until) => match until.checked_sub(monotonic_clock()) {
+                None => Some(().encode()),
+                Some(dur_from_now) => {
+                    let dur = Duration::from_nanos(
+                        u64::try_from(dur_from_now).unwrap_or(u64::max_value()),
+                    );
+                    self.new_timer_tx
+                        .unbounded_send((Delay::new(dur), message_id.unwrap()))
+                        .unwrap();
+                    None
                 }
             },
         }
@@ -89,7 +100,7 @@ impl TimerHandler {
                         new_delay.await;
                         message_id
                     }));
-                },
+                }
                 future::Either::Left((None, _)) => unreachable!(),
                 future::Either::Right((None, _)) => unreachable!(),
             }
