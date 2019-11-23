@@ -4,6 +4,8 @@ WASM and are loaded from some IPFS-like decentralized network.
 I'm frequently telling people what my vision of an operating system would be. Now I've started
 building it.
 
+[![dependency status](https://deps.rs/repo/github/tomaka/os/status.svg)](https://deps.rs/repo/github/tomaka/os)
+
 # How to test
 
 ```
