@@ -7,7 +7,7 @@ edition = "2018"
 publish = false
 
 [dependencies]
-futures-preview = { version = "0.3.0-alpha.18", features = ["async-await", "nightly"] }
+futures = "0.3.1"
 nametbd-core = { path = "../../core" }
 nametbd-tcp-hosted = { path = "../tcp" }
 nametbd-tcp-interface = { path = "../../interfaces/tcp" }

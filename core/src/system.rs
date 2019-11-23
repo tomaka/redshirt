@@ -138,18 +138,11 @@ impl<TExtEx: Clone> System<TExtEx> {
         loop {
             match self.core.run() {
                 CoreRunOutcome::ProgramFinished {
-                    process,
-                    return_value: _,
+                    process, outcome, ..
                 } => {
                     return SystemRunOutcome::ProgramFinished {
                         pid: process,
-                        outcome: Ok(()),
-                    }
-                }
-                CoreRunOutcome::ProgramCrashed { pid, error } => {
-                    return SystemRunOutcome::ProgramFinished {
-                        pid,
-                        outcome: Err(error),
+                        outcome: outcome.map(|_| ()).map_err(|err| err.into()),
                     }
                 }
                 CoreRunOutcome::ThreadWaitExtrinsic {
@@ -160,11 +153,12 @@ impl<TExtEx: Clone> System<TExtEx> {
                     let pid = thread.pid();
                     return SystemRunOutcome::ThreadWaitExtrinsic {
                         pid,
-                        thread_id: thread.id(),
+                        thread_id: thread.tid(),
                         extrinsic: extrinsic.clone(),
                         params: params.clone(),
                     };
                 }
+                CoreRunOutcome::ThreadWaitUnavailableInterface { .. } => unimplemented!(),
 
                 CoreRunOutcome::MessageResponse {
                     message_id,
@@ -174,7 +168,7 @@ impl<TExtEx: Clone> System<TExtEx> {
                     if self.loading_programs.remove(&message_id) {
                         let nametbd_loader_interface::ffi::LoadResponse { result } =
                             DecodeAll::decode_all(&response).unwrap();
-                        let module = Module::from_bytes(&result.unwrap());
+                        let module = Module::from_bytes(&result.unwrap()).unwrap();
                         self.core.execute(&module).unwrap();
                     }
                 }

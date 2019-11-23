@@ -24,8 +24,9 @@ fn main() {
 
 async fn async_main() {
     let module = nametbd_core::module::Module::from_bytes(
-        &include_bytes!("../../../modules/target/wasm32-wasi/debug/ipfs.wasm")[..],
-    );
+        &include_bytes!("../../../modules/target/wasm32-wasi/release/ipfs.wasm")[..],
+    )
+    .unwrap();
 
     let mut system =
         nametbd_wasi_hosted::register_extrinsics(nametbd_core::system::SystemBuilder::new())
@@ -34,7 +35,7 @@ async fn async_main() {
             .with_main_program([0; 32]) // TODO: just a test
             .build();
 
-    let mut tcp = nametbd_tcp_hosted::TcpState::new();
+    let tcp = nametbd_tcp_hosted::TcpState::new();
 
     loop {
         let result = loop {
@@ -70,7 +71,7 @@ async fn async_main() {
                 } if interface == nametbd_tcp_interface::ffi::INTERFACE => {
                     let message: nametbd_tcp_interface::ffi::TcpMessage =
                         DecodeAll::decode_all(&message).unwrap();
-                    tcp.handle_message(message_id, message);
+                    tcp.handle_message(message_id, message).await;
                     continue;
                 }
                 nametbd_core::system::SystemRunOutcome::Idle => false,
