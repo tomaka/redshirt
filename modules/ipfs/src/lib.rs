@@ -91,13 +91,13 @@ impl<T> Network<T> {
         }
         // TODO: unfinished
 
-        if !self.active_fetches.is_empty() {
+        /*if !self.active_fetches.is_empty() {
             let (_, user_data) = self.active_fetches.remove(0);
             return NetworkEvent::FetchFail { user_data };
         }
 
         loop {
             futures::pending!()
-        }
+        }*/
     }
 }

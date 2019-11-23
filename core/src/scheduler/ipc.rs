@@ -670,9 +670,9 @@ impl<T: Clone> Core<T> {
             },
         );
 
-        let pid = match self.interfaces.get(&interface).ok_or(())? {
+        let pid = match self.interfaces.get(&interface).ok_or_else(|| panic!())? {
             InterfaceHandler::Process(pid) => *pid,
-            InterfaceHandler::External => return Err(()), // TODO: explain that explicitely
+            InterfaceHandler::External => panic!(),
         };
 
         let mut process = self.processes.process_by_id(pid).unwrap();
