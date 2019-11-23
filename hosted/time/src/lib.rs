@@ -75,12 +75,14 @@ impl TimerHandler {
             TimeMessage::WaitMonotonic(until) => match until.checked_sub(monotonic_clock()) {
                 None => Some(().encode()),
                 Some(dur_from_now) => {
-                    let dur = Duration::from_nanos(
-                        u64::try_from(dur_from_now).unwrap_or(u64::max_value()),
-                    );
-                    self.new_timer_tx
-                        .unbounded_send((Delay::new(dur), message_id.unwrap()))
-                        .unwrap();
+                    // If `dur_from_now` is larger than a `u64`, we simply don't insert any timer.
+                    // We assume that we will never reach this time ever.
+                    if let Ok(dur) = u64::try_from(dur_from_now) {
+                        let dur = Duration::from_nanos(dur);
+                        self.new_timer_tx
+                            .unbounded_send((Delay::new(dur), message_id.unwrap()))
+                            .unwrap();
+                    }
                     None
                 }
             },
