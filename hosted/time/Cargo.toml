@@ -7,6 +7,8 @@ edition = "2018"
 publish = false
 
 [dependencies]
+futures = "0.3.0"
+futures-timer = "2.0"
 nametbd-time-interface = { path = "../../interfaces/time" }
 parity-scale-codec = "1.0.5"
 lazy_static = "1.4"

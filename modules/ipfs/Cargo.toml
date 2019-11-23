@@ -18,4 +18,5 @@ nametbd-interface-interface = { path = "../../interfaces/interface" }
 nametbd-loader-interface = { path = "../../interfaces/loader" }
 nametbd-syscalls-interface = { path = "../../interfaces/syscalls" }
 nametbd-tcp-interface = { path = "../../interfaces/tcp" }
+nametbd-time-interface = { path = "../../interfaces/time" }
 parity-scale-codec = "1.0.5"

@@ -631,6 +631,7 @@ dependencies = [
  "nametbd-loader-interface 0.1.0",
  "nametbd-syscalls-interface 0.1.0",
  "nametbd-tcp-interface 0.1.0",
+ "nametbd-time-interface 0.1.0",
  "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -863,6 +864,14 @@ name = "nametbd-tcp-interface"
 version = "0.1.0"
 dependencies = [
  "futures 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "nametbd-syscalls-interface 0.1.0",
+ "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "nametbd-time-interface"
+version = "0.1.0"
+dependencies = [
  "nametbd-syscalls-interface 0.1.0",
  "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]

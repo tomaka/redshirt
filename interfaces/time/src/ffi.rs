@@ -27,4 +27,6 @@ pub enum TimeMessage {
     GetMonotonic,
     /// Must respond with a `u128`.
     GetSystem,
+    /// Send response when the monotonic clock reaches this value. Responds with nothing (`()`).
+    WaitMonotonic(u128),
 }
