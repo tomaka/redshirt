@@ -15,14 +15,13 @@
 
 mod tcp_transport;
 
-use futures::{prelude::*, compat::Compat01As03};
-use futures01::Stream as _;
+use futures::prelude::*;
 use libp2p_core::{identity, upgrade, PeerId, muxing::StreamMuxerBox, nodes::node::Substream};
 use libp2p_core::transport::{Transport, boxed::Boxed};
 use libp2p_kad::{Kademlia, Quorum, record::Key, record::store::MemoryStore};
 use libp2p_mplex::MplexConfig;
 use libp2p_plaintext::PlainText2Config;
-use libp2p_swarm::Swarm;
+use libp2p_swarm::{Swarm, NetworkBehaviour};
 use std::io;
 
 /// Active set of connections to the network.
@@ -58,7 +57,7 @@ impl<T> Network<T> {
         let transport = tcp_transport::TcpConfig::default()
             .upgrade(upgrade::Version::V1)
             .authenticate(PlainText2Config {
-                pubkey: local_keypair.public(),
+                local_public_key: local_keypair.public(),
             })
             .multiplex(MplexConfig::default())
             // TODO: timeout
@@ -87,7 +86,9 @@ impl<T> Network<T> {
 
     /// Returns a future that returns the next event that happens on the network.
     pub async fn next_event(&mut self) -> NetworkEvent<T> {
-        Compat01As03::new(futures01::future::poll_fn(|| self.swarm.poll())).await;
+        loop {
+            self.swarm.next().await;
+        }
         // TODO: unfinished
 
         if !self.active_fetches.is_empty() {

@@ -13,22 +13,14 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use futures::{prelude::*, compat::Compat};
-use futures01::Future;
+use futures::prelude::*;
 use libp2p_core::{
     Transport,
     multiaddr::{Protocol, Multiaddr},
     transport::{ListenerEvent, TransportError}
 };
-use log::{debug, trace};
-use std::{
-    collections::VecDeque,
-    io::{self, Read, Write},
-    iter::{self, FromIterator},
-    net::{IpAddr, SocketAddr},
-    time::{Duration, Instant},
-    vec::IntoIter
-};
+use log::debug;
+use std::{io, net::SocketAddr, pin::Pin};
 
 /// Represents the configuration for a TCP/IP transport capability for libp2p.
 #[derive(Debug, Clone, Default)]
@@ -44,11 +36,11 @@ impl TcpConfig {
 }
 
 impl Transport for TcpConfig {
-    type Output = Compat<nametbd_tcp_interface::TcpStream>;
+    type Output = nametbd_tcp_interface::TcpStream;
     type Error = io::Error;
-    type Listener = Box<dyn futures01::Stream<Item = ListenerEvent<Self::ListenerUpgrade>, Error = Self::Error> + Send>;
-    type ListenerUpgrade = futures01::future::FutureResult<Self::Output, Self::Error>;
-    type Dial = Box<dyn futures01::Future<Item = Self::Output, Error = io::Error> + Send>;
+    type Listener = Pin<Box<dyn Stream<Item = Result<ListenerEvent<Self::ListenerUpgrade>, Self::Error>> + Send>>;
+    type ListenerUpgrade = future::Ready<Result<Self::Output, Self::Error>>;
+    type Dial = Pin<Box<dyn Future<Output = Result<Self::Output, io::Error>> + Send>>;
 
     fn listen_on(self, addr: Multiaddr) -> Result<Self::Listener, TransportError<Self::Error>> {
         unimplemented!()
@@ -67,7 +59,7 @@ impl Transport for TcpConfig {
             };
 
         debug!("Dialing {}", addr);
-        Ok(Box::new(Future::map(Compat::new(Box::pin(nametbd_tcp_interface::TcpStream::connect(&socket_addr).map(Ok))), |f| Compat::new(f))))
+        Ok(Box::pin(Box::pin(nametbd_tcp_interface::TcpStream::connect(&socket_addr).map(Ok))))
     }
 }
 
