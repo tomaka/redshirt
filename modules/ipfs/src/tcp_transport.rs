@@ -23,7 +23,7 @@ use log::debug;
 use std::{io, net::SocketAddr, pin::Pin};
 
 /// Represents the configuration for a TCP/IP transport capability for libp2p.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct TcpConfig {
 }
 
@@ -32,6 +32,12 @@ impl TcpConfig {
     pub fn new() -> TcpConfig {
         TcpConfig {
         }
+    }
+}
+
+impl Default for TcpConfig {
+    fn default() -> Self {
+        TcpConfig::new()
     }
 }
 

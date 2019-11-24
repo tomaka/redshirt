@@ -1,0 +1,9 @@
+[package]
+name = "wasm-timer"
+version = "0.2.4"
+authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+nametbd-time-interface = { path = "../../interfaces/time" }
+pin-project = "0.4.6"
