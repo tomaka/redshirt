@@ -17,7 +17,14 @@
 
 #![deny(intra_doc_link_resolution_failure)]
 
+use std::time::Duration;
+
+pub use self::delay::Delay;
+pub use self::instant::Instant;
+
+mod delay;
 pub mod ffi;
+mod instant;
 
 /// Returns the number of nanoseconds since an arbitrary point in time in the past.
 pub async fn monotonic_clock() -> u128 {
@@ -33,4 +40,23 @@ pub async fn system_clock() -> u128 {
     nametbd_syscalls_interface::emit_message_with_response(ffi::INTERFACE, msg)
         .await
         .unwrap()
+}
+
+/// Returns a `Future` that yields when the monotonic clock reaches this value.
+pub async fn monotonic_wait_until(until: u128) {
+    let msg = ffi::TimeMessage::WaitMonotonic(until);
+    nametbd_syscalls_interface::emit_message_with_response(ffi::INTERFACE, msg)
+        .await
+        .unwrap()
+}
+
+/// Returns a `Future` that outputs after `duration` has elapsed.
+pub async fn monotonic_wait(duration: Duration) {
+    let dur_nanos = u128::from(duration.as_secs())
+        .saturating_mul(1_000_000_000)
+        .saturating_add(u128::from(duration.subsec_nanos()));
+
+    // TODO: meh for two syscalls
+    let now = monotonic_clock().await;
+    monotonic_wait_until(now.saturating_add(dur_nanos)).await;
 }

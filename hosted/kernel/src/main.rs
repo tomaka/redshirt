@@ -73,7 +73,7 @@ async fn async_main(
 
     let mut system =
         nametbd_wasi_hosted::register_extrinsics(nametbd_core::system::SystemBuilder::new())
-            .with_interface_handler(nametbd_time_interface::ffi::INTERFACE)
+            // TODO: restore this .with_interface_handler(nametbd_time_interface::ffi::INTERFACE)
             .with_interface_handler(nametbd_tcp_interface::ffi::INTERFACE)
             .with_interface_handler(nametbd_vulkan_interface::INTERFACE)
             .with_interface_handler(nametbd_window_interface::ffi::INTERFACE)
@@ -121,6 +121,7 @@ async fn async_main(
                     tcp.handle_message(message_id, message).await;
                     continue;
                 }
+                /* TODO: restore this
                 nametbd_core::system::SystemRunOutcome::InterfaceMessage {
                     message_id,
                     interface,
@@ -129,7 +130,7 @@ async fn async_main(
                     let answer = nametbd_time_hosted::time_message(&message);
                     system.answer_message(message_id.unwrap(), &answer);
                     continue;
-                }
+                }*/
                 nametbd_core::system::SystemRunOutcome::InterfaceMessage {
                     message_id,
                     interface,

@@ -15,8 +15,9 @@
 
 #![deny(intra_doc_link_resolution_failure)]
 
-use futures::prelude::*;
+use futures::{channel::mpsc, pin_mut, prelude::*};
 use parity_scale_codec::{DecodeAll, Encode as _};
+use std::sync::Arc;
 
 fn main() {
     futures::executor::block_on(async_main());
@@ -30,12 +31,55 @@ async fn async_main() {
 
     let mut system =
         nametbd_wasi_hosted::register_extrinsics(nametbd_core::system::SystemBuilder::new())
+            .with_interface_handler(nametbd_time_interface::ffi::INTERFACE)
             .with_interface_handler(nametbd_tcp_interface::ffi::INTERFACE)
             .with_startup_process(module)
             .with_main_program([0; 32]) // TODO: just a test
             .build();
 
-    let tcp = nametbd_tcp_hosted::TcpState::new();
+    let time = Arc::new(nametbd_time_hosted::TimerHandler::new());
+    let tcp = Arc::new(nametbd_tcp_hosted::TcpState::new());
+
+    let mut to_answer_rx = {
+        let (mut to_answer_tx, to_answer_rx) = mpsc::channel(16);
+        let tcp = tcp.clone();
+        let time = time.clone();
+        async_std::task::spawn(async move {
+            loop {
+                let tcp = tcp.next_event();
+                let time = time.next_answer();
+                pin_mut!(tcp);
+                pin_mut!(time);
+                let to_send = match future::select(tcp, time).await {
+                    future::Either::Left((
+                        nametbd_tcp_hosted::TcpResponse::Accept(msg_id, msg),
+                        _,
+                    )) => (msg_id, msg.encode()),
+                    future::Either::Left((
+                        nametbd_tcp_hosted::TcpResponse::Listen(msg_id, msg),
+                        _,
+                    )) => (msg_id, msg.encode()),
+                    future::Either::Left((
+                        nametbd_tcp_hosted::TcpResponse::Open(msg_id, msg),
+                        _,
+                    )) => (msg_id, msg.encode()),
+                    future::Either::Left((
+                        nametbd_tcp_hosted::TcpResponse::Read(msg_id, msg),
+                        _,
+                    )) => (msg_id, msg.encode()),
+                    future::Either::Left((
+                        nametbd_tcp_hosted::TcpResponse::Write(msg_id, msg),
+                        _,
+                    )) => (msg_id, msg.encode()),
+                    future::Either::Right(((msg_id, bytes), _)) => (msg_id, bytes),
+                };
+                if to_answer_tx.send(to_send).await.is_err() {
+                    break;
+                }
+            }
+        });
+        to_answer_rx
+    };
 
     loop {
         let result = loop {
@@ -60,8 +104,9 @@ async fn async_main() {
                     interface,
                     message,
                 } if interface == nametbd_time_interface::ffi::INTERFACE => {
-                    let answer = nametbd_time_hosted::time_message(&message);
-                    system.answer_message(message_id.unwrap(), &answer);
+                    if let Some(answer) = time.time_message(message_id, &message) {
+                        system.answer_message(message_id.unwrap(), &answer);
+                    }
                     continue;
                 }
                 nametbd_core::system::SystemRunOutcome::InterfaceMessage {
@@ -78,22 +123,16 @@ async fn async_main() {
                 other => break other,
             };
 
-            let event = if only_poll {
-                match tcp.next_event().now_or_never() {
+            let (msg_to_respond, response_bytes) = if only_poll {
+                match to_answer_rx.next().now_or_never() {
                     Some(e) => e,
                     None => continue,
                 }
             } else {
-                tcp.next_event().await
-            };
+                to_answer_rx.next().await
+            }
+            .unwrap();
 
-            let (msg_to_respond, response_bytes) = match event {
-                nametbd_tcp_hosted::TcpResponse::Accept(msg_id, msg) => (msg_id, msg.encode()),
-                nametbd_tcp_hosted::TcpResponse::Listen(msg_id, msg) => (msg_id, msg.encode()),
-                nametbd_tcp_hosted::TcpResponse::Open(msg_id, msg) => (msg_id, msg.encode()),
-                nametbd_tcp_hosted::TcpResponse::Read(msg_id, msg) => (msg_id, msg.encode()),
-                nametbd_tcp_hosted::TcpResponse::Write(msg_id, msg) => (msg_id, msg.encode()),
-            };
             system.answer_message(msg_to_respond, &response_bytes);
         };
 
