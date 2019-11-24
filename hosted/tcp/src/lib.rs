@@ -331,16 +331,10 @@ impl TcpState {
             BackToFront::Accept { message_id, socket } => {
                 let mut sockets = self.sockets.lock().await;
 
-                let remote_addr = socket.peer_addr().unwrap();        // TODO: don't unwrap
+                let remote_addr = socket.peer_addr().unwrap(); // TODO: don't unwrap
                 let (remote_ip, remote_port) = match remote_addr {
-                    SocketAddr::V4(addr) => (
-                        addr.ip().to_ipv6_mapped().segments(),
-                        addr.port(),
-                    ),
-                    SocketAddr::V6(addr) => (
-                        addr.ip().segments(),
-                        addr.port(),
-                    ),
+                    SocketAddr::V4(addr) => (addr.ip().to_ipv6_mapped().segments(), addr.port()),
+                    SocketAddr::V6(addr) => (addr.ip().segments(), addr.port()),
                 };
 
                 // Find a vacant entry in `self.sockets`, spawn the task, and insert.
@@ -501,7 +495,7 @@ async fn listener_task(
             let (tx, rx) = mpsc::channel(2);
             let msg_to_front = BackToFront::ListenOk {
                 socket_id,
-                local_addr: s.local_addr().unwrap(),        // TODO:
+                local_addr: s.local_addr().unwrap(), // TODO:
                 listen_message_id,
                 sender: tx,
             };

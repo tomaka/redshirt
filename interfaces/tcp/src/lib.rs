@@ -21,7 +21,10 @@
 
 use futures::{prelude::*, ready};
 use parity_scale_codec::{DecodeAll, Encode as _};
-use std::{io, mem, net::Ipv6Addr, net::SocketAddr, pin::Pin, sync::Arc, task::Context, task::Poll, task::Waker};
+use std::{
+    io, mem, net::Ipv6Addr, net::SocketAddr, pin::Pin, sync::Arc, task::Context, task::Poll,
+    task::Waker,
+};
 
 pub mod ffi;
 
@@ -203,7 +206,7 @@ impl TcpListener {
                 };
                 let remote_ip = Ipv6Addr::from(new_stream.remote_ip);
                 let remote_addr = SocketAddr::from((remote_ip, new_stream.remote_port));
-                return (stream, remote_addr)
+                return (stream, remote_addr);
             }
 
             let tcp_accept = ffi::TcpMessage::Accept(ffi::TcpAccept {
