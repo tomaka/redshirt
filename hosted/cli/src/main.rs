@@ -51,6 +51,14 @@ async fn async_main() {
                 pin_mut!(tcp);
                 pin_mut!(time);
                 let to_send = match future::select(tcp, time).await {
+                    future::Either::Accept((
+                        nametbd_tcp_hosted::TcpResponse::Open(msg_id, msg),
+                        _,
+                    )) => (msg_id, msg.encode()),
+                    future::Either::Listen((
+                        nametbd_tcp_hosted::TcpResponse::Open(msg_id, msg),
+                        _,
+                    )) => (msg_id, msg.encode()),
                     future::Either::Left((
                         nametbd_tcp_hosted::TcpResponse::Open(msg_id, msg),
                         _,

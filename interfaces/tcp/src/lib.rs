@@ -143,3 +143,76 @@ impl Drop for TcpStream {
         nametbd_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_close, false);
     }
 }
+
+pub struct TcpListener {
+    handle: u32,
+    /// If Some, we have sent out an "accept" message and are waiting for a response.
+    // TODO: use strongly typed Future here
+    pending_accept: Option<Pin<Box<dyn Future<Output = ffi::TcpAcceptResponse> + Send>>>,
+}
+
+impl TcpListener {
+    pub fn bind(socket_addr: &SocketAddr) -> impl Future<Output = TcpListener> {
+        let tcp_listen = ffi::TcpMessage::Listen(match socket_addr {
+            SocketAddr::V4(addr) => ffi::TcpListen {
+                local_ip: addr.ip().to_ipv6_mapped().segments(),
+                port: addr.port(),
+            },
+            SocketAddr::V6(addr) => ffi::TcpListen {
+                local_ip: addr.ip().segments(),
+                port: addr.port(),
+            },
+        });
+
+        let msg_id = nametbd_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_listen, true)
+            .unwrap()
+            .unwrap();
+
+        async move {
+            let message: ffi::TcpOpenResponse =
+                nametbd_syscalls_interface::message_response(msg_id).await;
+            let handle = message.result.unwrap();
+
+            TcpListener {
+                handle,
+                pending_accept: None,
+            }
+        }
+    }
+
+    // TODO: make `&self` instead
+    pub async fn accept(&mut self) -> TcpStream {
+        loop {
+            if let Some(pending_accept) = self.pending_accept.as_mut() {
+                let new_stream = pending_accept.await;
+                self.pending_accept = None;
+                return TcpStream {
+                    handle: new_stream.accepted_socket_id,
+                    pending_read: None,
+                    pending_write: None,
+                };
+            }
+
+            let tcp_accept = ffi::TcpMessage::Accept(ffi::TcpAccept {
+                socket_id: self.handle,
+            });
+            let msg_id =
+                nametbd_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_accept, true)
+                    .unwrap()
+                    .unwrap();
+            self.pending_accept = Some(Box::pin(nametbd_syscalls_interface::message_response(
+                msg_id,
+            )));
+        }
+    }
+}
+
+impl Drop for TcpListener {
+    fn drop(&mut self) {
+        let tcp_close = ffi::TcpMessage::Close(ffi::TcpClose {
+            socket_id: self.handle,
+        });
+
+        nametbd_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_close, false);
+    }
+}
