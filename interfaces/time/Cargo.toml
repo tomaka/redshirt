@@ -8,3 +8,4 @@ edition = "2018"
 [dependencies]
 nametbd-syscalls-interface = { path = "../syscalls" }
 parity-scale-codec = { version = "1.0.5", features = ["derive"] }
+pin-project = "0.4.6"
