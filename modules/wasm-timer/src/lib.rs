@@ -13,46 +13,54 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::{monotonic_wait_until, Instant};
-use std::{fmt, future::Future, pin::Pin, task::Context, task::Poll, time::Duration};
+pub use nametbd_time_interface::Instant;
+
+use std::{fmt, future::Future, io, pin::Pin, task::Context, task::Poll, time::Duration};
 
 /// Mimics the API of `futures_timer::Delay`.
+#[pin_project::pin_project]
 pub struct Delay {
-    when: Instant,
-    inner: Pin<Box<dyn Future<Output = ()> + Send>>,
+    #[pin]
+    inner: nametbd_time_interface::Delay,
 }
 
 impl Delay {
     pub fn new(dur: Duration) -> Delay {
-        Delay::new_at(Instant::now() + dur)
+        Delay {
+            inner: nametbd_time_interface::Delay::new(dur),
+        }
     }
 
     pub fn new_at(at: Instant) -> Delay {
         Delay {
-            when: at,
-            inner: Box::pin(monotonic_wait_until(at.inner)),
+            inner: nametbd_time_interface::Delay::new_at(at),
         }
     }
 
     pub fn when(&self) -> Instant {
-        self.when
+        self.inner.when()
     }
 
-    pub fn reset(&mut self, at: Instant) {
+    pub fn reset(&mut self, dur: Duration) {
+        *self = Delay::new(dur);
+    }
+
+    pub fn reset_at(&mut self, at: Instant) {
         *self = Delay::new_at(at);
     }
 }
 
 impl fmt::Debug for Delay {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("Delay").field("when", &self.when).finish()
+        fmt::Debug::fmt(&self.inner, f)
     }
 }
 
 impl Future for Delay {
-    type Output = ();
+    type Output = io::Result<()>;
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        Future::poll(self.inner.as_mut(), cx)
+    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let mut this = self.project();
+        Future::poll(this.inner.as_mut(), cx).map(Ok)
     }
 }

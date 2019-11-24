@@ -21,12 +21,17 @@
 
 use futures::{prelude::*, ready};
 use parity_scale_codec::{DecodeAll, Encode as _};
-use std::{io, mem, net::SocketAddr, pin::Pin, sync::Arc, task::Context, task::Poll, task::Waker};
+use std::{
+    cmp, io, mem, net::Ipv6Addr, net::SocketAddr, pin::Pin, sync::Arc, task::Context, task::Poll,
+    task::Waker,
+};
 
 pub mod ffi;
 
 pub struct TcpStream {
     handle: u32,
+    /// Buffer of data that has been read from the socket but not transmitted to the user yet.
+    read_buffer: Vec<u8>,
     /// If Some, we have sent out a "read" message and are waiting for a response.
     // TODO: use strongly typed Future here
     pending_read: Option<Pin<Box<dyn Future<Output = ffi::TcpReadResponse> + Send>>>,
@@ -36,7 +41,7 @@ pub struct TcpStream {
 }
 
 impl TcpStream {
-    pub fn connect(socket_addr: &SocketAddr) -> impl Future<Output = TcpStream> {
+    pub fn connect(socket_addr: &SocketAddr) -> impl Future<Output = Result<TcpStream, ()>> {
         let tcp_open = ffi::TcpMessage::Open(match socket_addr {
             SocketAddr::V4(addr) => ffi::TcpOpen {
                 ip: addr.ip().to_ipv6_mapped().segments(),
@@ -55,13 +60,14 @@ impl TcpStream {
         async move {
             let message: ffi::TcpOpenResponse =
                 nametbd_syscalls_interface::message_response(msg_id).await;
-            let handle = message.result.unwrap();
+            let handle = message.result?;
 
-            TcpStream {
+            Ok(TcpStream {
                 handle,
+                read_buffer: Vec::new(),
                 pending_read: None,
                 pending_write: None,
-            }
+            })
         }
     }
 }
@@ -74,14 +80,19 @@ impl AsyncRead for TcpStream {
     ) -> Poll<Result<usize, io::Error>> {
         loop {
             if let Some(pending_read) = self.pending_read.as_mut() {
-                let data = match ready!(Future::poll(Pin::new(pending_read), cx)).result {
+                self.read_buffer = match ready!(Future::poll(Pin::new(pending_read), cx)).result {
                     Ok(d) => d,
                     Err(_) => return Poll::Ready(Err(io::ErrorKind::Other.into())), // TODO:
                 };
-
                 self.pending_read = None;
-                buf[..data.len()].copy_from_slice(&data); // TODO: this just assumes that buf is large enough
-                return Poll::Ready(Ok(data.len()));
+            }
+
+            if !self.read_buffer.is_empty() {
+                let to_copy = cmp::min(self.read_buffer.len(), buf.len());
+                let mut tmp = mem::replace(&mut self.read_buffer, Vec::new());
+                self.read_buffer = tmp.split_off(to_copy);
+                buf[..to_copy].copy_from_slice(&tmp);
+                return Poll::Ready(Ok(to_copy));
             }
 
             let tcp_read = ffi::TcpMessage::Read(ffi::TcpRead {
@@ -146,13 +157,14 @@ impl Drop for TcpStream {
 
 pub struct TcpListener {
     handle: u32,
+    local_addr: SocketAddr,
     /// If Some, we have sent out an "accept" message and are waiting for a response.
     // TODO: use strongly typed Future here
     pending_accept: Option<Pin<Box<dyn Future<Output = ffi::TcpAcceptResponse> + Send>>>,
 }
 
 impl TcpListener {
-    pub fn bind(socket_addr: &SocketAddr) -> impl Future<Output = TcpListener> {
+    pub fn bind(socket_addr: &SocketAddr) -> impl Future<Output = Result<TcpListener, ()>> {
         let tcp_listen = ffi::TcpMessage::Listen(match socket_addr {
             SocketAddr::V4(addr) => ffi::TcpListen {
                 local_ip: addr.ip().to_ipv6_mapped().segments(),
@@ -168,29 +180,42 @@ impl TcpListener {
             .unwrap()
             .unwrap();
 
-        async move {
-            let message: ffi::TcpOpenResponse =
-                nametbd_syscalls_interface::message_response(msg_id).await;
-            let handle = message.result.unwrap();
+        let mut local_addr = socket_addr.clone();
 
-            TcpListener {
+        async move {
+            let message: ffi::TcpListenResponse =
+                nametbd_syscalls_interface::message_response(msg_id).await;
+            let (handle, local_port) = message.result?;
+            local_addr.set_port(local_port);
+
+            Ok(TcpListener {
                 handle,
+                local_addr,
                 pending_accept: None,
-            }
+            })
         }
     }
 
+    /// Returns the local address of the listener. Useful to determine the port.
+    pub fn local_addr(&self) -> SocketAddr {
+        self.local_addr
+    }
+
     // TODO: make `&self` instead
-    pub async fn accept(&mut self) -> TcpStream {
+    pub async fn accept(&mut self) -> (TcpStream, SocketAddr) {
         loop {
             if let Some(pending_accept) = self.pending_accept.as_mut() {
                 let new_stream = pending_accept.await;
                 self.pending_accept = None;
-                return TcpStream {
+                let stream = TcpStream {
                     handle: new_stream.accepted_socket_id,
+                    read_buffer: Vec::new(),
                     pending_read: None,
                     pending_write: None,
                 };
+                let remote_ip = Ipv6Addr::from(new_stream.remote_ip);
+                let remote_addr = SocketAddr::from((remote_ip, new_stream.remote_port));
+                return (stream, remote_addr);
             }
 
             let tcp_accept = ffi::TcpMessage::Accept(ffi::TcpAccept {

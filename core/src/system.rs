@@ -234,6 +234,16 @@ impl<TExtEx: Clone> System<TExtEx> {
                         nametbd_interface_interface::ffi::InterfaceMessage::Register(
                             interface_hash,
                         ) => {
+                            self.core
+                                .set_interface_handler(interface_hash, pid)
+                                .unwrap();
+                            let response =
+                                nametbd_interface_interface::ffi::InterfaceRegisterResponse {
+                                    result: Ok(()),
+                                };
+                            self.core
+                                .answer_message(message_id.unwrap(), &response.encode());
+
                             if interface_hash == nametbd_loader_interface::ffi::INTERFACE {
                                 for hash in self.main_programs.drain(..) {
                                     let msg =
@@ -248,16 +258,6 @@ impl<TExtEx: Clone> System<TExtEx> {
                                     self.loading_programs.insert(id);
                                 }
                             }
-
-                            self.core
-                                .set_interface_handler(interface_hash, pid)
-                                .unwrap();
-                            let response =
-                                nametbd_interface_interface::ffi::InterfaceRegisterResponse {
-                                    result: Ok(()),
-                                };
-                            self.core
-                                .answer_message(message_id.unwrap(), &response.encode());
                         }
                     }
                 }

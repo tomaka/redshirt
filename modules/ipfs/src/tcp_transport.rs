@@ -13,25 +13,17 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use futures::{prelude::*, compat::Compat};
-use futures01::Future;
+use futures::prelude::*;
 use libp2p_core::{
     Transport,
     multiaddr::{Protocol, Multiaddr},
     transport::{ListenerEvent, TransportError}
 };
-use log::{debug, trace};
-use std::{
-    collections::VecDeque,
-    io::{self, Read, Write},
-    iter::{self, FromIterator},
-    net::{IpAddr, SocketAddr},
-    time::{Duration, Instant},
-    vec::IntoIter
-};
+use log::debug;
+use std::{io, iter, net::IpAddr, net::SocketAddr, pin::Pin};
 
 /// Represents the configuration for a TCP/IP transport capability for libp2p.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct TcpConfig {
 }
 
@@ -43,15 +35,55 @@ impl TcpConfig {
     }
 }
 
+impl Default for TcpConfig {
+    fn default() -> Self {
+        TcpConfig::new()
+    }
+}
+
 impl Transport for TcpConfig {
-    type Output = Compat<nametbd_tcp_interface::TcpStream>;
+    type Output = nametbd_tcp_interface::TcpStream;
     type Error = io::Error;
-    type Listener = Box<dyn futures01::Stream<Item = ListenerEvent<Self::ListenerUpgrade>, Error = Self::Error> + Send>;
-    type ListenerUpgrade = futures01::future::FutureResult<Self::Output, Self::Error>;
-    type Dial = Box<dyn futures01::Future<Item = Self::Output, Error = io::Error> + Send>;
+    type Listener = Pin<Box<dyn Stream<Item = Result<ListenerEvent<Self::ListenerUpgrade>, Self::Error>> + Send>>;
+    type ListenerUpgrade = future::Ready<Result<Self::Output, Self::Error>>;
+    type Dial = Pin<Box<dyn Future<Output = Result<Self::Output, io::Error>> + Send>>;
 
     fn listen_on(self, addr: Multiaddr) -> Result<Self::Listener, TransportError<Self::Error>> {
-        unimplemented!()
+        let socket_addr =
+            if let Ok(socket_addr) = multiaddr_to_socketaddr(&addr) {
+                socket_addr
+            } else {
+                return Err(TransportError::MultiaddrNotSupported(addr))
+            };
+
+        Ok(Box::pin(async move {
+            let listener = nametbd_tcp_interface::TcpListener::bind(&socket_addr).await
+                .map_err(|()| io::Error::from(io::ErrorKind::Other))?;
+            let local_addr = ip_to_multiaddr(listener.local_addr().ip(), listener.local_addr().port());
+            println!("Listening on {}", local_addr);
+
+            let first = stream::once({
+                let local_addr = local_addr.clone();
+                async move {
+                    Ok(ListenerEvent::NewAddress(local_addr))
+                }
+            });
+
+            let then = stream::unfold(listener, move |mut s| {
+                let local_addr = local_addr.clone();
+                async move {
+                    let (socket, remote_addr) = s.accept().await;
+                    let ev = ListenerEvent::Upgrade {
+                        upgrade: future::ready(Ok(socket)),
+                        local_addr: local_addr.clone(),
+                        remote_addr: ip_to_multiaddr(remote_addr.ip(), remote_addr.port()),
+                    };
+                    Some((Ok(ev), s))
+                }
+            });
+
+            Ok(first.chain(then))
+        }.try_flatten_stream()))
     }
 
     fn dial(self, addr: Multiaddr) -> Result<Self::Dial, TransportError<Self::Error>> {
@@ -66,8 +98,11 @@ impl Transport for TcpConfig {
                 return Err(TransportError::MultiaddrNotSupported(addr))
             };
 
-        debug!("Dialing {}", addr);
-        Ok(Box::new(Future::map(Compat::new(Box::pin(nametbd_tcp_interface::TcpStream::connect(&socket_addr).map(Ok))), |f| Compat::new(f))))
+        println!("Dialing {}", addr);
+        Ok(Box::pin(async move {
+            nametbd_tcp_interface::TcpStream::connect(&socket_addr).await
+                .map_err(|()| io::Error::from(io::ErrorKind::Other))
+        }))
     }
 }
 
@@ -86,4 +121,14 @@ fn multiaddr_to_socketaddr(addr: &Multiaddr) -> Result<SocketAddr, ()> {
         (Protocol::Ip6(ip), Protocol::Tcp(port)) => Ok(SocketAddr::new(ip.into(), port)),
         _ => Err(()),
     }
+}
+
+/// Create a [`Multiaddr`] from the given IP address and port number.
+fn ip_to_multiaddr(ip: IpAddr, port: u16) -> Multiaddr {
+    let proto = match ip {
+        IpAddr::V4(ip) => Protocol::Ip4(ip),
+        IpAddr::V6(ip) => Protocol::Ip6(ip)
+    };
+
+    iter::once(proto).chain(iter::once(Protocol::Tcp(port))).collect()
 }
