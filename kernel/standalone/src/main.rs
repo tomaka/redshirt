@@ -35,7 +35,7 @@ async fn async_main() -> ! {
         .with_startup_process(module)
         .with_main_program([0; 32]) // TODO: just a test
         .build();
-    
+
     let mut console = unsafe { nametbd_x86_stdout::Console::init() };
 
     loop {
@@ -50,9 +50,7 @@ async fn async_main() -> ! {
                 println!("Program finished {:?} => {:?}", pid, outcome);
             }
             nametbd_core::system::SystemRunOutcome::InterfaceMessage {
-                interface,
-                message,
-                ..
+                interface, message, ..
             } if interface == nametbd_stdout_interface::ffi::INTERFACE => {
                 let msg = nametbd_stdout_interface::ffi::StdoutMessage::decode_all(&message);
                 let nametbd_stdout_interface::ffi::StdoutMessage::Message(msg) = msg.unwrap();

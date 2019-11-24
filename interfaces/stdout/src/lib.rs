@@ -22,6 +22,5 @@ pub mod ffi;
 /// Sends a string to be printed on stdout.
 pub fn stdout(msg: String) {
     let msg = ffi::StdoutMessage::Message(msg);
-    nametbd_syscalls_interface::emit_message(&ffi::INTERFACE, &msg, false)
-        .unwrap();
+    nametbd_syscalls_interface::emit_message(&ffi::INTERFACE, &msg, false).unwrap();
 }
