@@ -10,6 +10,7 @@ publish = false
 async-std = "1.0"
 futures = "0.3.1"
 nametbd-core = { path = "../../core" }
+nametbd-stdout-interface = { path = "../../interfaces/stdout" }
 nametbd-tcp-hosted = { path = "../hosted-tcp" }
 nametbd-tcp-interface = { path = "../../interfaces/tcp" }
 nametbd-time-hosted = { path = "../hosted-time" }

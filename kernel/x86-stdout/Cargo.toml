@@ -1,0 +1,9 @@
+[package]
+name = "nametbd-x86-stdout"
+version = "0.1.0"
+license = "GPL-3.0-or-later"
+authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
+edition = "2018"
+publish = false
+
+[dependencies]
