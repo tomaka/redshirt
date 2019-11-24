@@ -19,6 +19,11 @@
 
 use std::time::Duration;
 
+pub use self::delay::Delay;
+pub use self::instant::Instant;
+
+mod delay;
+mod instant;
 pub mod ffi;
 
 /// Returns the number of nanoseconds since an arbitrary point in time in the past.
