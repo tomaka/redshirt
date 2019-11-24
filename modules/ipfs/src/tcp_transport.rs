@@ -20,7 +20,7 @@ use libp2p_core::{
     transport::{ListenerEvent, TransportError}
 };
 use log::debug;
-use std::{io, net::SocketAddr, pin::Pin};
+use std::{io, iter, net::IpAddr, net::SocketAddr, pin::Pin};
 
 /// Represents the configuration for a TCP/IP transport capability for libp2p.
 #[derive(Debug, Clone)]
@@ -49,7 +49,40 @@ impl Transport for TcpConfig {
     type Dial = Pin<Box<dyn Future<Output = Result<Self::Output, io::Error>> + Send>>;
 
     fn listen_on(self, addr: Multiaddr) -> Result<Self::Listener, TransportError<Self::Error>> {
-        unimplemented!()
+        let socket_addr =
+            if let Ok(socket_addr) = multiaddr_to_socketaddr(&addr) {
+                socket_addr
+            } else {
+                return Err(TransportError::MultiaddrNotSupported(addr))
+            };
+
+        Ok(Box::pin(async move {
+            let listener = nametbd_tcp_interface::TcpListener::bind(&socket_addr).await;
+            let local_addr = ip_to_multiaddr(listener.local_addr().ip(), listener.local_addr().port());
+            println!("Listening on {}", local_addr);
+
+            let first = stream::once({
+                let local_addr = local_addr.clone();
+                async move {
+                    Ok(ListenerEvent::NewAddress(local_addr))
+                }
+            });
+
+            let then = stream::unfold(listener, move |mut s| {
+                let local_addr = local_addr.clone();
+                async move {
+                    let (socket, remote_addr) = s.accept().await;
+                    let ev = ListenerEvent::Upgrade {
+                        upgrade: future::ready(Ok(socket)),
+                        local_addr: local_addr.clone(),
+                        remote_addr: ip_to_multiaddr(remote_addr.ip(), remote_addr.port()),
+                    };
+                    Some((Ok(ev), s))
+                }
+            });
+
+            Ok(first.chain(then))
+        }.try_flatten_stream()))
     }
 
     fn dial(self, addr: Multiaddr) -> Result<Self::Dial, TransportError<Self::Error>> {
@@ -84,4 +117,14 @@ fn multiaddr_to_socketaddr(addr: &Multiaddr) -> Result<SocketAddr, ()> {
         (Protocol::Ip6(ip), Protocol::Tcp(port)) => Ok(SocketAddr::new(ip.into(), port)),
         _ => Err(()),
     }
+}
+
+/// Create a [`Multiaddr`] from the given IP address and port number.
+fn ip_to_multiaddr(ip: IpAddr, port: u16) -> Multiaddr {
+    let proto = match ip {
+        IpAddr::V4(ip) => Protocol::Ip4(ip),
+        IpAddr::V6(ip) => Protocol::Ip6(ip)
+    };
+
+    iter::once(proto).chain(iter::once(Protocol::Tcp(port))).collect()
 }

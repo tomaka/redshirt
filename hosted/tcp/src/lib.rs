@@ -93,6 +93,7 @@ enum BackToFront {
     ListenOk {
         listen_message_id: u64,
         socket_id: u32,
+        local_addr: SocketAddr,
         sender: mpsc::Sender<FrontToBackListener>,
     },
     ListenErr {
@@ -293,6 +294,7 @@ impl TcpState {
 
             BackToFront::ListenOk {
                 listen_message_id,
+                local_addr,
                 socket_id,
                 sender,
             } => {
@@ -304,7 +306,7 @@ impl TcpState {
                 TcpResponse::Listen(
                     listen_message_id,
                     nametbd_tcp_interface::ffi::TcpListenResponse {
-                        result: Ok((socket_id, 0)), // FIXME: correct port
+                        result: Ok((socket_id, local_addr.port())),
                     },
                 )
             }
@@ -329,6 +331,18 @@ impl TcpState {
             BackToFront::Accept { message_id, socket } => {
                 let mut sockets = self.sockets.lock().await;
 
+                let remote_addr = socket.peer_addr().unwrap();        // TODO: don't unwrap
+                let (remote_ip, remote_port) = match remote_addr {
+                    SocketAddr::V4(addr) => (
+                        addr.ip().to_ipv6_mapped().segments(),
+                        addr.port(),
+                    ),
+                    SocketAddr::V6(addr) => (
+                        addr.ip().segments(),
+                        addr.port(),
+                    ),
+                };
+
                 // Find a vacant entry in `self.sockets`, spawn the task, and insert.
                 let mut tentative_socket_id = rand::random();
                 loop {
@@ -350,8 +364,8 @@ impl TcpState {
                     message_id,
                     nametbd_tcp_interface::ffi::TcpAcceptResponse {
                         accepted_socket_id: tentative_socket_id,
-                        remote_ip: [0; 8], // FIXME:
-                        remote_port: 0,    // FIXME:
+                        remote_ip,
+                        remote_port,
                     },
                 )
             }
@@ -487,6 +501,7 @@ async fn listener_task(
             let (tx, rx) = mpsc::channel(2);
             let msg_to_front = BackToFront::ListenOk {
                 socket_id,
+                local_addr: s.local_addr().unwrap(),        // TODO:
                 listen_message_id,
                 sender: tx,
             };

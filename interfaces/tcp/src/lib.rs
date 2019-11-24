@@ -21,7 +21,7 @@
 
 use futures::{prelude::*, ready};
 use parity_scale_codec::{DecodeAll, Encode as _};
-use std::{io, mem, net::SocketAddr, pin::Pin, sync::Arc, task::Context, task::Poll, task::Waker};
+use std::{io, mem, net::Ipv6Addr, net::SocketAddr, pin::Pin, sync::Arc, task::Context, task::Poll, task::Waker};
 
 pub mod ffi;
 
@@ -146,6 +146,7 @@ impl Drop for TcpStream {
 
 pub struct TcpListener {
     handle: u32,
+    local_addr: SocketAddr,
     /// If Some, we have sent out an "accept" message and are waiting for a response.
     // TODO: use strongly typed Future here
     pending_accept: Option<Pin<Box<dyn Future<Output = ffi::TcpAcceptResponse> + Send>>>,
@@ -168,29 +169,41 @@ impl TcpListener {
             .unwrap()
             .unwrap();
 
+        let mut local_addr = socket_addr.clone();
+
         async move {
-            let message: ffi::TcpOpenResponse =
+            let message: ffi::TcpListenResponse =
                 nametbd_syscalls_interface::message_response(msg_id).await;
-            let handle = message.result.unwrap();
+            let (handle, local_port) = message.result.unwrap();
+            local_addr.set_port(local_port);
 
             TcpListener {
                 handle,
+                local_addr,
                 pending_accept: None,
             }
         }
     }
 
+    /// Returns the local address of the listener. Useful to determine the port.
+    pub fn local_addr(&self) -> SocketAddr {
+        self.local_addr
+    }
+
     // TODO: make `&self` instead
-    pub async fn accept(&mut self) -> TcpStream {
+    pub async fn accept(&mut self) -> (TcpStream, SocketAddr) {
         loop {
             if let Some(pending_accept) = self.pending_accept.as_mut() {
                 let new_stream = pending_accept.await;
                 self.pending_accept = None;
-                return TcpStream {
+                let stream = TcpStream {
                     handle: new_stream.accepted_socket_id,
                     pending_read: None,
                     pending_write: None,
                 };
+                let remote_ip = Ipv6Addr::from(new_stream.remote_ip);
+                let remote_addr = SocketAddr::from((remote_ip, new_stream.remote_port));
+                return (stream, remote_addr)
             }
 
             let tcp_accept = ffi::TcpMessage::Accept(ffi::TcpAccept {
