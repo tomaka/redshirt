@@ -126,6 +126,22 @@ jobs:
         name: kernel
         path: target/x86_64-unknown-hermit/debug/nametbd-standalone-kernel
 
+  no-std-core:
+    name: Check that core compiles for no_std
+    runs-on: ubuntu-latest
+    container:
+      image: rust
+    steps:
+    - uses: actions/checkout@v1
+    - name: Install target with only core support
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: thumbv6m-none-eabi    # target supports `core` but not `std`
+        override: true
+    - name: Build for no_std platform
+      run: cargo build --package nametbd-core --locked --verbose --target thumbv6m-none-eabi
+
   fmt:
     name: Rustfmt
     runs-on: ubuntu-latest

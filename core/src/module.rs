@@ -30,8 +30,7 @@ pub struct Module {
 pub struct ModuleHash([u8; 32]);
 
 /// Error that can happen when calling `from_bytes`.
-#[derive(Debug, thiserror::Error)]
-#[error("Eror while parsing WASM module")]
+#[derive(Debug)]
 pub struct FromBytesError {}
 
 impl Module {

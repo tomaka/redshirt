@@ -422,7 +422,6 @@ impl<T: Clone> Core<T> {
             processes::RunOneOutcome::ThreadFinished { user_data, .. } => {
                 debug_assert_eq!(user_data, Thread::ReadyToRun);
                 // TODO: report?
-                println!("thread finished");
                 CoreRunOutcomeInner::LoopAgain
             }
 

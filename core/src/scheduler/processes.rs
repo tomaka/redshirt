@@ -204,12 +204,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
                         if expected_signature.matches_wasmi(obtained_signature) {
                             return Ok(*index);
                         } else {
-                            // TODO: remove this println?
                             // TODO: way to report the signature mismatch?
-                            println!(
-                                "signature mismatch for {:?}:{:?}; expected={:?}; obtained={:?}",
-                                interface, function, expected_signature, obtained_signature
-                            );
                         }
                     }
 
