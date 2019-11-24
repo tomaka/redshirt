@@ -24,8 +24,8 @@ Short overview of the structure of the repository:
   communication. It is meant to become `#![no_std]`-compatible.
 - `interfaces` contains crates that provide definitions and helpers for WASM programs to use
   (examples: `tcp` for TCP/IP, `window` for windowing).
-- `hosted` contains crates that implement interfaces using the host's environment (examples:
-  implements the `tcp` interface using Linux's or Window's TCP/IP).
+- `kernel` contains the kernel binaries, plus crates that implement interfaces using the host's
+  environment (e.g.: implements the `tcp` interface using Linux's or Window's TCP/IP).
 - `modules` contains WASM programs.
 
 # Contributing
