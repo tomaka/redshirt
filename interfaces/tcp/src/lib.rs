@@ -41,7 +41,7 @@ pub struct TcpStream {
 }
 
 impl TcpStream {
-    pub fn connect(socket_addr: &SocketAddr) -> impl Future<Output = TcpStream> {
+    pub fn connect(socket_addr: &SocketAddr) -> impl Future<Output = Result<TcpStream, ()>> {
         let tcp_open = ffi::TcpMessage::Open(match socket_addr {
             SocketAddr::V4(addr) => ffi::TcpOpen {
                 ip: addr.ip().to_ipv6_mapped().segments(),
@@ -60,14 +60,14 @@ impl TcpStream {
         async move {
             let message: ffi::TcpOpenResponse =
                 nametbd_syscalls_interface::message_response(msg_id).await;
-            let handle = message.result.unwrap();
+            let handle = message.result?;
 
-            TcpStream {
+            Ok(TcpStream {
                 handle,
                 read_buffer: Vec::new(),
                 pending_read: None,
                 pending_write: None,
-            }
+            })
         }
     }
 }
@@ -164,7 +164,7 @@ pub struct TcpListener {
 }
 
 impl TcpListener {
-    pub fn bind(socket_addr: &SocketAddr) -> impl Future<Output = TcpListener> {
+    pub fn bind(socket_addr: &SocketAddr) -> impl Future<Output = Result<TcpListener, ()>> {
         let tcp_listen = ffi::TcpMessage::Listen(match socket_addr {
             SocketAddr::V4(addr) => ffi::TcpListen {
                 local_ip: addr.ip().to_ipv6_mapped().segments(),
@@ -185,14 +185,14 @@ impl TcpListener {
         async move {
             let message: ffi::TcpListenResponse =
                 nametbd_syscalls_interface::message_response(msg_id).await;
-            let (handle, local_port) = message.result.unwrap();
+            let (handle, local_port) = message.result?;
             local_addr.set_port(local_port);
 
-            TcpListener {
+            Ok(TcpListener {
                 handle,
                 local_addr,
                 pending_accept: None,
-            }
+            })
         }
     }
 

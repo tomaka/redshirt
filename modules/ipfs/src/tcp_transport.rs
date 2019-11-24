@@ -57,7 +57,8 @@ impl Transport for TcpConfig {
             };
 
         Ok(Box::pin(async move {
-            let listener = nametbd_tcp_interface::TcpListener::bind(&socket_addr).await;
+            let listener = nametbd_tcp_interface::TcpListener::bind(&socket_addr).await
+                .map_err(|()| io::Error::from(io::ErrorKind::Other))?;
             let local_addr = ip_to_multiaddr(listener.local_addr().ip(), listener.local_addr().port());
             println!("Listening on {}", local_addr);
 
@@ -98,7 +99,10 @@ impl Transport for TcpConfig {
             };
 
         println!("Dialing {}", addr);
-        Ok(Box::pin(Box::pin(nametbd_tcp_interface::TcpStream::connect(&socket_addr).map(Ok))))
+        Ok(Box::pin(async move {
+            nametbd_tcp_interface::TcpStream::connect(&socket_addr).await
+                .map_err(|()| io::Error::from(io::ErrorKind::Other))
+        }))
     }
 }
 
