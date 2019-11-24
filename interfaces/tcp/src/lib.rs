@@ -22,7 +22,7 @@
 use futures::{prelude::*, ready};
 use parity_scale_codec::{DecodeAll, Encode as _};
 use std::{
-    io, mem, net::Ipv6Addr, net::SocketAddr, pin::Pin, sync::Arc, task::Context, task::Poll,
+    cmp, io, mem, net::Ipv6Addr, net::SocketAddr, pin::Pin, sync::Arc, task::Context, task::Poll,
     task::Waker,
 };
 
@@ -30,6 +30,8 @@ pub mod ffi;
 
 pub struct TcpStream {
     handle: u32,
+    /// Buffer of data that has been read from the socket but not transmitted to the user yet.
+    read_buffer: Vec<u8>,
     /// If Some, we have sent out a "read" message and are waiting for a response.
     // TODO: use strongly typed Future here
     pending_read: Option<Pin<Box<dyn Future<Output = ffi::TcpReadResponse> + Send>>>,
@@ -62,6 +64,7 @@ impl TcpStream {
 
             TcpStream {
                 handle,
+                read_buffer: Vec::new(),
                 pending_read: None,
                 pending_write: None,
             }
@@ -77,14 +80,19 @@ impl AsyncRead for TcpStream {
     ) -> Poll<Result<usize, io::Error>> {
         loop {
             if let Some(pending_read) = self.pending_read.as_mut() {
-                let data = match ready!(Future::poll(Pin::new(pending_read), cx)).result {
+                self.read_buffer = match ready!(Future::poll(Pin::new(pending_read), cx)).result {
                     Ok(d) => d,
                     Err(_) => return Poll::Ready(Err(io::ErrorKind::Other.into())), // TODO:
                 };
-
                 self.pending_read = None;
-                buf[..data.len()].copy_from_slice(&data); // TODO: this just assumes that buf is large enough
-                return Poll::Ready(Ok(data.len()));
+            }
+
+            if !self.read_buffer.is_empty() {
+                let to_copy = cmp::min(self.read_buffer.len(), buf.len());
+                let mut tmp = mem::replace(&mut self.read_buffer, Vec::new());
+                self.read_buffer = tmp.split_off(to_copy);
+                buf[..to_copy].copy_from_slice(&tmp);
+                return Poll::Ready(Ok(to_copy));
             }
 
             let tcp_read = ffi::TcpMessage::Read(ffi::TcpRead {
@@ -201,6 +209,7 @@ impl TcpListener {
                 self.pending_accept = None;
                 let stream = TcpStream {
                     handle: new_stream.accepted_socket_id,
+                    read_buffer: Vec::new(),
                     pending_read: None,
                     pending_write: None,
                 };

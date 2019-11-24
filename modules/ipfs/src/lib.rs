@@ -21,7 +21,7 @@ use libp2p_core::transport::{Transport, boxed::Boxed};
 use libp2p_kad::{Kademlia, Quorum, record::Key, record::store::MemoryStore};
 use libp2p_mplex::MplexConfig;
 use libp2p_plaintext::PlainText2Config;
-use libp2p_swarm::{Swarm, NetworkBehaviour};
+use libp2p_swarm::Swarm;
 use std::io;
 
 /// Active set of connections to the network.
@@ -68,8 +68,8 @@ impl<T> Network<T> {
         let kademlia = Kademlia::new(local_peer_id.clone(), MemoryStore::new(local_peer_id.clone()));
 
         let mut swarm = Swarm::new(transport, kademlia, local_peer_id);
-        Swarm::listen_on(&mut swarm, "/ip4/0.0.0.0/tcp/30333".parse().unwrap()).unwrap();
-        //swarm.add_address(&PeerId::random(), "/ip4/127.0.0.1/tcp/30333".parse().unwrap());
+        //Swarm::listen_on(&mut swarm, "/ip4/0.0.0.0/tcp/30333".parse().unwrap()).unwrap();
+        swarm.add_address(&PeerId::random(), "/ip4/127.0.0.1/tcp/30333".parse().unwrap());
         swarm.bootstrap();
 
         Network {
@@ -89,17 +89,8 @@ impl<T> Network<T> {
     /// Returns a future that returns the next event that happens on the network.
     pub async fn next_event(&mut self) -> NetworkEvent<T> {
         loop {
-            self.swarm.next().await;
+            let ev = self.swarm.next().await;
+            println!("{:?}", ev);
         }
-        // TODO: unfinished
-
-        /*if !self.active_fetches.is_empty() {
-            let (_, user_data) = self.active_fetches.remove(0);
-            return NetworkEvent::FetchFail { user_data };
-        }
-
-        loop {
-            futures::pending!()
-        }*/
     }
 }
