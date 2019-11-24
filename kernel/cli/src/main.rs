@@ -31,6 +31,7 @@ async fn async_main() {
 
     let mut system =
         nametbd_wasi_hosted::register_extrinsics(nametbd_core::system::SystemBuilder::new())
+            .with_interface_handler(nametbd_stdout_interface::ffi::INTERFACE)
             .with_interface_handler(nametbd_time_interface::ffi::INTERFACE)
             .with_interface_handler(nametbd_tcp_interface::ffi::INTERFACE)
             .with_startup_process(module)
@@ -98,6 +99,16 @@ async fn async_main() {
                         params,
                     );
                     true
+                }
+                nametbd_core::system::SystemRunOutcome::InterfaceMessage {
+                    interface,
+                    message,
+                    ..
+                } if interface == nametbd_stdout_interface::ffi::INTERFACE => {
+                    let msg = nametbd_stdout_interface::ffi::StdoutMessage::decode_all(&message);
+                    let nametbd_stdout_interface::ffi::StdoutMessage::Message(msg) = msg.unwrap();
+                    print!("{}", msg);
+                    continue;
                 }
                 nametbd_core::system::SystemRunOutcome::InterfaceMessage {
                     message_id,

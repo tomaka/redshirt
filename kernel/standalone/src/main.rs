@@ -18,6 +18,8 @@
 // TODO: enable `#![no_std]` when possible: https://github.com/rust-lang/rust/issues/56974
 //#![no_std]
 
+use parity_scale_codec::DecodeAll;
+
 fn main() {
     futures::executor::block_on(async_main());
 }
@@ -29,9 +31,12 @@ async fn async_main() -> ! {
     .unwrap();
 
     let mut system = nametbd_core::system::SystemBuilder::<()>::new() // TODO: `!` instead
+        .with_interface_handler(nametbd_stdout_interface::ffi::INTERFACE)
         .with_startup_process(module)
         .with_main_program([0; 32]) // TODO: just a test
         .build();
+
+    let mut console = unsafe { nametbd_x86_stdout::Console::init() };
 
     loop {
         match system.run() {
@@ -43,6 +48,13 @@ async fn async_main() -> ! {
             }
             nametbd_core::system::SystemRunOutcome::ProgramFinished { pid, outcome } => {
                 println!("Program finished {:?} => {:?}", pid, outcome);
+            }
+            nametbd_core::system::SystemRunOutcome::InterfaceMessage {
+                interface, message, ..
+            } if interface == nametbd_stdout_interface::ffi::INTERFACE => {
+                let msg = nametbd_stdout_interface::ffi::StdoutMessage::decode_all(&message);
+                let nametbd_stdout_interface::ffi::StdoutMessage::Message(msg) = msg.unwrap();
+                console.write(&msg);
             }
             _ => panic!(),
         }
