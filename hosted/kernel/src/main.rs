@@ -180,6 +180,8 @@ async fn async_main(
             };
 
             let (msg_to_respond, response_bytes) = match event {
+                nametbd_tcp_hosted::TcpResponse::Accept(msg_id, msg) => (msg_id, msg.encode()),
+                nametbd_tcp_hosted::TcpResponse::Listen(msg_id, msg) => (msg_id, msg.encode()),
                 nametbd_tcp_hosted::TcpResponse::Open(msg_id, msg) => (msg_id, msg.encode()),
                 nametbd_tcp_hosted::TcpResponse::Read(msg_id, msg) => (msg_id, msg.encode()),
                 nametbd_tcp_hosted::TcpResponse::Write(msg_id, msg) => (msg_id, msg.encode()),
