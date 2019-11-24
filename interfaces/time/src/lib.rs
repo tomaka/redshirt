@@ -23,8 +23,8 @@ pub use self::delay::Delay;
 pub use self::instant::Instant;
 
 mod delay;
-mod instant;
 pub mod ffi;
+mod instant;
 
 /// Returns the number of nanoseconds since an arbitrary point in time in the past.
 pub async fn monotonic_clock() -> u128 {
