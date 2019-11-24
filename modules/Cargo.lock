@@ -664,7 +664,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "libp2p-core"
 version = "0.13.0"
-source = "git+https://github.com/tomaka/libp2p-rs?branch=stable-fut-wasi#30b2532632f47f470f6042ef4fb0300c842c5b1c"
+source = "git+https://github.com/tomaka/libp2p-rs?branch=stable-fut-wasi#6b0116c4d1ef786fce5881c2e73e2bdd6d4cd9c5"
 dependencies = [
  "asn1_der 0.6.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "bs58 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -698,7 +698,7 @@ dependencies = [
 [[package]]
 name = "libp2p-kad"
 version = "0.13.0"
-source = "git+https://github.com/tomaka/libp2p-rs?branch=stable-fut-wasi#30b2532632f47f470f6042ef4fb0300c842c5b1c"
+source = "git+https://github.com/tomaka/libp2p-rs?branch=stable-fut-wasi#6b0116c4d1ef786fce5881c2e73e2bdd6d4cd9c5"
 dependencies = [
  "arrayvec 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "bytes 0.4.12 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -724,7 +724,7 @@ dependencies = [
 [[package]]
 name = "libp2p-mplex"
 version = "0.13.0"
-source = "git+https://github.com/tomaka/libp2p-rs?branch=stable-fut-wasi#30b2532632f47f470f6042ef4fb0300c842c5b1c"
+source = "git+https://github.com/tomaka/libp2p-rs?branch=stable-fut-wasi#6b0116c4d1ef786fce5881c2e73e2bdd6d4cd9c5"
 dependencies = [
  "bytes 0.4.12 (registry+https://github.com/rust-lang/crates.io-index)",
  "fnv 1.0.6 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -739,7 +739,7 @@ dependencies = [
 [[package]]
 name = "libp2p-plaintext"
 version = "0.13.0"
-source = "git+https://github.com/tomaka/libp2p-rs?branch=stable-fut-wasi#30b2532632f47f470f6042ef4fb0300c842c5b1c"
+source = "git+https://github.com/tomaka/libp2p-rs?branch=stable-fut-wasi#6b0116c4d1ef786fce5881c2e73e2bdd6d4cd9c5"
 dependencies = [
  "bytes 0.4.12 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -755,7 +755,7 @@ dependencies = [
 [[package]]
 name = "libp2p-swarm"
 version = "0.3.0"
-source = "git+https://github.com/tomaka/libp2p-rs?branch=stable-fut-wasi#30b2532632f47f470f6042ef4fb0300c842c5b1c"
+source = "git+https://github.com/tomaka/libp2p-rs?branch=stable-fut-wasi#6b0116c4d1ef786fce5881c2e73e2bdd6d4cd9c5"
 dependencies = [
  "futures 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "libp2p-core 0.13.0 (git+https://github.com/tomaka/libp2p-rs?branch=stable-fut-wasi)",
@@ -820,7 +820,7 @@ dependencies = [
 [[package]]
 name = "multistream-select"
 version = "0.6.0"
-source = "git+https://github.com/tomaka/libp2p-rs?branch=stable-fut-wasi#30b2532632f47f470f6042ef4fb0300c842c5b1c"
+source = "git+https://github.com/tomaka/libp2p-rs?branch=stable-fut-wasi#6b0116c4d1ef786fce5881c2e73e2bdd6d4cd9c5"
 dependencies = [
  "bytes 0.4.12 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures 0.1.29 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -921,7 +921,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "parity-multiaddr"
 version = "0.5.1"
-source = "git+https://github.com/tomaka/libp2p-rs?branch=stable-fut-wasi#30b2532632f47f470f6042ef4fb0300c842c5b1c"
+source = "git+https://github.com/tomaka/libp2p-rs?branch=stable-fut-wasi#6b0116c4d1ef786fce5881c2e73e2bdd6d4cd9c5"
 dependencies = [
  "arrayref 0.3.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "bs58 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -938,11 +938,11 @@ dependencies = [
 [[package]]
 name = "parity-multihash"
 version = "0.1.4"
-source = "git+https://github.com/tomaka/libp2p-rs?branch=stable-fut-wasi#30b2532632f47f470f6042ef4fb0300c842c5b1c"
+source = "git+https://github.com/tomaka/libp2p-rs?branch=stable-fut-wasi#6b0116c4d1ef786fce5881c2e73e2bdd6d4cd9c5"
 dependencies = [
  "blake2 0.8.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "bytes 0.4.12 (registry+https://github.com/rust-lang/crates.io-index)",
- "rand 0.6.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rand 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "sha-1 0.8.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "sha2 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "sha3 0.8.2 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1274,7 +1274,7 @@ dependencies = [
 [[package]]
 name = "rw-stream-sink"
 version = "0.1.2"
-source = "git+https://github.com/tomaka/libp2p-rs?branch=stable-fut-wasi#30b2532632f47f470f6042ef4fb0300c842c5b1c"
+source = "git+https://github.com/tomaka/libp2p-rs?branch=stable-fut-wasi#6b0116c4d1ef786fce5881c2e73e2bdd6d4cd9c5"
 dependencies = [
  "bytes 0.4.12 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",

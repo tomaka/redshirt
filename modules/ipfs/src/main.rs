@@ -23,8 +23,6 @@ fn main() {
 }
 
 async fn async_main() {
-    nametbd_time_interface::monotonic_wait(Duration::from_secs(5)).await;
-
     nametbd_interface_interface::register_interface(nametbd_loader_interface::ffi::INTERFACE)
         .await
         .unwrap();

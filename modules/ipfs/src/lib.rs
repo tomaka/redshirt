@@ -68,6 +68,8 @@ impl<T> Network<T> {
         let kademlia = Kademlia::new(local_peer_id.clone(), MemoryStore::new(local_peer_id.clone()));
 
         let mut swarm = Swarm::new(transport, kademlia, local_peer_id);
+        Swarm::listen_on(&mut swarm, "/ip4/0.0.0.0/tcp/30333".parse().unwrap()).unwrap();
+        swarm.add_address(&PeerId::random(), "/ip4/1.2.3.4/tcp/30333".parse().unwrap());
         swarm.bootstrap();
 
         Network {

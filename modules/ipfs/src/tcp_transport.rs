@@ -64,7 +64,7 @@ impl Transport for TcpConfig {
                 return Err(TransportError::MultiaddrNotSupported(addr))
             };
 
-        debug!("Dialing {}", addr);
+        println!("Dialing {}", addr);
         Ok(Box::pin(Box::pin(nametbd_tcp_interface::TcpStream::connect(&socket_addr).map(Ok))))
     }
 }
