@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::{Instant, monotonic_wait_until};
+use crate::{monotonic_wait_until, Instant};
 use std::{fmt, future::Future, pin::Pin, task::Context, task::Poll, time::Duration};
 
 /// Mimics the API of `futures_timer::Delay`.
