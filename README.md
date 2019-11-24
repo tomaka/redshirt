@@ -30,12 +30,12 @@ Short overview of the structure of the repository:
 
 # Contributing
 
-Please note that I haven't decided of a license yet. At the moment this is not a free software
-(yet).
+Please note that so far this is mostly a personal project. I reserve the right to break anything
+at any time.
 
 In general, I'd gladly accept PRs that fix bugs, do some minor API improvements, fix typos, etc.
-However, since this is just a prototype, anything more involved is probably a bad idea as it may
-go against the design that is in my head.
+However, since this is just a prototype, anything more involved is probably a bad idea. Feel free
+to get in touch if you want to contribute anything non-trivial.
 
 # General idea
 
