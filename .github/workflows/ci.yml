@@ -131,6 +131,35 @@ jobs:
         name: kernel
         path: target/x86_64-unknown-none/release/nametbd-standalone-kernel
 
+  build-iso:
+    name: Build bootable x86 ISO
+    needs: build-standalone
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:xenial
+    steps:
+    - uses: actions/checkout@v1
+    - name: Install required packages
+      run: |
+        apt-get update
+        apt-get install libisoburn1 xorriso
+    - name: Prepare file structure
+      run: |
+        mkdir -p iso/boot/grub
+        cp .github/workflows/grub.cfg iso/boot/grub
+    - name: Download kernel
+      uses: actions/download-artifact@v1
+      with:
+        name: kernel
+        path: iso/boot/
+    - name: Build ISO
+      run: grub2-mkrescue -o nametbd.iso iso
+    - name: Upload generated kernel
+      uses: actions/upload-artifact@master
+      with:
+        name: iso
+        path: nametbd.iso
+
   fmt:
     name: Rustfmt
     runs-on: ubuntu-latest
