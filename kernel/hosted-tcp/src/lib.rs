@@ -22,6 +22,7 @@ use async_std::{
 };
 use fnv::FnvHashMap;
 use futures::{channel::mpsc, prelude::*};
+use parity_scale_codec::Encode as _;
 use std::{
     collections::hash_map::Entry,
     fmt,
@@ -57,15 +58,6 @@ enum FrontSocketState {
 
     /// The socket is a listener.
     Listener(mpsc::Sender<FrontToBackListener>),
-}
-
-#[derive(Debug)]
-pub enum TcpResponse {
-    Open(u64, nametbd_tcp_interface::ffi::TcpOpenResponse),
-    Listen(u64, nametbd_tcp_interface::ffi::TcpListenResponse),
-    Read(u64, nametbd_tcp_interface::ffi::TcpReadResponse),
-    Write(u64, nametbd_tcp_interface::ffi::TcpWriteResponse),
-    Accept(u64, nametbd_tcp_interface::ffi::TcpAcceptResponse),
 }
 
 /// Message sent from the main task to the background task for sockets.
@@ -250,7 +242,7 @@ impl TcpState {
     }
 
     /// Returns the next message to respond to, and the response.
-    pub async fn next_event(&self) -> TcpResponse {
+    pub async fn next_event(&self) -> (u64, Vec<u8>) {
         let message = {
             let mut receiver = self.receiver.lock().await;
             receiver.next().await.unwrap()
@@ -267,11 +259,12 @@ impl TcpState {
                 // TODO: debug_assert is orphan
                 *front_state = FrontSocketState::Connected(sender);
 
-                TcpResponse::Open(
+                (
                     open_message_id,
                     nametbd_tcp_interface::ffi::TcpOpenResponse {
                         result: Ok(socket_id),
-                    },
+                    }
+                    .encode(),
                 )
             }
 
@@ -286,9 +279,9 @@ impl TcpState {
                     _ => false,
                 });
 
-                TcpResponse::Open(
+                (
                     open_message_id,
-                    nametbd_tcp_interface::ffi::TcpOpenResponse { result: Err(()) },
+                    nametbd_tcp_interface::ffi::TcpOpenResponse { result: Err(()) }.encode(),
                 )
             }
 
@@ -303,11 +296,12 @@ impl TcpState {
                 // TODO: debug_assert is orphan
                 *front_state = FrontSocketState::Listener(sender);
 
-                TcpResponse::Listen(
+                (
                     listen_message_id,
                     nametbd_tcp_interface::ffi::TcpListenResponse {
                         result: Ok((socket_id, local_addr.port())),
-                    },
+                    }
+                    .encode(),
                 )
             }
 
@@ -322,9 +316,9 @@ impl TcpState {
                     _ => false,
                 });
 
-                TcpResponse::Listen(
+                (
                     listen_message_id,
-                    nametbd_tcp_interface::ffi::TcpListenResponse { result: Err(()) },
+                    nametbd_tcp_interface::ffi::TcpListenResponse { result: Err(()) }.encode(),
                 )
             }
 
@@ -354,24 +348,25 @@ impl TcpState {
                     }
                 }
 
-                TcpResponse::Accept(
+                (
                     message_id,
                     nametbd_tcp_interface::ffi::TcpAcceptResponse {
                         accepted_socket_id: tentative_socket_id,
                         remote_ip,
                         remote_port,
-                    },
+                    }
+                    .encode(),
                 )
             }
 
-            BackToFront::Read { message_id, result } => TcpResponse::Read(
+            BackToFront::Read { message_id, result } => (
                 message_id,
-                nametbd_tcp_interface::ffi::TcpReadResponse { result },
+                nametbd_tcp_interface::ffi::TcpReadResponse { result }.encode(),
             ),
 
-            BackToFront::Write { message_id, result } => TcpResponse::Write(
+            BackToFront::Write { message_id, result } => (
                 message_id,
-                nametbd_tcp_interface::ffi::TcpWriteResponse { result },
+                nametbd_tcp_interface::ffi::TcpWriteResponse { result }.encode(),
             ),
         }
     }
