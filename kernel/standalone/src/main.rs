@@ -15,16 +15,14 @@
 
 //! This program is meant to be invoked in a non-hosted environment. It never finishes.
 
-// TODO: enable `#![no_std]` when possible: https://github.com/rust-lang/rust/issues/56974
-//#![no_std]
+#![no_std]
 
+extern crate alloc;
+
+use alloc::format;
 use parity_scale_codec::DecodeAll;
 
-fn main() {
-    futures::executor::block_on(async_main());
-}
-
-async fn async_main() -> ! {
+fn main() -> ! {
     let module = nametbd_core::module::Module::from_bytes(
         &include_bytes!("../../../modules/target/wasm32-wasi/release/ipfs.wasm")[..],
     )
@@ -47,7 +45,7 @@ async fn async_main() -> ! {
                 panic!()
             }
             nametbd_core::system::SystemRunOutcome::ProgramFinished { pid, outcome } => {
-                println!("Program finished {:?} => {:?}", pid, outcome);
+                console.write(&format!("Program finished {:?} => {:?}\n", pid, outcome));
             }
             nametbd_core::system::SystemRunOutcome::InterfaceMessage {
                 interface, message, ..
