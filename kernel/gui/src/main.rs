@@ -182,7 +182,7 @@ async fn async_main(
                 println!("windowing event: {:?}", event);
             }
 
-            let event = if only_poll {
+            let (msg_to_respond, response_bytes) = if only_poll {
                 match tcp.next_event().now_or_never() {
                     Some(e) => e,
                     None => continue,
@@ -191,13 +191,6 @@ async fn async_main(
                 tcp.next_event().await
             };
 
-            let (msg_to_respond, response_bytes) = match event {
-                nametbd_tcp_hosted::TcpResponse::Accept(msg_id, msg) => (msg_id, msg.encode()),
-                nametbd_tcp_hosted::TcpResponse::Listen(msg_id, msg) => (msg_id, msg.encode()),
-                nametbd_tcp_hosted::TcpResponse::Open(msg_id, msg) => (msg_id, msg.encode()),
-                nametbd_tcp_hosted::TcpResponse::Read(msg_id, msg) => (msg_id, msg.encode()),
-                nametbd_tcp_hosted::TcpResponse::Write(msg_id, msg) => (msg_id, msg.encode()),
-            };
             system.answer_message(msg_to_respond, &response_bytes);
         };
 

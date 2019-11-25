@@ -16,7 +16,7 @@
 #![deny(intra_doc_link_resolution_failure)]
 
 use futures::{channel::mpsc, pin_mut, prelude::*};
-use parity_scale_codec::{DecodeAll, Encode as _};
+use parity_scale_codec::DecodeAll;
 use std::sync::Arc;
 
 fn main() {
@@ -52,26 +52,7 @@ async fn async_main() {
                 pin_mut!(tcp);
                 pin_mut!(time);
                 let to_send = match future::select(tcp, time).await {
-                    future::Either::Left((
-                        nametbd_tcp_hosted::TcpResponse::Accept(msg_id, msg),
-                        _,
-                    )) => (msg_id, msg.encode()),
-                    future::Either::Left((
-                        nametbd_tcp_hosted::TcpResponse::Listen(msg_id, msg),
-                        _,
-                    )) => (msg_id, msg.encode()),
-                    future::Either::Left((
-                        nametbd_tcp_hosted::TcpResponse::Open(msg_id, msg),
-                        _,
-                    )) => (msg_id, msg.encode()),
-                    future::Either::Left((
-                        nametbd_tcp_hosted::TcpResponse::Read(msg_id, msg),
-                        _,
-                    )) => (msg_id, msg.encode()),
-                    future::Either::Left((
-                        nametbd_tcp_hosted::TcpResponse::Write(msg_id, msg),
-                        _,
-                    )) => (msg_id, msg.encode()),
+                    future::Either::Left(((msg_id, bytes), _)) => (msg_id, bytes),
                     future::Either::Right(((msg_id, bytes), _)) => (msg_id, bytes),
                 };
                 if to_answer_tx.send(to_send).await.is_err() {
