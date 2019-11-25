@@ -42,6 +42,19 @@ fn start(_: isize, _: *const *const u8) -> isize {
     main()
 }
 
+// TODO: meh
+#[no_mangle]
+fn fmod(_: f64, _: f64) -> f64 { panic!() }
+#[no_mangle]
+fn fmodf(_: f32, _: f32) -> f32 { panic!() }
+// http://www.dbp-consulting.com/tutorials/debugging/linuxProgramStartup.html
+#[no_mangle]
+fn __libc_csu_init() {}
+#[no_mangle]
+fn __libc_csu_fini() {}
+#[no_mangle]
+fn __libc_start_main() {}
+
 fn main() -> ! {
     unsafe {
         ALLOCATOR.init(0x0, 0x8000); // FIXME:
