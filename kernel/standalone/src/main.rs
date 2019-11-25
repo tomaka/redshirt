@@ -20,6 +20,7 @@
 #![feature(start)] // TODO: https://github.com/rust-lang/rust/issues/29633
 
 extern crate alloc;
+extern crate compiler_builtins;
 
 use alloc::format;
 use parity_scale_codec::DecodeAll;
@@ -45,28 +46,12 @@ fn _start(_: isize, _: *const *const u8) -> isize {
 
 // TODO: figure out how to remove these
 #[no_mangle]
-pub unsafe extern "C" fn memset(mem: *mut u8, _val: i32, _n: usize) -> *mut u8 {
-    mem
+pub extern "C" fn fmod(a: f64, b: f64) -> f64 {
+    libm::fmod(a, b)
 }
 #[no_mangle]
-pub unsafe extern "C" fn memcpy(dest: *mut u8, _src: *const u8, _n: usize) -> *mut u8 {
-    dest
-}
-#[no_mangle]
-pub unsafe extern "C" fn memmove(dest: *mut u8, _src: *const u8, _n: usize) -> *mut u8 {
-    dest
-}
-#[no_mangle]
-pub unsafe extern "C" fn memcmp(_mem1: *const u8, _mem2: *const u8, _n: usize) -> i32 {
-    0
-}
-#[no_mangle]
-pub unsafe extern "C" fn fmod(a: f64, _: f64) -> f64 {
-    a
-}
-#[no_mangle]
-pub unsafe extern "C" fn fmodf(a: f32, _: f32) -> f32 {
-    a
+pub extern "C" fn fmodf(a: f32, b: f32) -> f32 {
+    libm::fmodf(a, b)
 }
 
 fn main() -> ! {

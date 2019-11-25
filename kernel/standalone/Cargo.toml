@@ -7,7 +7,9 @@ edition = "2018"
 publish = false
 
 [dependencies]
+compiler_builtins = { version = "0.1.21", features = ["mem"] }
 futures = { version = "0.3.1", default-features = false }
+libm = "0.1.2"
 nametbd-core = { path = "../../core" }
 nametbd-stdout-interface = { path = "../../interfaces/stdout" }
 nametbd-x86-stdout = { path = "../x86-stdout" }
