@@ -142,7 +142,7 @@ jobs:
     - name: Install required packages
       run: |
         apt-get update
-        apt-get install libisoburn1 xorriso
+        apt-get install -y libisoburn1 xorriso
     - name: Prepare file structure
       run: |
         mkdir -p iso/boot/grub
