@@ -24,18 +24,18 @@ Short overview of the structure of the repository:
   communication. It is meant to become `#![no_std]`-compatible.
 - `interfaces` contains crates that provide definitions and helpers for WASM programs to use
   (examples: `tcp` for TCP/IP, `window` for windowing).
-- `hosted` contains crates that implement interfaces using the host's environment (examples:
-  implements the `tcp` interface using Linux's or Window's TCP/IP).
+- `kernel` contains the kernel binaries, plus crates that implement interfaces using the host's
+  environment (e.g.: implements the `tcp` interface using Linux's or Window's TCP/IP).
 - `modules` contains WASM programs.
 
 # Contributing
 
-Please note that I haven't decided of a license yet. At the moment this is not a free software
-(yet).
+Please note that so far this is mostly a personal project. I reserve the right to break anything
+at any time.
 
 In general, I'd gladly accept PRs that fix bugs, do some minor API improvements, fix typos, etc.
-However, since this is just a prototype, anything more involved is probably a bad idea as it may
-go against the design that is in my head.
+However, since this is just a prototype, anything more involved is probably a bad idea. Feel free
+to get in touch if you want to contribute anything non-trivial.
 
 # General idea
 

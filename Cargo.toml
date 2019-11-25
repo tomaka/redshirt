@@ -1,20 +1,22 @@
 [workspace]
 members = [
     "core",
-    "hosted/cli",
-    "hosted/kernel",
-    "hosted/tcp",
-    "hosted/time",
-    "hosted/wasi",
+    "kernel/cli",
+    "kernel/gui",
+    "kernel/hosted-tcp",
+    "kernel/hosted-time",
+    "kernel/hosted-wasi",
+    "kernel/standalone",
+    "kernel/x86-stdout",
     "interfaces/interface",
     "interfaces/loader",
+    "interfaces/stdout",
     "interfaces/syscalls",
     "interfaces/threads",
     "interfaces/tcp",
     "interfaces/time",
     "interfaces/vulkan",
     "interfaces/window",
-    "standalone",
 ]
 
 [profile.dev]
