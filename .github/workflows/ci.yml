@@ -86,14 +86,12 @@ jobs:
     - name: Run tests
       run: cargo test --locked --verbose
 
-  build-unikernel:
-    name: Build stand-alone kernel
+  build-standalone:
+    name: Check compilation for no_std
     needs: build-modules
     runs-on: ubuntu-latest
     container:
-      image: rwthos/hermitcore-rs
-    env:
-      RUSTFLAGS: "-L/usr/lib/x86_64-linux-gnu/ -Clink-args=-lm"
+      image: rust
     steps:
     - uses: actions/checkout@v1
     - name: Download WASM modules
@@ -116,36 +114,22 @@ jobs:
       with:
         path: target
         key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('Cargo.lock') }}
-    - name: Build core
-      run: cargo build --locked --package nametbd-core --target x86_64-unknown-hermit
-    - name: Build kernel
-      run: cargo build --locked --package nametbd-standalone-kernel --target x86_64-unknown-hermit
-    - name: Upload generated kernel
-      uses: actions/upload-artifact@master
-      with:
-        name: kernel
-        path: target/x86_64-unknown-hermit/debug/nametbd-standalone-kernel
-
-  no-std-core:
-    name: Check compilation for no_std
-    runs-on: ubuntu-latest
-    container:
-      image: rust
-    steps:
-    - uses: actions/checkout@v1
     - name: Install nightly Rust
       uses: actions-rs/toolchain@v1
       with:
         toolchain: nightly
         override: true
-    - name: Install cargo-xbuild
-      run: cargo install cargo-xbuild
     - name: Install rust-src
       run: rustup component add rust-src
     - name: Build core for no_std platform
-      run: RUST_TARGET_PATH=`pwd` cargo +nightly xbuild --target x86_64-unknown-none --package nametbd-core
+      run: RUST_TARGET_PATH=`pwd` cargo +nightly build -Z build-std=core,alloc --target x86_64-unknown-none --package nametbd-core --release
     - name: Build kernel for no_std platform
-      run: RUST_TARGET_PATH=`pwd` cargo +nightly xbuild --target x86_64-unknown-none --package nametbd-standalone-kernel
+      run: RUST_TARGET_PATH=`pwd` cargo +nightly build -Z build-std=core,alloc --target x86_64-unknown-none --package nametbd-standalone-kernel --release
+    - name: Upload generated kernel
+      uses: actions/upload-artifact@master
+      with:
+        name: kernel
+        path: target/x86_64-unknown-none/release/nametbd-standalone-kernel
 
   fmt:
     name: Rustfmt
