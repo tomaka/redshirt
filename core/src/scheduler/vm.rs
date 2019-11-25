@@ -612,6 +612,46 @@ where
     }
 }
 
+impl fmt::Display for NewErr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            NewErr::Interpreter(_) => write!(f, "Error in the interpreter"),
+            NewErr::StartNotFound => write!(f, "The \"start\" symbol doesn't exist"),
+            NewErr::StartIsntAFunction => write!(f, "The \"start\" symbol must be a function"),
+            NewErr::MemoryIsntMemory => {
+                write!(f, "If a \"memory\" symbol is provided, it must be a memory")
+            }
+            NewErr::IndirectTableIsntTable => write!(
+                f,
+                "If a \"__indirect_function_table\" symbol is provided, it must be a table"
+            ),
+        }
+    }
+}
+
+impl fmt::Display for StartErr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            StartErr::Poisoned => write!(f, "State machine is in a poisoned state"),
+            StartErr::FunctionNotFound => write!(f, "Function to start was not found"),
+            StartErr::NotAFunction => write!(f, "Symbol to start is not a function"),
+        }
+    }
+}
+
+impl fmt::Display for RunErr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            RunErr::Poisoned => write!(f, "State machine is poisoned"),
+            RunErr::BadValueTy { expected, obtained } => write!(
+                f,
+                "Expected value of type {:?} but got {:?} instead",
+                expected, obtained
+            ),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{ExecOutcome, NewErr, ProcessStateMachine};

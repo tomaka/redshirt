@@ -87,6 +87,12 @@ impl fmt::Debug for ModuleHash {
     }
 }
 
+impl fmt::Display for FromBytesError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "FromBytesError")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::Module;
