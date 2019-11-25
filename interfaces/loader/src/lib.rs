@@ -20,8 +20,8 @@
 
 extern crate alloc;
 
-use parity_scale_codec::DecodeAll;
 use core::mem;
+use parity_scale_codec::DecodeAll;
 
 pub mod ffi;
 

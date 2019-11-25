@@ -18,8 +18,8 @@
 #![deny(intra_doc_link_resolution_failure)]
 #![cfg_attr(not(feature = "std"), no_std)]
 
-use parity_scale_codec::DecodeAll;
 use core::mem;
+use parity_scale_codec::DecodeAll;
 
 pub use ffi::InterfaceRegisterError;
 

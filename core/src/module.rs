@@ -43,7 +43,7 @@ impl Module {
     }
 
     /// Turns some WASM text source into a `Module`.
-    #[cfg(test)]        // TODO: is `#[cfg(test)]` a good idea?
+    #[cfg(test)] // TODO: is `#[cfg(test)]` a good idea?
     pub fn from_wat(source: impl AsRef<[u8]>) -> Result<Self, wat::Error> {
         let wasm = wat::parse_bytes(source.as_ref())?;
         Ok(Self::from_bytes(wasm).unwrap())

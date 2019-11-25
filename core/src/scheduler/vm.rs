@@ -14,7 +14,12 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use crate::module::Module;
-use alloc::{borrow::{Cow, ToOwned as _}, boxed::Box, format, vec::Vec};
+use alloc::{
+    borrow::{Cow, ToOwned as _},
+    boxed::Box,
+    format,
+    vec::Vec,
+};
 use core::{cell::RefCell, convert::TryInto, fmt};
 use smallvec::SmallVec;
 
