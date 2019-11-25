@@ -87,7 +87,7 @@ jobs:
       run: cargo test --workspace --exclude nametbd-standalone-kernel --locked --verbose
 
   build-standalone:
-    name: Check compilation for no_std
+    name: Build standalone kernel
     needs: build-modules
     runs-on: ubuntu-latest
     container:
