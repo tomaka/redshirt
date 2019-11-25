@@ -38,13 +38,43 @@ fn panic(_: &core::panic::PanicInfo) -> ! {
 }
 
 #[start]
-fn start(_: isize, _: *const *const u8) -> isize {
+#[no_mangle]
+fn _start(_: isize, _: *const *const u8) -> isize {
     main()
 }
 
+// TODO: figure out how to remove these
+#[no_mangle]
+pub unsafe extern "C" fn memset(mem: *mut u8, _val: i32, _n: usize) -> *mut u8 {
+    mem
+}
+#[no_mangle]
+pub unsafe extern "C" fn memcpy(dest: *mut u8, _src: *const u8, _n: usize) -> *mut u8 {
+    dest
+}
+#[no_mangle]
+pub unsafe extern "C" fn memmove(dest: *mut u8, _src: *const u8, _n: usize) -> *mut u8 {
+    dest
+}
+#[no_mangle]
+pub unsafe extern "C" fn memcmp(_mem1: *const u8, _mem2: *const u8, _n: usize) -> i32 {
+    0
+}
+#[no_mangle]
+pub unsafe extern "C" fn fmod(a: f64, _: f64) -> f64 {
+    a
+}
+#[no_mangle]
+pub unsafe extern "C" fn fmodf(a: f32, _: f32) -> f32 {
+    a
+}
+
 fn main() -> ! {
+    let mut console = unsafe { nametbd_x86_stdout::Console::init() };
+    console.write("hello world");
+
     unsafe {
-        ALLOCATOR.init(0x0, 0x8000); // FIXME:
+        ALLOCATOR.init(0x8000, 0x10000); // FIXME:
     }
 
     let module = nametbd_core::module::Module::from_bytes(
@@ -57,8 +87,6 @@ fn main() -> ! {
         .with_startup_process(module)
         .with_main_program([0; 32]) // TODO: just a test
         .build();
-
-    let mut console = unsafe { nametbd_x86_stdout::Console::init() };
 
     loop {
         match system.run() {
