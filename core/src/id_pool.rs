@@ -14,10 +14,10 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use core::fmt;
-use crossbeam::queue::SegQueue;
+// TODO: use crossbeam::queue::SegQueue;
+use rand::distributions::{Distribution as _, Uniform};
 use rand_chacha::{ChaCha20Core, ChaCha20Rng};
 use rand_core::SeedableRng as _;
-use rand_distr::{Distribution as _, Uniform};
 
 // Maths note: after 3 billion iterations, there's a 2% chance of a collision
 //
@@ -26,9 +26,9 @@ use rand_distr::{Distribution as _, Uniform};
 
 /// Lock-free pool of identifiers. Can assign new identifiers from it.
 pub struct IdPool {
-    /// Queue of RNG objects. Since generating a value requires an exclusive reference to the
-    /// RNG object, we hold a queue of objects.
-    rngs_queue: SegQueue<ChaCha20Rng>,
+    // TODO: /// Queue of RNG objects. Since generating a value requires an exclusive reference to the
+    // TODO: /// RNG object, we hold a queue of objects.
+    // TODO: rngs_queue: SegQueue<ChaCha20Rng>,
     /// Distribution of IDs.
     distribution: Uniform<u64>,
 }
@@ -37,16 +37,16 @@ impl IdPool {
     /// Initializes a new pool.
     pub fn new() -> Self {
         IdPool {
-            rngs_queue: SegQueue::new(),
+            // TODO: rngs_queue: SegQueue::new(),
             distribution: Uniform::from(0..=u64::max_value()),
         }
     }
 
     /// Assigns a new PID from this pool.
     pub fn assign<T: From<u64>>(&self) -> T {
-        let mut rng = self.rngs_queue.pop().unwrap_or_else(|_| self.gen_new_rng());
+        let mut rng = self.gen_new_rng(); // TODO: self.rngs_queue.pop().unwrap_or_else(|_| self.gen_new_rng());
         let id = self.distribution.sample(&mut rng);
-        self.rngs_queue.push(rng);
+        // TODO: self.rngs_queue.push(rng);
         T::from(id)
     }
 

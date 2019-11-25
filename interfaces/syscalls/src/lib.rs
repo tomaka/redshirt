@@ -47,10 +47,11 @@
 //!
 
 #![deny(intra_doc_link_resolution_failure)]
+#![cfg_attr(not(feature = "std"), no_std)]
 
 extern crate alloc;
 
-use alloc::sync::Arc;
+use alloc::{sync::Arc, vec::Vec};
 use core::{
     hint::unreachable_unchecked,
     marker::PhantomData,
@@ -58,13 +59,14 @@ use core::{
     pin::Pin,
     task::{Context, Poll, Waker},
 };
-use crossbeam::{atomic::AtomicCell, queue::SegQueue};
 use futures::prelude::*;
 use parity_scale_codec::{DecodeAll, Encode};
 
+#[cfg(feature = "std")]
 pub use block_on::block_on;
 pub use ffi::{InterfaceMessage, Message, ResponseMessage};
 
+#[cfg(feature = "std")]
 mod block_on;
 
 pub mod ffi;
@@ -120,6 +122,7 @@ pub fn emit_message_raw(
 
 /// Combines [`emit_message`] with [`message_response`].
 // TODO: the returned Future should have a Drop impl that cancels the message
+#[cfg(feature = "std")]
 pub async fn emit_message_with_response<T: DecodeAll>(
     interface_hash: [u8; 32],
     msg: impl Encode,
@@ -164,6 +167,7 @@ pub fn next_interface_message() -> InterfaceMessageFuture {
 /// Returns a future that is ready when a response to the given message comes back.
 ///
 /// The return value is the type the message decodes to.
+#[cfg(feature = "std")]
 pub fn message_response_sync_raw(msg_id: u64) -> Vec<u8> {
     match block_on::next_message(&mut [msg_id], true).unwrap() {
         Message::Response(m) => m.actual_data,

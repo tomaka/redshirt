@@ -236,7 +236,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
         // We start by finding a thread in `self.processes` that is ready to run.
         let (mut process, thread_index): (OccupiedEntry<_, _, _>, usize) = {
             let mut entries = self.processes.iter_mut().collect::<Vec<_>>();
-            entries.shuffle(&mut rand::thread_rng());
+            // TODO: entries.shuffle(&mut rand::thread_rng());
             let entry = entries
                 .into_iter()
                 .filter_map(|(k, p)| {

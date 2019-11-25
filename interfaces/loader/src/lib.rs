@@ -16,9 +16,12 @@
 //! Lazy-loading WASM modules.
 
 #![deny(intra_doc_link_resolution_failure)]
+#![cfg_attr(not(feature = "std"), no_std)]
+
+extern crate alloc;
 
 use parity_scale_codec::DecodeAll;
-use std::mem;
+use core::mem;
 
 pub mod ffi;
 
@@ -27,6 +30,7 @@ pub mod ffi;
 /// Returns either the binary content of the module, or an error if no module with that hash
 /// could be found.
 #[cfg(target_arch = "wasm32")] // TODO: bad
+#[cfg(feature = "std")]
 pub async fn load(hash: [u8; 32]) -> Result<Vec<u8>, ()> {
     let msg = ffi::LoaderMessage::Load(hash);
     let rep: ffi::LoadResponse =
@@ -39,6 +43,7 @@ pub async fn load(hash: [u8; 32]) -> Result<Vec<u8>, ()> {
 /// Returns either the binary content of the module, or an error if no module with that hash
 /// could be found.
 #[cfg(not(target_arch = "wasm32"))]
+#[cfg(feature = "std")]
 pub async fn load(hash: &[u8; 32]) -> Result<Vec<u8>, ()> {
     Err(())
 }

@@ -133,14 +133,15 @@ jobs:
       image: rust
     steps:
     - uses: actions/checkout@v1
-    - name: Install target with only core support
+    - name: Install nightly Rust
       uses: actions-rs/toolchain@v1
       with:
-        toolchain: stable
-        target: thumbv6m-none-eabi    # target supports `core` but not `std`
+        toolchain: nightly
         override: true
+    - name: Install cargo-xbuild
+      run: cargo install cargo-xbuild
     - name: Build for no_std platform
-      run: cargo build --package nametbd-core --locked --verbose --target thumbv6m-none-eabi
+      run: RUST_TARGET_PATH=`pwd` cargo +nightly xbuild --target x86_64-unknown-none --package nametbd-core
 
   fmt:
     name: Rustfmt
