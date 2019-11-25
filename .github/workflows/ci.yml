@@ -127,7 +127,7 @@ jobs:
         path: target/x86_64-unknown-hermit/debug/nametbd-standalone-kernel
 
   no-std-core:
-    name: Check that core compiles for no_std
+    name: Check compilation for no_std
     runs-on: ubuntu-latest
     container:
       image: rust
@@ -142,8 +142,10 @@ jobs:
       run: cargo install cargo-xbuild
     - name: Install rust-src
       run: rustup component add rust-src
-    - name: Build for no_std platform
+    - name: Build core for no_std platform
       run: RUST_TARGET_PATH=`pwd` cargo +nightly xbuild --target x86_64-unknown-none --package nametbd-core
+    - name: Build kernel for no_std platform
+      run: RUST_TARGET_PATH=`pwd` cargo +nightly xbuild --target x86_64-unknown-none --package nametbd-standalone-kernel
 
   fmt:
     name: Rustfmt

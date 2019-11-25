@@ -16,13 +16,37 @@
 //! This program is meant to be invoked in a non-hosted environment. It never finishes.
 
 #![no_std]
+#![feature(alloc_error_handler)] // TODO: https://github.com/rust-lang/rust/issues/66741
+#![feature(start)] // TODO: https://github.com/rust-lang/rust/issues/29633
 
 extern crate alloc;
 
 use alloc::format;
 use parity_scale_codec::DecodeAll;
 
+#[global_allocator]
+static ALLOCATOR: slab_allocator::LockedHeap = slab_allocator::LockedHeap::empty();
+
+#[alloc_error_handler]
+fn foo(_: core::alloc::Layout) -> ! {
+    panic!()
+}
+
+#[panic_handler]
+fn panic(_: &core::panic::PanicInfo) -> ! {
+    loop {} // TODO:
+}
+
+#[start]
+fn start(_: isize, _: *const *const u8) -> isize {
+    main()
+}
+
 fn main() -> ! {
+    unsafe {
+        ALLOCATOR.init(0x0, 0x8000); // FIXME:
+    }
+
     let module = nametbd_core::module::Module::from_bytes(
         &include_bytes!("../../../modules/target/wasm32-wasi/release/ipfs.wasm")[..],
     )
