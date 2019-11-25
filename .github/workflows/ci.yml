@@ -139,6 +139,11 @@ jobs:
       image: ubuntu:xenial
     steps:
     - uses: actions/checkout@v1
+    - name: Download kernel
+      uses: actions/download-artifact@v1
+      with:
+        name: kernel
+        path: .
     - name: Install required packages
       run: |
         apt-get update
@@ -147,11 +152,7 @@ jobs:
       run: |
         mkdir -p iso/boot/grub
         cp .github/workflows/grub.cfg iso/boot/grub
-    - name: Download kernel
-      uses: actions/download-artifact@v1
-      with:
-        name: kernel
-        path: iso/boot/
+        mv nametbd-standalone-kernel iso/boot/kernel
     - name: Build ISO
       run: grub2-mkrescue -o nametbd.iso iso
     - name: Upload generated kernel
