@@ -147,14 +147,14 @@ jobs:
     - name: Install required packages
       run: |
         apt-get update
-        apt-get install -y libisoburn1 xorriso
+        apt-get install -y libisoburn1 xorriso grub-pc-bin
     - name: Prepare file structure
       run: |
         mkdir -p iso/boot/grub
         cp .github/workflows/grub.cfg iso/boot/grub
         mv nametbd-standalone-kernel iso/boot/kernel
     - name: Build ISO
-      run: grub2-mkrescue -o nametbd.iso iso
+      run: grub-mkrescue -o nametbd.iso iso
     - name: Upload generated kernel
       uses: actions/upload-artifact@master
       with:
