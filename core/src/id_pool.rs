@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use core::fmt;
+use core::{fmt, sync::atomic::{AtomicU64, Ordering}};
 // TODO: use crossbeam::queue::SegQueue;
 use rand::distributions::{Distribution as _, Uniform};
 use rand_chacha::{ChaCha20Core, ChaCha20Rng};
@@ -29,6 +29,7 @@ pub struct IdPool {
     // TODO: /// Queue of RNG objects. Since generating a value requires an exclusive reference to the
     // TODO: /// RNG object, we hold a queue of objects.
     // TODO: rngs_queue: SegQueue<ChaCha20Rng>,
+    next_val: AtomicU64,
     /// Distribution of IDs.
     distribution: Uniform<u64>,
 }
@@ -37,6 +38,7 @@ impl IdPool {
     /// Initializes a new pool.
     pub fn new() -> Self {
         IdPool {
+            next_val: AtomicU64::new(0),
             // TODO: rngs_queue: SegQueue::new(),
             distribution: Uniform::from(0..=u64::max_value()),
         }
@@ -44,17 +46,8 @@ impl IdPool {
 
     /// Assigns a new PID from this pool.
     pub fn assign<T: From<u64>>(&self) -> T {
-        let mut rng = self.gen_new_rng(); // TODO: self.rngs_queue.pop().unwrap_or_else(|_| self.gen_new_rng());
-        let id = self.distribution.sample(&mut rng);
-        // TODO: self.rngs_queue.push(rng);
+        let id = self.next_val.fetch_add(1, Ordering::Relaxed);
         T::from(id)
-    }
-
-    /// Generates a new `ChaCha20Rng`.
-    #[cold]
-    fn gen_new_rng(&self) -> ChaCha20Rng {
-        let core = ChaCha20Core::from_seed([0; 32]); // TODO:
-        core.into()
     }
 }
 

@@ -26,4 +26,5 @@ smallvec = { version = "1.0.0", default-features = false }
 wasmi = { git = "https://github.com/tomaka/wasmi", branch = "no-std", default-features = false, features = ["core"] }
 
 [dev-dependencies]
+rand = "0.7"
 wat = "1.0.3"
