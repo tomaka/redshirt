@@ -16,8 +16,8 @@
 //! This program is meant to be invoked in a non-hosted environment. It never finishes.
 
 #![no_std]
+#![no_main]
 #![feature(alloc_error_handler)] // TODO: https://github.com/rust-lang/rust/issues/66741
-#![feature(start)] // TODO: https://github.com/rust-lang/rust/issues/29633
 
 extern crate alloc;
 extern crate compiler_builtins;
@@ -38,12 +38,6 @@ fn panic(_: &core::panic::PanicInfo) -> ! {
     loop {} // TODO:
 }
 
-#[start]
-#[no_mangle]
-fn _start(_: isize, _: *const *const u8) -> isize {
-    main()
-}
-
 // TODO: figure out how to remove these
 #[no_mangle]
 pub extern "C" fn fmod(a: f64, b: f64) -> f64 {
@@ -54,7 +48,8 @@ pub extern "C" fn fmodf(a: f32, b: f32) -> f32 {
     libm::fmodf(a, b)
 }
 
-fn main() -> ! {
+#[no_mangle]
+extern "C" fn _start() -> ! {
     let mut console = unsafe { nametbd_x86_stdout::Console::init() };
     console.write("hello world");
 
