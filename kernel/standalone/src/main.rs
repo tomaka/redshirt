@@ -47,7 +47,7 @@ fn panic(_: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-static mut HEAP: [u8; 65536] = [0; 65536];
+static mut HEAP: [u8; 0x1000000] = [0; 0x1000000];
 
 // Note: don't get fooled, this is not the "official" main function.
 // We have a `#![no_main]` attribute applied to this crate, meaning that this `main` function here

@@ -50,7 +50,17 @@ pub extern "C" fn __truncdfsf2(a: f64) -> f32 {
     libm::trunc(a) as f32   // TODO: correct?
 }
 
+// Called by `boot.S`.
+// If the kernel was loaded by a multiboot2 bootloader, then the first parameter is the memory
+// address of the multiboot header. Otherwise, it is `0`.
 #[no_mangle]
-extern "C" fn loader_main() -> ! {
-    crate::main()
+extern "C" fn loader_main(multiboot_header: usize) -> ! {
+    unsafe {
+        if multiboot_header != 0 {
+            let _info = multiboot2::load(multiboot_header);
+            // TODO: do something with that?
+        }
+        
+        crate::main()
+    }
 }

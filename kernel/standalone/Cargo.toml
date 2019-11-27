@@ -18,3 +18,6 @@ slab_allocator = "0.3.5"
 
 [build-dependencies]
 cc = "1.0"
+
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+multiboot2 = "0.8.1"

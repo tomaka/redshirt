@@ -20,6 +20,12 @@
 .global _start
 .type _start, @function
 _start:
+    // See if we have been loaded by a multiboot2 bootloader
+    cmp $0x36d76289, %eax
+    jne L1
+    mov %ebx, multiboot_info_ptr
+L1:
+
     // Fill the PML4 and PDPT to identity-map the first 512GiB
     movl $pdpt, %eax
     or $((1 << 1) | (1 << 0)), %eax
@@ -67,6 +73,8 @@ _start64:
     movw %ax, %ss
 
     // Jump to our Rust code
+    // Pass as parameter the content of `multiboot_info_ptr`
+    mov multiboot_info_ptr, %rdi
     call loader_main
     cli
     hlt
@@ -86,8 +94,11 @@ gdt_ptr:
      .long gdt_table
 
 
+
 .section .bss
 .comm pml4, 0x1000, 0x1000
 .comm pdpt, 0x1000, 0x1000
 
 .comm stack, KERNEL_STACK_SIZE, 0x10000
+
+.comm multiboot_info_ptr, 4, 8
