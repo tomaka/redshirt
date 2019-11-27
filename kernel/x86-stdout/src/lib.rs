@@ -17,6 +17,8 @@
 
 #![no_std]
 
+use core::fmt;
+
 /// State machine for the standard text console.
 pub struct Console {
     cursor_x: u8,
@@ -30,12 +32,15 @@ impl Console {
     ///
     /// - Assumes that we are in text mode and that we are write in the video memory.
     ///
-    pub unsafe fn init() -> Console {
-        clear_screen();
+    pub const unsafe fn init() -> Console {
         Console {
             cursor_x: 0,
             cursor_y: 0,
         }
+    }
+
+    pub fn clear_screen(&mut self) {
+        clear_screen();
     }
 
     /// Writes a message on the console.
@@ -46,12 +51,8 @@ impl Console {
                     continue;
                 }
 
-                if chr == '\r' {
+                if chr == '\r' || chr == '\n' {
                     self.cursor_x = 0;
-                    continue;
-                }
-
-                if chr == '\n' {
                     self.cursor_y += 1;
                     if self.cursor_y == 25 {
                         self.cursor_y -= 1;
@@ -61,7 +62,7 @@ impl Console {
                 }
 
                 let chr = chr as u8;
-                ptr_of(self.cursor_x, self.cursor_y).write_volatile(u16::from(chr));
+                ptr_of(self.cursor_x, self.cursor_y).write_volatile(u16::from(chr) | 0xf00);
 
                 debug_assert!(self.cursor_x < 80);
                 self.cursor_x += 1;
@@ -76,6 +77,13 @@ impl Console {
                 }
             }
         }
+    }
+}
+
+impl fmt::Write for Console {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        self.write(s);
+        Ok(())
     }
 }
 

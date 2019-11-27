@@ -16,13 +16,85 @@
 //! This program is meant to be invoked in a non-hosted environment. It never finishes.
 
 #![no_std]
+#![no_main]
+#![feature(panic_info_message)] // TODO: https://github.com/rust-lang/rust/issues/66745
+#![feature(alloc_error_handler)] // TODO: https://github.com/rust-lang/rust/issues/66741
 
 extern crate alloc;
+extern crate compiler_builtins;
 
-use alloc::format;
+mod arch;
+
+use alloc::{format, string::String};
+use core::fmt::Write;
 use parity_scale_codec::DecodeAll;
 
+#[global_allocator]
+static ALLOCATOR: linked_list_allocator::LockedHeap = linked_list_allocator::LockedHeap::empty();
+
+#[alloc_error_handler]
+fn alloc_error_handler(_: core::alloc::Layout) -> ! {
+    panic!()
+}
+
+#[panic_handler]
+fn panic(panic_info: &core::panic::PanicInfo) -> ! {
+    // Because the diagnostic code below might panic again, we first print a `Panic` message on
+    // the top left of the screen.
+    let vga_buffer = 0xb8000 as *mut u8;
+    for (i, &byte) in b"Panic".iter().enumerate() {
+        unsafe {
+            *vga_buffer.offset(i as isize * 2) = byte;
+            *vga_buffer.offset(i as isize * 2 + 1) = 0xc;
+        }
+    }
+
+    let mut console = unsafe { nametbd_x86_stdout::Console::init() };
+
+    if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
+        let _ = writeln!(console, "panic occurred: {:?}", s);
+    } else if let Some(s) = panic_info.payload().downcast_ref::<String>() {
+        let _ = writeln!(console, "panic occurred: {:?}", s);
+    } else if let Some(message) = panic_info.message() {
+        let _ = Write::write_fmt(&mut console, *message);
+        let _ = writeln!(console, "");
+    } else {
+        let _ = writeln!(console, "panic occurred");
+    }
+
+    if let Some(location) = panic_info.location() {
+        let _ = writeln!(
+            console,
+            "panic occurred in file '{}' at line {}",
+            location.file(),
+            location.line()
+        );
+    } else {
+        let _ = writeln!(
+            console,
+            "panic occurred but can't get location information..."
+        );
+    }
+
+    loop {
+        unsafe { x86::halt() }
+    }
+}
+
+// Note: don't get fooled, this is not the "official" main function.
+// We have a `#![no_main]` attribute applied to this crate, meaning that this `main` function here
+// is just a regular function that is called by our bootstrapping process.
 fn main() -> ! {
+    unsafe {
+        // TODO: don't have the HEAP here, but adjust it to the available RAM
+        static mut HEAP: [u8; 0x10000000] = [0; 0x10000000];
+        ALLOCATOR
+            .lock()
+            .init(HEAP.as_mut_ptr() as usize, HEAP.len());
+    }
+
+    let mut console = unsafe { nametbd_x86_stdout::Console::init() };
+
     let module = nametbd_core::module::Module::from_bytes(
         &include_bytes!("../../../modules/target/wasm32-wasi/release/ipfs.wasm")[..],
     )
@@ -33,8 +105,6 @@ fn main() -> ! {
         .with_startup_process(module)
         .with_main_program([0; 32]) // TODO: just a test
         .build();
-
-    let mut console = unsafe { nametbd_x86_stdout::Console::init() };
 
     loop {
         match system.run() {

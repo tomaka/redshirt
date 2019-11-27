@@ -82,18 +82,16 @@ jobs:
         path: target
         key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('Cargo.lock') }}
     - name: Build
-      run: cargo build --locked --verbose
+      run: cargo build --workspace --exclude nametbd-standalone-kernel --locked --verbose
     - name: Run tests
-      run: cargo test --locked --verbose
+      run: cargo test --workspace --exclude nametbd-standalone-kernel --locked --verbose
 
-  build-unikernel:
-    name: Build stand-alone kernel
+  build-standalone:
+    name: Build standalone kernel
     needs: build-modules
     runs-on: ubuntu-latest
     container:
-      image: rwthos/hermitcore-rs
-    env:
-      RUSTFLAGS: "-L/usr/lib/x86_64-linux-gnu/ -Clink-args=-lm"
+      image: rust
     steps:
     - uses: actions/checkout@v1
     - name: Download WASM modules
@@ -101,6 +99,10 @@ jobs:
       with:
         name: wasm-modules
         path: modules/target/wasm32-wasi/release
+    - name: Install lld
+      run: |
+        apt-get update
+        apt-get install -y lld
     - name: Cache cargo registry
       uses: actions/cache@v1
       with:
@@ -115,16 +117,53 @@ jobs:
       uses: actions/cache@v1
       with:
         path: target
-        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('Cargo.lock') }}
-    - name: Build core
-      run: cargo build --locked --package nametbd-core --target x86_64-unknown-hermit
-    - name: Build kernel
-      run: cargo build --locked --package nametbd-standalone-kernel --target x86_64-unknown-hermit
+        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('Cargo.lock') }}-standalone
+    - name: Install nightly Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: nightly
+        override: true
+    - name: Install rust-src
+      run: rustup component add rust-src
+    - name: Build core for no_std platform
+      run: RUST_TARGET_PATH=`pwd` cargo +nightly build -Z build-std=core,alloc --target x86_64-multiboot2 --package nametbd-core --release
+    - name: Build kernel for no_std platform
+      run: RUST_TARGET_PATH=`pwd` cargo +nightly build -Z build-std=core,alloc --target x86_64-multiboot2 --package nametbd-standalone-kernel --release
     - name: Upload generated kernel
       uses: actions/upload-artifact@master
       with:
         name: kernel
-        path: target/x86_64-unknown-hermit/debug/nametbd-standalone-kernel
+        path: target/x86_64-multiboot2/release/nametbd-standalone-kernel
+
+  build-iso:
+    name: Build bootable x86 ISO
+    needs: build-standalone
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:xenial
+    steps:
+    - uses: actions/checkout@v1
+    - name: Download kernel
+      uses: actions/download-artifact@v1
+      with:
+        name: kernel
+        path: .
+    - name: Install required packages
+      run: |
+        apt-get update
+        apt-get install -y libisoburn1 xorriso grub-pc-bin
+    - name: Prepare file structure
+      run: |
+        mkdir -p iso/boot/grub
+        cp .github/workflows/grub.cfg iso/boot/grub
+        mv nametbd-standalone-kernel iso/boot/kernel
+    - name: Build ISO
+      run: grub-mkrescue -o nametbd.iso iso
+    - name: Upload generated kernel
+      uses: actions/upload-artifact@master
+      with:
+        name: iso
+        path: nametbd.iso
 
   fmt:
     name: Rustfmt

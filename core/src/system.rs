@@ -229,7 +229,6 @@ impl<TExtEx: Clone> System<TExtEx> {
                 } if interface == nametbd_interface_interface::ffi::INTERFACE => {
                     let msg: nametbd_interface_interface::ffi::InterfaceMessage =
                         DecodeAll::decode_all(&message).unwrap();
-                    println!("interface message: {:?}", msg);
                     match msg {
                         nametbd_interface_interface::ffi::InterfaceMessage::Register(
                             interface_hash,

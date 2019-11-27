@@ -30,8 +30,7 @@ pub struct Module {
 pub struct ModuleHash([u8; 32]);
 
 /// Error that can happen when calling `from_bytes`.
-#[derive(Debug, thiserror::Error)]
-#[error("Eror while parsing WASM module")]
+#[derive(Debug)]
 pub struct FromBytesError {}
 
 impl Module {
@@ -44,6 +43,7 @@ impl Module {
     }
 
     /// Turns some WASM text source into a `Module`.
+    #[cfg(test)] // TODO: is `#[cfg(test)]` a good idea?
     pub fn from_wat(source: impl AsRef<[u8]>) -> Result<Self, wat::Error> {
         let wasm = wat::parse_bytes(source.as_ref())?;
         Ok(Self::from_bytes(wasm).unwrap())
@@ -84,6 +84,12 @@ impl ModuleHash {
 impl fmt::Debug for ModuleHash {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "ModuleHash({})", bs58::encode(&self.0).into_string())
+    }
+}
+
+impl fmt::Display for FromBytesError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "FromBytesError")
     }
 }
 

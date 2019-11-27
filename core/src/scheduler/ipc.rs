@@ -422,7 +422,6 @@ impl<T: Clone> Core<T> {
             processes::RunOneOutcome::ThreadFinished { user_data, .. } => {
                 debug_assert_eq!(user_data, Thread::ReadyToRun);
                 // TODO: report?
-                println!("thread finished");
                 CoreRunOutcomeInner::LoopAgain
             }
 
@@ -1132,7 +1131,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn duplicate_interface_handler() {
-        let interface: [u8; 32] = rand::random();
+        let interface: [u8; 32] = [4; 32];
         Core::<()>::new()
             .with_interface_handler(interface)
             .with_interface_handler(interface);

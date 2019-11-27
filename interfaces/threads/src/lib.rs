@@ -16,8 +16,9 @@
 //! Threads.
 
 #![deny(intra_doc_link_resolution_failure)]
+#![no_std]
 
-use std::mem;
+use core::mem;
 
 pub mod ffi;
 

@@ -7,8 +7,18 @@ edition = "2018"
 publish = false
 
 [dependencies]
-futures = "0.3.1"
+compiler_builtins = { version = "0.1.21", features = ["mem"] }
+futures = { version = "0.3.1", default-features = false }
+libm = "0.1.2"
+linked_list_allocator = "0.6.4"
 nametbd-core = { path = "../../core" }
 nametbd-stdout-interface = { path = "../../interfaces/stdout" }
 nametbd-x86-stdout = { path = "../x86-stdout" }
-parity-scale-codec = "1.1.0"
+parity-scale-codec = { version = "1.0.5", default-features = false }
+
+[build-dependencies]
+cc = "1.0"
+
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+multiboot2 = "0.8.1"
+x86 = "0.28.0"

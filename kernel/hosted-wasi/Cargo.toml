@@ -13,4 +13,4 @@ nametbd-core = { path = "../../core" }
 rand = "0.7"
 
 # TODO: remove
-wasmi = { git = "https://github.com/paritytech/wasmi", default-features = false, features = ["core"] }
+wasmi = { git = "https://github.com/tomaka/wasmi", branch = "no-std", default-features = false, features = ["core"] }

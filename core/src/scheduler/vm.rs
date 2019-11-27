@@ -14,7 +14,12 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use crate::module::Module;
-use alloc::{borrow::Cow, boxed::Box, format, vec::Vec};
+use alloc::{
+    borrow::{Cow, ToOwned as _},
+    boxed::Box,
+    format,
+    vec::Vec,
+};
 use core::{cell::RefCell, convert::TryInto, fmt};
 use smallvec::SmallVec;
 
@@ -175,47 +180,37 @@ pub enum ExecOutcome<'a, T> {
 }
 
 /// Error that can happen when initializing a VM.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug)]
 pub enum NewErr {
     /// Error in the interpreter.
-    #[error("Error in the interpreter")]
-    Interpreter(#[source] wasmi::Error),
+    Interpreter(wasmi::Error),
     /// The "start" symbol doesn't exist.
-    #[error("The \"start\" symbol doesn't exist")]
     StartNotFound,
     /// The "start" symbol must be a function.
-    #[error("The \"start\" symbol must be a function")]
     StartIsntAFunction,
     /// If a "memory" symbol is provided, it must be a memory.
-    #[error("If a \"memory\" symbol is provided, it must be a memory")]
     MemoryIsntMemory,
     /// If a "__indirect_function_table" symbol is provided, it must be a table.
-    #[error("If a \"__indirect_function_table\" symbol is provided, it must be a table")]
     IndirectTableIsntTable,
 }
 
 /// Error that can happen when starting a new thread.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug)]
 pub enum StartErr {
     /// The state machine is poisoned and cannot run anymore.
-    #[error("State machine is in a poisoned state")]
     Poisoned,
     /// Couldn't find the requested function.
-    #[error("Function to start was not found")]
     FunctionNotFound,
     /// The requested function has been found in the list of exports, but it is not a function.
-    #[error("Symbol to start is not a function")]
     NotAFunction,
 }
 
 /// Error that can happen when resuming the execution of a function.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug)]
 pub enum RunErr {
     /// The state machine is poisoned.
-    #[error("State machine is poisoned")]
     Poisoned,
     /// Passed a wrong value back.
-    #[error("Expected value of type {:?} but got {:?} instead", expected, obtained)]
     BadValueTy {
         /// Type of the value that was expected.
         expected: Option<wasmi::ValueType>,
@@ -614,6 +609,46 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(&self.vm.threads[self.index], f)
+    }
+}
+
+impl fmt::Display for NewErr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            NewErr::Interpreter(_) => write!(f, "Error in the interpreter"),
+            NewErr::StartNotFound => write!(f, "The \"start\" symbol doesn't exist"),
+            NewErr::StartIsntAFunction => write!(f, "The \"start\" symbol must be a function"),
+            NewErr::MemoryIsntMemory => {
+                write!(f, "If a \"memory\" symbol is provided, it must be a memory")
+            }
+            NewErr::IndirectTableIsntTable => write!(
+                f,
+                "If a \"__indirect_function_table\" symbol is provided, it must be a table"
+            ),
+        }
+    }
+}
+
+impl fmt::Display for StartErr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            StartErr::Poisoned => write!(f, "State machine is in a poisoned state"),
+            StartErr::FunctionNotFound => write!(f, "Function to start was not found"),
+            StartErr::NotAFunction => write!(f, "Symbol to start is not a function"),
+        }
+    }
+}
+
+impl fmt::Display for RunErr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            RunErr::Poisoned => write!(f, "State machine is poisoned"),
+            RunErr::BadValueTy { expected, obtained } => write!(
+                f,
+                "Expected value of type {:?} but got {:?} instead",
+                expected, obtained
+            ),
+        }
     }
 }
 

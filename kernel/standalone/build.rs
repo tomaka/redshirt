@@ -13,20 +13,17 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#![warn(missing_docs)]
-#![deny(unsafe_code)]
-#![deny(intra_doc_link_resolution_failure)]
-#![allow(dead_code)] // TODO: temporary during development
-#![no_std]
+use std::env;
 
-extern crate alloc;
-
-pub use self::module::Module;
-pub use self::system::{System, SystemBuilder, SystemRunOutcome};
-
-mod id_pool;
-
-pub mod module;
-pub mod scheduler;
-pub mod signature;
-pub mod system;
+fn main() {
+    // Builds additional platform-specific code to link to the kernel.
+    let target = env::var("TARGET").unwrap();
+    if target.starts_with("x86_64-") {
+        cc::Build::new()
+            .file("src/arch/x86_64/boot.S")
+            .include("src")
+            .compile("libboot.a");
+    } else {
+        panic!("Unsupported target: {:?}", target)
+    }
+}
