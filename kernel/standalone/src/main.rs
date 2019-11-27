@@ -48,9 +48,7 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
         }
     }
 
-    let mut console = unsafe {
-        nametbd_x86_stdout::Console::init()
-    };
+    let mut console = unsafe { nametbd_x86_stdout::Console::init() };
 
     if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
         let _ = writeln!(console, "panic occurred: {:?}", s);
@@ -64,9 +62,17 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
     }
 
     if let Some(location) = panic_info.location() {
-        let _ = writeln!(console, "panic occurred in file '{}' at line {}", location.file(), location.line());
+        let _ = writeln!(
+            console,
+            "panic occurred in file '{}' at line {}",
+            location.file(),
+            location.line()
+        );
     } else {
-        let _ = writeln!(console, "panic occurred but can't get location information...");
+        let _ = writeln!(
+            console,
+            "panic occurred but can't get location information..."
+        );
     }
 
     loop {
@@ -83,7 +89,9 @@ fn main() -> ! {
 
     unsafe {
         static mut HEAP: [u8; 0x10000000] = [0; 0x10000000];
-        ALLOCATOR.lock().init(HEAP.as_mut_ptr() as usize, HEAP.len()); // FIXME:
+        ALLOCATOR
+            .lock()
+            .init(HEAP.as_mut_ptr() as usize, HEAP.len()); // FIXME:
     }
 
     let module = nametbd_core::module::Module::from_bytes(
