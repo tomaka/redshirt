@@ -7,4 +7,4 @@ edition = "2018"
 
 [dependencies]
 nametbd-syscalls-interface = { path = "../syscalls" }
-parity-scale-codec = { version = "1.0.5", features = ["derive"] }
+parity-scale-codec = { version = "1.1.0", features = ["derive"] }

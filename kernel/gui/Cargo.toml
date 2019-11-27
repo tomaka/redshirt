@@ -18,7 +18,7 @@ nametbd-time-interface = { path = "../../interfaces/time" }
 nametbd-vulkan-interface = { path = "../../interfaces/vulkan" }
 nametbd-wasi-hosted = { path = "../hosted-wasi" }
 nametbd-window-interface = { path = "../../interfaces/window" }
-parity-scale-codec = "1.0.5"
+parity-scale-codec = "1.1.0"
 wasi = "0.7.0"
 winit = "0.20.0-alpha3"
 
