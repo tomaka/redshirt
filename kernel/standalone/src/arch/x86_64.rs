@@ -15,8 +15,6 @@
 
 #![cfg(target_arch = "x86_64")]
 
-extern crate compiler_builtins;
-
 #[link(name = "boot")]
 extern "C" {}
 
@@ -50,16 +48,18 @@ pub extern "C" fn __truncdfsf2(a: f64) -> f32 {
     libm::trunc(a) as f32 // TODO: correct?
 }
 
-// Called by `boot.S`.
-// If the kernel was loaded by a multiboot2 bootloader, then the first parameter is the memory
-// address of the multiboot header. Otherwise, it is `0`.
+/// Called by `boot.S` after basic set up has been performed.
+///
+/// When this function is called, a stack has been set up and as much memory space as possible has
+/// been identity-mapped (i.e. the virtual memory is equal to the physical memory).
+///
+/// Since the kernel was loaded by a multiboot2 bootloader, the first parameter is the memory
+/// address of the multiboot header.
 #[no_mangle]
-extern "C" fn loader_main(multiboot_header: usize) -> ! {
+extern "C" fn after_boot(multiboot_header: usize) -> ! {
     unsafe {
-        if multiboot_header != 0 {
-            let _info = multiboot2::load(multiboot_header);
-            // TODO: do something with that?
-        }
+        let _info = multiboot2::load(multiboot_header);
+        // TODO: do something with that?
 
         crate::main()
     }

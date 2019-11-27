@@ -16,6 +16,7 @@
 use std::env;
 
 fn main() {
+    // Builds additional platform-specific code to link to the kernel.
     let target = env::var("TARGET").unwrap();
     if target.starts_with("x86_64-") {
         cc::Build::new()

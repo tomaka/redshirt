@@ -21,6 +21,7 @@
 #![feature(alloc_error_handler)] // TODO: https://github.com/rust-lang/rust/issues/66741
 
 extern crate alloc;
+extern crate compiler_builtins;
 
 mod arch;
 
