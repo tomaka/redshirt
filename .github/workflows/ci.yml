@@ -122,14 +122,14 @@ jobs:
     - name: Install rust-src
       run: rustup component add rust-src
     - name: Build core for no_std platform
-      run: RUST_TARGET_PATH=`pwd` cargo +nightly build -Z build-std=core,alloc --target x86_64-unknown-none --package nametbd-core --release
+      run: RUST_TARGET_PATH=`pwd` cargo +nightly build -Z build-std=core,alloc --target x86_64-multiboot2 --package nametbd-core --release
     - name: Build kernel for no_std platform
-      run: RUST_TARGET_PATH=`pwd` cargo +nightly build -Z build-std=core,alloc --target x86_64-unknown-none --package nametbd-standalone-kernel --release
+      run: RUST_TARGET_PATH=`pwd` cargo +nightly build -Z build-std=core,alloc --target x86_64-multiboot2 --package nametbd-standalone-kernel --release
     - name: Upload generated kernel
       uses: actions/upload-artifact@master
       with:
         name: kernel
-        path: target/x86_64-unknown-none/release/nametbd-standalone-kernel
+        path: target/x86_64-multiboot2/release/nametbd-standalone-kernel
 
   build-iso:
     name: Build bootable x86 ISO
