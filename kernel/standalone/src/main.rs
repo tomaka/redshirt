@@ -29,7 +29,7 @@ use core::fmt::Write;
 use parity_scale_codec::DecodeAll;
 
 #[global_allocator]
-static ALLOCATOR: slab_allocator::LockedHeap = slab_allocator::LockedHeap::empty();
+static ALLOCATOR: linked_list_allocator::LockedHeap = linked_list_allocator::LockedHeap::empty();
 
 #[alloc_error_handler]
 fn alloc_error_handler(_: core::alloc::Layout) -> ! {
@@ -74,8 +74,6 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
     }
 }
 
-static mut HEAP: [u8; 0x10000000] = [0; 0x10000000];
-
 // Note: don't get fooled, this is not the "official" main function.
 // We have a `#![no_main]` attribute applied to this crate, meaning that this `main` function here
 // is just a regular function that is called by our bootstrapping process.
@@ -84,7 +82,8 @@ fn main() -> ! {
     console.write("hello world\r");
 
     unsafe {
-        ALLOCATOR.init(HEAP.as_mut_ptr() as usize, HEAP.len()); // FIXME:
+        static mut HEAP: [u8; 0x10000000] = [0; 0x10000000];
+        ALLOCATOR.lock().init(HEAP.as_mut_ptr() as usize, HEAP.len()); // FIXME:
     }
 
     let module = nametbd_core::module::Module::from_bytes(
