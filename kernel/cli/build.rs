@@ -27,6 +27,7 @@ fn main() {
         .args(&["-C", "link-arg=--export-table"])
         .status()
         .unwrap();
+    assert!(status.success());
 
     // TODO: not a great solution
     for entry in walkdir::WalkDir::new("../../modules/") {

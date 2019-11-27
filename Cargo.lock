@@ -798,6 +798,7 @@ dependencies = [
  "nametbd-stdout-interface 0.1.0",
  "nametbd-x86-stdout 0.1.0",
  "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "walkdir 2.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
  "x86 0.28.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 

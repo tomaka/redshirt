@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use std::env;
+use std::{env, process::Command};
 
 fn main() {
     // Builds additional platform-specific code to link to the kernel.
@@ -25,5 +25,27 @@ fn main() {
             .compile("libboot.a");
     } else {
         panic!("Unsupported target: {:?}", target)
+    }
+
+    // Build the WASM module.
+    let status = Command::new("cargo")
+        .arg("rustc")
+        .arg("--release")
+        .args(&["--target", "wasm32-unknown-unknown"])
+        .args(&["--package", "hello-world"])
+        .args(&["--bin", "hello-world"])
+        .args(&["--manifest-path", "../../modules/hello-world/Cargo.toml"])
+        .arg("--")
+        .args(&["-C", "link-arg=--export-table"])
+        .status()
+        .unwrap();
+    assert!(status.success());
+
+    // TODO: not a great solution
+    for entry in walkdir::WalkDir::new("../../modules/") {
+        println!("cargo:rerun-if-changed={}", entry.unwrap().path().display());
+    }
+    for entry in walkdir::WalkDir::new("../../interfaces/") {
+        println!("cargo:rerun-if-changed={}", entry.unwrap().path().display());
     }
 }

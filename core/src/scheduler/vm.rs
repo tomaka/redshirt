@@ -332,12 +332,23 @@ impl<T> ProcessStateMachine<T> {
             threads: SmallVec::new(),
         };
 
-        // Try to start executing `_start`.
+        // Try to start executing `_start` or `main`.
+        // TODO: executing `main` is a hack right now in order to support wasm32-unknown-unknown which doesn't have
+        // a `_start` function
         match state_machine.start_thread_by_name("_start", &[][..], main_thread_user_data) {
             Ok(_) => {}
-            Err(StartErr::FunctionNotFound) => return Err(NewErr::StartNotFound),
-            Err(StartErr::Poisoned) => unreachable!(),
-            Err(StartErr::NotAFunction) => return Err(NewErr::StartIsntAFunction),
+            Err((StartErr::FunctionNotFound, user_data)) => {
+                static argc_argv: [wasmi::RuntimeValue; 2] =
+                    [wasmi::RuntimeValue::I32(0), wasmi::RuntimeValue::I32(0)];
+                match state_machine.start_thread_by_name("main", &argc_argv[..], user_data) {
+                    Ok(_) => {}
+                    Err((StartErr::FunctionNotFound, _)) => return Err(NewErr::StartNotFound),
+                    Err((StartErr::Poisoned, _)) => unreachable!(),
+                    Err((StartErr::NotAFunction, _)) => return Err(NewErr::StartIsntAFunction),
+                }
+            }
+            Err((StartErr::Poisoned, _)) => unreachable!(),
+            Err((StartErr::NotAFunction, _)) => return Err(NewErr::StartIsntAFunction),
         };
 
         Ok(state_machine)
@@ -391,9 +402,9 @@ impl<T> ProcessStateMachine<T> {
         symbol_name: &str,
         params: impl Into<Cow<'static, [wasmi::RuntimeValue]>>,
         user_data: T,
-    ) -> Result<Thread<T>, StartErr> {
+    ) -> Result<Thread<T>, (StartErr, T)> {
         if self.is_poisoned {
-            return Err(StartErr::Poisoned);
+            return Err((StartErr::Poisoned, user_data));
         }
 
         match self.module.export_by_name(symbol_name) {
@@ -405,8 +416,8 @@ impl<T> ProcessStateMachine<T> {
                     user_data,
                 });
             }
-            None => return Err(StartErr::FunctionNotFound),
-            _ => return Err(StartErr::NotAFunction),
+            None => return Err((StartErr::FunctionNotFound, user_data)),
+            _ => return Err((StartErr::NotAFunction, user_data)),
         }
 
         let thread_id = self.threads.len() - 1;

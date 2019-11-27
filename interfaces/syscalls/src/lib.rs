@@ -195,7 +195,7 @@ pub struct MessageResponseFuture<T> {
     marker: PhantomData<T>,
 }
 
-#[cfg(target_arch = "wasm32")] // TODO: bad
+#[cfg(all(feature = "std", target_arch = "wasm32"))] // TODO: bad
 impl<T> Future for MessageResponseFuture<T>
 where
     T: DecodeAll,
@@ -230,7 +230,7 @@ pub struct InterfaceMessageFuture {
     finished: bool,
 }
 
-#[cfg(target_arch = "wasm32")] // TODO: bad
+#[cfg(all(feature = "std", target_arch = "wasm32"))] // TODO: bad
 impl Future for InterfaceMessageFuture {
     type Output = InterfaceMessage;
 

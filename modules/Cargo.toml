@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "hello-world",
     "ipfs",
     "vulkan-triangle",
     "wasm-timer",
