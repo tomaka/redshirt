@@ -13,7 +13,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use core::{fmt, sync::atomic::{AtomicU64, Ordering}};
+use core::{
+    fmt,
+    sync::atomic::{AtomicU64, Ordering},
+};
 // TODO: use crossbeam::queue::SegQueue;
 use rand::distributions::{Distribution as _, Uniform};
 use rand_chacha::{ChaCha20Core, ChaCha20Rng};

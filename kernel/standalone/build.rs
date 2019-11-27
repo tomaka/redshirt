@@ -22,7 +22,6 @@ fn main() {
             .file("src/arch/x86_64/boot.S")
             .include("src")
             .compile("libboot.a");
-
     } else {
         panic!("Unsupported target: {:?}", target)
     }

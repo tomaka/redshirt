@@ -18,7 +18,7 @@
 extern crate compiler_builtins;
 
 #[link(name = "boot")]
-extern {}
+extern "C" {}
 
 // TODO: figure out how to remove these
 #[no_mangle]
@@ -47,7 +47,7 @@ pub extern "C" fn fmaxf(a: f32, b: f32) -> f32 {
 }
 #[no_mangle]
 pub extern "C" fn __truncdfsf2(a: f64) -> f32 {
-    libm::trunc(a) as f32   // TODO: correct?
+    libm::trunc(a) as f32 // TODO: correct?
 }
 
 // Called by `boot.S`.
@@ -60,7 +60,7 @@ extern "C" fn loader_main(multiboot_header: usize) -> ! {
             let _info = multiboot2::load(multiboot_header);
             // TODO: do something with that?
         }
-        
+
         crate::main()
     }
 }
