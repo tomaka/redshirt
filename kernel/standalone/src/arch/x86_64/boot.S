@@ -157,7 +157,7 @@ gdt_ptr:
 .comm pdpt, 0x1000, 0x1000
 
 // Stack used by the kernel.
-.comm stack, KERNEL_STACK_SIZE, 0x10000
+.comm stack, KERNEL_STACK_SIZE, 0x8
 
 // Small variable used to store the value of ebx passed by the bootloader.
 .comm multiboot_info_ptr, 4, 8
