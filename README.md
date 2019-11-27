@@ -8,12 +8,42 @@ building it.
 
 # How to test
 
+There are two binaries available in this repository:
+
+- The "hosted kernel" is a regular binary that executes WASM programs and uses the host operating
+  system.
+- The freestanding kernel is a multiboot2-compliant kernel that can be loaded with GRUB2 or any
+  compliant bootloader.
+
+For the hosted kernel:
+
 ```
 # You need the WASI target installed:
 rustup target add wasm32-wasi
 
 # Then:
 cargo run
+```
+
+For the freestanding kernel:
+
+```
+rustup target add wasm32-wasi
+
+# From the root directory of this repository (where the `x86_64-multiboot2.json` file is located):
+RUST_TARGET_PATH=`pwd` cargo +nightly build -Z build-std=core,alloc --target x86_64-multiboot2 --package nametbd-standalone-kernel
+
+# You now have a `target/x86_64-multiboot2/debug/nametbd-standalone-kernel`.
+# It can be loaded directly by QEMU: (Note: that's not working, see https://github.com/tomaka/os/issues/75)
+qemu-system-x86_64 -kernel ./target/x86_64-multiboot2/debug/nametbd-standalone-kernel -m 1024
+
+# Alternatively, you can put it on a CDROM:
+mkdir -p iso/boot/grub
+cp .github/workflows/grub.cfg iso/boot/grub
+cp target/x86_64-multiboot2/debug/nametbd-standalone-kernel iso/boot/kernel
+# Note: grub-mkrescue is sometimes called grub2-mkrescue
+grub-mkrescue -o cdrom.iso iso
+qemu-system-x86_64 -cdrom cdrom.iso -m 1024
 ```
 
 # Repository structure
@@ -80,7 +110,8 @@ to get in touch if you want to contribute anything non-trivial.
 
 # Current state
 
-- Threads and Futures are working.
+- Futures are working.
 - WASM programs can use TCP/IP, but the implementation is very hacky.
 - Building IPFS is currently blocked due to the lack of Rust ECDH library that compiles for WASM.
   The plan is to bypass this problem by not using encryption.
+- There is a freestanding version of the kernel for the bare metal for x86_64.
