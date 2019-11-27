@@ -20,16 +20,13 @@
 .global _start
 .type _start, @function
 _start:
-    // Set up a stack
-    movl $stack + KERNEL_STACK_SIZE, %esp
-
     // Fill the PML4 and PDPT to identity-map the first 512GiB
     movl $pdpt, %eax
     or $((1 << 1) | (1 << 0)), %eax
     movl %eax, pml4
     mov $0, %ecx
 L0: mov %ecx, %eax
-    shl $30, %eax
+    shl $30, %eax       // FIXME: oooooops, this doesn't fit eax, doh
     or $((1 << 7) | (1 << 1) | (1 << 0)), %eax
     movl %eax, pdpt(, %ecx, 8)
     inc %ecx
@@ -59,7 +56,9 @@ L0: mov %ecx, %eax
 .global _start64
 .type _start64, @function
 _start64:
+    // Set up a stack
     movq $stack + KERNEL_STACK_SIZE, %rsp
+
     movw $0, %ax
     movw %ax, %ds
     movw %ax, %es
@@ -67,7 +66,7 @@ _start64:
     movw %ax, %gs
     movw %ax, %ss
 
-    // Jumps to our Rust code
+    // Jump to our Rust code
     call loader_main
     cli
     hlt
