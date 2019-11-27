@@ -8,7 +8,7 @@ MULTIBOOT2_HEADER_LEN = mboot_end - mboot_start;
 MULTIBOOT2_CHECKSUM = -(MULTIBOOT2_MAGIC + MULTIBOOT2_ARCH + MULTIBOOT2_HEADER_LEN);
 
 SECTIONS {
-  . = 100000;
+  . = 4M;
 
   .mboot ALIGN(32) : AT(ADDR(.mboot)) {
     mboot_start = .;

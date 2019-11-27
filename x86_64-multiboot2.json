@@ -17,7 +17,7 @@
     "os": "unknown",
     "panic-strategy": "abort",
     "pre-link-args": {
-        "ld": ["--script", "link.ld"]
+        "ld": ["--script", "x86_64-multiboot2.ld"]
     },
     "relocation-model": "static",
     "singlethread": true,
