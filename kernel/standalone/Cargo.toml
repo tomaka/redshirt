@@ -21,3 +21,4 @@ cc = "1.0"
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 multiboot2 = "0.8.1"
+x86 = "0.28.0"

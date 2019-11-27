@@ -26,6 +26,10 @@ _start:
     mov %ebx, multiboot_info_ptr
 L1:
 
+    // TODO: check for long mode support in CPUID
+    // TODO: check for 1g pages support in the CPUID
+    // TODO: check for sse/sse2 support in the CPUID
+
     // Fill the PML4 and PDPT to identity-map the first 512GiB
     movl $pdpt, %eax
     or $((1 << 1) | (1 << 0)), %eax
@@ -40,10 +44,16 @@ L0: mov %ecx, %eax
     jne L0
 
     // Set up the control registers
+    mov %cr0, %eax
+    and $(~(1 << 2)), %eax
+    or $(1 << 1), %eax
+    and $(~(1 << 31)), %eax
+    movl %eax, %cr0
+
     movl $pml4, %eax
     movl %eax, %cr3
 
-    movl $(1 << 5), %eax
+    movl $((1 << 10) | (1 << 9) | (1 << 5)), %eax
     movl %eax, %cr4
 
     movl $0xc0000080, %ecx
@@ -53,6 +63,7 @@ L0: mov %ecx, %eax
 
     movl $((1 << 31) | (1 << 4) | (1 << 0)), %eax
     movl %eax, %cr0
+    // TODO: official manual says that instruction right after long mode switch must be a branch?!?!?!
 
     // Set up the GDT to allow us to jump to long mode
     lgdt gdt_ptr

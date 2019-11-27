@@ -10,7 +10,7 @@ MULTIBOOT2_CHECKSUM = -(MULTIBOOT2_MAGIC + MULTIBOOT2_ARCH + MULTIBOOT2_HEADER_L
 SECTIONS {
   . = 4M;
 
-  .mboot ALIGN(32) : AT(ADDR(.mboot)) {
+  .mboot ALIGN(4) : AT(ADDR(.mboot)) {
     mboot_start = .;
 
     LONG(MULTIBOOT2_MAGIC)

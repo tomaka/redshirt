@@ -44,7 +44,9 @@ fn panic(_: &core::panic::PanicInfo) -> ! {
             *vga_buffer.offset(i as isize * 2 + 1) = 0xc;
         }
     }
-    loop {}
+    loop {
+        unsafe { x86::halt() }
+    }
 }
 
 static mut HEAP: [u8; 0x1000000] = [0; 0x1000000];
@@ -56,7 +58,6 @@ fn main() -> ! {
     let mut console = unsafe { nametbd_x86_stdout::Console::init() };
     console.write("hello world");
 
-    loop {}
     unsafe {
         ALLOCATOR.init(HEAP.as_mut_ptr() as usize, HEAP.len()); // FIXME:
     }
@@ -78,7 +79,9 @@ fn main() -> ! {
                 // TODO: If we don't support any interface or extrinsic, then `Idle` shouldn't
                 // happen. In a normal situation, this is when we would check the status of the
                 // "externalities", such as the timer.
-                panic!()
+                loop {
+                    unsafe { x86::halt() }
+                }
             }
             nametbd_core::system::SystemRunOutcome::ProgramFinished { pid, outcome } => {
                 console.write(&format!("Program finished {:?} => {:?}\n", pid, outcome));
@@ -90,7 +93,9 @@ fn main() -> ! {
                 let nametbd_stdout_interface::ffi::StdoutMessage::Message(msg) = msg.unwrap();
                 console.write(&msg);
             }
-            _ => panic!(),
+            _ => loop {
+                unsafe { x86::halt() }
+            },
         }
     }
 }
