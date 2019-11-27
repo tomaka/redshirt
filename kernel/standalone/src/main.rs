@@ -25,17 +25,28 @@ extern crate compiler_builtins;
 use alloc::format;
 use parity_scale_codec::DecodeAll;
 
+#[link(name = "entry")]
+extern {}
+
 #[global_allocator]
 static ALLOCATOR: slab_allocator::LockedHeap = slab_allocator::LockedHeap::empty();
 
 #[alloc_error_handler]
-fn foo(_: core::alloc::Layout) -> ! {
+fn alloc_error_handler(_: core::alloc::Layout) -> ! {
     panic!()
 }
 
 #[panic_handler]
 fn panic(_: &core::panic::PanicInfo) -> ! {
-    loop {} // TODO:
+    // TODO:
+    let vga_buffer = 0xb8000 as *mut u8;
+    for (i, &byte) in b"Panic".iter().enumerate() {
+        unsafe {
+            *vga_buffer.offset(i as isize * 2) = byte;
+            *vga_buffer.offset(i as isize * 2 + 1) = 0xc;
+        }
+    }
+    loop {}
 }
 
 // TODO: figure out how to remove these
@@ -47,14 +58,38 @@ pub extern "C" fn fmod(a: f64, b: f64) -> f64 {
 pub extern "C" fn fmodf(a: f32, b: f32) -> f32 {
     libm::fmodf(a, b)
 }
+#[no_mangle]
+pub extern "C" fn fmin(a: f64, b: f64) -> f64 {
+    libm::fmin(a, b)
+}
+#[no_mangle]
+pub extern "C" fn fminf(a: f32, b: f32) -> f32 {
+    libm::fminf(a, b)
+}
+#[no_mangle]
+pub extern "C" fn fmax(a: f64, b: f64) -> f64 {
+    libm::fmax(a, b)
+}
+#[no_mangle]
+pub extern "C" fn fmaxf(a: f32, b: f32) -> f32 {
+    libm::fmaxf(a, b)
+}
+#[no_mangle]
+pub extern "C" fn __truncdfsf2(a: f64) -> f32 {
+    libm::trunc(a) as f32   // TODO: correct?
+}
+
+static mut HEAP: [u8; 65536] = [0; 65536];
 
 #[no_mangle]
-extern "C" fn _start() -> ! {
+extern "C" fn loader_main() -> ! {
     let mut console = unsafe { nametbd_x86_stdout::Console::init() };
     console.write("hello world");
 
+    loop {}
+
     unsafe {
-        ALLOCATOR.init(0x8000, 0x10000); // FIXME:
+        ALLOCATOR.init(HEAP.as_mut_ptr() as usize, HEAP.len()); // FIXME:
     }
 
     let module = nametbd_core::module::Module::from_bytes(

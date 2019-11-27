@@ -17,7 +17,7 @@
     "os": "none",
     "panic-strategy": "abort",
     "pre-link-args": {
-        "gcc": ["-m64", "-nostdlib"]
+        "gcc": ["-m64", "-nostdlib", "-Tlink.ld"]
     },
     "relocation-model": "static",
     "singlethread": true,

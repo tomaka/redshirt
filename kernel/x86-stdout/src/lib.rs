@@ -61,7 +61,7 @@ impl Console {
                 }
 
                 let chr = chr as u8;
-                ptr_of(self.cursor_x, self.cursor_y).write_volatile(u16::from(chr));
+                ptr_of(self.cursor_x, self.cursor_y).write_volatile(u16::from(chr) | 0xf00);
 
                 debug_assert!(self.cursor_x < 80);
                 self.cursor_x += 1;
@@ -108,8 +108,9 @@ fn line_up() {
             }
         }
 
-        for x in 0..80 {
+        // TODO: this is UB for some reason
+        /*for x in 0..80 {
             ptr_of(x, 24).write_volatile(0);
-        }
+        }*/
     }
 }
