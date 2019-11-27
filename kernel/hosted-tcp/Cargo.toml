@@ -11,5 +11,5 @@ async-std = "1.1"
 fnv = "1.0"
 futures = "0.3.1"
 nametbd-tcp-interface = { path = "../../interfaces/tcp" }
-parity-scale-codec = "1.0.5"
+parity-scale-codec = "1.1.0"
 rand = "0.7"

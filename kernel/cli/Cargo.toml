@@ -16,7 +16,7 @@ nametbd-tcp-interface = { path = "../../interfaces/tcp" }
 nametbd-time-hosted = { path = "../hosted-time" }
 nametbd-time-interface = { path = "../../interfaces/time" }
 nametbd-wasi-hosted = { path = "../hosted-wasi" }
-parity-scale-codec = "1.0.5"
+parity-scale-codec = "1.1.0"
 wasi = "0.7.0"
 
 [build-dependencies]

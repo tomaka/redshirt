@@ -16,7 +16,7 @@ nametbd-interface-interface = { path = "../interfaces/interface", default-featur
 nametbd-loader-interface = { path = "../interfaces/loader", default-features = false }
 nametbd-syscalls-interface = { path = "../interfaces/syscalls", default-features = false }
 nametbd-threads-interface = { path = "../interfaces/threads", default-features = false }
-parity-scale-codec = { version = "1.0.5", features = ["derive"] } # TODO: might be unused
+parity-scale-codec = { version = "1.1.0", features = ["derive"] } # TODO: might be unused
 rand = "0.7"        # TODO: remove in favour of fine grained rand crates
 rand_chacha = { version = "0.2.1", default-features = false }
 rand_core = { version = "0.5.0", default-features = false }
