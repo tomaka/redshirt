@@ -17,13 +17,15 @@
 
 #![no_std]
 #![no_main]
+#![feature(panic_info_message)] // TODO: https://github.com/rust-lang/rust/issues/66745
 #![feature(alloc_error_handler)] // TODO: https://github.com/rust-lang/rust/issues/66741
 
 extern crate alloc;
 
 mod arch;
 
-use alloc::format;
+use alloc::{format, string::String};
+use core::fmt::Write;
 use parity_scale_codec::DecodeAll;
 
 #[global_allocator]
@@ -35,8 +37,9 @@ fn alloc_error_handler(_: core::alloc::Layout) -> ! {
 }
 
 #[panic_handler]
-fn panic(_: &core::panic::PanicInfo) -> ! {
-    // TODO:
+fn panic(panic_info: &core::panic::PanicInfo) -> ! {
+    // Because the diagnostic code below might panic again, we first print a `Panic` message on
+    // the top left of the screen.
     let vga_buffer = 0xb8000 as *mut u8;
     for (i, &byte) in b"Panic".iter().enumerate() {
         unsafe {
@@ -44,19 +47,41 @@ fn panic(_: &core::panic::PanicInfo) -> ! {
             *vga_buffer.offset(i as isize * 2 + 1) = 0xc;
         }
     }
+
+    let mut console = unsafe {
+        nametbd_x86_stdout::Console::init()
+    };
+
+    if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
+        let _ = writeln!(console, "panic occurred: {:?}", s);
+    } else if let Some(s) = panic_info.payload().downcast_ref::<String>() {
+        let _ = writeln!(console, "panic occurred: {:?}", s);
+    } else if let Some(message) = panic_info.message() {
+        let _ = Write::write_fmt(&mut console, *message);
+        let _ = writeln!(console, "");
+    } else {
+        let _ = writeln!(console, "panic occurred");
+    }
+
+    if let Some(location) = panic_info.location() {
+        let _ = writeln!(console, "panic occurred in file '{}' at line {}", location.file(), location.line());
+    } else {
+        let _ = writeln!(console, "panic occurred but can't get location information...");
+    }
+
     loop {
         unsafe { x86::halt() }
     }
 }
 
-static mut HEAP: [u8; 0x1000000] = [0; 0x1000000];
+static mut HEAP: [u8; 0x10000000] = [0; 0x10000000];
 
 // Note: don't get fooled, this is not the "official" main function.
 // We have a `#![no_main]` attribute applied to this crate, meaning that this `main` function here
 // is just a regular function that is called by our bootstrapping process.
 fn main() -> ! {
     let mut console = unsafe { nametbd_x86_stdout::Console::init() };
-    console.write("hello world");
+    console.write("hello world\r");
 
     unsafe {
         ALLOCATOR.init(HEAP.as_mut_ptr() as usize, HEAP.len()); // FIXME:
@@ -79,9 +104,7 @@ fn main() -> ! {
                 // TODO: If we don't support any interface or extrinsic, then `Idle` shouldn't
                 // happen. In a normal situation, this is when we would check the status of the
                 // "externalities", such as the timer.
-                loop {
-                    unsafe { x86::halt() }
-                }
+                panic!()
             }
             nametbd_core::system::SystemRunOutcome::ProgramFinished { pid, outcome } => {
                 console.write(&format!("Program finished {:?} => {:?}\n", pid, outcome));
@@ -93,9 +116,7 @@ fn main() -> ! {
                 let nametbd_stdout_interface::ffi::StdoutMessage::Message(msg) = msg.unwrap();
                 console.write(&msg);
             }
-            _ => loop {
-                unsafe { x86::halt() }
-            },
+            _ => panic!(),
         }
     }
 }

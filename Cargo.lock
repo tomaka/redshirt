@@ -798,6 +798,7 @@ dependencies = [
  "nametbd-x86-stdout 0.1.0",
  "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "slab_allocator 0.3.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "spin 0.5.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "x86 0.28.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 

@@ -7,14 +7,15 @@ edition = "2018"
 publish = false
 
 [dependencies]
-compiler_builtins = { version = "0.1.21", features = ["mem"] }
+compiler_builtins = { version = "0.1.21", features = ["mem"] }      # TODO: necessary?
 futures = { version = "0.3.1", default-features = false }
-libm = "0.1.2"
+libm = "0.1.2"      # TODO: necessary?
 nametbd-core = { path = "../../core" }
 nametbd-stdout-interface = { path = "../../interfaces/stdout" }
 nametbd-x86-stdout = { path = "../x86-stdout" }
 parity-scale-codec = { version = "1.0.5", default-features = false }
 slab_allocator = "0.3.5"
+spin = "0.5.2"      # TODO: remove
 
 [build-dependencies]
 cc = "1.0"
