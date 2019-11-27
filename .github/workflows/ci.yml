@@ -99,6 +99,10 @@ jobs:
       with:
         name: wasm-modules
         path: modules/target/wasm32-wasi/release
+    - name: Install lld
+      run: |
+        apt-get update
+        apt-get install -y lld
     - name: Cache cargo registry
       uses: actions/cache@v1
       with:
