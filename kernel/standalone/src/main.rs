@@ -85,15 +85,15 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
 // We have a `#![no_main]` attribute applied to this crate, meaning that this `main` function here
 // is just a regular function that is called by our bootstrapping process.
 fn main() -> ! {
-    let mut console = unsafe { nametbd_x86_stdout::Console::init() };
-    console.write("hello world\r");
-
     unsafe {
+        // TODO: don't have the HEAP here, but adjust it to the available RAM
         static mut HEAP: [u8; 0x10000000] = [0; 0x10000000];
         ALLOCATOR
             .lock()
-            .init(HEAP.as_mut_ptr() as usize, HEAP.len()); // FIXME:
+            .init(HEAP.as_mut_ptr() as usize, HEAP.len());
     }
+
+    let mut console = unsafe { nametbd_x86_stdout::Console::init() };
 
     let module = nametbd_core::module::Module::from_bytes(
         &include_bytes!("../../../modules/target/wasm32-wasi/release/ipfs.wasm")[..],
