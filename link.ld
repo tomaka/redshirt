@@ -45,6 +45,4 @@ SECTIONS
     *(.bss.*)
     *(COMMON)
   }
-
-  PROVIDE(kernel_end = .);
 }
