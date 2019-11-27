@@ -7,10 +7,8 @@ MULTIBOOT2_ARCH = 0;
 MULTIBOOT2_HEADER_LEN = mboot_end - mboot_start;
 MULTIBOOT2_CHECKSUM = -(MULTIBOOT2_MAGIC + MULTIBOOT2_ARCH + MULTIBOOT2_HEADER_LEN);
 
-SECTIONS
-{
+SECTIONS {
   . = 100000;
-  kernel_start = .;
 
   .mboot ALIGN(32) : AT(ADDR(.mboot)) {
     mboot_start = .;
@@ -31,16 +29,18 @@ SECTIONS
     *(.text)
     *(.text.*)
   }
+
   .rodata ALIGN(4096) : AT(ADDR(.rodata)) {
     *(.rodata)
     *(.rodata.*)
   }
+
   .data ALIGN(4096) : AT(ADDR(.data)) {
     *(.data)
     *(.data.*)
   }
+
   .bss ALIGN(4096) : AT(ADDR(.bss)) {
-    bss_start = .;
     *(.bss)
     *(.bss.*)
     *(COMMON)
