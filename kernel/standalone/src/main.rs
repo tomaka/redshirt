@@ -57,7 +57,6 @@ fn main() -> ! {
     console.write("hello world");
 
     loop {}
-
     unsafe {
         ALLOCATOR.init(HEAP.as_mut_ptr() as usize, HEAP.len()); // FIXME:
     }

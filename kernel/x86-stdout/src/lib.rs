@@ -108,9 +108,8 @@ fn line_up() {
             }
         }
 
-        // TODO: this is UB for some reason
-        /*for x in 0..80 {
+        for x in 0..80 {
             ptr_of(x, 24).write_volatile(0);
-        }*/
+        }
     }
 }
