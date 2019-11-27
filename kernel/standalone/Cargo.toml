@@ -7,6 +7,7 @@ edition = "2018"
 publish = false
 
 [dependencies]
+compiler_builtins = { version = "0.1.21", features = ["mem"] }      # TODO: necessary?
 futures = { version = "0.3.1", default-features = false }
 libm = "0.1.2"      # TODO: necessary?
 linked_list_allocator = "0.6.4"

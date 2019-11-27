@@ -15,6 +15,8 @@
 
 #![cfg(target_arch = "x86_64")]
 
+extern crate compiler_builtins;
+
 #[link(name = "boot")]
 extern "C" {}
 
