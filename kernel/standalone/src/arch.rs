@@ -13,17 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use std::env;
+mod x86_64;
 
-fn main() {
-    let target = env::var("TARGET").unwrap();
-    if target.starts_with("x86_64-") {
-        cc::Build::new()
-            .file("src/arch/x86_64/boot.S")
-            .include("src")
-            .compile("libboot.a");
-
-    } else {
-        panic!("Unsupported target: {:?}", target)
-    }
-}
+#[cfg(target_arch = "x86_64")]
+pub use x86_64::*;

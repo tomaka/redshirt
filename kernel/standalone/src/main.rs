@@ -20,13 +20,11 @@
 #![feature(alloc_error_handler)] // TODO: https://github.com/rust-lang/rust/issues/66741
 
 extern crate alloc;
-extern crate compiler_builtins;
+
+mod arch;
 
 use alloc::format;
 use parity_scale_codec::DecodeAll;
-
-#[link(name = "entry")]
-extern {}
 
 #[global_allocator]
 static ALLOCATOR: slab_allocator::LockedHeap = slab_allocator::LockedHeap::empty();
@@ -49,40 +47,12 @@ fn panic(_: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-// TODO: figure out how to remove these
-#[no_mangle]
-pub extern "C" fn fmod(a: f64, b: f64) -> f64 {
-    libm::fmod(a, b)
-}
-#[no_mangle]
-pub extern "C" fn fmodf(a: f32, b: f32) -> f32 {
-    libm::fmodf(a, b)
-}
-#[no_mangle]
-pub extern "C" fn fmin(a: f64, b: f64) -> f64 {
-    libm::fmin(a, b)
-}
-#[no_mangle]
-pub extern "C" fn fminf(a: f32, b: f32) -> f32 {
-    libm::fminf(a, b)
-}
-#[no_mangle]
-pub extern "C" fn fmax(a: f64, b: f64) -> f64 {
-    libm::fmax(a, b)
-}
-#[no_mangle]
-pub extern "C" fn fmaxf(a: f32, b: f32) -> f32 {
-    libm::fmaxf(a, b)
-}
-#[no_mangle]
-pub extern "C" fn __truncdfsf2(a: f64) -> f32 {
-    libm::trunc(a) as f32   // TODO: correct?
-}
-
 static mut HEAP: [u8; 65536] = [0; 65536];
 
-#[no_mangle]
-extern "C" fn loader_main() -> ! {
+// Note: don't get fooled, this is not the "official" main function.
+// We have a `#![no_main]` attribute applied to this crate, meaning that this `main` function here
+// is just a regular function that is called by our bootstrapping process.
+fn main() -> ! {
     let mut console = unsafe { nametbd_x86_stdout::Console::init() };
     console.write("hello world");
 

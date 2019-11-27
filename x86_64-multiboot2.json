@@ -14,7 +14,7 @@
     "llvm-target": "x86_64-unknown-none",
     "max-atomic-width": 64,
     "no-compiler-rt": true,
-    "os": "none",
+    "os": "unknown",
     "panic-strategy": "abort",
     "pre-link-args": {
         "ld": ["--script", "link.ld"]
