@@ -24,6 +24,6 @@ rand_distr = { version = "0.2.2", default-features = false }
 sha2 = "0.8.0"
 smallvec = { version = "1.0.0", default-features = false }
 thiserror = "1.0"
-wat = "1.0.3"
+wat = "1.0.4"
 wasmi = { git = "https://github.com/paritytech/wasmi", default-features = false, features = ["core", "std"] }
 #wasmi = { version = "0.5.1", default-features = false, features = ["core"] }       # TODO: https://github.com/paritytech/wasmi/pull/210

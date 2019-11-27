@@ -720,7 +720,7 @@ dependencies = [
  "smallvec 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "thiserror 1.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "wasmi 0.6.0 (git+https://github.com/paritytech/wasmi)",
- "wat 1.0.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "wat 1.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -1402,7 +1402,7 @@ dependencies = [
 
 [[package]]
 name = "wast"
-version = "3.0.2"
+version = "3.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "leb128 0.2.4 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1410,10 +1410,10 @@ dependencies = [
 
 [[package]]
 name = "wat"
-version = "1.0.3"
+version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
- "wast 3.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "wast 3.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -1716,8 +1716,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum wasi 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)" = "b89c3ce4ce14bdc6fb6beaf9ec7928ca331de5df7e5ea278375642a2f478570d"
 "checksum wasmi 0.6.0 (git+https://github.com/paritytech/wasmi)" = "<none>"
 "checksum wasmi-validation 0.3.0 (git+https://github.com/paritytech/wasmi)" = "<none>"
-"checksum wast 3.0.2 (registry+https://github.com/rust-lang/crates.io-index)" = "86b52202bd73a756b216bbfea019991ff317b1e5f22677da5cef2964696a3245"
-"checksum wat 1.0.3 (registry+https://github.com/rust-lang/crates.io-index)" = "80db13d155bab63db0f19c24a0e12bf60c3fe346edba8da508ba6962e08c137b"
+"checksum wast 3.0.4 (registry+https://github.com/rust-lang/crates.io-index)" = "233648f540f07fce9b972436f2fbcae8a750c1121b6d32d949e1a44b4d9fc7b1"
+"checksum wat 1.0.4 (registry+https://github.com/rust-lang/crates.io-index)" = "55d3a7b5963209ea69d0e4830b6e81265717c335e3624d32e255e84443bd4d9d"
 "checksum wayland-client 0.23.6 (registry+https://github.com/rust-lang/crates.io-index)" = "af1080ebe0efabcf12aef2132152f616038f2d7dcbbccf7b2d8c5270fe14bcda"
 "checksum wayland-commons 0.23.6 (registry+https://github.com/rust-lang/crates.io-index)" = "bb66b0d1a27c39bbce712b6372131c6e25149f03ffb0cd017cf8f7de8d66dbdb"
 "checksum wayland-protocols 0.23.6 (registry+https://github.com/rust-lang/crates.io-index)" = "6cc286643656742777d55dc8e70d144fa4699e426ca8e9d4ef454f4bf15ffcf9"
