@@ -16,9 +16,9 @@
 mod tcp_transport;
 
 use futures::prelude::*;
-use libp2p_core::{identity, upgrade, PeerId, muxing::StreamMuxerBox, nodes::node::Substream};
-use libp2p_core::transport::{Transport, boxed::Boxed};
-use libp2p_kad::{Kademlia, Quorum, record::Key, record::store::MemoryStore};
+use libp2p_core::transport::{boxed::Boxed, Transport};
+use libp2p_core::{identity, muxing::StreamMuxerBox, nodes::node::Substream, upgrade, PeerId};
+use libp2p_kad::{record::store::MemoryStore, record::Key, Kademlia, Quorum};
 use libp2p_mplex::MplexConfig;
 use libp2p_plaintext::PlainText2Config;
 use libp2p_swarm::Swarm;
@@ -26,7 +26,10 @@ use std::io;
 
 /// Active set of connections to the network.
 pub struct Network<T> {
-    swarm: Swarm<Boxed<(PeerId, StreamMuxerBox), io::Error>, Kademlia<Substream<StreamMuxerBox>, MemoryStore>>,
+    swarm: Swarm<
+        Boxed<(PeerId, StreamMuxerBox), io::Error>,
+        Kademlia<Substream<StreamMuxerBox>, MemoryStore>,
+    >,
     active_fetches: Vec<([u8; 32], T)>,
 }
 
@@ -65,7 +68,10 @@ impl<T> Network<T> {
             .map_err(|err| io::Error::new(io::ErrorKind::Other, err))
             .boxed();
 
-        let kademlia = Kademlia::new(local_peer_id.clone(), MemoryStore::new(local_peer_id.clone()));
+        let kademlia = Kademlia::new(
+            local_peer_id.clone(),
+            MemoryStore::new(local_peer_id.clone()),
+        );
 
         let mut swarm = Swarm::new(transport, kademlia, local_peer_id);
         Swarm::listen_on(&mut swarm, "/ip4/0.0.0.0/tcp/30333".parse().unwrap()).unwrap();

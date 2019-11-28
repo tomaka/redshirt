@@ -19,15 +19,17 @@
 use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer};
 use vulkano::command_buffer::{AutoCommandBufferBuilder, DynamicState};
 use vulkano::device::{Device, DeviceExtensions};
-use vulkano::framebuffer::{Framebuffer, FramebufferAbstract, Subpass, RenderPassAbstract};
+use vulkano::framebuffer::{Framebuffer, FramebufferAbstract, RenderPassAbstract, Subpass};
 use vulkano::image::SwapchainImage;
 use vulkano::instance::{ApplicationInfo, Instance, PhysicalDevice, RawInstanceExtensions};
-use vulkano::pipeline::GraphicsPipeline;
 use vulkano::pipeline::viewport::Viewport;
-use vulkano::swapchain::{AcquireError, PresentMode, SurfaceTransform, Swapchain, SwapchainCreationError};
+use vulkano::pipeline::GraphicsPipeline;
 use vulkano::swapchain;
-use vulkano::sync::{GpuFuture, FlushError};
+use vulkano::swapchain::{
+    AcquireError, PresentMode, SurfaceTransform, Swapchain, SwapchainCreationError,
+};
 use vulkano::sync;
+use vulkano::sync::{FlushError, GpuFuture};
 
 use std::sync::Arc;
 
@@ -36,7 +38,11 @@ fn main() {
     let instance = {
         struct MyLoader;
         unsafe impl vulkano::instance::loader::Loader for MyLoader {
-            fn get_instance_proc_addr(&self, instance: vk_sys::Instance, name: *const std::os::raw::c_char) -> extern "system" fn() {
+            fn get_instance_proc_addr(
+                &self,
+                instance: vk_sys::Instance,
+                name: *const std::os::raw::c_char,
+            ) -> extern "system" fn() {
                 unsafe {
                     nametbd_vulkan_interface::vkGetInstanceProcAddr(instance, name as *const _)
                 }
@@ -70,9 +76,13 @@ fn main() {
     // most of the time.
     let physical = PhysicalDevice::enumerate(&instance).next().unwrap();
     // Some little debug infos.
-    println!("Using device: {} (type: {:?})", physical.name(), physical.ty());
+    println!(
+        "Using device: {} (type: {:?})",
+        physical.name(),
+        physical.ty()
+    );
 
-/*
+    /*
     // The objective of this example is to draw a triangle on a window. To do so, we first need to
     // create the window.
     //
@@ -86,7 +96,8 @@ fn main() {
     let mut events_loop = EventsLoop::new();
     let surface = WindowBuilder::new().build_vk_surface(&events_loop, instance.clone()).unwrap();
     let window = surface.window();*/
-    let window = nametbd_syscalls_interface::block_on(nametbd_window_interface::Window::open()).unwrap();
+    let window =
+        nametbd_syscalls_interface::block_on(nametbd_window_interface::Window::open()).unwrap();
 
     // The next step is to choose which GPU queue will execute our draw commands.
     //
@@ -98,10 +109,13 @@ fn main() {
     // queue to handle data transfers in parallel. In this example we only use one queue.
     //
     // We have to choose which queues to use early on, because we will need this info very soon.
-    let queue_family = physical.queue_families().find(|&q| {
-        // We take the first queue that supports drawing to our window.
-        q.supports_graphics()// && surface.is_supported(q).unwrap_or(false)
-    }).unwrap();
+    let queue_family = physical
+        .queue_families()
+        .find(|&q| {
+            // We take the first queue that supports drawing to our window.
+            q.supports_graphics() // && surface.is_supported(q).unwrap_or(false)
+        })
+        .unwrap();
 
     // Now initializing the device. This is probably the most important object of Vulkan.
     //
@@ -122,16 +136,24 @@ fn main() {
     //   much it should prioritize queues between one another.
     //
     // The list of created queues is returned by the function alongside with the device.
-    let device_ext = DeviceExtensions { khr_swapchain: true, .. DeviceExtensions::none() };
-    let (device, mut queues) = Device::new(physical, physical.supported_features(), &device_ext,
-        [(queue_family, 0.5)].iter().cloned()).unwrap();
+    let device_ext = DeviceExtensions {
+        khr_swapchain: true,
+        ..DeviceExtensions::none()
+    };
+    let (device, mut queues) = Device::new(
+        physical,
+        physical.supported_features(),
+        &device_ext,
+        [(queue_family, 0.5)].iter().cloned(),
+    )
+    .unwrap();
 
     // Since we can request multiple queues, the `queues` variable is in fact an iterator. In this
     // example we use only one queue, so we just retrieve the first and only element of the
     // iterator and throw it away.
     let queue = queues.next().unwrap();
 
-/*    // Before we can draw on the surface, we have to create what is called a swapchain. Creating
+    /*    // Before we can draw on the surface, we have to create what is called a swapchain. Creating
     // a swapchain allocates the color buffers that will contain the image that will ultimately
     // be visible on the screen. These images are returned alongside with the swapchain.
     let (mut swapchain, images) = {
@@ -177,14 +199,29 @@ fn main() {
     // We now create a buffer that will store the shape of our triangle.
     let vertex_buffer = {
         #[derive(Default, Debug, Clone)]
-        struct Vertex { position: [f32; 2] }
+        struct Vertex {
+            position: [f32; 2],
+        }
         vulkano::impl_vertex!(Vertex, position);
 
-        CpuAccessibleBuffer::from_iter(device.clone(), BufferUsage::all(), [
-            Vertex { position: [-0.5, -0.25] },
-            Vertex { position: [0.0, 0.5] },
-            Vertex { position: [0.25, -0.1] }
-        ].iter().cloned()).unwrap()
+        CpuAccessibleBuffer::from_iter(
+            device.clone(),
+            BufferUsage::all(),
+            [
+                Vertex {
+                    position: [-0.5, -0.25],
+                },
+                Vertex {
+                    position: [0.0, 0.5],
+                },
+                Vertex {
+                    position: [0.25, -0.1],
+                },
+            ]
+            .iter()
+            .cloned(),
+        )
+        .unwrap()
     };
 
     // The next step is to create the shaders.
@@ -196,7 +233,7 @@ fn main() {
     //
     // TODO: explain this in details
     mod vs {
-        vulkano_shaders::shader!{
+        vulkano_shaders::shader! {
             ty: "vertex",
             src: "
 #version 450
@@ -210,7 +247,7 @@ void main() {
     }
 
     mod fs {
-        vulkano_shaders::shader!{
+        vulkano_shaders::shader! {
             ty: "fragment",
             src: "
 #version 450
@@ -226,7 +263,7 @@ void main() {
 
     let vs = vs::Shader::load(device.clone()).unwrap();
     let fs = fs::Shader::load(device.clone()).unwrap();
-/*
+    /*
     // At this point, OpenGL initialization would be finished. However in Vulkan it is not. OpenGL
     // implicitly does a lot of computation whenever you draw. In Vulkan, you have to do all this
     // manually.

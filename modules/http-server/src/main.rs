@@ -13,40 +13,60 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use futures::{prelude::*, channel::mpsc};
+use futures::{channel::mpsc, prelude::*};
 use std::{pin::Pin, task::Context, task::Poll};
 
 fn main() {
     nametbd_syscalls_interface::block_on(async move {
-        let listener = nametbd_tcp_interface::TcpListener::bind(&"0.0.0.0:8000".parse().unwrap()).await.unwrap();
-        let stream = stream::unfold(listener, |mut l| async move {
-            let connec = l.accept().await.0;
-            Some((connec, l))
+        let listener = nametbd_tcp_interface::TcpListener::bind(&"0.0.0.0:8000".parse().unwrap())
+            .await
+            .unwrap();
+        let stream = stream::unfold(listener, |mut l| {
+            async move {
+                let connec = l.accept().await.0;
+                Some((connec, l))
+            }
         });
 
-        let mut active_conncs = stream::FuturesUnordered::<Pin<Box<dyn Future<Output = ()>>>>::new();
+        let mut active_conncs =
+            stream::FuturesUnordered::<Pin<Box<dyn Future<Output = ()>>>>::new();
         active_conncs.push(Box::pin(future::pending()));
         let (tx, mut rx) = mpsc::unbounded();
 
-        let http = hyper::server::conn::Http::new()
-            .with_executor(Executor { pusher: tx });
+        let http = hyper::server::conn::Http::new().with_executor(Executor { pusher: tx });
 
-        let mut server = hyper::server::Builder::new(Accept { next_connec: Box::pin(stream) }, http)
-            .serve(hyper::service::make_service_fn(|_| async {
-                Ok::<_, std::io::Error>(hyper::service::service_fn(|_req| async {
-                    Ok::<_, std::io::Error>(hyper::Response::new(hyper::Body::from("Hello World")))
+        let mut server = hyper::server::Builder::new(
+            Accept {
+                next_connec: Box::pin(stream),
+            },
+            http,
+        )
+        .serve(hyper::service::make_service_fn(|_| {
+            async {
+                Ok::<_, std::io::Error>(hyper::service::service_fn(|_req| {
+                    async {
+                        Ok::<_, std::io::Error>(hyper::Response::new(hyper::Body::from(
+                            "Hello World",
+                        )))
+                    }
                 }))
-            }));
+            }
+        }));
 
         loop {
-            let new_connec = match future::select(future::select(&mut server, rx.next()), active_conncs.next()).await {
-                future::Either::Left((future::Either::Left((_, _)), _)) => {
-                    println!("server finished");
-                    break;
-                },
-                future::Either::Left((future::Either::Right((new_connec, _)), _)) => new_connec.unwrap(),
-                future::Either::Right((_, _)) => continue,
-            };
+            let new_connec =
+                match future::select(future::select(&mut server, rx.next()), active_conncs.next())
+                    .await
+                {
+                    future::Either::Left((future::Either::Left((_, _)), _)) => {
+                        println!("server finished");
+                        break;
+                    }
+                    future::Either::Left((future::Either::Right((new_connec, _)), _)) => {
+                        new_connec.unwrap()
+                    }
+                    future::Either::Right((_, _)) => continue,
+                };
 
             active_conncs.push(new_connec);
         }
@@ -61,7 +81,10 @@ impl hyper::server::accept::Accept for Accept {
     type Conn = nametbd_tcp_interface::TcpStream;
     type Error = std::io::Error;
 
-    fn poll_accept(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Result<Self::Conn, Self::Error>>> {
+    fn poll_accept(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context,
+    ) -> Poll<Option<Result<Self::Conn, Self::Error>>> {
         match Stream::poll_next(Pin::new(&mut self.next_connec), cx) {
             Poll::Ready(Some(c)) => Poll::Ready(Some(Ok(c))),
             Poll::Ready(None) => Poll::Ready(None),
@@ -77,7 +100,8 @@ struct Executor {
 
 impl<T: Future<Output = ()> + 'static> tokio_executor::TypedExecutor<T> for Executor {
     fn spawn(&mut self, future: T) -> Result<(), tokio_executor::SpawnError> {
-        self.pusher.unbounded_send(Box::pin(future))
+        self.pusher
+            .unbounded_send(Box::pin(future))
             .map_err(|_| tokio_executor::SpawnError::shutdown())
     }
 }
