@@ -5,6 +5,7 @@ license = "GPL-3.0-or-later"
 authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
 edition = "2018"
 publish = false
+default-run = "nametbd-cli-kernel"
 
 [dependencies]
 async-std = "1.0"
