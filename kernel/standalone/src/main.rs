@@ -96,7 +96,8 @@ fn main() -> ! {
     let mut console = unsafe { nametbd_x86_stdout::Console::init() };
 
     let module = nametbd_core::module::Module::from_bytes(
-        &include_bytes!("../../../modules/target/wasm32-wasi/release/ipfs.wasm")[..],
+        &include_bytes!("../../../modules/target/wasm32-unknown-unknown/release/hello-world.wasm")
+            [..],
     )
     .unwrap();
 
@@ -112,7 +113,9 @@ fn main() -> ! {
                 // TODO: If we don't support any interface or extrinsic, then `Idle` shouldn't
                 // happen. In a normal situation, this is when we would check the status of the
                 // "externalities", such as the timer.
-                panic!()
+                loop {
+                    unsafe { x86::halt() }
+                }
             }
             nametbd_core::system::SystemRunOutcome::ProgramFinished { pid, outcome } => {
                 console.write(&format!("Program finished {:?} => {:?}\n", pid, outcome));
