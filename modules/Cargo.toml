@@ -1,8 +1,10 @@
 [workspace]
 members = [
     "hello-world",
+    "http-server",
     "ipfs",
     "vulkan-triangle",
+    "time",
     "wasm-timer",
 ]
 
@@ -16,4 +18,5 @@ codegen-units = 1
 panic = 'abort'
 
 [patch.crates-io]
+time = { path = "./time" }
 wasm-timer = { path = "./wasm-timer" }
