@@ -108,8 +108,6 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: rust
-      env:
-        CC: clang-9
     steps:
     - uses: actions/checkout@v1
     - name: Download WASM modules
