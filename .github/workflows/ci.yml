@@ -63,6 +63,12 @@ jobs:
         toolchain: stable
         target: wasm32-wasi
         override: true
+    - name: Install a recent version of Clang
+      run: |
+        wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
+        echo "deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-9 main" >> /etc/apt/sources.list
+        apt-get update
+        apt-get install -y clang-9
     - name: Download WASM modules
       uses: actions/download-artifact@v1
       with:
