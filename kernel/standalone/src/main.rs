@@ -96,7 +96,8 @@ fn main() -> ! {
     let mut console = unsafe { nametbd_x86_stdout::Console::init() };
 
     let module = nametbd_core::module::Module::from_bytes(
-        &include_bytes!("../../../modules/target/wasm32-unknown-unknown/release/hello-world.wasm")[..],
+        &include_bytes!("../../../modules/target/wasm32-unknown-unknown/release/hello-world.wasm")
+            [..],
     )
     .unwrap();
 
