@@ -21,6 +21,9 @@ fn main() {
         let listener = nametbd_tcp_interface::TcpListener::bind(&"0.0.0.0:8000".parse().unwrap())
             .await
             .unwrap();
+
+        println!("Now listening on 0.0.0.0:8000");
+
         let stream = stream::unfold(listener, |mut l| {
             async move {
                 let connec = l.accept().await.0;
