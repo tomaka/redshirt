@@ -145,6 +145,34 @@ impl AsyncWrite for TcpStream {
     }
 }
 
+impl tokio_io::AsyncRead for TcpStream {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context,
+        buf: &mut [u8],
+    ) -> Poll<Result<usize, io::Error>> {
+        AsyncRead::poll_read(self, cx, buf)
+    }
+}
+
+impl tokio_io::AsyncWrite for TcpStream {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context,
+        buf: &[u8],
+    ) -> Poll<Result<usize, io::Error>> {
+        AsyncWrite::poll_write(self, cx, buf)
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), io::Error>> {
+        AsyncWrite::poll_flush(self, cx)
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), io::Error>> {
+        AsyncWrite::poll_close(self, cx)
+    }
+}
+
 impl Drop for TcpStream {
     fn drop(&mut self) {
         let tcp_close = ffi::TcpMessage::Close(ffi::TcpClose {
