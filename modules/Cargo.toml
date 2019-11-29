@@ -3,9 +3,9 @@ members = [
     "hello-world",
     "http-server",
     "ipfs",
+    "third-party/time",
+    "third-party/wasm-timer",
     "vulkan-triangle",
-    "time",
-    "wasm-timer",
 ]
 
 [profile.dev]
@@ -18,5 +18,5 @@ codegen-units = 1
 panic = 'abort'
 
 [patch.crates-io]
-time = { path = "./time" }
-wasm-timer = { path = "./wasm-timer" }
+time = { path = "./third-party/time" }
+wasm-timer = { path = "./third-party/wasm-timer" }
