@@ -18,14 +18,16 @@
 #[no_mangle]
 extern "C" fn dummy_fn() {
     unsafe {
-        asm!(r#"
+        asm!(
+            r#"
 .comm stack, 0x40000, 8
 
 .globl _start
 _start:
     ldr sp, =stack+0x40000
     b after_boot
-"#);
+"#
+        );
     }
 }
 

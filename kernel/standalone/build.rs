@@ -23,10 +23,8 @@ fn main() {
             .file("src/arch/x86_64/boot.S")
             .include("src")
             .compile("libboot.a");
-
     } else if target.starts_with("arm") || target.starts_with("aarch64") {
         // Nothing more to do.
-
     } else {
         panic!("Unsupported target: {:?}", target)
     }
