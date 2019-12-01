@@ -37,78 +37,78 @@ use std::{
 /// message that a process sends on the TCP interface. In parallel, call [`TcpState::next_event`]
 /// in order to receive answers to send back to processes.
 ///
-pub struct TcpState {
+pub struct TcpState<TMsgId> {
     /// Receives messages from the sockets background tasks.
-    receiver: Mutex<mpsc::Receiver<BackToFront>>,
+    receiver: Mutex<mpsc::Receiver<BackToFront<TMsgId>>>,
 
     /// List of all active sockets. Contains both open and non-open sockets.
-    sockets: Mutex<FnvHashMap<u32, FrontSocketState>>,
+    sockets: Mutex<FnvHashMap<u32, FrontSocketState<TMsgId>>>,
 
     /// Sending side of `receiver`. Meant to be cloned and sent to background tasks.
-    sender: mpsc::Sender<BackToFront>,
+    sender: mpsc::Sender<BackToFront<TMsgId>>,
 }
 
 /// State of a socket known from the front state.
-enum FrontSocketState {
+enum FrontSocketState<TMsgId> {
     /// This socket ID is reserved, but not the background task is in the process of opening it.
     Orphan,
 
     /// The socket is connected. Contains a sender to send commands to the background task.
-    Connected(mpsc::Sender<FrontToBackSocket>),
+    Connected(mpsc::Sender<FrontToBackSocket<TMsgId>>),
 
     /// The socket is a listener.
-    Listener(mpsc::Sender<FrontToBackListener>),
+    Listener(mpsc::Sender<FrontToBackListener<TMsgId>>),
 }
 
 /// Message sent from the main task to the background task for sockets.
-enum FrontToBackSocket {
-    Read { message_id: u64 },
-    Write { message_id: u64, data: Vec<u8> },
+enum FrontToBackSocket<TMsgId> {
+    Read { message_id: TMsgId },
+    Write { message_id: TMsgId, data: Vec<u8> },
 }
 
 /// Message sent from the main task to the background task for listeners.
-enum FrontToBackListener {
-    Accept { message_id: u64 },
+enum FrontToBackListener<TMsgId> {
+    Accept { message_id: TMsgId },
 }
 
 /// Message sent from a background socket task to the main task.
-enum BackToFront {
+enum BackToFront<TMsgId> {
     OpenOk {
-        open_message_id: u64,
+        open_message_id: TMsgId,
         socket_id: u32,
-        sender: mpsc::Sender<FrontToBackSocket>,
+        sender: mpsc::Sender<FrontToBackSocket<TMsgId>>,
     },
     OpenErr {
-        open_message_id: u64,
+        open_message_id: TMsgId,
         socket_id: u32,
     },
     ListenOk {
-        listen_message_id: u64,
+        listen_message_id: TMsgId,
         socket_id: u32,
         local_addr: SocketAddr,
-        sender: mpsc::Sender<FrontToBackListener>,
+        sender: mpsc::Sender<FrontToBackListener<TMsgId>>,
     },
     ListenErr {
-        listen_message_id: u64,
+        listen_message_id: TMsgId,
         socket_id: u32,
     },
     Read {
-        message_id: u64,
+        message_id: TMsgId,
         result: Result<Vec<u8>, ()>,
     },
     Write {
-        message_id: u64,
+        message_id: TMsgId,
         result: Result<(), ()>,
     },
     Accept {
-        message_id: u64,
+        message_id: TMsgId,
         socket: TcpStream,
     },
 }
 
-impl TcpState {
+impl<TMsgId> TcpState<TMsgId> {
     /// Initializes a new empty [`TcpState`].
-    pub fn new() -> TcpState {
+    pub fn new() -> Self {
         let (sender, receiver) = mpsc::channel(32);
 
         TcpState {
@@ -117,14 +117,19 @@ impl TcpState {
             sender,
         }
     }
+}
 
+impl<TMsgId> TcpState<TMsgId>
+where
+    TMsgId: Send + 'static,
+{
     /// Injects a message from a process into the state machine.
     ///
     /// Call [`TcpState::next_event`] in order to receive a response (if relevant).
     pub async fn handle_message(
         &self,
         //emitter_pid: u64,     // TODO: also notify the TcpState when a process exits, for clean up
-        message_id: Option<u64>,
+        message_id: Option<TMsgId>,
         message: nametbd_tcp_interface::ffi::TcpMessage,
     ) {
         let mut sockets = self.sockets.lock().await;
@@ -242,7 +247,7 @@ impl TcpState {
     }
 
     /// Returns the next message to respond to, and the response.
-    pub async fn next_event(&self) -> (u64, Vec<u8>) {
+    pub async fn next_event(&self) -> (TMsgId, Vec<u8>) {
         let message = {
             let mut receiver = self.receiver.lock().await;
             receiver.next().await.unwrap()
@@ -372,27 +377,27 @@ impl TcpState {
     }
 }
 
-impl Default for TcpState {
+impl<TMsgId> Default for TcpState<TMsgId> {
     fn default() -> Self {
         TcpState::new()
     }
 }
 
-impl fmt::Debug for TcpState {
+impl<TMsgId> fmt::Debug for TcpState<TMsgId> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_tuple("TcpState").finish()
     }
 }
 
-impl FrontSocketState {
-    fn as_mut_connected(&mut self) -> Option<&mut mpsc::Sender<FrontToBackSocket>> {
+impl<TMsgId> FrontSocketState<TMsgId> {
+    fn as_mut_connected(&mut self) -> Option<&mut mpsc::Sender<FrontToBackSocket<TMsgId>>> {
         match self {
             FrontSocketState::Connected(sender) => Some(sender),
             _ => None,
         }
     }
 
-    fn as_mut_listener(&mut self) -> Option<&mut mpsc::Sender<FrontToBackListener>> {
+    fn as_mut_listener(&mut self) -> Option<&mut mpsc::Sender<FrontToBackListener<TMsgId>>> {
         match self {
             FrontSocketState::Listener(sender) => Some(sender),
             _ => None,
@@ -401,16 +406,16 @@ impl FrontSocketState {
 }
 
 /// Function executed in the background for each TCP socket.
-async fn socket_task(
+async fn socket_task<TMsgId>(
     socket_id: u32,
-    open_message_id: u64,
+    open_message_id: TMsgId,
     socket_addr: SocketAddr,
-    mut back_to_front: mpsc::Sender<BackToFront>,
+    mut back_to_front: mpsc::Sender<BackToFront<TMsgId>>,
 ) {
     // First step is to try connect to the destination.
     let (socket, commands_rx) = match TcpStream::connect(socket_addr).await {
         Ok(s) => {
-            let (tx, rx) = mpsc::channel(2);
+            let (tx, rx) = mpsc::channel::<FrontToBackSocket<TMsgId>>(2);
             let msg_to_front = BackToFront::OpenOk {
                 socket_id,
                 open_message_id,
@@ -437,10 +442,10 @@ async fn socket_task(
 }
 
 /// Function executed in the background for each TCP socket.
-async fn open_socket_task(
+async fn open_socket_task<TMsgId>(
     mut socket: TcpStream,
-    mut commands_rx: mpsc::Receiver<FrontToBackSocket>,
-    mut back_to_front: mpsc::Sender<BackToFront>,
+    mut commands_rx: mpsc::Receiver<FrontToBackSocket<TMsgId>>,
+    mut back_to_front: mpsc::Sender<BackToFront<TMsgId>>,
 ) {
     // Now that we're connected and we have a `socket` and `commands_rx`, we can start reading
     // and writing.
@@ -478,16 +483,16 @@ async fn open_socket_task(
 }
 
 /// Function executed in the background for each TCP listener.
-async fn listener_task(
+async fn listener_task<TMsgId>(
     socket_id: u32,
-    listen_message_id: u64,
+    listen_message_id: TMsgId,
     socket_addr: SocketAddr,
-    mut back_to_front: mpsc::Sender<BackToFront>,
+    mut back_to_front: mpsc::Sender<BackToFront<TMsgId>>,
 ) {
     // First step is to try create the listener.
     let (listener, mut commands_rx) = match TcpListener::bind(socket_addr).await {
         Ok(s) => {
-            let (tx, rx) = mpsc::channel(2);
+            let (tx, rx) = mpsc::channel::<FrontToBackListener<TMsgId>>(2);
             let msg_to_front = BackToFront::ListenOk {
                 socket_id,
                 local_addr: s.local_addr().unwrap(), // TODO:

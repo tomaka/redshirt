@@ -40,6 +40,7 @@ async fn async_main() {
 
     let time = Arc::new(nametbd_time_hosted::TimerHandler::new());
     let tcp = Arc::new(nametbd_tcp_hosted::TcpState::new());
+    let mut wasi = nametbd_wasi_hosted::WasiStateMachine::new();
 
     let mut to_answer_rx = {
         let (mut to_answer_tx, to_answer_rx) = mpsc::channel(16);
@@ -72,13 +73,34 @@ async fn async_main() {
                     extrinsic,
                     params,
                 } => {
-                    nametbd_wasi_hosted::handle_wasi(
-                        &mut system,
-                        extrinsic,
-                        pid,
-                        thread_id,
-                        params,
-                    );
+                    let out =
+                        wasi.handle_extrinsic_call(&mut system, extrinsic, pid, thread_id, params);
+                    if let nametbd_wasi_hosted::HandleOut::EmitMessage {
+                        id,
+                        interface,
+                        message,
+                    } = out
+                    {
+                        if interface == nametbd_stdout_interface::ffi::INTERFACE {
+                            let msg =
+                                nametbd_stdout_interface::ffi::StdoutMessage::decode_all(&message);
+                            let nametbd_stdout_interface::ffi::StdoutMessage::Message(msg) =
+                                msg.unwrap();
+                            print!("{}", msg);
+                        } else if interface == nametbd_time_interface::ffi::INTERFACE {
+                            if let Some(answer) =
+                                time.time_message(id.map(MessageId::Wasi), &message)
+                            {
+                                unimplemented!()
+                            }
+                        } else if interface == nametbd_tcp_interface::ffi::INTERFACE {
+                            let message: nametbd_tcp_interface::ffi::TcpMessage =
+                                DecodeAll::decode_all(&message).unwrap();
+                            tcp.handle_message(id.map(MessageId::Wasi), message).await;
+                        } else {
+                            panic!()
+                        }
+                    }
                     true
                 }
                 nametbd_core::system::SystemRunOutcome::InterfaceMessage {
@@ -96,7 +118,9 @@ async fn async_main() {
                     interface,
                     message,
                 } if interface == nametbd_time_interface::ffi::INTERFACE => {
-                    if let Some(answer) = time.time_message(message_id, &message) {
+                    if let Some(answer) =
+                        time.time_message(message_id.map(MessageId::Core), &message)
+                    {
                         system.answer_message(message_id.unwrap(), &answer);
                     }
                     continue;
@@ -108,7 +132,8 @@ async fn async_main() {
                 } if interface == nametbd_tcp_interface::ffi::INTERFACE => {
                     let message: nametbd_tcp_interface::ffi::TcpMessage =
                         DecodeAll::decode_all(&message).unwrap();
-                    tcp.handle_message(message_id, message).await;
+                    tcp.handle_message(message_id.map(MessageId::Core), message)
+                        .await;
                     continue;
                 }
                 nametbd_core::system::SystemRunOutcome::Idle => false,
@@ -125,7 +150,10 @@ async fn async_main() {
             }
             .unwrap();
 
-            system.answer_message(msg_to_respond, &response_bytes);
+            match msg_to_respond {
+                MessageId::Core(msg_id) => system.answer_message(msg_id, &response_bytes),
+                MessageId::Wasi(msg_id) => unimplemented!(),
+            }
         };
 
         match result {
@@ -135,4 +163,9 @@ async fn async_main() {
             _ => panic!(),
         }
     }
+}
+
+enum MessageId {
+    Core(u64),
+    Wasi(nametbd_wasi_hosted::WasiMessageId),
 }

@@ -39,9 +39,13 @@ pub async fn generate(len: usize) -> Vec<u8> {
 #[cfg(feature = "std")]
 pub async fn generate_in(out: &mut [u8]) {
     for chunk in out.chunks_mut(usize::from(u16::max_value())) {
-        let msg = ffi::RandomMessage::Generate { len: u16::try_from(chunk.len()).unwrap() };
+        let msg = ffi::RandomMessage::Generate {
+            len: u16::try_from(chunk.len()).unwrap(),
+        };
         let rep: ffi::GenerateResponse =
-            nametbd_syscalls_interface::emit_message_with_response(ffi::INTERFACE, msg).await.unwrap();
+            nametbd_syscalls_interface::emit_message_with_response(ffi::INTERFACE, msg)
+                .await
+                .unwrap();
         chunk.copy_from_slice(&rep.result);
     }
 }

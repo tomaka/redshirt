@@ -19,11 +19,11 @@ extern crate alloc;
 
 use alloc::{string::String, string::ToString as _, vec, vec::Vec};
 use byteorder::{ByteOrder as _, LittleEndian};
-use core::convert::{TryFrom as _};
+use core::convert::TryFrom as _;
 use hashbrown::HashMap;
 use nametbd_core::scheduler::{Pid, ThreadId};
 use nametbd_core::system::{System, SystemBuilder};
-use parity_scale_codec::{Encode as _, DecodeAll};
+use parity_scale_codec::{DecodeAll, Encode as _};
 
 // TODO: lots of unwraps as `as` conversions in this module
 
@@ -48,7 +48,7 @@ enum WasiExtrinsicInner {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub struct WasmMessageId(u64);
+pub struct WasiMessageId(u64);
 
 /// Adds to the `SystemBuilder` the extrinsics required by WASI.
 pub fn register_extrinsics<T: From<WasiExtrinsic> + Clone>(
@@ -131,8 +131,9 @@ pub fn register_extrinsics<T: From<WasiExtrinsic> + Clone>(
 }
 
 pub struct WasiStateMachine {
+    next_id: WasiMessageId,
     /// All the interface messages that we emited and for which we're expecting a response.
-    pending_messages: HashMap<WasmMessageId, CallInfo>,
+    pending_messages: HashMap<WasiMessageId, CallInfo>,
 }
 
 enum CallInfo {
@@ -157,23 +158,33 @@ struct RandomCallInfo {
     remaining_len: u32,
 }
 
+#[must_use]
 pub enum HandleOut {
     Ok,
     EmitMessage {
-        id: Option<WasmMessageId>,
+        id: Option<WasiMessageId>,
         interface: [u8; 32],
         message: Vec<u8>,
-    }
+    },
 }
 
 impl WasiStateMachine {
-    fn alloc_message_id(&mut self) -> WasmMessageId {
-        WasmMessageId(0)        // FIXME:
+    pub fn new() -> WasiStateMachine {
+        WasiStateMachine {
+            next_id: WasiMessageId(0),
+            pending_messages: HashMap::new(),
+        }
+    }
+
+    fn alloc_message_id(&mut self) -> WasiMessageId {
+        let id = self.next_id;
+        self.next_id.0 += 1;
+        id
     }
 
     /// Call this when a process performs a WASI extrinsic call.
     pub fn handle_extrinsic_call(
-        &mut self,  // TODO: replace with `&self`
+        &mut self, // TODO: replace with `&self`
         system: &mut System<impl Clone>,
         extrinsic: WasiExtrinsic,
         pid: Pid,
@@ -217,11 +228,14 @@ impl WasiStateMachine {
                     _ => panic!(),
                 };
                 let msg_id = self.alloc_message_id();
-                let _prev_val = self.pending_messages.insert(msg_id, CallInfo::Time(TimeCallInfo {
-                    pid,
-                    tid: thread_id,
-                    out_ptr,
-                }));
+                let _prev_val = self.pending_messages.insert(
+                    msg_id,
+                    CallInfo::Time(TimeCallInfo {
+                        pid,
+                        tid: thread_id,
+                        out_ptr,
+                    }),
+                );
                 debug_assert!(_prev_val.is_none());
                 HandleOut::EmitMessage {
                     id: Some(msg_id),
@@ -271,16 +285,21 @@ impl WasiStateMachine {
                 let len = params[1].try_into::<i32>().unwrap() as u32;
 
                 let msg_id = self.alloc_message_id();
-                let _prev_val = self.pending_messages.insert(msg_id, CallInfo::Random(RandomCallInfo {
-                    pid,
-                    tid: thread_id,
-                    out_ptr: buf,
-                    remaining_len: len,
-                }));
+                let _prev_val = self.pending_messages.insert(
+                    msg_id,
+                    CallInfo::Random(RandomCallInfo {
+                        pid,
+                        tid: thread_id,
+                        out_ptr: buf,
+                        remaining_len: len,
+                    }),
+                );
                 debug_assert!(_prev_val.is_none());
-                
+
                 let len_to_request = u16::try_from(len).unwrap_or(u16::max_value());
-                let message = nametbd_random_interface::ffi::RandomMessage::Generate { len: len_to_request };
+                let message = nametbd_random_interface::ffi::RandomMessage::Generate {
+                    len: len_to_request,
+                };
                 HandleOut::EmitMessage {
                     id: Some(msg_id),
                     interface: nametbd_random_interface::ffi::INTERFACE,
@@ -296,44 +315,56 @@ impl WasiStateMachine {
     }
 
     // TODO: make `&self`
-    pub fn message_response(&mut self, system: &mut System<impl Clone>, msg_id: WasmMessageId, response: Vec<u8>)
-    -> HandleOut {
+    pub fn message_response(
+        &mut self,
+        system: &mut System<impl Clone>,
+        msg_id: WasiMessageId,
+        response: Vec<u8>,
+    ) -> HandleOut {
         match self.pending_messages.remove(&msg_id) {
             Some(CallInfo::Time(info)) => {
                 let value: u128 = DecodeAll::decode_all(&response).unwrap();
-                let to_write = u64::try_from(value).unwrap_or(u64::max_value());        // TODO: meh; return an error instead?
+                let to_write = u64::try_from(value).unwrap_or(u64::max_value()); // TODO: meh; return an error instead?
                 let mut buf = [0; 8];
                 LittleEndian::write_u64(&mut buf, to_write);
                 system.write_memory(info.pid, info.out_ptr, &buf).unwrap();
                 system.resolve_extrinsic_call(info.tid, Some(wasmi::RuntimeValue::I32(0)));
                 HandleOut::Ok
-            },
+            }
             Some(CallInfo::Random(mut info)) => {
-                let value: nametbd_random_interface::ffi::GenerateResponse = DecodeAll::decode_all(&response).unwrap();
-                assert!(u32::try_from(value.result.len()).unwrap_or(u32::max_value()) <= info.remaining_len);
-                system.write_memory(info.pid, info.out_ptr, &value.result).unwrap();
-                info.remaining_len -= value.result.len() as u32;        // TODO: as :-/
+                let value: nametbd_random_interface::ffi::GenerateResponse =
+                    DecodeAll::decode_all(&response).unwrap();
+                assert!(
+                    u32::try_from(value.result.len()).unwrap_or(u32::max_value())
+                        <= info.remaining_len
+                );
+                system
+                    .write_memory(info.pid, info.out_ptr, &value.result)
+                    .unwrap();
+                info.remaining_len -= value.result.len() as u32; // TODO: as :-/
 
                 if info.remaining_len == 0 {
                     system.resolve_extrinsic_call(info.tid, Some(wasmi::RuntimeValue::I32(0)));
                     HandleOut::Ok
-
                 } else {
                     let msg_id = self.alloc_message_id();
-                    let len_to_request = u16::try_from(info.remaining_len).unwrap_or(u16::max_value());
+                    let len_to_request =
+                        u16::try_from(info.remaining_len).unwrap_or(u16::max_value());
 
                     let _prev_val = self.pending_messages.insert(msg_id, CallInfo::Random(info));
                     debug_assert!(_prev_val.is_none());
 
-                    let message = nametbd_random_interface::ffi::RandomMessage::Generate { len: len_to_request };
+                    let message = nametbd_random_interface::ffi::RandomMessage::Generate {
+                        len: len_to_request,
+                    };
                     HandleOut::EmitMessage {
                         id: Some(msg_id),
                         interface: nametbd_random_interface::ffi::INTERFACE,
                         message: message.encode(),
                     }
                 }
-            },
-            None => panic!()        // TODO:
+            }
+            None => panic!(), // TODO:
         }
     }
 }
@@ -383,6 +414,9 @@ fn fd_write(
     HandleOut::EmitMessage {
         id: None,
         interface: nametbd_stdout_interface::ffi::INTERFACE,
-        message: nametbd_stdout_interface::ffi::StdoutMessage::Message(String::from_utf8_lossy(&to_write).to_string()).encode(),       // TODO:  lossy?
+        message: nametbd_stdout_interface::ffi::StdoutMessage::Message(
+            String::from_utf8_lossy(&to_write).to_string(),
+        )
+        .encode(), // TODO:  lossy?
     }
 }
