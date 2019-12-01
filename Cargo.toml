@@ -9,6 +9,7 @@ members = [
     "kernel/x86-stdout",
     "interfaces/interface",
     "interfaces/loader",
+    "interfaces/random",
     "interfaces/stdout",
     "interfaces/syscalls",
     "interfaces/threads",
