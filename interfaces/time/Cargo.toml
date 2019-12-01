@@ -6,6 +6,10 @@ authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-nametbd-syscalls-interface = { path = "../syscalls" }
-parity-scale-codec = { version = "1.0.5", features = ["derive"] }
+nametbd-syscalls-interface = { path = "../syscalls", default-features = false }
+parity-scale-codec = { version = "1.0.5", default-features = false, features = ["derive"] }
 pin-project = "0.4.6"
+
+[features]
+default = ["std"]
+std = ["nametbd-syscalls-interface/std"]

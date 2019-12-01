@@ -138,8 +138,6 @@ jobs:
         toolchain: nightly
         target: wasm32-wasi
         override: true
-    - name: Install wasm32-unknown-unknown
-      run: rustup target add wasm32-unknown-unknown
     - name: Install rust-src
       run: rustup component add rust-src
     - name: Build core for no_std platform
