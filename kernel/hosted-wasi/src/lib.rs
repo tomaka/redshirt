@@ -13,6 +13,21 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+//! Handles calls that WASM code makes to the WASI API.
+//!
+//! The WASI API is implemented by translating WASI function calls into message emissions.
+//!
+//! # Usage
+//!
+//! - When building a system, register extrinsics using [`register_extrinsics`].
+//! - Create a [`WasiStateMachine`].
+//! - Whenever a program calls a WASI extrinsic, call [`WasiStateMachine::handle_extrinsic_call`].
+//! - If [`HandleOut::EmitMessage`] is emitted, act as if a program had emitted the given message.
+//! - When a message returned as a [`HandleOut::EmitMessage`] gets an answer, call
+//!   [`WasiStateMachine::message_response`]. This function also returns [`HandleOut`] in case
+//!   further calls are needed.
+//!
+
 #![no_std]
 
 extern crate alloc;
@@ -47,6 +62,7 @@ enum WasiExtrinsicInner {
     SchedYield,
 }
 
+/// Identifier of a message emitted by the [`WasiStateMachine`].
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct WasiMessageId(u64);
 
@@ -130,7 +146,9 @@ pub fn register_extrinsics<T: From<WasiExtrinsic> + Clone>(
         )
 }
 
+/// State machine handling WASI extrinsics calls.
 pub struct WasiStateMachine {
+    /// Identifier of the next message to emit.
     next_id: WasiMessageId,
     /// All the interface messages that we emited and for which we're expecting a response.
     pending_messages: HashMap<WasiMessageId, CallInfo>,
