@@ -9,11 +9,10 @@ publish = false
 [dependencies]
 byteorder = { version = "1.3.2", default-features = false }
 hashbrown = { version = "0.6.0", default-features = false }
-lazy_static = "1.4"
-nametbd-core = { path = "../../core" }
-nametbd-random-interface = { path = "../../interfaces/random" }
-nametbd-stdout-interface = { path = "../../interfaces/stdout" }
-nametbd-time-interface = { path = "../../interfaces/time" }
+nametbd-core = { path = "../../core", default-features = false }
+nametbd-random-interface = { path = "../../interfaces/random", default-features = false }
+nametbd-stdout-interface = { path = "../../interfaces/stdout", default-features = false }
+nametbd-time-interface = { path = "../../interfaces/time", default-features = false }
 parity-scale-codec = { version = "1.1.0", default-features = false }
 
 # TODO: remove
