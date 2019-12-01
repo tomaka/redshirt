@@ -64,3 +64,10 @@ extern "C" fn after_boot(multiboot_header: usize) -> ! {
         crate::main()
     }
 }
+
+// TODO: define the semantics of that
+pub fn halt() -> ! {
+    loop {
+        unsafe { x86::halt() }
+    }
+}
