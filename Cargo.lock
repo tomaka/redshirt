@@ -585,6 +585,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "nametbd-random-interface"
+version = "0.1.0"
+dependencies = [
+ "nametbd-syscalls-interface 0.1.0",
+ "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "nametbd-standalone-kernel"
 version = "0.1.0"
 dependencies = [
@@ -596,6 +604,7 @@ dependencies = [
  "multiboot2 0.8.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "nametbd-core 0.1.0",
  "nametbd-stdout-interface 0.1.0",
+ "nametbd-wasi-hosted 0.1.0",
  "nametbd-x86-stdout 0.1.0",
  "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "walkdir 2.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -688,9 +697,12 @@ name = "nametbd-wasi-hosted"
 version = "0.1.0"
 dependencies = [
  "byteorder 1.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "lazy_static 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "hashbrown 0.6.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "nametbd-core 0.1.0",
- "rand 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "nametbd-random-interface 0.1.0",
+ "nametbd-stdout-interface 0.1.0",
+ "nametbd-time-interface 0.1.0",
+ "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "wasmi 0.6.2 (git+https://github.com/tomaka/wasmi?branch=no-std)",
 ]
 

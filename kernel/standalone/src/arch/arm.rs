@@ -81,3 +81,11 @@ pub extern "C" fn fmaxf(a: f32, b: f32) -> f32 {
 pub extern "C" fn __aeabi_d2f(a: f64) -> f32 {
     libm::trunc(a) as f32 // TODO: correct?
 }
+
+// TODO: define the semantics of that
+pub fn halt() -> ! {
+    unsafe {
+        asm!("b .");
+        core::intrinsics::unreachable()
+    }
+}

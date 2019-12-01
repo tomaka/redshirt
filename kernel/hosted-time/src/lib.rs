@@ -26,31 +26,34 @@ use std::{
 };
 
 /// State machine for `time` interface messages handling.
-pub struct TimerHandler {
+pub struct TimerHandler<TMsgId> {
     /// Accessed only by `next_event`.
-    inner: Mutex<TimerHandlerInner>,
+    inner: Mutex<TimerHandlerInner<TMsgId>>,
     /// Send on this channel the new timers to insert in [`TimerHandlerInner::timers`].
-    new_timer_tx: mpsc::UnboundedSender<(Delay, u64)>,
+    new_timer_tx: mpsc::UnboundedSender<(Delay, TMsgId)>,
 }
 
 /// Separate struct behind a mutex.
-struct TimerHandlerInner {
+struct TimerHandlerInner<TMsgId> {
     /// Stream of message IDs to answer.
-    timers: FuturesUnordered<Pin<Box<dyn Future<Output = u64> + Send>>>, // TODO: meh for boxing
+    timers: FuturesUnordered<Pin<Box<dyn Future<Output = TMsgId> + Send>>>, // TODO: meh for boxing
     /// Receiving side of [`TimerHandler::new_timer_tx`].
-    new_timer_rx: mpsc::UnboundedReceiver<(Delay, u64)>,
+    new_timer_rx: mpsc::UnboundedReceiver<(Delay, TMsgId)>,
 }
 
-impl TimerHandler {
+impl<TMsgId> TimerHandler<TMsgId>
+where
+    TMsgId: Send + 'static,
+{
     /// Initializes the new state machine for timers.
-    pub fn new() -> TimerHandler {
+    pub fn new() -> Self {
         let (new_timer_tx, new_timer_rx) = mpsc::unbounded();
 
         TimerHandler {
             inner: Mutex::new(TimerHandlerInner {
                 timers: {
                     let timers =
-                        FuturesUnordered::<Pin<Box<dyn Future<Output = u64> + Send>>>::new();
+                        FuturesUnordered::<Pin<Box<dyn Future<Output = TMsgId> + Send>>>::new();
                     // TODO: ugh; pushing a never-ending future, otherwise we get a permanent `None` when polling
                     timers.push(Box::pin(async move {
                         loop {
@@ -67,7 +70,7 @@ impl TimerHandler {
 
     /// Processes a message on the `time` interface, and optionally returns an answer to
     /// immediately send  back.
-    pub fn time_message(&self, message_id: Option<u64>, message: &[u8]) -> Option<Vec<u8>> {
+    pub fn time_message(&self, message_id: Option<TMsgId>, message: &[u8]) -> Option<Vec<u8>> {
         match TimeMessage::decode_all(&message).unwrap() {
             // TODO: don't unwrap
             TimeMessage::GetMonotonic => Some(monotonic_clock().encode()),
@@ -90,7 +93,7 @@ impl TimerHandler {
     }
 
     /// Returns the next message to answer, and the message to send back.
-    pub async fn next_answer(&self) -> (u64, Vec<u8>) {
+    pub async fn next_answer(&self) -> (TMsgId, Vec<u8>) {
         let mut inner = self.inner.lock().await;
         let inner = &mut *inner;
 

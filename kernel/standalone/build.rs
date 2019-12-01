@@ -35,7 +35,7 @@ fn main() {
     let status = Command::new("cargo")
         .arg("rustc")
         .arg("--release")
-        .args(&["--target", "wasm32-unknown-unknown"])
+        .args(&["--target", "wasm32-wasi"])
         .args(&["--package", "hello-world"])
         .args(&["--bin", "hello-world"])
         .args(&["--manifest-path", "../../modules/hello-world/Cargo.toml"])
