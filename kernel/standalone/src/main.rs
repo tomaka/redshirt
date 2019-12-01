@@ -76,9 +76,7 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
         );
     }
 
-    loop {
-        unsafe { x86::halt() }
-    }
+    arch::halt();
 }
 
 // Note: don't get fooled, this is not the "official" main function.
@@ -113,9 +111,7 @@ fn main() -> ! {
                 // TODO: If we don't support any interface or extrinsic, then `Idle` shouldn't
                 // happen. In a normal situation, this is when we would check the status of the
                 // "externalities", such as the timer.
-                loop {
-                    unsafe { x86::halt() }
-                }
+                arch::halt();
             }
             nametbd_core::system::SystemRunOutcome::ProgramFinished { pid, outcome } => {
                 console.write(&format!("Program finished {:?} => {:?}\n", pid, outcome));
