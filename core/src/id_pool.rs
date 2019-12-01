@@ -15,7 +15,7 @@
 
 use core::{
     fmt,
-    sync::atomic::{AtomicU64, Ordering},
+    sync::atomic::{AtomicU32, Ordering},
 };
 // TODO: use crossbeam::queue::SegQueue;
 use rand::distributions::{Distribution as _, Uniform};
@@ -32,7 +32,7 @@ pub struct IdPool {
     // TODO: /// Queue of RNG objects. Since generating a value requires an exclusive reference to the
     // TODO: /// RNG object, we hold a queue of objects.
     // TODO: rngs_queue: SegQueue<ChaCha20Rng>,
-    next_val: AtomicU64,
+    next_val: AtomicU32,
     /// Distribution of IDs.
     distribution: Uniform<u64>,
 }
@@ -41,7 +41,7 @@ impl IdPool {
     /// Initializes a new pool.
     pub fn new() -> Self {
         IdPool {
-            next_val: AtomicU64::new(0),
+            next_val: AtomicU32::new(0),
             // TODO: rngs_queue: SegQueue::new(),
             distribution: Uniform::from(0..=u64::max_value()),
         }
@@ -50,7 +50,7 @@ impl IdPool {
     /// Assigns a new PID from this pool.
     pub fn assign<T: From<u64>>(&self) -> T {
         let id = self.next_val.fetch_add(1, Ordering::Relaxed);
-        T::from(id)
+        T::from(id.into())
     }
 }
 

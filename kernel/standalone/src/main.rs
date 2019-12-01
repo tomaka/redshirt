@@ -17,6 +17,8 @@
 
 #![no_std]
 #![no_main]
+#![feature(asm)]
+#![feature(core_intrinsics)]
 #![feature(panic_info_message)] // TODO: https://github.com/rust-lang/rust/issues/66745
 #![feature(alloc_error_handler)] // TODO: https://github.com/rust-lang/rust/issues/66741
 
@@ -77,7 +79,7 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
     }
 
     loop {
-        unsafe { x86::halt() }
+        //unsafe { x86::halt() }
     }
 }
 
@@ -114,7 +116,7 @@ fn main() -> ! {
                 // happen. In a normal situation, this is when we would check the status of the
                 // "externalities", such as the timer.
                 loop {
-                    unsafe { x86::halt() }
+                    //unsafe { x86::halt() }
                 }
             }
             nametbd_core::system::SystemRunOutcome::ProgramFinished { pid, outcome } => {

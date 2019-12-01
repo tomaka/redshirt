@@ -13,7 +13,44 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+mod arm;
 mod x86_64;
 
+#[cfg(target_arch = "aarch64")]
+pub use arm::*;
 #[cfg(target_arch = "x86_64")]
 pub use x86_64::*;
+
+// TODO: figure out how to remove these
+/*#[no_mangle]
+pub extern "C" fn fmod(a: f64, b: f64) -> f64 {
+    libm::fmod(a, b)
+}
+#[no_mangle]
+pub extern "C" fn fmodf(a: f32, b: f32) -> f32 {
+    libm::fmodf(a, b)
+}*/
+#[no_mangle]
+pub extern "C" fn fmin(a: f64, b: f64) -> f64 {
+    libm::fmin(a, b)
+}
+#[no_mangle]
+pub extern "C" fn fminf(a: f32, b: f32) -> f32 {
+    libm::fminf(a, b)
+}
+#[no_mangle]
+pub extern "C" fn fmax(a: f64, b: f64) -> f64 {
+    libm::fmax(a, b)
+}
+#[no_mangle]
+pub extern "C" fn fmaxf(a: f32, b: f32) -> f32 {
+    libm::fmaxf(a, b)
+}
+#[no_mangle]
+pub extern "C" fn __truncdfsf2(a: f64) -> f32 {
+    libm::trunc(a) as f32 // TODO: correct?
+}
+#[no_mangle]
+pub extern "C" fn __aeabi_d2f(a: f64) -> f32 {
+    libm::trunc(a) as f32 // TODO: correct?
+}
