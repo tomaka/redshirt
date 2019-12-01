@@ -29,7 +29,6 @@ For the freestanding kernel:
 
 ```
 rustup target add wasm32-wasi
-rustup target add wasm32-unknown-unknown
 
 # From the root directory of this repository (where the `x86_64-multiboot2.json` file is located):
 RUST_TARGET_PATH=`pwd` cargo +nightly build -Z build-std=core,alloc --target x86_64-multiboot2 --package nametbd-standalone-kernel

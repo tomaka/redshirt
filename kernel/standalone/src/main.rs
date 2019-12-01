@@ -94,16 +94,18 @@ fn main() -> ! {
     let mut console = unsafe { nametbd_x86_stdout::Console::init() };
 
     let module = nametbd_core::module::Module::from_bytes(
-        &include_bytes!("../../../modules/target/wasm32-unknown-unknown/release/hello-world.wasm")
-            [..],
+        &include_bytes!("../../../modules/target/wasm32-wasi/release/hello-world.wasm")[..],
     )
     .unwrap();
 
-    let mut system = nametbd_core::system::SystemBuilder::<()>::new() // TODO: `!` instead
-        .with_interface_handler(nametbd_stdout_interface::ffi::INTERFACE)
-        .with_startup_process(module)
-        .with_main_program([0; 32]) // TODO: just a test
-        .build();
+    let mut system =
+        nametbd_wasi_hosted::register_extrinsics(nametbd_core::system::SystemBuilder::new())
+            .with_interface_handler(nametbd_stdout_interface::ffi::INTERFACE)
+            .with_startup_process(module)
+            .with_main_program([0; 32]) // TODO: just a test
+            .build();
+
+    let mut wasi = nametbd_wasi_hosted::WasiStateMachine::new();
 
     loop {
         match system.run() {
@@ -112,6 +114,31 @@ fn main() -> ! {
                 // happen. In a normal situation, this is when we would check the status of the
                 // "externalities", such as the timer.
                 arch::halt();
+            }
+            nametbd_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
+                pid,
+                thread_id,
+                extrinsic,
+                params,
+            } => {
+                let out =
+                    wasi.handle_extrinsic_call(&mut system, extrinsic, pid, thread_id, params);
+                if let nametbd_wasi_hosted::HandleOut::EmitMessage {
+                    id,
+                    interface,
+                    message,
+                } = out
+                {
+                    if interface == nametbd_stdout_interface::ffi::INTERFACE {
+                        let msg =
+                            nametbd_stdout_interface::ffi::StdoutMessage::decode_all(&message);
+                        let nametbd_stdout_interface::ffi::StdoutMessage::Message(msg) =
+                            msg.unwrap();
+                        console.write(&msg);
+                    } else {
+                        panic!()
+                    }
+                }
             }
             nametbd_core::system::SystemRunOutcome::ProgramFinished { pid, outcome } => {
                 console.write(&format!("Program finished {:?} => {:?}\n", pid, outcome));
