@@ -13,17 +13,18 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+#![cfg(any(target_arch = "arm", target_arch = "aarch64"))]
+
 #[no_mangle]
 extern "C" fn dummy_fn() {
     unsafe {
         asm!(r#"
 .comm stack, 0x40000, 8
 
+.globl _start
 _start:
-    .globl _start
     ldr sp, =stack+0x40000
     b after_boot
-
 "#);
     }
 }
@@ -33,8 +34,8 @@ extern "C" fn after_boot() -> ! {
     write_serial(b"hello world\n".iter().cloned());
     unsafe {
         asm!("b .");
+        core::intrinsics::unreachable()
     }
-    unsafe { core::intrinsics::unreachable() }
     //crate::main()
 }
 
@@ -57,4 +58,26 @@ fn write_serial(data: impl Iterator<Item = u8>) {
             base_ptr.write_volatile(byte);
         }
     }
+}
+
+// TODO: figure out how to remove these
+#[no_mangle]
+pub extern "C" fn fmin(a: f64, b: f64) -> f64 {
+    libm::fmin(a, b)
+}
+#[no_mangle]
+pub extern "C" fn fminf(a: f32, b: f32) -> f32 {
+    libm::fminf(a, b)
+}
+#[no_mangle]
+pub extern "C" fn fmax(a: f64, b: f64) -> f64 {
+    libm::fmax(a, b)
+}
+#[no_mangle]
+pub extern "C" fn fmaxf(a: f32, b: f32) -> f32 {
+    libm::fmaxf(a, b)
+}
+#[no_mangle]
+pub extern "C" fn __aeabi_d2f(a: f64) -> f32 {
+    libm::trunc(a) as f32 // TODO: correct?
 }

@@ -25,10 +25,7 @@ fn main() {
             .compile("libboot.a");
 
     } else if target.starts_with("arm") || target.starts_with("aarch64") {
-        /*cc::Build::new()
-            .file("src/arch/arm/boot.S")
-            .include("src")
-            .compile("libboot.a");*/
+        // Nothing more to do.
 
     } else {
         panic!("Unsupported target: {:?}", target)
