@@ -1,0 +1,14 @@
+[package]
+name = "nametbd-random-interface"
+version = "0.1.0"
+license = "GPL-3.0-or-later"
+authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+nametbd-syscalls-interface = { path = "../syscalls", default-features = false }
+parity-scale-codec = { version = "1.0.5", default-features = false, features = ["derive"] }
+
+[features]
+default = ["std"]
+std = ["nametbd-syscalls-interface/std"]
