@@ -33,7 +33,7 @@ async fn async_main() {
         nametbd_wasi_hosted::register_extrinsics(nametbd_core::system::SystemBuilder::new())
             .with_interface_handler(nametbd_stdout_interface::ffi::INTERFACE)
             .with_interface_handler(nametbd_time_interface::ffi::INTERFACE)
-            .with_interface_handler(nametbd_tcp_interface::ffi::INTERFACE)
+            .with_interface_handler(nametbd_network_interface::ffi::INTERFACE)
             .with_startup_process(module)
             .with_main_program([0; 32]) // TODO: just a test
             .build();
@@ -93,8 +93,8 @@ async fn async_main() {
                             {
                                 unimplemented!()
                             }
-                        } else if interface == nametbd_tcp_interface::ffi::INTERFACE {
-                            let message: nametbd_tcp_interface::ffi::TcpMessage =
+                        } else if interface == nametbd_network_interface::ffi::INTERFACE {
+                            let message: nametbd_network_interface::ffi::TcpMessage =
                                 DecodeAll::decode_all(&message).unwrap();
                             tcp.handle_message(id.map(MessageId::Wasi), message).await;
                         } else {
@@ -129,8 +129,8 @@ async fn async_main() {
                     message_id,
                     interface,
                     message,
-                } if interface == nametbd_tcp_interface::ffi::INTERFACE => {
-                    let message: nametbd_tcp_interface::ffi::TcpMessage =
+                } if interface == nametbd_network_interface::ffi::INTERFACE => {
+                    let message: nametbd_network_interface::ffi::TcpMessage =
                         DecodeAll::decode_all(&message).unwrap();
                     tcp.handle_message(message_id.map(MessageId::Core), message)
                         .await;

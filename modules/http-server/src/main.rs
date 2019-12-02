@@ -18,7 +18,7 @@ use std::{pin::Pin, task::Context, task::Poll};
 
 fn main() {
     nametbd_syscalls_interface::block_on(async move {
-        let listener = nametbd_tcp_interface::TcpListener::bind(&"0.0.0.0:8000".parse().unwrap())
+        let listener = nametbd_network_interface::TcpListener::bind(&"0.0.0.0:8000".parse().unwrap())
             .await
             .unwrap();
 
@@ -77,11 +77,11 @@ fn main() {
 }
 
 struct Accept {
-    next_connec: Pin<Box<dyn Stream<Item = nametbd_tcp_interface::TcpStream>>>,
+    next_connec: Pin<Box<dyn Stream<Item = nametbd_network_interface::TcpStream>>>,
 }
 
 impl hyper::server::accept::Accept for Accept {
-    type Conn = nametbd_tcp_interface::TcpStream;
+    type Conn = nametbd_network_interface::TcpStream;
     type Error = std::io::Error;
 
     fn poll_accept(

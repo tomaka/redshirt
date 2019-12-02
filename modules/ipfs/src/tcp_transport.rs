@@ -40,7 +40,7 @@ impl Default for TcpConfig {
 }
 
 impl Transport for TcpConfig {
-    type Output = nametbd_tcp_interface::TcpStream;
+    type Output = nametbd_network_interface::TcpStream;
     type Error = io::Error;
     type Listener = Pin<
         Box<dyn Stream<Item = Result<ListenerEvent<Self::ListenerUpgrade>, Self::Error>> + Send>,
@@ -57,7 +57,7 @@ impl Transport for TcpConfig {
 
         Ok(Box::pin(
             async move {
-                let listener = nametbd_tcp_interface::TcpListener::bind(&socket_addr)
+                let listener = nametbd_network_interface::TcpListener::bind(&socket_addr)
                     .await
                     .map_err(|()| io::Error::from(io::ErrorKind::Other))?;
                 let local_addr =
@@ -103,7 +103,7 @@ impl Transport for TcpConfig {
 
         println!("Dialing {}", addr);
         Ok(Box::pin(async move {
-            nametbd_tcp_interface::TcpStream::connect(&socket_addr)
+            nametbd_network_interface::TcpStream::connect(&socket_addr)
                 .await
                 .map_err(|()| io::Error::from(io::ErrorKind::Other))
         }))

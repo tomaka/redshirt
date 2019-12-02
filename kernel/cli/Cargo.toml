@@ -11,9 +11,9 @@ default-run = "nametbd-cli-kernel"
 async-std = "1.2"
 futures = "0.3.1"
 nametbd-core = { path = "../../core" }
+nametbd-network-interface = { path = "../../interfaces/network" }
 nametbd-stdout-interface = { path = "../../interfaces/stdout" }
 nametbd-tcp-hosted = { path = "../hosted-tcp" }
-nametbd-tcp-interface = { path = "../../interfaces/tcp" }
 nametbd-time-hosted = { path = "../hosted-time" }
 nametbd-time-interface = { path = "../../interfaces/time" }
 nametbd-wasi-hosted = { path = "../hosted-wasi" }
