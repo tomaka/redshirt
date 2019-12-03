@@ -1,0 +1,15 @@
+[package]
+name = "network-manager"
+version = "0.1.0"
+license = "GPL-3.0-or-later"
+authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
+edition = "2018"
+publish = false
+
+[dependencies]
+futures = "0.3"
+nametbd-interface-interface = { path = "../../interfaces/interface" }
+nametbd-network-interface = { path = "../../interfaces/network" }
+nametbd-syscalls-interface = { path = "../../interfaces/syscalls" }
+nametbd-time-interface = { path = "../../interfaces/time" }
+smoltcp = { version = "0.5.0", default-features = false, features = ["proto-ipv4", "proto-ipv6", "socket-udp", "socket-tcp", "std"] }
