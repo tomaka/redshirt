@@ -33,6 +33,10 @@ pub enum TcpMessage {
     /// Ask to write data to a socket. A response is sent back once written. For each socket, only
     /// one write can exist at any given point in time.
     Write(TcpWrite),
+    RegisterInterface(u64),
+    UnregisterInterface(u64),
+    InterfaceOnData(u64, Vec<u8>),
+    InterfaceWaitData(u64),
 }
 
 #[derive(Debug, Encode, Decode)]
@@ -95,4 +99,14 @@ pub struct TcpWrite {
 #[derive(Debug, Encode, Decode)]
 pub struct TcpWriteResponse {
     pub result: Result<(), ()>,
+}
+
+#[derive(Debug, Encode, Decode)]
+pub struct InterfaceOnDataResponse {
+    pub result: Result<(), ()>,
+}
+
+#[derive(Debug, Encode, Decode)]
+pub struct InterfaceWaitDataResponse {
+    pub result: Result<Vec<u8>, ()>,
 }
