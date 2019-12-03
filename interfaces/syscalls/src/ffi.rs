@@ -14,7 +14,6 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use alloc::vec::Vec;
-use core::ffi::c_void;
 use parity_scale_codec::{Decode, Encode};
 
 #[link(wasm_import_module = "nametbd")]
