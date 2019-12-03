@@ -51,7 +51,7 @@ impl Console {
                     continue;
                 }
 
-                if chr == '\r' || chr == '\n' {
+                if chr == '\n' {
                     self.cursor_x = 0;
                     self.cursor_y += 1;
                     if self.cursor_y == 25 {

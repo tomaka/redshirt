@@ -25,6 +25,11 @@ use alloc::string::String;
 pub mod ffi;
 
 /// Sends a string to be printed on stdout.
+///
+/// # About `\r` vs `\n`
+///
+/// In order to follow the Unix world, the character `\n` (LF, 0xA) means "new line". The
+/// character `\r` (CR, 0xD) is ignored.
 pub fn stdout(msg: String) {
     let msg = ffi::StdoutMessage::Message(msg);
     nametbd_syscalls_interface::emit_message(&ffi::INTERFACE, &msg, false).unwrap();

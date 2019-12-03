@@ -1127,7 +1127,7 @@ fn write_deserialize_response_into(
                     &format!("{}.r#{}", out_var_name, field_name),
                     force_write,
                 ));
-                out.push_str("\r");
+                out.push_str("\n");
             }
             out
         }
