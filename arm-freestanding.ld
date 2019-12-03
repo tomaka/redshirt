@@ -18,7 +18,7 @@ SECTIONS {
         LONG(0xeafffffe)
     }
 
-    . = 0x10000;
+    . = 0x8000;
     .text : AT(ADDR(.text)) {
         *(.text*)
         *(.rodata*)

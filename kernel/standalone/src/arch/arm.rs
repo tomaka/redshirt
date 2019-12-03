@@ -24,8 +24,23 @@ extern "C" fn dummy_fn() {
 
 .globl _start
 _start:
+    // Detect which CPU we are. Halt all CPUs except the first one.
+    // TODO: this is specific to the Raspi2
+    mrc p15, 0, r5, c0, c0, 5
+    and r5, r5, #3
+    cmp r5, #0
+    bne .halt
+
+    // Only one CPU reaches here.
+
+    // Set up the stack.
     ldr sp, =stack+0x40000
+    // Jump to the Rust code.
     b after_boot
+
+.halt:
+    wfe
+    b .halt
 "#
         );
     }
@@ -33,7 +48,11 @@ _start:
 
 #[no_mangle]
 extern "C" fn after_boot() -> ! {
-    write_serial(b"hello world\n".iter().cloned());
+    init_uart();
+    for byte in b"hello world\n".iter().cloned() {
+        write_uart(byte);
+    }
+
     unsafe {
         asm!("b .");
         core::intrinsics::unreachable()
@@ -41,25 +60,44 @@ extern "C" fn after_boot() -> ! {
     //crate::main()
 }
 
-fn write_uart(data: impl Iterator<Item = u8>) {
+const GPIO_BASE: usize = 0x3F200000;
+const UART0_BASE: usize = 0x3F201000;
+
+fn init_uart() {
     unsafe {
-        let base_ptr = 0x101f1000 as *mut u32;
-        for byte in data {
-            base_ptr.write_volatile(u32::from(byte));
-        }
+        ((UART0_BASE + 0x30) as *mut u32).write_volatile(0x0);
+        ((GPIO_BASE + 0x94) as *mut u32).write_volatile(0x0);
+        delay(150);
+
+        ((GPIO_BASE + 0x98) as *mut u32).write_volatile((1 << 14) | (1 << 15));
+        delay(150);
+
+        ((GPIO_BASE + 0x98) as *mut u32).write_volatile(0x0);
+
+        ((UART0_BASE + 0x44) as *mut u32).write_volatile(0x7FF);
+
+        ((UART0_BASE + 0x24) as *mut u32).write_volatile(1);
+        ((UART0_BASE + 0x28) as *mut u32).write_volatile(40);
+
+        ((UART0_BASE + 0x2C) as *mut u32).write_volatile((1 << 4) | (1 << 5) | (1 << 6));
+
+        ((UART0_BASE + 0x38) as *mut u32).write_volatile((1 << 1) | (1 << 4) | (1 << 5) | (1 << 6) |
+            (1 << 7) | (1 << 8) | (1 << 9) | (1 << 10));
+
+        ((UART0_BASE + 0x30) as *mut u32).write_volatile((1 << 0) | (1 << 8) | (1 << 9));
     }
 }
 
-fn write_serial(data: impl Iterator<Item = u8>) {
+fn write_uart(byte: u8) {
     unsafe {
-        let base_ptr = 0x16000000 as *mut u8;
-        let register = 0x16000018 as *mut u8;
-
-        for byte in data {
-            while register.read_volatile() & (1 << 5) != 0 {}
-            base_ptr.write_volatile(byte);
-        }
+        // Wait for UART to become ready to transmit.
+        while (((UART0_BASE + 0x18) as *mut u32).read_volatile() & (1 << 5)) != 0 { }
+        ((UART0_BASE + 0x0) as *mut u32).write_volatile(u32::from(byte));
     }
+}
+
+fn delay(count: i32) {
+    // TODO: asm!("__delay_%=: subs %[count], %[count], #1; bne __delay_%=\n" : "=r"(count): [count]"0"(count) : "cc");
 }
 
 // TODO: figure out how to remove these
@@ -87,7 +125,11 @@ pub extern "C" fn __aeabi_d2f(a: f64) -> f32 {
 // TODO: define the semantics of that
 pub fn halt() -> ! {
     unsafe {
-        asm!("b .");
+        asm!(r#"
+.halt:
+    wfe
+    b .halt
+"#);
         core::intrinsics::unreachable()
     }
 }
