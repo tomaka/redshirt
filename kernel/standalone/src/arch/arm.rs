@@ -81,8 +81,9 @@ fn init_uart() {
 
         ((UART0_BASE + 0x2C) as *mut u32).write_volatile((1 << 4) | (1 << 5) | (1 << 6));
 
-        ((UART0_BASE + 0x38) as *mut u32).write_volatile((1 << 1) | (1 << 4) | (1 << 5) | (1 << 6) |
-            (1 << 7) | (1 << 8) | (1 << 9) | (1 << 10));
+        ((UART0_BASE + 0x38) as *mut u32).write_volatile(
+            (1 << 1) | (1 << 4) | (1 << 5) | (1 << 6) | (1 << 7) | (1 << 8) | (1 << 9) | (1 << 10),
+        );
 
         ((UART0_BASE + 0x30) as *mut u32).write_volatile((1 << 0) | (1 << 8) | (1 << 9));
     }
@@ -91,7 +92,7 @@ fn init_uart() {
 fn write_uart(byte: u8) {
     unsafe {
         // Wait for UART to become ready to transmit.
-        while (((UART0_BASE + 0x18) as *mut u32).read_volatile() & (1 << 5)) != 0 { }
+        while (((UART0_BASE + 0x18) as *mut u32).read_volatile() & (1 << 5)) != 0 {}
         ((UART0_BASE + 0x0) as *mut u32).write_volatile(u32::from(byte));
     }
 }
@@ -125,11 +126,13 @@ pub extern "C" fn __aeabi_d2f(a: f64) -> f32 {
 // TODO: define the semantics of that
 pub fn halt() -> ! {
     unsafe {
-        asm!(r#"
+        asm!(
+            r#"
 .halt:
     wfe
     b .halt
-"#);
+"#
+        );
         core::intrinsics::unreachable()
     }
 }
