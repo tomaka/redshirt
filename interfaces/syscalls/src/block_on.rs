@@ -13,36 +13,33 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::{emit_message, InterfaceMessage, Message, ResponseMessage};
+use crate::{InterfaceMessage, Message, ResponseMessage};
 use alloc::{collections::VecDeque, sync::Arc, vec::Vec};
 use core::{
-    cell::RefCell,
-    mem,
     sync::atomic::{AtomicBool, Ordering},
     task::{Context, Poll, Waker},
 };
-use crossbeam::atomic::AtomicCell;
 use futures::{prelude::*, task};
 use hashbrown::HashMap;
-use parity_scale_codec::{DecodeAll, Encode};
-use send_wrapper::SendWrapper;
+use parity_scale_codec::DecodeAll;
+use spin::Mutex;
 
 // TODO: document
 pub(crate) fn register_message_waker(message_id: u64, waker: Waker) {
-    let mut state = (&*STATE).borrow_mut();
+    let mut state = (&*STATE).lock();
     state.message_ids.push(message_id);
     state.wakers.push(waker);
 }
 
 // TODO: document
 pub(crate) fn peek_interface_message() -> Option<InterfaceMessage> {
-    let mut state = (&*STATE).borrow_mut();
+    let mut state = (&*STATE).lock();
     state.interface_messages_queue.pop_front()
 }
 
 // TODO: document
 pub(crate) fn peek_response(msg_id: u64) -> Option<ResponseMessage> {
-    let mut state = (&*STATE).borrow_mut();
+    let mut state = (&*STATE).lock();
     state.pending_messages.remove(&msg_id)
 }
 
@@ -86,7 +83,7 @@ pub fn block_on<T>(future: impl Future<Output = T>) -> T {
             }
         }
 
-        let mut state = (&*STATE).borrow_mut();
+        let mut state = (&*STATE).lock();
         debug_assert_eq!(state.message_ids.len(), state.wakers.len());
 
         // `block` indicates whether we should block the thread or just peek. Always `true` during
@@ -125,13 +122,15 @@ pub fn block_on<T>(future: impl Future<Output = T>) -> T {
 }
 
 lazy_static::lazy_static! {
-    static ref STATE: SendWrapper<RefCell<ResponsesState>> = {
-        SendWrapper::new(RefCell::new(ResponsesState {
+    // TODO: we're using a Mutex, which is ok for as long as WASM doesn't have threads
+    // if WASM ever gets threads and no pre-emptive multitasking, then we might spin forever
+    static ref STATE: Mutex<ResponsesState> = {
+        Mutex::new(ResponsesState {
             message_ids: Vec::new(),
             wakers: Vec::new(),
             pending_messages: HashMap::with_capacity(6),
             interface_messages_queue: VecDeque::with_capacity(2),
-        }))
+        })
     };
 }
 
@@ -160,7 +159,6 @@ struct ResponsesState {
 ///
 /// See the [`next_message`](crate::ffi::next_message) FFI function for the semantics of
 /// `to_poll`.
-#[cfg(target_arch = "wasm32")] // TODO: bad
 pub(crate) fn next_message(to_poll: &mut [u64], block: bool) -> Option<Message> {
     unsafe {
         let mut out = Vec::with_capacity(32);
@@ -183,9 +181,4 @@ pub(crate) fn next_message(to_poll: &mut [u64], block: bool) -> Option<Message> 
             return Some(DecodeAll::decode_all(&out).unwrap());
         }
     }
-}
-
-#[cfg(not(target_arch = "wasm32"))] // TODO: bad
-pub(crate) fn next_message(to_poll: &mut [u64], block: bool) -> Option<Message> {
-    panic!()
 }

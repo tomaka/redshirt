@@ -51,22 +51,18 @@
 
 extern crate alloc;
 
-use alloc::{sync::Arc, vec::Vec};
+use alloc::vec::Vec;
 use core::{
-    hint::unreachable_unchecked,
     marker::PhantomData,
-    mem,
     pin::Pin,
-    task::{Context, Poll, Waker},
+    task::{Context, Poll},
 };
 use futures::prelude::*;
 use parity_scale_codec::{DecodeAll, Encode};
 
-#[cfg(feature = "std")]
 pub use block_on::block_on;
 pub use ffi::{InterfaceMessage, Message, ResponseMessage};
 
-#[cfg(feature = "std")]
 mod block_on;
 
 pub mod ffi;
@@ -167,7 +163,6 @@ pub fn next_interface_message() -> InterfaceMessageFuture {
 /// Returns a future that is ready when a response to the given message comes back.
 ///
 /// The return value is the type the message decodes to.
-#[cfg(feature = "std")]
 pub fn message_response_sync_raw(msg_id: u64) -> Vec<u8> {
     match block_on::next_message(&mut [msg_id], true).unwrap() {
         Message::Response(m) => m.actual_data,
@@ -195,7 +190,6 @@ pub struct MessageResponseFuture<T> {
     marker: PhantomData<T>,
 }
 
-#[cfg(all(feature = "std", target_arch = "wasm32"))] // TODO: bad
 impl<T> Future for MessageResponseFuture<T>
 where
     T: DecodeAll,
@@ -214,15 +208,6 @@ where
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))] // TODO: bad
-impl<T> Future for MessageResponseFuture<T> {
-    type Output = T;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        panic!()
-    }
-}
-
 impl<T> Unpin for MessageResponseFuture<T> {}
 
 #[must_use]
@@ -230,7 +215,6 @@ pub struct InterfaceMessageFuture {
     finished: bool,
 }
 
-#[cfg(all(feature = "std", target_arch = "wasm32"))] // TODO: bad
 impl Future for InterfaceMessageFuture {
     type Output = InterfaceMessage;
 
@@ -243,15 +227,6 @@ impl Future for InterfaceMessageFuture {
             block_on::register_message_waker(1, cx.waker().clone());
             Poll::Pending
         }
-    }
-}
-
-#[cfg(not(target_arch = "wasm32"))] // TODO: bad
-impl Future for InterfaceMessageFuture {
-    type Output = InterfaceMessage;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        panic!()
     }
 }
 
