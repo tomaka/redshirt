@@ -27,3 +27,5 @@ mod arch;
 mod kernel;
 mod panic;
 
+// This contains nothing. As the main entry point of the kernel is platform-specific, it is
+// located in the `arch` module rather than here.
