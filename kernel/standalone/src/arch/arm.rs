@@ -57,7 +57,13 @@ extern "C" fn after_boot() -> ! {
         asm!("b .");
         core::intrinsics::unreachable()
     }
-    //crate::main()
+
+    /*let kernel = crate::kernel::Kernel::init(crate::kernel::KernelConfig {
+        num_cpus: 1,
+        ..Default::default()
+    });
+
+    kernel.run()*/
 }
 
 const GPIO_BASE: usize = 0x3F200000;
@@ -126,13 +132,10 @@ pub extern "C" fn __aeabi_d2f(a: f64) -> f32 {
 // TODO: define the semantics of that
 pub fn halt() -> ! {
     unsafe {
-        asm!(
-            r#"
-.halt:
-    wfe
-    b .halt
-"#
-        );
+        loop {
+            asm!(r#"wfe"#);
+        }
+
         core::intrinsics::unreachable()
     }
 }
