@@ -23,7 +23,7 @@
 //!
 
 use alloc::format;
-use core::{sync::atomic::{AtomicBool, Ordering}};
+use core::sync::atomic::{AtomicBool, Ordering};
 use parity_scale_codec::DecodeAll;
 
 /// Main struct of this crate. Runs everything.
@@ -125,7 +125,9 @@ impl Kernel {
                     console.write(&format!("Program finished {:?} => {:?}\n", pid, outcome));
                 }
                 nametbd_core::system::SystemRunOutcome::InterfaceMessage {
-                    interface, message, ..
+                    interface,
+                    message,
+                    ..
                 } if interface == nametbd_stdout_interface::ffi::INTERFACE => {
                     let msg = nametbd_stdout_interface::ffi::StdoutMessage::decode_all(&message);
                     let nametbd_stdout_interface::ffi::StdoutMessage::Message(msg) = msg.unwrap();

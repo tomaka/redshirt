@@ -63,7 +63,7 @@ extern "C" fn after_boot(multiboot_header: usize) -> ! {
 
         let kernel = crate::kernel::Kernel::init(crate::kernel::KernelConfig {
             num_cpus: 1,
-            .. Default::default()
+            ..Default::default()
         });
 
         kernel.run()
