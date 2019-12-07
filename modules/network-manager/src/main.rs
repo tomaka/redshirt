@@ -14,7 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use futures::prelude::*;
-use ipfs::{Network, NetworkEvent};
+use nametbd_network_interface::ffi;
 use parity_scale_codec::DecodeAll;
 use std::time::Duration;
 
@@ -23,11 +23,11 @@ fn main() {
 }
 
 async fn async_main() {
-    nametbd_interface_interface::register_interface(nametbd_network_interface::ffi::INTERFACE)
+    nametbd_interface_interface::register_interface(ffi::INTERFACE)
         .await
         .unwrap();
 
-    let mut network = Network::start();
+    let mut network = NetworkManager::new();
 
     loop {
         let next_interface = nametbd_syscalls_interface::next_interface_message();
@@ -35,21 +35,51 @@ async fn async_main() {
         let msg = match future::select(next_interface, next_net_event).await {
             future::Either::Left((msg, _)) => msg,
             future::Either::Right((NetworkEvent::FetchSuccess { data, user_data }, _)) => {
-                let rp = nametbd_network_interface::ffi::LoadResponse { result: Ok(data) };
+                let rp = ffi::LoadResponse { result: Ok(data) };
                 nametbd_syscalls_interface::emit_answer(user_data, &rp);
                 continue;
             }
             future::Either::Right((NetworkEvent::FetchFail { user_data }, _)) => {
-                let rp = nametbd_network_interface::ffi::LoadResponse { result: Err(()) };
+                let rp = ffi::LoadResponse { result: Err(()) };
                 nametbd_syscalls_interface::emit_answer(user_data, &rp);
                 continue;
             }
         };
 
-        assert_eq!(msg.interface, nametbd_network_interface::ffi::INTERFACE);
-        let msg_data =
-            nametbd_network_interface::ffi::LoaderMessage::decode_all(&msg.actual_data).unwrap();
-        let nametbd_network_interface::ffi::LoaderMessage::Load(hash_to_load) = msg_data;
-        network.start_fetch(&hash_to_load, msg.message_id.unwrap());
+        assert_eq!(msg.interface, ffi::INTERFACE);
+        let msg_data = ffi::TcpMessage::decode_all(&msg.actual_data).unwrap();
+
+        match msg_data {
+            ffi::TcpMessage::Listen(_) => {
+
+            },
+            ffi::TcpMessage::Accept(_) => {
+
+            },
+            ffi::TcpMessage::Open(msg) => {
+                network.tcp_connect();
+            },
+            ffi::TcpMessage::Close(msg) => {
+                network.
+            },
+            ffi::TcpMessage::Read(_) => {
+
+            },
+            ffi::TcpMessage::Write(_) => {
+
+            },
+            ffi::TcpMessage::RegisterInterface(_) => {
+
+            },
+            ffi::TcpMessage::UnregisterInterface(_) => {
+
+            },
+            ffi::TcpMessage::InterfaceOnData(_, _) => {
+
+            },
+            ffi::TcpMessage::InterfaceWaitData(_) => {
+
+            },
+        }
     }
 }
