@@ -34,28 +34,34 @@ mod instant;
 /// Returns the number of nanoseconds since an arbitrary point in time in the past.
 #[cfg(feature = "std")]
 pub async fn monotonic_clock() -> u128 {
-    let msg = ffi::TimeMessage::GetMonotonic;
-    nametbd_syscalls_interface::emit_message_with_response(ffi::INTERFACE, msg)
-        .await
-        .unwrap()
+    unsafe {
+        let msg = ffi::TimeMessage::GetMonotonic;
+        nametbd_syscalls_interface::emit_message_with_response(ffi::INTERFACE, msg)
+            .await
+            .unwrap()
+    }
 }
 
 /// Returns the number of nanoseconds since the Epoch (January 1st, 1970 at midnight UTC).
 #[cfg(feature = "std")]
 pub async fn system_clock() -> u128 {
-    let msg = ffi::TimeMessage::GetSystem;
-    nametbd_syscalls_interface::emit_message_with_response(ffi::INTERFACE, msg)
-        .await
-        .unwrap()
+    unsafe {
+        let msg = ffi::TimeMessage::GetSystem;
+        nametbd_syscalls_interface::emit_message_with_response(ffi::INTERFACE, msg)
+            .await
+            .unwrap()
+    }
 }
 
 /// Returns a `Future` that yields when the monotonic clock reaches this value.
 #[cfg(feature = "std")]
 pub async fn monotonic_wait_until(until: u128) {
-    let msg = ffi::TimeMessage::WaitMonotonic(until);
-    nametbd_syscalls_interface::emit_message_with_response(ffi::INTERFACE, msg)
-        .await
-        .unwrap()
+    unsafe {
+        let msg = ffi::TimeMessage::WaitMonotonic(until);
+        nametbd_syscalls_interface::emit_message_with_response(ffi::INTERFACE, msg)
+            .await
+            .unwrap()
+    }
 }
 
 /// Returns a `Future` that outputs after `duration` has elapsed.

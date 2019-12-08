@@ -28,8 +28,11 @@ pub struct Window {
 impl Window {
     pub async fn open() -> Result<Window, ()> {
         let open = ffi::WindowMessage::Open(ffi::WindowOpen {});
-        let response: ffi::WindowOpenResponse =
-            nametbd_syscalls_interface::emit_message_with_response(ffi::INTERFACE, open).await?;
+        let response: ffi::WindowOpenResponse = unsafe {
+            nametbd_syscalls_interface::emit_message_with_response(ffi::INTERFACE, open)
+                .await
+                .map_err(|_| ())?
+        };
         Ok(Window {
             handle: response.result?,
         })
@@ -38,10 +41,12 @@ impl Window {
 
 impl Drop for Window {
     fn drop(&mut self) {
-        let close = ffi::WindowMessage::Close(ffi::WindowClose {
-            window_id: self.handle,
-        });
+        unsafe {
+            let close = ffi::WindowMessage::Close(ffi::WindowClose {
+                window_id: self.handle,
+            });
 
-        let _ = nametbd_syscalls_interface::emit_message(&ffi::INTERFACE, &close, false);
+            let _ = nametbd_syscalls_interface::emit_message(&ffi::INTERFACE, &close, false);
+        }
     }
 }

@@ -15,6 +15,42 @@
 
 //! Bindings for interfacing with the environment of the "kernel".
 //!
+//! # Messages and responses
+//!
+//! The environment available to `nametbd` programs consists in a collection of **interfaces**.
+//! An interface is referred to by a 32-bytes hash.
+//!
+//! Programs can emit messages by passing a target interface (a 32 bytes array), and a buffer
+//! containing the body of the message. The way the body of the message must be interpreted is
+//! entirely dependant on the interface it is sent on. Emitting a message always succeeds if the
+//! interface is available to the program, even if the body is malformed.
+//!
+//! When emitting a message, the sender must indicate whether or not it expects a response. If the
+//! interface handler sends back a response when none is expected, the response is discarded. If
+//! the interface handler doesn't send back a response when one is expected, then you effectively
+//! have a memory leak.
+//!
+//! A response can also be cancelled by the sender, in which case it is as if it had decided to not
+//! expect any response.
+//!
+//! The two primary and recommended ways to emit a message are the
+//! [`emit_message_without_response`] and [`emit_message_with_response`] functions.
+//!
+//! # Interface handling
+//!
+//! If your program is registered as an interface handler (using the `interface` interface, not
+//! covered here), then it can receive interface messages using the [`next_interface_message`]
+//! function.
+//!
+//! The message can later be optionally be answered using the [`emit_answer`] function.
+//!
+//! Whether the sender of a message expects an answer can't be known, but should depend on the
+//! message itself.
+//!
+//! There is no way for an interface handler to pro-actively send data to a process. Communication
+//! can only be done as a response to a message. This must be taken into account when designing
+//! interfaces.
+//!
 //! # About threads
 //!
 //! Multithreading in WASM isn't specified yet, and Rust doesn't allow multithreaded WASM code.
@@ -35,199 +71,33 @@
 //! Consequently, it has been decided that the implementations of `Future` that this module
 //! provide interact, through a global variable, with the behaviour of [`block_on`]. More
 //! precisely, before a `Future` returns `Poll::Pending`, it stores its `Waker` in a global
-//! variable alongside with the ID of the message whose response ware waiting for, and the
+//! variable alongside with the ID of the message whose response we are waiting for, and the
 //! [`block_on`] function reads and processes that global variable.
 //!
-//! It is not possible to build a `Future` that is not built on top of [`MessageResponseFuture`]
-//! or [`InterfaceMessageFuture`], and every single use-cases of `Future`s that we could think of
-//! can and must be built on top of one of these two `Future`. Similarly, it is not possible to
-//! build an implementation of [`block_on`] without having access to the internals of these
-//! `Future`s. Tying these `Future`s to the implementation of [`block_on`] is therefore the
-//! logical thing to do.
+//! It is not possible to build a `Future` that is not built on top of one of the `Future`
+//! provided by this crate, and every single use-cases of `Future`s that we could think of
+//! can and must be built on top of them. Similarly, it is not possible to build an implementation
+//! of [`block_on`] without having access to the internals of these `Future`s. Tying these
+//! `Future`s to the implementation of [`block_on`] is therefore the logical thing to do.
 //!
 
 #![deny(intra_doc_link_resolution_failure)]
-#![cfg_attr(not(feature = "std"), no_std)]
+#![no_std]
 
 extern crate alloc;
 
-use alloc::vec::Vec;
-use core::{
-    marker::PhantomData,
-    pin::Pin,
-    task::{Context, Poll},
-};
-use futures::prelude::*;
-use parity_scale_codec::{DecodeAll, Encode};
-
 pub use block_on::block_on;
+pub use emit::{
+    cancel_message, emit_message, emit_message_raw, emit_message_with_response,
+    emit_message_without_response,
+};
 pub use ffi::{InterfaceMessage, Message, ResponseMessage};
+pub use interface_message::{emit_answer, next_interface_message, InterfaceMessageFuture};
+pub use response::{message_response, message_response_sync_raw, MessageResponseFuture};
 
 mod block_on;
+mod emit;
+mod interface_message;
+mod response;
 
 pub mod ffi;
-
-/// Emits a message destined to the handler of the given interface.
-///
-/// Returns `Ok` if the message has been successfully dispatched.
-///
-/// If `needs_answer` is true, then we expect an answer to the message to come later. A message ID
-/// is generated and is returned within `Ok(Some(...))`.
-/// If `needs_answer` is false, the function always returns `Ok(None)`.
-pub fn emit_message(
-    interface_hash: &[u8; 32],
-    msg: &impl Encode,
-    needs_answer: bool,
-) -> Result<Option<u64>, ()> {
-    emit_message_raw(interface_hash, &msg.encode(), needs_answer)
-}
-
-/// Emits a message destined to the handler of the given interface.
-///
-/// Returns `Ok` if the message has been successfully dispatched.
-///
-/// If `needs_answer` is true, then we expect an answer to the message to come later. A message ID
-/// is generated and is returned within `Ok(Some(...))`.
-/// If `needs_answer` is false, the function always returns `Ok(None)`.
-pub fn emit_message_raw(
-    interface_hash: &[u8; 32],
-    buf: &[u8],
-    needs_answer: bool,
-) -> Result<Option<u64>, ()> {
-    unsafe {
-        let mut message_id_out = 0xdeadbeefu64;
-        let ret = ffi::emit_message(
-            interface_hash as *const [u8; 32] as *const _,
-            buf.as_ptr(),
-            buf.len() as u32,
-            needs_answer,
-            &mut message_id_out as *mut u64,
-        );
-        if ret != 0 {
-            return Err(());
-        }
-
-        if needs_answer {
-            debug_assert_ne!(message_id_out, 0xdeadbeefu64); // TODO: what if written message_id is actually deadbeef?
-            Ok(Some(message_id_out))
-        } else {
-            Ok(None)
-        }
-    }
-}
-
-/// Combines [`emit_message`] with [`message_response`].
-// TODO: the returned Future should have a Drop impl that cancels the message
-#[cfg(feature = "std")]
-pub async fn emit_message_with_response<T: DecodeAll>(
-    interface_hash: [u8; 32],
-    msg: impl Encode,
-) -> Result<T, ()> {
-    let msg_id = emit_message(&interface_hash, &msg, true)?.unwrap();
-    Ok(message_response(msg_id).await)
-}
-
-/// Answers the given message.
-// TODO: move to interface interface?
-pub fn emit_answer(message_id: u64, msg: &impl Encode) -> Result<(), ()> {
-    unsafe {
-        let buf = msg.encode();
-        let ret = ffi::emit_answer(&message_id, buf.as_ptr(), buf.len() as u32);
-        if ret == 0 {
-            Ok(())
-        } else {
-            Err(())
-        }
-    }
-}
-
-/// Cancel the given message. No answer will be received.
-pub fn cancel_message(message_id: u64) -> Result<(), ()> {
-    unsafe {
-        if ffi::cancel_message(&message_id) == 0 {
-            Ok(())
-        } else {
-            Err(())
-        }
-    }
-}
-
-/// Returns a future that is ready when a new message arrives on an interface that we have
-/// registered.
-///
-// TODO: move to interface interface?
-pub fn next_interface_message() -> InterfaceMessageFuture {
-    InterfaceMessageFuture { finished: false }
-}
-
-/// Returns a future that is ready when a response to the given message comes back.
-///
-/// The return value is the type the message decodes to.
-pub fn message_response_sync_raw(msg_id: u64) -> Vec<u8> {
-    match block_on::next_message(&mut [msg_id], true).unwrap() {
-        Message::Response(m) => m.actual_data,
-        _ => panic!(),
-    }
-}
-
-/// Returns a future that is ready when a response to the given message comes back.
-///
-/// The return value is the type the message decodes to.
-pub fn message_response<T: DecodeAll>(msg_id: u64) -> MessageResponseFuture<T> {
-    MessageResponseFuture {
-        finished: false,
-        msg_id,
-        marker: PhantomData,
-    }
-}
-
-// TODO: add a variant of message_response but for multiple messages
-
-#[must_use]
-pub struct MessageResponseFuture<T> {
-    msg_id: u64,
-    finished: bool,
-    marker: PhantomData<T>,
-}
-
-impl<T> Future for MessageResponseFuture<T>
-where
-    T: DecodeAll,
-{
-    type Output = T;
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        assert!(!self.finished);
-        if let Some(message) = block_on::peek_response(self.msg_id) {
-            self.finished = true;
-            Poll::Ready(DecodeAll::decode_all(&message.actual_data).unwrap())
-        } else {
-            block_on::register_message_waker(self.msg_id, cx.waker().clone());
-            Poll::Pending
-        }
-    }
-}
-
-impl<T> Unpin for MessageResponseFuture<T> {}
-
-#[must_use]
-pub struct InterfaceMessageFuture {
-    finished: bool,
-}
-
-impl Future for InterfaceMessageFuture {
-    type Output = InterfaceMessage;
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        assert!(!self.finished);
-        if let Some(message) = block_on::peek_interface_message() {
-            self.finished = true;
-            Poll::Ready(message)
-        } else {
-            block_on::register_message_waker(1, cx.waker().clone());
-            Poll::Pending
-        }
-    }
-}
-
-impl Unpin for InterfaceMessageFuture {}
