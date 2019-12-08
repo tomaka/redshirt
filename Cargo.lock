@@ -691,7 +691,6 @@ dependencies = [
  "nametbd-stdout-interface 0.1.0",
  "nametbd-time-interface 0.1.0",
  "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "wasmi 0.6.2 (git+https://github.com/tomaka/wasmi?branch=no-std)",
 ]
 
 [[package]]
