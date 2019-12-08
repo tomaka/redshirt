@@ -27,6 +27,7 @@ use spin::Mutex;
 /// Lock-free pool of identifiers. Can assign new identifiers from it.
 pub struct IdPool {
     /// Source of randomness.
+    // TODO: don't use a Mutex here unless necessary
     rng: Mutex<ChaCha20Rng>,
     /// Distribution of IDs.
     distribution: Uniform<u64>,
