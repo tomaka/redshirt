@@ -15,17 +15,25 @@
 
 #![cfg(any(target_arch = "arm", target_arch = "aarch64"))]
 
+// TODO: always fails :-/
+/*#[cfg(not(any(target_feature = "armv7-a", target_feature = "armv7-r")))]
+compile_error!("The ARMv7-A or ARMv7-R instruction sets must be enabled");*/
+
+// Since inline assembly is forbidden outside of functions, we have to define a dummy function that
+// exists for this sole purpose. It is not meant to be called.
 #[no_mangle]
 extern "C" fn dummy_fn() {
     unsafe {
         asm!(
             r#"
-.comm stack, 0x40000, 8
+.comm stack, 0x400000, 8
 
 .globl _start
 _start:
+    // This is the main entry point of the kernel for ARM architectures.
+
     // Detect which CPU we are. Halt all CPUs except the first one.
-    // TODO: this is specific to the Raspi2
+    // This is specific to ARMv7-a and ARMv7-R, hence the compile_error! above.
     mrc p15, 0, r5, c0, c0, 5
     and r5, r5, #3
     cmp r5, #0
@@ -34,9 +42,9 @@ _start:
     // Only one CPU reaches here.
 
     // Set up the stack.
-    ldr sp, =stack+0x40000
+    ldr sp, =stack+0x400000
     // Jump to the Rust code.
-    b after_boot
+    b arm_after_boot
 
 .halt:
     wfe
@@ -46,17 +54,15 @@ _start:
     }
 }
 
+// Called after the initialization process. At this point, a stack is available.
 #[no_mangle]
-extern "C" fn after_boot() -> ! {
+extern "C" fn arm_after_boot() -> ! {
     init_uart();
     for byte in b"hello world\n".iter().cloned() {
         write_uart(byte);
     }
 
-    unsafe {
-        asm!("b .");
-        core::intrinsics::unreachable()
-    }
+    halt();
 
     /*let kernel = crate::kernel::Kernel::init(crate::kernel::KernelConfig {
         num_cpus: 1,
@@ -135,7 +141,5 @@ pub fn halt() -> ! {
         loop {
             asm!(r#"wfe"#);
         }
-
-        core::intrinsics::unreachable()
     }
 }
