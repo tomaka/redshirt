@@ -13,6 +13,27 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+//! As explained in the crate root, the futures of this crate can only work with [`block_on`], and
+//! vice-versa.
+//!
+//! The way it works is the following:
+//!
+//! - We hold a global buffer of interface messages waiting to be processed, and a global buffer
+//!   of responses that have been received and that are waiting to be processed.
+//!
+//! - We also hold a global buffer of message IDs that we want a response for, and an associated
+//!   `core::task::Waker`.
+//!
+//! - When one of the `Future`s gets polled, it first look whether an interface message or a
+//!   response is available in one of the buffers. If not, it registers a waker using the
+//!   [`register_message_waker`] function.
+//!
+//! - The [`block_on`] function polls the `Future` passed to it, which optionally calls
+//!   [`register_message_waker`], then asks the kernel for responses to the message IDs that have
+//!   been registered. Once one or more messages have come back, we poll the `Future` again.
+//!   Repeat until the `Future` has ended.
+//!
+
 use crate::{InterfaceMessage, Message, ResponseMessage};
 use alloc::{collections::VecDeque, sync::Arc, vec::Vec};
 use core::{
@@ -24,20 +45,33 @@ use hashbrown::HashMap;
 use parity_scale_codec::DecodeAll;
 use spin::Mutex;
 
-// TODO: document
+/// Registers a message ID (or 1 for interface messages) and a waker. The `block_on` function will
+/// then ask the kernel for a message corresponding to this ID. If one is received, the `Waker`
+/// is called.
+///
+/// For non-interface messages, there can only ever be one registered `Waker`. Registering a
+/// `Waker` a second time overrides the one previously registered.
 pub(crate) fn register_message_waker(message_id: u64, waker: Waker) {
     let mut state = (&*STATE).lock();
+
+    if message_id != 1 {
+        if let Some(pos) = state.message_ids.iter().position(|msg| *msg == message_id) {
+            state.wakers[pos] = waker;
+            return;
+        }
+    }
+
     state.message_ids.push(message_id);
     state.wakers.push(waker);
 }
 
-// TODO: document
+/// Removes one element from the global buffer of interface messages waiting to be processed.
 pub(crate) fn peek_interface_message() -> Option<InterfaceMessage> {
     let mut state = (&*STATE).lock();
     state.interface_messages_queue.pop_front()
 }
 
-// TODO: document
+/// If a response to this message ID has previously been obtained, extracts it for processing.
 pub(crate) fn peek_response(msg_id: u64) -> Option<ResponseMessage> {
     let mut state = (&*STATE).lock();
     state.pending_messages.remove(&msg_id)
@@ -46,10 +80,6 @@ pub(crate) fn peek_response(msg_id: u64) -> Option<ResponseMessage> {
 /// Blocks the current thread until the [`Future`](core::future::Future) passed as parameter
 /// finishes.
 pub fn block_on<T>(future: impl Future<Output = T>) -> T {
-    // Implementation note: the function works by emitting a `FutexWait` message, then polling
-    // the `Future`, then waiting for answer on that `FutexWait` message. The `Waker` passed when
-    // polling emits a `FutexWake` message when `wake` is called.
-
     futures::pin_mut!(future);
 
     // This `Arc<AtomicBool>` will be set to true if we are waken up during the polling.
@@ -97,7 +127,7 @@ pub fn block_on<T>(future: impl Future<Output = T>) -> T {
             match msg {
                 Message::Response(msg) => {
                     let _was_in = state.message_ids.remove(msg.index_in_list as usize);
-                    debug_assert_eq!(_was_in, 0);
+                    debug_assert_eq!(_was_in, 0); // Value is zero-ed by the kernel.
 
                     let waker = state.wakers.remove(msg.index_in_list as usize);
                     waker.wake();
@@ -107,7 +137,7 @@ pub fn block_on<T>(future: impl Future<Output = T>) -> T {
                 }
                 Message::Interface(msg) => {
                     let _was_in = state.message_ids.remove(msg.index_in_list as usize);
-                    debug_assert_eq!(_was_in, 0);
+                    debug_assert_eq!(_was_in, 0); // Value is zero-ed by the kernel.
 
                     let waker = state.wakers.remove(msg.index_in_list as usize);
                     waker.wake();
@@ -124,8 +154,8 @@ pub fn block_on<T>(future: impl Future<Output = T>) -> T {
 lazy_static::lazy_static! {
     // TODO: we're using a Mutex, which is ok for as long as WASM doesn't have threads
     // if WASM ever gets threads and no pre-emptive multitasking, then we might spin forever
-    static ref STATE: Mutex<ResponsesState> = {
-        Mutex::new(ResponsesState {
+    static ref STATE: Mutex<BlockOnState> = {
+        Mutex::new(BlockOnState {
             message_ids: Vec::new(),
             wakers: Vec::new(),
             pending_messages: HashMap::with_capacity(6),
@@ -134,8 +164,17 @@ lazy_static::lazy_static! {
     };
 }
 
-struct ResponsesState {
+/// State of the global `block_on` mechanism.
+///
+/// This is instantiated only once.
+struct BlockOnState {
+    /// List of messages for which we are waiting for a response. A pointer to this list is passed
+    /// to the kernel.
     message_ids: Vec<u64>,
+
+    /// List whose length is identical to [`BlockOnState::messages_ids`]. For each element in
+    /// [`BlockOnState::messages_ids`], contains a corresponding `Waker` that must be waken up
+    /// when a response comes.
     wakers: Vec<Waker>,
 
     /// Queue of response messages waiting to be delivered.
