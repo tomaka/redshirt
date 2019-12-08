@@ -10,9 +10,5 @@ futures = { version = "0.3.1", default-features = false, features = ["alloc"] }
 hashbrown = { version = "0.6.0", default-features = false, features = ["ahash"] }
 lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
 parity-scale-codec = { version = "1.0.5", default-features = false, features = ["derive"] }
-pin-utils = "0.1.0-alpha.4"
+pin-project = "0.4.6"
 spin = "0.5.2"
-
-[features]
-default = ["std"]
-std = []

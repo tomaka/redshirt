@@ -11,4 +11,4 @@ parity-scale-codec = { version = "1.0.5", default-features = false, features = [
 
 [features]
 default = ["std"]
-std = ["nametbd-syscalls-interface/std"]
+std = []

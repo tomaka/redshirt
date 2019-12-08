@@ -1,0 +1,84 @@
+// Copyright (C) 2019  Pierre Krieger
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+use crate::ffi::InterfaceMessage;
+
+use core::{
+    fmt,
+    pin::Pin,
+    task::{Context, Poll},
+};
+use futures::prelude::*;
+use parity_scale_codec::Encode;
+
+/// Returns a future that is ready when a new message arrives on an interface that we have
+/// registered.
+// TODO: move to interface interface?
+pub fn next_interface_message() -> InterfaceMessageFuture {
+    InterfaceMessageFuture { finished: false }
+}
+
+/// Answers the given message.
+// TODO: move to interface interface?
+// TODO: this ties the messaging system to parity_scale_codec; is that a good thing?
+pub fn emit_answer(message_id: u64, msg: &impl Encode) -> Result<(), EmitAnswerErr> {
+    unsafe {
+        let buf = msg.encode();
+        let ret = crate::ffi::emit_answer(&message_id, buf.as_ptr(), buf.len() as u32);
+        if ret == 0 {
+            Ok(())
+        } else {
+            Err(EmitAnswerErr::InvalidMessageId)
+        }
+    }
+}
+
+/// Error that can be retuend by [`emit_answer`].
+#[derive(Debug)]
+pub enum EmitAnswerErr {
+    /// The message ID is not valid or has already been answered.
+    InvalidMessageId,
+}
+
+impl fmt::Display for EmitAnswerErr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            EmitAnswerErr::InvalidMessageId => write!(f, "Invalid message ID"),
+        }
+    }
+}
+
+/// Future that drives [`next_interface_message`] to completion.
+#[must_use]
+pub struct InterfaceMessageFuture {
+    finished: bool,
+}
+
+impl Future for InterfaceMessageFuture {
+    type Output = InterfaceMessage;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        assert!(!self.finished);
+        if let Some(message) = crate::block_on::peek_interface_message() {
+            self.finished = true;
+            Poll::Ready(message)
+        } else {
+            crate::block_on::register_message_waker(1, cx.waker().clone());
+            Poll::Pending
+        }
+    }
+}
+
+impl Unpin for InterfaceMessageFuture {}
