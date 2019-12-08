@@ -50,7 +50,7 @@ pub fn block_on<T>(future: impl Future<Output = T>) -> T {
     // the `Future`, then waiting for answer on that `FutexWait` message. The `Waker` passed when
     // polling emits a `FutexWake` message when `wake` is called.
 
-    pin_utils::pin_mut!(future);
+    futures::pin_mut!(future);
 
     // This `Arc<AtomicBool>` will be set to true if we are waken up during the polling.
     let woken_up = Arc::new(AtomicBool::new(false));

@@ -42,10 +42,11 @@ pub async fn generate_in(out: &mut [u8]) {
         let msg = ffi::RandomMessage::Generate {
             len: u16::try_from(chunk.len()).unwrap(),
         };
-        let rep: ffi::GenerateResponse =
+        let rep: ffi::GenerateResponse = unsafe {
             nametbd_syscalls_interface::emit_message_with_response(ffi::INTERFACE, msg)
                 .await
-                .unwrap();
+                .unwrap()
+        };
         chunk.copy_from_slice(&rep.result);
     }
 }
