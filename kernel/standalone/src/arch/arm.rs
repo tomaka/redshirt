@@ -19,44 +19,37 @@
 /*#[cfg(not(any(target_feature = "armv7-a", target_feature = "armv7-r")))]
 compile_error!("The ARMv7-A or ARMv7-R instruction sets must be enabled");*/
 
-// Since inline assembly is forbidden outside of functions, we have to define a dummy function that
-// exists for this sole purpose. It is not meant to be called.
+/// This is the main entry point of the kernel for ARM architectures.
 #[no_mangle]
-extern "C" fn dummy_fn() {
-    unsafe {
-        asm!(
-            r#"
-.comm stack, 0x400000, 8
-
-.globl _start
-_start:
-    // This is the main entry point of the kernel for ARM architectures.
-
-    // Detect which CPU we are. Halt all CPUs except the first one.
-    // This is specific to ARMv7-a and ARMv7-R, hence the compile_error! above.
+#[naked]
+unsafe extern "C" fn _start() -> ! {
+    // Detect which CPU we are.
+    //
+    // See sections B4.1.106 and B6.1.67 of the ARM® Architecture Reference Manual
+    // (ARMv7-A and ARMv7-R edition).
+    //
+    // This is specific to ARMv7-A and ARMv7-R, hence the compile_error! above.
+    asm!(
+        r#"
     mrc p15, 0, r5, c0, c0, 5
     and r5, r5, #3
     cmp r5, #0
-    bne .halt
+    bne halt
+    "#
+    );
 
     // Only one CPU reaches here.
 
     // Set up the stack.
-    ldr sp, =stack+0x400000
-    // Jump to the Rust code.
-    b arm_after_boot
+    asm!(r#"
+    .comm stack, 0x400000, 8
+    ldr sp, =stack+0x400000"#:::"memory":"volatile");
 
-.halt:
-    wfe
-    b .halt
-"#
-        );
-    }
+    cpu_enter()
 }
 
-// Called after the initialization process. At this point, a stack is available.
 #[no_mangle]
-extern "C" fn arm_after_boot() -> ! {
+fn cpu_enter() -> ! {
     init_uart();
     for byte in b"hello world\n".iter().cloned() {
         write_uart(byte);
@@ -135,6 +128,9 @@ pub extern "C" fn __aeabi_d2f(a: f64) -> f32 {
     libm::trunc(a) as f32 // TODO: correct?
 }
 
+// TODO: no_mangle and naked because it's called at initialization; attributes should eventually be removed
+#[no_mangle]
+#[naked]
 // TODO: define the semantics of that
 pub fn halt() -> ! {
     unsafe {
