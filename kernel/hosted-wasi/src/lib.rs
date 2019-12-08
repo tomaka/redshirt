@@ -362,7 +362,8 @@ impl WasiStateMachine {
                 info.remaining_len -= value.result.len() as u32; // TODO: as :-/
 
                 if info.remaining_len == 0 {
-                    system.resolve_extrinsic_call(info.tid, Some(nametbd_core::RuntimeValue::I32(0)));
+                    system
+                        .resolve_extrinsic_call(info.tid, Some(nametbd_core::RuntimeValue::I32(0)));
                     HandleOut::Ok
                 } else {
                     let msg_id = self.alloc_message_id();
