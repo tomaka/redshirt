@@ -26,4 +26,4 @@ spin = "0.5.2"
 wasmi = { git = "https://github.com/tomaka/wasmi", branch = "no-std", default-features = false, features = ["core"] }
 
 [dev-dependencies]
-wat = "1.0.3"
+wat = "1.0.5"
