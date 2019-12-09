@@ -363,6 +363,10 @@ impl<T> ProcessStateMachine<T> {
     /// interrupted state.
     ///
     /// You should call [`run`](Thread::run) afterwards with a value of `None`.
+    ///
+    /// > **Note**: The "function ID" is the index of the function in the WASM module. WASM
+    /// >           doesn't have function pointers. Instead, all the functions are part of a single
+    /// >           global array of functions.
     pub fn start_thread_by_id(
         &mut self,
         function_id: u32,
