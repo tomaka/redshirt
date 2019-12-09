@@ -7,7 +7,7 @@ edition = "2018"
 publish = false
 
 [dependencies]
-compiler_builtins = { version = "0.1.21", features = ["mem"] }
+compiler_builtins = { version = "0.1.22", features = ["mem"] }
 futures = { version = "0.3.1", default-features = false }
 libm = "0.2.1"
 linked_list_allocator = "0.6.4"
