@@ -511,6 +511,7 @@ impl<T: Clone> Core<T> {
                         thread.resume(Some(wasmi::RuntimeValue::I32(0)));
                         let mut process = self.processes.process_by_id(*pid).unwrap();
                         process.user_data().messages_queue.push_back(message);
+                        try_resume_message_wait(process);
                         CoreRunOutcomeInner::LoopAgain
                     }
                     Some(InterfaceHandler::External) => {
