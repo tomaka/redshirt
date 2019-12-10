@@ -94,10 +94,15 @@ pub enum Operation {
     },
 }
 
+/// Response to a [`HardwareMessage::HardwareAccess`].
 #[derive(Debug, Encode, Decode)]
 pub enum HardwareAccessResponse {
+    /// Sent back in response to a [`Operation::PhysicalMemoryRead`].
     PhysicalMemoryRead(Vec<u8>),
+    /// Sent back in response to a [`Operation::PortReadU8`].
     PortReadU8(u8),
+    /// Sent back in response to a [`Operation::PortReadU16`].
     PortReadU16(u16),
+    /// Sent back in response to a [`Operation::PortReadU32`].
     PortReadU32(u32),
 }

@@ -28,7 +28,7 @@ use nametbd_hardware_interface::ffi::{HardwareMessage, HardwareAccessResponse, O
 use parity_scale_codec::{DecodeAll, Encode as _};
 use x86_64::structures::port::{PortWrite as _, PortRead as _};
 
-/// State machine for `time` interface messages handling.
+/// State machine for `hardware` interface messages handling.
 pub struct HardwareHandler<TMsgId> {
     marker: PhantomData<TMsgId>,
 }

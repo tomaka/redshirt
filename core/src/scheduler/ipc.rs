@@ -526,7 +526,7 @@ impl<T: Clone> Core<T> {
                     }
                     None => {
                         // TODO: set to InterfaceNotAvailableWait instead
-                        unimplemented!("interface not available")
+                        unimplemented!()
                     }
                 }
             }
@@ -561,7 +561,7 @@ impl<T: Clone> Core<T> {
                 mut thread,
                 id: Extrinsic::CancelMessage,
                 params,
-            } => unimplemented!("b"),
+            } => unimplemented!(),
 
             processes::RunOneOutcome::Idle => CoreRunOutcomeInner::Idle,
         }
@@ -602,7 +602,7 @@ impl<T: Clone> Core<T> {
             .unwrap_or(SmallVec::new())
         {
             //let thread = self.processes.thread_by_id(thread_id);
-            unimplemented!("a") // TODO:
+            unimplemented!() // TODO:
         }
 
         Ok(())
