@@ -40,7 +40,7 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
     } else if let Some(s) = panic_info.payload().downcast_ref::<String>() {
         let _ = writeln!(console, "panic occurred: {:?}", s);
     } else if let Some(message) = panic_info.message() {
-        let _ = fmt::Write::write_fmt(&mut console, *message);
+        let _ = Write::write_fmt(&mut console, *message);
         let _ = writeln!(console, "");
     } else {
         let _ = writeln!(console, "panic occurred");
