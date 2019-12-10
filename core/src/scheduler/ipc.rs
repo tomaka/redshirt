@@ -511,6 +511,7 @@ impl<T: Clone> Core<T> {
                         thread.resume(Some(wasmi::RuntimeValue::I32(0)));
                         let mut process = self.processes.process_by_id(*pid).unwrap();
                         process.user_data().messages_queue.push_back(message);
+                        try_resume_message_wait(process);
                         CoreRunOutcomeInner::LoopAgain
                     }
                     Some(InterfaceHandler::External) => {
@@ -525,7 +526,7 @@ impl<T: Clone> Core<T> {
                     }
                     None => {
                         // TODO: set to InterfaceNotAvailableWait instead
-                        unimplemented!()
+                        unimplemented!("interface not available")
                     }
                 }
             }
@@ -560,7 +561,7 @@ impl<T: Clone> Core<T> {
                 mut thread,
                 id: Extrinsic::CancelMessage,
                 params,
-            } => unimplemented!(),
+            } => unimplemented!("b"),
 
             processes::RunOneOutcome::Idle => CoreRunOutcomeInner::Idle,
         }
@@ -601,7 +602,7 @@ impl<T: Clone> Core<T> {
             .unwrap_or(SmallVec::new())
         {
             //let thread = self.processes.thread_by_id(thread_id);
-            unimplemented!() // TODO:
+            unimplemented!("a") // TODO:
         }
 
         Ok(())

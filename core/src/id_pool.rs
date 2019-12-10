@@ -37,7 +37,7 @@ impl IdPool {
     /// Initializes a new pool.
     pub fn new() -> Self {
         IdPool {
-            rng: Mutex::new(ChaCha20Rng::from_seed([0; 32])), // FIXME: proper seed
+            rng: Mutex::new(ChaCha20Rng::from_seed([6; 32])), // FIXME: proper seed
             distribution: Uniform::from(0..=u64::max_value()),
         }
     }

@@ -1,0 +1,12 @@
+[package]
+name = "nametbd-hardware"
+version = "0.1.0"
+license = "GPL-3.0-or-later"
+authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
+edition = "2018"
+publish = false
+
+[dependencies]
+nametbd-hardware-interface = { path = "../../interfaces/hardware" }
+parity-scale-codec = { version = "1.0.5", default-features = false }
+x86_64 = "0.8.1"

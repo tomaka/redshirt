@@ -15,9 +15,27 @@
 
 //! Implements the stdout interface by writing in text mode.
 
-#![no_std]
+use parity_scale_codec::DecodeAll;
+use std::fmt;
 
-use core::fmt;
+fn main() {
+    nametbd_syscalls_interface::block_on(async_main());
+}
+
+async fn async_main() -> ! {
+    nametbd_interface_interface::register_interface(nametbd_stdout_interface::ffi::INTERFACE)
+        .await.unwrap();
+
+    let mut console = unsafe { Console::init() };
+
+    loop {
+        let msg = nametbd_syscalls_interface::next_interface_message().await;
+        assert_eq!(msg.interface, nametbd_stdout_interface::ffi::INTERFACE);
+        let nametbd_stdout_interface::ffi::StdoutMessage::Message(message) =
+            DecodeAll::decode_all(&msg.actual_data).unwrap();       // TODO: don't unwrap
+        console.write(&message);
+    }
+}
 
 /// State machine for the standard text console.
 pub struct Console {
@@ -62,7 +80,10 @@ impl Console {
                 }
 
                 let chr = chr as u8;
-                ptr_of(self.cursor_x, self.cursor_y).write_volatile(u16::from(chr) | 0xf00);
+                nametbd_hardware_interface::write(
+                    ptr_of(self.cursor_x, self.cursor_y),
+                    vec![chr, 0xf]
+                );
 
                 debug_assert!(self.cursor_x < 80);
                 self.cursor_x += 1;
@@ -89,26 +110,24 @@ impl fmt::Write for Console {
 
 fn clear_screen() {
     unsafe {
-        for y in 0..25 {
-            for x in 0..80 {
-                ptr_of(x, y).write_volatile(0);
-            }
-        }
+        nametbd_hardware_interface::write(
+            ptr_of(0, 0),
+            (0..(80 * 25 * 2)).map(|_| 0).collect::<Vec<_>>()
+        );
     }
 }
 
-fn ptr_of(x: u8, y: u8) -> *mut u16 {
+fn ptr_of(x: u8, y: u8) -> u64 {
     assert!(x < 80);
     assert!(y < 25);
 
-    unsafe {
-        let offset = isize::from((y * 80) + x);
-        (0xb8000 as *mut u16).offset(offset)
-    }
+    let offset = 2 * u64::from((y * 80) + x);
+    0xb8000 + offset
 }
 
 fn line_up() {
-    unsafe {
+    // TODO:
+    /*unsafe {
         for y in 1..25 {
             for x in 0..80 {
                 let val = ptr_of(x, y).read_volatile();
@@ -119,5 +138,5 @@ fn line_up() {
         for x in 0..80 {
             ptr_of(x, 24).write_volatile(0);
         }
-    }
+    }*/
 }
