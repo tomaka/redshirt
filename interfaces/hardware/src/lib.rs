@@ -26,14 +26,67 @@ use alloc::{vec, vec::Vec};
 
 pub mod ffi;
 
-/// Writes the given data to the given physical memory address location.
-pub unsafe fn write(address: u64, data: impl Into<Vec<u8>>) {
-    let msg = ffi::HardwareMessage::HardwareAccess(vec![
-        ffi::Operation::PhysicalMemoryWrite {
+/// Builder for write-only hardware operations.
+pub struct HardwareWriteOperationsBuilder {
+    operations: Vec<ffi::Operation>,
+}
+
+impl HardwareWriteOperationsBuilder {
+    pub fn new() -> Self {
+        HardwareWriteOperationsBuilder {
+            operations: Vec::new(),
+        }
+    }
+
+    pub fn with_capacity(capacity: usize) -> Self {
+        HardwareWriteOperationsBuilder {
+            operations: Vec::with_capacity(capacity),
+        }
+    }
+
+    pub unsafe fn write(&mut self, address: u64, data: impl Into<Vec<u8>>) {
+        self.operations.push(ffi::Operation::PhysicalMemoryWrite {
             address,
             data: data.into(),
-        }
-    ]);
+        });
+    }
 
-    nametbd_syscalls_interface::emit_message_without_response(&ffi::INTERFACE, &msg).unwrap();
+    pub unsafe fn port_write_u8(&mut self, port: u32, data: u8) {
+        self.operations.push(ffi::Operation::PortWriteU8 {
+            port,
+            data,
+        });
+    }
+
+    pub unsafe fn port_write_u16(&mut self, port: u32, data: u16) {
+        self.operations.push(ffi::Operation::PortWriteU16 {
+            port,
+            data,
+        });
+    }
+
+    pub unsafe fn port_write_u32(&mut self, port: u32, data: u32) {
+        self.operations.push(ffi::Operation::PortWriteU32 {
+            port,
+            data,
+        });
+    }
+
+    pub fn send(self) {
+        unsafe {
+            if self.operations.is_empty() {
+                return;
+            }
+
+            let msg = ffi::HardwareMessage::HardwareAccess(self.operations);
+            nametbd_syscalls_interface::emit_message_without_response(&ffi::INTERFACE, &msg).unwrap();
+        }
+    }
+}
+
+/// Writes the given data to the given physical memory address location.
+pub unsafe fn write(address: u64, data: impl Into<Vec<u8>>) {
+    let mut builder = HardwareWriteOperationsBuilder::with_capacity(1);
+    builder.write(address, data);
+    builder.send();
 }

@@ -16,7 +16,7 @@
 //! Implements the stdout interface by writing in text mode.
 
 use parity_scale_codec::DecodeAll;
-use std::fmt;
+use std::{convert::TryFrom as _, fmt};
 
 fn main() {
     nametbd_syscalls_interface::block_on(async_main());
@@ -64,6 +64,8 @@ impl Console {
     /// Writes a message on the console.
     pub fn write(&mut self, message: &str) {
         unsafe {
+            let mut operation_builder = nametbd_hardware_interface::HardwareWriteOperationsBuilder::new();
+
             for chr in message.chars() {
                 if !chr.is_ascii() {
                     continue;
@@ -80,7 +82,7 @@ impl Console {
                 }
 
                 let chr = chr as u8;
-                nametbd_hardware_interface::write(
+                operation_builder.write(
                     ptr_of(self.cursor_x, self.cursor_y),
                     vec![chr, 0xf]
                 );
@@ -97,6 +99,15 @@ impl Console {
                     }
                 }
             }
+
+            // Update the VGA cursor to match self.cursor_x and self.cursor_y.
+            let cursor_pos = u64::from((self.cursor_y * 80) + self.cursor_x);
+            operation_builder.port_write_u8(0x3d4, 0xf);
+            operation_builder.port_write_u8(0x3d5, u8::try_from(cursor_pos & 0xff).unwrap());
+            operation_builder.port_write_u8(0x3d4, 0xe);
+            operation_builder.port_write_u8(0x3d5, u8::try_from((cursor_pos >> 8) & 0xff).unwrap());
+
+            operation_builder.send();
         }
     }
 }
