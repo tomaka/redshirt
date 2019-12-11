@@ -651,13 +651,12 @@ impl<T: Clone> Core<T> {
             } = thread_user_data
             {
                 assert_eq!(interface, int);
-                let pid = thread.pid();
                 let message = nametbd_syscalls_interface::ffi::Message::Interface(
                     nametbd_syscalls_interface::ffi::InterfaceMessage {
                         interface,
                         index_in_list: 0,
                         message_id,
-                        emitter_pid: Some(pid.into()),
+                        emitter_pid: Some(thread.pid().into()),
                         actual_data: message,
                     },
                 );
