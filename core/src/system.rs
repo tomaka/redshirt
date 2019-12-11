@@ -158,7 +158,7 @@ impl<TExtEx: Clone> System<TExtEx> {
                         params: params.clone(),
                     };
                 }
-                CoreRunOutcome::ThreadWaitUnavailableInterface { .. } => unimplemented!(),
+                CoreRunOutcome::ThreadWaitUnavailableInterface { .. } => {} // TODO: lazy-loading
 
                 CoreRunOutcome::MessageResponse {
                     message_id,
