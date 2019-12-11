@@ -164,7 +164,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "compiler_builtins"
-version = "0.1.22"
+version = "0.1.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
@@ -615,7 +615,7 @@ name = "nametbd-standalone-kernel"
 version = "0.1.0"
 dependencies = [
  "cc 1.0.48 (registry+https://github.com/rust-lang/crates.io-index)",
- "compiler_builtins 0.1.22 (registry+https://github.com/rust-lang/crates.io-index)",
+ "compiler_builtins 0.1.23 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "libm 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "linked_list_allocator 0.6.4 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1189,7 +1189,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum cast 0.2.3 (registry+https://github.com/rust-lang/crates.io-index)" = "4b9434b9a5aa1450faa3f9cb14ea0e8c53bb5d2b3c1bfd1ab4fc03e9f33fbfb0"
 "checksum cc 1.0.48 (registry+https://github.com/rust-lang/crates.io-index)" = "f52a465a666ca3d838ebbf08b241383421412fe7ebb463527bba275526d89f76"
 "checksum cfg-if 0.1.9 (registry+https://github.com/rust-lang/crates.io-index)" = "b486ce3ccf7ffd79fdeb678eac06a9e6c09fc88d33836340becb8fffe87c5e33"
-"checksum compiler_builtins 0.1.22 (registry+https://github.com/rust-lang/crates.io-index)" = "e6f083abf9bb9005a27d2da62706f661245278cb7096da37ab27410eaf60f2c1"
+"checksum compiler_builtins 0.1.23 (registry+https://github.com/rust-lang/crates.io-index)" = "d6159d24f423d03da594eaf3299c05219ead9dcc4d8cebe9155b21f066741955"
 "checksum const-random 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)" = "7b641a8c9867e341f3295564203b1c250eb8ce6cb6126e007941f78c4d2ed7fe"
 "checksum const-random-macro 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)" = "c750ec12b83377637110d5a57f5ae08e895b06c4b16e2bdbf1a94ef717428c59"
 "checksum crossbeam-channel 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)" = "acec9a3b0b3559f15aee4f90746c4e5e293b701c0f7d3925d24e01645267b68c"

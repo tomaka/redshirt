@@ -94,6 +94,7 @@ pub unsafe fn emit_message_raw(
         buf.as_ptr(),
         buf.len() as u32,
         needs_answer,
+        true,
         message_id_out.as_mut_ptr(),
     );
 
