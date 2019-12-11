@@ -72,17 +72,23 @@ impl Kernel {
             crate::arch::halt();
         }
 
-        let mut console = unsafe { nametbd_x86_stdout::Console::init() };
+        let hardware = nametbd_hardware::HardwareHandler::new();
 
-        let module = nametbd_core::module::Module::from_bytes(
+        let hello_module = nametbd_core::module::Module::from_bytes(
             &include_bytes!("../../../modules/target/wasm32-wasi/release/hello-world.wasm")[..],
+        )
+        .unwrap();
+
+        let stdout_module = nametbd_core::module::Module::from_bytes(
+            &include_bytes!("../../../modules/target/wasm32-wasi/release/x86-stdout.wasm")[..],
         )
         .unwrap();
 
         let mut system =
             nametbd_wasi_hosted::register_extrinsics(nametbd_core::system::SystemBuilder::new())
-                .with_interface_handler(nametbd_stdout_interface::ffi::INTERFACE)
-                .with_startup_process(module)
+                .with_interface_handler(nametbd_hardware_interface::ffi::INTERFACE)
+                .with_startup_process(stdout_module)
+                .with_startup_process(hello_module)
                 .with_main_program([0; 32]) // TODO: just a test
                 .build();
 
@@ -94,6 +100,7 @@ impl Kernel {
                     // TODO: If we don't support any interface or extrinsic, then `Idle` shouldn't
                     // happen. In a normal situation, this is when we would check the status of the
                     // "externalities", such as the timer.
+                    //panic!("idle");
                     crate::arch::halt();
                 }
                 nametbd_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
@@ -110,28 +117,28 @@ impl Kernel {
                         message,
                     } = out
                     {
-                        if interface == nametbd_stdout_interface::ffi::INTERFACE {
+                        /*if interface == nametbd_stdout_interface::ffi::INTERFACE {
                             let msg =
                                 nametbd_stdout_interface::ffi::StdoutMessage::decode_all(&message);
                             let nametbd_stdout_interface::ffi::StdoutMessage::Message(msg) =
                                 msg.unwrap();
                             console.write(&msg);
-                        } else {
-                            panic!()
-                        }
+                        } else {*/
+                        panic!()
+                        //}
                     }
                 }
                 nametbd_core::system::SystemRunOutcome::ProgramFinished { pid, outcome } => {
-                    console.write(&format!("Program finished {:?} => {:?}\n", pid, outcome));
+                    //console.write(&format!("Program finished {:?} => {:?}\n", pid, outcome));
                 }
                 nametbd_core::system::SystemRunOutcome::InterfaceMessage {
                     interface,
                     message,
-                    ..
-                } if interface == nametbd_stdout_interface::ffi::INTERFACE => {
-                    let msg = nametbd_stdout_interface::ffi::StdoutMessage::decode_all(&message);
-                    let nametbd_stdout_interface::ffi::StdoutMessage::Message(msg) = msg.unwrap();
-                    console.write(&msg);
+                    message_id,
+                } if interface == nametbd_hardware_interface::ffi::INTERFACE => {
+                    if let Some(answer) = hardware.hardware_message(message_id, &message) {
+                        system.answer_message(message_id.unwrap(), &answer);
+                    }
                 }
                 _ => panic!(),
             }
