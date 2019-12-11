@@ -63,6 +63,10 @@ extern "C" {
     /// On success, if `needs_answer` is true, will write the ID of new event into the memory
     /// pointed by `message_id_out`.
     ///
+    /// If `allow_delay` is true, the kernel is allowed to block the thread in order to
+    /// lazily-load a handler for that interface if necessary. If `allow_delay` is false and no
+    /// interface handler is available, the function fails immediately.
+    ///
     /// When this function is being called, a "lock" is being held on the memory pointed by
     /// `interface_hash`, `msg` and `message_id_out`. In particular, it is invalid to modify these
     /// buffers while the function is running.
@@ -71,6 +75,7 @@ extern "C" {
         msg: *const u8,
         msg_len: u32,
         needs_answer: bool,
+        allow_delay: bool,
         message_id_out: *mut u64,
     ) -> u32;
 
@@ -108,7 +113,7 @@ pub enum Message {
     ProcessDestroyed(u64),*/
 }
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode, PartialEq, Eq)]
 pub struct InterfaceMessage {
     /// Interface the message concerns.
     pub interface: [u8; 32],
