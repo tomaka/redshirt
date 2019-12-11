@@ -124,7 +124,7 @@ impl Kernel {
                                 msg.unwrap();
                             console.write(&msg);
                         } else {*/
-                            panic!()
+                        panic!()
                         //}
                     }
                 }
@@ -134,7 +134,7 @@ impl Kernel {
                 nametbd_core::system::SystemRunOutcome::InterfaceMessage {
                     interface,
                     message,
-                    message_id
+                    message_id,
                 } if interface == nametbd_hardware_interface::ffi::INTERFACE => {
                     if let Some(answer) = hardware.hardware_message(message_id, &message) {
                         system.answer_message(message_id.unwrap(), &answer);

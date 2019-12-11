@@ -24,9 +24,9 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 use core::{convert::TryFrom as _, marker::PhantomData};
-use nametbd_hardware_interface::ffi::{HardwareMessage, HardwareAccessResponse, Operation};
+use nametbd_hardware_interface::ffi::{HardwareAccessResponse, HardwareMessage, Operation};
 use parity_scale_codec::{DecodeAll, Encode as _};
-use x86_64::structures::port::{PortWrite as _, PortRead as _};
+use x86_64::structures::port::{PortRead as _, PortWrite as _};
 
 /// State machine for `hardware` interface messages handling.
 pub struct HardwareHandler<TMsgId> {
@@ -64,14 +64,14 @@ where
                 } else {
                     None
                 }
-            },
-            HardwareMessage::InterruptWait(int_id) => unimplemented!(),     // TODO:
+            }
+            HardwareMessage::InterruptWait(int_id) => unimplemented!(), // TODO:
         }
     }
 
     /*/// Returns the next message to answer, and the message to send back.
     pub fn next_answer(&self) -> impl Future<Output = (TMsgId, Vec<u8>)> {
-        
+
     }*/
 }
 
@@ -81,57 +81,63 @@ unsafe fn perform_operation(operation: Operation) -> Option<HardwareAccessRespon
             if let Ok(address) = usize::try_from(address) {
                 for (off, byte) in data.iter().enumerate() {
                     // TODO: `offset` might be unsound
-                    (address as *mut u8).offset(off as isize).write_volatile(*byte);
+                    (address as *mut u8)
+                        .offset(off as isize)
+                        .write_volatile(*byte);
                 }
             }
             None
-        },
+        }
         Operation::PhysicalMemoryRead { address, len } => {
-            let mut out = Vec::with_capacity(len as usize);     // TODO: don't use `as`
+            let mut out = Vec::with_capacity(len as usize); // TODO: don't use `as`
             for n in 0..len {
                 // TODO: `offset` might be unsound
                 out.push((address as *mut u8).offset(n as isize).read_volatile());
             }
             Some(HardwareAccessResponse::PhysicalMemoryRead(out))
-        },
+        }
         Operation::PortWriteU8 { port, data } => {
             if let Ok(port) = u16::try_from(port) {
                 u8::write_to_port(port, data);
             }
             None
-        },
+        }
         Operation::PortWriteU16 { port, data } => {
             if let Ok(port) = u16::try_from(port) {
                 u16::write_to_port(port, data);
             }
             None
-        },
+        }
         Operation::PortWriteU32 { port, data } => {
             if let Ok(port) = u16::try_from(port) {
                 u32::write_to_port(port, data);
             }
             None
-        },
+        }
         Operation::PortReadU8 { port } => {
             if let Ok(port) = u16::try_from(port) {
                 Some(HardwareAccessResponse::PortReadU8(u8::read_from_port(port)))
             } else {
                 Some(HardwareAccessResponse::PortReadU8(0))
             }
-        },
+        }
         Operation::PortReadU16 { port } => {
             if let Ok(port) = u16::try_from(port) {
-                Some(HardwareAccessResponse::PortReadU16(u16::read_from_port(port)))
+                Some(HardwareAccessResponse::PortReadU16(u16::read_from_port(
+                    port,
+                )))
             } else {
                 Some(HardwareAccessResponse::PortReadU16(0))
             }
-        },
+        }
         Operation::PortReadU32 { port } => {
             if let Ok(port) = u16::try_from(port) {
-                Some(HardwareAccessResponse::PortReadU32(u32::read_from_port(port)))
+                Some(HardwareAccessResponse::PortReadU32(u32::read_from_port(
+                    port,
+                )))
             } else {
                 Some(HardwareAccessResponse::PortReadU32(0))
             }
-        },
+        }
     }
 }

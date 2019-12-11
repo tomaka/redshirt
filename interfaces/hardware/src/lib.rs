@@ -52,24 +52,18 @@ impl HardwareWriteOperationsBuilder {
     }
 
     pub unsafe fn port_write_u8(&mut self, port: u32, data: u8) {
-        self.operations.push(ffi::Operation::PortWriteU8 {
-            port,
-            data,
-        });
+        self.operations
+            .push(ffi::Operation::PortWriteU8 { port, data });
     }
 
     pub unsafe fn port_write_u16(&mut self, port: u32, data: u16) {
-        self.operations.push(ffi::Operation::PortWriteU16 {
-            port,
-            data,
-        });
+        self.operations
+            .push(ffi::Operation::PortWriteU16 { port, data });
     }
 
     pub unsafe fn port_write_u32(&mut self, port: u32, data: u32) {
-        self.operations.push(ffi::Operation::PortWriteU32 {
-            port,
-            data,
-        });
+        self.operations
+            .push(ffi::Operation::PortWriteU32 { port, data });
     }
 
     pub fn send(self) {
@@ -79,7 +73,8 @@ impl HardwareWriteOperationsBuilder {
             }
 
             let msg = ffi::HardwareMessage::HardwareAccess(self.operations);
-            nametbd_syscalls_interface::emit_message_without_response(&ffi::INTERFACE, &msg).unwrap();
+            nametbd_syscalls_interface::emit_message_without_response(&ffi::INTERFACE, &msg)
+                .unwrap();
         }
     }
 }

@@ -98,7 +98,7 @@ impl fmt::Write for Console {
                     self.cursor_y += 1;
                     if self.cursor_y == 25 {
                         self.cursor_y -= 1;
-                        line_up();  // TODO: no?
+                        line_up(); // TODO: no?
                     }
                 }
             }
