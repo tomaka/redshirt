@@ -32,6 +32,7 @@ pub enum HardwareMessage {
     /// If there is at least one memory or port read, the response must be a
     /// `Vec<HardwareAccessResponse>` where each element corresponds to a read. No response is
     /// expected if there are only writes.
+    // TODO: should we enforce some limits in the amount of data that can be returned in a response?
     HardwareAccess(Vec<Operation>),
 
     /// Ask the handler to send back a response when the interrupt with the given number is

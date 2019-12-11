@@ -22,11 +22,12 @@
 
 extern crate alloc;
 
+mod arch;
+
 use alloc::vec::Vec;
 use core::{convert::TryFrom as _, marker::PhantomData};
 use nametbd_hardware_interface::ffi::{HardwareAccessResponse, HardwareMessage, Operation};
 use parity_scale_codec::{DecodeAll, Encode as _};
-use x86_64::structures::port::{PortRead as _, PortWrite as _};
 
 /// State machine for `hardware` interface messages handling.
 pub struct HardwareHandler<TMsgId> {
@@ -78,66 +79,43 @@ where
 unsafe fn perform_operation(operation: Operation) -> Option<HardwareAccessResponse> {
     match operation {
         Operation::PhysicalMemoryWrite { address, data } => {
-            if let Ok(address) = usize::try_from(address) {
-                for (off, byte) in data.iter().enumerate() {
-                    // TODO: `offset` might be unsound
-                    (address as *mut u8)
-                        .offset(off as isize)
-                        .write_volatile(*byte);
+            if let Ok(mut address) = usize::try_from(address) {
+                for byte in data {
+                    (address as *mut u8).write_volatile(byte);
+                    address = address.checked_add(1).unwrap();
                 }
             }
             None
         }
-        Operation::PhysicalMemoryRead { address, len } => {
+        Operation::PhysicalMemoryRead { mut address, len } => {
+            // TODO: try allocate `len` but don't panic if `len` is too large
             let mut out = Vec::with_capacity(len as usize); // TODO: don't use `as`
-            for n in 0..len {
-                // TODO: `offset` might be unsound
-                out.push((address as *mut u8).offset(n as isize).read_volatile());
+            for _ in 0..len {
+                out.push((address as *mut u8).read_volatile());
+                address = address.checked_add(1).unwrap();
             }
             Some(HardwareAccessResponse::PhysicalMemoryRead(out))
         }
         Operation::PortWriteU8 { port, data } => {
-            if let Ok(port) = u16::try_from(port) {
-                u8::write_to_port(port, data);
-            }
+            arch::write_port_u8(port, data);
             None
         }
         Operation::PortWriteU16 { port, data } => {
-            if let Ok(port) = u16::try_from(port) {
-                u16::write_to_port(port, data);
-            }
+            arch::write_port_u16(port, data);
             None
         }
         Operation::PortWriteU32 { port, data } => {
-            if let Ok(port) = u16::try_from(port) {
-                u32::write_to_port(port, data);
-            }
+            arch::write_port_u32(port, data);
             None
         }
         Operation::PortReadU8 { port } => {
-            if let Ok(port) = u16::try_from(port) {
-                Some(HardwareAccessResponse::PortReadU8(u8::read_from_port(port)))
-            } else {
-                Some(HardwareAccessResponse::PortReadU8(0))
-            }
+            Some(HardwareAccessResponse::PortReadU8(arch::read_port_u8(port)))
         }
-        Operation::PortReadU16 { port } => {
-            if let Ok(port) = u16::try_from(port) {
-                Some(HardwareAccessResponse::PortReadU16(u16::read_from_port(
-                    port,
-                )))
-            } else {
-                Some(HardwareAccessResponse::PortReadU16(0))
-            }
-        }
-        Operation::PortReadU32 { port } => {
-            if let Ok(port) = u16::try_from(port) {
-                Some(HardwareAccessResponse::PortReadU32(u32::read_from_port(
-                    port,
-                )))
-            } else {
-                Some(HardwareAccessResponse::PortReadU32(0))
-            }
-        }
+        Operation::PortReadU16 { port } => Some(HardwareAccessResponse::PortReadU16(
+            arch::read_port_u16(port),
+        )),
+        Operation::PortReadU32 { port } => Some(HardwareAccessResponse::PortReadU32(
+            arch::read_port_u32(port),
+        )),
     }
 }
