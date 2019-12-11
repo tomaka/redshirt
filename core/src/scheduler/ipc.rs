@@ -663,14 +663,18 @@ impl<T: Clone> Core<T> {
                 );
 
                 thread.resume(Some(wasmi::RuntimeValue::I32(0)));
-                let mut process = self.processes.process_by_id(pid).unwrap();
-                process.user_data().messages_queue.push_back(message);
-                try_resume_message_wait(process);
+                let mut interface_handler_proc = self.processes.process_by_id(process).unwrap();
+                interface_handler_proc
+                    .user_data()
+                    .messages_queue
+                    .push_back(message);
             } else {
                 // State inconsistency in the core.
                 unreachable!()
             }
         }
+
+        // TODO: do we have to resume `process`?
 
         Ok(())
     }
