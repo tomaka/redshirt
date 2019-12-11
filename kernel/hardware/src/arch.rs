@@ -14,7 +14,45 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #[cfg(target_arch = "x86_64")]
-pub use self::x86_64::*;
+use self::x86_64 as platform;
 
 #[cfg(target_arch = "x86_64")]
 mod x86_64;
+
+// Functions are duplicated here in order to define a precise API that platforms have to implement.
+
+/// Write data on a specific hardware port. Has no effect if the operation is not supported or the
+/// port is out of range.
+pub unsafe fn write_port_u8(port: u32, data: u8) {
+    platform::write_port_u8(port, data)
+}
+
+/// Write data on a specific hardware port. Has no effect if the operation is not supported or the
+/// port is out of range.
+pub unsafe fn write_port_u16(port: u32, data: u16) {
+    platform::write_port_u16(port, data)
+}
+
+/// Write data on a specific hardware port. Has no effect if the operation is not supported or the
+/// port is out of range.
+pub unsafe fn write_port_u32(port: u32, data: u32) {
+    platform::write_port_u32(port, data)
+}
+
+/// Reads data from a specific hardware port. Returns 0 if the operation is not supported or the
+/// port is out of range.
+pub unsafe fn read_port_u8(port: u32) -> u8 {
+    platform::read_port_u8(port)
+}
+
+/// Reads data from a specific hardware port. Returns 0 if the operation is not supported or the
+/// port is out of range.
+pub unsafe fn read_port_u16(port: u32) -> u16 {
+    platform::read_port_u16(port)
+}
+
+/// Reads data from a specific hardware port. Returns 0 if the operation is not supported or the
+/// port is out of range.
+pub unsafe fn read_port_u32(port: u32) -> u32 {
+    platform::read_port_u32(port)
+}
