@@ -70,7 +70,11 @@ where
 
     /// Processes a message on the `time` interface, and optionally returns an answer to
     /// immediately send  back.
-    pub fn time_message(&self, message_id: Option<TMsgId>, message: &[u8]) -> Option<Result<Vec<u8>, ()>> {
+    pub fn time_message(
+        &self,
+        message_id: Option<TMsgId>,
+        message: &[u8],
+    ) -> Option<Result<Vec<u8>, ()>> {
         match TimeMessage::decode_all(&message) {
             Ok(TimeMessage::GetMonotonic) => Some(Ok(monotonic_clock().encode())),
             Ok(TimeMessage::GetSystem) => Some(Ok(system_clock().encode())),

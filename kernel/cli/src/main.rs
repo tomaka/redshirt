@@ -123,7 +123,7 @@ async fn async_main() {
                     {
                         let answer = match &answer {
                             Ok(v) => Ok(&v[..]),
-                            Err(()) => Err(())
+                            Err(()) => Err(()),
                         };
                         system.answer_message(message_id.unwrap(), answer);
                     }
