@@ -22,8 +22,8 @@ extern "C" {
     ///
     /// The `to_poll` parameter must be a list (whose length is `to_poll_len`) of messages to poll.
     /// Entries in this list equal to `0` are ignored. Entries equal to `1` are special and mean
-    /// "a message received on an interface". If a message is successfully pulled, the
-    /// corresponding entry in `to_poll` is set to `0`.
+    /// "a message received on an interface or a process destroyed message". If a message is
+    /// successfully pulled, the corresponding entry in `to_poll` is set to `0`.
     ///
     /// If `block` is true, then this function puts the thread to sleep until a message is
     /// available. If `block` is false, then this function returns as soon as possible.
@@ -120,9 +120,9 @@ extern "C" {
 pub enum Message {
     Interface(InterfaceMessage),
     Response(ResponseMessage),
-    /* TODO: implement /// Whenever a process that has emitted events on one of our interfaces stops, a
+    /// Whenever a process that has emitted events on one of our interfaces stops, a
     /// `ProcessDestroyed` message is sent.
-    ProcessDestroyed(u64),*/
+    ProcessDestroyed(ProcessDestroyedMessage),
 }
 
 #[derive(Debug, Clone, Encode, Decode, PartialEq, Eq)]
@@ -141,6 +141,20 @@ pub struct InterfaceMessage {
     /// Index within the list to poll where this message was.
     pub index_in_list: u32,
     pub actual_data: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Encode, Decode, PartialEq, Eq)]
+pub struct ProcessDestroyedMessage {
+    /// Identifier of the process that got destroyed.
+    pub pid: u64,
+    /// Index within the list to poll where this message was.
+    pub index_in_list: u32,
+}
+
+#[derive(Debug, Clone, Encode, Decode, PartialEq, Eq)]
+pub enum InterfaceOrDestroyed {
+    Interface(InterfaceMessage),
+    ProcessDestroyed(ProcessDestroyedMessage),
 }
 
 #[derive(Debug, Encode, Decode)]

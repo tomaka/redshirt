@@ -22,7 +22,7 @@ use crate::signature::Signature;
 use alloc::{borrow::Cow, collections::VecDeque, vec, vec::Vec};
 use byteorder::{ByteOrder as _, LittleEndian};
 use core::{convert::TryFrom, iter, marker::PhantomData, mem};
-use hashbrown::{hash_map::Entry, HashMap};
+use hashbrown::{hash_map::Entry, HashMap, HashSet};
 use parity_scale_codec::Encode;
 use smallvec::SmallVec;
 
@@ -207,6 +207,10 @@ struct Process {
 
     /// Interfaces that the process has registered.
     registered_interfaces: SmallVec<[[u8; 32]; 1]>,
+
+    /// List of interfaces that this process has used. When the process dies, we notify all the
+    /// handlers about it.
+    used_interfaces: HashSet<[u8; 32]>,
 
     /// List of messages that the process has emitted and that are waiting for an answer.
     emitted_messages: SmallVec<[u64; 8]>,
@@ -416,6 +420,27 @@ impl<T: Clone> Core<T> {
                     cancelled_messages.push(emitted_message);
                 }
 
+                // Notify interface handlers about the process stopping.
+                for interface in user_data.used_interfaces {
+                    match self.interfaces.get(&interface) {
+                        Some(InterfaceState::Process(p)) => {
+                            let message =
+                                nametbd_syscalls_interface::ffi::Message::ProcessDestroyed(
+                                    nametbd_syscalls_interface::ffi::ProcessDestroyedMessage {
+                                        index_in_list: 0,
+                                        pid: pid.into(),
+                                    },
+                                );
+
+                            let mut process = self.processes.process_by_id(*p).unwrap();
+                            process.user_data().messages_queue.push_back(message);
+                            try_resume_message_wait(process);
+                        }
+                        None => unreachable!(),
+                        _ => {}
+                    }
+                }
+
                 // TODO: also, what do we do with the pending messages and all?
 
                 CoreRunOutcomeInner::ProgramFinished {
@@ -504,6 +529,8 @@ impl<T: Clone> Core<T> {
                 } else {
                     None
                 };
+
+                thread.process_user_data().used_interfaces.insert(interface);
 
                 match (self.interfaces.get_mut(&interface), allow_delay) {
                     (Some(InterfaceState::Process(pid)), _) => {
@@ -847,6 +874,7 @@ impl<T: Clone> Core<T> {
         let proc_metadata = Process {
             messages_queue: VecDeque::new(),
             registered_interfaces: SmallVec::new(),
+            used_interfaces: HashSet::new(),
             emitted_messages: SmallVec::new(),
             messages_to_answer: SmallVec::new(),
         };
@@ -1067,6 +1095,7 @@ fn try_resume_message_wait_thread(
         // For that message in queue, grab the value that must be in `msg_ids` in order to match.
         let msg_id = match &thread.process_user_data().messages_queue[index_in_queue] {
             nametbd_syscalls_interface::ffi::Message::Interface(_) => 1,
+            nametbd_syscalls_interface::ffi::Message::ProcessDestroyed(_) => 1,
             nametbd_syscalls_interface::ffi::Message::Response(response) => {
                 debug_assert!(response.message_id >= 2);
                 response.message_id
@@ -1089,6 +1118,9 @@ fn try_resume_message_wait_thread(
         }
         nametbd_syscalls_interface::ffi::Message::Interface(ref mut interface) => {
             interface.index_in_list = index_in_msg_ids;
+        }
+        nametbd_syscalls_interface::ffi::Message::ProcessDestroyed(ref mut proc_destr) => {
+            proc_destr.index_in_list = index_in_msg_ids;
         }
     }
 

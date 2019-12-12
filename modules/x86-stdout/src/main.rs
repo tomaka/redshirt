@@ -29,7 +29,10 @@ async fn async_main() -> ! {
     let mut console = unsafe { Console::init() };
 
     loop {
-        let msg = nametbd_syscalls_interface::next_interface_message().await;
+        let msg = match nametbd_syscalls_interface::next_interface_message().await {
+            nametbd_syscalls_interface::InterfaceOrDestroyed::Interface(m) => m,
+            nametbd_syscalls_interface::InterfaceOrDestroyed::ProcessDestroyed(_) => continue,
+        };
         assert_eq!(msg.interface, nametbd_stdout_interface::ffi::INTERFACE);
         let nametbd_stdout_interface::ffi::StdoutMessage::Message(message) =
             DecodeAll::decode_all(&msg.actual_data).unwrap();       // TODO: don't unwrap

@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::ffi::InterfaceMessage;
+use crate::ffi::InterfaceOrDestroyed;
 
 use core::{
     fmt,
@@ -79,7 +79,7 @@ pub struct InterfaceMessageFuture {
 }
 
 impl Future for InterfaceMessageFuture {
-    type Output = InterfaceMessage;
+    type Output = InterfaceOrDestroyed;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         assert!(!self.finished);

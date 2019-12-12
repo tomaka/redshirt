@@ -34,7 +34,7 @@
 //!   Repeat until the `Future` has ended.
 //!
 
-use crate::{InterfaceMessage, Message, ResponseMessage};
+use crate::{InterfaceMessage, InterfaceOrDestroyed, Message, ResponseMessage};
 use alloc::{collections::VecDeque, sync::Arc, vec::Vec};
 use core::{
     sync::atomic::{AtomicBool, Ordering},
@@ -66,7 +66,7 @@ pub(crate) fn register_message_waker(message_id: u64, waker: Waker) {
 }
 
 /// Removes one element from the global buffer of interface messages waiting to be processed.
-pub(crate) fn peek_interface_message() -> Option<InterfaceMessage> {
+pub(crate) fn peek_interface_message() -> Option<InterfaceOrDestroyed> {
     let mut state = (&*STATE).lock();
     state.interface_messages_queue.pop_front()
 }
@@ -142,6 +142,17 @@ pub fn block_on<T>(future: impl Future<Output = T>) -> T {
                     let waker = state.wakers.remove(msg.index_in_list as usize);
                     waker.wake();
 
+                    let msg = InterfaceOrDestroyed::Interface(msg);
+                    state.interface_messages_queue.push_back(msg);
+                }
+                Message::ProcessDestroyed(msg) => {
+                    let _was_in = state.message_ids.remove(msg.index_in_list as usize);
+                    debug_assert_eq!(_was_in, 0); // Value is zero-ed by the kernel.
+
+                    let waker = state.wakers.remove(msg.index_in_list as usize);
+                    waker.wake();
+
+                    let msg = InterfaceOrDestroyed::ProcessDestroyed(msg);
                     state.interface_messages_queue.push_back(msg);
                 }
             };
@@ -189,7 +200,7 @@ struct BlockOnState {
     /// > **Note**: We have to maintain this queue as a global variable rather than a per-future
     /// >           channel, otherwise dropping a `Future` would silently drop messages that have
     /// >           already been received.
-    interface_messages_queue: VecDeque<InterfaceMessage>,
+    interface_messages_queue: VecDeque<InterfaceOrDestroyed>,
 }
 
 /// Checks whether a new message arrives, optionally blocking the thread.
