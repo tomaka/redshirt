@@ -35,7 +35,8 @@ async fn async_main() {
         let next_interface = nametbd_syscalls_interface::next_interface_message();
         let next_net_event = Box::pin(network.next_event());
         let msg = match future::select(next_interface, next_net_event).await {
-            future::Either::Left((msg, _)) => msg,
+            future::Either::Left((nametbd_syscalls_interface::InterfaceOrDestroyed::Interface(m), _)) => m,
+            future::Either::Left((nametbd_syscalls_interface::InterfaceOrDestroyed::ProcessDestroyed(_), _)) => continue,
             future::Either::Right((NetworkEvent::FetchSuccess { data, user_data }, _)) => {
                 let rp = nametbd_loader_interface::ffi::LoadResponse { result: Ok(data) };
                 nametbd_syscalls_interface::emit_answer(user_data, &rp);
