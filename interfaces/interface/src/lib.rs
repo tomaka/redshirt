@@ -18,12 +18,9 @@
 #![deny(intra_doc_link_resolution_failure)]
 #![no_std]
 
-use core::mem;
 use futures::prelude::*;
-use parity_scale_codec::DecodeAll;
 
 pub use ffi::InterfaceRegisterError;
-
 pub mod ffi;
 
 /// Registers the current program as the provider for the given interface hash.
@@ -35,9 +32,9 @@ pub mod ffi;
 pub fn register_interface(
     hash: [u8; 32],
 ) -> impl Future<Output = Result<(), InterfaceRegisterError>> {
-    let msg = ffi::InterfaceMessage::Register(hash);
-    // TODO: we unwrap cause there's always something that handles interface registration; is that correct?
     unsafe {
+        let msg = ffi::InterfaceMessage::Register(hash);
+        // TODO: we unwrap cause there's always something that handles interface registration; is that correct?
         nametbd_syscalls_interface::emit_message_with_response(ffi::INTERFACE, msg)
             .map(|response: Result<ffi::InterfaceRegisterResponse, _>| response.unwrap().result)
     }
