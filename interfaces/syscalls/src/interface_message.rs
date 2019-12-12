@@ -45,6 +45,18 @@ pub fn emit_answer(message_id: u64, msg: &impl Encode) -> Result<(), EmitAnswerE
     }
 }
 
+/// Answers the given message by notifying of an error in the message.
+// TODO: move to interface interface?
+pub fn emit_message_error(message_id: u64) -> Result<(), EmitAnswerErr> {
+    unsafe {
+        if crate::ffi::emit_message_error(&message_id) == 0 {
+            Ok(())
+        } else {
+            Err(EmitAnswerErr::InvalidMessageId)
+        }
+    }
+}
+
 /// Error that can be retuend by [`emit_answer`].
 #[derive(Debug)]
 pub enum EmitAnswerErr {

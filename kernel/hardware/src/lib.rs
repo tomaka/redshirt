@@ -47,10 +47,13 @@ where
 
     /// Processes a message on the `hardware` interface, and optionally returns an answer to
     /// immediately send  back.
-    pub fn hardware_message(&self, message_id: Option<TMsgId>, message: &[u8]) -> Option<Vec<u8>> {
-        match HardwareMessage::decode_all(&message).unwrap() {
-            // TODO: don't unwrap
-            HardwareMessage::HardwareAccess(operations) => {
+    pub fn hardware_message(
+        &self,
+        message_id: Option<TMsgId>,
+        message: &[u8],
+    ) -> Option<Result<Vec<u8>, ()>> {
+        match HardwareMessage::decode_all(&message) {
+            Ok(HardwareMessage::HardwareAccess(operations)) => {
                 let mut response = Vec::with_capacity(operations.len());
                 for operation in operations {
                     unsafe {
@@ -61,12 +64,13 @@ where
                 }
 
                 if !response.is_empty() {
-                    Some(response.encode())
+                    Some(Ok(response.encode()))
                 } else {
                     None
                 }
             }
-            HardwareMessage::InterruptWait(int_id) => unimplemented!(), // TODO:
+            Ok(HardwareMessage::InterruptWait(int_id)) => unimplemented!(), // TODO:
+            Err(_) => Some(Err(())),
         }
     }
 

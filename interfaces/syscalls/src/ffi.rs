@@ -88,6 +88,18 @@ extern "C" {
     /// function is running.
     pub(crate) fn emit_answer(message_id: *const u64, msg: *const u8, msg_len: u32) -> u32;
 
+    /// Notifies the kernel that the given message is invalid and cannot reasonably be answered.
+    ///
+    /// This should be used in situations where a message we receive fails to parse or is generally
+    /// invalid. In other words, this should only be used in case of misbehaviour by the sender.
+    ///
+    /// Returns `0` on success, or `1` if there is no message with that id.
+    ///
+    /// When this function is being called, a "lock" is being held on the memory pointed by
+    /// `message_id`. In particular, it is invalid to modify these buffers while the function is
+    /// running.
+    pub(crate) fn emit_message_error(message_id: *const u64) -> u32;
+
     /// Cancel an expected answer.
     ///
     /// After a message that needs an answer has been emitted using `emit_message`,
@@ -133,8 +145,16 @@ pub struct InterfaceMessage {
 
 #[derive(Debug, Encode, Decode)]
 pub struct ResponseMessage {
+    /// Identifier of the message whose answer we are receiving.
     pub message_id: u64,
+
     /// Index within the list to poll where this message was.
     pub index_in_list: u32,
-    pub actual_data: Vec<u8>,
+
+    /// The response, or `Err` if:
+    ///
+    /// - The interface handler has crashed.
+    /// - The interface handler marked our message as invalid.
+    ///
+    pub actual_data: Result<Vec<u8>, ()>,
 }
