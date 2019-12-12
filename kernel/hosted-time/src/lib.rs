@@ -70,13 +70,12 @@ where
 
     /// Processes a message on the `time` interface, and optionally returns an answer to
     /// immediately send  back.
-    pub fn time_message(&self, message_id: Option<TMsgId>, message: &[u8]) -> Option<Vec<u8>> {
-        match TimeMessage::decode_all(&message).unwrap() {
-            // TODO: don't unwrap
-            TimeMessage::GetMonotonic => Some(monotonic_clock().encode()),
-            TimeMessage::GetSystem => Some(system_clock().encode()),
-            TimeMessage::WaitMonotonic(until) => match until.checked_sub(monotonic_clock()) {
-                None => Some(().encode()),
+    pub fn time_message(&self, message_id: Option<TMsgId>, message: &[u8]) -> Option<Result<Vec<u8>, ()>> {
+        match TimeMessage::decode_all(&message) {
+            Ok(TimeMessage::GetMonotonic) => Some(Ok(monotonic_clock().encode())),
+            Ok(TimeMessage::GetSystem) => Some(Ok(system_clock().encode())),
+            Ok(TimeMessage::WaitMonotonic(until)) => match until.checked_sub(monotonic_clock()) {
+                None => Some(Ok(().encode())),
                 Some(dur_from_now) => {
                     // If `dur_from_now` is larger than a `u64`, we simply don't insert any timer.
                     // We assume that we will never reach this time ever.
@@ -89,6 +88,7 @@ where
                     None
                 }
             },
+            Err(_) => Some(Err(())),
         }
     }
 
