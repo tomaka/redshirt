@@ -89,7 +89,7 @@ pub use emit::{
     cancel_message, emit_message, emit_message_raw, emit_message_with_response,
     emit_message_without_response,
 };
-pub use ffi::{InterfaceMessage, Message, ResponseMessage};
+pub use ffi::{InterfaceMessage, InterfaceOrDestroyed, Message, ResponseMessage};
 pub use interface_message::{emit_answer, next_interface_message, InterfaceMessageFuture};
 pub use response::{message_response, message_response_sync_raw, MessageResponseFuture};
 
