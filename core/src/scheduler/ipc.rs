@@ -424,12 +424,13 @@ impl<T: Clone> Core<T> {
                 for interface in user_data.used_interfaces {
                     match self.interfaces.get(&interface) {
                         Some(InterfaceState::Process(p)) => {
-                            let message = nametbd_syscalls_interface::ffi::Message::ProcessDestroyed(
-                                nametbd_syscalls_interface::ffi::ProcessDestroyedMessage {
-                                    index_in_list: 0,
-                                    pid: pid.into(),
-                                },
-                            );
+                            let message =
+                                nametbd_syscalls_interface::ffi::Message::ProcessDestroyed(
+                                    nametbd_syscalls_interface::ffi::ProcessDestroyedMessage {
+                                        index_in_list: 0,
+                                        pid: pid.into(),
+                                    },
+                                );
 
                             let mut process = self.processes.process_by_id(*p).unwrap();
                             process.user_data().messages_queue.push_back(message);
