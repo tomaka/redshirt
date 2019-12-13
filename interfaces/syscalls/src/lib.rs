@@ -42,10 +42,8 @@
 //! covered here), then it can receive interface messages using the [`next_interface_message`]
 //! function.
 //!
-//! The message can later be optionally be answered using the [`emit_answer`] function.
-//!
-//! Whether the sender of a message expects an answer can't be known, but should depend on the
-//! message itself.
+//! The message can later be optionally be answered using the [`emit_answer`] function. If the
+//! mesage is malformed, you can also use the [`emit_message_error`] function.
 //!
 //! There is no way for an interface handler to pro-actively send data to a process. Communication
 //! can only be done as a response to a message. This must be taken into account when designing
@@ -91,7 +89,7 @@ pub use emit::{
     cancel_message, emit_message, emit_message_raw, emit_message_with_response,
     emit_message_without_response,
 };
-pub use ffi::{InterfaceMessage, Message, ResponseMessage};
+pub use ffi::{InterfaceMessage, InterfaceOrDestroyed, Message, ResponseMessage};
 pub use interface_message::{emit_answer, next_interface_message, InterfaceMessageFuture};
 pub use response::{message_response, message_response_sync_raw, MessageResponseFuture};
 

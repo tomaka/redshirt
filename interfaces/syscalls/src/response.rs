@@ -29,7 +29,7 @@ use parity_scale_codec::DecodeAll;
 /// Returns the undecoded response.
 pub fn message_response_sync_raw(msg_id: u64) -> Vec<u8> {
     match crate::block_on::next_message(&mut [msg_id], true).unwrap() {
-        Message::Response(m) => m.actual_data,
+        Message::Response(m) => m.actual_data.unwrap(),
         _ => panic!(),
     }
 }
@@ -66,7 +66,7 @@ where
         assert!(!self.finished);
         if let Some(message) = crate::block_on::peek_response(self.msg_id) {
             self.finished = true;
-            Poll::Ready(DecodeAll::decode_all(&message.actual_data).unwrap())
+            Poll::Ready(DecodeAll::decode_all(&message.actual_data.unwrap()).unwrap())
         } else {
             crate::block_on::register_message_waker(self.msg_id, cx.waker().clone());
             Poll::Pending

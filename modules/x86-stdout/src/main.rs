@@ -15,9 +15,32 @@
 
 //! Implements the stdout interface by writing in text mode.
 
-#![no_std]
+use parity_scale_codec::DecodeAll;
+use std::{convert::TryFrom as _, fmt};
 
-use core::fmt;
+fn main() {
+    nametbd_syscalls_interface::block_on(async_main());
+}
+
+async fn async_main() -> ! {
+    nametbd_interface_interface::register_interface(nametbd_stdout_interface::ffi::INTERFACE)
+        .await.unwrap();
+
+    // TODO: properly initialize VGA? https://gist.github.com/tomaka/8a007d0e3c7064f419b24b044e152c22
+
+    let mut console = unsafe { Console::init() };
+
+    loop {
+        let msg = match nametbd_syscalls_interface::next_interface_message().await {
+            nametbd_syscalls_interface::InterfaceOrDestroyed::Interface(m) => m,
+            nametbd_syscalls_interface::InterfaceOrDestroyed::ProcessDestroyed(_) => continue,
+        };
+        assert_eq!(msg.interface, nametbd_stdout_interface::ffi::INTERFACE);
+        let nametbd_stdout_interface::ffi::StdoutMessage::Message(message) =
+            DecodeAll::decode_all(&msg.actual_data).unwrap();       // TODO: don't unwrap
+        console.write(&message);
+    }
+}
 
 /// State machine for the standard text console.
 pub struct Console {
@@ -46,6 +69,8 @@ impl Console {
     /// Writes a message on the console.
     pub fn write(&mut self, message: &str) {
         unsafe {
+            let mut operation_builder = nametbd_hardware_interface::HardwareWriteOperationsBuilder::new();
+
             for chr in message.chars() {
                 if !chr.is_ascii() {
                     continue;
@@ -62,7 +87,10 @@ impl Console {
                 }
 
                 let chr = chr as u8;
-                ptr_of(self.cursor_x, self.cursor_y).write_volatile(u16::from(chr) | 0xf00);
+                operation_builder.write(
+                    ptr_of(self.cursor_x, self.cursor_y),
+                    vec![chr, 0xf]
+                );
 
                 debug_assert!(self.cursor_x < 80);
                 self.cursor_x += 1;
@@ -76,6 +104,15 @@ impl Console {
                     }
                 }
             }
+
+            // Update the VGA cursor to match self.cursor_x and self.cursor_y.
+            let cursor_pos = u64::from(self.cursor_y) * 80 + u64::from(self.cursor_x);
+            operation_builder.port_write_u8(0x3d4, 0xf);
+            operation_builder.port_write_u8(0x3d5, u8::try_from(cursor_pos & 0xff).unwrap());
+            operation_builder.port_write_u8(0x3d4, 0xe);
+            operation_builder.port_write_u8(0x3d5, u8::try_from((cursor_pos >> 8) & 0xff).unwrap());
+
+            operation_builder.send();
         }
     }
 }
@@ -89,26 +126,24 @@ impl fmt::Write for Console {
 
 fn clear_screen() {
     unsafe {
-        for y in 0..25 {
-            for x in 0..80 {
-                ptr_of(x, y).write_volatile(0);
-            }
-        }
+        nametbd_hardware_interface::write(
+            ptr_of(0, 0),
+            (0..(80 * 25 * 2)).map(|_| 0).collect::<Vec<_>>()
+        );
     }
 }
 
-fn ptr_of(x: u8, y: u8) -> *mut u16 {
+fn ptr_of(x: u8, y: u8) -> u64 {
     assert!(x < 80);
     assert!(y < 25);
 
-    unsafe {
-        let offset = isize::from((y * 80) + x);
-        (0xb8000 as *mut u16).offset(offset)
-    }
+    let offset = 2 * (u64::from(y) * 80 + u64::from(x));
+    0xb8000 + offset
 }
 
 fn line_up() {
-    unsafe {
+    // TODO:
+    /*unsafe {
         for y in 1..25 {
             for x in 0..80 {
                 let val = ptr_of(x, y).read_volatile();
@@ -119,5 +154,5 @@ fn line_up() {
         for x in 0..80 {
             ptr_of(x, 24).write_volatile(0);
         }
-    }
+    }*/
 }

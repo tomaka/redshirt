@@ -14,7 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use alloc::string::String;
-use core::fmt::Write;
+use core::fmt::{self, Write};
 
 #[panic_handler]
 fn panic(panic_info: &core::panic::PanicInfo) -> ! {
@@ -28,7 +28,12 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
         }
     }
 
-    let mut console = unsafe { nametbd_x86_stdout::Console::init() };
+    // TODO: switch back to text mode somehow?
+
+    let mut console = Console {
+        cursor_x: 0,
+        cursor_y: 0,
+    };
 
     if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
         let _ = writeln!(console, "panic occurred: {:?}", s);
@@ -56,4 +61,74 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
     }
 
     crate::arch::halt();
+}
+
+// State machine for the standard text console.
+struct Console {
+    cursor_x: u8,
+    cursor_y: u8,
+}
+
+impl fmt::Write for Console {
+    fn write_str(&mut self, message: &str) -> fmt::Result {
+        unsafe {
+            for chr in message.chars() {
+                if !chr.is_ascii() {
+                    continue;
+                }
+
+                if chr == '\n' {
+                    self.cursor_x = 0;
+                    self.cursor_y += 1;
+                    if self.cursor_y == 25 {
+                        self.cursor_y -= 1;
+                        line_up();
+                    }
+                    continue;
+                }
+
+                let chr = chr as u8;
+                ptr_of(self.cursor_x, self.cursor_y).write_volatile(u16::from(chr) | 0xf00);
+
+                debug_assert!(self.cursor_x < 80);
+                self.cursor_x += 1;
+                if self.cursor_x == 80 {
+                    self.cursor_x = 0;
+                    debug_assert!(self.cursor_y < 25);
+                    self.cursor_y += 1;
+                    if self.cursor_y == 25 {
+                        self.cursor_y -= 1;
+                        line_up(); // TODO: no?
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+fn ptr_of(x: u8, y: u8) -> *mut u16 {
+    assert!(x < 80);
+    assert!(y < 25);
+
+    unsafe {
+        let offset = isize::from((y * 80) + x);
+        (0xb8000 as *mut u16).offset(offset)
+    }
+}
+
+fn line_up() {
+    unsafe {
+        for y in 1..25 {
+            for x in 0..80 {
+                let val = ptr_of(x, y).read_volatile();
+                ptr_of(x, y - 1).write_volatile(val);
+            }
+        }
+
+        for x in 0..80 {
+            ptr_of(x, 24).write_volatile(0);
+        }
+    }
 }

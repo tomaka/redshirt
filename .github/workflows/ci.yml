@@ -96,9 +96,9 @@ jobs:
         path: target
         key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('Cargo.lock') }}
     - name: Build
-      run: cargo build --workspace --exclude nametbd-standalone-kernel --locked --verbose
+      run: cargo build --workspace --exclude nametbd-standalone-kernel --exclude nametbd-hardware --locked --verbose
     - name: Run tests
-      run: cargo test --workspace --exclude nametbd-standalone-kernel --locked --verbose
+      run: cargo test --workspace --exclude nametbd-standalone-kernel --exclude nametbd-hardware --locked --verbose
 
   build-standalone:
     name: Build standalone kernel
