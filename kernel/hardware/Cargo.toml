@@ -7,7 +7,7 @@ edition = "2018"
 publish = false
 
 [dependencies]
-nametbd-hardware-interface = { path = "../../interfaces/hardware" }
+nametbd-hardware-interface = { path = "../../interfaces/hardware", default-features = false }
 parity-scale-codec = { version = "1.0.5", default-features = false }
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
