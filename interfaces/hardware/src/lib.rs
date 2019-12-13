@@ -135,7 +135,7 @@ impl<'a> HardwareOperationsBuilder<'a> {
         let out = out.as_mut();
         self.operations.push(ffi::Operation::PhysicalMemoryRead {
             address,
-            len: out.len() as u32,  // TODO: don't use `as`
+            len: out.len() as u32, // TODO: don't use `as`
         });
         self.out.push(Out::MemRead(out));
     }
@@ -163,20 +163,17 @@ impl<'a> HardwareOperationsBuilder<'a> {
     }
 
     pub unsafe fn port_read_u8(&mut self, port: u32, out: &'a mut u8) {
-        self.operations
-            .push(ffi::Operation::PortReadU8 { port });
+        self.operations.push(ffi::Operation::PortReadU8 { port });
         self.out.push(Out::PortU8(out));
     }
 
     pub unsafe fn port_read_u16(&mut self, port: u32, out: &'a mut u16) {
-        self.operations
-            .push(ffi::Operation::PortReadU16 { port });
+        self.operations.push(ffi::Operation::PortReadU16 { port });
         self.out.push(Out::PortU16(out));
     }
 
     pub unsafe fn port_read_u32(&mut self, port: u32, out: &'a mut u32) {
-        self.operations
-            .push(ffi::Operation::PortReadU32 { port });
+        self.operations.push(ffi::Operation::PortReadU32 { port });
         self.out.push(Out::PortU32(out));
     }
 
@@ -184,25 +181,31 @@ impl<'a> HardwareOperationsBuilder<'a> {
         unsafe {
             let msg = ffi::HardwareMessage::HardwareAccess(self.operations);
             let out = self.out;
-            nametbd_syscalls_interface::emit_message_with_response(ffi::INTERFACE, msg)
-                .then(move |response| {
+            nametbd_syscalls_interface::emit_message_with_response(ffi::INTERFACE, msg).then(
+                move |response| {
                     let response: Vec<ffi::HardwareAccessResponse> = response.unwrap();
                     for (response_elem, out) in response.into_iter().zip(out) {
                         match (response_elem, out) {
-                            (ffi::HardwareAccessResponse::PortReadU8(val), Out::PortU8(out)) =>
-                                *out = val,
-                            (ffi::HardwareAccessResponse::PortReadU16(val), Out::PortU16(out)) =>
-                                *out = val,
-                            (ffi::HardwareAccessResponse::PortReadU32(val), Out::PortU32(out)) =>
-                                *out = val,
-                            (ffi::HardwareAccessResponse::PhysicalMemoryRead(val), Out::MemRead(out)) =>
-                                out.copy_from_slice(&val),
-                            _ => unreachable!()
+                            (ffi::HardwareAccessResponse::PortReadU8(val), Out::PortU8(out)) => {
+                                *out = val
+                            }
+                            (ffi::HardwareAccessResponse::PortReadU16(val), Out::PortU16(out)) => {
+                                *out = val
+                            }
+                            (ffi::HardwareAccessResponse::PortReadU32(val), Out::PortU32(out)) => {
+                                *out = val
+                            }
+                            (
+                                ffi::HardwareAccessResponse::PhysicalMemoryRead(val),
+                                Out::MemRead(out),
+                            ) => out.copy_from_slice(&val),
+                            _ => unreachable!(),
                         }
                     }
 
                     future::ready(())
-                })
+                },
+            )
         }
     }
 }
