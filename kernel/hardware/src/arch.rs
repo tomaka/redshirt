@@ -13,9 +13,13 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+#[cfg(any(target_arch = "aarch64", target_arch = "arm"))]
+use self::arm as platform;
 #[cfg(target_arch = "x86_64")]
 use self::x86_64 as platform;
 
+#[cfg(any(target_arch = "aarch64", target_arch = "arm"))]
+mod arm;
 #[cfg(target_arch = "x86_64")]
 mod x86_64;
 
