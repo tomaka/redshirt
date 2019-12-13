@@ -18,7 +18,7 @@
 //! Use this interface if you're writing a device driver.
 
 #![deny(intra_doc_link_resolution_failure)]
-#![no_std]
+#![cfg_attr(not(feature = "std"), no_std)]
 
 extern crate alloc;
 
@@ -85,6 +85,22 @@ pub unsafe fn write(address: u64, data: impl Into<Vec<u8>>) {
     let mut builder = HardwareWriteOperationsBuilder::with_capacity(1);
     builder.write(address, data);
     builder.send();
+}
+
+pub unsafe fn port_write_u8(port: u32, data: u8) {
+    let mut builder = HardwareWriteOperationsBuilder::with_capacity(1);
+    builder.port_write_u8(port, data);
+    builder.send();
+}
+
+/// Reads the given port.
+#[cfg(feature = "std")]
+pub async unsafe fn port_read_u8(port: u32) -> u8 {
+    let mut builder = HardwareOperationsBuilder::with_capacity(1);
+    let mut out = 0;
+    builder.port_read_u8(port, &mut out);
+    builder.send().await;
+    out
 }
 
 /// Builder for read and write hardware operations.
