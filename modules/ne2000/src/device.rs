@@ -17,6 +17,18 @@ use std::convert::TryFrom as _;
 
 /// State of a device.
 //
+// # Device overview
+//
+// TODO: 96 pages?
+// The ne2000 has a circular buffer of 96 pages of 256 bytes each. Packets always have to be
+// aligned on pages boundaries.
+//
+// The device writes received packets to the buffer, and can transmit out packets by reading from
+// this buffer.
+//
+// In order to access this buffer from the host (i.e. us), we have to use the DMA system of the
+// chip.
+//
 // # Implementation note
 //
 // We always maintain the device in started mode and with registers page 0.
@@ -30,6 +42,8 @@ pub struct Device {
 }
 
 impl Device {
+    /// Assumes that an ne2000 device is mapped starting at `base_port` and reinitializes it
+    /// to a starting state.
     pub async unsafe fn reset(base_port: u32) -> Self {
         // Reads the RESET register and write its value back in order to reset the device.
         nametbd_hardware_interface::port_write_u8(
@@ -126,14 +140,14 @@ impl Device {
     }
 
     unsafe fn send_packet(&mut self, packet: &[u8]) {
-        let mut ops = nametbd_hardware_interface::HardwareWriteOperationsBuilder::new();
-
         let (packet_len_lo, packet_len_hi) = if let Ok(len) = u16::try_from(packet.len()) {
             let len_bytes = len.to_le_bytes();
             (len_bytes[0], len_bytes[1])
         } else {
             panic!()        // TODO:
         };
+
+        let mut ops = nametbd_hardware_interface::HardwareWriteOperationsBuilder::new();
 
         // TODO: check available length
 
@@ -163,5 +177,23 @@ impl Device {
         ops.send();
 
         // TODO: wait until transmitted
+    }
+
+    pub async unsafe fn on_interrupt(&mut self) {
+        // Read the ISR (Interrupt Status Register) to determine why an interrupt has been raised.
+        let status = nametbd_hardware_interface::port_read_u8(self.base_port + 7).await;
+        // Write back the same status in order to clear the bits and allow further interrupts to
+        // happen.
+        nametbd_hardware_interface::port_write_u8(self.base_port + 7, status);
+
+        if (status & (1 << 0)) != 0 {
+            // Packet received with no error.
+            // TODO: read packet
+
+        } else if (status & (1 << 1)) != 0 || (status & (1 << 3)) != 0 {
+            // Packet transmission successful or aborted. We don't treat the "aborted" situation
+            // differently than the successful situation.
+            // TODO: inform of successful packet transfer
+        }
     }
 }
