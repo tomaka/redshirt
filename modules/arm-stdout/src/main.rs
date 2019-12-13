@@ -20,13 +20,13 @@ use parity_scale_codec::DecodeAll;
 use std::{convert::TryFrom as _, fmt};
 
 fn main() {
-    init_uart();
     nametbd_syscalls_interface::block_on(async_main());
 }
 
 async fn async_main() -> ! {
     nametbd_interface_interface::register_interface(nametbd_stdout_interface::ffi::INTERFACE)
         .await.unwrap();
+    init_uart();
 
     loop {
         let msg = match nametbd_syscalls_interface::next_interface_message().await {
