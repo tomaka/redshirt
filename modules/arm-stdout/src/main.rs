@@ -15,6 +15,7 @@
 
 //! Implements the stdout interface by writing in text mode.
 
+use byteorder::{ByteOrder as _, LittleEndian};
 use parity_scale_codec::DecodeAll;
 use std::{convert::TryFrom as _, fmt};
 
@@ -27,57 +28,75 @@ async fn async_main() -> ! {
     nametbd_interface_interface::register_interface(nametbd_stdout_interface::ffi::INTERFACE)
         .await.unwrap();
 
-    // TODO: properly initialize VGA? https://gist.github.com/tomaka/8a007d0e3c7064f419b24b044e152c22
-
-    let mut console = unsafe { Console::init() };
-
     loop {
         let msg = match nametbd_syscalls_interface::next_interface_message().await {
             nametbd_syscalls_interface::InterfaceOrDestroyed::Interface(m) => m,
             nametbd_syscalls_interface::InterfaceOrDestroyed::ProcessDestroyed(_) => continue,
         };
         assert_eq!(msg.interface, nametbd_stdout_interface::ffi::INTERFACE);
+
         let nametbd_stdout_interface::ffi::StdoutMessage::Message(message) =
             DecodeAll::decode_all(&msg.actual_data).unwrap();       // TODO: don't unwrap
-        console.write(&message);
+        for byte in message.as_bytes() {
+            write_uart(*byte);
+        }
     }
 }
 
+const GPIO_BASE: u64 = 0x3F200000;
+const UART0_BASE: u64 = 0x3F201000;
 
-const GPIO_BASE: usize = 0x3F200000;
-const UART0_BASE: usize = 0x3F201000;
+// TODO: all this might not work because we're writing byte by byte
 
 fn init_uart() {
     unsafe {
-        ((UART0_BASE + 0x30) as *mut u32).write_volatile(0x0);
-        ((GPIO_BASE + 0x94) as *mut u32).write_volatile(0x0);
+        let mut ops = nametbd_hardware_interface::HardwareWriteOperationsBuilder::new();
+
+        ops.write(UART0_BASE + 0x30, to_le_vec(0x0));
+        ops.write(GPIO_BASE + 0x94, to_le_vec(0x0));
         delay(150);
 
-        ((GPIO_BASE + 0x98) as *mut u32).write_volatile((1 << 14) | (1 << 15));
+        ops.write(GPIO_BASE + 0x98, to_le_vec((1 << 14) | (1 << 15)));
         delay(150);
 
-        ((GPIO_BASE + 0x98) as *mut u32).write_volatile(0x0);
+        ops.write(GPIO_BASE + 0x98, to_le_vec(0x0));
 
-        ((UART0_BASE + 0x44) as *mut u32).write_volatile(0x7FF);
+        ops.write(UART0_BASE + 0x44, to_le_vec(0x7FF));
 
-        ((UART0_BASE + 0x24) as *mut u32).write_volatile(1);
-        ((UART0_BASE + 0x28) as *mut u32).write_volatile(40);
+        ops.write(UART0_BASE + 0x24, to_le_vec(1));
+        ops.write(UART0_BASE + 0x28, to_le_vec(40));
 
-        ((UART0_BASE + 0x2C) as *mut u32).write_volatile((1 << 4) | (1 << 5) | (1 << 6));
+        ops.write(UART0_BASE + 0x2C, to_le_vec((1 << 4) | (1 << 5) | (1 << 6)));
 
-        ((UART0_BASE + 0x38) as *mut u32).write_volatile(
-            (1 << 1) | (1 << 4) | (1 << 5) | (1 << 6) | (1 << 7) | (1 << 8) | (1 << 9) | (1 << 10),
-        );
+        ops.write(UART0_BASE + 0x38, to_le_vec(
+            (1 << 1) | (1 << 4) | (1 << 5) | (1 << 6) | (1 << 7) | (1 << 8) | (1 << 9) | (1 << 10)
+        ));
 
-        ((UART0_BASE + 0x30) as *mut u32).write_volatile((1 << 0) | (1 << 8) | (1 << 9));
+        ops.write(UART0_BASE + 0x30, to_le_vec((1 << 0) | (1 << 8) | (1 << 9)));
+        ops.send();
     }
 }
 
-fn write_uart(byte: u8) {
+fn to_le_vec(val: u32) -> Vec<u8> {
+    let mut buf = [0; 4];
+    LittleEndian::write_u32(&mut buf, val);
+    buf.to_vec()
+}
+
+async fn write_uart(byte: u8) {
     unsafe {
         // Wait for UART to become ready to transmit.
-        while (((UART0_BASE + 0x18) as *mut u32).read_volatile() & (1 << 5)) != 0 {}
-        ((UART0_BASE + 0x0) as *mut u32).write_volatile(u32::from(byte));
+        loop {
+            // TODO: add shortcut in hardware-interface
+            let mut read = nametbd_hardware_interface::HardwareOperationsBuilder::new();
+            let mut out = [0; 4];
+            read.read(UART0_BASE + 0x18, &mut out);
+            read.send().await;
+            let val = LittleEndian::read_u32(&out);
+            if val & (1 << 5) == 0 { break; }
+        }
+
+        nametbd_hardware_interface::write(UART0_BASE + 0x0, &[byte, 0, 0, 0][..]);
     }
 }
 

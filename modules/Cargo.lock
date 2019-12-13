@@ -17,6 +17,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 name = "arm-stdout"
 version = "0.1.0"
 dependencies = [
+ "byteorder 1.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "nametbd-hardware-interface 0.1.0",
  "nametbd-interface-interface 0.1.0",
  "nametbd-stdout-interface 0.1.0",
