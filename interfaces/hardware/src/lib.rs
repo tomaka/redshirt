@@ -22,7 +22,8 @@
 
 extern crate alloc;
 
-use alloc::{vec, vec::Vec};
+use alloc::vec::Vec;
+use futures::prelude::*;
 
 pub mod ffi;
 
@@ -84,4 +85,108 @@ pub unsafe fn write(address: u64, data: impl Into<Vec<u8>>) {
     let mut builder = HardwareWriteOperationsBuilder::with_capacity(1);
     builder.write(address, data);
     builder.send();
+}
+
+/// Builder for read and write hardware operations.
+pub struct HardwareOperationsBuilder<'a> {
+    operations: Vec<ffi::Operation>,
+    out: Vec<Out<'a>>,
+}
+
+enum Out<'a> {
+    MemRead(&'a mut [u8]),
+    PortU8(&'a mut u8),
+    PortU16(&'a mut u16),
+    PortU32(&'a mut u32),
+}
+
+impl<'a> HardwareOperationsBuilder<'a> {
+    pub fn new() -> Self {
+        HardwareOperationsBuilder {
+            operations: Vec::new(),
+            out: Vec::new(),
+        }
+    }
+
+    pub fn with_capacity(capacity: usize) -> Self {
+        HardwareOperationsBuilder {
+            operations: Vec::with_capacity(capacity),
+            out: Vec::with_capacity(capacity),
+        }
+    }
+
+    pub unsafe fn read(&mut self, address: u64, out: &'a mut impl AsMut<[u8]>) {
+        let out = out.as_mut();
+        self.operations.push(ffi::Operation::PhysicalMemoryRead {
+            address,
+            len: out.len() as u32,  // TODO: don't use `as`
+        });
+        self.out.push(Out::MemRead(out));
+    }
+
+    pub unsafe fn write(&mut self, address: u64, data: impl Into<Vec<u8>>) {
+        self.operations.push(ffi::Operation::PhysicalMemoryWrite {
+            address,
+            data: data.into(),
+        });
+    }
+
+    pub unsafe fn port_write_u8(&mut self, port: u32, data: u8) {
+        self.operations
+            .push(ffi::Operation::PortWriteU8 { port, data });
+    }
+
+    pub unsafe fn port_write_u16(&mut self, port: u32, data: u16) {
+        self.operations
+            .push(ffi::Operation::PortWriteU16 { port, data });
+    }
+
+    pub unsafe fn port_write_u32(&mut self, port: u32, data: u32) {
+        self.operations
+            .push(ffi::Operation::PortWriteU32 { port, data });
+    }
+
+    pub unsafe fn port_read_u8(&mut self, port: u32, out: &'a mut u8) {
+        self.operations
+            .push(ffi::Operation::PortReadU8 { port });
+        self.out.push(Out::PortU8(out));
+    }
+
+    pub unsafe fn port_read_u16(&mut self, port: u32, out: &'a mut u16) {
+        self.operations
+            .push(ffi::Operation::PortReadU16 { port });
+        self.out.push(Out::PortU16(out));
+    }
+
+    pub unsafe fn port_read_u32(&mut self, port: u32, out: &'a mut u32) {
+        self.operations
+            .push(ffi::Operation::PortReadU32 { port });
+        self.out.push(Out::PortU32(out));
+    }
+
+    pub fn send(self) -> impl Future<Output = ()> + 'a {
+        unsafe {
+            let msg = ffi::HardwareMessage::HardwareAccess(self.operations);
+            let out = self.out;
+            nametbd_syscalls_interface::emit_message_with_response(ffi::INTERFACE, msg)
+                .then(move |response| {
+                    let response: Vec<ffi::HardwareAccessResponse> = response.unwrap();
+                    for (response_elem, out) in response.into_iter().zip(out) {
+                        match (response_elem, out) {
+                            (ffi::HardwareAccessResponse::PortReadU8(val), Out::PortU8(out)) =>
+                                *out = val,
+                            (ffi::HardwareAccessResponse::PortReadU16(val), Out::PortU16(out)) =>
+                                *out = val,
+                            (ffi::HardwareAccessResponse::PortReadU32(val), Out::PortU32(out)) =>
+                                *out = val,
+                            (ffi::HardwareAccessResponse::PhysicalMemoryRead(val), Out::MemRead(out)) =>
+                                out.copy_from_slice(&val),
+                            _ => unreachable!()
+                        }
+                    }
+
+                    future::ready(())
+                })
+        }
+    }
 }

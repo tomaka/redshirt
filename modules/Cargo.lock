@@ -936,6 +936,7 @@ dependencies = [
 name = "nametbd-hardware-interface"
 version = "0.1.0"
 dependencies = [
+ "futures 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "nametbd-syscalls-interface 0.1.0",
  "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
@@ -1946,6 +1947,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 name = "winapi-x86_64-pc-windows-gnu"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "x86-pci"
+version = "0.1.0"
+dependencies = [
+ "nametbd-hardware-interface 0.1.0",
+ "nametbd-interface-interface 0.1.0",
+ "nametbd-stdout-interface 0.1.0",
+ "nametbd-syscalls-interface 0.1.0",
+]
 
 [[package]]
 name = "x86-stdout"

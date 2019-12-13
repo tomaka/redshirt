@@ -84,11 +84,17 @@ impl Kernel {
         )
         .unwrap();
 
+        let pci_module = nametbd_core::module::Module::from_bytes(
+            &include_bytes!("../../../modules/target/wasm32-wasi/release/x86-pci.wasm")[..],
+        )
+        .unwrap();
+
         let mut system =
             nametbd_wasi_hosted::register_extrinsics(nametbd_core::system::SystemBuilder::new())
                 .with_interface_handler(nametbd_hardware_interface::ffi::INTERFACE)
                 .with_startup_process(stdout_module)
                 .with_startup_process(hello_module)
+                .with_startup_process(pci_module)
                 .with_main_program([0; 32]) // TODO: just a test
                 .build();
 

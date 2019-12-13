@@ -6,6 +6,7 @@ members = [
     "third-party/time",
     "third-party/wasm-timer",
     "vulkan-triangle",
+    "x86-pci",
     "x86-stdout"
 ]
 

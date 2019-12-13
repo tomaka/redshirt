@@ -54,6 +54,19 @@ fn main() {
         .unwrap();
     assert!(status.success());
 
+    let status = Command::new("cargo")
+        .arg("rustc")
+        .arg("--release")
+        .args(&["--target", "wasm32-wasi"])
+        .args(&["--package", "x86-pci"])
+        .args(&["--bin", "x86-pci"])
+        .args(&["--manifest-path", "../../modules/x86-pci/Cargo.toml"])
+        .arg("--")
+        .args(&["-C", "link-arg=--export-table"])
+        .status()
+        .unwrap();
+    assert!(status.success());
+
     // TODO: not a great solution
     for entry in walkdir::WalkDir::new("../../modules/") {
         println!("cargo:rerun-if-changed={}", entry.unwrap().path().display());
