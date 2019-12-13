@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use hashbrown::HashMap;
 use smoltcp::iface::{EthernetInterface, EthernetInterfaceBuilder, NeighborCache, Routes};
 use smoltcp::socket::{SocketHandle, SocketSet};
 use smoltcp::{phy, time::Instant, wire::EthernetAddress};
@@ -44,6 +45,9 @@ pub struct NetworkInterface {
 
     /// Collection of all the active sockets that currently operate on this interface.
     sockets: smoltcp::socket::SocketSet<'static, 'static, 'static>,
+
+    /// State of the sockets. Maintained in parallel with [`NetworkInterface`].
+    sockets_state: HashMap<SocketId, SocketState>,
 
     /// Future that triggers the next time we should poll [`NetworkInterface::ethernet`].
     /// Must be set to `None` whenever we modify [`NetworkInterface::ethernet`] in such a way that
@@ -78,6 +82,10 @@ pub struct TcpSocket<'a> {
     id: SocketId,
 }
 
+struct SocketState {
+    connected: bool,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum ConnectError {
     #[error("No route available for this destination")]
@@ -100,6 +108,9 @@ impl NetworkInterface {
 
         let socket = socket.connect(dest.clone(), dest.clone()).unwrap(); // TODO: bad source
         let id = SocketId(self.sockets.add(socket));
+        self.sockets.insert(id, SocketState {
+            connected: false,
+        });
         self.next_event_delay = None;
 
         Ok(TcpSocket { manager: self, id })
@@ -146,6 +157,15 @@ impl NetworkInterface {
                 if !device_out_buffer.is_empty() {
                     let out = mem::replace(&mut *device_out_buffer, Vec::new());
                     return NetworkInterfaceEvent::EthernetCableOut(out);
+                }
+
+                for (socket_id, socket_state) in self.socket_state {
+                    let smoltcp_socket = self.sockets.get::<smoltcp::socket::TcpSocket>(socket_id).unwrap();
+
+                    // Check if this socket got connected.
+                    if !socket_state.is_connected && smoltcp_socket.may_send() {
+
+                    }
                 }
 
                 // TODO: TCP socket events

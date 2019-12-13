@@ -24,8 +24,13 @@ fn main() {
 }
 
 async fn async_main() {
-    let module = nametbd_core::module::Module::from_bytes(
+    let http_server_module = nametbd_core::module::Module::from_bytes(
         &include_bytes!("../../../modules/target/wasm32-wasi/release/http-server.wasm")[..],
+    )
+    .unwrap();
+
+    let net_manager_module = nametbd_core::module::Module::from_bytes(
+        &include_bytes!("../../../modules/target/wasm32-wasi/release/network-manager.wasm")[..],
     )
     .unwrap();
 
@@ -34,25 +39,26 @@ async fn async_main() {
             .with_interface_handler(nametbd_stdout_interface::ffi::INTERFACE)
             .with_interface_handler(nametbd_time_interface::ffi::INTERFACE)
             .with_interface_handler(nametbd_network_interface::ffi::INTERFACE)
-            .with_startup_process(module)
+            .with_startup_process(net_manager_module)
+            .with_startup_process(http_server_module)
             .with_main_program([0; 32]) // TODO: just a test
             .build();
 
     let time = Arc::new(nametbd_time_hosted::TimerHandler::new());
-    let tcp = Arc::new(nametbd_tcp_hosted::TcpState::new());
+    let tap = Arc::new(nametbd_tap_hosted::TapNetworkInterface::new());
     let mut wasi = nametbd_wasi_hosted::WasiStateMachine::new();
 
     let mut to_answer_rx = {
         let (mut to_answer_tx, to_answer_rx) = mpsc::channel(16);
-        let tcp = tcp.clone();
+        let tap = tap.clone();
         let time = time.clone();
         async_std::task::spawn(async move {
             loop {
-                let tcp = tcp.next_event();
+                let tap = tap.next_event();
                 let time = time.next_answer();
-                pin_mut!(tcp);
+                pin_mut!(tap);
                 pin_mut!(time);
-                let to_send = match future::select(tcp, time).await {
+                let to_send = match future::select(tap, time).await {
                     future::Either::Left(((msg_id, bytes), _)) => (msg_id, bytes),
                     future::Either::Right(((msg_id, bytes), _)) => (msg_id, bytes),
                 };
@@ -96,7 +102,7 @@ async fn async_main() {
                         } else if interface == nametbd_network_interface::ffi::INTERFACE {
                             let message: nametbd_network_interface::ffi::TcpMessage =
                                 DecodeAll::decode_all(&message).unwrap();
-                            tcp.handle_message(id.map(MessageId::Wasi), message).await;
+                            tap.handle_message(id.map(MessageId::Wasi), message).await;
                         } else {
                             panic!()
                         }
@@ -136,7 +142,7 @@ async fn async_main() {
                 } if interface == nametbd_network_interface::ffi::INTERFACE => {
                     let message: nametbd_network_interface::ffi::TcpMessage =
                         DecodeAll::decode_all(&message).unwrap();
-                    tcp.handle_message(message_id.map(MessageId::Core), message)
+                    tap.handle_message(message_id.map(MessageId::Core), message)
                         .await;
                     continue;
                 }

@@ -4,7 +4,6 @@ members = [
     "kernel/cli",
     "kernel/hardware",
     "kernel/hosted-tap",
-    "kernel/hosted-tcp",
     "kernel/hosted-time",
     "kernel/hosted-wasi",
     "kernel/standalone",

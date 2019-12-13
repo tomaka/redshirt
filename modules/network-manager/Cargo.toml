@@ -8,6 +8,7 @@ publish = false
 
 [dependencies]
 futures = "0.3"
+hashbrown = "0.6.3"
 nametbd-interface-interface = { path = "../../interfaces/interface" }
 nametbd-network-interface = { path = "../../interfaces/network" }
 nametbd-syscalls-interface = { path = "../../interfaces/syscalls" }
