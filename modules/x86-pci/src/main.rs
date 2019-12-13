@@ -18,9 +18,10 @@
 //! See https://en.wikipedia.org/wiki/PCI_configuration_space
 
 // TODO: support Enhanced Configuration Access Mechanism (ECAM)
-// TODO: load PCI information from https://pci-ids.ucw.cz/
 
-use std::convert::TryFrom as _;
+use std::{borrow::Cow, convert::TryFrom as _};
+
+include!(concat!(env!("OUT_DIR"), "/build-pci.rs"));
 
 fn main() {
     nametbd_syscalls_interface::block_on(async_main());
@@ -44,6 +45,8 @@ async fn async_main() {
 }
 
 async unsafe fn read_pci_devices() {
+    let pci_devices = build_pci_info();
+
     // https://wiki.osdev.org/PCI
     for bus_idx in 0 .. 4 {      // TODO: be smarter; check bus 0 then check for bridges
         for device_idx in 0 .. 32 {
@@ -59,8 +62,17 @@ async unsafe fn read_pci_devices() {
                     continue;
                 }
 
+                let (vendor_name, device_name) = match pci_devices.get(&(vendor_id, device_id)) {
+                    Some((v, d)) => (Cow::Borrowed(*v), Cow::Borrowed(*d)),
+                    None => (
+                        Cow::Owned(format!("Unknown <0x{:x}>", vendor_id)),
+                        Cow::Owned(format!("Unknown <0x{:x}>", device_id))
+                    ),
+                };
+
                 let class_code = pci_cfg_read_u32(bus_idx, device_idx, func_idx, 0x8).await;
-                nametbd_stdout_interface::stdout(format!("PCI device: {:x} {:x}; class = {:?}\n", vendor_id, device_id, class_code));
+                let bar0 = pci_cfg_read_u32(bus_idx, device_idx, func_idx, 0x10).await;
+                nametbd_stdout_interface::stdout(format!("PCI device: {} - {}; class = {:x}; bar0 = {:x}\n", vendor_name, device_name, class_code, bar0));
             }
         }
     }

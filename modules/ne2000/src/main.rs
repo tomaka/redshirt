@@ -23,6 +23,7 @@
 //!
 //! - https://wiki.osdev.org/Ne2000
 //! - https://en.wikipedia.org/wiki/NE1000#NE2000
+//! - http://www.ethernut.de/pdf/8019asds.pdf
 //!
 
 mod device;
@@ -34,5 +35,7 @@ fn main() {
 }
 
 async fn async_main() {
-    
+    unsafe {
+        device::Device::reset(0xc001).await;        // TODO: don't hardcode
+    }
 }
