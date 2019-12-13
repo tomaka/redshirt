@@ -143,7 +143,11 @@ impl Kernel {
                     message_id,
                 } if interface == nametbd_hardware_interface::ffi::INTERFACE => {
                     if let Some(answer) = hardware.hardware_message(message_id, &message) {
-                        system.answer_message(message_id.unwrap(), &answer);
+                        let answer = match &answer {
+                            Ok(v) => Ok(&v[..]),
+                            Err(()) => Err(()),
+                        };
+                        system.answer_message(message_id.unwrap(), answer);
                     }
                 }
                 _ => panic!(),

@@ -26,10 +26,15 @@ async fn async_main() -> ! {
     nametbd_interface_interface::register_interface(nametbd_stdout_interface::ffi::INTERFACE)
         .await.unwrap();
 
+    // TODO: properly initialize VGA? https://gist.github.com/tomaka/8a007d0e3c7064f419b24b044e152c22
+
     let mut console = unsafe { Console::init() };
 
     loop {
-        let msg = nametbd_syscalls_interface::next_interface_message().await;
+        let msg = match nametbd_syscalls_interface::next_interface_message().await {
+            nametbd_syscalls_interface::InterfaceOrDestroyed::Interface(m) => m,
+            nametbd_syscalls_interface::InterfaceOrDestroyed::ProcessDestroyed(_) => continue,
+        };
         assert_eq!(msg.interface, nametbd_stdout_interface::ffi::INTERFACE);
         let nametbd_stdout_interface::ffi::StdoutMessage::Message(message) =
             DecodeAll::decode_all(&msg.actual_data).unwrap();       // TODO: don't unwrap
@@ -101,7 +106,7 @@ impl Console {
             }
 
             // Update the VGA cursor to match self.cursor_x and self.cursor_y.
-            let cursor_pos = u64::from((self.cursor_y * 80) + self.cursor_x);
+            let cursor_pos = u64::from(self.cursor_y) * 80 + u64::from(self.cursor_x);
             operation_builder.port_write_u8(0x3d4, 0xf);
             operation_builder.port_write_u8(0x3d5, u8::try_from(cursor_pos & 0xff).unwrap());
             operation_builder.port_write_u8(0x3d4, 0xe);
@@ -132,7 +137,7 @@ fn ptr_of(x: u8, y: u8) -> u64 {
     assert!(x < 80);
     assert!(y < 25);
 
-    let offset = 2 * u64::from((y * 80) + x);
+    let offset = 2 * (u64::from(y) * 80 + u64::from(x));
     0xb8000 + offset
 }
 

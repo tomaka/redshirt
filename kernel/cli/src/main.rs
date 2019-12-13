@@ -121,7 +121,11 @@ async fn async_main() {
                     if let Some(answer) =
                         time.time_message(message_id.map(MessageId::Core), &message)
                     {
-                        system.answer_message(message_id.unwrap(), &answer);
+                        let answer = match &answer {
+                            Ok(v) => Ok(&v[..]),
+                            Err(()) => Err(()),
+                        };
+                        system.answer_message(message_id.unwrap(), answer);
                     }
                     continue;
                 }
@@ -151,7 +155,7 @@ async fn async_main() {
             .unwrap();
 
             match msg_to_respond {
-                MessageId::Core(msg_id) => system.answer_message(msg_id, &response_bytes),
+                MessageId::Core(msg_id) => system.answer_message(msg_id, Ok(&response_bytes)),
                 MessageId::Wasi(msg_id) => unimplemented!(),
             }
         };

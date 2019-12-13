@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::ffi::InterfaceMessage;
+use crate::ffi::InterfaceOrDestroyed;
 
 use core::{
     fmt,
@@ -45,6 +45,18 @@ pub fn emit_answer(message_id: u64, msg: &impl Encode) -> Result<(), EmitAnswerE
     }
 }
 
+/// Answers the given message by notifying of an error in the message.
+// TODO: move to interface interface?
+pub fn emit_message_error(message_id: u64) -> Result<(), EmitAnswerErr> {
+    unsafe {
+        if crate::ffi::emit_message_error(&message_id) == 0 {
+            Ok(())
+        } else {
+            Err(EmitAnswerErr::InvalidMessageId)
+        }
+    }
+}
+
 /// Error that can be retuend by [`emit_answer`].
 #[derive(Debug)]
 pub enum EmitAnswerErr {
@@ -67,7 +79,7 @@ pub struct InterfaceMessageFuture {
 }
 
 impl Future for InterfaceMessageFuture {
-    type Output = InterfaceMessage;
+    type Output = InterfaceOrDestroyed;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         assert!(!self.finished);
