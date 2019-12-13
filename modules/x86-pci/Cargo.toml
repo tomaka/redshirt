@@ -8,6 +8,7 @@ publish = false
 
 [dependencies]
 hashbrown = "0.6.3"
+lazy_static = "1"
 nametbd-hardware-interface = { path = "../../interfaces/hardware" }
 nametbd-interface-interface = { path = "../../interfaces/interface" }
 nametbd-stdout-interface = { path = "../../interfaces/stdout" }
