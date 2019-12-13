@@ -54,7 +54,7 @@ impl Device {
         // Wait for reset to be complete.
         loop {
             let val = nametbd_hardware_interface::port_read_u8(base_port + 7).await;
-            if (val & 0x80) == 0 { break }
+            if (val & 0x80) != 0 { break }      // TODO: fail after trying too many times
         }
 
         // Clear interrupts.
@@ -94,6 +94,10 @@ impl Device {
             [buffer[0], buffer[2], buffer[4], buffer[6], buffer[8], buffer[10]]
         };
 
+        nametbd_stdout_interface::stdout(
+            format!("MAC: {:x} {:x} {:x} {:x} {:x} {:x}\n", mac_address[0], mac_address[1], mac_address[2], mac_address[3], mac_address[4], mac_address[5])
+        );
+
         // Start page address of the packet to be transmitted.
         nametbd_hardware_interface::port_write_u8(base_port + 4, 0x40);
         // 0x46 to PSTART and BNRY.
@@ -116,7 +120,7 @@ impl Device {
                 mac_address[usize::from(n)]
             );
         }
-        
+
         // Write the MAR (Multicast Address Registers). Filtering bits for multicast packets.
         for n in 8..=15 {
             nametbd_hardware_interface::port_write_u8(base_port + 0 + n, 0xff);

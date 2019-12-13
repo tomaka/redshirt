@@ -36,7 +36,7 @@ fn main() {
 
 async fn async_main() {
     unsafe {
-        device::Device::reset(0xc001).await;        // TODO: don't hardcode
-        nametbd_stdout_interface::stdout(format!("Initialized ne2000"));
+        device::Device::reset(0xc000).await;        // TODO: don't hardcode
+        nametbd_stdout_interface::stdout(format!("Initialized ne2000\n"));
     }
 }
