@@ -1017,6 +1017,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ne2000"
+version = "0.1.0"
+dependencies = [
+ "nametbd-hardware-interface 0.1.0",
+ "nametbd-interface-interface 0.1.0",
+ "nametbd-stdout-interface 0.1.0",
+ "nametbd-syscalls-interface 0.1.0",
+]
+
+[[package]]
 name = "nom"
 version = "4.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

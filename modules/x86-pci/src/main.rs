@@ -44,9 +44,10 @@ async fn async_main() {
 }
 
 async unsafe fn read_pci_devices() {
-    for bus_idx in 0 .. 4 {      // TODO: 256 instead of 4?
+    // https://wiki.osdev.org/PCI
+    for bus_idx in 0 .. 4 {      // TODO: be smarter; check bus 0 then check for bridges
         for device_idx in 0 .. 32 {
-            for func_idx in 0 .. 8 {
+            for func_idx in 0 .. 8 {    // TODO: check function 0 only first
                 let (vendor_id, device_id) = {
                     let vendor_device = pci_cfg_read_u32(bus_idx, device_idx, func_idx, 0).await;
                     let vendor_id = u16::try_from(vendor_device & 0xffff).unwrap();
@@ -54,11 +55,12 @@ async unsafe fn read_pci_devices() {
                     (vendor_id, device_id)
                 };
 
-                if vendor_id == 0x0 || vendor_id == 0xffff {
+                if vendor_id == 0xffff {
                     continue;
                 }
 
-                nametbd_stdout_interface::stdout(format!("PCI device: {:x} {:x}\n", vendor_id, device_id));
+                let class_code = pci_cfg_read_u32(bus_idx, device_idx, func_idx, 0x8).await;
+                nametbd_stdout_interface::stdout(format!("PCI device: {:x} {:x}; class = {:?}\n", vendor_id, device_id, class_code));
             }
         }
     }

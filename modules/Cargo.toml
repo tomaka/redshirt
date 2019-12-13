@@ -3,6 +3,7 @@ members = [
     "hello-world",
     "http-server",
     "ipfs",
+    "ne2000",
     "third-party/time",
     "third-party/wasm-timer",
     "vulkan-triangle",

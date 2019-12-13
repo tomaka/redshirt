@@ -35,7 +35,7 @@ RUST_TARGET_PATH=`pwd` cargo +nightly build -Z build-std=core,alloc --target x86
 
 # You now have a `target/x86_64-multiboot2/debug/nametbd-standalone-kernel`.
 # It can be loaded directly by QEMU: (Note: that's not working, see https://github.com/tomaka/os/issues/75)
-qemu-system-x86_64 -kernel ./target/x86_64-multiboot2/debug/nametbd-standalone-kernel -m 1024
+qemu-system-x86_64 -kernel ./target/x86_64-multiboot2/debug/nametbd-standalone-kernel -m 1024 -netdev user,id=nd0 -device ne2k_pci,netdev=nd0
 
 # Alternatively, you can put it on a CDROM:
 mkdir -p iso/boot/grub
@@ -43,7 +43,7 @@ cp .github/workflows/grub.cfg iso/boot/grub
 cp target/x86_64-multiboot2/debug/nametbd-standalone-kernel iso/boot/kernel
 # Note: grub-mkrescue is sometimes called grub2-mkrescue
 grub-mkrescue -o cdrom.iso iso
-qemu-system-x86_64 -cdrom cdrom.iso -m 1024
+qemu-system-x86_64 -cdrom cdrom.iso -m 1024 -netdev user,id=nd0 -device ne2k_pci,netdev=nd0
 ```
 
 # Repository structure
