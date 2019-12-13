@@ -47,6 +47,19 @@ fn main() {
         .arg("rustc")
         .arg("--release")
         .args(&["--target", "wasm32-wasi"])
+        .args(&["--package", "arm-stdout"])
+        .args(&["--bin", "arm-stdout"])
+        .args(&["--manifest-path", "../../modules/arm-stdout/Cargo.toml"])
+        .arg("--")
+        .args(&["-C", "link-arg=--export-table"])
+        .status()
+        .unwrap();
+    assert!(status.success());
+
+    let status = Command::new("cargo")
+        .arg("rustc")
+        .arg("--release")
+        .args(&["--target", "wasm32-wasi"])
         .args(&["--package", "x86-stdout"])
         .args(&["--bin", "x86-stdout"])
         .args(&["--manifest-path", "../../modules/x86-stdout/Cargo.toml"])

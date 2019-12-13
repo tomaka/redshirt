@@ -14,6 +14,17 @@ version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
+name = "arm-stdout"
+version = "0.1.0"
+dependencies = [
+ "nametbd-hardware-interface 0.1.0",
+ "nametbd-interface-interface 0.1.0",
+ "nametbd-stdout-interface 0.1.0",
+ "nametbd-syscalls-interface 0.1.0",
+ "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "arrayref"
 version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"

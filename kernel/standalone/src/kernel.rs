@@ -80,7 +80,7 @@ impl Kernel {
         .unwrap();
 
         let stdout_module = nametbd_core::module::Module::from_bytes(
-            &include_bytes!("../../../modules/target/wasm32-wasi/release/x86-stdout.wasm")[..],
+            &include_bytes!("../../../modules/target/wasm32-wasi/release/arm-stdout.wasm")[..],
         )
         .unwrap();
 

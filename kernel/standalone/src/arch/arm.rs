@@ -50,60 +50,12 @@ unsafe extern "C" fn _start() -> ! {
 
 #[no_mangle]
 fn cpu_enter() -> ! {
-    init_uart();
-    for byte in b"hello world\n".iter().cloned() {
-        write_uart(byte);
-    }
-
-    halt();
-
-    /*let kernel = crate::kernel::Kernel::init(crate::kernel::KernelConfig {
+    let kernel = crate::kernel::Kernel::init(crate::kernel::KernelConfig {
         num_cpus: 1,
         ..Default::default()
     });
 
-    kernel.run()*/
-}
-
-const GPIO_BASE: usize = 0x3F200000;
-const UART0_BASE: usize = 0x3F201000;
-
-fn init_uart() {
-    unsafe {
-        ((UART0_BASE + 0x30) as *mut u32).write_volatile(0x0);
-        ((GPIO_BASE + 0x94) as *mut u32).write_volatile(0x0);
-        delay(150);
-
-        ((GPIO_BASE + 0x98) as *mut u32).write_volatile((1 << 14) | (1 << 15));
-        delay(150);
-
-        ((GPIO_BASE + 0x98) as *mut u32).write_volatile(0x0);
-
-        ((UART0_BASE + 0x44) as *mut u32).write_volatile(0x7FF);
-
-        ((UART0_BASE + 0x24) as *mut u32).write_volatile(1);
-        ((UART0_BASE + 0x28) as *mut u32).write_volatile(40);
-
-        ((UART0_BASE + 0x2C) as *mut u32).write_volatile((1 << 4) | (1 << 5) | (1 << 6));
-
-        ((UART0_BASE + 0x38) as *mut u32).write_volatile(
-            (1 << 1) | (1 << 4) | (1 << 5) | (1 << 6) | (1 << 7) | (1 << 8) | (1 << 9) | (1 << 10),
-        );
-
-        ((UART0_BASE + 0x30) as *mut u32).write_volatile((1 << 0) | (1 << 8) | (1 << 9));
-    }
-}
-
-fn write_uart(byte: u8) {
-    unsafe {
-        // Wait for UART to become ready to transmit.
-        while (((UART0_BASE + 0x18) as *mut u32).read_volatile() & (1 << 5)) != 0 {}
-        ((UART0_BASE + 0x0) as *mut u32).write_volatile(u32::from(byte));
-    }
-}
-
-fn delay(count: i32) {
-    // TODO: asm!("__delay_%=: subs %[count], %[count], #1; bne __delay_%=\n" : "=r"(count): [count]"0"(count) : "cc");
+    kernel.run()
 }
 
 // TODO: figure out how to remove these
