@@ -158,7 +158,7 @@ impl<TExtEx: Clone> System<TExtEx> {
                         params: params.clone(),
                     };
                 }
-                CoreRunOutcome::ThreadWaitUnavailableInterface { .. } => unimplemented!(),
+                CoreRunOutcome::ThreadWaitUnavailableInterface { .. } => {} // TODO: lazy-loading
 
                 CoreRunOutcome::MessageResponse {
                     message_id,
@@ -167,7 +167,7 @@ impl<TExtEx: Clone> System<TExtEx> {
                 } => {
                     if self.loading_programs.remove(&message_id) {
                         let nametbd_loader_interface::ffi::LoadResponse { result } =
-                            DecodeAll::decode_all(&response).unwrap();
+                            DecodeAll::decode_all(&response.unwrap()).unwrap();
                         let module = Module::from_bytes(&result.unwrap()).unwrap();
                         self.core.execute(&module).unwrap();
                     }
@@ -195,7 +195,7 @@ impl<TExtEx: Clone> System<TExtEx> {
                                 while wake.nwake > 0 && !list.is_empty() {
                                     wake.nwake -= 1;
                                     let message_id = list.remove(0);
-                                    self.core.answer_message(message_id, &[]);
+                                    self.core.answer_message(message_id, Ok(&[]));
                                 }
 
                                 if list.is_empty() {
@@ -241,7 +241,7 @@ impl<TExtEx: Clone> System<TExtEx> {
                                     result: Ok(()),
                                 };
                             self.core
-                                .answer_message(message_id.unwrap(), &response.encode());
+                                .answer_message(message_id.unwrap(), Ok(&response.encode()));
 
                             if interface_hash == nametbd_loader_interface::ffi::INTERFACE {
                                 for hash in self.main_programs.drain(..) {
@@ -299,7 +299,7 @@ impl<TExtEx: Clone> System<TExtEx> {
     /// After [`SystemRunOutcome::InterfaceMessage`] has been returned, call this method in order
     /// to send back an answer to the message.
     // TODO: better API
-    pub fn answer_message(&mut self, message_id: u64, response: &[u8]) {
+    pub fn answer_message(&mut self, message_id: u64, response: Result<&[u8], ()>) {
         //println!("answered event {:?}", message_id);
         self.core.answer_message(message_id, response)
     }

@@ -53,9 +53,11 @@ impl TcpStream {
             },
         });
 
-        let msg_id = nametbd_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_open, true)
-            .unwrap()
-            .unwrap();
+        let msg_id = unsafe {
+            nametbd_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_open, true)
+                .unwrap()
+                .unwrap()
+        };
 
         async move {
             let message: ffi::TcpOpenResponse =
@@ -98,9 +100,11 @@ impl AsyncRead for TcpStream {
             let tcp_read = ffi::TcpMessage::Read(ffi::TcpRead {
                 socket_id: self.handle,
             });
-            let msg_id = nametbd_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_read, true)
-                .unwrap()
-                .unwrap();
+            let msg_id = unsafe {
+                nametbd_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_read, true)
+                    .unwrap()
+                    .unwrap()
+            };
             self.pending_read = Some(Box::pin(nametbd_syscalls_interface::message_response(
                 msg_id,
             )));
@@ -127,9 +131,11 @@ impl AsyncWrite for TcpStream {
             socket_id: self.handle,
             data: buf.to_vec(),
         });
-        let msg_id = nametbd_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_write, true)
-            .unwrap()
-            .unwrap();
+        let msg_id = unsafe {
+            nametbd_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_write, true)
+                .unwrap()
+                .unwrap()
+        };
         self.pending_write = Some(Box::pin(nametbd_syscalls_interface::message_response(
             msg_id,
         )));
@@ -175,11 +181,13 @@ impl tokio_io::AsyncWrite for TcpStream {
 
 impl Drop for TcpStream {
     fn drop(&mut self) {
-        let tcp_close = ffi::TcpMessage::Close(ffi::TcpClose {
-            socket_id: self.handle,
-        });
+        unsafe {
+            let tcp_close = ffi::TcpMessage::Close(ffi::TcpClose {
+                socket_id: self.handle,
+            });
 
-        nametbd_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_close, false);
+            nametbd_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_close, false);
+        }
     }
 }
 
@@ -204,9 +212,11 @@ impl TcpListener {
             },
         });
 
-        let msg_id = nametbd_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_listen, true)
-            .unwrap()
-            .unwrap();
+        let msg_id = unsafe {
+            nametbd_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_listen, true)
+                .unwrap()
+                .unwrap()
+        };
 
         let mut local_addr = socket_addr.clone();
 
@@ -249,10 +259,11 @@ impl TcpListener {
             let tcp_accept = ffi::TcpMessage::Accept(ffi::TcpAccept {
                 socket_id: self.handle,
             });
-            let msg_id =
+            let msg_id = unsafe {
                 nametbd_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_accept, true)
                     .unwrap()
-                    .unwrap();
+                    .unwrap()
+            };
             self.pending_accept = Some(Box::pin(nametbd_syscalls_interface::message_response(
                 msg_id,
             )));
@@ -262,10 +273,12 @@ impl TcpListener {
 
 impl Drop for TcpListener {
     fn drop(&mut self) {
-        let tcp_close = ffi::TcpMessage::Close(ffi::TcpClose {
-            socket_id: self.handle,
-        });
+        unsafe {
+            let tcp_close = ffi::TcpMessage::Close(ffi::TcpClose {
+                socket_id: self.handle,
+            });
 
-        nametbd_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_close, false);
+            nametbd_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_close, false);
+        }
     }
 }

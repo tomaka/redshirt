@@ -207,7 +207,7 @@ impl WasiStateMachine {
         extrinsic: WasiExtrinsic,
         pid: Pid,
         thread_id: ThreadId,
-        params: Vec<wasmi::RuntimeValue>,
+        params: Vec<nametbd_core::RuntimeValue>,
     ) -> HandleOut {
         const ENV_VARS: &[u8] = b"RUST_BACKTRACE=1\0";
 
@@ -218,7 +218,7 @@ impl WasiStateMachine {
                 let num_ptr = params[0].try_into::<i32>().unwrap() as u32;
                 let buf_size_ptr = params[1].try_into::<i32>().unwrap() as u32;
                 system.write_memory(pid, num_ptr, &[0, 0, 0, 0]).unwrap();
-                system.resolve_extrinsic_call(thread_id, Some(wasmi::RuntimeValue::I32(0)));
+                system.resolve_extrinsic_call(thread_id, Some(nametbd_core::RuntimeValue::I32(0)));
                 HandleOut::Ok
             }
             WasiExtrinsicInner::ClockTimeGet => {
@@ -269,7 +269,7 @@ impl WasiStateMachine {
                 LittleEndian::write_u32(&mut buf, buf_ptr);
                 system.write_memory(pid, ptrs_ptr, &buf).unwrap();
                 system.write_memory(pid, buf_ptr, ENV_VARS).unwrap();
-                system.resolve_extrinsic_call(thread_id, Some(wasmi::RuntimeValue::I32(0)));
+                system.resolve_extrinsic_call(thread_id, Some(nametbd_core::RuntimeValue::I32(0)));
                 HandleOut::Ok
             }
             WasiExtrinsicInner::EnvironSizesGet => {
@@ -281,7 +281,7 @@ impl WasiStateMachine {
                 system.write_memory(pid, num_ptr, &buf).unwrap();
                 LittleEndian::write_u32(&mut buf, ENV_VARS.len() as u32);
                 system.write_memory(pid, buf_size_ptr, &buf).unwrap();
-                system.resolve_extrinsic_call(thread_id, Some(wasmi::RuntimeValue::I32(0)));
+                system.resolve_extrinsic_call(thread_id, Some(nametbd_core::RuntimeValue::I32(0)));
                 HandleOut::Ok
             }
             WasiExtrinsicInner::FdPrestatGet => {
@@ -290,7 +290,7 @@ impl WasiStateMachine {
                 let ptr = params[1].try_into::<i32>().unwrap() as u32;
                 //system.write_memory(pid, ptr, &[0]).unwrap();
                 // TODO: incorrect
-                system.resolve_extrinsic_call(thread_id, Some(wasmi::RuntimeValue::I32(8)));
+                system.resolve_extrinsic_call(thread_id, Some(nametbd_core::RuntimeValue::I32(8)));
                 HandleOut::Ok
             }
             WasiExtrinsicInner::FdPrestatDirName => unimplemented!(),
@@ -326,7 +326,7 @@ impl WasiStateMachine {
             }
             WasiExtrinsicInner::SchedYield => {
                 // TODO: guarantee the yield
-                system.resolve_extrinsic_call(thread_id, Some(wasmi::RuntimeValue::I32(0)));
+                system.resolve_extrinsic_call(thread_id, Some(nametbd_core::RuntimeValue::I32(0)));
                 HandleOut::Ok
             }
         }
@@ -346,7 +346,7 @@ impl WasiStateMachine {
                 let mut buf = [0; 8];
                 LittleEndian::write_u64(&mut buf, to_write);
                 system.write_memory(info.pid, info.out_ptr, &buf).unwrap();
-                system.resolve_extrinsic_call(info.tid, Some(wasmi::RuntimeValue::I32(0)));
+                system.resolve_extrinsic_call(info.tid, Some(nametbd_core::RuntimeValue::I32(0)));
                 HandleOut::Ok
             }
             Some(CallInfo::Random(mut info)) => {
@@ -362,7 +362,8 @@ impl WasiStateMachine {
                 info.remaining_len -= value.result.len() as u32; // TODO: as :-/
 
                 if info.remaining_len == 0 {
-                    system.resolve_extrinsic_call(info.tid, Some(wasmi::RuntimeValue::I32(0)));
+                    system
+                        .resolve_extrinsic_call(info.tid, Some(nametbd_core::RuntimeValue::I32(0)));
                     HandleOut::Ok
                 } else {
                     let msg_id = self.alloc_message_id();
@@ -391,11 +392,11 @@ fn fd_write(
     system: &mut nametbd_core::system::System<impl Clone>,
     pid: nametbd_core::scheduler::Pid,
     thread_id: nametbd_core::scheduler::ThreadId,
-    params: Vec<wasmi::RuntimeValue>,
+    params: Vec<nametbd_core::RuntimeValue>,
 ) -> HandleOut {
     assert_eq!(params.len(), 4); // TODO: what to do when it's not the case?
 
-    //assert!(params[0] == wasmi::RuntimeValue::I32(1) || params[0] == wasmi::RuntimeValue::I32(2));      // either stdout or stderr
+    //assert!(params[0] == nametbd_core::RuntimeValue::I32(1) || params[0] == nametbd_core::RuntimeValue::I32(2));      // either stdout or stderr
 
     // Get a list of pointers and lengths to write.
     // Elements 0, 2, 4, 6, ... or that list are pointers, and elements 1, 3, 5, 7, ... are
@@ -428,7 +429,7 @@ fn fd_write(
         system.write_memory(pid, out_ptr, &buf).unwrap();
     }
 
-    system.resolve_extrinsic_call(thread_id, Some(wasmi::RuntimeValue::I32(0)));
+    system.resolve_extrinsic_call(thread_id, Some(nametbd_core::RuntimeValue::I32(0)));
     HandleOut::EmitMessage {
         id: None,
         interface: nametbd_stdout_interface::ffi::INTERFACE,

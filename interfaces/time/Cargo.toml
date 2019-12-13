@@ -12,4 +12,4 @@ pin-project = "0.4.6"
 
 [features]
 default = ["std"]
-std = ["nametbd-syscalls-interface/std"]
+std = []

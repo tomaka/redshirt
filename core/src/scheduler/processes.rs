@@ -30,8 +30,9 @@ use rand::seq::SliceRandom as _;
 ///
 /// This struct handles interleaving processes execution.
 ///
-/// The generic parameters `TPud` and `TTud` are "user data"s that are stored per process and per
-/// thread, and allows the user to put extra information associated to a process or a thread.
+/// The generic parameters `TPud` and `TTud` are "user data"s that are stored respectively per
+/// process and per thread, and allows the user to put extra information associated to a process
+/// or a thread.
 pub struct ProcessesCollection<TExtr, TPud, TTud> {
     /// Allocations of process IDs.
     pid_pool: IdPool,
@@ -44,13 +45,13 @@ pub struct ProcessesCollection<TExtr, TPud, TTud> {
 
     /// List of functions that processes can call.
     /// The key of this map is an arbitrary `usize` that we pass to the WASM interpreter.
-    /// This field is never modified after the `ProcessesCollection` is created.
+    /// This field is never modified after the [`ProcessesCollection`] is created.
     extrinsics: HashMap<usize, TExtr>,
 
     /// Map used to resolve imports when starting a process.
     /// For each module and function name, stores the signature and an arbitrary usize that
     /// corresponds to the entry in `extrinsics`.
-    /// This field is never modified after the `Core` is created.
+    /// This field is never modified after the [`ProcessesCollection`] is created.
     extrinsics_id_assign: HashMap<(Cow<'static, str>, Cow<'static, str>), (usize, Signature)>,
 }
 
@@ -222,10 +223,12 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
                 user_data: proc_user_data,
             },
         );
+
         // Shrink the list from time to time so that it doesn't grow too much.
         if u64::from(new_pid) % 256 == 0 {
             self.processes.shrink_to(PROCESSES_MIN_CAPACITY);
         }
+
         Ok(self.process_by_id(new_pid).unwrap())
     }
 
@@ -234,7 +237,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
     /// Which thread is run is implementation-defined and no guarantee is made.
     pub fn run(&mut self) -> RunOneOutcome<TExtr, TPud, TTud> {
         // We start by finding a thread in `self.processes` that is ready to run.
-        let (mut process, thread_index): (OccupiedEntry<_, _, _>, usize) = {
+        let (mut process, inner_thread_index): (OccupiedEntry<_, _, _>, usize) = {
             let mut entries = self.processes.iter_mut().collect::<Vec<_>>();
             // TODO: entries.shuffle(&mut rand::thread_rng());
             let entry = entries
@@ -248,19 +251,20 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
                 })
                 .next();
             match entry {
-                Some((pid, thread_index)) => match self.processes.entry(pid) {
-                    Entry::Occupied(p) => (p, thread_index),
+                Some((pid, inner_thread_index)) => match self.processes.entry(pid) {
+                    Entry::Occupied(p) => (p, inner_thread_index),
                     Entry::Vacant(_) => unreachable!(),
                 },
                 None => return RunOneOutcome::Idle,
             }
         };
 
+        // Now run the thread until something happens.
         let run_outcome = {
             let mut thread = process
                 .get_mut()
                 .state_machine
-                .thread(thread_index)
+                .thread(inner_thread_index)
                 .unwrap();
             let value_back = thread.user_data().value_back.take().unwrap();
             thread.run(value_back)
@@ -269,19 +273,15 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
         match run_outcome {
             Err(vm::RunErr::BadValueTy { .. }) => panic!(), // TODO:
             Err(vm::RunErr::Poisoned) => unreachable!(),
+
+            // A process has ended.
             Ok(vm::ExecOutcome::ThreadFinished {
                 thread_index: 0,
                 return_value,
                 user_data: main_thread_user_data,
             }) => {
-                let (
-                    pid,
-                    Process {
-                        user_data,
-                        state_machine,
-                    },
-                ) = process.remove_entry();
-                let other_threads_ud = state_machine.into_user_datas();
+                let (pid, proc) = process.remove_entry();
+                let other_threads_ud = proc.state_machine.into_user_datas();
                 let mut dead_threads = Vec::with_capacity(1 + other_threads_ud.len());
                 dead_threads.push((
                     main_thread_user_data.thread_id,
@@ -293,11 +293,13 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
                 debug_assert_eq!(dead_threads.len(), dead_threads.capacity());
                 RunOneOutcome::ProcessFinished {
                     pid,
-                    user_data,
+                    user_data: proc.user_data,
                     dead_threads,
                     outcome: Ok(return_value),
                 }
             }
+
+            // A thread has ended.
             Ok(vm::ExecOutcome::ThreadFinished {
                 return_value,
                 user_data,
@@ -310,33 +312,32 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
                 user_data: user_data.user_data,
                 value: return_value,
             },
+
+            // Thread wants to call an extrinsic function.
             Ok(vm::ExecOutcome::Interrupted { id, params, .. }) => {
                 // TODO: check params against signature with a debug_assert
                 let extrinsic = self.extrinsics.get_mut(&id).unwrap();
                 RunOneOutcome::Interrupted {
                     thread: ProcessesCollectionThread {
                         process,
-                        thread_index,
+                        thread_index: inner_thread_index,
                     },
                     id: extrinsic,
                     params,
                 }
             }
+
+            // An error happened during the execution. We kill the entire process.
             Ok(vm::ExecOutcome::Errored { error, .. }) => {
-                let (
-                    pid,
-                    Process {
-                        user_data,
-                        state_machine,
-                    },
-                ) = process.remove_entry();
-                let dead_threads = state_machine
+                let (pid, proc) = process.remove_entry();
+                let dead_threads = proc
+                    .state_machine
                     .into_user_datas()
                     .map(|t| (t.thread_id, t.user_data))
                     .collect::<Vec<_>>();
                 RunOneOutcome::ProcessFinished {
                     pid,
-                    user_data,
+                    user_data: proc.user_data,
                     dead_threads,
                     outcome: Err(error),
                 }
@@ -352,11 +353,11 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
     /// Returns a process by its [`Pid`], if it exists.
     pub fn process_by_id(&mut self, pid: Pid) -> Option<ProcessesCollectionProc<TPud, TTud>> {
         match self.processes.entry(pid) {
+            Entry::Vacant(_) => None,
             Entry::Occupied(e) => Some(ProcessesCollectionProc {
                 process: e,
                 tid_pool: &mut self.tid_pool,
             }),
-            Entry::Vacant(_) => None,
         }
     }
 
@@ -480,6 +481,10 @@ impl<'a, TPud, TTud> ProcessesCollectionProc<'a, TPud, TTud> {
 
     /// Adds a new thread to the process, starting the function with the given index and passing
     /// the given parameters.
+    ///
+    /// > **Note**: The "function ID" is the index of the function in the WASM module. WASM
+    /// >           doesn't have function pointers. Instead, all the functions are part of a single
+    /// >           global array of functions.
     // TODO: don't expose wasmi::RuntimeValue in the API
     pub fn start_thread(
         mut self,
@@ -535,10 +540,14 @@ impl<'a, TPud, TTud> ProcessesCollectionProc<'a, TPud, TTud> {
     }
 
     /// Aborts the process and returns the associated user data.
-    pub fn abort(self) -> TPud {
-        // TODO: return thread user datas as well
-        let (_, Process { user_data, .. }) = self.process.remove_entry();
-        user_data
+    pub fn abort(self) -> (TPud, Vec<(ThreadId, TTud)>) {
+        let (_, proc) = self.process.remove_entry();
+        let dead_threads = proc
+            .state_machine
+            .into_user_datas()
+            .map(|t| (t.thread_id, t.user_data))
+            .collect::<Vec<_>>();
+        (proc.user_data, dead_threads)
     }
 }
 
