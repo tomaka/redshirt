@@ -33,7 +33,10 @@ pub enum TcpMessage {
     /// Ask to write data to a socket. A response is sent back once written. For each socket, only
     /// one write can exist at any given point in time.
     Write(TcpWrite),
-    RegisterInterface(u64),
+    RegisterInterface {
+        id: u64,
+        mac_address: [u8; 6],
+    },
     UnregisterInterface(u64),
     InterfaceOnData(u64, Vec<u8>),
     InterfaceWaitData(u64),

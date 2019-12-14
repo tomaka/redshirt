@@ -68,11 +68,11 @@ async fn async_main() {
             ffi::TcpMessage::Write(_) => {
 
             },
-            ffi::TcpMessage::RegisterInterface(_) => {
-
+            ffi::TcpMessage::RegisterInterface { id, mac_address } => {
+                network.register_interface((msg.emitter_pid, id), mac_address);
             },
-            ffi::TcpMessage::UnregisterInterface(_) => {
-
+            ffi::TcpMessage::UnregisterInterface(id) => {
+                network.unregister_interface((msg.emitter_pid, id));
             },
             ffi::TcpMessage::InterfaceOnData(_, _) => {
 

@@ -1025,6 +1025,7 @@ name = "network-manager"
 version = "0.1.0"
 dependencies = [
  "futures 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "hashbrown 0.6.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "nametbd-interface-interface 0.1.0",
  "nametbd-network-interface 0.1.0",
  "nametbd-syscalls-interface 0.1.0",
