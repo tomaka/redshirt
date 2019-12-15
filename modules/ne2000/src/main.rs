@@ -47,7 +47,7 @@ async fn async_main() {
 
             if let Some(port_number) = port_number {
                 unsafe {
-                    device::Device::reset(port_number).await;        // TODO: don't hardcode
+                    device::Device::reset(port_number).await;
                     nametbd_stdout_interface::stdout(format!("Initialized ne2000\n"));
                 }
             }
