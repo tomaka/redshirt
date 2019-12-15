@@ -19,14 +19,15 @@ use std::convert::TryFrom as _;
 //
 // # Device overview
 //
-// The ne2000 has a circular buffer of 96 pages of 256 bytes each. Packets always have to be
-// aligned on pages boundaries. Only the last 48 pages are available for us to read/write on.
+// The ne2000 has a circular buffer of pages of 256 bytes each. Packets always have to be
+// aligned on pages boundaries. Only pages 0x40 to 0x60 are available for us to read/write on.
+// We store the .
 //
 // The device writes received packets to the buffer, and can transmit out packets by reading from
 // this buffer.
 //
-// In order to access this buffer from the host (i.e. us), we have to use the DMA system of the
-// chip.
+// This buffer isn't available in physical memory. In order to access it from the host (i.e. us),
+// we have to use the DMA system of the chip.
 //
 // # Implementation note
 //
@@ -72,23 +73,10 @@ impl Device {
         // TODO: understand
         nametbd_hardware_interface::port_write_u8(base_port + 14, (1 << 6) | (1 << 4) | (1 << 3));
 
-        // Remote byte count set to 32 in order to prepare for reading the MAC address.
-        nametbd_hardware_interface::port_write_u8(base_port + 10, 32);
-        nametbd_hardware_interface::port_write_u8(base_port + 11, 0);
-        // Set DMA to 0.
-        nametbd_hardware_interface::port_write_u8(base_port + 8, 0);
-        nametbd_hardware_interface::port_write_u8(base_port + 9, 0);
-        // Start & DMA remote read.
-        nametbd_hardware_interface::port_write_u8(base_port + 0, (1 << 3) | (1 << 1));
-
         // Read our MAC address.
         let mac_address: [u8; 6] = {
             let mut buffer = [0; 32];
-            let mut ops = nametbd_hardware_interface::HardwareOperationsBuilder::new();
-            for byte in &mut buffer {
-                ops.port_read_u8(base_port + 16, byte);
-            }
-            ops.send().await;
+            dma_read(base_port, &mut buffer, 0).await;
             // TODO: wtf is with these indices? is that correct?
             [buffer[0], buffer[2], buffer[4], buffer[6], buffer[8], buffer[10]]
         };
@@ -100,8 +88,8 @@ impl Device {
         // Start page address of the packet to be transmitted.
         nametbd_hardware_interface::port_write_u8(base_port + 4, 0x40);
         // 0x46 to PSTART and BNRY.
-        nametbd_hardware_interface::port_write_u8(base_port + 1, 0x46);
-        nametbd_hardware_interface::port_write_u8(base_port + 3, 0x46);
+        nametbd_hardware_interface::port_write_u8(base_port + 1, 0x4b);
+        nametbd_hardware_interface::port_write_u8(base_port + 3, 0x4b);
         // 0x60 to PSTOP (maximum value).
         nametbd_hardware_interface::port_write_u8(base_port + 2, 0x60);
         // Now enable interrupts.
@@ -143,6 +131,8 @@ impl Device {
     }
 
     unsafe fn send_packet(&mut self, packet: &[u8]) {
+        dma_write(self.base_port, packet, 0x40);
+
         let (packet_len_lo, packet_len_hi) = if let Ok(len) = u16::try_from(packet.len()) {
             let len_bytes = len.to_le_bytes();
             (len_bytes[0], len_bytes[1])
@@ -154,19 +144,6 @@ impl Device {
 
         // TODO: check available length
 
-        // DMA remote bytes count set to the length we want to write.
-        ops.port_write_u8(self.base_port + 10, packet_len_lo);
-        ops.port_write_u8(self.base_port + 11, packet_len_hi);
-        // DMA remote start address.
-        ops.port_write_u8(self.base_port + 8, 0);
-        ops.port_write_u8(self.base_port + 9, 0x40);
-        // Remote write + start.
-        ops.port_write_u8(self.base_port + 0, (1 << 4) | (1 << 1));
-
-        // Feed data to the DMA.
-        for byte in packet {
-            ops.port_write_u8(self.base_port + 16, *byte);
-        }
 
         // Set transmit page start to address where we wrote.
         ops.port_write_u8(self.base_port + 4, 0x40);
@@ -199,4 +176,85 @@ impl Device {
             // TODO: inform of successful packet transfer
         }
     }
+}
+
+/// Reads data from the memory of the card.
+///
+/// Command register must be at page 0.
+///
+/// # Safety
+///
+/// Race condition if the same remote memory is at the same time written by something else.
+///
+async unsafe fn dma_read(base_port: u32, data: &mut [u8], page_start: u8) {
+    if data.is_empty() {
+        return;
+    }
+
+    assert!(usize::from(page_start) + ((data.len() - 1) / 256 + 1) < 0x60);
+
+    let (data_len_lo, data_len_hi) = if let Ok(len) = u16::try_from(data.len()) {
+        let len_bytes = len.to_le_bytes();
+        (len_bytes[0], len_bytes[1])
+    } else {
+        panic!()        // TODO:
+    };
+
+    let mut ops = nametbd_hardware_interface::HardwareOperationsBuilder::new();
+
+    // DMA remote bytes count set to the length we want to write.
+    ops.port_write_u8(base_port + 10, data_len_lo);
+    ops.port_write_u8(base_port + 11, data_len_hi);
+    // DMA remote start address.
+    ops.port_write_u8(base_port + 8, 0);   // A page is 256 bytes, so the low is always 0
+    ops.port_write_u8(base_port + 9, page_start);
+    // Start & DMA remote read.
+    ops.port_write_u8(base_port + 0, (1 << 3) | (1 << 1));
+
+    for byte in data {
+        ops.port_read_u8(base_port + 16, byte);
+    }
+
+    ops.send().await;
+}
+
+/// Writes data to the memory of the card.
+///
+/// Command register must be at page 0.
+///
+/// # Safety
+///
+/// Race condition if the same remote memory is accessed at the same time by something else.
+///
+unsafe fn dma_write(base_port: u32, data: &[u8], page_start: u8) {
+    if data.is_empty() {
+        return;
+    }
+
+    assert!(page_start >= 0x40 && usize::from(page_start) + ((data.len() - 1) / 256 + 1) < 0x60);
+
+    let (data_len_lo, data_len_hi) = if let Ok(len) = u16::try_from(data.len()) {
+        let len_bytes = len.to_le_bytes();
+        (len_bytes[0], len_bytes[1])
+    } else {
+        panic!()        // TODO:
+    };
+
+    let mut ops = nametbd_hardware_interface::HardwareWriteOperationsBuilder::new();
+
+    // DMA remote bytes count set to the length we want to write.
+    ops.port_write_u8(base_port + 10, data_len_lo);
+    ops.port_write_u8(base_port + 11, data_len_hi);
+    // DMA remote start address.
+    ops.port_write_u8(base_port + 8, 0);   // A page is 256 bytes, so the low is always 0
+    ops.port_write_u8(base_port + 9, page_start);
+    // Remote write + start.
+    ops.port_write_u8(base_port + 0, (1 << 4) | (1 << 1));
+
+    // Feed data to the DMA.
+    for byte in data {
+        ops.port_write_u8(base_port + 16, *byte);
+    }
+
+    ops.send();
 }
