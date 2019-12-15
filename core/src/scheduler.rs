@@ -17,6 +17,7 @@ use core::fmt;
 
 mod ipc;
 mod processes;
+mod tests;
 mod vm;
 
 // TODO: move definition?
