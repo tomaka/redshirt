@@ -19,9 +19,8 @@ use std::convert::TryFrom as _;
 //
 // # Device overview
 //
-// TODO: 96 pages?
 // The ne2000 has a circular buffer of 96 pages of 256 bytes each. Packets always have to be
-// aligned on pages boundaries.
+// aligned on pages boundaries. Only the last 48 pages are available for us to read/write on.
 //
 // The device writes received packets to the buffer, and can transmit out packets by reading from
 // this buffer.

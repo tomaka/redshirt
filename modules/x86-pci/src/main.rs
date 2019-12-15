@@ -19,6 +19,7 @@
 
 // TODO: support Enhanced Configuration Access Mechanism (ECAM)
 
+use parity_scale_codec::DecodeAll;
 use std::{borrow::Cow, convert::TryFrom as _};
 
 include!(concat!(env!("OUT_DIR"), "/build-pci.rs"));
@@ -28,19 +29,24 @@ fn main() {
 }
 
 async fn async_main() {
-    /*nametbd_interface_interface::register_interface(nametbd_pci_interface::ffi::INTERFACE)
-        .await.unwrap();*/
+    nametbd_interface_interface::register_interface(nametbd_pci_interface::ffi::INTERFACE)
+        .await.unwrap();
 
-    /*loop {
-        let msg = nametbd_syscalls_interface::next_interface_message().await;
-        assert_eq!(msg.interface, nametbd_stdout_interface::ffi::INTERFACE);
-        let nametbd_stdout_interface::ffi::StdoutMessage::Message(message) =
+    let devices = unsafe {
+        read_pci_devices().await
+    };
+
+    loop {
+        let msg = match nametbd_syscalls_interface::next_interface_message().await {
+            nametbd_syscalls_interface::InterfaceOrDestroyed::Interface(m) => m,
+            nametbd_syscalls_interface::InterfaceOrDestroyed::ProcessDestroyed(_) => continue,
+        };
+        assert_eq!(msg.interface, nametbd_pci_interface::ffi::INTERFACE);
+        let nametbd_pci_interface::ffi::PciMessage::GetDevicesList =
             DecodeAll::decode_all(&msg.actual_data).unwrap();       // TODO: don't unwrap
-        console.write(&message);
-    }*/
-
-    unsafe {
-        read_pci_devices().await;
+        nametbd_syscalls_interface::emit_answer(msg.message_id.unwrap(), &nametbd_pci_interface::ffi::GetDevicesListResponse {
+            devices: devices.clone(),
+        });
     }
 }
 
@@ -48,13 +54,15 @@ lazy_static::lazy_static! {
     static ref PCI_DEVICES: hashbrown::HashMap<(u16, u16), (&'static str, &'static str)> = build_pci_info();
 }
 
-async unsafe fn read_pci_devices() {
+async unsafe fn read_pci_devices() -> Vec<nametbd_pci_interface::PciDeviceInfo> {
     // https://wiki.osdev.org/PCI
     let pci_devices = build_pci_info();
-    read_bus_pci_devices(0).await;
+    read_bus_pci_devices(0).await
 }
 
-async unsafe fn read_bus_pci_devices(bus_idx: u8) {
+async unsafe fn read_bus_pci_devices(bus_idx: u8) -> Vec<nametbd_pci_interface::PciDeviceInfo> {
+    let mut out = Vec::new();
+
     for device_idx in 0 .. 32 {
         for func_idx in 0 .. 8 {    // TODO: check function 0 only first
             let (vendor_id, device_id) = {
@@ -83,19 +91,42 @@ async unsafe fn read_bus_pci_devices(bus_idx: u8) {
             };
 
             let class_code = pci_cfg_read_u32(bus_idx, device_idx, func_idx, 0x8).await;
-            let bar0 = pci_cfg_read_u32(bus_idx, device_idx, func_idx, 0x10).await;
-            let bar1 = pci_cfg_read_u32(bus_idx, device_idx, func_idx, 0x14).await;
-            let bar2 = pci_cfg_read_u32(bus_idx, device_idx, func_idx, 0x18).await;
-            let bar3 = pci_cfg_read_u32(bus_idx, device_idx, func_idx, 0x1c).await;
-            let bar4 = pci_cfg_read_u32(bus_idx, device_idx, func_idx, 0x20).await;
-            let bar5 = pci_cfg_read_u32(bus_idx, device_idx, func_idx, 0x24).await;
-            nametbd_stdout_interface::stdout(format!("PCI device: {} - {}; class = {:x}; header = {:x}; bar = 0x{:x}, 0x{:x}, 0x{:x}, 0x{:x}, 0x{:x}, 0x{:x}\n", vendor_name, device_name, class_code, header_ty, bar0, bar1, bar2, bar3, bar4, bar5));
+
+            out.push(nametbd_pci_interface::PciDeviceInfo {
+                vendor_id,
+                device_id,
+                base_address_registers: {
+                    let mut list = Vec::with_capacity(6);
+                    for bar_n in 0..6 {
+                        let bar = pci_cfg_read_u32(bus_idx, device_idx, func_idx, 0x10 + bar_n * 0x4).await;
+                        list.push(if (bar & 0x1) == 0 {
+                            let prefetchable = (bar & (1 << 3)) != 0;
+                            let base_address = bar & !0b1111;
+                            nametbd_pci_interface::PciBaseAddressRegister::Memory {
+                                base_address,
+                                prefetchable,
+                            }
+                        } else {
+                            let base_address = bar & !0b11;
+                            nametbd_pci_interface::PciBaseAddressRegister::Io {
+                                base_address,
+                            }
+                        });
+                    }
+                    list
+                },
+            });
+
+            nametbd_stdout_interface::stdout(format!("PCI device: {} - {}\n", vendor_name, device_name));
 
             // TODO: wrong; need to enumerate other PCI buses
         }
     }
+
+    out
 }
 
+// TODO: ensure endianess? PCI is always little endian, but what if we're on a BE platform?
 async unsafe fn pci_cfg_read_u32(bus: u8, slot: u8, func: u8, offset: u8) -> u32 {
     //assert!(bus < 256); // commented out because always true
     assert!(slot < 32);
