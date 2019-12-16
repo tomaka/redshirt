@@ -25,7 +25,7 @@ pub unsafe fn init() {
     // The PIC (Programmable Interrupt Controller) is the old chip responsible for triggering
     // on the CPU interrupts coming from the hardware.
     //
-    // Because of poor design decisions, it will be default trigger interrupts 0 to 32 on the CPU,
+    // Because of poor design decisions, it will by default trigger interrupts 0 to 32 on the CPU,
     // which are normally reserved for software-related concerns. For example, the timer will by
     // default trigger interrupt 8, which is also the double fault exception handler.
     //
