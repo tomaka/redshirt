@@ -19,7 +19,6 @@
 //! implementation.
 
 #![cfg_attr(target_arch = "x86_64", feature(abi_x86_interrupt))]
-#![feature(asm)] // TODO: remove
 #![no_std]
 
 extern crate alloc;
@@ -44,10 +43,6 @@ where
     pub fn new() -> Self {
         unsafe {
             arch::init();
-        }
-
-        unsafe {
-            x86_64::software_interrupt!(38);
         }
 
         HardwareHandler {
