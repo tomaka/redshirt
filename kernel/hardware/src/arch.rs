@@ -21,6 +21,11 @@ mod x86_64;
 
 // Functions are duplicated here in order to define a precise API that platforms have to implement.
 
+/// Initialization step.
+pub unsafe fn init() {
+    platform::init();
+}
+
 /// Write data on a specific hardware port. Has no effect if the operation is not supported or the
 /// port is out of range.
 pub unsafe fn write_port_u8(port: u32, data: u8) {

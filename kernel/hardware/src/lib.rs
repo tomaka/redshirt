@@ -18,6 +18,7 @@
 //! The `hardware` interface is particular in that it can only be implemented using a "hosted"
 //! implementation.
 
+#![cfg_attr(target_arch = "x86_64", feature(abi_x86_interrupt))]
 #![no_std]
 
 extern crate alloc;
@@ -40,13 +41,17 @@ where
 {
     /// Initializes the new state machine for hardware accesses.
     pub fn new() -> Self {
+        unsafe {
+            arch::init();
+        }
+
         HardwareHandler {
             marker: PhantomData,
         }
     }
 
     /// Processes a message on the `hardware` interface, and optionally returns an answer to
-    /// immediately send  back.
+    /// immediately send back.
     pub fn hardware_message(
         &self,
         message_id: Option<TMsgId>,
