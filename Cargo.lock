@@ -616,6 +616,7 @@ name = "nametbd-hardware"
 version = "0.1.0"
 dependencies = [
  "futures 0.3.1 (git+https://github.com/tomaka/futures-rs?branch=const-new-atomic-waker)",
+ "lazy_static 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "nametbd-hardware-interface 0.1.0",
  "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "x86_64 0.8.1 (registry+https://github.com/rust-lang/crates.io-index)",
