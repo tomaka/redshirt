@@ -612,17 +612,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "nametbd-hardware"
-version = "0.1.0"
-dependencies = [
- "futures 0.3.1 (git+https://github.com/tomaka/futures-rs?branch=const-new-atomic-waker)",
- "lazy_static 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "nametbd-hardware-interface 0.1.0",
- "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "x86_64 0.8.1 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
 name = "nametbd-hardware-interface"
 version = "0.1.0"
 dependencies = [
@@ -662,17 +651,18 @@ version = "0.1.0"
 dependencies = [
  "cc 1.0.48 (registry+https://github.com/rust-lang/crates.io-index)",
  "compiler_builtins 0.1.23 (registry+https://github.com/rust-lang/crates.io-index)",
- "futures 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "futures 0.3.1 (git+https://github.com/tomaka/futures-rs?branch=const-new-atomic-waker)",
+ "lazy_static 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "libm 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "linked_list_allocator 0.6.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "multiboot2 0.8.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "nametbd-core 0.1.0",
- "nametbd-hardware 0.1.0",
  "nametbd-hardware-interface 0.1.0",
  "nametbd-wasi-hosted 0.1.0",
  "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "walkdir 2.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
  "x86 0.28.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "x86_64 0.8.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
