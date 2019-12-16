@@ -1,5 +1,5 @@
 Experiment to build some kind of operating-system-like environment where executables are all in
-WASM and are loaded from some IPFS-like decentralized network.
+WASM and are loaded from an IPFS-like decentralized network.
 
 I'm frequently telling people what my vision of an operating system would be. Now I've started
 building it.
@@ -77,7 +77,7 @@ to get in touch if you want to contribute anything non-trivial.
 
 - Programs are referred to by their hash, not by a file name. For example you don't tell the OS
   "execute /usr/bin/foo". Instead you say "execute A45d9a21c3a7". The WASM binary, if it doesn't
-  exist locally, is fetched from IPFS or something similar.
+  exist locally, is fetched from a peer-to-peer network similar to IPFS.
 
 - There exists 3 core syscalls (send a message, send an answer, wait for a message), and
   everything else is done by passing messages between processes or between a process and the
@@ -112,6 +112,6 @@ to get in touch if you want to contribute anything non-trivial.
 
 - Futures are working.
 - WASM programs can use TCP/IP, but the implementation is very hacky.
-- Building IPFS is currently blocked due to the lack of Rust ECDH library that compiles for WASM.
+- Building the IPFS-like network is currently blocked due to the lack of Rust ECDH library that compiles for WASM.
   The plan is to bypass this problem by not using encryption.
 - There is a freestanding version of the kernel for the bare metal for x86_64.
