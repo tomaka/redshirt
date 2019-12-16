@@ -51,7 +51,7 @@ pub unsafe fn init() {
     let apic_base_addr = {
         const APIC_BASE_MSR: Msr = Msr::new(0x1b);
         let base_addr = APIC_BASE_MSR.read() & !0xfff;
-        APIC_BASE_MSR.write(base_addr | 0x800);     // Enable the APIC.
+        APIC_BASE_MSR.write(base_addr | 0x800); // Enable the APIC.
         base_addr
     };
 
@@ -59,7 +59,7 @@ pub unsafe fn init() {
     {
         let svr_addr = usize::try_from(apic_base_addr + 0xf0).unwrap() as *mut u32;
         let val = svr_addr.read_volatile();
-        svr_addr.write_volatile(val | 0x100);       // Enable spurious interrupts.
+        svr_addr.write_volatile(val | 0x100); // Enable spurious interrupts.
     }
 
     interrupts::init();
