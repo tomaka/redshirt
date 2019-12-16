@@ -72,7 +72,7 @@ impl Kernel {
             crate::arch::halt();
         }
 
-        let hardware = nametbd_hardware::HardwareHandler::new();
+        let hardware = crate::hardware::HardwareHandler::new();
 
         let hello_module = nametbd_core::module::Module::from_bytes(
             &include_bytes!("../../../modules/target/wasm32-wasi/release/hello-world.wasm")[..],
