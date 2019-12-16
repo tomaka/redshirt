@@ -7,6 +7,9 @@ edition = "2018"
 publish = false
 
 [dependencies]
+# TODO: https://github.com/rust-lang/futures-rs/pull/2007
+futures = { git = "https://github.com/tomaka/futures-rs", branch = "const-new-atomic-waker", default-features = false }
+lazy_static = "1.4"
 nametbd-hardware-interface = { path = "../../interfaces/hardware", default-features = false }
 parity-scale-codec = { version = "1.0.5", default-features = false }
 
