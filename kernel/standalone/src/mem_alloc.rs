@@ -32,9 +32,7 @@ use core::ops::Range;
 ///
 pub unsafe fn initialize(range: Range<usize>) {
     assert!(range.end >= range.start);
-    ALLOCATOR
-        .lock()
-        .init(range.start, range.end - range.start);
+    ALLOCATOR.lock().init(range.start, range.end - range.start);
 }
 
 #[global_allocator]

@@ -91,7 +91,6 @@ fn find_free_memory_range(multiboot_info: &multiboot2::BootInformation) -> Range
             } else {
                 area_start = section.end_address();
             }
-
         } else if section.start_address() < area_start && section.end_address() > area_end {
             /*    ↓ section_start             section_end ↓
                ==================================================
@@ -99,14 +98,12 @@ fn find_free_memory_range(multiboot_info: &multiboot2::BootInformation) -> Range
             */
             // We have no memory available!
             panic!()
-
         } else if section.start_address() <= area_start && section.end_address() > area_start {
             /*    ↓ section_start     section_end ↓
                ==================================================
                        ↑ area_start                 area_end ↑
             */
             area_start = section.end_address();
-
         } else if section.start_address() < area_end && section.end_address() >= area_end {
             /*         ↓ section_start      section_end ↓
                ==================================================
@@ -118,7 +115,7 @@ fn find_free_memory_range(multiboot_info: &multiboot2::BootInformation) -> Range
 
     let area_start = usize::try_from(area_start).unwrap();
     let area_end = usize::try_from(area_end).unwrap();
-    area_start .. area_end
+    area_start..area_end
 }
 
 unsafe fn init_pic_apic() {
