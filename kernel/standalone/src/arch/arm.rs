@@ -50,7 +50,11 @@ unsafe extern "C" fn _start() -> ! {
 
 #[no_mangle]
 fn cpu_enter() -> ! {
-    crate::mem_alloc::initialize();
+    unsafe {
+        // TODO: RAM starts at 0, but we start later to avoid the kernel
+        // TODO: make this is a cleaner way
+        crate::mem_alloc::initialize(0xa00000..0x40000000);
+    }
 
     let kernel = crate::kernel::Kernel::init(crate::kernel::KernelConfig {
         num_cpus: 1,
