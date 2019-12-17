@@ -1,5 +1,5 @@
 [package]
-name = "ipfs"       # TODO: rename; this isn't actually ipfs
+name = "p2p-loader"
 version = "0.1.0"
 authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
 edition = "2018"

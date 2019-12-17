@@ -21,13 +21,16 @@
 #![feature(core_intrinsics)]
 #![feature(panic_info_message)] // TODO: https://github.com/rust-lang/rust/issues/66745
 #![feature(alloc_error_handler)] // TODO: https://github.com/rust-lang/rust/issues/66741
-#![feature(naked_functions)]
+#![feature(naked_functions)] // TODO: https://github.com/rust-lang/rust/issues/32408
+#![cfg_attr(target_arch = "x86_64", feature(abi_x86_interrupt))] // TODO: https://github.com/rust-lang/rust/issues/40180
 
 extern crate alloc;
 extern crate compiler_builtins;
 
 mod arch;
+mod hardware;
 mod kernel;
+mod mem_alloc;
 mod panic;
 
 // This contains nothing. As the main entry point of the kernel is platform-specific, it is

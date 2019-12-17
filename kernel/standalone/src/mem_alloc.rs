@@ -13,23 +13,22 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-pub unsafe fn write_port_u8(port: u32, data: u8) {
+/// Initialize the memory allocator.
+pub fn initialize() {
+    // TODO: initialize allocator only once?
+    unsafe {
+        // TODO: don't have the HEAP here, but adjust it to the available RAM
+        static mut HEAP: [u8; 0x10000000] = [0; 0x10000000];
+        ALLOCATOR
+            .lock()
+            .init(HEAP.as_mut_ptr() as usize, HEAP.len());
+    }
 }
 
-pub unsafe fn write_port_u16(port: u32, data: u16) {
-}
+#[global_allocator]
+static ALLOCATOR: linked_list_allocator::LockedHeap = linked_list_allocator::LockedHeap::empty();
 
-pub unsafe fn write_port_u32(port: u32, data: u32) {
-}
-
-pub unsafe fn read_port_u8(port: u32) -> u8 {
-    0
-}
-
-pub unsafe fn read_port_u16(port: u32) -> u16 {
-    0
-}
-
-pub unsafe fn read_port_u32(port: u32) -> u32 {
-    0
+#[alloc_error_handler]
+fn alloc_error_handler(_: core::alloc::Layout) -> ! {
+    panic!()
 }

@@ -726,25 +726,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ipfs"
-version = "0.1.0"
-dependencies = [
- "futures 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "libp2p-core 0.13.0 (git+https://github.com/tomaka/libp2p-rs?branch=stable-fut-wasi)",
- "libp2p-kad 0.13.0 (git+https://github.com/tomaka/libp2p-rs?branch=stable-fut-wasi)",
- "libp2p-mplex 0.13.0 (git+https://github.com/tomaka/libp2p-rs?branch=stable-fut-wasi)",
- "libp2p-plaintext 0.13.0 (git+https://github.com/tomaka/libp2p-rs?branch=stable-fut-wasi)",
- "libp2p-swarm 0.3.0 (git+https://github.com/tomaka/libp2p-rs?branch=stable-fut-wasi)",
- "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
- "nametbd-interface-interface 0.1.0",
- "nametbd-loader-interface 0.1.0",
- "nametbd-syscalls-interface 0.1.0",
- "nametbd-tcp-interface 0.1.0",
- "nametbd-time-interface 0.1.0",
- "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
 name = "itoa"
 version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1050,6 +1031,25 @@ dependencies = [
 name = "opaque-debug"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "p2p-loader"
+version = "0.1.0"
+dependencies = [
+ "futures 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "libp2p-core 0.13.0 (git+https://github.com/tomaka/libp2p-rs?branch=stable-fut-wasi)",
+ "libp2p-kad 0.13.0 (git+https://github.com/tomaka/libp2p-rs?branch=stable-fut-wasi)",
+ "libp2p-mplex 0.13.0 (git+https://github.com/tomaka/libp2p-rs?branch=stable-fut-wasi)",
+ "libp2p-plaintext 0.13.0 (git+https://github.com/tomaka/libp2p-rs?branch=stable-fut-wasi)",
+ "libp2p-swarm 0.3.0 (git+https://github.com/tomaka/libp2p-rs?branch=stable-fut-wasi)",
+ "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
+ "nametbd-interface-interface 0.1.0",
+ "nametbd-loader-interface 0.1.0",
+ "nametbd-syscalls-interface 0.1.0",
+ "nametbd-tcp-interface 0.1.0",
+ "nametbd-time-interface 0.1.0",
+ "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+]
 
 [[package]]
 name = "parity-multiaddr"

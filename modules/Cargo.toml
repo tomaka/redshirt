@@ -3,7 +3,7 @@ members = [
     "arm-stdout",
     "hello-world",
     "http-server",
-    "ipfs",
+    "p2p-loader",
     "third-party/time",
     "third-party/wasm-timer",
     "vulkan-triangle",

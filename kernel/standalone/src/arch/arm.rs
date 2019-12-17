@@ -50,6 +50,8 @@ unsafe extern "C" fn _start() -> ! {
 
 #[no_mangle]
 fn cpu_enter() -> ! {
+    crate::mem_alloc::initialize();
+
     let kernel = crate::kernel::Kernel::init(crate::kernel::KernelConfig {
         num_cpus: 1,
         ..Default::default()
@@ -90,4 +92,25 @@ pub fn halt() -> ! {
             asm!(r#"wfe"#);
         }
     }
+}
+
+pub unsafe fn write_port_u8(port: u32, data: u8) {
+}
+
+pub unsafe fn write_port_u16(port: u32, data: u16) {
+}
+
+pub unsafe fn write_port_u32(port: u32, data: u32) {
+}
+
+pub unsafe fn read_port_u8(port: u32) -> u8 {
+    0
+}
+
+pub unsafe fn read_port_u16(port: u32) -> u16 {
+    0
+}
+
+pub unsafe fn read_port_u32(port: u32) -> u32 {
+    0
 }
