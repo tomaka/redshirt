@@ -113,7 +113,7 @@ fn ptr_of(x: u8, y: u8) -> *mut u16 {
     assert!(y < 25);
 
     unsafe {
-        let offset = isize::from((y * 80) + x);
+        let offset = isize::from(y) * 80 + isize::from(x);
         (0xb8000 as *mut u16).offset(offset)
     }
 }

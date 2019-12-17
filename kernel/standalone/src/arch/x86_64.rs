@@ -19,40 +19,9 @@ use core::convert::TryFrom as _;
 use x86_64::registers::model_specific::Msr;
 use x86_64::structures::port::{PortRead as _, PortWrite as _};
 
+mod acpi;
+mod boot_link;
 mod interrupts;
-
-#[link(name = "boot")]
-extern "C" {}
-
-// TODO: figure out how to remove these
-#[no_mangle]
-pub extern "C" fn fmod(a: f64, b: f64) -> f64 {
-    libm::fmod(a, b)
-}
-#[no_mangle]
-pub extern "C" fn fmodf(a: f32, b: f32) -> f32 {
-    libm::fmodf(a, b)
-}
-#[no_mangle]
-pub extern "C" fn fmin(a: f64, b: f64) -> f64 {
-    libm::fmin(a, b)
-}
-#[no_mangle]
-pub extern "C" fn fminf(a: f32, b: f32) -> f32 {
-    libm::fminf(a, b)
-}
-#[no_mangle]
-pub extern "C" fn fmax(a: f64, b: f64) -> f64 {
-    libm::fmax(a, b)
-}
-#[no_mangle]
-pub extern "C" fn fmaxf(a: f32, b: f32) -> f32 {
-    libm::fmaxf(a, b)
-}
-#[no_mangle]
-pub extern "C" fn __truncdfsf2(a: f64) -> f32 {
-    libm::trunc(a) as f32 // TODO: correct?
-}
 
 /// Called by `boot.S` after basic set up has been performed.
 ///
@@ -64,11 +33,14 @@ pub extern "C" fn __truncdfsf2(a: f64) -> f32 {
 #[no_mangle]
 extern "C" fn after_boot(multiboot_header: usize) -> ! {
     unsafe {
-        let _info = multiboot2::load(multiboot_header);
-        // TODO: do something with that?
-
         crate::mem_alloc::initialize();
-        init();
+
+        let _multiboot_info = multiboot2::load(multiboot_header);
+        // TODO: panics in BOCHS
+        //let acpi = acpi::load_acpi_tables(&multiboot_info);
+
+        init_pic_apic();
+        interrupts::init();
 
         let kernel = crate::kernel::Kernel::init(crate::kernel::KernelConfig {
             num_cpus: 1,
@@ -86,7 +58,7 @@ pub fn halt() -> ! {
     }
 }
 
-unsafe fn init() {
+unsafe fn init_pic_apic() {
     // Remap and disable the PIC.
     //
     // The PIC (Programmable Interrupt Controller) is the old chip responsible for triggering
@@ -128,8 +100,6 @@ unsafe fn init() {
         let val = svr_addr.read_volatile();
         svr_addr.write_volatile(val | 0x100); // Enable spurious interrupts.
     }
-
-    interrupts::init();
 }
 
 pub unsafe fn write_port_u8(port: u32, data: u8) {
