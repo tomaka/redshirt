@@ -12,7 +12,7 @@
     "emit-debug-gdb-scripts": false,
     "env": "",
     "executables": true,
-    "features": "+armv7-a",
+    "features": "+armv7-a,-slowfpvmlx,-vfp2,-vfp3,-vfp4,+soft-float",
     "linker": "ld.lld",
     "linker-flavor": "ld",
     "lld-flavor": "link",
