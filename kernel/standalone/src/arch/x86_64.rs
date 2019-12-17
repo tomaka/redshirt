@@ -80,6 +80,10 @@ fn find_free_memory_range(multiboot_info: &multiboot2::BootInformation) -> Range
     // from the portion of memory that we use.
     for section in elf_sections.sections() {
         if section.start_address() >= area_start && section.end_address() <= area_end {
+            /*         ↓ section_start    section_end ↓
+               ==================================================
+                  ↑ area_start                      area_end ↑
+            */
             let off_bef = section.start_address() - area_start;
             let off_aft = area_end - section.end_address();
             if off_bef > off_aft {
@@ -87,12 +91,27 @@ fn find_free_memory_range(multiboot_info: &multiboot2::BootInformation) -> Range
             } else {
                 area_start = section.end_address();
             }
+
         } else if section.start_address() < area_start && section.end_address() > area_end {
+            /*    ↓ section_start             section_end ↓
+               ==================================================
+                       ↑ area_start         area_end ↑
+            */
             // We have no memory available!
             panic!()
+
         } else if section.start_address() <= area_start && section.end_address() > area_start {
+            /*    ↓ section_start     section_end ↓
+               ==================================================
+                       ↑ area_start                 area_end ↑
+            */
             area_start = section.end_address();
+
         } else if section.start_address() < area_end && section.end_address() >= area_end {
+            /*         ↓ section_start      section_end ↓
+               ==================================================
+                  ↑ area_start         area_end ↑
+            */
             area_end = section.start_address();
         }
     }
