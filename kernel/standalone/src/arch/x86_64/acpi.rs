@@ -25,16 +25,24 @@ use core::ptr::NonNull;
 ///
 pub fn load_acpi_tables(multiboot_info: &multiboot2::BootInformation) -> acpi::Acpi {
     let mut err = None;
-    
+
     if let Some(rsdp_v2) = multiboot_info.rsdp_v2_tag() {
-        match acpi::parse_rsdt(&mut DummyHandler, rsdp_v2.revision(), rsdp_v2.xsdt_address()) {
+        match acpi::parse_rsdt(
+            &mut DummyHandler,
+            rsdp_v2.revision(),
+            rsdp_v2.xsdt_address(),
+        ) {
             Ok(acpi) => return acpi,
             Err(e) => err = Some(e),
         }
     }
-    
+
     if let Some(rsdp_v1) = multiboot_info.rsdp_v1_tag() {
-        match acpi::parse_rsdt(&mut DummyHandler, rsdp_v1.revision(), rsdp_v1.rsdt_address()) {
+        match acpi::parse_rsdt(
+            &mut DummyHandler,
+            rsdp_v1.revision(),
+            rsdp_v1.rsdt_address(),
+        ) {
             Ok(acpi) => return acpi,
             Err(e) => {
                 if err.is_none() {
