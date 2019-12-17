@@ -94,14 +94,11 @@ pub fn halt() -> ! {
     }
 }
 
-pub unsafe fn write_port_u8(port: u32, data: u8) {
-}
+pub unsafe fn write_port_u8(port: u32, data: u8) {}
 
-pub unsafe fn write_port_u16(port: u32, data: u16) {
-}
+pub unsafe fn write_port_u16(port: u32, data: u16) {}
 
-pub unsafe fn write_port_u32(port: u32, data: u32) {
-}
+pub unsafe fn write_port_u32(port: u32, data: u32) {}
 
 pub unsafe fn read_port_u8(port: u32) -> u8 {
     0
