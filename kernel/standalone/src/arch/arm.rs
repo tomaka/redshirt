@@ -15,6 +15,8 @@
 
 #![cfg(any(target_arch = "arm", target_arch = "aarch64"))]
 
+mod misc;
+
 // TODO: always fails :-/
 /*#[cfg(not(any(target_feature = "armv7-a", target_feature = "armv7-r")))]
 compile_error!("The ARMv7-A or ARMv7-R instruction sets must be enabled");*/
@@ -62,28 +64,6 @@ fn cpu_enter() -> ! {
     });
 
     kernel.run()
-}
-
-// TODO: figure out how to remove these
-#[no_mangle]
-pub extern "C" fn fmin(a: f64, b: f64) -> f64 {
-    libm::fmin(a, b)
-}
-#[no_mangle]
-pub extern "C" fn fminf(a: f32, b: f32) -> f32 {
-    libm::fminf(a, b)
-}
-#[no_mangle]
-pub extern "C" fn fmax(a: f64, b: f64) -> f64 {
-    libm::fmax(a, b)
-}
-#[no_mangle]
-pub extern "C" fn fmaxf(a: f32, b: f32) -> f32 {
-    libm::fmaxf(a, b)
-}
-#[no_mangle]
-pub extern "C" fn __aeabi_d2f(a: f64) -> f32 {
-    libm::trunc(a) as f32 // TODO: correct?
 }
 
 // TODO: no_mangle and naked because it's called at initialization; attributes should eventually be removed
