@@ -15,7 +15,7 @@
 
 #![cfg(target_arch = "x86_64")]
 
-use core::convert::TryFrom as _;
+use core::{convert::TryFrom as _, ops::Range};
 use x86_64::registers::model_specific::Msr;
 use x86_64::structures::port::{PortRead as _, PortWrite as _};
 
@@ -33,9 +33,10 @@ mod interrupts;
 #[no_mangle]
 extern "C" fn after_boot(multiboot_header: usize) -> ! {
     unsafe {
-        crate::mem_alloc::initialize();
+        let multiboot_info = multiboot2::load(multiboot_header);
 
-        let _multiboot_info = multiboot2::load(multiboot_header);
+        crate::mem_alloc::initialize(find_free_memory_range(&multiboot_info));
+
         // TODO: panics in BOCHS
         //let acpi = acpi::load_acpi_tables(&multiboot_info);
 
@@ -56,6 +57,49 @@ pub fn halt() -> ! {
     loop {
         unsafe { x86::halt() }
     }
+}
+
+/// Reads the boot information and find a memory range that can be used as a heap.
+///
+/// # Panic
+///
+/// Panics if the information is wrong or if there isn't enough information available.
+///
+fn find_free_memory_range(multiboot_info: &multiboot2::BootInformation) -> Range<usize> {
+    let mem_map = multiboot_info.memory_map_tag().unwrap();
+    let elf_sections = multiboot_info.elf_sections_tag().unwrap();
+
+    // TODO: we choose the largest area, as we have no way to use multiple areas in
+    // the allocator
+    let area = mem_map.memory_areas().max_by_key(|mem| mem.size()).unwrap();
+    let mut area_start = area.start_address();
+    let mut area_end = area.end_address();
+    debug_assert!(area_start <= area_end);
+
+    // The kernel has probably been loaded into RAM, so we have to remove ELF sections
+    // from the portion of memory that we use.
+    for section in elf_sections.sections() {
+        if section.start_address() >= area_start && section.end_address() <= area_end {
+            let off_bef = section.start_address() - area_start;
+            let off_aft = area_end - section.end_address();
+            if off_bef > off_aft {
+                area_end = section.start_address();
+            } else {
+                area_start = section.end_address();
+            }
+        } else if section.start_address() < area_start && section.end_address() > area_end {
+            // We have no memory available!
+            panic!()
+        } else if section.start_address() <= area_start && section.end_address() > area_start {
+            area_start = section.end_address();
+        } else if section.start_address() < area_end && section.end_address() >= area_end {
+            area_end = section.start_address();
+        }
+    }
+
+    let area_start = usize::try_from(area_start).unwrap();
+    let area_end = usize::try_from(area_end).unwrap();
+    area_start .. area_end
 }
 
 unsafe fn init_pic_apic() {
