@@ -67,6 +67,7 @@ extern "C" fn after_boot(multiboot_header: usize) -> ! {
         let _info = multiboot2::load(multiboot_header);
         // TODO: do something with that?
 
+        crate::mem_alloc::initialize();
         init();
 
         let kernel = crate::kernel::Kernel::init(crate::kernel::KernelConfig {
