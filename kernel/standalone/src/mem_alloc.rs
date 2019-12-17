@@ -13,22 +13,22 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-//! This program is meant to be invoked in a non-hosted environment. It never finishes.
+/// Initialize the memory allocator.
+pub fn initialize() {
+    // TODO: initialize allocator only once?
+    unsafe {
+        // TODO: don't have the HEAP here, but adjust it to the available RAM
+        static mut HEAP: [u8; 0x10000000] = [0; 0x10000000];
+        ALLOCATOR
+            .lock()
+            .init(HEAP.as_mut_ptr() as usize, HEAP.len());
+    }
+}
 
-#![no_std]
-#![no_main]
-#![feature(panic_info_message)] // TODO: https://github.com/rust-lang/rust/issues/66745
-#![feature(alloc_error_handler)] // TODO: https://github.com/rust-lang/rust/issues/66741
-#![cfg_attr(target_arch = "x86_64", feature(abi_x86_interrupt))] // TODO: https://github.com/rust-lang/rust/issues/40180
+#[global_allocator]
+static ALLOCATOR: linked_list_allocator::LockedHeap = linked_list_allocator::LockedHeap::empty();
 
-extern crate alloc;
-extern crate compiler_builtins;
-
-mod arch;
-mod hardware;
-mod kernel;
-mod mem_alloc;
-mod panic;
-
-// This contains nothing. As the main entry point of the kernel is platform-specific, it is
-// located in the `arch` module rather than here.
+#[alloc_error_handler]
+fn alloc_error_handler(_: core::alloc::Layout) -> ! {
+    panic!()
+}
