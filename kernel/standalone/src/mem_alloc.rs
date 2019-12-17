@@ -13,16 +13,26 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use core::ops::Range;
+
 /// Initialize the memory allocator.
-pub fn initialize() {
-    // TODO: initialize allocator only once?
-    unsafe {
-        // TODO: don't have the HEAP here, but adjust it to the available RAM
-        static mut HEAP: [u8; 0x10000000] = [0; 0x10000000];
-        ALLOCATOR
-            .lock()
-            .init(HEAP.as_mut_ptr() as usize, HEAP.len());
-    }
+///
+/// After this function returns, the memory allocator will use the memory range passed as
+/// parameter.
+///
+/// # Panics
+///
+/// Panics if `range.end` is inferior to `range.start`.
+///
+/// # Safety
+///
+/// The memory range has to be RAM or behave like RAM (i.e. both readable and writable,
+/// consistent, and so on). This memory range must not be touched by anything (other than the
+/// allocator) afterwards.
+///
+pub unsafe fn initialize(range: Range<usize>) {
+    assert!(range.end >= range.start);
+    ALLOCATOR.lock().init(range.start, range.end - range.start);
 }
 
 #[global_allocator]
