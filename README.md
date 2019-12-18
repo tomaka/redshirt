@@ -1,5 +1,6 @@
-Experiment to build some kind of operating-system-like environment where executables are all in
-WASM and are loaded from an IPFS-like decentralized network.
+The **redshirt** operating system is an experiment to build some kind of operating-system-like
+environment where executables are all in WASM and are loaded from an IPFS-like decentralized
+network.
 
 I'm frequently telling people what my vision of an operating system would be. Now I've started
 building it.
