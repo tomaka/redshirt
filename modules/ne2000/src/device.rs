@@ -13,21 +13,25 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use std::convert::TryFrom as _;
+use core::{convert::TryFrom as _, fmt, ops::Range};
 
 /// State of a device.
 //
 // # Device overview
 //
-// The ne2000 has a circular buffer of pages of 256 bytes each. Packets always have to be
-// aligned on pages boundaries. Only pages 0x40 to 0x60 are available for us to read/write on.
-// We store the .
+// The ne2000 has a circular buffer of pages of 256 bytes each. An Ethernet packet can occupy up
+// to six pages. Packets always have to be aligned on pages boundaries. Only pages 0x40 to 0x60
+// are available for us to read/write on.
 //
-// The device writes received packets to the buffer, and can transmit out packets by reading from
-// this buffer.
+// We use pages 0x40..0x4c (12 pages) to store the pages to transmit out. While the device is
+// sending it the packet at pages 0x40..0x46, we can write the packet at 0x46..0x4c, and
+// vice-versa.
 //
-// This buffer isn't available in physical memory. In order to access it from the host (i.e. us),
-// we have to use the DMA system of the chip.
+// We use pages 0x4c..0x60 (20 pages) for the device to read Ethereum packets in. When the
+// device reads a packet, we need to then read it through the DMA into RAM.
+//
+// The circular buffer containing the pages isn't available in physical memory. In order to access
+// it from the host (i.e. us), we have to use the DMA system of the chip.
 //
 // # Implementation note
 //
@@ -36,10 +40,18 @@ use std::convert::TryFrom as _;
 // If there's a need to change the registers page, it must be set back to 0 afterwards.
 //
 pub struct Device {
+    /// Base I/O port where to write commands to. All ports are derived from this one.
     base_port: u32,
-    next_packet: u32,
+    /// Next page to write to.
+    next_write_page: u32,
+    /// Page containing the next packet of incoming data to read.
+    next_to_read: u8,
+    /// MAC address of the device. // TODO: keep as a field? it isn't really useful
     mac_address: [u8; 6],
 }
+
+/// Range of pages that we use for the read ring buffer.
+const READ_BUFFER_PAGES: Range<u8> = 0x4c..0x60;
 
 impl Device {
     /// Assumes that an ne2000 device is mapped starting at `base_port` and reinitializes it
@@ -87,11 +99,12 @@ impl Device {
 
         // Start page address of the packet to be transmitted.
         redshirt_hardware_interface::port_write_u8(base_port + 4, 0x40);
-        // 0x46 to PSTART and BNRY.
-        redshirt_hardware_interface::port_write_u8(base_port + 1, 0x4b);
-        redshirt_hardware_interface::port_write_u8(base_port + 3, 0x4b);
-        // 0x60 to PSTOP (maximum value).
-        redshirt_hardware_interface::port_write_u8(base_port + 2, 0x60);
+
+        // Configuring the read ring buffer.
+        redshirt_hardware_interface::port_write_u8(base_port + 1, READ_BUFFER_PAGES.start);
+        redshirt_hardware_interface::port_write_u8(base_port + 3, READ_BUFFER_PAGES.start);
+        redshirt_hardware_interface::port_write_u8(base_port + 2, READ_BUFFER_PAGES.end);
+
         // Now enable interrupts.
         redshirt_hardware_interface::port_write_u8(base_port + 15, 0x1f);
 
@@ -113,11 +126,12 @@ impl Device {
             redshirt_hardware_interface::port_write_u8(base_port + 0 + n, 0xff);
         }
 
-        // Writing the CURR (Current Page Register).
-        // TODO: understand
-        redshirt_hardware_interface::port_write_u8(base_port + 7, 0x47);
+        // Writing the CURR (Current Page Register). This is the page where the device will write
+        // incoming packets.
+        redshirt_hardware_interface::port_write_u8(base_port + 7, READ_BUFFER_PAGES.start);
         // Registers to page 0. Abort/complete DMA and start.
         redshirt_hardware_interface::port_write_u8(base_port + 0, (1 << 5) | (1 << 1));
+
         // Transmit Configuration register. Normal operation.
         redshirt_hardware_interface::port_write_u8(base_port + 13, 0);
         // Receive Configuration register.
@@ -125,9 +139,76 @@ impl Device {
 
         Device {
             base_port,
-            next_packet: 0x47,
+            next_write_page: 0x40,
+            next_to_read: READ_BUFFER_PAGES.start,
             mac_address,
         }
+    }
+
+    /// Reads one packet of incoming data from the device's buffer.
+    ///
+    /// Returns `None` if there's no packet available.
+    async unsafe fn read_one_incoming(&mut self) -> Option<Vec<u8>> {
+        debug_assert!(self.next_to_read >= READ_BUFFER_PAGES.start);
+        debug_assert!(self.next_to_read < READ_BUFFER_PAGES.end);
+
+        // Read the value of the `CURR` register. It is automatically updated by the device
+        // when a packet is read. We compare it with `self.next_to_read` to know whether there
+        // is available data.
+        if self.read_curr_register().await == self.next_to_read {
+            return None;
+        }
+
+        // The device prepends each packet with a header.
+        let (status, next_packet_page, current_packet_len) = {
+            let mut out = [0; 4];
+            dma_read(self.base_port, &mut out, self.next_to_read).await;
+            let next = out[1];
+            let len = u16::from_le_bytes([out[2], out[3]]);
+            (out[0], out[1], len)
+        };
+
+        // TODO: check this status thing
+
+        debug_assert!(current_packet_len < 15522);       // TODO: is that correct?
+        let mut out_packet = vec![0; usize::from(current_packet_len)];
+        dma_read(self.base_port, &mut out_packet, self.next_to_read);
+
+        // Update `self.next_to_read` with the page of the next packet.
+        self.next_to_read = if next_packet_page == READ_BUFFER_PAGES.end {
+            READ_BUFFER_PAGES.start
+        } else {
+            next_packet_page
+        };
+
+        // Write in the BNRY (Boundary) register the address of the last page that we read.
+        // This prevents the device from potentially overwriting packets we haven't read yet.
+        if self.next_to_read == READ_BUFFER_PAGES.start {
+            redshirt_hardware_interface::port_write_u8(self.base_port + 3, READ_BUFFER_PAGES.end - 1);
+        } else {
+            redshirt_hardware_interface::port_write_u8(self.base_port + 3, self.next_to_read - 1);
+        }
+
+        Some(out_packet)
+    }
+
+    /// Reads the value of the `CURR` register, indicating the next page the device will write a
+    /// received packet to.
+    async unsafe fn read_curr_register(&mut self) -> u8 {
+        let mut ops = redshirt_hardware_interface::HardwareOperationsBuilder::new();
+
+        // Registers to page 1. Abort/complete DMA and start.
+        redshirt_hardware_interface::port_write_u8(self.base_port + 0, (1 << 6) | (1 << 5) | (1 << 1));
+
+        // Read the `CURR` register.
+        let mut out = 0;
+        ops.port_read_u8(self.base_port + 16, &mut out);
+
+        // Registers to page 0. Abort/complete DMA and start.
+        redshirt_hardware_interface::port_write_u8(self.base_port + 0, (1 << 5) | (1 << 1));
+    
+        ops.send().await;
+        out
     }
 
     unsafe fn send_packet(&mut self, packet: &[u8]) {
@@ -144,19 +225,28 @@ impl Device {
 
         // TODO: check available length
 
+        unimplemented!();
+
+        ops.send();
+
+        // TODO: wait until transmitted
+    }
+
+    /// Sends a command to the device to transmit out data from its circular buffer.
+    unsafe fn send_transmit_command(&mut self, page_start: u8, len: u16) {
+        let mut ops = redshirt_hardware_interface::HardwareWriteOperationsBuilder::new();
 
         // Set transmit page start to address where we wrote.
         ops.port_write_u8(self.base_port + 4, 0x40);
         // Length to transmit.
-        ops.port_write_u8(self.base_port + 5, packet_len_lo);
-        ops.port_write_u8(self.base_port + 6, packet_len_hi);
+        let len_bytes = len.to_le_bytes();
+        ops.port_write_u8(self.base_port + 5, len_bytes[0]);
+        ops.port_write_u8(self.base_port + 6, len_bytes[1]);
 
         // Abort/complete DMA + Transmit packet + Start.
         ops.port_write_u8(self.base_port + 0, (1 << 5) | (1 << 2) | (1 << 1));
 
         ops.send();
-
-        // TODO: wait until transmitted
     }
 
     pub async unsafe fn on_interrupt(&mut self) {
@@ -168,6 +258,9 @@ impl Device {
 
         if (status & (1 << 0)) != 0 {
             // Packet received with no error.
+            if let Some(packet) = read_one_incoming {
+                // TODO: implement
+            }
             // TODO: read packet
 
         } else if (status & (1 << 1)) != 0 || (status & (1 << 3)) != 0 {
@@ -175,6 +268,12 @@ impl Device {
             // differently than the successful situation.
             // TODO: inform of successful packet transfer
         }
+    }
+}
+
+impl fmt::Debug for Device {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_tuple("Device").finish()
     }
 }
 
