@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-pub use nametbd_time_interface::Instant;
+pub use redshirt_time_interface::Instant;
 
 use std::{fmt, future::Future, io, pin::Pin, task::Context, task::Poll, time::Duration};
 
@@ -21,19 +21,19 @@ use std::{fmt, future::Future, io, pin::Pin, task::Context, task::Poll, time::Du
 #[pin_project::pin_project]
 pub struct Delay {
     #[pin]
-    inner: nametbd_time_interface::Delay,
+    inner: redshirt_time_interface::Delay,
 }
 
 impl Delay {
     pub fn new(dur: Duration) -> Delay {
         Delay {
-            inner: nametbd_time_interface::Delay::new(dur),
+            inner: redshirt_time_interface::Delay::new(dur),
         }
     }
 
     pub fn new_at(at: Instant) -> Delay {
         Delay {
-            inner: nametbd_time_interface::Delay::new_at(at),
+            inner: redshirt_time_interface::Delay::new_at(at),
         }
     }
 

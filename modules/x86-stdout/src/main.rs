@@ -19,11 +19,11 @@ use parity_scale_codec::DecodeAll;
 use std::{convert::TryFrom as _, fmt};
 
 fn main() {
-    nametbd_syscalls_interface::block_on(async_main());
+    redshirt_syscalls_interface::block_on(async_main());
 }
 
 async fn async_main() -> ! {
-    nametbd_interface_interface::register_interface(nametbd_stdout_interface::ffi::INTERFACE)
+    redshirt_interface_interface::register_interface(redshirt_stdout_interface::ffi::INTERFACE)
         .await.unwrap();
 
     // TODO: properly initialize VGA? https://gist.github.com/tomaka/8a007d0e3c7064f419b24b044e152c22
@@ -31,12 +31,12 @@ async fn async_main() -> ! {
     let mut console = unsafe { Console::init() };
 
     loop {
-        let msg = match nametbd_syscalls_interface::next_interface_message().await {
-            nametbd_syscalls_interface::InterfaceOrDestroyed::Interface(m) => m,
-            nametbd_syscalls_interface::InterfaceOrDestroyed::ProcessDestroyed(_) => continue,
+        let msg = match redshirt_syscalls_interface::next_interface_message().await {
+            redshirt_syscalls_interface::InterfaceOrDestroyed::Interface(m) => m,
+            redshirt_syscalls_interface::InterfaceOrDestroyed::ProcessDestroyed(_) => continue,
         };
-        assert_eq!(msg.interface, nametbd_stdout_interface::ffi::INTERFACE);
-        let nametbd_stdout_interface::ffi::StdoutMessage::Message(message) =
+        assert_eq!(msg.interface, redshirt_stdout_interface::ffi::INTERFACE);
+        let redshirt_stdout_interface::ffi::StdoutMessage::Message(message) =
             DecodeAll::decode_all(&msg.actual_data).unwrap();       // TODO: don't unwrap
         console.write(&message);
     }
@@ -69,7 +69,7 @@ impl Console {
     /// Writes a message on the console.
     pub fn write(&mut self, message: &str) {
         unsafe {
-            let mut operation_builder = nametbd_hardware_interface::HardwareWriteOperationsBuilder::new();
+            let mut operation_builder = redshirt_hardware_interface::HardwareWriteOperationsBuilder::new();
 
             for chr in message.chars() {
                 if !chr.is_ascii() {
@@ -126,7 +126,7 @@ impl fmt::Write for Console {
 
 fn clear_screen() {
     unsafe {
-        nametbd_hardware_interface::write(
+        redshirt_hardware_interface::write(
             ptr_of(0, 0),
             (0..(80 * 25 * 2)).map(|_| 0).collect::<Vec<_>>()
         );

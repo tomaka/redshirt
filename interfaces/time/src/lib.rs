@@ -36,7 +36,7 @@ mod instant;
 pub async fn monotonic_clock() -> u128 {
     unsafe {
         let msg = ffi::TimeMessage::GetMonotonic;
-        nametbd_syscalls_interface::emit_message_with_response(ffi::INTERFACE, msg)
+        redshirt_syscalls_interface::emit_message_with_response(ffi::INTERFACE, msg)
             .await
             .unwrap()
     }
@@ -47,7 +47,7 @@ pub async fn monotonic_clock() -> u128 {
 pub async fn system_clock() -> u128 {
     unsafe {
         let msg = ffi::TimeMessage::GetSystem;
-        nametbd_syscalls_interface::emit_message_with_response(ffi::INTERFACE, msg)
+        redshirt_syscalls_interface::emit_message_with_response(ffi::INTERFACE, msg)
             .await
             .unwrap()
     }
@@ -58,7 +58,7 @@ pub async fn system_clock() -> u128 {
 pub async fn monotonic_wait_until(until: u128) {
     unsafe {
         let msg = ffi::TimeMessage::WaitMonotonic(until);
-        nametbd_syscalls_interface::emit_message_with_response(ffi::INTERFACE, msg)
+        redshirt_syscalls_interface::emit_message_with_response(ffi::INTERFACE, msg)
             .await
             .unwrap()
     }

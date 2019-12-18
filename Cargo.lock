@@ -576,203 +576,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "nametbd-cli-kernel"
-version = "0.1.0"
-dependencies = [
- "async-std 1.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "futures 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "nametbd-core 0.1.0",
- "nametbd-stdout-interface 0.1.0",
- "nametbd-tcp-hosted 0.1.0",
- "nametbd-tcp-interface 0.1.0",
- "nametbd-time-hosted 0.1.0",
- "nametbd-time-interface 0.1.0",
- "nametbd-wasi-hosted 0.1.0",
- "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "walkdir 2.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
- "wasi 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "nametbd-core"
-version = "0.1.0"
-dependencies = [
- "bs58 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "byteorder 1.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "futures 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "hashbrown 0.6.3 (registry+https://github.com/rust-lang/crates.io-index)",
- "nametbd-interface-interface 0.1.0",
- "nametbd-loader-interface 0.1.0",
- "nametbd-syscalls-interface 0.1.0",
- "nametbd-threads-interface 0.1.0",
- "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "rand 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "rand_chacha 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "rand_core 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "sha2 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "smallvec 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "spin 0.5.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "wasmi 0.6.2 (git+https://github.com/tomaka/wasmi?branch=no-std)",
- "wat 1.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "nametbd-hardware-interface"
-version = "0.1.0"
-dependencies = [
- "futures 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "nametbd-syscalls-interface 0.1.0",
- "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "nametbd-interface-interface"
-version = "0.1.0"
-dependencies = [
- "futures 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "nametbd-syscalls-interface 0.1.0",
- "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "nametbd-loader-interface"
-version = "0.1.0"
-dependencies = [
- "nametbd-syscalls-interface 0.1.0",
- "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "nametbd-random-interface"
-version = "0.1.0"
-dependencies = [
- "nametbd-syscalls-interface 0.1.0",
- "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "nametbd-standalone-kernel"
-version = "0.1.0"
-dependencies = [
- "acpi 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "cc 1.0.48 (registry+https://github.com/rust-lang/crates.io-index)",
- "compiler_builtins 0.1.23 (registry+https://github.com/rust-lang/crates.io-index)",
- "futures 0.3.1 (git+https://github.com/tomaka/futures-rs?branch=const-new-atomic-waker)",
- "lazy_static 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "libm 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "linked_list_allocator 0.6.4 (registry+https://github.com/rust-lang/crates.io-index)",
- "multiboot2 0.8.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "nametbd-core 0.1.0",
- "nametbd-hardware-interface 0.1.0",
- "nametbd-wasi-hosted 0.1.0",
- "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "walkdir 2.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
- "x86_64 0.8.2 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "nametbd-stdout-interface"
-version = "0.1.0"
-dependencies = [
- "nametbd-syscalls-interface 0.1.0",
- "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "nametbd-syscalls-interface"
-version = "0.1.0"
-dependencies = [
- "futures 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "hashbrown 0.6.3 (registry+https://github.com/rust-lang/crates.io-index)",
- "lazy_static 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "pin-project 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
- "spin 0.5.2 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "nametbd-tcp-hosted"
-version = "0.1.0"
-dependencies = [
- "async-std 1.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "fnv 1.0.6 (registry+https://github.com/rust-lang/crates.io-index)",
- "futures 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "nametbd-tcp-interface 0.1.0",
- "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "rand 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "nametbd-tcp-interface"
-version = "0.1.0"
-dependencies = [
- "futures 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "nametbd-syscalls-interface 0.1.0",
- "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "tokio-io 0.2.0-alpha.6 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "nametbd-threads-interface"
-version = "0.1.0"
-dependencies = [
- "nametbd-syscalls-interface 0.1.0",
- "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "nametbd-time-hosted"
-version = "0.1.0"
-dependencies = [
- "futures 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "futures-timer 2.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "lazy_static 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "nametbd-time-interface 0.1.0",
- "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "nametbd-time-interface"
-version = "0.1.0"
-dependencies = [
- "nametbd-syscalls-interface 0.1.0",
- "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "pin-project 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "nametbd-vulkan-interface"
-version = "0.1.0"
-dependencies = [
- "hashbrown 0.6.3 (registry+https://github.com/rust-lang/crates.io-index)",
- "nametbd-syscalls-interface 0.1.0",
- "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "xml-rs 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "nametbd-wasi-hosted"
-version = "0.1.0"
-dependencies = [
- "byteorder 1.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "hashbrown 0.6.3 (registry+https://github.com/rust-lang/crates.io-index)",
- "nametbd-core 0.1.0",
- "nametbd-random-interface 0.1.0",
- "nametbd-stdout-interface 0.1.0",
- "nametbd-time-interface 0.1.0",
- "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "nametbd-window-interface"
-version = "0.1.0"
-dependencies = [
- "futures 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "nametbd-syscalls-interface 0.1.0",
- "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
 name = "net2"
 version = "0.2.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -968,6 +771,203 @@ version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "rand_core 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "redshirt-cli-kernel"
+version = "0.1.0"
+dependencies = [
+ "async-std 1.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "futures 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "redshirt-core 0.1.0",
+ "redshirt-stdout-interface 0.1.0",
+ "redshirt-tcp-hosted 0.1.0",
+ "redshirt-tcp-interface 0.1.0",
+ "redshirt-time-hosted 0.1.0",
+ "redshirt-time-interface 0.1.0",
+ "redshirt-wasi-hosted 0.1.0",
+ "walkdir 2.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
+ "wasi 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "redshirt-core"
+version = "0.1.0"
+dependencies = [
+ "bs58 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "byteorder 1.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "futures 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "hashbrown 0.6.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rand 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rand_chacha 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rand_core 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "redshirt-interface-interface 0.1.0",
+ "redshirt-loader-interface 0.1.0",
+ "redshirt-syscalls-interface 0.1.0",
+ "redshirt-threads-interface 0.1.0",
+ "sha2 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "smallvec 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "spin 0.5.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "wasmi 0.6.2 (git+https://github.com/tomaka/wasmi?branch=no-std)",
+ "wat 1.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "redshirt-hardware-interface"
+version = "0.1.0"
+dependencies = [
+ "futures 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "redshirt-syscalls-interface 0.1.0",
+]
+
+[[package]]
+name = "redshirt-interface-interface"
+version = "0.1.0"
+dependencies = [
+ "futures 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "redshirt-syscalls-interface 0.1.0",
+]
+
+[[package]]
+name = "redshirt-loader-interface"
+version = "0.1.0"
+dependencies = [
+ "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "redshirt-syscalls-interface 0.1.0",
+]
+
+[[package]]
+name = "redshirt-random-interface"
+version = "0.1.0"
+dependencies = [
+ "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "redshirt-syscalls-interface 0.1.0",
+]
+
+[[package]]
+name = "redshirt-standalone-kernel"
+version = "0.1.0"
+dependencies = [
+ "acpi 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "cc 1.0.48 (registry+https://github.com/rust-lang/crates.io-index)",
+ "compiler_builtins 0.1.23 (registry+https://github.com/rust-lang/crates.io-index)",
+ "futures 0.3.1 (git+https://github.com/tomaka/futures-rs?branch=const-new-atomic-waker)",
+ "lazy_static 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "libm 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "linked_list_allocator 0.6.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "multiboot2 0.8.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "redshirt-core 0.1.0",
+ "redshirt-hardware-interface 0.1.0",
+ "redshirt-wasi-hosted 0.1.0",
+ "walkdir 2.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
+ "x86_64 0.8.2 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "redshirt-stdout-interface"
+version = "0.1.0"
+dependencies = [
+ "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "redshirt-syscalls-interface 0.1.0",
+]
+
+[[package]]
+name = "redshirt-syscalls-interface"
+version = "0.1.0"
+dependencies = [
+ "futures 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "hashbrown 0.6.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "lazy_static 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "pin-project 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "spin 0.5.2 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "redshirt-tcp-hosted"
+version = "0.1.0"
+dependencies = [
+ "async-std 1.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "fnv 1.0.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "futures 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rand 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "redshirt-tcp-interface 0.1.0",
+]
+
+[[package]]
+name = "redshirt-tcp-interface"
+version = "0.1.0"
+dependencies = [
+ "futures 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "redshirt-syscalls-interface 0.1.0",
+ "tokio-io 0.2.0-alpha.6 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "redshirt-threads-interface"
+version = "0.1.0"
+dependencies = [
+ "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "redshirt-syscalls-interface 0.1.0",
+]
+
+[[package]]
+name = "redshirt-time-hosted"
+version = "0.1.0"
+dependencies = [
+ "futures 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "futures-timer 2.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "lazy_static 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "redshirt-time-interface 0.1.0",
+]
+
+[[package]]
+name = "redshirt-time-interface"
+version = "0.1.0"
+dependencies = [
+ "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "pin-project 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "redshirt-syscalls-interface 0.1.0",
+]
+
+[[package]]
+name = "redshirt-vulkan-interface"
+version = "0.1.0"
+dependencies = [
+ "hashbrown 0.6.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "redshirt-syscalls-interface 0.1.0",
+ "xml-rs 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "redshirt-wasi-hosted"
+version = "0.1.0"
+dependencies = [
+ "byteorder 1.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "hashbrown 0.6.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "redshirt-core 0.1.0",
+ "redshirt-random-interface 0.1.0",
+ "redshirt-stdout-interface 0.1.0",
+ "redshirt-time-interface 0.1.0",
+]
+
+[[package]]
+name = "redshirt-window-interface"
+version = "0.1.0"
+dependencies = [
+ "futures 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "redshirt-syscalls-interface 0.1.0",
 ]
 
 [[package]]

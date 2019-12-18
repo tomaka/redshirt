@@ -19,46 +19,46 @@ use parity_scale_codec::DecodeAll;
 use std::time::Duration;
 
 fn main() {
-    nametbd_syscalls_interface::block_on(async_main())
+    redshirt_syscalls_interface::block_on(async_main())
 }
 
 async fn async_main() {
-    nametbd_time_interface::monotonic_wait(Duration::from_secs(5)).await;
+    redshirt_time_interface::monotonic_wait(Duration::from_secs(5)).await;
 
-    nametbd_interface_interface::register_interface(nametbd_loader_interface::ffi::INTERFACE)
+    redshirt_interface_interface::register_interface(redshirt_loader_interface::ffi::INTERFACE)
         .await
         .unwrap();
 
     let mut network = Network::start();
 
     loop {
-        let next_interface = nametbd_syscalls_interface::next_interface_message();
+        let next_interface = redshirt_syscalls_interface::next_interface_message();
         let next_net_event = Box::pin(network.next_event());
         let msg = match future::select(next_interface, next_net_event).await {
             future::Either::Left((
-                nametbd_syscalls_interface::InterfaceOrDestroyed::Interface(m),
+                redshirt_syscalls_interface::InterfaceOrDestroyed::Interface(m),
                 _,
             )) => m,
             future::Either::Left((
-                nametbd_syscalls_interface::InterfaceOrDestroyed::ProcessDestroyed(_),
+                redshirt_syscalls_interface::InterfaceOrDestroyed::ProcessDestroyed(_),
                 _,
             )) => continue,
             future::Either::Right((NetworkEvent::FetchSuccess { data, user_data }, _)) => {
-                let rp = nametbd_loader_interface::ffi::LoadResponse { result: Ok(data) };
-                nametbd_syscalls_interface::emit_answer(user_data, &rp);
+                let rp = redshirt_loader_interface::ffi::LoadResponse { result: Ok(data) };
+                redshirt_syscalls_interface::emit_answer(user_data, &rp);
                 continue;
             }
             future::Either::Right((NetworkEvent::FetchFail { user_data }, _)) => {
-                let rp = nametbd_loader_interface::ffi::LoadResponse { result: Err(()) };
-                nametbd_syscalls_interface::emit_answer(user_data, &rp);
+                let rp = redshirt_loader_interface::ffi::LoadResponse { result: Err(()) };
+                redshirt_syscalls_interface::emit_answer(user_data, &rp);
                 continue;
             }
         };
 
-        assert_eq!(msg.interface, nametbd_loader_interface::ffi::INTERFACE);
+        assert_eq!(msg.interface, redshirt_loader_interface::ffi::INTERFACE);
         let msg_data =
-            nametbd_loader_interface::ffi::LoaderMessage::decode_all(&msg.actual_data).unwrap();
-        let nametbd_loader_interface::ffi::LoaderMessage::Load(hash_to_load) = msg_data;
+            redshirt_loader_interface::ffi::LoaderMessage::decode_all(&msg.actual_data).unwrap();
+        let redshirt_loader_interface::ffi::LoaderMessage::Load(hash_to_load) = msg_data;
         network.start_fetch(&hash_to_load, msg.message_id.unwrap());
     }
 }

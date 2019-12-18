@@ -14,9 +14,9 @@ libp2p-mplex = { git = "https://github.com/tomaka/libp2p-rs", branch = "stable-f
 libp2p-plaintext = { git = "https://github.com/tomaka/libp2p-rs", branch = "stable-fut-wasi" }
 libp2p-swarm = { git = "https://github.com/tomaka/libp2p-rs", branch = "stable-fut-wasi" }
 log = "0.4"
-nametbd-interface-interface = { path = "../../interfaces/interface" }
-nametbd-loader-interface = { path = "../../interfaces/loader" }
-nametbd-syscalls-interface = { path = "../../interfaces/syscalls" }
-nametbd-tcp-interface = { path = "../../interfaces/tcp" }
-nametbd-time-interface = { path = "../../interfaces/time" }
+redshirt-interface-interface = { path = "../../interfaces/interface" }
+redshirt-loader-interface = { path = "../../interfaces/loader" }
+redshirt-syscalls-interface = { path = "../../interfaces/syscalls" }
+redshirt-tcp-interface = { path = "../../interfaces/tcp" }
+redshirt-time-interface = { path = "../../interfaces/time" }
 parity-scale-codec = "1.0.5"
