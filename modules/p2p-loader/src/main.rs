@@ -14,7 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use futures::prelude::*;
-use ipfs::{Network, NetworkEvent};
+use p2p_loader::{Network, NetworkEvent};
 use parity_scale_codec::DecodeAll;
 use std::time::Duration;
 

@@ -18,11 +18,7 @@
 //! The `hardware` interface is particular in that it can only be implemented using a "hosted"
 //! implementation.
 
-#![no_std]
-
-extern crate alloc;
-
-mod arch;
+use crate::arch;
 
 use alloc::vec::Vec;
 use core::{convert::TryFrom as _, marker::PhantomData};
@@ -46,7 +42,7 @@ where
     }
 
     /// Processes a message on the `hardware` interface, and optionally returns an answer to
-    /// immediately send  back.
+    /// immediately send back.
     pub fn hardware_message(
         &self,
         message_id: Option<TMsgId>,

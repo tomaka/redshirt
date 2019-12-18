@@ -7,7 +7,7 @@ edition = "2018"
 publish = false
 
 [dependencies]
-nametbd-hardware-interface = { path = "../../interfaces/hardware" }
+nametbd-hardware-interface = { path = "../../interfaces/hardware", default-features = false }
 nametbd-interface-interface = { path = "../../interfaces/interface" }
 nametbd-stdout-interface = { path = "../../interfaces/stdout" }
 nametbd-syscalls-interface = { path = "../../interfaces/syscalls" }

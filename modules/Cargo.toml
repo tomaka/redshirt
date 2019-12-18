@@ -2,8 +2,8 @@
 members = [
     "hello-world",
     "http-server",
-    "ipfs",
     "network-manager",
+    "p2p-loader",
     "third-party/time",
     "third-party/wasm-timer",
     "vulkan-triangle",

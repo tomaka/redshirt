@@ -13,36 +13,35 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use core::fmt;
+#[link(name = "boot")]
+extern "C" {}
 
-mod ipc;
-mod processes;
-mod tests;
-mod vm;
-
-// TODO: move definition?
-pub use self::ipc::{Core, CoreBuilder, CoreProcess, CoreRunOutcome};
-pub use self::processes::ThreadId;
-
-/// Identifier of a running process within a core.
-// TODO: move to a Pid module?
-#[derive(Copy, Clone, PartialEq, Eq, Hash)]
-pub struct Pid(u64);
-
-impl From<u64> for Pid {
-    fn from(id: u64) -> Pid {
-        Pid(id)
-    }
+// TODO: figure out how to remove these
+#[no_mangle]
+pub extern "C" fn fmod(a: f64, b: f64) -> f64 {
+    libm::fmod(a, b)
 }
-
-impl From<Pid> for u64 {
-    fn from(pid: Pid) -> u64 {
-        pid.0
-    }
+#[no_mangle]
+pub extern "C" fn fmodf(a: f32, b: f32) -> f32 {
+    libm::fmodf(a, b)
 }
-
-impl fmt::Debug for Pid {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "#{}", self.0)
-    }
+#[no_mangle]
+pub extern "C" fn fmin(a: f64, b: f64) -> f64 {
+    libm::fmin(a, b)
+}
+#[no_mangle]
+pub extern "C" fn fminf(a: f32, b: f32) -> f32 {
+    libm::fminf(a, b)
+}
+#[no_mangle]
+pub extern "C" fn fmax(a: f64, b: f64) -> f64 {
+    libm::fmax(a, b)
+}
+#[no_mangle]
+pub extern "C" fn fmaxf(a: f32, b: f32) -> f32 {
+    libm::fmaxf(a, b)
+}
+#[no_mangle]
+pub extern "C" fn __truncdfsf2(a: f64) -> f32 {
+    libm::trunc(a) as f32 // TODO: correct?
 }
