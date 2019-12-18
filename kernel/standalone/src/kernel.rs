@@ -40,26 +40,9 @@ pub struct KernelConfig {
     pub num_cpus: u32,
 }
 
-#[global_allocator]
-static ALLOCATOR: linked_list_allocator::LockedHeap = linked_list_allocator::LockedHeap::empty();
-
-#[alloc_error_handler]
-fn alloc_error_handler(_: core::alloc::Layout) -> ! {
-    panic!()
-}
-
 impl Kernel {
     /// Initializes a new `Kernel`.
     pub fn init(_cfg: KernelConfig) -> Self {
-        // TODO: initialize allocator only once?
-        unsafe {
-            // TODO: don't have the HEAP here, but adjust it to the available RAM
-            static mut HEAP: [u8; 0x10000000] = [0; 0x10000000];
-            ALLOCATOR
-                .lock()
-                .init(HEAP.as_mut_ptr() as usize, HEAP.len());
-        }
-
         Kernel {
             running: AtomicBool::new(false),
         }
@@ -72,7 +55,7 @@ impl Kernel {
             crate::arch::halt();
         }
 
-        let hardware = nametbd_hardware::HardwareHandler::new();
+        let hardware = crate::hardware::HardwareHandler::new();
 
         let hello_module = nametbd_core::module::Module::from_bytes(
             &include_bytes!("../../../modules/target/wasm32-wasi/release/hello-world.wasm")[..],

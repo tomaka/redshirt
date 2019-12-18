@@ -18,12 +18,7 @@
 //! The `hardware` interface is particular in that it can only be implemented using a "hosted"
 //! implementation.
 
-#![cfg_attr(target_arch = "x86_64", feature(abi_x86_interrupt))]
-#![no_std]
-
-extern crate alloc;
-
-mod arch;
+use crate::arch;
 
 use alloc::vec::Vec;
 use core::{convert::TryFrom as _, marker::PhantomData};
@@ -41,10 +36,6 @@ where
 {
     /// Initializes the new state machine for hardware accesses.
     pub fn new() -> Self {
-        unsafe {
-            arch::init();
-        }
-
         HardwareHandler {
             marker: PhantomData,
         }
