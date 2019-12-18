@@ -57,29 +57,29 @@ impl Kernel {
 
         let hardware = crate::hardware::HardwareHandler::new();
 
-        let hello_module = nametbd_core::module::Module::from_bytes(
+        let hello_module = redshirt_core::module::Module::from_bytes(
             &include_bytes!("../../../modules/target/wasm32-wasi/release/hello-world.wasm")[..],
         )
         .unwrap();
 
-        let stdout_module = nametbd_core::module::Module::from_bytes(
+        let stdout_module = redshirt_core::module::Module::from_bytes(
             &include_bytes!("../../../modules/target/wasm32-wasi/release/x86-stdout.wasm")[..],
         )
         .unwrap();
 
-        let pci_module = nametbd_core::module::Module::from_bytes(
+        let pci_module = redshirt_core::module::Module::from_bytes(
             &include_bytes!("../../../modules/target/wasm32-wasi/release/x86-pci.wasm")[..],
         )
         .unwrap();
 
-        let ne2000_module = nametbd_core::module::Module::from_bytes(
+        let ne2000_module = redshirt_core::module::Module::from_bytes(
             &include_bytes!("../../../modules/target/wasm32-wasi/release/ne2000.wasm")[..],
         )
         .unwrap();
 
         let mut system =
-            nametbd_wasi_hosted::register_extrinsics(nametbd_core::system::SystemBuilder::new())
-                .with_interface_handler(nametbd_hardware_interface::ffi::INTERFACE)
+            redshirt_wasi_hosted::register_extrinsics(redshirt_core::system::SystemBuilder::new())
+                .with_interface_handler(redshirt_hardware_interface::ffi::INTERFACE)
                 .with_startup_process(stdout_module)
                 .with_startup_process(hello_module)
                 .with_startup_process(pci_module)
@@ -87,18 +87,18 @@ impl Kernel {
                 .with_main_program([0; 32]) // TODO: just a test
                 .build();
 
-        let mut wasi = nametbd_wasi_hosted::WasiStateMachine::new();
+        let mut wasi = redshirt_wasi_hosted::WasiStateMachine::new();
 
         loop {
             match system.run() {
-                nametbd_core::system::SystemRunOutcome::Idle => {
+                redshirt_core::system::SystemRunOutcome::Idle => {
                     // TODO: If we don't support any interface or extrinsic, then `Idle` shouldn't
                     // happen. In a normal situation, this is when we would check the status of the
                     // "externalities", such as the timer.
                     //panic!("idle");
                     crate::arch::halt();
                 }
-                nametbd_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
+                redshirt_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
                     pid,
                     thread_id,
                     extrinsic,
@@ -106,16 +106,16 @@ impl Kernel {
                 } => {
                     let out =
                         wasi.handle_extrinsic_call(&mut system, extrinsic, pid, thread_id, params);
-                    if let nametbd_wasi_hosted::HandleOut::EmitMessage {
+                    if let redshirt_wasi_hosted::HandleOut::EmitMessage {
                         id,
                         interface,
                         message,
                     } = out
                     {
-                        /*if interface == nametbd_stdout_interface::ffi::INTERFACE {
+                        /*if interface == redshirt_stdout_interface::ffi::INTERFACE {
                             let msg =
-                                nametbd_stdout_interface::ffi::StdoutMessage::decode_all(&message);
-                            let nametbd_stdout_interface::ffi::StdoutMessage::Message(msg) =
+                                redshirt_stdout_interface::ffi::StdoutMessage::decode_all(&message);
+                            let redshirt_stdout_interface::ffi::StdoutMessage::Message(msg) =
                                 msg.unwrap();
                             console.write(&msg);
                         } else {*/
@@ -123,14 +123,14 @@ impl Kernel {
                         //}
                     }
                 }
-                nametbd_core::system::SystemRunOutcome::ProgramFinished { pid, outcome } => {
+                redshirt_core::system::SystemRunOutcome::ProgramFinished { pid, outcome } => {
                     //console.write(&format!("Program finished {:?} => {:?}\n", pid, outcome));
                 }
-                nametbd_core::system::SystemRunOutcome::InterfaceMessage {
+                redshirt_core::system::SystemRunOutcome::InterfaceMessage {
                     interface,
                     message,
                     message_id,
-                } if interface == nametbd_hardware_interface::ffi::INTERFACE => {
+                } if interface == redshirt_hardware_interface::ffi::INTERFACE => {
                     if let Some(answer) = hardware.hardware_message(message_id, &message) {
                         let answer = match &answer {
                             Ok(v) => Ok(&v[..]),

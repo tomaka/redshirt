@@ -130,12 +130,12 @@ where
         &self,
         //emitter_pid: u64,     // TODO: also notify the TcpState when a process exits, for clean up
         message_id: Option<TMsgId>,
-        message: nametbd_tcp_interface::ffi::TcpMessage,
+        message: redshirt_tcp_interface::ffi::TcpMessage,
     ) {
         let mut sockets = self.sockets.lock().await;
 
         match message {
-            nametbd_tcp_interface::ffi::TcpMessage::Open(open) => {
+            redshirt_tcp_interface::ffi::TcpMessage::Open(open) => {
                 let message_id = message_id.unwrap(); // TODO: don't unwrap; but what to do?
                 let socket_addr = {
                     let ip_addr = Ipv6Addr::from(open.ip);
@@ -168,7 +168,7 @@ where
                 }
             }
 
-            nametbd_tcp_interface::ffi::TcpMessage::Listen(listen) => {
+            redshirt_tcp_interface::ffi::TcpMessage::Listen(listen) => {
                 let message_id = message_id.unwrap(); // TODO: don't unwrap; but what to do?
                 let socket_addr = {
                     let ip_addr = Ipv6Addr::from(listen.local_ip);
@@ -201,11 +201,11 @@ where
                 }
             }
 
-            nametbd_tcp_interface::ffi::TcpMessage::Close(close) => {
+            redshirt_tcp_interface::ffi::TcpMessage::Close(close) => {
                 let _ = sockets.remove(&close.socket_id);
             }
 
-            nametbd_tcp_interface::ffi::TcpMessage::Accept(accept) => {
+            redshirt_tcp_interface::ffi::TcpMessage::Accept(accept) => {
                 let message_id = message_id.unwrap(); // TODO: don't unwrap; but what to do?
                 sockets
                     .get_mut(&accept.socket_id)
@@ -217,7 +217,7 @@ where
                     .unwrap(); // TODO: don't unwrap; but what to do?
             }
 
-            nametbd_tcp_interface::ffi::TcpMessage::Read(read) => {
+            redshirt_tcp_interface::ffi::TcpMessage::Read(read) => {
                 let message_id = message_id.unwrap(); // TODO: don't unwrap; but what to do?
                 sockets
                     .get_mut(&read.socket_id)
@@ -229,7 +229,7 @@ where
                     .unwrap(); // TODO: don't unwrap; but what to do?
             }
 
-            nametbd_tcp_interface::ffi::TcpMessage::Write(write) => {
+            redshirt_tcp_interface::ffi::TcpMessage::Write(write) => {
                 let message_id = message_id.unwrap(); // TODO: don't unwrap; but what to do?
                 sockets
                     .get_mut(&write.socket_id)
@@ -266,7 +266,7 @@ where
 
                 (
                     open_message_id,
-                    nametbd_tcp_interface::ffi::TcpOpenResponse {
+                    redshirt_tcp_interface::ffi::TcpOpenResponse {
                         result: Ok(socket_id),
                     }
                     .encode(),
@@ -286,7 +286,7 @@ where
 
                 (
                     open_message_id,
-                    nametbd_tcp_interface::ffi::TcpOpenResponse { result: Err(()) }.encode(),
+                    redshirt_tcp_interface::ffi::TcpOpenResponse { result: Err(()) }.encode(),
                 )
             }
 
@@ -303,7 +303,7 @@ where
 
                 (
                     listen_message_id,
-                    nametbd_tcp_interface::ffi::TcpListenResponse {
+                    redshirt_tcp_interface::ffi::TcpListenResponse {
                         result: Ok((socket_id, local_addr.port())),
                     }
                     .encode(),
@@ -323,7 +323,7 @@ where
 
                 (
                     listen_message_id,
-                    nametbd_tcp_interface::ffi::TcpListenResponse { result: Err(()) }.encode(),
+                    redshirt_tcp_interface::ffi::TcpListenResponse { result: Err(()) }.encode(),
                 )
             }
 
@@ -355,7 +355,7 @@ where
 
                 (
                     message_id,
-                    nametbd_tcp_interface::ffi::TcpAcceptResponse {
+                    redshirt_tcp_interface::ffi::TcpAcceptResponse {
                         accepted_socket_id: tentative_socket_id,
                         remote_ip,
                         remote_port,
@@ -366,12 +366,12 @@ where
 
             BackToFront::Read { message_id, result } => (
                 message_id,
-                nametbd_tcp_interface::ffi::TcpReadResponse { result }.encode(),
+                redshirt_tcp_interface::ffi::TcpReadResponse { result }.encode(),
             ),
 
             BackToFront::Write { message_id, result } => (
                 message_id,
-                nametbd_tcp_interface::ffi::TcpWriteResponse { result }.encode(),
+                redshirt_tcp_interface::ffi::TcpWriteResponse { result }.encode(),
             ),
         }
     }

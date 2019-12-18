@@ -33,6 +33,6 @@ pub mod ffi;
 pub fn stdout(msg: String) {
     unsafe {
         let msg = ffi::StdoutMessage::Message(msg);
-        nametbd_syscalls_interface::emit_message(&ffi::INTERFACE, &msg, false).unwrap();
+        redshirt_syscalls_interface::emit_message(&ffi::INTERFACE, &msg, false).unwrap();
     }
 }

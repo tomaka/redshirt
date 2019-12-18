@@ -25,11 +25,11 @@ use std::{borrow::Cow, convert::TryFrom as _};
 include!(concat!(env!("OUT_DIR"), "/build-pci.rs"));
 
 fn main() {
-    nametbd_syscalls_interface::block_on(async_main());
+    redshirt_syscalls_interface::block_on(async_main());
 }
 
 async fn async_main() {
-    nametbd_interface_interface::register_interface(nametbd_pci_interface::ffi::INTERFACE)
+    redshirt_interface_interface::register_interface(redshirt_pci_interface::ffi::INTERFACE)
         .await.unwrap();
 
     let devices = unsafe {
@@ -37,14 +37,14 @@ async fn async_main() {
     };
 
     loop {
-        let msg = match nametbd_syscalls_interface::next_interface_message().await {
-            nametbd_syscalls_interface::InterfaceOrDestroyed::Interface(m) => m,
-            nametbd_syscalls_interface::InterfaceOrDestroyed::ProcessDestroyed(_) => continue,
+        let msg = match redshirt_syscalls_interface::next_interface_message().await {
+            redshirt_syscalls_interface::InterfaceOrDestroyed::Interface(m) => m,
+            redshirt_syscalls_interface::InterfaceOrDestroyed::ProcessDestroyed(_) => continue,
         };
-        assert_eq!(msg.interface, nametbd_pci_interface::ffi::INTERFACE);
-        let nametbd_pci_interface::ffi::PciMessage::GetDevicesList =
+        assert_eq!(msg.interface, redshirt_pci_interface::ffi::INTERFACE);
+        let redshirt_pci_interface::ffi::PciMessage::GetDevicesList =
             DecodeAll::decode_all(&msg.actual_data).unwrap();       // TODO: don't unwrap
-        nametbd_syscalls_interface::emit_answer(msg.message_id.unwrap(), &nametbd_pci_interface::ffi::GetDevicesListResponse {
+        redshirt_syscalls_interface::emit_answer(msg.message_id.unwrap(), &redshirt_pci_interface::ffi::GetDevicesListResponse {
             devices: devices.clone(),
         });
     }
@@ -54,13 +54,13 @@ lazy_static::lazy_static! {
     static ref PCI_DEVICES: hashbrown::HashMap<(u16, u16), (&'static str, &'static str)> = build_pci_info();
 }
 
-async unsafe fn read_pci_devices() -> Vec<nametbd_pci_interface::PciDeviceInfo> {
+async unsafe fn read_pci_devices() -> Vec<redshirt_pci_interface::PciDeviceInfo> {
     // https://wiki.osdev.org/PCI
     let pci_devices = build_pci_info();
     read_bus_pci_devices(0).await
 }
 
-async unsafe fn read_bus_pci_devices(bus_idx: u8) -> Vec<nametbd_pci_interface::PciDeviceInfo> {
+async unsafe fn read_bus_pci_devices(bus_idx: u8) -> Vec<redshirt_pci_interface::PciDeviceInfo> {
     let mut out = Vec::new();
 
     for device_idx in 0 .. 32 {
@@ -92,7 +92,7 @@ async unsafe fn read_bus_pci_devices(bus_idx: u8) -> Vec<nametbd_pci_interface::
 
             let class_code = pci_cfg_read_u32(bus_idx, device_idx, func_idx, 0x8).await;
 
-            out.push(nametbd_pci_interface::PciDeviceInfo {
+            out.push(redshirt_pci_interface::PciDeviceInfo {
                 vendor_id,
                 device_id,
                 base_address_registers: {
@@ -102,13 +102,13 @@ async unsafe fn read_bus_pci_devices(bus_idx: u8) -> Vec<nametbd_pci_interface::
                         list.push(if (bar & 0x1) == 0 {
                             let prefetchable = (bar & (1 << 3)) != 0;
                             let base_address = bar & !0b1111;
-                            nametbd_pci_interface::PciBaseAddressRegister::Memory {
+                            redshirt_pci_interface::PciBaseAddressRegister::Memory {
                                 base_address,
                                 prefetchable,
                             }
                         } else {
                             let base_address = bar & !0b11;
-                            nametbd_pci_interface::PciBaseAddressRegister::Io {
+                            redshirt_pci_interface::PciBaseAddressRegister::Io {
                                 base_address,
                             }
                         });
@@ -117,7 +117,7 @@ async unsafe fn read_bus_pci_devices(bus_idx: u8) -> Vec<nametbd_pci_interface::
                 },
             });
 
-            nametbd_stdout_interface::stdout(format!("PCI device: {} - {}\n", vendor_name, device_name));
+            redshirt_stdout_interface::stdout(format!("PCI device: {} - {}\n", vendor_name, device_name));
 
             // TODO: wrong; need to enumerate other PCI buses
         }
@@ -140,7 +140,7 @@ async unsafe fn pci_cfg_read_u32(bus: u8, slot: u8, func: u8, offset: u8) -> u32
         (u32::from(func) << 8) |
         u32::from(offset);
 
-    let mut operations_builder = nametbd_hardware_interface::HardwareOperationsBuilder::new();
+    let mut operations_builder = redshirt_hardware_interface::HardwareOperationsBuilder::new();
     operations_builder.port_write_u32(0xcf8, addr);
     let mut out = 0;
     // TODO: is it correct to immediately read back afterwards without delay? seems weird to me

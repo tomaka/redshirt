@@ -46,32 +46,32 @@ impl Device {
     /// to a starting state.
     pub async unsafe fn reset(base_port: u32) -> Self {
         // Reads the RESET register and write its value back in order to reset the device.
-        nametbd_hardware_interface::port_write_u8(
+        redshirt_hardware_interface::port_write_u8(
             base_port + 0x1f,
-            nametbd_hardware_interface::port_read_u8(base_port + 0x1f).await
+            redshirt_hardware_interface::port_read_u8(base_port + 0x1f).await
         );
 
         // Wait for reset to be complete.
         loop {
-            let val = nametbd_hardware_interface::port_read_u8(base_port + 7).await;
+            let val = redshirt_hardware_interface::port_read_u8(base_port + 7).await;
             if (val & 0x80) != 0 { break }      // TODO: fail after trying too many times
         }
 
         // Clear interrupts.
         // When an interrupt is triggered, a bit of this register is set to 1. Writing 1 resets it.
         // We reset all.
-        nametbd_hardware_interface::port_write_u8(base_port + 7, 0xff);
+        redshirt_hardware_interface::port_write_u8(base_port + 7, 0xff);
 
         // Abort DMA and stop.
-        nametbd_hardware_interface::port_write_u8(base_port + 0, (1 << 5) | (1 << 0));
+        redshirt_hardware_interface::port_write_u8(base_port + 0, (1 << 5) | (1 << 0));
 
         // Packets with multicast addresses, broadcast addresses and small are all accepted.
-        nametbd_hardware_interface::port_write_u8(base_port + 12, (1 << 3) | (1 << 2) | (1 << 1));
+        redshirt_hardware_interface::port_write_u8(base_port + 12, (1 << 3) | (1 << 2) | (1 << 1));
         // External lookback. // TODO: is this how we read our MAC?
-        nametbd_hardware_interface::port_write_u8(base_port + 13, 1 << 2);
+        redshirt_hardware_interface::port_write_u8(base_port + 13, 1 << 2);
 
         // TODO: understand
-        nametbd_hardware_interface::port_write_u8(base_port + 14, (1 << 6) | (1 << 4) | (1 << 3));
+        redshirt_hardware_interface::port_write_u8(base_port + 14, (1 << 6) | (1 << 4) | (1 << 3));
 
         // Read our MAC address.
         let mac_address: [u8; 6] = {
@@ -81,28 +81,28 @@ impl Device {
             [buffer[0], buffer[2], buffer[4], buffer[6], buffer[8], buffer[10]]
         };
 
-        nametbd_stdout_interface::stdout(
+        redshirt_stdout_interface::stdout(
             format!("MAC: {:x} {:x} {:x} {:x} {:x} {:x}\n", mac_address[0], mac_address[1], mac_address[2], mac_address[3], mac_address[4], mac_address[5])
         );
 
         // Start page address of the packet to be transmitted.
-        nametbd_hardware_interface::port_write_u8(base_port + 4, 0x40);
+        redshirt_hardware_interface::port_write_u8(base_port + 4, 0x40);
         // 0x46 to PSTART and BNRY.
-        nametbd_hardware_interface::port_write_u8(base_port + 1, 0x4b);
-        nametbd_hardware_interface::port_write_u8(base_port + 3, 0x4b);
+        redshirt_hardware_interface::port_write_u8(base_port + 1, 0x4b);
+        redshirt_hardware_interface::port_write_u8(base_port + 3, 0x4b);
         // 0x60 to PSTOP (maximum value).
-        nametbd_hardware_interface::port_write_u8(base_port + 2, 0x60);
+        redshirt_hardware_interface::port_write_u8(base_port + 2, 0x60);
         // Now enable interrupts.
-        nametbd_hardware_interface::port_write_u8(base_port + 15, 0x1f);
+        redshirt_hardware_interface::port_write_u8(base_port + 15, 0x1f);
 
         // Set to registers page 1. Abort/complete DMA. Stop.
         // (note: found a demo code that sends that twice for an unknown reason)
-        nametbd_hardware_interface::port_write_u8(base_port + 0, (1 << 6) | (1 << 5) | (1 << 0));
+        redshirt_hardware_interface::port_write_u8(base_port + 0, (1 << 6) | (1 << 5) | (1 << 0));
 
         // Write to the PAR (Physical Address Registers). Incoming packets are compared with this
         // for acceptance/rejection.
         for n in 0..6u8 {
-            nametbd_hardware_interface::port_write_u8(
+            redshirt_hardware_interface::port_write_u8(
                 base_port + 1 + u32::from(n),
                 mac_address[usize::from(n)]
             );
@@ -110,18 +110,18 @@ impl Device {
 
         // Write the MAR (Multicast Address Registers). Filtering bits for multicast packets.
         for n in 8..=15 {
-            nametbd_hardware_interface::port_write_u8(base_port + 0 + n, 0xff);
+            redshirt_hardware_interface::port_write_u8(base_port + 0 + n, 0xff);
         }
 
         // Writing the CURR (Current Page Register).
         // TODO: understand
-        nametbd_hardware_interface::port_write_u8(base_port + 7, 0x47);
+        redshirt_hardware_interface::port_write_u8(base_port + 7, 0x47);
         // Registers to page 0. Abort/complete DMA and start.
-        nametbd_hardware_interface::port_write_u8(base_port + 0, (1 << 5) | (1 << 1));
+        redshirt_hardware_interface::port_write_u8(base_port + 0, (1 << 5) | (1 << 1));
         // Transmit Configuration register. Normal operation.
-        nametbd_hardware_interface::port_write_u8(base_port + 13, 0);
+        redshirt_hardware_interface::port_write_u8(base_port + 13, 0);
         // Receive Configuration register.
-        nametbd_hardware_interface::port_write_u8(base_port + 12, (1 << 3) | (1 << 2));
+        redshirt_hardware_interface::port_write_u8(base_port + 12, (1 << 3) | (1 << 2));
 
         Device {
             base_port,
@@ -140,7 +140,7 @@ impl Device {
             panic!()        // TODO:
         };
 
-        let mut ops = nametbd_hardware_interface::HardwareWriteOperationsBuilder::new();
+        let mut ops = redshirt_hardware_interface::HardwareWriteOperationsBuilder::new();
 
         // TODO: check available length
 
@@ -161,10 +161,10 @@ impl Device {
 
     pub async unsafe fn on_interrupt(&mut self) {
         // Read the ISR (Interrupt Status Register) to determine why an interrupt has been raised.
-        let status = nametbd_hardware_interface::port_read_u8(self.base_port + 7).await;
+        let status = redshirt_hardware_interface::port_read_u8(self.base_port + 7).await;
         // Write back the same status in order to clear the bits and allow further interrupts to
         // happen.
-        nametbd_hardware_interface::port_write_u8(self.base_port + 7, status);
+        redshirt_hardware_interface::port_write_u8(self.base_port + 7, status);
 
         if (status & (1 << 0)) != 0 {
             // Packet received with no error.
@@ -200,7 +200,7 @@ async unsafe fn dma_read(base_port: u32, data: &mut [u8], page_start: u8) {
         panic!()        // TODO:
     };
 
-    let mut ops = nametbd_hardware_interface::HardwareOperationsBuilder::new();
+    let mut ops = redshirt_hardware_interface::HardwareOperationsBuilder::new();
 
     // DMA remote bytes count set to the length we want to write.
     ops.port_write_u8(base_port + 10, data_len_lo);
@@ -240,7 +240,7 @@ unsafe fn dma_write(base_port: u32, data: &[u8], page_start: u8) {
         panic!()        // TODO:
     };
 
-    let mut ops = nametbd_hardware_interface::HardwareWriteOperationsBuilder::new();
+    let mut ops = redshirt_hardware_interface::HardwareWriteOperationsBuilder::new();
 
     // DMA remote bytes count set to the length we want to write.
     ops.port_write_u8(base_port + 10, data_len_lo);

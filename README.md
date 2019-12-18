@@ -1,5 +1,6 @@
-Experiment to build some kind of operating-system-like environment where executables are all in
-WASM and are loaded from an IPFS-like decentralized network.
+The **redshirt** operating system is an experiment to build some kind of operating-system-like
+environment where executables are all in WASM and are loaded from an IPFS-like decentralized
+network.
 
 I'm frequently telling people what my vision of an operating system would be. Now I've started
 building it.
@@ -31,16 +32,16 @@ For the freestanding kernel:
 rustup target add wasm32-wasi
 
 # From the root directory of this repository (where the `x86_64-multiboot2.json` file is located):
-RUST_TARGET_PATH=`pwd` cargo +nightly build -Z build-std=core,alloc --target x86_64-multiboot2 --package nametbd-standalone-kernel
+RUST_TARGET_PATH=`pwd` cargo +nightly build -Z build-std=core,alloc --target x86_64-multiboot2 --package redshirt-standalone-kernel
 
-# You now have a `target/x86_64-multiboot2/debug/nametbd-standalone-kernel`.
+# You now have a `target/x86_64-multiboot2/debug/redshirt-standalone-kernel`.
 # It can be loaded directly by QEMU: (Note: that's not working, see https://github.com/tomaka/os/issues/75)
-qemu-system-x86_64 -kernel ./target/x86_64-multiboot2/debug/nametbd-standalone-kernel -m 1024 -netdev user,id=nd0 -device ne2k_pci,netdev=nd0
+qemu-system-x86_64 -kernel ./target/x86_64-multiboot2/debug/redshirt-standalone-kernel -m 1024 -netdev user,id=nd0 -device ne2k_pci,netdev=nd0
 
 # Alternatively, you can put it on a CDROM:
 mkdir -p iso/boot/grub
 cp .github/workflows/grub.cfg iso/boot/grub
-cp target/x86_64-multiboot2/debug/nametbd-standalone-kernel iso/boot/kernel
+cp target/x86_64-multiboot2/debug/redshirt-standalone-kernel iso/boot/kernel
 # Note: grub-mkrescue is sometimes called grub2-mkrescue
 grub-mkrescue -o cdrom.iso iso
 qemu-system-x86_64 -cdrom cdrom.iso -m 1024 -netdev user,id=nd0 -device ne2k_pci,netdev=nd0

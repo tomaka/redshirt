@@ -31,16 +31,16 @@ mod device;
 use std::convert::TryFrom as _;
 
 fn main() {
-    nametbd_syscalls_interface::block_on(async_main());
+    redshirt_syscalls_interface::block_on(async_main());
 }
 
 async fn async_main() {
-    let pci_devices = nametbd_pci_interface::get_pci_devices().await;
+    let pci_devices = redshirt_pci_interface::get_pci_devices().await;
     for device in pci_devices {
         if device.vendor_id == 0x10ec && device.device_id == 0x8029 {
             let port_number = device.base_address_registers.iter().filter_map(|bar| {
                 match bar {
-                    nametbd_pci_interface::PciBaseAddressRegister::Io { base_address } if *base_address != 0 => Some(*base_address),
+                    redshirt_pci_interface::PciBaseAddressRegister::Io { base_address } if *base_address != 0 => Some(*base_address),
                     _ => None
                 }
             }).next();
@@ -48,7 +48,7 @@ async fn async_main() {
             if let Some(port_number) = port_number {
                 unsafe {
                     device::Device::reset(port_number).await;
-                    nametbd_stdout_interface::stdout(format!("Initialized ne2000\n"));
+                    redshirt_stdout_interface::stdout(format!("Initialized ne2000\n"));
                 }
             }
         }

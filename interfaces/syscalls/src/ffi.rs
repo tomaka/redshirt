@@ -16,7 +16,7 @@
 use alloc::vec::Vec;
 use parity_scale_codec::{Decode, Encode};
 
-#[link(wasm_import_module = "nametbd")]
+#[link(wasm_import_module = "redshirt")]
 extern "C" {
     /// Asks for the next message.
     ///
