@@ -14,34 +14,34 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use futures::prelude::*;
-use nametbd_network_interface::ffi;
+use redshirt_network_interface::ffi;
 use parity_scale_codec::DecodeAll;
 use std::time::Duration;
 
 fn main() {
-    nametbd_syscalls_interface::block_on(async_main())
+    redshirt_syscalls_interface::block_on(async_main())
 }
 
 async fn async_main() {
-    nametbd_interface_interface::register_interface(ffi::INTERFACE)
+    redshirt_interface_interface::register_interface(ffi::INTERFACE)
         .await
         .unwrap();
 
     let mut network = NetworkManager::new();
 
     loop {
-        let next_interface = nametbd_syscalls_interface::next_interface_message();
+        let next_interface = redshirt_syscalls_interface::next_interface_message();
         let next_net_event = Box::pin(network.next_event());
         let msg = match future::select(next_interface, next_net_event).await {
             future::Either::Left((msg, _)) => msg,
             future::Either::Right((NetworkEvent::FetchSuccess { data, user_data }, _)) => {
                 let rp = ffi::LoadResponse { result: Ok(data) };
-                nametbd_syscalls_interface::emit_answer(user_data, &rp);
+                redshirt_syscalls_interface::emit_answer(user_data, &rp);
                 continue;
             }
             future::Either::Right((NetworkEvent::FetchFail { user_data }, _)) => {
                 let rp = ffi::LoadResponse { result: Err(()) };
-                nametbd_syscalls_interface::emit_answer(user_data, &rp);
+                redshirt_syscalls_interface::emit_answer(user_data, &rp);
                 continue;
             }
         };

@@ -14,5 +14,5 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 fn main() {
-    nametbd_stdout_interface::stdout("hello world!\n".to_string())
+    redshirt_stdout_interface::stdout("hello world!\n".to_string())
 }

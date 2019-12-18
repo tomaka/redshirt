@@ -24,29 +24,29 @@ fn main() {
 }
 
 async fn async_main() {
-    let http_server_module = nametbd_core::module::Module::from_bytes(
+    let http_server_module = redshirt_core::module::Module::from_bytes(
         &include_bytes!("../../../modules/target/wasm32-wasi/release/http-server.wasm")[..],
     )
     .unwrap();
 
-    let net_manager_module = nametbd_core::module::Module::from_bytes(
+    let net_manager_module = redshirt_core::module::Module::from_bytes(
         &include_bytes!("../../../modules/target/wasm32-wasi/release/network-manager.wasm")[..],
     )
     .unwrap();
 
     let mut system =
-        nametbd_wasi_hosted::register_extrinsics(nametbd_core::system::SystemBuilder::new())
-            .with_interface_handler(nametbd_stdout_interface::ffi::INTERFACE)
-            .with_interface_handler(nametbd_time_interface::ffi::INTERFACE)
-            .with_interface_handler(nametbd_network_interface::ffi::INTERFACE)
+        redshirt_wasi_hosted::register_extrinsics(redshirt_core::system::SystemBuilder::new())
+            .with_interface_handler(redshirt_stdout_interface::ffi::INTERFACE)
+            .with_interface_handler(redshirt_time_interface::ffi::INTERFACE)
+            .with_interface_handler(redshirt_network_interface::ffi::INTERFACE)
             .with_startup_process(net_manager_module)
             .with_startup_process(http_server_module)
             .with_main_program([0; 32]) // TODO: just a test
             .build();
 
-    let time = Arc::new(nametbd_time_hosted::TimerHandler::new());
-    let tap = Arc::new(nametbd_tap_hosted::TapNetworkInterface::new());
-    let mut wasi = nametbd_wasi_hosted::WasiStateMachine::new();
+    let time = Arc::new(redshirt_time_hosted::TimerHandler::new());
+    let tap = Arc::new(redshirt_tap_hosted::TapNetworkInterface::new());
+    let mut wasi = redshirt_wasi_hosted::WasiStateMachine::new();
 
     let mut to_answer_rx = {
         let (mut to_answer_tx, to_answer_rx) = mpsc::channel(16);
@@ -73,7 +73,7 @@ async fn async_main() {
     loop {
         let result = loop {
             let only_poll = match system.run() {
-                nametbd_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
+                redshirt_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
                     pid,
                     thread_id,
                     extrinsic,
@@ -81,26 +81,26 @@ async fn async_main() {
                 } => {
                     let out =
                         wasi.handle_extrinsic_call(&mut system, extrinsic, pid, thread_id, params);
-                    if let nametbd_wasi_hosted::HandleOut::EmitMessage {
+                    if let redshirt_wasi_hosted::HandleOut::EmitMessage {
                         id,
                         interface,
                         message,
                     } = out
                     {
-                        if interface == nametbd_stdout_interface::ffi::INTERFACE {
+                        if interface == redshirt_stdout_interface::ffi::INTERFACE {
                             let msg =
-                                nametbd_stdout_interface::ffi::StdoutMessage::decode_all(&message);
-                            let nametbd_stdout_interface::ffi::StdoutMessage::Message(msg) =
+                                redshirt_stdout_interface::ffi::StdoutMessage::decode_all(&message);
+                            let redshirt_stdout_interface::ffi::StdoutMessage::Message(msg) =
                                 msg.unwrap();
                             print!("{}", msg);
-                        } else if interface == nametbd_time_interface::ffi::INTERFACE {
+                        } else if interface == redshirt_time_interface::ffi::INTERFACE {
                             if let Some(answer) =
                                 time.time_message(id.map(MessageId::Wasi), &message)
                             {
                                 unimplemented!()
                             }
-                        } else if interface == nametbd_network_interface::ffi::INTERFACE {
-                            let message: nametbd_network_interface::ffi::TcpMessage =
+                        } else if interface == redshirt_network_interface::ffi::INTERFACE {
+                            let message: redshirt_network_interface::ffi::TcpMessage =
                                 DecodeAll::decode_all(&message).unwrap();
                             tap.handle_message(id.map(MessageId::Wasi), message).await;
                         } else {
@@ -109,21 +109,21 @@ async fn async_main() {
                     }
                     true
                 }
-                nametbd_core::system::SystemRunOutcome::InterfaceMessage {
+                redshirt_core::system::SystemRunOutcome::InterfaceMessage {
                     interface,
                     message,
                     ..
-                } if interface == nametbd_stdout_interface::ffi::INTERFACE => {
-                    let msg = nametbd_stdout_interface::ffi::StdoutMessage::decode_all(&message);
-                    let nametbd_stdout_interface::ffi::StdoutMessage::Message(msg) = msg.unwrap();
+                } if interface == redshirt_stdout_interface::ffi::INTERFACE => {
+                    let msg = redshirt_stdout_interface::ffi::StdoutMessage::decode_all(&message);
+                    let redshirt_stdout_interface::ffi::StdoutMessage::Message(msg) = msg.unwrap();
                     print!("{}", msg);
                     continue;
                 }
-                nametbd_core::system::SystemRunOutcome::InterfaceMessage {
+                redshirt_core::system::SystemRunOutcome::InterfaceMessage {
                     message_id,
                     interface,
                     message,
-                } if interface == nametbd_time_interface::ffi::INTERFACE => {
+                } if interface == redshirt_time_interface::ffi::INTERFACE => {
                     if let Some(answer) =
                         time.time_message(message_id.map(MessageId::Core), &message)
                     {
@@ -135,18 +135,18 @@ async fn async_main() {
                     }
                     continue;
                 }
-                nametbd_core::system::SystemRunOutcome::InterfaceMessage {
+                redshirt_core::system::SystemRunOutcome::InterfaceMessage {
                     message_id,
                     interface,
                     message,
-                } if interface == nametbd_network_interface::ffi::INTERFACE => {
-                    let message: nametbd_network_interface::ffi::TcpMessage =
+                } if interface == redshirt_network_interface::ffi::INTERFACE => {
+                    let message: redshirt_network_interface::ffi::TcpMessage =
                         DecodeAll::decode_all(&message).unwrap();
                     tap.handle_message(message_id.map(MessageId::Core), message)
                         .await;
                     continue;
                 }
-                nametbd_core::system::SystemRunOutcome::Idle => false,
+                redshirt_core::system::SystemRunOutcome::Idle => false,
                 other => break other,
             };
 
@@ -167,7 +167,7 @@ async fn async_main() {
         };
 
         match result {
-            nametbd_core::system::SystemRunOutcome::ProgramFinished { pid, outcome } => {
+            redshirt_core::system::SystemRunOutcome::ProgramFinished { pid, outcome } => {
                 println!("Program finished {:?} => {:?}", pid, outcome);
             }
             _ => panic!(),
@@ -177,5 +177,5 @@ async fn async_main() {
 
 enum MessageId {
     Core(u64),
-    Wasi(nametbd_wasi_hosted::WasiMessageId),
+    Wasi(redshirt_wasi_hosted::WasiMessageId),
 }

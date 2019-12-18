@@ -54,14 +54,14 @@ impl TcpStream {
         });
 
         let msg_id = unsafe {
-            nametbd_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_open, true)
+            redshirt_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_open, true)
                 .unwrap()
                 .unwrap()
         };
 
         async move {
             let message: ffi::TcpOpenResponse =
-                nametbd_syscalls_interface::message_response(msg_id).await;
+                redshirt_syscalls_interface::message_response(msg_id).await;
             let handle = message.result?;
 
             Ok(TcpStream {
@@ -101,11 +101,11 @@ impl AsyncRead for TcpStream {
                 socket_id: self.handle,
             });
             let msg_id = unsafe {
-                nametbd_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_read, true)
+                redshirt_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_read, true)
                     .unwrap()
                     .unwrap()
             };
-            self.pending_read = Some(Box::pin(nametbd_syscalls_interface::message_response(
+            self.pending_read = Some(Box::pin(redshirt_syscalls_interface::message_response(
                 msg_id,
             )));
         }
@@ -132,11 +132,11 @@ impl AsyncWrite for TcpStream {
             data: buf.to_vec(),
         });
         let msg_id = unsafe {
-            nametbd_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_write, true)
+            redshirt_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_write, true)
                 .unwrap()
                 .unwrap()
         };
-        self.pending_write = Some(Box::pin(nametbd_syscalls_interface::message_response(
+        self.pending_write = Some(Box::pin(redshirt_syscalls_interface::message_response(
             msg_id,
         )));
         Poll::Ready(Ok(buf.len()))
@@ -186,7 +186,7 @@ impl Drop for TcpStream {
                 socket_id: self.handle,
             });
 
-            nametbd_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_close, false);
+            redshirt_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_close, false);
         }
     }
 }
@@ -213,7 +213,7 @@ impl TcpListener {
         });
 
         let msg_id = unsafe {
-            nametbd_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_listen, true)
+            redshirt_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_listen, true)
                 .unwrap()
                 .unwrap()
         };
@@ -222,7 +222,7 @@ impl TcpListener {
 
         async move {
             let message: ffi::TcpListenResponse =
-                nametbd_syscalls_interface::message_response(msg_id).await;
+                redshirt_syscalls_interface::message_response(msg_id).await;
             let (handle, local_port) = message.result?;
             local_addr.set_port(local_port);
 
@@ -260,11 +260,11 @@ impl TcpListener {
                 socket_id: self.handle,
             });
             let msg_id = unsafe {
-                nametbd_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_accept, true)
+                redshirt_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_accept, true)
                     .unwrap()
                     .unwrap()
             };
-            self.pending_accept = Some(Box::pin(nametbd_syscalls_interface::message_response(
+            self.pending_accept = Some(Box::pin(redshirt_syscalls_interface::message_response(
                 msg_id,
             )));
         }
@@ -278,7 +278,7 @@ impl Drop for TcpListener {
                 socket_id: self.handle,
             });
 
-            nametbd_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_close, false);
+            redshirt_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_close, false);
         }
     }
 }

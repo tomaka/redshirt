@@ -36,9 +36,9 @@ use alloc::{string::String, string::ToString as _, vec, vec::Vec};
 use byteorder::{ByteOrder as _, LittleEndian};
 use core::convert::TryFrom as _;
 use hashbrown::HashMap;
-use nametbd_core::scheduler::{Pid, ThreadId};
-use nametbd_core::system::{System, SystemBuilder};
 use parity_scale_codec::{DecodeAll, Encode as _};
+use redshirt_core::scheduler::{Pid, ThreadId};
+use redshirt_core::system::{System, SystemBuilder};
 
 // TODO: lots of unwraps as `as` conversions in this module
 
@@ -75,73 +75,73 @@ pub fn register_extrinsics<T: From<WasiExtrinsic> + Clone>(
         .with_extrinsic(
             "wasi_unstable",
             "args_get",
-            nametbd_core::sig!((I32, I32) -> I32),
+            redshirt_core::sig!((I32, I32) -> I32),
             WasiExtrinsic(WasiExtrinsicInner::ArgsGet).into(),
         )
         .with_extrinsic(
             "wasi_unstable",
             "args_sizes_get",
-            nametbd_core::sig!((I32, I32) -> I32),
+            redshirt_core::sig!((I32, I32) -> I32),
             WasiExtrinsic(WasiExtrinsicInner::ArgsSizesGet).into(),
         )
         .with_extrinsic(
             "wasi_unstable",
             "clock_time_get",
-            nametbd_core::sig!((I32, I64, I32) -> I32),
+            redshirt_core::sig!((I32, I64, I32) -> I32),
             WasiExtrinsic(WasiExtrinsicInner::ClockTimeGet).into(),
         )
         .with_extrinsic(
             "wasi_unstable",
             "environ_get",
-            nametbd_core::sig!((I32, I32) -> I32),
+            redshirt_core::sig!((I32, I32) -> I32),
             WasiExtrinsic(WasiExtrinsicInner::EnvironGet).into(),
         )
         .with_extrinsic(
             "wasi_unstable",
             "environ_sizes_get",
-            nametbd_core::sig!((I32, I32) -> I32),
+            redshirt_core::sig!((I32, I32) -> I32),
             WasiExtrinsic(WasiExtrinsicInner::EnvironSizesGet).into(),
         )
         .with_extrinsic(
             "wasi_unstable",
             "fd_prestat_get",
-            nametbd_core::sig!((I32, I32) -> I32),
+            redshirt_core::sig!((I32, I32) -> I32),
             WasiExtrinsic(WasiExtrinsicInner::FdPrestatGet).into(),
         )
         .with_extrinsic(
             "wasi_unstable",
             "fd_prestat_dir_name",
-            nametbd_core::sig!((I32, I32, I32) -> I32),
+            redshirt_core::sig!((I32, I32, I32) -> I32),
             WasiExtrinsic(WasiExtrinsicInner::FdPrestatDirName).into(),
         )
         .with_extrinsic(
             "wasi_unstable",
             "fd_fdstat_get",
-            nametbd_core::sig!((I32, I32) -> I32),
+            redshirt_core::sig!((I32, I32) -> I32),
             WasiExtrinsic(WasiExtrinsicInner::FdFdstatGet).into(),
         )
         .with_extrinsic(
             "wasi_unstable",
             "fd_write",
-            nametbd_core::sig!((I32, I32, I32, I32) -> I32),
+            redshirt_core::sig!((I32, I32, I32, I32) -> I32),
             WasiExtrinsic(WasiExtrinsicInner::FdWrite).into(),
         )
         .with_extrinsic(
             "wasi_unstable",
             "proc_exit",
-            nametbd_core::sig!((I32)),
+            redshirt_core::sig!((I32)),
             WasiExtrinsic(WasiExtrinsicInner::ProcExit).into(),
         )
         .with_extrinsic(
             "wasi_unstable",
             "random_get",
-            nametbd_core::sig!((I32, I32) -> I32),
+            redshirt_core::sig!((I32, I32) -> I32),
             WasiExtrinsic(WasiExtrinsicInner::RandomGet).into(),
         )
         .with_extrinsic(
             "wasi_unstable",
             "sched_yield",
-            nametbd_core::sig!(() -> I32),
+            redshirt_core::sig!(() -> I32),
             WasiExtrinsic(WasiExtrinsicInner::SchedYield).into(),
         )
 }
@@ -207,7 +207,7 @@ impl WasiStateMachine {
         extrinsic: WasiExtrinsic,
         pid: Pid,
         thread_id: ThreadId,
-        params: Vec<nametbd_core::RuntimeValue>,
+        params: Vec<redshirt_core::RuntimeValue>,
     ) -> HandleOut {
         const ENV_VARS: &[u8] = b"RUST_BACKTRACE=1\0";
 
@@ -218,7 +218,7 @@ impl WasiStateMachine {
                 let num_ptr = params[0].try_into::<i32>().unwrap() as u32;
                 let buf_size_ptr = params[1].try_into::<i32>().unwrap() as u32;
                 system.write_memory(pid, num_ptr, &[0, 0, 0, 0]).unwrap();
-                system.resolve_extrinsic_call(thread_id, Some(nametbd_core::RuntimeValue::I32(0)));
+                system.resolve_extrinsic_call(thread_id, Some(redshirt_core::RuntimeValue::I32(0)));
                 HandleOut::Ok
             }
             WasiExtrinsicInner::ClockTimeGet => {
@@ -229,11 +229,11 @@ impl WasiStateMachine {
                 let message = match clock_ty {
                     0 => {
                         // CLOCK_REALTIME
-                        nametbd_time_interface::ffi::TimeMessage::GetSystem
+                        redshirt_time_interface::ffi::TimeMessage::GetSystem
                     }
                     1 => {
                         // CLOCK_MONOTONIC
-                        nametbd_time_interface::ffi::TimeMessage::GetMonotonic
+                        redshirt_time_interface::ffi::TimeMessage::GetMonotonic
                     }
                     2 => {
                         // CLOCK_PROCESS_CPUTIME_ID
@@ -257,7 +257,7 @@ impl WasiStateMachine {
                 debug_assert!(_prev_val.is_none());
                 HandleOut::EmitMessage {
                     id: Some(msg_id),
-                    interface: nametbd_time_interface::ffi::INTERFACE,
+                    interface: redshirt_time_interface::ffi::INTERFACE,
                     message: message.encode(),
                 }
             }
@@ -269,7 +269,7 @@ impl WasiStateMachine {
                 LittleEndian::write_u32(&mut buf, buf_ptr);
                 system.write_memory(pid, ptrs_ptr, &buf).unwrap();
                 system.write_memory(pid, buf_ptr, ENV_VARS).unwrap();
-                system.resolve_extrinsic_call(thread_id, Some(nametbd_core::RuntimeValue::I32(0)));
+                system.resolve_extrinsic_call(thread_id, Some(redshirt_core::RuntimeValue::I32(0)));
                 HandleOut::Ok
             }
             WasiExtrinsicInner::EnvironSizesGet => {
@@ -281,7 +281,7 @@ impl WasiStateMachine {
                 system.write_memory(pid, num_ptr, &buf).unwrap();
                 LittleEndian::write_u32(&mut buf, ENV_VARS.len() as u32);
                 system.write_memory(pid, buf_size_ptr, &buf).unwrap();
-                system.resolve_extrinsic_call(thread_id, Some(nametbd_core::RuntimeValue::I32(0)));
+                system.resolve_extrinsic_call(thread_id, Some(redshirt_core::RuntimeValue::I32(0)));
                 HandleOut::Ok
             }
             WasiExtrinsicInner::FdPrestatGet => {
@@ -290,7 +290,7 @@ impl WasiStateMachine {
                 let ptr = params[1].try_into::<i32>().unwrap() as u32;
                 //system.write_memory(pid, ptr, &[0]).unwrap();
                 // TODO: incorrect
-                system.resolve_extrinsic_call(thread_id, Some(nametbd_core::RuntimeValue::I32(8)));
+                system.resolve_extrinsic_call(thread_id, Some(redshirt_core::RuntimeValue::I32(8)));
                 HandleOut::Ok
             }
             WasiExtrinsicInner::FdPrestatDirName => unimplemented!(),
@@ -315,18 +315,18 @@ impl WasiStateMachine {
                 debug_assert!(_prev_val.is_none());
 
                 let len_to_request = u16::try_from(len).unwrap_or(u16::max_value());
-                let message = nametbd_random_interface::ffi::RandomMessage::Generate {
+                let message = redshirt_random_interface::ffi::RandomMessage::Generate {
                     len: len_to_request,
                 };
                 HandleOut::EmitMessage {
                     id: Some(msg_id),
-                    interface: nametbd_random_interface::ffi::INTERFACE,
+                    interface: redshirt_random_interface::ffi::INTERFACE,
                     message: message.encode(),
                 }
             }
             WasiExtrinsicInner::SchedYield => {
                 // TODO: guarantee the yield
-                system.resolve_extrinsic_call(thread_id, Some(nametbd_core::RuntimeValue::I32(0)));
+                system.resolve_extrinsic_call(thread_id, Some(redshirt_core::RuntimeValue::I32(0)));
                 HandleOut::Ok
             }
         }
@@ -346,11 +346,11 @@ impl WasiStateMachine {
                 let mut buf = [0; 8];
                 LittleEndian::write_u64(&mut buf, to_write);
                 system.write_memory(info.pid, info.out_ptr, &buf).unwrap();
-                system.resolve_extrinsic_call(info.tid, Some(nametbd_core::RuntimeValue::I32(0)));
+                system.resolve_extrinsic_call(info.tid, Some(redshirt_core::RuntimeValue::I32(0)));
                 HandleOut::Ok
             }
             Some(CallInfo::Random(mut info)) => {
-                let value: nametbd_random_interface::ffi::GenerateResponse =
+                let value: redshirt_random_interface::ffi::GenerateResponse =
                     DecodeAll::decode_all(&response).unwrap();
                 assert!(
                     u32::try_from(value.result.len()).unwrap_or(u32::max_value())
@@ -362,8 +362,10 @@ impl WasiStateMachine {
                 info.remaining_len -= value.result.len() as u32; // TODO: as :-/
 
                 if info.remaining_len == 0 {
-                    system
-                        .resolve_extrinsic_call(info.tid, Some(nametbd_core::RuntimeValue::I32(0)));
+                    system.resolve_extrinsic_call(
+                        info.tid,
+                        Some(redshirt_core::RuntimeValue::I32(0)),
+                    );
                     HandleOut::Ok
                 } else {
                     let msg_id = self.alloc_message_id();
@@ -373,12 +375,12 @@ impl WasiStateMachine {
                     let _prev_val = self.pending_messages.insert(msg_id, CallInfo::Random(info));
                     debug_assert!(_prev_val.is_none());
 
-                    let message = nametbd_random_interface::ffi::RandomMessage::Generate {
+                    let message = redshirt_random_interface::ffi::RandomMessage::Generate {
                         len: len_to_request,
                     };
                     HandleOut::EmitMessage {
                         id: Some(msg_id),
-                        interface: nametbd_random_interface::ffi::INTERFACE,
+                        interface: redshirt_random_interface::ffi::INTERFACE,
                         message: message.encode(),
                     }
                 }
@@ -389,14 +391,14 @@ impl WasiStateMachine {
 }
 
 fn fd_write(
-    system: &mut nametbd_core::system::System<impl Clone>,
-    pid: nametbd_core::scheduler::Pid,
-    thread_id: nametbd_core::scheduler::ThreadId,
-    params: Vec<nametbd_core::RuntimeValue>,
+    system: &mut redshirt_core::system::System<impl Clone>,
+    pid: redshirt_core::scheduler::Pid,
+    thread_id: redshirt_core::scheduler::ThreadId,
+    params: Vec<redshirt_core::RuntimeValue>,
 ) -> HandleOut {
     assert_eq!(params.len(), 4); // TODO: what to do when it's not the case?
 
-    //assert!(params[0] == nametbd_core::RuntimeValue::I32(1) || params[0] == nametbd_core::RuntimeValue::I32(2));      // either stdout or stderr
+    //assert!(params[0] == redshirt_core::RuntimeValue::I32(1) || params[0] == redshirt_core::RuntimeValue::I32(2));      // either stdout or stderr
 
     // Get a list of pointers and lengths to write.
     // Elements 0, 2, 4, 6, ... or that list are pointers, and elements 1, 3, 5, 7, ... are
@@ -429,11 +431,11 @@ fn fd_write(
         system.write_memory(pid, out_ptr, &buf).unwrap();
     }
 
-    system.resolve_extrinsic_call(thread_id, Some(nametbd_core::RuntimeValue::I32(0)));
+    system.resolve_extrinsic_call(thread_id, Some(redshirt_core::RuntimeValue::I32(0)));
     HandleOut::EmitMessage {
         id: None,
-        interface: nametbd_stdout_interface::ffi::INTERFACE,
-        message: nametbd_stdout_interface::ffi::StdoutMessage::Message(
+        interface: redshirt_stdout_interface::ffi::INTERFACE,
+        message: redshirt_stdout_interface::ffi::StdoutMessage::Message(
             String::from_utf8_lossy(&to_write).to_string(),
         )
         .encode(), // TODO:  lossy?

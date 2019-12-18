@@ -21,7 +21,7 @@ pub struct TapNetworkInterface {
 
 impl TapNetworkInterface {
     pub fn new() -> TapNetworkInterface {
-        let interface = tun_tap::Iface::new("nametbd-%d", tun_tap::Mode::Tap).unwrap();     // TODO: don't unwrap
+        let interface = tun_tap::Iface::new("redshirt-%d", tun_tap::Mode::Tap).unwrap();     // TODO: don't unwrap
         TapNetworkInterface {
             interface
         }

@@ -49,7 +49,7 @@ pub struct NetInterfaceState {
     /// Future that triggers the next time we should poll [`NetInterfaceState::ethernet`].
     /// Must be set to `None` whenever we modify [`NetInterfaceState::ethernet`] in such a way that
     /// it could produce an event.
-    next_event_delay: Option<nametbd_time_interface::Delay>,
+    next_event_delay: Option<redshirt_time_interface::Delay>,
 }
 
 /// Prototype for a [`NetInterfaceState`] under construction.
@@ -173,7 +173,7 @@ impl NetInterfaceState {
 
             self.ethernet.poll(&mut self.sockets, now().await).unwrap();
             self.next_event_delay = match self.ethernet.poll_delay(&mut self.sockets, now().await) {
-                Some(d) => Some(nametbd_time_interface::Delay::new(d.into())),
+                Some(d) => Some(redshirt_time_interface::Delay::new(d.into())),
                 None => continue,
             };
         }
@@ -291,7 +291,7 @@ impl<'a> TcpSocket<'a> {
 
 // TODO: remove
 async fn now() -> smoltcp::time::Instant {
-    let now = nametbd_time_interface::monotonic_clock().await;
+    let now = redshirt_time_interface::monotonic_clock().await;
     smoltcp::time::Instant::from_millis((now / 1_000_000) as i64) // TODO: don't use as
 }
 

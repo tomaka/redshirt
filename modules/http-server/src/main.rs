@@ -17,8 +17,8 @@ use futures::{channel::mpsc, prelude::*};
 use std::{pin::Pin, task::Context, task::Poll};
 
 fn main() {
-    nametbd_syscalls_interface::block_on(async move {
-        let listener = nametbd_network_interface::TcpListener::bind(&"0.0.0.0:8000".parse().unwrap())
+    redshirt_syscalls_interface::block_on(async move {
+        let listener = redshirt_network_interface::TcpListener::bind(&"0.0.0.0:8000".parse().unwrap())
             .await
             .unwrap();
 
@@ -77,11 +77,11 @@ fn main() {
 }
 
 struct Accept {
-    next_connec: Pin<Box<dyn Stream<Item = nametbd_network_interface::TcpStream>>>,
+    next_connec: Pin<Box<dyn Stream<Item = redshirt_network_interface::TcpStream>>>,
 }
 
 impl hyper::server::accept::Accept for Accept {
-    type Conn = nametbd_network_interface::TcpStream;
+    type Conn = redshirt_network_interface::TcpStream;
     type Error = std::io::Error;
 
     fn poll_accept(
