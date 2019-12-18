@@ -17,8 +17,8 @@
 
 use futures::{channel::mpsc, lock::Mutex, prelude::*, stream::FuturesUnordered};
 use futures_timer::Delay;
-use redshirt_time_interface::ffi::TimeMessage;
 use parity_scale_codec::{DecodeAll, Encode as _};
+use redshirt_time_interface::ffi::TimeMessage;
 use std::{
     convert::TryFrom,
     pin::Pin,

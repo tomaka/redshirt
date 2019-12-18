@@ -36,9 +36,9 @@ use alloc::{string::String, string::ToString as _, vec, vec::Vec};
 use byteorder::{ByteOrder as _, LittleEndian};
 use core::convert::TryFrom as _;
 use hashbrown::HashMap;
+use parity_scale_codec::{DecodeAll, Encode as _};
 use redshirt_core::scheduler::{Pid, ThreadId};
 use redshirt_core::system::{System, SystemBuilder};
-use parity_scale_codec::{DecodeAll, Encode as _};
 
 // TODO: lots of unwraps as `as` conversions in this module
 
@@ -362,8 +362,10 @@ impl WasiStateMachine {
                 info.remaining_len -= value.result.len() as u32; // TODO: as :-/
 
                 if info.remaining_len == 0 {
-                    system
-                        .resolve_extrinsic_call(info.tid, Some(redshirt_core::RuntimeValue::I32(0)));
+                    system.resolve_extrinsic_call(
+                        info.tid,
+                        Some(redshirt_core::RuntimeValue::I32(0)),
+                    );
                     HandleOut::Ok
                 } else {
                     let msg_id = self.alloc_message_id();

@@ -22,8 +22,8 @@ use crate::arch;
 
 use alloc::vec::Vec;
 use core::{convert::TryFrom as _, marker::PhantomData};
-use redshirt_hardware_interface::ffi::{HardwareAccessResponse, HardwareMessage, Operation};
 use parity_scale_codec::{DecodeAll, Encode as _};
+use redshirt_hardware_interface::ffi::{HardwareAccessResponse, HardwareMessage, Operation};
 
 /// State machine for `hardware` interface messages handling.
 pub struct HardwareHandler<TMsgId> {
