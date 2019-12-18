@@ -17,7 +17,7 @@
 //!
 //! # Messages and responses
 //!
-//! The environment available to `nametbd` programs consists in a collection of **interfaces**.
+//! The environment available to `redshirt` programs consists in a collection of **interfaces**.
 //! An interface is referred to by a 32-bytes hash.
 //!
 //! Programs can emit messages by passing a target interface (a 32 bytes array), and a buffer

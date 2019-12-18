@@ -55,7 +55,7 @@ unsafe fn spawn_thread_inner(function: impl FnOnce()) {
         user_data: Box::into_raw(function_box) as usize as u32,
     });
 
-    nametbd_syscalls_interface::emit_message_without_response(&ffi::INTERFACE, &thread_new)
+    redshirt_syscalls_interface::emit_message_without_response(&ffi::INTERFACE, &thread_new)
         .unwrap();
 }
 

@@ -27,7 +27,7 @@ pub struct Signature {
 /// # Example
 ///
 /// ```
-/// let _sig: nametbd_core::signature::Signature = nametbd_core::sig!((I32, I64) -> I32);
+/// let _sig: redshirt_core::signature::Signature = redshirt_core::sig!((I32, I64) -> I32);
 /// ```
 #[macro_export]
 macro_rules! sig {
