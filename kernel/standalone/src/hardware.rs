@@ -78,7 +78,7 @@ where
 
 unsafe fn perform_operation(operation: Operation) -> Option<HardwareAccessResponse> {
     match operation {
-        Operation::PhysicalMemoryWrite { address, data } => {
+        Operation::PhysicalMemoryWriteU8 { address, data } => {
             if let Ok(mut address) = usize::try_from(address) {
                 for byte in data {
                     (address as *mut u8).write_volatile(byte);
@@ -87,14 +87,50 @@ unsafe fn perform_operation(operation: Operation) -> Option<HardwareAccessRespon
             }
             None
         }
-        Operation::PhysicalMemoryRead { mut address, len } => {
+        Operation::PhysicalMemoryWriteU16 { address, data } => {
+            if let Ok(mut address) = usize::try_from(address) {
+                for word in data {
+                    (address as *mut u16).write_volatile(word);
+                    address = address.checked_add(2).unwrap();
+                }
+            }
+            None
+        }
+        Operation::PhysicalMemoryWriteU32 { address, data } => {
+            if let Ok(mut address) = usize::try_from(address) {
+                for dword in data {
+                    (address as *mut u32).write_volatile(dword);
+                    address = address.checked_add(4).unwrap();
+                }
+            }
+            None
+        }
+        Operation::PhysicalMemoryReadU8 { mut address, len } => {
             // TODO: try allocate `len` but don't panic if `len` is too large
             let mut out = Vec::with_capacity(len as usize); // TODO: don't use `as`
             for _ in 0..len {
                 out.push((address as *mut u8).read_volatile());
                 address = address.checked_add(1).unwrap();
             }
-            Some(HardwareAccessResponse::PhysicalMemoryRead(out))
+            Some(HardwareAccessResponse::PhysicalMemoryReadU8(out))
+        }
+        Operation::PhysicalMemoryReadU16 { mut address, len } => {
+            // TODO: try allocate `len` but don't panic if `len` is too large
+            let mut out = Vec::with_capacity(len as usize); // TODO: don't use `as`
+            for _ in 0..len {
+                out.push((address as *mut u16).read_volatile());
+                address = address.checked_add(2).unwrap();
+            }
+            Some(HardwareAccessResponse::PhysicalMemoryReadU16(out))
+        }
+        Operation::PhysicalMemoryReadU32 { mut address, len } => {
+            // TODO: try allocate `len` but don't panic if `len` is too large
+            let mut out = Vec::with_capacity(len as usize); // TODO: don't use `as`
+            for _ in 0..len {
+                out.push((address as *mut u32).read_volatile());
+                address = address.checked_add(4).unwrap();
+            }
+            Some(HardwareAccessResponse::PhysicalMemoryReadU32(out))
         }
         Operation::PortWriteU8 { port, data } => {
             arch::write_port_u8(port, data);

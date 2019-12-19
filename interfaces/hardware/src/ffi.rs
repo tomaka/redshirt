@@ -46,12 +46,32 @@ pub enum HardwareMessage {
 /// Request to perform accesses to physical memory or to ports.
 #[derive(Debug, Encode, Decode)]
 pub enum Operation {
-    PhysicalMemoryWrite {
+    PhysicalMemoryWriteU8 {
         address: u64,
         data: Vec<u8>,
     },
-    PhysicalMemoryRead {
+    /// Uses the platform's native endianess.
+    PhysicalMemoryWriteU16 {
         address: u64,
+        data: Vec<u16>,
+    },
+    /// Uses the platform's native endianess.
+    PhysicalMemoryWriteU32 {
+        address: u64,
+        data: Vec<u32>,
+    },
+    PhysicalMemoryReadU8 {
+        address: u64,
+        len: u32,
+    },
+    PhysicalMemoryReadU16 {
+        address: u64,
+        /// Number of `u16`s to read.
+        len: u32,
+    },
+    PhysicalMemoryReadU32 {
+        address: u64,
+        /// Number of `u32`s to read.
         len: u32,
     },
     /// Write data to a port.
@@ -98,8 +118,12 @@ pub enum Operation {
 /// Response to a [`HardwareMessage::HardwareAccess`].
 #[derive(Debug, Encode, Decode)]
 pub enum HardwareAccessResponse {
-    /// Sent back in response to a [`Operation::PhysicalMemoryRead`].
-    PhysicalMemoryRead(Vec<u8>),
+    /// Sent back in response to a [`Operation::PhysicalMemoryReadU8`].
+    PhysicalMemoryReadU8(Vec<u8>),
+    /// Sent back in response to a [`Operation::PhysicalMemoryReadU16`].
+    PhysicalMemoryReadU16(Vec<u16>),
+    /// Sent back in response to a [`Operation::PhysicalMemoryReadU32`].
+    PhysicalMemoryReadU32(Vec<u32>),
     /// Sent back in response to a [`Operation::PortReadU8`].
     PortReadU8(u8),
     /// Sent back in response to a [`Operation::PortReadU16`].
