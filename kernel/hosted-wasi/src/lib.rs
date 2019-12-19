@@ -97,7 +97,19 @@ pub fn register_extrinsics<T: From<WasiExtrinsic> + Clone>(
             WasiExtrinsic(WasiExtrinsicInner::EnvironGet).into(),
         )
         .with_extrinsic(
+            "wasi_snapshot_preview1",
+            "environ_get",
+            redshirt_core::sig!((I32, I32) -> I32),
+            WasiExtrinsic(WasiExtrinsicInner::EnvironGet).into(),
+        )
+        .with_extrinsic(
             "wasi_unstable",
+            "environ_sizes_get",
+            redshirt_core::sig!((I32, I32) -> I32),
+            WasiExtrinsic(WasiExtrinsicInner::EnvironSizesGet).into(),
+        )
+        .with_extrinsic(
+            "wasi_snapshot_preview1",
             "environ_sizes_get",
             redshirt_core::sig!((I32, I32) -> I32),
             WasiExtrinsic(WasiExtrinsicInner::EnvironSizesGet).into(),
@@ -127,7 +139,19 @@ pub fn register_extrinsics<T: From<WasiExtrinsic> + Clone>(
             WasiExtrinsic(WasiExtrinsicInner::FdWrite).into(),
         )
         .with_extrinsic(
+            "wasi_snapshot_preview1",
+            "fd_write",
+            redshirt_core::sig!((I32, I32, I32, I32) -> I32),
+            WasiExtrinsic(WasiExtrinsicInner::FdWrite).into(),
+        )
+        .with_extrinsic(
             "wasi_unstable",
+            "proc_exit",
+            redshirt_core::sig!((I32)),
+            WasiExtrinsic(WasiExtrinsicInner::ProcExit).into(),
+        )
+        .with_extrinsic(
+            "wasi_snapshot_preview1",
             "proc_exit",
             redshirt_core::sig!((I32)),
             WasiExtrinsic(WasiExtrinsicInner::ProcExit).into(),
@@ -277,7 +301,7 @@ impl WasiStateMachine {
                 let num_ptr = params[0].try_into::<i32>().unwrap() as u32;
                 let buf_size_ptr = params[1].try_into::<i32>().unwrap() as u32;
                 let mut buf = [0; 4];
-                LittleEndian::write_u32(&mut buf, 1);
+                LittleEndian::write_u32(&mut buf, 0);
                 system.write_memory(pid, num_ptr, &buf).unwrap();
                 LittleEndian::write_u32(&mut buf, ENV_VARS.len() as u32);
                 system.write_memory(pid, buf_size_ptr, &buf).unwrap();
@@ -296,7 +320,12 @@ impl WasiStateMachine {
             WasiExtrinsicInner::FdPrestatDirName => unimplemented!(),
             WasiExtrinsicInner::FdFdstatGet => unimplemented!(),
             WasiExtrinsicInner::FdWrite => fd_write(system, pid, thread_id, params),
-            WasiExtrinsicInner::ProcExit => unimplemented!(),
+            WasiExtrinsicInner::ProcExit => {
+                // TODO: for now, WASI programs call `exit()` right before exiting, and doing
+                // nothing is a viable option. This should be implemented properly at some point,
+                // though.
+                HandleOut::Ok
+            },
             WasiExtrinsicInner::RandomGet => {
                 assert_eq!(params.len(), 2);
                 let buf = params[0].try_into::<i32>().unwrap() as u32;
