@@ -63,6 +63,7 @@ async fn async_main() {
     ne2k_devices.shrink_to_fit();
 
     loop {
+        redshirt_stdout_interface::stdout(format!("Polling"));
         let packet = match unsafe { ne2k_devices[0].read_one_incoming().await } {
             Some(p) => p,
             None => continue,

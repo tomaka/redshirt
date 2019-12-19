@@ -69,7 +69,6 @@ fn main() {
 
     let status = Command::new("cargo")
         .arg("rustc")
-        .arg("--release")
         .args(&["--target", "wasm32-wasi"])
         .args(&["--package", "ne2000"])
         .args(&["--bin", "ne2000"])

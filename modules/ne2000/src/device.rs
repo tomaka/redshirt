@@ -205,6 +205,9 @@ impl Device {
             (out[0], out[1], len)
         };
 
+        assert!(next_packet_page >= READ_BUFFER_PAGES.start);
+        assert!(next_packet_page <= READ_BUFFER_PAGES.end);
+
         // TODO: check this status thing
 
         debug_assert!(current_packet_len < 15522);       // TODO: is that correct?
