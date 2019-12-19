@@ -18,7 +18,7 @@ redshirt-time-hosted = { path = "../hosted-time" }
 redshirt-time-interface = { path = "../../interfaces/time" }
 redshirt-wasi-hosted = { path = "../hosted-wasi" }
 parity-scale-codec = "1.0.5"
-wasi = "0.7.0"
+wasi = "0.9.0+wasi-snapshot-preview1"
 
 [build-dependencies]
 walkdir = "2.2.9"
