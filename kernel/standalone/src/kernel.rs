@@ -100,15 +100,13 @@ impl Kernel {
                         message,
                     } = out
                     {
-                        /*if interface == redshirt_stdout_interface::ffi::INTERFACE {
+                        if interface == redshirt_stdout_interface::ffi::INTERFACE {
                             let msg =
                                 redshirt_stdout_interface::ffi::StdoutMessage::decode_all(&message);
-                            let redshirt_stdout_interface::ffi::StdoutMessage::Message(msg) =
-                                msg.unwrap();
-                            console.write(&msg);
-                        } else {*/
-                        panic!()
-                        //}
+                            system.emit_interface_message_no_answer(interface, msg.unwrap());
+                        } else {
+                            panic!()
+                        }
                     }
                 }
                 redshirt_core::system::SystemRunOutcome::ProgramFinished { pid, outcome } => {

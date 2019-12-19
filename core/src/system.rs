@@ -303,6 +303,19 @@ impl<TExtEx: Clone> System<TExtEx> {
         //println!("answered event {:?}", message_id);
         self.core.answer_message(message_id, response)
     }
+
+    /// Emits a message for the handler of the given interface.
+    ///
+    /// The message doesn't expect any answer.
+    // TODO: better API
+    pub fn emit_interface_message_no_answer(
+        &mut self,
+        interface: [u8; 32],
+        message: impl Encode,
+    ) -> Result<(), ()> {
+        self.core
+            .emit_interface_message_no_answer(interface, message)
+    }
 }
 
 impl<TExtEx: Clone> SystemBuilder<TExtEx> {
