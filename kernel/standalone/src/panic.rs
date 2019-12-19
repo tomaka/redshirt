@@ -60,8 +60,7 @@ struct Console {
 
 // State machine for the standard text console.
 #[cfg(target_arch = "arm")]
-struct Console {
-}
+struct Console {}
 
 #[cfg(target_arch = "x86_64")]
 impl fmt::Write for Console {
