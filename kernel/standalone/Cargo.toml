@@ -15,6 +15,7 @@ libm = "0.2.1"
 linked_list_allocator = "0.6.4"
 redshirt-core = { path = "../../core" }
 redshirt-hardware-interface = { path = "../../interfaces/hardware", default-features = false }
+redshirt-stdout-interface = { path = "../../interfaces/stdout", default-features = false }
 redshirt-wasi-hosted = { path = "../hosted-wasi" }
 parity-scale-codec = { version = "1.0.5", default-features = false }
 
