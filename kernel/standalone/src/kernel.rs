@@ -62,8 +62,15 @@ impl Kernel {
         )
         .unwrap();
 
+        // TODO: use a better system than cfgs
+        #[cfg(target_arch = "x86_64")]
         let stdout_module = redshirt_core::module::Module::from_bytes(
             &include_bytes!("../../../modules/target/wasm32-wasi/release/x86-stdout.wasm")[..],
+        )
+        .unwrap();
+        #[cfg(target_arch = "arm")]
+        let stdout_module = redshirt_core::module::Module::from_bytes(
+            &include_bytes!("../../../modules/target/wasm32-wasi/release/arm-stdout.wasm")[..],
         )
         .unwrap();
 
