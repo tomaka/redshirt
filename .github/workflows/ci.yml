@@ -124,17 +124,17 @@ jobs:
       uses: actions/cache@v1
       with:
         path: ~/.cargo/registry
-        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-registry-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}
     - name: Cache cargo index
       uses: actions/cache@v1
       with:
         path: ~/.cargo/git
-        key: ${{ runner.os }}-cargo-index-${{ hashFiles('Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-index-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}
     - name: Cache cargo build
       uses: actions/cache@v1
       with:
         path: target
-        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('Cargo.lock') }}-standalone
+        key: ${{ runner.os }}-cargo-build-target-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}-standalone
     - name: Install nightly Rust
       uses: actions-rs/toolchain@v1
       with:
@@ -150,8 +150,8 @@ jobs:
     - name: Upload generated kernel
       uses: actions/upload-artifact@master
       with:
-        name: kernel-{{ matrix.target }}
-        path: target/{{ matrix.target }}/release/redshirt-standalone-kernel
+        name: kernel-${{ matrix.target }}
+        path: target/${{ matrix.target }}/release/redshirt-standalone-kernel
 
   build-iso:
     name: Build bootable x86 ISO
