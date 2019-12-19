@@ -325,7 +325,7 @@ impl WasiStateMachine {
                 // nothing is a viable option. This should be implemented properly at some point,
                 // though.
                 HandleOut::Ok
-            },
+            }
             WasiExtrinsicInner::RandomGet => {
                 assert_eq!(params.len(), 2);
                 let buf = params[0].try_into::<i32>().unwrap() as u32;
