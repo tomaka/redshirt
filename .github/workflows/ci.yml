@@ -106,6 +106,9 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: rust
+    strategy:
+      matrix:
+        target: [x86_64-multiboot2, arm-freestanding]
     steps:
     - uses: actions/checkout@v1
     - name: Download WASM modules
@@ -141,14 +144,14 @@ jobs:
     - name: Install rust-src
       run: rustup component add rust-src
     - name: Build core for no_std platform
-      run: RUST_TARGET_PATH=`pwd` cargo +nightly build -Z build-std=core,alloc --target x86_64-multiboot2 --package redshirt-core --release
+      run: RUST_TARGET_PATH=`pwd` cargo +nightly build -Z build-std=core,alloc --target ${{ matrix.target }} --package redshirt-core --release
     - name: Build kernel for no_std platform
-      run: RUST_TARGET_PATH=`pwd` cargo +nightly build -Z build-std=core,alloc --target x86_64-multiboot2 --package redshirt-standalone-kernel --release
+      run: RUST_TARGET_PATH=`pwd` cargo +nightly build -Z build-std=core,alloc --target ${{ matrix.target }} --package redshirt-standalone-kernel --release
     - name: Upload generated kernel
       uses: actions/upload-artifact@master
       with:
-        name: kernel
-        path: target/x86_64-multiboot2/release/redshirt-standalone-kernel
+        name: kernel-{{ matrix.target }}
+        path: target/{{ matrix.target }}/release/redshirt-standalone-kernel
 
   build-iso:
     name: Build bootable x86 ISO
@@ -161,7 +164,7 @@ jobs:
     - name: Download kernel
       uses: actions/download-artifact@v1
       with:
-        name: kernel
+        name: kernel-x86_64-multiboot2
         path: .
     - name: Install required packages
       run: |
