@@ -27,6 +27,7 @@ use std::{
 };
 
 pub mod ffi;
+pub mod interface;
 
 pub struct TcpStream {
     handle: u32,
