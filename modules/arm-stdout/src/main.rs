@@ -38,7 +38,7 @@ async fn async_main() -> ! {
         let redshirt_stdout_interface::ffi::StdoutMessage::Message(message) =
             DecodeAll::decode_all(&msg.actual_data).unwrap();       // TODO: don't unwrap
         for byte in message.as_bytes() {
-            write_uart(*byte);
+            write_uart(*byte).await;
         }
     }
 }
