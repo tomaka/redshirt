@@ -313,7 +313,8 @@ impl<TExtEx: Clone> System<TExtEx> {
         interface: [u8; 32],
         message: impl Encode,
     ) -> Result<(), ()> {
-        self.core.emit_interface_message_no_answer(interface, message)
+        self.core
+            .emit_interface_message_no_answer(interface, message)
     }
 }
 
