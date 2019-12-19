@@ -27,7 +27,7 @@ pub struct Instant {
 
 impl Instant {
     pub fn now() -> Instant {
-        let val = nametbd_syscalls_interface::block_on(monotonic_clock());
+        let val = redshirt_syscalls_interface::block_on(monotonic_clock());
         Instant { inner: val }
     }
 

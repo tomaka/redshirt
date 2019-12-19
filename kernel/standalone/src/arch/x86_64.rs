@@ -55,7 +55,7 @@ extern "C" fn after_boot(multiboot_header: usize) -> ! {
 // TODO: define the semantics of that
 pub fn halt() -> ! {
     loop {
-        unsafe { x86::halt() }
+        unsafe { x86_64::instructions::hlt() }
     }
 }
 

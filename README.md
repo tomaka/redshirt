@@ -1,5 +1,6 @@
-Experiment to build some kind of operating-system-like environment where executables are all in
-WASM and are loaded from an IPFS-like decentralized network.
+The **redshirt** operating system is an experiment to build some kind of operating-system-like
+environment where executables are all in WASM and are loaded from an IPFS-like decentralized
+network.
 
 I'm frequently telling people what my vision of an operating system would be. Now I've started
 building it.
@@ -31,17 +32,17 @@ For the freestanding kernel:
 rustup target add wasm32-wasi
 
 # From the root directory of this repository (where the `arm-freestanding.json` file is located):
-RUST_TARGET_PATH=`pwd` cargo +nightly build -Z build-std=core,alloc --target arm-freestanding --package nametbd-standalone-kernel
+RUST_TARGET_PATH=`pwd` cargo +nightly build -Z build-std=core,alloc --target arm-freestanding --package redshirt-standalone-kernel
 
-# You now have a `target/arm-freestanding/debug/nametbd-standalone-kernel`.
+# You now have a `target/arm-freestanding/debug/redshirt-standalone-kernel`.
 # It can be loaded directly by QEMU:
-qemu-system-arm -M raspi2 -m 2048 -serial stdio -kernel ./target/arm-freestanding/debug/nametbd-standalone-kernel
+qemu-system-arm -M raspi2 -m 2048 -serial stdio -kernel ./target/arm-freestanding/debug/redshirt-standalone-kernel
 ```
 
 The freestanding kernel also supports x86_64:
 
 ```
-RUST_TARGET_PATH=`pwd` cargo +nightly build -Z build-std=core,alloc --target x86_64-multiboot2 --package nametbd-standalone-kernel
+RUST_TARGET_PATH=`pwd` cargo +nightly build -Z build-std=core,alloc --target x86_64-multiboot2 --package redshirt-standalone-kernel
 ```
 
 Unfortunately, the `-kernel` CLI option of QEMU doesn't support the multiboot2 standard (which we use). See https://github.com/tomaka/os/issues/75.
@@ -50,7 +51,7 @@ You can however put the kernel on a CD-ROM, and boot from it:
 ```
 mkdir -p iso/boot/grub
 cp .github/workflows/grub.cfg iso/boot/grub
-cp target/x86_64-multiboot2/debug/nametbd-standalone-kernel iso/boot/kernel
+cp target/x86_64-multiboot2/debug/redshirt-standalone-kernel iso/boot/kernel
 # Note: grub-mkrescue is sometimes called grub2-mkrescue
 grub-mkrescue -o cdrom.iso iso
 qemu-system-x86_64 -cdrom cdrom.iso -m 1024

@@ -52,7 +52,7 @@ pub struct System<TExtEx> {
     main_programs: Vec<[u8; 32]>,
 
     /// Set of messages that we emitted of requests to load a program from the loader interface.
-    /// All these messages expect a `nametbd_loader_interface::ffi::LoadResponse` as answer.
+    /// All these messages expect a `redshirt_loader_interface::ffi::LoadResponse` as answer.
     // TODO: call shink_to_fit from time to time
     loading_programs: HashSet<u64>,
 }
@@ -166,7 +166,7 @@ impl<TExtEx: Clone> System<TExtEx> {
                     ..
                 } => {
                     if self.loading_programs.remove(&message_id) {
-                        let nametbd_loader_interface::ffi::LoadResponse { result } =
+                        let redshirt_loader_interface::ffi::LoadResponse { result } =
                             DecodeAll::decode_all(&response.unwrap()).unwrap();
                         let module = Module::from_bytes(&result.unwrap()).unwrap();
                         self.core.execute(&module).unwrap();
@@ -178,18 +178,18 @@ impl<TExtEx: Clone> System<TExtEx> {
                     message_id,
                     interface,
                     message,
-                } if interface == nametbd_threads_interface::ffi::INTERFACE => {
-                    let msg: nametbd_threads_interface::ffi::ThreadsMessage =
+                } if interface == redshirt_threads_interface::ffi::INTERFACE => {
+                    let msg: redshirt_threads_interface::ffi::ThreadsMessage =
                         DecodeAll::decode_all(&message).unwrap();
                     match msg {
-                        nametbd_threads_interface::ffi::ThreadsMessage::New(new_thread) => {
+                        redshirt_threads_interface::ffi::ThreadsMessage::New(new_thread) => {
                             assert!(message_id.is_none());
                             self.core.process_by_id(pid).unwrap().start_thread(
                                 new_thread.fn_ptr,
                                 vec![wasmi::RuntimeValue::I32(new_thread.user_data as i32)],
                             );
                         }
-                        nametbd_threads_interface::ffi::ThreadsMessage::FutexWake(mut wake) => {
+                        redshirt_threads_interface::ffi::ThreadsMessage::FutexWake(mut wake) => {
                             assert!(message_id.is_none());
                             if let Some(list) = self.futex_waits.get_mut(&(pid, wake.addr)) {
                                 while wake.nwake > 0 && !list.is_empty() {
@@ -204,7 +204,7 @@ impl<TExtEx: Clone> System<TExtEx> {
                             }
                             // TODO: implement
                         }
-                        nametbd_threads_interface::ffi::ThreadsMessage::FutexWait(wait) => {
+                        redshirt_threads_interface::ffi::ThreadsMessage::FutexWait(wait) => {
                             let message_id = message_id.unwrap();
                             // TODO: val_cmp
                             match self.futex_waits.entry((pid, wait.addr)) {
@@ -226,31 +226,31 @@ impl<TExtEx: Clone> System<TExtEx> {
                     message_id,
                     interface,
                     message,
-                } if interface == nametbd_interface_interface::ffi::INTERFACE => {
-                    let msg: nametbd_interface_interface::ffi::InterfaceMessage =
+                } if interface == redshirt_interface_interface::ffi::INTERFACE => {
+                    let msg: redshirt_interface_interface::ffi::InterfaceMessage =
                         DecodeAll::decode_all(&message).unwrap();
                     match msg {
-                        nametbd_interface_interface::ffi::InterfaceMessage::Register(
+                        redshirt_interface_interface::ffi::InterfaceMessage::Register(
                             interface_hash,
                         ) => {
                             self.core
                                 .set_interface_handler(interface_hash, pid)
                                 .unwrap();
                             let response =
-                                nametbd_interface_interface::ffi::InterfaceRegisterResponse {
+                                redshirt_interface_interface::ffi::InterfaceRegisterResponse {
                                     result: Ok(()),
                                 };
                             self.core
                                 .answer_message(message_id.unwrap(), Ok(&response.encode()));
 
-                            if interface_hash == nametbd_loader_interface::ffi::INTERFACE {
+                            if interface_hash == redshirt_loader_interface::ffi::INTERFACE {
                                 for hash in self.main_programs.drain(..) {
                                     let msg =
-                                        nametbd_loader_interface::ffi::LoaderMessage::Load(hash);
+                                        redshirt_loader_interface::ffi::LoaderMessage::Load(hash);
                                     let id = self
                                         .core
                                         .emit_interface_message_answer(
-                                            nametbd_loader_interface::ffi::INTERFACE,
+                                            redshirt_loader_interface::ffi::INTERFACE,
                                             msg,
                                         )
                                         .unwrap();
@@ -303,6 +303,19 @@ impl<TExtEx: Clone> System<TExtEx> {
         //println!("answered event {:?}", message_id);
         self.core.answer_message(message_id, response)
     }
+
+    /// Emits a message for the handler of the given interface.
+    ///
+    /// The message doesn't expect any answer.
+    // TODO: better API
+    pub fn emit_interface_message_no_answer(
+        &mut self,
+        interface: [u8; 32],
+        message: impl Encode,
+    ) -> Result<(), ()> {
+        self.core
+            .emit_interface_message_no_answer(interface, message)
+    }
 }
 
 impl<TExtEx: Clone> SystemBuilder<TExtEx> {
@@ -311,8 +324,8 @@ impl<TExtEx: Clone> SystemBuilder<TExtEx> {
     pub fn new() -> SystemBuilder<TExtEx> {
         // We handle some low-level interfaces here.
         let core = Core::new()
-            .with_interface_handler(nametbd_interface_interface::ffi::INTERFACE)
-            .with_interface_handler(nametbd_threads_interface::ffi::INTERFACE);
+            .with_interface_handler(redshirt_interface_interface::ffi::INTERFACE)
+            .with_interface_handler(redshirt_threads_interface::ffi::INTERFACE);
 
         SystemBuilder {
             core,

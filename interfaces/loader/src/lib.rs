@@ -35,7 +35,7 @@ pub async fn load(hash: [u8; 32]) -> Result<Vec<u8>, ()> {
     unsafe {
         let msg = ffi::LoaderMessage::Load(hash);
         let rep: ffi::LoadResponse =
-            nametbd_syscalls_interface::emit_message_with_response(ffi::INTERFACE, msg)
+            redshirt_syscalls_interface::emit_message_with_response(ffi::INTERFACE, msg)
                 .await
                 .map_err(|_| ())?;
         rep.result

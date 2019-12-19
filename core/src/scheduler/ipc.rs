@@ -199,11 +199,11 @@ enum CoreRunOutcomeInner<T> {
 struct Process {
     /// Messages available for retrieval by the process by calling `next_message`.
     ///
-    /// Note that the [`ResponseMessage::index_in_list`](nametbd_syscalls_interface::ffi::ResponseMessage::index_in_list)
-    /// and [`InterfaceMessage::index_in_list`](nametbd_syscalls_interface::ffi::InterfaceMessage::index_in_list) fields are
+    /// Note that the [`ResponseMessage::index_in_list`](redshirt_syscalls_interface::ffi::ResponseMessage::index_in_list)
+    /// and [`InterfaceMessage::index_in_list`](redshirt_syscalls_interface::ffi::InterfaceMessage::index_in_list) fields are
     /// set to a dummy value, and must be filled before actually delivering the message.
     // TODO: call shrink_to_fit from time to time
-    messages_queue: VecDeque<nametbd_syscalls_interface::ffi::Message>,
+    messages_queue: VecDeque<redshirt_syscalls_interface::ffi::Message>,
 
     /// Interfaces that the process has registered.
     registered_interfaces: SmallVec<[[u8; 32]; 1]>,
@@ -288,31 +288,31 @@ impl<T: Clone> Core<T> {
             interfaces: Default::default(),
             inner_builder: processes::ProcessesCollectionBuilder::default()
                 .with_extrinsic(
-                    "nametbd",
+                    "redshirt",
                     "next_message",
                     sig!((I32, I32, I32, I32, I32) -> I32),
                     Extrinsic::NextMessage,
                 )
                 .with_extrinsic(
-                    "nametbd",
+                    "redshirt",
                     "emit_message",
                     sig!((I32, I32, I32, I32, I32, I32) -> I32),
                     Extrinsic::EmitMessage,
                 )
                 .with_extrinsic(
-                    "nametbd",
+                    "redshirt",
                     "emit_message_error",
                     sig!((I32) -> I32),
                     Extrinsic::EmitMessageError,
                 )
                 .with_extrinsic(
-                    "nametbd",
+                    "redshirt",
                     "emit_answer",
                     sig!((I32, I32, I32) -> I32),
                     Extrinsic::EmitAnswer,
                 )
                 .with_extrinsic(
-                    "nametbd",
+                    "redshirt",
                     "cancel_message",
                     sig!((I32) -> I32),
                     Extrinsic::CancelMessage,
@@ -425,8 +425,8 @@ impl<T: Clone> Core<T> {
                     match self.interfaces.get(&interface) {
                         Some(InterfaceState::Process(p)) => {
                             let message =
-                                nametbd_syscalls_interface::ffi::Message::ProcessDestroyed(
-                                    nametbd_syscalls_interface::ffi::ProcessDestroyedMessage {
+                                redshirt_syscalls_interface::ffi::Message::ProcessDestroyed(
+                                    redshirt_syscalls_interface::ffi::ProcessDestroyedMessage {
                                         index_in_list: 0,
                                         pid: pid.into(),
                                     },
@@ -534,8 +534,8 @@ impl<T: Clone> Core<T> {
 
                 match (self.interfaces.get_mut(&interface), allow_delay) {
                     (Some(InterfaceState::Process(pid)), _) => {
-                        let message = nametbd_syscalls_interface::ffi::Message::Interface(
-                            nametbd_syscalls_interface::ffi::InterfaceMessage {
+                        let message = redshirt_syscalls_interface::ffi::Message::Interface(
+                            redshirt_syscalls_interface::ffi::InterfaceMessage {
                                 interface,
                                 index_in_list: 0,
                                 message_id,
@@ -712,8 +712,8 @@ impl<T: Clone> Core<T> {
             } = thread_user_data
             {
                 assert_eq!(interface, int);
-                let message = nametbd_syscalls_interface::ffi::Message::Interface(
-                    nametbd_syscalls_interface::ffi::InterfaceMessage {
+                let message = redshirt_syscalls_interface::ffi::Message::Interface(
+                    redshirt_syscalls_interface::ffi::InterfaceMessage {
                         interface,
                         index_in_list: 0,
                         message_id,
@@ -748,8 +748,8 @@ impl<T: Clone> Core<T> {
         interface: [u8; 32],
         message: impl Encode,
     ) -> Result<(), ()> {
-        let message = nametbd_syscalls_interface::ffi::Message::Interface(
-            nametbd_syscalls_interface::ffi::InterfaceMessage {
+        let message = redshirt_syscalls_interface::ffi::Message::Interface(
+            redshirt_syscalls_interface::ffi::InterfaceMessage {
                 interface,
                 message_id: None,
                 emitter_pid: None,
@@ -792,8 +792,8 @@ impl<T: Clone> Core<T> {
             };
         };
 
-        let message = nametbd_syscalls_interface::ffi::Message::Interface(
-            nametbd_syscalls_interface::ffi::InterfaceMessage {
+        let message = redshirt_syscalls_interface::ffi::Message::Interface(
+            redshirt_syscalls_interface::ffi::InterfaceMessage {
                 interface,
                 message_id: Some(message_id),
                 emitter_pid: None,
@@ -833,8 +833,8 @@ impl<T: Clone> Core<T> {
         response: Result<&[u8], ()>,
         answerer_pid: Option<Pid>,
     ) -> Option<CoreRunOutcomeInner<T>> {
-        let actual_message = nametbd_syscalls_interface::ffi::Message::Response(
-            nametbd_syscalls_interface::ffi::ResponseMessage {
+        let actual_message = redshirt_syscalls_interface::ffi::Message::Response(
+            redshirt_syscalls_interface::ffi::ResponseMessage {
                 message_id,
                 // We a dummy value here and fill it up later when actually delivering the message.
                 index_in_list: 0,
@@ -1094,9 +1094,9 @@ fn try_resume_message_wait_thread(
 
         // For that message in queue, grab the value that must be in `msg_ids` in order to match.
         let msg_id = match &thread.process_user_data().messages_queue[index_in_queue] {
-            nametbd_syscalls_interface::ffi::Message::Interface(_) => 1,
-            nametbd_syscalls_interface::ffi::Message::ProcessDestroyed(_) => 1,
-            nametbd_syscalls_interface::ffi::Message::Response(response) => {
+            redshirt_syscalls_interface::ffi::Message::Interface(_) => 1,
+            redshirt_syscalls_interface::ffi::Message::ProcessDestroyed(_) => 1,
+            redshirt_syscalls_interface::ffi::Message::Response(response) => {
                 debug_assert!(response.message_id >= 2);
                 response.message_id
             }
@@ -1113,13 +1113,13 @@ fn try_resume_message_wait_thread(
 
     // Adjust the `index_in_list` field of the message to match what we have.
     match thread.process_user_data().messages_queue[index_in_queue] {
-        nametbd_syscalls_interface::ffi::Message::Response(ref mut response) => {
+        redshirt_syscalls_interface::ffi::Message::Response(ref mut response) => {
             response.index_in_list = index_in_msg_ids;
         }
-        nametbd_syscalls_interface::ffi::Message::Interface(ref mut interface) => {
+        redshirt_syscalls_interface::ffi::Message::Interface(ref mut interface) => {
             interface.index_in_list = index_in_msg_ids;
         }
-        nametbd_syscalls_interface::ffi::Message::ProcessDestroyed(ref mut proc_destr) => {
+        redshirt_syscalls_interface::ffi::Message::ProcessDestroyed(ref mut proc_destr) => {
             proc_destr.index_in_list = index_in_msg_ids;
         }
     }

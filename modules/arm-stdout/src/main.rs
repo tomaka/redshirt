@@ -20,22 +20,22 @@ use parity_scale_codec::DecodeAll;
 use std::{convert::TryFrom as _, fmt};
 
 fn main() {
-    nametbd_syscalls_interface::block_on(async_main());
+    redshirt_syscalls_interface::block_on(async_main());
 }
 
 async fn async_main() -> ! {
-    nametbd_interface_interface::register_interface(nametbd_stdout_interface::ffi::INTERFACE)
+    redshirt_interface_interface::register_interface(redshirt_stdout_interface::ffi::INTERFACE)
         .await.unwrap();
     init_uart();
 
     loop {
-        let msg = match nametbd_syscalls_interface::next_interface_message().await {
-            nametbd_syscalls_interface::InterfaceOrDestroyed::Interface(m) => m,
-            nametbd_syscalls_interface::InterfaceOrDestroyed::ProcessDestroyed(_) => continue,
+        let msg = match redshirt_syscalls_interface::next_interface_message().await {
+            redshirt_syscalls_interface::InterfaceOrDestroyed::Interface(m) => m,
+            redshirt_syscalls_interface::InterfaceOrDestroyed::ProcessDestroyed(_) => continue,
         };
-        assert_eq!(msg.interface, nametbd_stdout_interface::ffi::INTERFACE);
+        assert_eq!(msg.interface, redshirt_stdout_interface::ffi::INTERFACE);
 
-        let nametbd_stdout_interface::ffi::StdoutMessage::Message(message) =
+        let redshirt_stdout_interface::ffi::StdoutMessage::Message(message) =
             DecodeAll::decode_all(&msg.actual_data).unwrap();       // TODO: don't unwrap
         for byte in message.as_bytes() {
             write_uart(*byte);
@@ -50,7 +50,7 @@ const UART0_BASE: u64 = 0x3F201000;
 
 fn init_uart() {
     unsafe {
-        let mut ops = nametbd_hardware_interface::HardwareWriteOperationsBuilder::new();
+        let mut ops = redshirt_hardware_interface::HardwareWriteOperationsBuilder::new();
 
         ops.write(UART0_BASE + 0x30, to_le_vec(0x0));
         ops.write(GPIO_BASE + 0x94, to_le_vec(0x0));
@@ -88,7 +88,7 @@ async fn write_uart(byte: u8) {
         // Wait for UART to become ready to transmit.
         loop {
             // TODO: add shortcut in hardware-interface
-            let mut read = nametbd_hardware_interface::HardwareOperationsBuilder::new();
+            let mut read = redshirt_hardware_interface::HardwareOperationsBuilder::new();
             let mut out = [0; 4];
             read.read(UART0_BASE + 0x18, &mut out);
             read.send().await;
@@ -96,7 +96,7 @@ async fn write_uart(byte: u8) {
             if val & (1 << 5) == 0 { break; }
         }
 
-        nametbd_hardware_interface::write(UART0_BASE + 0x0, &[byte, 0, 0, 0][..]);
+        redshirt_hardware_interface::write(UART0_BASE + 0x0, &[byte, 0, 0, 0][..]);
     }
 }
 

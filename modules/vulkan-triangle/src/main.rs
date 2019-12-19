@@ -44,7 +44,7 @@ fn main() {
                 name: *const std::os::raw::c_char,
             ) -> extern "system" fn() {
                 unsafe {
-                    nametbd_vulkan_interface::vkGetInstanceProcAddr(instance, name as *const _)
+                    redshirt_vulkan_interface::vkGetInstanceProcAddr(instance, name as *const _)
                 }
             }
         }
@@ -97,7 +97,7 @@ fn main() {
     let surface = WindowBuilder::new().build_vk_surface(&events_loop, instance.clone()).unwrap();
     let window = surface.window();*/
     let window =
-        nametbd_syscalls_interface::block_on(nametbd_window_interface::Window::open()).unwrap();
+        redshirt_syscalls_interface::block_on(redshirt_window_interface::Window::open()).unwrap();
 
     // The next step is to choose which GPU queue will execute our draw commands.
     //
