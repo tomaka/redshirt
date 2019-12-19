@@ -69,6 +69,15 @@ async fn async_main() {
             None => continue,
         };
 
-        redshirt_stdout_interface::stdout(format!("Packet: {:?}\n", packet));
+        let (header, data) = etherparse::Ethernet2Header::read_from_slice(&packet).unwrap();
+        if header.ether_type == 0x86dd {
+            let (ip_header, ip_data) = etherparse::Ipv6Header::read_from_slice(&data).unwrap();
+            if ip_header.next_header == 0x11 {
+                let (udp_header, udp_data) = etherparse::UdpHeader::read_from_slice(&ip_data).unwrap();
+                redshirt_stdout_interface::stdout(format!("Headers: {:?} {:?}\n", ip_header, udp_header));
+            }
+        }
+
+        //redshirt_stdout_interface::stdout(format!("Header: {:?}\n", header));
     }
 }

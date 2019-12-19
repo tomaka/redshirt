@@ -96,7 +96,7 @@ impl Device {
 
         // Packets with multicast addresses, broadcast addresses and small are all accepted.
         redshirt_hardware_interface::port_write_u8(base_port + 12, (1 << 3) | (1 << 2) | (1 << 1));
-        // External lookback. // TODO: is this how we read our MAC?
+        // External lookback. // TODO: why is that necessary?
         redshirt_hardware_interface::port_write_u8(base_port + 13, 1 << 2);
 
         // TODO: understand
@@ -109,6 +109,7 @@ impl Device {
             [buffer[0], buffer[2], buffer[4], buffer[6], buffer[8], buffer[10]]
         };
 
+        // TODO: remove
         redshirt_stdout_interface::stdout(
             format!("MAC: {:x} {:x} {:x} {:x} {:x} {:x}\n", mac_address[0], mac_address[1], mac_address[2], mac_address[3], mac_address[4], mac_address[5])
         );
@@ -148,6 +149,7 @@ impl Device {
         // Registers to page 0. Abort/complete DMA and start.
         redshirt_hardware_interface::port_write_u8(base_port + 0, (1 << 5) | (1 << 1));
 
+        // TODO: why do we do this *after* starting?
         // Transmit Configuration register. Normal operation.
         redshirt_hardware_interface::port_write_u8(base_port + 13, 0);
         // Receive Configuration register.
@@ -172,7 +174,7 @@ impl Device {
         debug_assert!(self.next_to_read < READ_BUFFER_PAGES.end);
 
         // Read the value of the `CURR` register. It is automatically updated by the device
-        // when a packet is read.
+        // when a packet arrives from the network.
         let curr_register = {
             let mut ops = redshirt_hardware_interface::HardwareOperationsBuilder::new();
 
@@ -207,9 +209,7 @@ impl Device {
             (out[0], out[1], len)
         };
 
-        // TODO: check this status thing
-        // TODO: nothing works properly :see-no-evil:
-
+        // TODO: why are these checks necessary?
         if status & 0x1f != 1 {
             return None;
         }
@@ -225,7 +225,7 @@ impl Device {
 
         debug_assert!(current_packet_len < 15522);       // TODO: is that correct?
         let mut out_packet = vec![0; usize::from(current_packet_len)];
-        dma_read(self.base_port, &mut out_packet, self.next_to_read, 4);
+        dma_read(self.base_port, &mut out_packet, self.next_to_read, 4).await;
 
         // Update `self.next_to_read` with the page of the next packet.
         self.next_to_read = if next_packet_page == READ_BUFFER_PAGES.end {
