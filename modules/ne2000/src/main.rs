@@ -35,6 +35,8 @@ fn main() {
 }
 
 async fn async_main() {
+    let mut ne2k_devices = Vec::new();
+
     let pci_devices = redshirt_pci_interface::get_pci_devices().await;
     for device in pci_devices {
         if device.vendor_id == 0x10ec && device.device_id == 0x8029 {
@@ -47,10 +49,25 @@ async fn async_main() {
 
             if let Some(port_number) = port_number {
                 unsafe {
-                    device::Device::reset(port_number).await;
-                    redshirt_stdout_interface::stdout(format!("Initialized ne2000\n"));
+                    ne2k_devices.push(device::Device::reset(port_number).await);
+                    redshirt_stdout_interface::stdout(format!("Initialized ne2000 at 0x{:x}\n", port_number));
                 }
             }
         }
+    }
+
+    if ne2k_devices.is_empty() {
+        return;
+    }
+
+    ne2k_devices.shrink_to_fit();
+
+    loop {
+        let packet = match unsafe { ne2k_devices[0].read_one_incoming().await } {
+            Some(p) => p,
+            None => continue,
+        };
+
+        redshirt_stdout_interface::stdout(format!("Packet of length 0x{:x}\n", packet.len()));
     }
 }

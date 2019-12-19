@@ -930,6 +930,7 @@ dependencies = [
  "redshirt-pci-interface 0.1.0",
  "redshirt-stdout-interface 0.1.0",
  "redshirt-syscalls-interface 0.1.0",
+ "smallvec 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
