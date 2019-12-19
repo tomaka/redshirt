@@ -18,22 +18,9 @@ use core::fmt::{self, Write};
 
 #[panic_handler]
 fn panic(panic_info: &core::panic::PanicInfo) -> ! {
-    // Because the diagnostic code below might panic again, we first print a `Panic` message on
-    // the top left of the screen.
-    let vga_buffer = 0xb8000 as *mut u8;
-    for (i, &byte) in b"Panic".iter().enumerate() {
-        unsafe {
-            *vga_buffer.offset(i as isize * 2) = byte;
-            *vga_buffer.offset(i as isize * 2 + 1) = 0xc;
-        }
-    }
-
     // TODO: switch back to text mode somehow?
 
-    let mut console = Console {
-        cursor_x: 0,
-        cursor_y: 0,
-    };
+    let mut console = Console::default();
 
     if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
         let _ = writeln!(console, "panic occurred: {:?}", s);
@@ -64,11 +51,19 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
 }
 
 // State machine for the standard text console.
+#[cfg(target_arch = "x86_64")]
+#[derive(Default)]
 struct Console {
     cursor_x: u8,
     cursor_y: u8,
 }
 
+// State machine for the standard text console.
+#[cfg(target_arch = "arm")]
+struct Console {
+}
+
+#[cfg(target_arch = "x86_64")]
 impl fmt::Write for Console {
     fn write_str(&mut self, message: &str) -> fmt::Result {
         unsafe {
@@ -108,6 +103,25 @@ impl fmt::Write for Console {
     }
 }
 
+// State machine for the standard text console.
+#[cfg(target_arch = "arm")]
+impl Default for Console {
+    fn default() -> Console {
+        init_uart();
+        Console {}
+    }
+}
+
+#[cfg(target_arch = "arm")]
+impl fmt::Write for Console {
+    fn write_str(&mut self, message: &str) -> fmt::Result {
+        for byte in message.as_bytes() {
+            write_uart(*byte);
+        }
+        Ok(())
+    }
+}
+
 fn ptr_of(x: u8, y: u8) -> *mut u16 {
     assert!(x < 80);
     assert!(y < 25);
@@ -131,4 +145,45 @@ fn line_up() {
             ptr_of(x, 24).write_volatile(0);
         }
     }
+}
+
+const GPIO_BASE: usize = 0x3F200000;
+const UART0_BASE: usize = 0x3F201000;
+
+fn init_uart() {
+    unsafe {
+        ((UART0_BASE + 0x30) as *mut u32).write_volatile(0x0);
+        ((GPIO_BASE + 0x94) as *mut u32).write_volatile(0x0);
+        delay(150);
+
+        ((GPIO_BASE + 0x98) as *mut u32).write_volatile((1 << 14) | (1 << 15));
+        delay(150);
+
+        ((GPIO_BASE + 0x98) as *mut u32).write_volatile(0x0);
+
+        ((UART0_BASE + 0x44) as *mut u32).write_volatile(0x7FF);
+
+        ((UART0_BASE + 0x24) as *mut u32).write_volatile(1);
+        ((UART0_BASE + 0x28) as *mut u32).write_volatile(40);
+
+        ((UART0_BASE + 0x2C) as *mut u32).write_volatile((1 << 4) | (1 << 5) | (1 << 6));
+
+        ((UART0_BASE + 0x38) as *mut u32).write_volatile(
+            (1 << 1) | (1 << 4) | (1 << 5) | (1 << 6) | (1 << 7) | (1 << 8) | (1 << 9) | (1 << 10),
+        );
+
+        ((UART0_BASE + 0x30) as *mut u32).write_volatile((1 << 0) | (1 << 8) | (1 << 9));
+    }
+}
+
+fn write_uart(byte: u8) {
+    unsafe {
+        // Wait for UART to become ready to transmit.
+        while (((UART0_BASE + 0x18) as *mut u32).read_volatile() & (1 << 5)) != 0 {}
+        ((UART0_BASE + 0x0) as *mut u32).write_volatile(u32::from(byte));
+    }
+}
+
+fn delay(count: i32) {
+    // TODO: asm!("__delay_%=: subs %[count], %[count], #1; bne __delay_%=\n" : "=r"(count): [count]"0"(count) : "cc");
 }
