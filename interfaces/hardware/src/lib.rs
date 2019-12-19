@@ -53,10 +53,11 @@ impl HardwareWriteOperationsBuilder {
     }
 
     pub unsafe fn write_one_u32(&mut self, address: u64, data: u32) {
-        self.operations.push(ffi::Operation::PhysicalMemoryWriteU32 {
-            address,
-            data: vec![data],
-        });
+        self.operations
+            .push(ffi::Operation::PhysicalMemoryWriteU32 {
+                address,
+                data: vec![data],
+            });
     }
 
     pub unsafe fn port_write_u8(&mut self, port: u32, data: u8) {
@@ -172,10 +173,11 @@ impl<'a> HardwareOperationsBuilder<'a> {
     }
 
     pub unsafe fn write_one_u32(&mut self, address: u64, data: u32) {
-        self.operations.push(ffi::Operation::PhysicalMemoryWriteU32 {
-            address,
-            data: vec![data],
-        });
+        self.operations
+            .push(ffi::Operation::PhysicalMemoryWriteU32 {
+                address,
+                data: vec![data],
+            });
     }
 
     pub unsafe fn port_write_u8(&mut self, port: u32, data: u8) {
