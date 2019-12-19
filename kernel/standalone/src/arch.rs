@@ -17,6 +17,6 @@ mod arm;
 mod x86_64;
 
 #[cfg(target_arch = "x86_64")]
-pub use self::x86_64::*;
+pub use self::x86_64::*; // TODO: remove
 #[cfg(any(target_arch = "arm", target_arch = "aarch64"))]
 pub use arm::*; // TODO: remove
