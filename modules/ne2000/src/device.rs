@@ -22,7 +22,8 @@ use smallvec::SmallVec;
 //
 // The ne2000 has a circular buffer of pages of 256 bytes each. An Ethernet packet can occupy up
 // to six pages. Packets always have to be aligned on pages boundaries. Only pages 0x40 to 0x60
-// are available for us to read/write on.
+// are available for us to read/write on. The first 16 bytes of the device memory contain its MAC
+// address.
 //
 // The circular buffer containing the pages isn't available in physical memory. In order to access
 // it from the host (i.e. us), we have to use the DMA system of the chip.
@@ -104,7 +105,7 @@ impl Device {
         // Read our MAC address.
         let mac_address: [u8; 6] = {
             let mut buffer = [0; 32];
-            dma_read(base_port, &mut buffer, 0).await;
+            dma_read(base_port, &mut buffer, 0, 0).await;
             [buffer[0], buffer[2], buffer[4], buffer[6], buffer[8], buffer[10]]
         };
 
@@ -167,85 +168,81 @@ impl Device {
     ///
     /// Returns `None` if there's no packet available.
     pub async unsafe fn read_one_incoming(&mut self) -> Option<Vec<u8>> {
-        for _ in 0..16 {
-            debug_assert!(self.next_to_read >= READ_BUFFER_PAGES.start);
-            debug_assert!(self.next_to_read < READ_BUFFER_PAGES.end);
+        debug_assert!(self.next_to_read >= READ_BUFFER_PAGES.start);
+        debug_assert!(self.next_to_read < READ_BUFFER_PAGES.end);
 
-            // Read the value of the `CURR` register. It is automatically updated by the device
-            // when a packet is read.
-            let curr_register = {
-                let mut ops = redshirt_hardware_interface::HardwareOperationsBuilder::new();
+        // Read the value of the `CURR` register. It is automatically updated by the device
+        // when a packet is read.
+        let curr_register = {
+            let mut ops = redshirt_hardware_interface::HardwareOperationsBuilder::new();
 
-                // Registers to page 1. Abort/complete DMA and start.
-                redshirt_hardware_interface::port_write_u8(self.base_port + 0, (1 << 6) | (1 << 5) | (1 << 1));
+            // Registers to page 1. Abort/complete DMA and start.
+            redshirt_hardware_interface::port_write_u8(self.base_port + 0, (1 << 6) | (1 << 5) | (1 << 1));
 
-                // Read the register.
-                let mut out = 0;
-                ops.port_read_u8(self.base_port + 16, &mut out);
+            // Read the register.
+            let mut out = 0;
+            ops.port_read_u8(self.base_port + 16, &mut out);
 
-                // Registers to page 0. Abort/complete DMA and start.
-                redshirt_hardware_interface::port_write_u8(self.base_port + 0, (1 << 5) | (1 << 1));
+            // Registers to page 0. Abort/complete DMA and start.
+            redshirt_hardware_interface::port_write_u8(self.base_port + 0, (1 << 5) | (1 << 1));
 
-                // Note: since the write, read, and write is sent in one chunk, it would be safe to
-                // interrupt the `Future` here.
-                ops.send().await;
-                out
-            };
+            // Note: since the write, read, and write is sent in one chunk, it would be safe to
+            // interrupt the `Future` here.
+            ops.send().await;
+            out
+        };
 
-            // We compare `CURR` with `self.next_to_read` to know whether there is available data.
-            //println!("curr = {:?} ; next = {:?}", curr_register, self.next_to_read);
-            if curr_register == self.next_to_read {
-                return None;
-            }
-
-            // The device prepends each packet with a header which we need to analyze.
-            let (status, next_packet_page, current_packet_len) = {
-                let mut out = [0; 4];
-                dma_read(self.base_port, &mut out, self.next_to_read).await;
-                let next = out[1];
-                let len = u16::from_le_bytes([out[2], out[3]]);
-                (out[0], out[1], len)
-            };
-
-            // TODO: check this status thing
-            // TODO: nothing works properly :see-no-evil:
-
-            if status & 0x1f != 1 {
-                continue;
-            }
-            if next_packet_page < READ_BUFFER_PAGES.start || next_packet_page > READ_BUFFER_PAGES.end {
-                continue;
-            }
-            if current_packet_len > 1536 {
-                continue;
-            }
-
-            assert!(next_packet_page >= READ_BUFFER_PAGES.start);
-            assert!(next_packet_page <= READ_BUFFER_PAGES.end);
-
-            debug_assert!(current_packet_len < 15522);       // TODO: is that correct?
-            let mut out_packet = vec![0; usize::from(current_packet_len)];
-            dma_read(self.base_port, &mut out_packet, self.next_to_read);
-
-            // Update `self.next_to_read` with the page of the next packet.
-            self.next_to_read = if next_packet_page == READ_BUFFER_PAGES.end {
-                READ_BUFFER_PAGES.start
-            } else {
-                next_packet_page
-            };
-
-            // Write in the BNRY (Boundary) register the address of the last page that we read.
-            // This prevents the device from potentially overwriting packets we haven't read yet.
-            if self.next_to_read == READ_BUFFER_PAGES.start {
-                redshirt_hardware_interface::port_write_u8(self.base_port + 3, READ_BUFFER_PAGES.end - 1);
-            } else {
-                redshirt_hardware_interface::port_write_u8(self.base_port + 3, self.next_to_read - 1);
-            }
-
-            return Some(out_packet)
+        // We compare `CURR` with `self.next_to_read` to know whether there is available data.
+        //println!("curr = {:?} ; next = {:?}", curr_register, self.next_to_read);
+        if curr_register == self.next_to_read {
+            return None;
         }
 
-        None
+        // The device prepends each packet with a header which we need to analyze.
+        let (status, next_packet_page, current_packet_len) = {
+            let mut out = [0; 4];
+            dma_read(self.base_port, &mut out, self.next_to_read, 0).await;
+            let next = out[1];
+            let len = u16::from_le_bytes([out[2], out[3]]);
+            (out[0], out[1], len)
+        };
+
+        // TODO: check this status thing
+        // TODO: nothing works properly :see-no-evil:
+
+        if status & 0x1f != 1 {
+            return None;
+        }
+        if next_packet_page < READ_BUFFER_PAGES.start || next_packet_page > READ_BUFFER_PAGES.end {
+            return None;
+        }
+        if current_packet_len > 1536 {
+            return None;
+        }
+
+        assert!(next_packet_page >= READ_BUFFER_PAGES.start);
+        assert!(next_packet_page <= READ_BUFFER_PAGES.end);
+
+        debug_assert!(current_packet_len < 15522);       // TODO: is that correct?
+        let mut out_packet = vec![0; usize::from(current_packet_len)];
+        dma_read(self.base_port, &mut out_packet, self.next_to_read, 4);
+
+        // Update `self.next_to_read` with the page of the next packet.
+        self.next_to_read = if next_packet_page == READ_BUFFER_PAGES.end {
+            READ_BUFFER_PAGES.start
+        } else {
+            next_packet_page
+        };
+
+        // Write in the BNRY (Boundary) register the address of the last page that we read.
+        // This prevents the device from potentially overwriting packets we haven't read yet.
+        if self.next_to_read == READ_BUFFER_PAGES.start {
+            redshirt_hardware_interface::port_write_u8(self.base_port + 3, READ_BUFFER_PAGES.end - 1);
+        } else {
+            redshirt_hardware_interface::port_write_u8(self.base_port + 3, self.next_to_read - 1);
+        }
+
+        Some(out_packet)
     }
 
     /// Sends a packet out. Returns an error if the device's buffer is full, in which case we must
@@ -377,7 +374,7 @@ impl fmt::Debug for Device {
 ///
 /// Race condition if the same remote memory is at the same time written by something else.
 ///
-async unsafe fn dma_read(base_port: u32, data: &mut [u8], page_start: u8) {
+async unsafe fn dma_read(base_port: u32, data: &mut [u8], page_start: u8, page_offset: u8) {
     if data.is_empty() {
         return;
     }
@@ -397,7 +394,7 @@ async unsafe fn dma_read(base_port: u32, data: &mut [u8], page_start: u8) {
     ops.port_write_u8(base_port + 10, data_len_lo);
     ops.port_write_u8(base_port + 11, data_len_hi);
     // DMA remote start address.
-    ops.port_write_u8(base_port + 8, 0);   // A page is 256 bytes, so the low is always 0
+    ops.port_write_u8(base_port + 8, page_offset);
     ops.port_write_u8(base_port + 9, page_start);
     // Start & DMA remote read.
     ops.port_write_u8(base_port + 0, (1 << 3) | (1 << 1));
