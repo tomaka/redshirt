@@ -25,6 +25,23 @@ pub const INTERFACE: [u8; 32] = [
 /// Message in destination to the hardware interface handler.
 #[derive(Debug, Encode, Decode)]
 pub enum HardwareMessage {
+    /// Allocate RAM. Must answer with a `u64`. The value `0` is returned if the allocation is
+    /// too large.
+    ///
+    /// This is useful in situations where you want to pass a pointer to a device.
+    Malloc {
+        /// Size to allocate.
+        size: u64,
+        /// Alignment of the pointer to return.
+        ///
+        /// The returned value modulo `alignment` must be equal to 0.
+        alignment: u8,
+    },
+    /// Opposite of malloc.
+    Free {
+        /// Value previously returned after a malloc message.
+        ptr: u64,
+    },
     /// Request to perform some access on the physical memory or ports.
     ///
     /// All operations must be performed in order.
