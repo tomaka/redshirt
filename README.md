@@ -31,14 +31,24 @@ For the freestanding kernel:
 ```
 rustup target add wasm32-wasi
 
-# From the root directory of this repository (where the `x86_64-multiboot2.json` file is located):
+# From the root directory of this repository (where the `arm-freestanding.json` file is located):
+RUST_TARGET_PATH=`pwd` cargo +nightly build -Z build-std=core,alloc --target arm-freestanding --package redshirt-standalone-kernel
+
+# You now have a `target/arm-freestanding/debug/redshirt-standalone-kernel`.
+# It can be loaded directly by QEMU:
+qemu-system-arm -M raspi2 -m 2048 -serial stdio -kernel ./target/arm-freestanding/debug/redshirt-standalone-kernel
+```
+
+The freestanding kernel also supports x86_64:
+
+```
 RUST_TARGET_PATH=`pwd` cargo +nightly build -Z build-std=core,alloc --target x86_64-multiboot2 --package redshirt-standalone-kernel
+```
 
-# You now have a `target/x86_64-multiboot2/debug/redshirt-standalone-kernel`.
-# It can be loaded directly by QEMU: (Note: that's not working, see https://github.com/tomaka/os/issues/75)
-qemu-system-x86_64 -kernel ./target/x86_64-multiboot2/debug/redshirt-standalone-kernel -m 1024 -netdev user,id=nd0 -device ne2k_pci,netdev=nd0
+Unfortunately, the `-kernel` CLI option of QEMU doesn't support the multiboot2 standard (which we use). See https://github.com/tomaka/os/issues/75.
+You can however put the kernel on a CD-ROM, and boot from it:
 
-# Alternatively, you can put it on a CDROM:
+```
 mkdir -p iso/boot/grub
 cp .github/workflows/grub.cfg iso/boot/grub
 cp target/x86_64-multiboot2/debug/redshirt-standalone-kernel iso/boot/kernel

@@ -22,6 +22,18 @@ version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
+name = "arm-stdout"
+version = "0.1.0"
+dependencies = [
+ "byteorder 1.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "redshirt-hardware-interface 0.1.0",
+ "redshirt-interface-interface 0.1.0",
+ "redshirt-stdout-interface 0.1.0",
+ "redshirt-syscalls-interface 0.1.0",
+]
+
+[[package]]
 name = "arrayref"
 version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
