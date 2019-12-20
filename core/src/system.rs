@@ -101,6 +101,8 @@ pub enum SystemRunOutcome<TExtEx> {
     /// [`SystemBuilder::with_interface_handler`].
     InterfaceMessage {
         // TODO: return an object representing the process or message
+        /// Pid of the process that sent the message.
+        pid: Pid,
         /// If `Some`, identifier of the message to use to send the answer. If `None`, the message
         /// doesn't expect any answer.
         message_id: Option<u64>,
@@ -268,6 +270,7 @@ impl<TExtEx: Clone> System<TExtEx> {
                     message,
                 } => {
                     return SystemRunOutcome::InterfaceMessage {
+                        pid,
                         message_id,
                         interface,
                         message,
