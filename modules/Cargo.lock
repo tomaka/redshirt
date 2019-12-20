@@ -1387,6 +1387,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "rpi-framebuffer"
+version = "0.1.0"
+dependencies = [
+ "byteorder 1.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "redshirt-hardware-interface 0.1.0",
+ "redshirt-interface-interface 0.1.0",
+ "redshirt-stdout-interface 0.1.0",
+ "redshirt-syscalls-interface 0.1.0",
+]
+
+[[package]]
 name = "rustc-demangle"
 version = "0.1.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"

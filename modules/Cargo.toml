@@ -4,6 +4,7 @@ members = [
     "hello-world",
     "http-server",
     "p2p-loader",
+    "rpi-framebuffer",
     "third-party/time",
     "third-party/wasm-timer",
     "vulkan-triangle",

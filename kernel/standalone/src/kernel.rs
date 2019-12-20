@@ -74,11 +74,17 @@ impl Kernel {
         )
         .unwrap();
 
+        let rpi_fb_module = redshirt_core::module::Module::from_bytes(
+            &include_bytes!("../../../modules/target/wasm32-wasi/release/rpi-framebuffer.wasm")[..],
+        )
+        .unwrap();
+
         let mut system =
             redshirt_wasi_hosted::register_extrinsics(redshirt_core::system::SystemBuilder::new())
                 .with_interface_handler(redshirt_hardware_interface::ffi::INTERFACE)
                 .with_startup_process(stdout_module)
                 .with_startup_process(hello_module)
+                .with_startup_process(rpi_fb_module)
                 .with_main_program([0; 32]) // TODO: just a test
                 .build();
 
