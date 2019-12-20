@@ -15,6 +15,8 @@
 
 //! Implements the stdout interface by writing in text mode.
 
+// TODO: doc https://jsandler18.github.io/
+
 use byteorder::{ByteOrder as _, LittleEndian};
 use parity_scale_codec::DecodeAll;
 use std::{convert::TryFrom as _, fmt};
