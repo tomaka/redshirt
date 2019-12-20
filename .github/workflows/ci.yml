@@ -154,7 +154,7 @@ jobs:
         path: target/${{ matrix.target }}/release/redshirt-standalone-kernel
 
   build-iso:
-    name: Build bootable x86 ISO
+    name: Build bootable x86_64 ISO
     needs: build-standalone
     runs-on: ubuntu-latest
     container:
@@ -180,7 +180,7 @@ jobs:
     - name: Upload generated kernel
       uses: actions/upload-artifact@master
       with:
-        name: iso
+        name: bootable-cdrom-x86_64
         path: redshirt.iso
 
   fmt:
