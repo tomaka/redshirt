@@ -117,14 +117,16 @@ impl Kernel {
                     }
                 }
                 redshirt_core::system::SystemRunOutcome::ProgramFinished { pid, outcome } => {
+                    hardware.process_stopped(pid);
                     //console.write(&format!("Program finished {:?} => {:?}\n", pid, outcome));
                 }
                 redshirt_core::system::SystemRunOutcome::InterfaceMessage {
+                    pid,
                     interface,
                     message,
                     message_id,
                 } if interface == redshirt_hardware_interface::ffi::INTERFACE => {
-                    if let Some(answer) = hardware.hardware_message(message_id, &message) {
+                    if let Some(answer) = hardware.hardware_message(pid, message_id, &message) {
                         let answer = match &answer {
                             Ok(v) => Ok(&v[..]),
                             Err(()) => Err(()),

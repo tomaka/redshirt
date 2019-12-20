@@ -117,6 +117,7 @@ async fn async_main() {
                     message_id,
                     interface,
                     message,
+                    ..
                 } if interface == redshirt_time_interface::ffi::INTERFACE => {
                     if let Some(answer) =
                         time.time_message(message_id.map(MessageId::Core), &message)
@@ -133,6 +134,7 @@ async fn async_main() {
                     message_id,
                     interface,
                     message,
+                    ..
                 } if interface == redshirt_tcp_interface::ffi::INTERFACE => {
                     let message: redshirt_tcp_interface::ffi::TcpMessage =
                         DecodeAll::decode_all(&message).unwrap();
