@@ -33,7 +33,8 @@ pub trait Decode {
 
     /// Decode the raw data passed as parameter.
     fn decode(buffer: Vec<u8>) -> Result<Self, Self::Error>
-        where Self: Sized;
+    where
+        Self: Sized;
 }
 
 impl<'a> Encode<'a> for EncodedMessage {
@@ -44,7 +45,7 @@ impl<'a> Encode<'a> for EncodedMessage {
 
 impl<'a, T> Encode<'a> for T
 where
-    T: parity_scale_codec::Encode
+    T: parity_scale_codec::Encode,
 {
     fn encode(self) -> Cow<'a, [u8]> {
         Cow::Owned(parity_scale_codec::Encode::encode(&self))
@@ -52,7 +53,7 @@ where
 }
 
 impl Decode for EncodedMessage {
-    type Error = core::convert::Infallible;     // TODO: `!`
+    type Error = core::convert::Infallible; // TODO: `!`
 
     fn decode(buffer: Vec<u8>) -> Result<Self, Self::Error> {
         Ok(EncodedMessage(buffer))
@@ -61,7 +62,7 @@ impl Decode for EncodedMessage {
 
 impl<T> Decode for T
 where
-    T: parity_scale_codec::DecodeAll
+    T: parity_scale_codec::DecodeAll,
 {
     type Error = ();
 
