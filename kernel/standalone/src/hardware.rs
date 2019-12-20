@@ -81,7 +81,8 @@ where
             }
             Ok(HardwareMessage::Malloc { size, alignment }) => {
                 // TODO: this is obviously badly written
-                let mut buffer = Vec::with_capacity(usize::try_from(size).unwrap() + usize::from(alignment) - 1);
+                let mut buffer =
+                    Vec::with_capacity(usize::try_from(size).unwrap() + usize::from(alignment) - 1);
                 let mut ptr = u64::try_from(buffer.as_ptr() as usize).unwrap();
                 while ptr % u64::from(alignment) != 0 {
                     ptr += 1;
@@ -91,17 +92,19 @@ where
                 allocations.entry(sender_pid).or_default().push(buffer);
 
                 Some(Ok(ptr.encode()))
-            },
+            }
             Ok(HardwareMessage::Free { ptr }) => {
                 if let Ok(ptr) = usize::try_from(ptr) {
                     let mut allocations = self.allocations.lock();
                     if let Some(list) = allocations.get_mut(&sender_pid) {
                         // Since we adjust the returned pointer to match the alignment.
-                        list.retain(|e| ptr < e.as_ptr() as usize || ptr >= (e.as_ptr() as usize) + e.len());
+                        list.retain(|e| {
+                            ptr < e.as_ptr() as usize || ptr >= (e.as_ptr() as usize) + e.len()
+                        });
                     }
                 }
                 None
-            },
+            }
             Ok(HardwareMessage::InterruptWait(int_id)) => unimplemented!(), // TODO:
             Err(_) => Some(Err(())),
         }

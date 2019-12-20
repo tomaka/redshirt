@@ -43,15 +43,14 @@ impl<T> PhysicalBuffer<T> {
         let size = u64::try_from(mem::size_of_val(&data)).unwrap();
         let align = u8::try_from(mem::align_of_val(&data)).unwrap();
 
-        malloc(size, align)
-            .map(move |ptr| {
-                let buf = PhysicalBuffer {
-                    ptr,
-                    marker: PhantomData,
-                };
-                buf.write(data);
-                buf
-            })
+        malloc(size, align).map(move |ptr| {
+            let buf = PhysicalBuffer {
+                ptr,
+                marker: PhantomData,
+            };
+            buf.write(data);
+            buf
+        })
     }
 
     /// Returns the location in physical memory of the buffer.
@@ -77,19 +76,15 @@ impl<T> PhysicalBuffer<T> {
 
     /// Reads back the content of the buffer and destroys the buffer.
     pub fn take(self) -> impl Future<Output = T> {
-        unsafe {
-            self.read_inner()
-        }
+        unsafe { self.read_inner() }
     }
 
     /// Returns a copy of the content of the buffer.
     pub fn read(&self) -> impl Future<Output = T>
     where
-        T: Copy
+        T: Copy,
     {
-        unsafe {
-            self.read_inner()
-        }
+        unsafe { self.read_inner() }
     }
 
     /// Reads the content of the buffer and returns a copy.
@@ -105,15 +100,14 @@ impl<T> PhysicalBuffer<T> {
         // function or block, which aren't available in `no_std` environments at the time of
         // writing.
 
-        let msg = ffi::HardwareMessage::HardwareAccess(vec![
-            ffi::Operation::PhysicalMemoryReadU8 {
+        let msg =
+            ffi::HardwareMessage::HardwareAccess(vec![ffi::Operation::PhysicalMemoryReadU8 {
                 address: self.ptr,
                 len: u32::try_from(mem::size_of::<T>()).unwrap(),
-            }
-        ]);
+            }]);
 
-        redshirt_syscalls_interface::emit_message_with_response(ffi::INTERFACE, msg)
-            .map(move |response: Result<Vec<ffi::HardwareAccessResponse>, _>| {
+        redshirt_syscalls_interface::emit_message_with_response(ffi::INTERFACE, msg).map(
+            move |response: Result<Vec<ffi::HardwareAccessResponse>, _>| {
                 let mut response = response.unwrap();
                 debug_assert_eq!(response.len(), 1);
                 let buf = match response.remove(0) {
@@ -121,7 +115,8 @@ impl<T> PhysicalBuffer<T> {
                     _ => unreachable!(),
                 };
                 ptr::read_unaligned(buf.as_ptr() as *const T)
-            })
+            },
+        )
     }
 }
 
@@ -139,17 +134,15 @@ impl<T: ?Sized> Drop for PhysicalBuffer<T> {
 ///
 pub fn malloc(size: u64, alignment: u8) -> impl Future<Output = u64> {
     unsafe {
-        let msg = ffi::HardwareMessage::Malloc {
-            size,
-            alignment,
-        };
-        redshirt_syscalls_interface::emit_message_with_response(ffi::INTERFACE, msg)
-            .map(move |out: Result<u64, _>| {
+        let msg = ffi::HardwareMessage::Malloc { size, alignment };
+        redshirt_syscalls_interface::emit_message_with_response(ffi::INTERFACE, msg).map(
+            move |out: Result<u64, _>| {
                 let ptr = out.unwrap();
                 assert_ne!(ptr, 0);
                 debug_assert_eq!(ptr % u64::from(alignment), 0);
                 ptr
-            })
+            },
+        )
     }
 }
 
