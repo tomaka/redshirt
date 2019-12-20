@@ -21,7 +21,7 @@ SECTIONS {
     . = 0x8000;
     .text : AT(ADDR(.text)) {
         /* Same as above, jump to the address of `_start` */
-        LONG(0xea000000 | (((_start >> 2) - 2) & 0x1FFFFFF))
+        LONG(0xea000000 | ((((_start - 0x8000) >> 2) - 2) & 0x1FFFFFF))
 
         *(.text*)
         *(.rodata*)
