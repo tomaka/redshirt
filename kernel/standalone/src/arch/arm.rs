@@ -37,8 +37,7 @@ unsafe extern "C" fn _start() -> ! {
     and r5, r5, #3
     cmp r5, #0
     bne halt
-    "#
-    );
+    "#::::"volatile");
 
     // Only one CPU reaches here.
 
@@ -47,16 +46,31 @@ unsafe extern "C" fn _start() -> ! {
     .comm stack, 0x400000, 8
     ldr sp, =stack+0x400000"#:::"memory":"volatile");
 
-    cpu_enter()
+    // On ARM platforms, the `r0`, `r1` and `r2` registers are used to pass the first three
+    // parameters when calling a function.
+    // Since we don't modify the values of these registers in this function, we can simply branch
+    // to `cpu_enter`, and it will receive the same parameters as what the bootloader passed to
+    // us.
+    // TODO: to be honest, I'd prefer retreiving the values of r0, r1 and r2 in local variables
+    // first, and then pass them to `cpu_enter` as parameters. In practice, though, I don't want
+    // to deal with the syntax of `asm!`.
+    asm!(r#"b cpu_enter"#:::"volatile");
+    core::hint::unreachable_unchecked()
 }
 
+/// Main Rust entry point. The three parameters are the values of the `r0`, `r1` and `r2`
+/// registers as they were when we entered the kernel.
 #[no_mangle]
-fn cpu_enter() -> ! {
+fn cpu_enter(_r0: u32, _r1: u32, _r2: u32) -> ! {
     unsafe {
         // TODO: RAM starts at 0, but we start later to avoid the kernel
         // TODO: make this is a cleaner way
         crate::mem_alloc::initialize(0xa000000..0x40000000);
     }
+
+    // TODO: The `r0`, `r1` and `r2` parameters are supposedly set by the bootloader, and `r2`
+    // points either to ATAGS or a DTB (device tree) indicating what the hardware supports. This
+    // is unfortunately not supported by QEMU as of the writing of this comment.
 
     let kernel = crate::kernel::Kernel::init(crate::kernel::KernelConfig {
         num_cpus: 1,
