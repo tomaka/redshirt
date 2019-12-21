@@ -34,7 +34,7 @@
 //!   Repeat until the `Future` has ended.
 //!
 
-use crate::{Decode, InterfaceMessage, InterfaceOrDestroyed, Message, ResponseMessage};
+use crate::{Decode, InterfaceMessage, InterfaceOrDestroyed, Message, MessageId, ResponseMessage};
 use alloc::{collections::VecDeque, sync::Arc, vec::Vec};
 use core::{
     sync::atomic::{AtomicBool, Ordering},
@@ -50,17 +50,17 @@ use spin::Mutex;
 ///
 /// For non-interface messages, there can only ever be one registered `Waker`. Registering a
 /// `Waker` a second time overrides the one previously registered.
-pub(crate) fn register_message_waker(message_id: u64, waker: Waker) {
+pub(crate) fn register_message_waker(message_id: MessageId, waker: Waker) {
     let mut state = (&*STATE).lock();
 
-    if message_id != 1 {
-        if let Some(pos) = state.message_ids.iter().position(|msg| *msg == message_id) {
+    if message_id != From::from(1) {
+        if let Some(pos) = state.message_ids.iter().position(|msg| *msg == From::from(message_id)) {
             state.wakers[pos] = waker;
             return;
         }
     }
 
-    state.message_ids.push(message_id);
+    state.message_ids.push(From::from(message_id));
     state.wakers.push(waker);
 }
 
@@ -71,7 +71,7 @@ pub(crate) fn peek_interface_message() -> Option<InterfaceOrDestroyed> {
 }
 
 /// If a response to this message ID has previously been obtained, extracts it for processing.
-pub(crate) fn peek_response(msg_id: u64) -> Option<ResponseMessage> {
+pub(crate) fn peek_response(msg_id: MessageId) -> Option<ResponseMessage> {
     let mut state = (&*STATE).lock();
     state.pending_messages.remove(&msg_id)
 }
@@ -192,7 +192,7 @@ struct BlockOnState {
     /// > **Note**: We have to maintain this queue as a global variable rather than a per-future
     /// >           channel, otherwise dropping a `Future` would silently drop messages that have
     /// >           already been received.
-    pending_messages: HashMap<u64, ResponseMessage>,
+    pending_messages: HashMap<MessageId, ResponseMessage>,
 
     /// Queue of interface messages waiting to be delivered.
     ///

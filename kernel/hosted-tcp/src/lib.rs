@@ -128,7 +128,7 @@ where
     /// Call [`TcpState::next_event`] in order to receive a response (if relevant).
     pub async fn handle_message(
         &self,
-        //emitter_pid: u64,     // TODO: also notify the TcpState when a process exits, for clean up
+        //emitter_pid: MessageId,     // TODO: also notify the TcpState when a process exits, for clean up
         message_id: Option<TMsgId>,
         message: redshirt_tcp_interface::ffi::TcpMessage,
     ) {

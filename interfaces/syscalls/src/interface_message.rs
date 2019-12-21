@@ -85,7 +85,7 @@ impl Future for InterfaceMessageFuture {
             self.finished = true;
             Poll::Ready(message)
         } else {
-            crate::block_on::register_message_waker(1, cx.waker().clone());
+            crate::block_on::register_message_waker(From::from(1), cx.waker().clone());
             Poll::Pending
         }
     }

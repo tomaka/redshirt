@@ -42,7 +42,7 @@ pub struct Core<T> {
     /// that are waiting for a response.
     // TODO: doc about hash safety
     // TODO: call shrink_to from time to time
-    messages_to_answer: HashMap<u64, MessageEmitter>,
+    messages_to_answer: HashMap<MessageId, MessageEmitter>,
 }
 
 /// Which way an interface is handled.
@@ -97,11 +97,11 @@ pub enum CoreRunOutcome<'a, T> {
 
         /// List of messages emitted using [`Core::emit_interface_message_answer`] that were
         /// supposed to be handled by the process that has just terminated.
-        unhandled_messages: Vec<u64>,
+        unhandled_messages: Vec<MessageId>,
 
         /// List of messages for which a [`CoreRunOutcome::InterfaceMessage`] has been emitted
         /// but that no loner need answering.
-        cancelled_messages: Vec<u64>,
+        cancelled_messages: Vec<MessageId>,
 
         /// List of interfaces that were registered by th process and no longer are.
         unregistered_interfaces: Vec<[u8; 32]>,
@@ -143,14 +143,14 @@ pub enum CoreRunOutcome<'a, T> {
     /// [`CoreBuilder::with_interface_handler`].
     InterfaceMessage {
         pid: Pid,
-        message_id: Option<u64>,
+        message_id: Option<MessageId>,
         interface: [u8; 32],
         message: Vec<u8>,
     },
 
     /// Response to a message emitted using [`Core::emit_interface_message_answer`].
     MessageResponse {
-        message_id: u64,
+        message_id: MessageId,
         pid: Pid,
         response: Result<Vec<u8>, ()>,
     },
@@ -165,8 +165,8 @@ pub enum CoreRunOutcome<'a, T> {
 enum CoreRunOutcomeInner<T> {
     ProgramFinished {
         process: Pid,
-        unhandled_messages: Vec<u64>,
-        cancelled_messages: Vec<u64>,
+        unhandled_messages: Vec<MessageId>,
+        cancelled_messages: Vec<MessageId>,
         unregistered_interfaces: Vec<[u8; 32]>,
         outcome: Result<Option<wasmi::RuntimeValue>, wasmi::Trap>,
     },
@@ -182,13 +182,13 @@ enum CoreRunOutcomeInner<T> {
     InterfaceMessage {
         // TODO: `pid` is redundant with `message_id`; should just be a better API with an `Event` handle struct
         pid: Pid,
-        message_id: Option<u64>,
+        message_id: Option<MessageId>,
         interface: [u8; 32],
         message: Vec<u8>,
     },
     MessageResponse {
         pid: Pid,
-        message_id: u64,
+        message_id: MessageId,
         response: Result<Vec<u8>, ()>,
     },
     LoopAgain,
@@ -214,10 +214,10 @@ struct Process {
     used_interfaces: HashSet<[u8; 32]>,
 
     /// List of messages that the process has emitted and that are waiting for an answer.
-    emitted_messages: SmallVec<[u64; 8]>,
+    emitted_messages: SmallVec<[MessageId; 8]>,
 
     /// List of messages that the process is expected to answer.
-    messages_to_answer: SmallVec<[u64; 8]>,
+    messages_to_answer: SmallVec<[MessageId; 8]>,
 }
 
 /// Additional information about a thread. Must be consistent with the actual state of the thread.
@@ -238,7 +238,7 @@ enum Thread {
         /// Interface we want to emit the message on.
         interface: [u8; 32],
         /// Identifier of the message if it expects an answer.
-        message_id: Option<u64>,
+        message_id: Option<MessageId>,
         /// Message itself. Needs to be delivered to the handler once it is registered.
         message: Vec<u8>,
     },
@@ -255,7 +255,7 @@ enum Thread {
 struct MessageWait {
     /// Identifiers of the messages we are waiting upon. Duplicate of what is in the process's
     /// memory.
-    msg_ids: Vec<u64>,
+    msg_ids: Vec<MessageId>,
     /// Offset within the memory of the process where the list of messages to wait upon is
     /// located. This is necessary as we have to zero.
     msg_ids_ptr: u32,
@@ -511,8 +511,8 @@ impl<T: Clone> Core<T> {
                 let message_id = if needs_answer {
                     let message_id_write = params[5].try_into::<i32>().unwrap() as u32;
                     let new_message_id = loop {
-                        let id = self.message_id_pool.assign();
-                        if id == 0 || id == 1 {
+                        let id: MessageId = self.message_id_pool.assign();
+                        if u64::from(id) == 0 || u64::from(id) == 1 {
                             continue;
                         }
                         match self.messages_to_answer.entry(id) {
@@ -522,7 +522,7 @@ impl<T: Clone> Core<T> {
                         break id;
                     };
                     let mut buf = [0; 8];
-                    LittleEndian::write_u64(&mut buf, new_message_id);
+                    LittleEndian::write_u64(&mut buf, From::from(new_message_id));
                     thread.write_memory(message_id_write, &buf).unwrap();
                     // TODO: thread.user_data().;
                     // TODO: thread.process().user_data().emitted_messages.push();
@@ -610,7 +610,7 @@ impl<T: Clone> Core<T> {
                 let msg_id = {
                     let addr = params[0].try_into::<i32>().unwrap() as u32;
                     let buf = thread.read_memory(addr, 8).unwrap();
-                    byteorder::LittleEndian::read_u64(&buf)
+                    MessageId::from(byteorder::LittleEndian::read_u64(&buf))
                 };
                 let message = {
                     let addr = params[1].try_into::<i32>().unwrap() as u32;
@@ -636,7 +636,7 @@ impl<T: Clone> Core<T> {
                 let msg_id = {
                     let addr = params[0].try_into::<i32>().unwrap() as u32;
                     let buf = thread.read_memory(addr, 8).unwrap();
-                    byteorder::LittleEndian::read_u64(&buf)
+                    MessageId::from(byteorder::LittleEndian::read_u64(&buf))
                 };
 
                 if let Some(_) = self.messages_to_answer.remove(&msg_id) {
@@ -781,10 +781,10 @@ impl<T: Clone> Core<T> {
         &mut self,
         interface: [u8; 32],
         message: impl Encode,
-    ) -> Result<u64, ()> {
+    ) -> Result<MessageId, ()> {
         let (message_id, messages_to_answer_entry) = loop {
-            let id = self.message_id_pool.assign();
-            if id == 0 || id == 1 {
+            let id: MessageId = self.message_id_pool.assign();
+            if u64::from(id) == 0 || u64::from(id) == 1 {
                 continue;
             }
             match self.messages_to_answer.entry(id) {
@@ -822,7 +822,7 @@ impl<T: Clone> Core<T> {
     /// [`emit_interface_message_no_answer`]. Only messages generated by processes can be answered
     /// through this method.
     // TODO: better API
-    pub fn answer_message(&mut self, message_id: u64, response: Result<&[u8], ()>) {
+    pub fn answer_message(&mut self, message_id: MessageId, response: Result<&[u8], ()>) {
         let ret = self.answer_message_inner(message_id, response, None);
         assert!(ret.is_none());
     }
@@ -830,7 +830,7 @@ impl<T: Clone> Core<T> {
     // TODO: better API
     fn answer_message_inner(
         &mut self,
-        message_id: u64,
+        message_id: MessageId,
         response: Result<&[u8], ()>,
         answerer_pid: Option<Pid>,
     ) -> Option<CoreRunOutcomeInner<T>> {
@@ -1022,7 +1022,7 @@ fn extrinsic_next_message(
         let mem = thread.read_memory(addr, len * 8)?;
         let mut out = vec![0u64; len as usize];
         byteorder::LittleEndian::read_u64_into(&mem, &mut out);
-        out
+        out.into_iter().map(MessageId::from).collect::<Vec<_>>()    // TODO: meh
     };
 
     let out_pointer = params[2].try_into::<i32>().ok_or(())? as u32;
@@ -1095,15 +1095,15 @@ fn try_resume_message_wait_thread(
 
         // For that message in queue, grab the value that must be in `msg_ids` in order to match.
         let msg_id = match &thread.process_user_data().messages_queue[index_in_queue] {
-            redshirt_syscalls_interface::ffi::Message::Interface(_) => 1,
-            redshirt_syscalls_interface::ffi::Message::ProcessDestroyed(_) => 1,
+            redshirt_syscalls_interface::ffi::Message::Interface(_) => MessageId::from(1),
+            redshirt_syscalls_interface::ffi::Message::ProcessDestroyed(_) => MessageId::from(1),
             redshirt_syscalls_interface::ffi::Message::Response(response) => {
-                debug_assert!(response.message_id >= 2);
+                debug_assert!(u64::from(response.message_id) >= 2);
                 response.message_id
             }
         };
 
-        if let Some(p) = msg_wait.msg_ids.iter().position(|id| *id == msg_id) {
+        if let Some(p) = msg_wait.msg_ids.iter().position(|id| *id == msg_id.into()) {
             break p as u32;
         }
 

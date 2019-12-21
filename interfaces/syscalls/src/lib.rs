@@ -106,7 +106,7 @@ pub mod ffi;
 
 /// Identifier of a running process within a core.
 // TODO: move to a Pid module?
-#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, parity_scale_codec::Encode, parity_scale_codec::Decode)]
 pub struct Pid(u64);
 
 impl From<u64> for Pid {
@@ -129,7 +129,7 @@ impl fmt::Debug for Pid {
 
 /// Identifier of a running thread within a core.
 // TODO: move to a separate module?
-#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, parity_scale_codec::Encode, parity_scale_codec::Decode)]
 pub struct ThreadId(u64);
 
 impl From<u64> for ThreadId {
@@ -152,7 +152,7 @@ impl fmt::Debug for ThreadId {
 
 /// Identifier of a message to answer.
 // TODO: move to a MessageId module?
-#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, parity_scale_codec::Encode, parity_scale_codec::Decode)]
 pub struct MessageId(u64);
 
 impl From<u64> for MessageId {

@@ -831,6 +831,7 @@ dependencies = [
  "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "redshirt-core 0.1.0",
  "redshirt-stdout-interface 0.1.0",
+ "redshirt-syscalls-interface 0.1.0",
  "redshirt-tcp-hosted 0.1.0",
  "redshirt-tcp-interface 0.1.0",
  "redshirt-time-hosted 0.1.0",
