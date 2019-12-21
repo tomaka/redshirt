@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use crate::{Decode, Encode};
 use core::{
     fmt,
     mem::MaybeUninit,
@@ -20,7 +21,6 @@ use core::{
     task::{Context, Poll},
 };
 use futures::prelude::*;
-use parity_scale_codec::{DecodeAll, Encode};
 
 /// Emits a message destined to the handler of the given interface.
 ///
@@ -38,12 +38,13 @@ use parity_scale_codec::{DecodeAll, Encode};
 /// While the action of sending a message is totally safe, the message itself might instruct the
 /// environment to perform actions that would lead to unsafety.
 ///
-pub unsafe fn emit_message(
+pub unsafe fn emit_message<'a>(
     interface_hash: &[u8; 32],
-    msg: &impl Encode,
+    msg: impl Encode<'a>,
     needs_answer: bool,
 ) -> Result<Option<u64>, EmitErr> {
-    emit_message_raw(interface_hash, &msg.encode(), needs_answer)
+    let encoded = msg.encode();
+    emit_message_raw(interface_hash, &encoded, needs_answer)
 }
 
 /// Emits a message destined to the handler of the given interface.
@@ -58,9 +59,9 @@ pub unsafe fn emit_message(
 /// While the action of sending a message is totally safe, the message itself might instruct the
 /// environment to perform actions that would lead to unsafety.
 ///
-pub unsafe fn emit_message_without_response(
+pub unsafe fn emit_message_without_response<'a>(
     interface_hash: &[u8; 32],
-    msg: &impl Encode,
+    msg: impl Encode<'a>,
 ) -> Result<(), EmitErr> {
     emit_message(interface_hash, msg, false)?;
     Ok(())
@@ -123,12 +124,11 @@ pub unsafe fn emit_message_raw(
 /// While the action of sending a message is totally safe, the message itself might instruct the
 /// environment to perform actions that would lead to unsafety.
 ///
-// TODO: this ties the messaging system to parity_scale_codec; is that a good thing?
-pub unsafe fn emit_message_with_response<T: DecodeAll>(
+pub unsafe fn emit_message_with_response<'a, T: Decode>(
     interface_hash: [u8; 32],
-    msg: impl Encode,
+    msg: impl Encode<'a>,
 ) -> impl Future<Output = Result<T, EmitErr>> {
-    let msg_id = match emit_message(&interface_hash, &msg, true) {
+    let msg_id = match emit_message(&interface_hash, msg, true) {
         Ok(m) => m.unwrap(),
         Err(err) => return future::Either::Right(future::ready(Err(err))),
     };
@@ -190,7 +190,7 @@ pub struct EmitMessageWithResponse<T> {
     msg_id: u64,
 }
 
-impl<T: DecodeAll> Future for EmitMessageWithResponse<T> {
+impl<T: Decode> Future for EmitMessageWithResponse<T> {
     type Output = Result<T, EmitErr>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
