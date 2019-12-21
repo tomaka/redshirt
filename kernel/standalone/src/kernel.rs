@@ -57,28 +57,21 @@ impl Kernel {
 
         let hardware = crate::hardware::HardwareHandler::new();
 
-        let hello_module = redshirt_core::module::Module::from_bytes(
-            &include_bytes!("../../../modules/target/wasm32-wasi/release/hello-world.wasm")[..],
-        )
-        .unwrap();
-
-        // TODO: use a better system than cfgs
-        #[cfg(target_arch = "x86_64")]
-        let stdout_module = redshirt_core::module::Module::from_bytes(
-            &include_bytes!("../../../modules/target/wasm32-wasi/release/x86-stdout.wasm")[..],
-        )
-        .unwrap();
-        #[cfg(target_arch = "arm")]
-        let stdout_module = redshirt_core::module::Module::from_bytes(
-            &include_bytes!("../../../modules/target/wasm32-wasi/release/arm-stdout.wasm")[..],
-        )
-        .unwrap();
-
         let mut system =
             redshirt_wasi_hosted::register_extrinsics(redshirt_core::system::SystemBuilder::new())
                 .with_interface_handler(redshirt_hardware_interface::ffi::INTERFACE)
-                .with_startup_process(stdout_module)
-                .with_startup_process(hello_module)
+                .with_startup_process({
+                    // TODO: use a better system than cfgs
+                    #[cfg(target_arch = "x86_64")]
+                    mod foo { wasi_module_builder::build!("../../../modules/x86-stdout"); }
+                    #[cfg(target_arch = "arm")]
+                    mod foo { wasi_module_builder::build!("../../../modules/arm-stdout"); }
+                    redshirt_core::module::Module::from_bytes(&foo::MODULE_BYTES[..]).unwrap()
+                })
+                .with_startup_process({
+                    mod foo { wasi_module_builder::build!("../../../modules/hello-world"); }
+                    redshirt_core::module::Module::from_bytes(&foo::MODULE_BYTES[..]).unwrap()
+                })
                 .with_main_program([0; 32]) // TODO: just a test
                 .build();
 

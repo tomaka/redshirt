@@ -20,6 +20,7 @@ redshirt-hardware-interface = { path = "../../interfaces/hardware", default-feat
 redshirt-stdout-interface = { path = "../../interfaces/stdout", default-features = false }
 redshirt-wasi-hosted = { path = "../hosted-wasi" }
 spin = "0.5.2"
+wasi-module-builder = { path = "../module-builder" }
 
 [build-dependencies]
 cc = "1.0"
