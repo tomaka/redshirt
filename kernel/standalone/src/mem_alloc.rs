@@ -44,6 +44,11 @@ pub unsafe fn initialize(ranges: impl Iterator<Item = Range<usize>>) {
         None => return,
     };
 
+    // Don't initialize the allocator if all the ranges were 0.
+    if range.start == range.end {
+        return;
+    }
+
     assert!(range.end >= range.start);
     ALLOCATOR.lock().init(range.start, range.end - range.start);
 }
