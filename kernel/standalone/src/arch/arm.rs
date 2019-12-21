@@ -15,6 +15,8 @@
 
 #![cfg(any(target_arch = "arm", target_arch = "aarch64"))]
 
+use core::iter;
+
 mod misc;
 
 // TODO: always fails :-/
@@ -65,7 +67,7 @@ fn cpu_enter(_r0: u32, _r1: u32, _r2: u32) -> ! {
     unsafe {
         // TODO: RAM starts at 0, but we start later to avoid the kernel
         // TODO: make this is a cleaner way
-        crate::mem_alloc::initialize(0xa000000..0x40000000);
+        crate::mem_alloc::initialize(iter::once(0xa000000..0x40000000));
     }
 
     // TODO: The `r0`, `r1` and `r2` parameters are supposedly set by the bootloader, and `r2`
