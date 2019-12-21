@@ -134,6 +134,14 @@ impl<TExtEx: Clone> System<TExtEx> {
             .resolve_extrinsic_call(return_value);
     }
 
+    /// Start executing a program.
+    pub fn execute(&mut self, program: &Module) -> Pid {
+        self.core
+            .execute(program)
+            .expect("failed to start startup program")
+            .pid() // TODO: don't unwrap
+    }
+
     /// Runs the [`System`] once and returns the outcome.
     pub fn run(&mut self) -> SystemRunOutcome<TExtEx> {
         // TODO: remove loop?
@@ -235,12 +243,12 @@ impl<TExtEx: Clone> System<TExtEx> {
                         redshirt_interface_interface::ffi::InterfaceMessage::Register(
                             interface_hash,
                         ) => {
-                            self.core
+                            let result = self.core
                                 .set_interface_handler(interface_hash, pid)
-                                .unwrap();
+                                .map_err(|()| redshirt_interface_interface::ffi::InterfaceRegisterError::AlreadyRegistered);
                             let response =
                                 redshirt_interface_interface::ffi::InterfaceRegisterResponse {
-                                    result: Ok(()),
+                                    result,
                                 };
                             self.core
                                 .answer_message(message_id.unwrap(), Ok(&response.encode()));

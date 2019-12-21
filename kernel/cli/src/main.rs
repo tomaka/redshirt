@@ -17,26 +17,48 @@
 
 use futures::{channel::mpsc, pin_mut, prelude::*};
 use parity_scale_codec::DecodeAll;
-use std::sync::Arc;
+use std::{fs, path::PathBuf, process, sync::Arc};
+use structopt::StructOpt;
+
+#[derive(Debug, StructOpt)]
+#[structopt(name = "redshirt", about = "Redshirt modules executor.")]
+struct CliOptions {
+    /// Input file.
+    #[structopt(parse(from_os_str))]
+    input: Option<PathBuf>,
+}
 
 fn main() {
     futures::executor::block_on(async_main());
 }
 
 async fn async_main() {
-    let module = redshirt_core::module::Module::from_bytes(
-        &include_bytes!("../../../modules/target/wasm32-wasi/release/http-server.wasm")[..],
-    )
-    .unwrap();
+    let cli_requested_process = {
+        let cli_opts = CliOptions::from_args();
+        if let Some(input) = cli_opts.input {
+            let file_content = fs::read(input).expect("failed to read input file");
+            Some(
+                redshirt_core::module::Module::from_bytes(&file_content)
+                    .expect("failed to parse input file"),
+            )
+        } else {
+            None
+        }
+    };
 
     let mut system =
         redshirt_wasi_hosted::register_extrinsics(redshirt_core::system::SystemBuilder::new())
             .with_interface_handler(redshirt_stdout_interface::ffi::INTERFACE)
             .with_interface_handler(redshirt_time_interface::ffi::INTERFACE)
             .with_interface_handler(redshirt_tcp_interface::ffi::INTERFACE)
-            .with_startup_process(module)
             .with_main_program([0; 32]) // TODO: just a test
             .build();
+
+    let cli_pid = if let Some(cli_requested_process) = cli_requested_process {
+        Some(system.execute(&cli_requested_process))
+    } else {
+        None
+    };
 
     let time = Arc::new(redshirt_time_hosted::TimerHandler::new());
     let tcp = Arc::new(redshirt_tcp_hosted::TcpState::new());
@@ -117,6 +139,7 @@ async fn async_main() {
                     message_id,
                     interface,
                     message,
+                    ..
                 } if interface == redshirt_time_interface::ffi::INTERFACE => {
                     if let Some(answer) =
                         time.time_message(message_id.map(MessageId::Core), &message)
@@ -133,6 +156,7 @@ async fn async_main() {
                     message_id,
                     interface,
                     message,
+                    ..
                 } if interface == redshirt_tcp_interface::ffi::INTERFACE => {
                     let message: redshirt_tcp_interface::ffi::TcpMessage =
                         DecodeAll::decode_all(&message).unwrap();
@@ -162,7 +186,15 @@ async fn async_main() {
 
         match result {
             redshirt_core::system::SystemRunOutcome::ProgramFinished { pid, outcome } => {
-                println!("Program finished {:?} => {:?}", pid, outcome);
+                if cli_pid == Some(pid) {
+                    process::exit(match outcome {
+                        Ok(_) => 0,
+                        Err(err) => {
+                            println!("{:?}", err);
+                            1
+                        }
+                    });
+                }
             }
             _ => panic!(),
         }

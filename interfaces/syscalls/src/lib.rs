@@ -92,10 +92,12 @@ pub use emit::{
 pub use ffi::{InterfaceMessage, InterfaceOrDestroyed, Message, ResponseMessage};
 pub use interface_message::{emit_answer, next_interface_message, InterfaceMessageFuture};
 pub use response::{message_response, message_response_sync_raw, MessageResponseFuture};
+pub use traits::{Decode, Encode, EncodedMessage};
 
 mod block_on;
 mod emit;
 mod interface_message;
 mod response;
+mod traits;
 
 pub mod ffi;

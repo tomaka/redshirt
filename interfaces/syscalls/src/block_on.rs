@@ -34,7 +34,7 @@
 //!   Repeat until the `Future` has ended.
 //!
 
-use crate::{InterfaceMessage, InterfaceOrDestroyed, Message, ResponseMessage};
+use crate::{Decode, InterfaceMessage, InterfaceOrDestroyed, Message, ResponseMessage};
 use alloc::{collections::VecDeque, sync::Arc, vec::Vec};
 use core::{
     sync::atomic::{AtomicBool, Ordering},
@@ -42,7 +42,6 @@ use core::{
 };
 use futures::{prelude::*, task};
 use hashbrown::HashMap;
-use parity_scale_codec::DecodeAll;
 use spin::Mutex;
 
 /// Registers a message ID (or 1 for interface messages) and a waker. The `block_on` function will
@@ -228,7 +227,7 @@ pub(crate) fn next_message(to_poll: &mut [u64], block: bool) -> Option<Message> 
                 continue;
             }
             out.set_len(ret);
-            return Some(DecodeAll::decode_all(&out).unwrap());
+            return Some(Decode::decode(out).unwrap());
         }
     }
 }
