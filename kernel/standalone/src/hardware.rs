@@ -24,8 +24,8 @@ use alloc::vec::Vec;
 use core::{convert::TryFrom as _, marker::PhantomData};
 use hashbrown::HashMap;
 use parity_scale_codec::{DecodeAll, Encode as _};
-use redshirt_core::scheduler::Pid;
 use redshirt_hardware_interface::ffi::{HardwareAccessResponse, HardwareMessage, Operation};
+use redshirt_syscalls_interface::Pid;
 use spin::Mutex;
 
 /// State machine for `hardware` interface messages handling.

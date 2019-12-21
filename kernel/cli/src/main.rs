@@ -202,6 +202,6 @@ async fn async_main() {
 }
 
 enum MessageId {
-    Core(u64),
+    Core(redshirt_syscalls_interface::MessageId),
     Wasi(redshirt_wasi_hosted::WasiMessageId),
 }

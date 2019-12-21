@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::{Decode, Encode};
+use crate::{Decode, Encode, MessageId};
 use core::{
     fmt,
     mem::MaybeUninit,
@@ -42,9 +42,9 @@ pub unsafe fn emit_message<'a>(
     interface_hash: &[u8; 32],
     msg: impl Encode<'a>,
     needs_answer: bool,
-) -> Result<Option<u64>, EmitErr> {
+) -> Result<Option<MessageId>, EmitErr> {
     let encoded = msg.encode();
-    emit_message_raw(interface_hash, &encoded, needs_answer)
+    emit_message_raw(interface_hash, &encoded, needs_answer).map(|r| r.map(MessageId::from))
 }
 
 /// Emits a message destined to the handler of the given interface.
@@ -87,7 +87,7 @@ pub unsafe fn emit_message_raw(
     interface_hash: &[u8; 32],
     buf: &[u8],
     needs_answer: bool,
-) -> Result<Option<u64>, EmitErr> {
+) -> Result<Option<MessageId>, EmitErr> {
     let mut message_id_out = MaybeUninit::uninit();
 
     let ret = crate::ffi::emit_message(
@@ -104,7 +104,7 @@ pub unsafe fn emit_message_raw(
     }
 
     if needs_answer {
-        Ok(Some(message_id_out.assume_init()))
+        Ok(Some(MessageId::from(message_id_out.assume_init())))
     } else {
         Ok(None)
     }
@@ -140,9 +140,9 @@ pub unsafe fn emit_message_with_response<'a, T: Decode>(
 }
 
 /// Cancel the given message. No answer will be received.
-pub fn cancel_message(message_id: u64) -> Result<(), CancelMessageErr> {
+pub fn cancel_message(message_id: MessageId) -> Result<(), CancelMessageErr> {
     unsafe {
-        if crate::ffi::cancel_message(&message_id) == 0 {
+        if crate::ffi::cancel_message(&u64::from(message_id)) == 0 {
             Ok(())
         } else {
             Err(CancelMessageErr::InvalidMessageId)
@@ -187,7 +187,7 @@ pub struct EmitMessageWithResponse<T> {
     #[pin]
     inner: Option<crate::MessageResponseFuture<T>>,
     // TODO: redundant with `inner`
-    msg_id: u64,
+    msg_id: MessageId,
 }
 
 impl<T: Decode> Future for EmitMessageWithResponse<T> {

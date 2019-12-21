@@ -14,11 +14,12 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use crate::module::Module;
-use crate::scheduler::{Core, CoreBuilder, CoreRunOutcome, Pid, ThreadId};
+use crate::scheduler::{Core, CoreBuilder, CoreRunOutcome};
 use crate::signature::Signature;
 use alloc::{borrow::Cow, vec, vec::Vec};
 use hashbrown::{hash_map::Entry, HashMap, HashSet};
 use parity_scale_codec::{DecodeAll, Encode};
+use redshirt_syscalls_interface::{MessageId, Pid, ThreadId};
 use smallvec::SmallVec;
 
 /// Main struct that handles a system, including the scheduler, program loader,
@@ -39,7 +40,7 @@ pub struct System<TExtEx> {
     /// oldest message.
     ///
     /// See the "threads" interface for documentation about what a futex is.
-    futex_waits: HashMap<(Pid, u32), SmallVec<[u64; 4]>>,
+    futex_waits: HashMap<(Pid, u32), SmallVec<[MessageId; 4]>>,
 
     /// List of programs to load as soon as a loader interface handler is available.
     ///
@@ -54,7 +55,7 @@ pub struct System<TExtEx> {
     /// Set of messages that we emitted of requests to load a program from the loader interface.
     /// All these messages expect a `redshirt_loader_interface::ffi::LoadResponse` as answer.
     // TODO: call shink_to_fit from time to time
-    loading_programs: HashSet<u64>,
+    loading_programs: HashSet<MessageId>,
 }
 
 /// Prototype for a [`System`].
@@ -105,7 +106,7 @@ pub enum SystemRunOutcome<TExtEx> {
         pid: Pid,
         /// If `Some`, identifier of the message to use to send the answer. If `None`, the message
         /// doesn't expect any answer.
-        message_id: Option<u64>,
+        message_id: Option<MessageId>,
         /// Interface the message was emitted on. Matches what was passed to
         /// [`SystemBuilder::with_interface_handler`].
         interface: [u8; 32],
@@ -310,7 +311,7 @@ impl<TExtEx: Clone> System<TExtEx> {
     /// After [`SystemRunOutcome::InterfaceMessage`] has been returned, call this method in order
     /// to send back an answer to the message.
     // TODO: better API
-    pub fn answer_message(&mut self, message_id: u64, response: Result<&[u8], ()>) {
+    pub fn answer_message(&mut self, message_id: MessageId, response: Result<&[u8], ()>) {
         //println!("answered event {:?}", message_id);
         self.core.answer_message(message_id, response)
     }

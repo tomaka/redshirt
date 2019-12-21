@@ -831,6 +831,7 @@ dependencies = [
  "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "redshirt-core 0.1.0",
  "redshirt-stdout-interface 0.1.0",
+ "redshirt-syscalls-interface 0.1.0",
  "redshirt-tcp-hosted 0.1.0",
  "redshirt-tcp-interface 0.1.0",
  "redshirt-time-hosted 0.1.0",
@@ -916,6 +917,7 @@ dependencies = [
  "redshirt-core 0.1.0",
  "redshirt-hardware-interface 0.1.0",
  "redshirt-stdout-interface 0.1.0",
+ "redshirt-syscalls-interface 0.1.0",
  "redshirt-wasi-hosted 0.1.0",
  "spin 0.5.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "walkdir 2.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1012,6 +1014,7 @@ dependencies = [
  "redshirt-core 0.1.0",
  "redshirt-random-interface 0.1.0",
  "redshirt-stdout-interface 0.1.0",
+ "redshirt-syscalls-interface 0.1.0",
  "redshirt-time-interface 0.1.0",
 ]
 
