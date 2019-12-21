@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::{ffi::Message, MessageId, Pid, Decode};
+use crate::{ffi::Message, Decode, MessageId, Pid};
 
 use alloc::vec::Vec;
 use core::{

@@ -44,8 +44,7 @@ pub unsafe fn emit_message<'a>(
     needs_answer: bool,
 ) -> Result<Option<MessageId>, EmitErr> {
     let encoded = msg.encode();
-    emit_message_raw(interface_hash, &encoded, needs_answer)
-        .map(|r| r.map(MessageId::from))
+    emit_message_raw(interface_hash, &encoded, needs_answer).map(|r| r.map(MessageId::from))
 }
 
 /// Emits a message destined to the handler of the given interface.

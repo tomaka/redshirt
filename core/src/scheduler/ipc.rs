@@ -23,8 +23,8 @@ use alloc::{borrow::Cow, collections::VecDeque, vec, vec::Vec};
 use byteorder::{ByteOrder as _, LittleEndian};
 use core::{convert::TryFrom, iter, marker::PhantomData, mem};
 use hashbrown::{hash_map::Entry, HashMap, HashSet};
-use redshirt_syscalls_interface::{Pid, MessageId, ThreadId};
 use parity_scale_codec::Encode;
+use redshirt_syscalls_interface::{MessageId, Pid, ThreadId};
 use smallvec::SmallVec;
 
 /// Handles scheduling processes and inter-process communications.
@@ -1022,7 +1022,7 @@ fn extrinsic_next_message(
         let mem = thread.read_memory(addr, len * 8)?;
         let mut out = vec![0u64; len as usize];
         byteorder::LittleEndian::read_u64_into(&mem, &mut out);
-        out.into_iter().map(MessageId::from).collect::<Vec<_>>()    // TODO: meh
+        out.into_iter().map(MessageId::from).collect::<Vec<_>>() // TODO: meh
     };
 
     let out_pointer = params[2].try_into::<i32>().ok_or(())? as u32;

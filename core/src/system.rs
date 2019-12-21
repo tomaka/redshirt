@@ -19,7 +19,7 @@ use crate::signature::Signature;
 use alloc::{borrow::Cow, vec, vec::Vec};
 use hashbrown::{hash_map::Entry, HashMap, HashSet};
 use parity_scale_codec::{DecodeAll, Encode};
-use redshirt_syscalls_interface::{Pid, MessageId, ThreadId};
+use redshirt_syscalls_interface::{MessageId, Pid, ThreadId};
 use smallvec::SmallVec;
 
 /// Main struct that handles a system, including the scheduler, program loader,
