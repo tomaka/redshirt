@@ -243,12 +243,12 @@ impl<TExtEx: Clone> System<TExtEx> {
                         redshirt_interface_interface::ffi::InterfaceMessage::Register(
                             interface_hash,
                         ) => {
-                            self.core
+                            let result = self.core
                                 .set_interface_handler(interface_hash, pid)
-                                .unwrap();
+                                .map_err(|()| redshirt_interface_interface::ffi::InterfaceRegisterError::AlreadyRegistered);
                             let response =
                                 redshirt_interface_interface::ffi::InterfaceRegisterResponse {
-                                    result: Ok(()),
+                                    result,
                                 };
                             self.core
                                 .answer_message(message_id.unwrap(), Ok(&response.encode()));
