@@ -15,7 +15,7 @@
 
 use crate::id_pool::IdPool;
 use crate::module::Module;
-use crate::scheduler::{vm, Pid};
+use crate::scheduler::vm;
 use crate::signature::Signature;
 use alloc::{borrow::Cow, vec::Vec};
 use core::fmt;
@@ -24,6 +24,7 @@ use hashbrown::{
     HashMap,
 };
 use rand::seq::SliceRandom as _;
+use redshirt_syscalls_interface::Pid;
 
 /// Collection of multiple [`ProcessStateMachine`](vm::ProcessStateMachine)s grouped together in a
 /// smart way.

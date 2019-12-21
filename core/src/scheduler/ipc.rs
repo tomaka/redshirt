@@ -15,7 +15,7 @@
 
 use crate::id_pool::IdPool;
 use crate::module::Module;
-use crate::scheduler::{processes, vm, Pid, ThreadId};
+use crate::scheduler::{processes, vm, ThreadId};
 use crate::sig;
 use crate::signature::Signature;
 
@@ -23,6 +23,7 @@ use alloc::{borrow::Cow, collections::VecDeque, vec, vec::Vec};
 use byteorder::{ByteOrder as _, LittleEndian};
 use core::{convert::TryFrom, iter, marker::PhantomData, mem};
 use hashbrown::{hash_map::Entry, HashMap, HashSet};
+use redshirt_syscalls_interface::{Pid, MessageId};
 use parity_scale_codec::Encode;
 use smallvec::SmallVec;
 

@@ -14,11 +14,12 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use crate::module::Module;
-use crate::scheduler::{Core, CoreBuilder, CoreRunOutcome, Pid, ThreadId};
+use crate::scheduler::{Core, CoreBuilder, CoreRunOutcome, ThreadId};
 use crate::signature::Signature;
 use alloc::{borrow::Cow, vec, vec::Vec};
 use hashbrown::{hash_map::Entry, HashMap, HashSet};
 use parity_scale_codec::{DecodeAll, Encode};
+use redshirt_syscalls_interface::{Pid, MessageId};
 use smallvec::SmallVec;
 
 /// Main struct that handles a system, including the scheduler, program loader,
