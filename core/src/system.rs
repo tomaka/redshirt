@@ -134,6 +134,12 @@ impl<TExtEx: Clone> System<TExtEx> {
             .resolve_extrinsic_call(return_value);
     }
 
+    /// Start executing a program.
+    pub fn execute(&mut self, program: &Module) -> Pid {
+        self.core.execute(program)
+            .expect("failed to start startup program").pid() // TODO: don't unwrap
+    }
+
     /// Runs the [`System`] once and returns the outcome.
     pub fn run(&mut self) -> SystemRunOutcome<TExtEx> {
         // TODO: remove loop?
