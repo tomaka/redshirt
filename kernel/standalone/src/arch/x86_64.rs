@@ -71,7 +71,7 @@ fn find_free_memory_ranges<'a>(
     let mem_map = multiboot_info.memory_map_tag().unwrap();
     let elf_sections = multiboot_info.elf_sections_tag().unwrap();
 
-    mem_map.memory_areas().map(move |area| {
+    mem_map.memory_areas().filter_map(move |area| {
         let mut area_start = area.start_address();
         let mut area_end = area.end_address();
         debug_assert!(area_start <= area_end);
@@ -97,7 +97,7 @@ fn find_free_memory_ranges<'a>(
                         ↑ area_start         area_end ↑
                 */
                 // We have no memory available!
-                area_end = area_start;
+                return None;
             } else if section.start_address() <= area_start && section.end_address() > area_start {
                 /*    ↓ section_start     section_end ↓
                 ==================================================
@@ -115,7 +115,7 @@ fn find_free_memory_ranges<'a>(
 
         let area_start = usize::try_from(area_start).unwrap();
         let area_end = usize::try_from(area_end).unwrap();
-        area_start..area_end
+        Some(area_start..area_end)
     })
 }
 
