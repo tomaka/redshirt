@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::ffi::InterfaceOrDestroyed;
+use crate::{ffi::InterfaceOrDestroyed, Encode};
 
 use core::{
     fmt,
@@ -21,7 +21,6 @@ use core::{
     task::{Context, Poll},
 };
 use futures::prelude::*;
-use parity_scale_codec::Encode;
 
 /// Returns a future that is ready when a new message arrives on an interface that we have
 /// registered.
@@ -32,8 +31,7 @@ pub fn next_interface_message() -> InterfaceMessageFuture {
 
 /// Answers the given message.
 // TODO: move to interface interface?
-// TODO: this ties the messaging system to parity_scale_codec; is that a good thing?
-pub fn emit_answer(message_id: u64, msg: &impl Encode) -> Result<(), EmitAnswerErr> {
+pub fn emit_answer<'a>(message_id: u64, msg: impl Encode<'a>) -> Result<(), EmitAnswerErr> {
     unsafe {
         let buf = msg.encode();
         let ret = crate::ffi::emit_answer(&message_id, buf.as_ptr(), buf.len() as u32);
