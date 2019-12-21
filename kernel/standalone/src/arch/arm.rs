@@ -15,6 +15,8 @@
 
 #![cfg(any(target_arch = "arm", target_arch = "aarch64"))]
 
+use core::iter;
+
 mod misc;
 
 // TODO: always fails :-/
@@ -55,7 +57,7 @@ fn cpu_enter() -> ! {
     unsafe {
         // TODO: RAM starts at 0, but we start later to avoid the kernel
         // TODO: make this is a cleaner way
-        crate::mem_alloc::initialize(0xa000000..0x40000000);
+        crate::mem_alloc::initialize(iter::once(0xa000000..0x40000000));
     }
 
     let kernel = crate::kernel::Kernel::init(crate::kernel::KernelConfig {
