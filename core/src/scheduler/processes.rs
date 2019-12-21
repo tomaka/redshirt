@@ -24,7 +24,7 @@ use hashbrown::{
     HashMap,
 };
 use rand::seq::SliceRandom as _;
-use redshirt_syscalls_interface::Pid;
+use redshirt_syscalls_interface::{Pid, ThreadId};
 
 /// Collection of multiple [`ProcessStateMachine`](vm::ProcessStateMachine)s grouped together in a
 /// smart way.
@@ -63,12 +63,6 @@ pub struct ProcessesCollectionBuilder<TExtr> {
     /// See the corresponding field in `ProcessesCollection`.
     extrinsics_id_assign: HashMap<(Cow<'static, str>, Cow<'static, str>), (usize, Signature)>,
 }
-
-/// Identifier of a thread within the [`ProcessesCollection`].
-///
-/// No two threads share the same ID, even between multiple processes.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub struct ThreadId(u64);
 
 /// Single running process in the list.
 struct Process<TPud, TTud> {
@@ -445,12 +439,6 @@ impl<TExtr> ProcessesCollectionBuilder<TExtr> {
             extrinsics: self.extrinsics,
             extrinsics_id_assign: self.extrinsics_id_assign,
         }
-    }
-}
-
-impl From<u64> for ThreadId {
-    fn from(id: u64) -> ThreadId {
-        ThreadId(id)
     }
 }
 

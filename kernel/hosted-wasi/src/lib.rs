@@ -37,9 +37,8 @@ use byteorder::{ByteOrder as _, LittleEndian};
 use core::convert::TryFrom as _;
 use hashbrown::HashMap;
 use parity_scale_codec::{DecodeAll, Encode as _};
-use redshirt_core::scheduler::ThreadId;
 use redshirt_core::system::{System, SystemBuilder};
-use redshirt_syscalls_interface::Pid;
+use redshirt_syscalls_interface::{Pid, ThreadId};
 
 // TODO: lots of unwraps as `as` conversions in this module
 
@@ -423,7 +422,7 @@ impl WasiStateMachine {
 fn fd_write(
     system: &mut redshirt_core::system::System<impl Clone>,
     pid: Pid,
-    thread_id: redshirt_core::scheduler::ThreadId,
+    thread_id: ThreadId,
     params: Vec<redshirt_core::RuntimeValue>,
 ) -> HandleOut {
     assert_eq!(params.len(), 4); // TODO: what to do when it's not the case?

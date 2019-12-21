@@ -127,6 +127,29 @@ impl fmt::Debug for Pid {
     }
 }
 
+/// Identifier of a running thread within a core.
+// TODO: move to a separate module?
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+pub struct ThreadId(u64);
+
+impl From<u64> for ThreadId {
+    fn from(id: u64) -> ThreadId {
+        ThreadId(id)
+    }
+}
+
+impl From<ThreadId> for u64 {
+    fn from(tid: ThreadId) -> u64 {
+        tid.0
+    }
+}
+
+impl fmt::Debug for ThreadId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "#{}", self.0)
+    }
+}
+
 /// Identifier of a message to answer.
 // TODO: move to a MessageId module?
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
@@ -139,8 +162,8 @@ impl From<u64> for MessageId {
 }
 
 impl From<MessageId> for u64 {
-    fn from(pid: MessageId) -> u64 {
-        pid.0
+    fn from(mid: MessageId) -> u64 {
+        mid.0
     }
 }
 
