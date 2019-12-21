@@ -37,19 +37,22 @@ async fn async_main() {
         let cli_opts = CliOptions::from_args();
         if let Some(input) = cli_opts.input {
             let file_content = fs::read(input).expect("failed to read input file");
-            Some(redshirt_core::module::Module::from_bytes(&file_content)
-                .expect("failed to parse input file"))
+            Some(
+                redshirt_core::module::Module::from_bytes(&file_content)
+                    .expect("failed to parse input file"),
+            )
         } else {
             None
         }
     };
 
-    let mut system = redshirt_wasi_hosted::register_extrinsics(redshirt_core::system::SystemBuilder::new())
-        .with_interface_handler(redshirt_stdout_interface::ffi::INTERFACE)
-        .with_interface_handler(redshirt_time_interface::ffi::INTERFACE)
-        .with_interface_handler(redshirt_tcp_interface::ffi::INTERFACE)
-        .with_main_program([0; 32]) // TODO: just a test
-        .build();
+    let mut system =
+        redshirt_wasi_hosted::register_extrinsics(redshirt_core::system::SystemBuilder::new())
+            .with_interface_handler(redshirt_stdout_interface::ffi::INTERFACE)
+            .with_interface_handler(redshirt_time_interface::ffi::INTERFACE)
+            .with_interface_handler(redshirt_tcp_interface::ffi::INTERFACE)
+            .with_main_program([0; 32]) // TODO: just a test
+            .build();
 
     let cli_pid = if let Some(cli_requested_process) = cli_requested_process {
         Some(system.execute(&cli_requested_process))
@@ -189,7 +192,7 @@ async fn async_main() {
                         Err(err) => {
                             println!("{:?}", err);
                             1
-                        },
+                        }
                     });
                 }
             }

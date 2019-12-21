@@ -136,8 +136,10 @@ impl<TExtEx: Clone> System<TExtEx> {
 
     /// Start executing a program.
     pub fn execute(&mut self, program: &Module) -> Pid {
-        self.core.execute(program)
-            .expect("failed to start startup program").pid() // TODO: don't unwrap
+        self.core
+            .execute(program)
+            .expect("failed to start startup program")
+            .pid() // TODO: don't unwrap
     }
 
     /// Runs the [`System`] once and returns the outcome.
