@@ -140,9 +140,9 @@ pub unsafe fn emit_message_with_response<'a, T: Decode>(
 }
 
 /// Cancel the given message. No answer will be received.
-pub fn cancel_message(message_id: u64) -> Result<(), CancelMessageErr> {
+pub fn cancel_message(message_id: MessageId) -> Result<(), CancelMessageErr> {
     unsafe {
-        if crate::ffi::cancel_message(&message_id) == 0 {
+        if crate::ffi::cancel_message(&u64::from(message_id)) == 0 {
             Ok(())
         } else {
             Err(CancelMessageErr::InvalidMessageId)
@@ -215,7 +215,7 @@ impl<T: Decode> Future for EmitMessageWithResponse<T> {
 impl<T> PinnedDrop for EmitMessageWithResponse<T> {
     fn drop(self: Pin<&mut Self>) {
         if self.inner.is_some() {
-            let _ = cancel_message(From::from(self.msg_id));
+            let _ = cancel_message(self.msg_id);
         }
     }
 }
