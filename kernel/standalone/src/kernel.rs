@@ -63,13 +63,19 @@ impl Kernel {
                 .with_startup_process({
                     // TODO: use a better system than cfgs
                     #[cfg(target_arch = "x86_64")]
-                    mod foo { wasi_module_builder::build!("../../../modules/x86-stdout"); }
+                    mod foo {
+                        wasi_module_builder::build!("../../../modules/x86-stdout");
+                    }
                     #[cfg(target_arch = "arm")]
-                    mod foo { wasi_module_builder::build!("../../../modules/arm-stdout"); }
+                    mod foo {
+                        wasi_module_builder::build!("../../../modules/arm-stdout");
+                    }
                     redshirt_core::module::Module::from_bytes(&foo::MODULE_BYTES[..]).unwrap()
                 })
                 .with_startup_process({
-                    mod foo { wasi_module_builder::build!("../../../modules/hello-world"); }
+                    mod foo {
+                        wasi_module_builder::build!("../../../modules/hello-world");
+                    }
                     redshirt_core::module::Module::from_bytes(&foo::MODULE_BYTES[..]).unwrap()
                 })
                 .with_main_program([0; 32]) // TODO: just a test

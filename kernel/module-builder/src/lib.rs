@@ -42,10 +42,13 @@ pub fn build(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
             .unwrap();
         assert!(output.status.success());
         let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-        json
-            .as_object().unwrap()
-            .get("id").unwrap()
-            .as_str().unwrap().to_owned()
+        json.as_object()
+            .unwrap()
+            .get("id")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .to_owned()
     };
 
     // Determine the path to the `.wasm` that Cargo will generate.
@@ -55,13 +58,19 @@ pub fn build(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
             .no_deps()
             .exec()
             .unwrap();
-        let package = metadata.packages.iter()
-            .find(|p| p.id.repr == pkg_id).unwrap();
-        let mut bin_targets_iter = package.targets.iter()
+        let package = metadata
+            .packages
+            .iter()
+            .find(|p| p.id.repr == pkg_id)
+            .unwrap();
+        let mut bin_targets_iter = package
+            .targets
+            .iter()
             .filter(|t| t.kind.iter().any(|k| k == "bin"));
         let bin_target = bin_targets_iter.next().unwrap();
         assert!(bin_targets_iter.next().is_none());
-        metadata.target_directory
+        metadata
+            .target_directory
             .join("wasm32-wasi")
             .join("release")
             .join(format!("{}.wasm", bin_target.name))
@@ -82,8 +91,14 @@ pub fn build(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
     // Read the output `.wasm` file.
     let wasm_content = fs::read(wasm_output).unwrap();
 
-    let rust_out = format!("pub(super) const MODULE_BYTES: [u8; {}] = [{}];",
+    let rust_out = format!(
+        "pub(super) const MODULE_BYTES: [u8; {}] = [{}];",
         wasm_content.len(),
-        wasm_content.iter().map(|byte| byte.to_string()).collect::<Vec<_>>().join(", "));
+        wasm_content
+            .iter()
+            .map(|byte| byte.to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
     rust_out.parse().unwrap()
 }
