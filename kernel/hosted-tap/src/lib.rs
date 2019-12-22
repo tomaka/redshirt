@@ -16,6 +16,8 @@
 //! Registers a network interface that uses
 //! [TAP](https://en.wikipedia.org/wiki/TAP_(network_driver)).
 
+use redshirt_syscalls_interface::MessageId;
+
 pub struct TapNetworkInterface {
     /// Interface on the host operating system.
     interface: tun_tap::Iface,
@@ -25,13 +27,14 @@ pub struct TapNetworkInterface {
 
 impl TapNetworkInterface {
     pub fn new() -> TapNetworkInterface {
-        let interface = tun_tap::Iface::new("redshirt-%d", tun_tap::Mode::Tap).unwrap();     // TODO: don't unwrap
+        let interface = tun_tap::Iface::new("redshirt-%d", tun_tap::Mode::Tap).unwrap(); // TODO: don't unwrap
         TapNetworkInterface {
-            interface
+            interface,
+            registered: false,
         }
     }
 
-    pub async fn next_interface_message(&mut self) {
-        
+    pub async fn next_event(&mut self) -> (MessageId, Vec<u8>) {
+        unimplemented!()
     }
 }

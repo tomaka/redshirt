@@ -55,7 +55,7 @@ async fn async_main() {
         redshirt_wasi_hosted::register_extrinsics(redshirt_core::system::SystemBuilder::new())
             .with_interface_handler(redshirt_stdout_interface::ffi::INTERFACE)
             .with_interface_handler(redshirt_time_interface::ffi::INTERFACE)
-            .with_interface_handler(redshirt_tcp_interface::ffi::INTERFACE)
+            .with_startup_process(net_manager_module)
             .with_main_program([0; 32]) // TODO: just a test
             .build();
 
@@ -120,10 +120,6 @@ async fn async_main() {
                             {
                                 unimplemented!()
                             }
-                        } else if interface == redshirt_network_interface::ffi::INTERFACE {
-                            let message: redshirt_network_interface::ffi::TcpMessage =
-                                DecodeAll::decode_all(&message).unwrap();
-                            tap.handle_message(id.map(MessageId::Wasi), message).await;
                         } else {
                             panic!()
                         }
@@ -155,18 +151,6 @@ async fn async_main() {
                         };
                         system.answer_message(message_id.unwrap(), answer);
                     }
-                    continue;
-                }
-                redshirt_core::system::SystemRunOutcome::InterfaceMessage {
-                    message_id,
-                    interface,
-                    message,
-                    ..
-                } if interface == redshirt_network_interface::ffi::INTERFACE => {
-                    let message: redshirt_network_interface::ffi::TcpMessage =
-                        DecodeAll::decode_all(&message).unwrap();
-                    tap.handle_message(message_id.map(MessageId::Core), message)
-                        .await;
                     continue;
                 }
                 redshirt_core::system::SystemRunOutcome::Idle => false,

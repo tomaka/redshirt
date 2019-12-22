@@ -46,7 +46,7 @@ pub struct InterfaceConfig {
 /// Registers a new network interface.
 pub fn register_interface(config: InterfaceConfig) -> NetInterfaceRegistration {
     unsafe {
-        let id = 0xdeadbeef;        // FIXME: generate randomly
+        let id = 0xdeadbeef; // FIXME: generate randomly
 
         redshirt_syscalls_interface::emit_message_without_response(&ffi::INTERFACE, &{
             ffi::TcpMessage::RegisterInterface {
@@ -80,10 +80,14 @@ pub struct NetInterfaceRegistration {
 /// Build a `Future` resolving to the next packet to send to the network.
 ///
 /// Only one such `Future` must be alive at any given point in time.
-fn build_packet_to_net(interface_id: u64) -> redshirt_syscalls_interface::MessageResponseFuture<Vec<u8>> {
+fn build_packet_to_net(
+    interface_id: u64,
+) -> redshirt_syscalls_interface::MessageResponseFuture<Vec<u8>> {
     unsafe {
         let message = ffi::TcpMessage::InterfaceWaitData(interface_id);
-        let msg_id = redshirt_syscalls_interface::emit_message(&ffi::INTERFACE, &message, true).unwrap().unwrap();
+        let msg_id = redshirt_syscalls_interface::emit_message(&ffi::INTERFACE, &message, true)
+            .unwrap()
+            .unwrap();
         redshirt_syscalls_interface::message_response(msg_id)
     }
 }
@@ -120,7 +124,9 @@ impl NetInterfaceRegistration {
 
 impl fmt::Debug for NetInterfaceRegistration {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_tuple("NetInterfaceRegistration").field(&self.id).finish()
+        f.debug_tuple("NetInterfaceRegistration")
+            .field(&self.id)
+            .finish()
     }
 }
 
@@ -146,7 +152,9 @@ impl<'a> PacketFromNetwork<'a> {
         unsafe {
             debug_assert!(self.send_future.is_none());
             let message = ffi::TcpMessage::InterfaceOnData(self.parent.id, data.into());
-            let msg_id = redshirt_syscalls_interface::emit_message(&ffi::INTERFACE, &message, true).unwrap().unwrap();
+            let msg_id = redshirt_syscalls_interface::emit_message(&ffi::INTERFACE, &message, true)
+                .unwrap()
+                .unwrap();
             let fut = redshirt_syscalls_interface::message_response(msg_id);
             *self.send_future = Some(fut);
         }
