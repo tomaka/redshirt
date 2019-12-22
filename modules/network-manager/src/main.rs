@@ -19,7 +19,10 @@ use network_manager::{NetworkManager, NetworkManagerEvent};
 use parity_scale_codec::DecodeAll;
 use redshirt_network_interface::ffi;
 use redshirt_syscalls_interface::ffi::InterfaceOrDestroyed;
-use std::{net::{Ipv6Addr, SocketAddr}, time::Duration};
+use std::{
+    net::{Ipv6Addr, SocketAddr},
+    time::Duration,
+};
 
 fn main() {
     redshirt_syscalls_interface::block_on(async_main())
@@ -39,13 +42,15 @@ async fn async_main() {
         let next_net_event = Box::pin(network.next_event());
         let msg = match future::select(next_interface, next_net_event).await {
             future::Either::Left((InterfaceOrDestroyed::Interface(msg), _)) => msg,
-            future::Either::Left((InterfaceOrDestroyed::ProcessDestroyed(_), _)) => unimplemented!(),
+            future::Either::Left((InterfaceOrDestroyed::ProcessDestroyed(_), _)) => {
+                unimplemented!()
+            }
             future::Either::Right((NetworkManagerEvent::EthernetCableOut(id, buffer), _)) => {
                 /*let rp = ffi::LoadResponse { result: Ok(data) };
                 redshirt_syscalls_interface::emit_answer(user_data, &rp);*/
                 continue;
             }
-            _ => unimplemented!()   // TODO:
+            _ => unimplemented!(), // TODO:
         };
 
         assert_eq!(msg.interface, ffi::INTERFACE);
@@ -79,35 +84,31 @@ async fn async_main() {
                 if let Some(message_id) = msg.message_id {
                     redshirt_syscalls_interface::emit_answer(message_id, &rp);
                 }*/
-            },
+            }
             ffi::TcpMessage::Close(msg) => {
                 if let Some(inner_id) = sockets.remove(&msg.socket_id) {
                     network.tcp_socket_by_id(&inner_id).unwrap().close();
                 }
-            },
-            ffi::TcpMessage::Read(_) => {
-                unimplemented!()
-            },
-            ffi::TcpMessage::Write(_) => {
-                unimplemented!()
-            },
+            }
+            ffi::TcpMessage::Read(_) => unimplemented!(),
+            ffi::TcpMessage::Write(_) => unimplemented!(),
             ffi::TcpMessage::RegisterInterface { id, mac_address } => {
                 network.register_interface((msg.emitter_pid, id), mac_address);
-            },
+            }
             ffi::TcpMessage::UnregisterInterface(id) => {
                 network.unregister_interface(&(msg.emitter_pid, id));
-            },
+            }
             ffi::TcpMessage::InterfaceOnData(id, buf) => {
                 network.inject_interface_data(&(msg.emitter_pid, id), buf);
                 if let Some(message_id) = msg.message_id {
                     redshirt_syscalls_interface::emit_answer(message_id, &());
                 }
-            },
+            }
             ffi::TcpMessage::InterfaceWaitData(id) => {
                 unimplemented!()
                 /*network.inject_interface_data(id, buf);
                 redshirt_syscalls_interface::emit_answer(msg.id, &());*/
-            },
+            }
         }
     }
 }

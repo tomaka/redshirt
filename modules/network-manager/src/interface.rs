@@ -19,8 +19,7 @@ use hashbrown::HashMap;
 use smoltcp::{phy, time::Instant};
 use std::{
     collections::BTreeMap,
-    fmt,
-    mem,
+    fmt, mem,
     net::{IpAddr, SocketAddr},
     sync::{Arc, Mutex, MutexGuard},
 };
@@ -120,7 +119,11 @@ pub struct SocketId(smoltcp::socket::SocketHandle);
 impl NetInterfaceState {
     /// Initializes a new TCP connection which tries to connect to the given
     /// [`SocketAddr`](std::net::SocketAddr).
-    pub fn build_tcp_socket(&mut self, listen: bool, addr: &SocketAddr) -> Result<TcpSocket, ConnectError> {
+    pub fn build_tcp_socket(
+        &mut self,
+        listen: bool,
+        addr: &SocketAddr,
+    ) -> Result<TcpSocket, ConnectError> {
         let mut socket = {
             let rx_buf = smoltcp::socket::TcpSocketBuffer::new(vec![0; 1024]);
             let tx_buf = smoltcp::socket::TcpSocketBuffer::new(vec![0; 1024]);
@@ -134,16 +137,22 @@ impl NetInterfaceState {
         }
 
         let id = SocketId(self.sockets.add(socket));
-        self.sockets_state.insert(id, SocketState {
-            is_connected: false,
-            is_closed: false,
-            read_ready: false,
-            write_ready: true,
-            write_remaining: Vec::new(),
-        });
+        self.sockets_state.insert(
+            id,
+            SocketState {
+                is_connected: false,
+                is_closed: false,
+                read_ready: false,
+                write_ready: true,
+                write_remaining: Vec::new(),
+            },
+        );
         self.next_event_delay = None;
 
-        Ok(TcpSocket { interface: self, id })
+        Ok(TcpSocket {
+            interface: self,
+            id,
+        })
     }
 
     /// Returns an existing TCP socket by its ID.
@@ -172,19 +181,19 @@ impl NetInterfaceState {
         match self.next_event_static().await {
             NetInterfaceEventStatic::EthernetCableOut(buf) => {
                 NetInterfaceEvent::EthernetCableOut(buf)
-            },
+            }
             NetInterfaceEventStatic::TcpConnected(id) => {
                 NetInterfaceEvent::TcpConnected(self.tcp_socket_by_id(id).unwrap())
-            },
+            }
             NetInterfaceEventStatic::TcpClosed(id) => {
                 NetInterfaceEvent::TcpClosed(self.tcp_socket_by_id(id).unwrap())
-            },
+            }
             NetInterfaceEventStatic::TcpReadReady(id) => {
                 NetInterfaceEvent::TcpReadReady(self.tcp_socket_by_id(id).unwrap())
-            },
+            }
             NetInterfaceEventStatic::TcpWriteFinished(id) => {
                 NetInterfaceEvent::TcpWriteFinished(self.tcp_socket_by_id(id).unwrap())
-            },
+            }
         }
     }
 
@@ -201,7 +210,8 @@ impl NetInterfaceState {
 
             // Check whether any socket has changed state.
             for (socket_id, socket_state) in &mut self.sockets_state {
-                let mut smoltcp_socket = self.sockets.get::<smoltcp::socket::TcpSocket>(socket_id.0);
+                let mut smoltcp_socket =
+                    self.sockets.get::<smoltcp::socket::TcpSocket>(socket_id.0);
 
                 // Check if this socket got connected.
                 if !socket_state.is_connected && smoltcp_socket.may_send() {
@@ -224,12 +234,17 @@ impl NetInterfaceState {
 
                 // Continue writing `write_remaining`.
                 if smoltcp_socket.can_send() && !socket_state.write_remaining.is_empty() {
-                    let written = smoltcp_socket.send_slice(&socket_state.write_remaining).unwrap();
+                    let written = smoltcp_socket
+                        .send_slice(&socket_state.write_remaining)
+                        .unwrap();
                     socket_state.write_remaining = socket_state.write_remaining.split_off(written);
                 }
 
                 // Report when this socket is available for writing.
-                if smoltcp_socket.may_send() && !socket_state.write_ready && socket_state.write_remaining.is_empty() {
+                if smoltcp_socket.may_send()
+                    && !socket_state.write_ready
+                    && socket_state.write_remaining.is_empty()
+                {
                     socket_state.write_ready = true;
                     return NetInterfaceEventStatic::TcpWriteFinished(*socket_id);
                 }
@@ -262,7 +277,7 @@ impl Default for NetInterfaceStateBuilder {
     fn default() -> Self {
         NetInterfaceStateBuilder {
             ip_addresses: Vec::new(),
-            mac_address: [0x01, 0x00, 0x00, 0x00, 0x00, 0x02],      // TODO: force config?
+            mac_address: [0x01, 0x00, 0x00, 0x00, 0x00, 0x02], // TODO: force config?
         }
     }
 }
@@ -275,11 +290,19 @@ impl NetInterfaceStateBuilder {
         match ip_addr {
             IpAddr::V4(addr) => {
                 assert!(prefix_len <= 32);
-                self.ip_addresses.push(From::from(smoltcp::wire::Ipv4Cidr::new(From::from(addr), prefix_len)));
+                self.ip_addresses
+                    .push(From::from(smoltcp::wire::Ipv4Cidr::new(
+                        From::from(addr),
+                        prefix_len,
+                    )));
             }
             IpAddr::V6(addr) => {
                 assert!(prefix_len <= 64);
-                self.ip_addresses.push(From::from(smoltcp::wire::Ipv6Cidr::new(From::from(addr), prefix_len)));
+                self.ip_addresses
+                    .push(From::from(smoltcp::wire::Ipv6Cidr::new(
+                        From::from(addr),
+                        prefix_len,
+                    )));
             }
         }
 
@@ -337,31 +360,50 @@ impl<'a> TcpSocket<'a> {
 
     /// Starts the process of closing the TCP socket.
     pub fn close(&mut self) {
-        let mut socket = self.interface.sockets.get::<smoltcp::socket::TcpSocket<'static>>(self.id.0);
+        let mut socket = self
+            .interface
+            .sockets
+            .get::<smoltcp::socket::TcpSocket<'static>>(self.id.0);
         socket.close();
     }
 
     /// Instantly drops the socket without a proper shutdown.
     pub fn reset(self) {
-        let mut socket = self.interface.sockets.get::<smoltcp::socket::TcpSocket<'static>>(self.id.0);
+        let mut socket = self
+            .interface
+            .sockets
+            .get::<smoltcp::socket::TcpSocket<'static>>(self.id.0);
         socket.abort();
-        self.interface.sockets_state.get_mut(&self.id).unwrap().is_closed = true;
+        self.interface
+            .sockets_state
+            .get_mut(&self.id)
+            .unwrap()
+            .is_closed = true;
     }
 
     /// Reads the data that has been received on the TCP socket.
     ///
     /// Returns an empty `Vec` if there is no data available.
     pub fn read(&mut self) -> Vec<u8> {
-        let mut socket = self.interface.sockets.get::<smoltcp::socket::TcpSocket<'static>>(self.id.0);
+        let mut socket = self
+            .interface
+            .sockets
+            .get::<smoltcp::socket::TcpSocket<'static>>(self.id.0);
         if !socket.can_recv() {
             return Vec::new();
         }
 
-        self.interface.sockets_state.get_mut(&self.id).unwrap().read_ready = false;
+        self.interface
+            .sockets_state
+            .get_mut(&self.id)
+            .unwrap()
+            .read_ready = false;
 
         let recv_queue_len = socket.recv_queue();
         let mut out = Vec::with_capacity(recv_queue_len);
-        unsafe { out.set_len(recv_queue_len); }
+        unsafe {
+            out.set_len(recv_queue_len);
+        }
         let n_recved = socket.recv_slice(&mut out).unwrap();
         debug_assert_eq!(n_recved, recv_queue_len);
         debug_assert_eq!(socket.recv_queue(), 0);
@@ -384,8 +426,12 @@ impl<'a> TcpSocket<'a> {
     }
 
     /// Internal function that returns the `smoltcp::socket::TcpSocket` contained within the set.
-    fn smoltcp_socket(&mut self) -> smoltcp::socket::SocketRef<smoltcp::socket::TcpSocket<'static>> {
-        self.interface.sockets.get::<smoltcp::socket::TcpSocket<'static>>(self.id.0)
+    fn smoltcp_socket(
+        &mut self,
+    ) -> smoltcp::socket::SocketRef<smoltcp::socket::TcpSocket<'static>> {
+        self.interface
+            .sockets
+            .get::<smoltcp::socket::TcpSocket<'static>>(self.id.0)
     }
 }
 
@@ -436,13 +482,9 @@ impl<'a> smoltcp::phy::Device<'a> for RawDevice {
             return None;
         }
 
-        let rx = RawDeviceRxToken {
-            buffer: in_buffer,
-        };
+        let rx = RawDeviceRxToken { buffer: in_buffer };
 
-        let tx = RawDeviceTxToken {
-            buffer: out_buffer,
-        };
+        let tx = RawDeviceTxToken { buffer: out_buffer };
 
         Some((rx, tx))
     }
@@ -453,9 +495,7 @@ impl<'a> smoltcp::phy::Device<'a> for RawDevice {
             return None;
         }
 
-        Some(RawDeviceTxToken {
-            buffer: out_buffer,
-        })
+        Some(RawDeviceTxToken { buffer: out_buffer })
     }
 
     fn capabilities(&self) -> phy::DeviceCapabilities {
@@ -493,7 +533,9 @@ impl<'a> phy::TxToken for RawDeviceTxToken<'a> {
     {
         debug_assert!(self.buffer.is_empty());
         *self.buffer = Vec::with_capacity(len);
-        unsafe { self.buffer.set_len(len); }
+        unsafe {
+            self.buffer.set_len(len);
+        }
         f(&mut self.buffer)
     }
 }
