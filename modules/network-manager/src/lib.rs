@@ -19,6 +19,9 @@ use std::{hash::Hash, net::SocketAddr};
 
 mod interface;
 
+/// State machine managing all the network interfaces and sockets.
+///
+/// The `TIfId` generic parameter is an identifier for network interfaces.
 pub struct NetworkManager<TIfId> {
     devices: HashMap<TIfId, interface::NetInterfaceState>,
 }
@@ -30,6 +33,13 @@ pub enum NetworkManagerEvent {
 pub struct TcpSocket<'a, TIfId> {
     inner: interface::TcpSocket<'a>,
     device_id: TIfId,
+}
+
+/// Identifier of a socket within the [`NetworkManager`]. Common between all types of sockets.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]    // TODO: Hash
+pub struct SocketId<TIfId> {
+    interface: TIfId,
+    socket: interface::SocketId,
 }
 
 impl<TIfId> NetworkManager<TIfId>
@@ -63,7 +73,7 @@ where
             Entry::Vacant(e) => e,
         };
 
-        let interface = interface::NetInterfaceStateBuilder::new()
+        let interface = interface::NetInterfaceStateBuilder::default()
             .with_mac_address(mac_address)
             .build();
         entry.insert(interface);
@@ -85,6 +95,11 @@ where
 }
 
 impl<'a, TIfId> TcpSocket<'a, TIfId> {
+    /// Returns the identifier of the socket, for later retrieval.
+    pub fn id(&self) -> SocketId<TIfId> {
+        unimplemented!()
+    }
+
     /// Closes the socket.
     pub fn close(self) {
         //self.device.

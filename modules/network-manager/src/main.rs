@@ -14,9 +14,10 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use futures::prelude::*;
+use hashbrown::HashMap;
 use redshirt_network_interface::ffi;
 use parity_scale_codec::DecodeAll;
-use std::time::Duration;
+use std::{net::SocketAddr, time::Duration};
 
 fn main() {
     redshirt_syscalls_interface::block_on(async_main())
@@ -28,6 +29,8 @@ async fn async_main() {
         .unwrap();
 
     let mut network = NetworkManager::new();
+    let mut sockets = HashMap::new();
+    let mut next_socket_id = 0u64;
 
     loop {
         let next_interface = redshirt_syscalls_interface::next_interface_message();
@@ -57,10 +60,32 @@ async fn async_main() {
 
             },
             ffi::TcpMessage::Open(msg) => {
-                network.tcp_connect();
+                let result = network.tcp_connect({
+                    let ip_addr = Ipv6Addr::from(msg.ip);
+                    if let Some(ip_addr) = ip_addr.to_ipv4() {
+                        SocketAddr::new(ip_addr.into(), msg.port)
+                    } else {
+                        SocketAddr::new(ip_addr.into(), msg.port)
+                    }
+                });
+
+                let result = match result {
+                    Ok(id) => {
+                        let new_id = next_socket_id;
+                        next_socket_id += 1;
+                        sockets.insert(new_id, id);
+                        new_id
+                    },
+                    Err(err) => Err(err)
+                };
+
+                let rp = ffi::TcpOpenResponse { result };
+                redshirt_syscalls_interface::emit_answer(msg.id, &rp);
             },
             ffi::TcpMessage::Close(msg) => {
-                network.
+                if let Some(inner_id) = sockets.remove(&msg.id) {
+                    network.socket_by_id(inner_id).unwrap().close();
+                }
             },
             ffi::TcpMessage::Read(_) => {
 
