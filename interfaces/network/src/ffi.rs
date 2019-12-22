@@ -53,7 +53,12 @@ pub struct TcpOpen {
 
 #[derive(Debug, Encode, Decode)]
 pub struct TcpOpenResponse {
-    pub result: Result<u32, ()>,
+    pub result: Result<TcpSocketOpen, ()>,
+}
+
+#[derive(Debug, Encode, Decode)]
+pub struct TcpSocketOpen {
+    pub socket_id: u32,
     pub local_ip: [u16; 8],
     pub local_port: u16,
     pub remote_ip: [u16; 8],

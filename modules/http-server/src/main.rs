@@ -18,9 +18,10 @@ use std::{pin::Pin, task::Context, task::Poll};
 
 fn main() {
     redshirt_syscalls_interface::block_on(async move {
-        let listener = redshirt_network_interface::TcpListener::bind(&"0.0.0.0:8000".parse().unwrap())
-            .await
-            .unwrap();
+        let listener =
+            redshirt_network_interface::TcpListener::bind(&"0.0.0.0:8000".parse().unwrap())
+                .await
+                .unwrap();
 
         println!("Now listening on 0.0.0.0:8000");
 

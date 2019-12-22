@@ -17,8 +17,8 @@
 
 #![deny(intra_doc_link_resolution_failure)]
 
-// TODO: pub use self::tcp::{TcpListener, TcpSocket};
+pub use self::tcp::{TcpListener, TcpStream};
 
 pub mod ffi;
 pub mod interface;
-// TODO: pub mod tcp;
+pub mod tcp;
