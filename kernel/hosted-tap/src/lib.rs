@@ -13,10 +13,14 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-//! Registers a network interface that uses [TAP](https://en.wikipedia.org/wiki/TAP_(network_driver)).
+//! Registers a network interface that uses
+//! [TAP](https://en.wikipedia.org/wiki/TAP_(network_driver)).
 
 pub struct TapNetworkInterface {
+    /// Interface on the host operating system.
     interface: tun_tap::Iface,
+    /// If true, we have already sent the registration message to the network interface.
+    registered: bool,
 }
 
 impl TapNetworkInterface {
@@ -25,5 +29,9 @@ impl TapNetworkInterface {
         TapNetworkInterface {
             interface
         }
+    }
+
+    pub async fn next_interface_message(&mut self) {
+        
     }
 }

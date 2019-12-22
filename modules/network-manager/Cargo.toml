@@ -9,6 +9,7 @@ publish = false
 [dependencies]
 futures = "0.3"
 hashbrown = "0.6.3"
+parity-scale-codec = "1.0.5"
 redshirt-interface-interface = { path = "../../interfaces/interface" }
 redshirt-network-interface = { path = "../../interfaces/network" }
 redshirt-syscalls-interface = { path = "../../interfaces/syscalls" }

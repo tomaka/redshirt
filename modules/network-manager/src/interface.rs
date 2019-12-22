@@ -167,6 +167,7 @@ impl NetInterfaceState {
         self.next_event_delay = None;
     }
 
+    /// Wait until an event happens on the network.
     pub async fn next_event<'a>(&'a mut self) -> NetInterfaceEvent<'a> {
         match self.next_event_static().await {
             NetInterfaceEventStatic::EthernetCableOut(buf) => {
@@ -187,7 +188,7 @@ impl NetInterfaceState {
         }
     }
 
-    pub async fn next_event_static(&mut self) -> NetInterfaceEventStatic {
+    async fn next_event_static(&mut self) -> NetInterfaceEventStatic {
         loop {
             // First, check the out buffer.
             {

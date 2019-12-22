@@ -36,7 +36,11 @@ pub enum TcpMessage {
         mac_address: [u8; 6],
     },
     UnregisterInterface(u64),
+    /// Notify when an interface has received data (e.g. from the Internet). Must answer with a
+    /// `()` when the send is finished and we're ready to accept a new packet.
     InterfaceOnData(u64, Vec<u8>),
+    /// Asks for the next packet of data to send out through this interface (e.g. going towards
+    /// the Internet). Must answer with a `Vec<u8>`.
     InterfaceWaitData(u64),
 }
 
