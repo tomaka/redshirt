@@ -62,8 +62,15 @@ impl Kernel {
         )
         .unwrap();
 
+        // TODO: use a better system than cfgs
+        #[cfg(target_arch = "x86_64")]
         let stdout_module = redshirt_core::module::Module::from_bytes(
             &include_bytes!("../../../modules/target/wasm32-wasi/release/x86-stdout.wasm")[..],
+        )
+        .unwrap();
+        #[cfg(target_arch = "arm")]
+        let stdout_module = redshirt_core::module::Module::from_bytes(
+            &include_bytes!("../../../modules/target/wasm32-wasi/release/arm-stdout.wasm")[..],
         )
         .unwrap();
 
@@ -110,14 +117,16 @@ impl Kernel {
                     }
                 }
                 redshirt_core::system::SystemRunOutcome::ProgramFinished { pid, outcome } => {
+                    hardware.process_stopped(pid);
                     //console.write(&format!("Program finished {:?} => {:?}\n", pid, outcome));
                 }
                 redshirt_core::system::SystemRunOutcome::InterfaceMessage {
+                    pid,
                     interface,
                     message,
                     message_id,
                 } if interface == redshirt_hardware_interface::ffi::INTERFACE => {
-                    if let Some(answer) = hardware.hardware_message(message_id, &message) {
+                    if let Some(answer) = hardware.hardware_message(pid, message_id, &message) {
                         let answer = match &answer {
                             Ok(v) => Ok(&v[..]),
                             Err(()) => Err(()),

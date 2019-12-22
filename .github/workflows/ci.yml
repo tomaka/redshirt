@@ -106,6 +106,9 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: rust
+    strategy:
+      matrix:
+        target: [x86_64-multiboot2, arm-freestanding]
     steps:
     - uses: actions/checkout@v1
     - name: Download WASM modules
@@ -121,17 +124,17 @@ jobs:
       uses: actions/cache@v1
       with:
         path: ~/.cargo/registry
-        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-registry-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}
     - name: Cache cargo index
       uses: actions/cache@v1
       with:
         path: ~/.cargo/git
-        key: ${{ runner.os }}-cargo-index-${{ hashFiles('Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-index-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}
     - name: Cache cargo build
       uses: actions/cache@v1
       with:
         path: target
-        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('Cargo.lock') }}-standalone
+        key: ${{ runner.os }}-cargo-build-target-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}-standalone
     - name: Install nightly Rust
       uses: actions-rs/toolchain@v1
       with:
@@ -140,18 +143,18 @@ jobs:
         override: true
     - name: Install rust-src
       run: rustup component add rust-src
-    - name: Build core for no_std platform
-      run: RUST_TARGET_PATH=`pwd` cargo +nightly build -Z build-std=core,alloc --target x86_64-multiboot2 --package redshirt-core --release
-    - name: Build kernel for no_std platform
-      run: RUST_TARGET_PATH=`pwd` cargo +nightly build -Z build-std=core,alloc --target x86_64-multiboot2 --package redshirt-standalone-kernel --release
+    - name: Build core
+      run: RUST_TARGET_PATH=`pwd` cargo +nightly build -Z build-std=core,alloc --target ${{ matrix.target }} --package redshirt-core --release
+    - name: Build kernel
+      run: RUST_TARGET_PATH=`pwd` cargo +nightly build -Z build-std=core,alloc --target ${{ matrix.target }} --package redshirt-standalone-kernel --release
     - name: Upload generated kernel
       uses: actions/upload-artifact@master
       with:
-        name: kernel
-        path: target/x86_64-multiboot2/release/redshirt-standalone-kernel
+        name: kernel-${{ matrix.target }}
+        path: target/${{ matrix.target }}/release/redshirt-standalone-kernel
 
   build-iso:
-    name: Build bootable x86 ISO
+    name: Build bootable x86_64 ISO
     needs: build-standalone
     runs-on: ubuntu-latest
     container:
@@ -161,7 +164,7 @@ jobs:
     - name: Download kernel
       uses: actions/download-artifact@v1
       with:
-        name: kernel
+        name: kernel-x86_64-multiboot2
         path: .
     - name: Install required packages
       run: |
@@ -177,7 +180,7 @@ jobs:
     - name: Upload generated kernel
       uses: actions/upload-artifact@master
       with:
-        name: iso
+        name: bootable-cdrom-x86_64
         path: redshirt.iso
 
   fmt:

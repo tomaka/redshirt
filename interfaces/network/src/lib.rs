@@ -21,6 +21,7 @@
 
 use futures::{prelude::*, ready};
 use parity_scale_codec::{DecodeAll, Encode as _};
+use redshirt_syscalls_interface::MessageId;
 use std::{
     cmp, io, mem, net::Ipv6Addr, net::SocketAddr, pin::Pin, sync::Arc, task::Context, task::Poll,
     task::Waker,

@@ -23,6 +23,8 @@ fn main() {
             .file("src/arch/x86_64/boot.S")
             .include("src")
             .compile("libboot.a");
+    } else if target.starts_with("arm") || target.starts_with("aarch64") {
+        // Nothing more to do.
     } else {
         panic!("Unsupported target: {:?}", target)
     }
@@ -35,6 +37,19 @@ fn main() {
         .args(&["--package", "hello-world"])
         .args(&["--bin", "hello-world"])
         .args(&["--manifest-path", "../../modules/hello-world/Cargo.toml"])
+        .arg("--")
+        .args(&["-C", "link-arg=--export-table"])
+        .status()
+        .unwrap();
+    assert!(status.success());
+
+    let status = Command::new("cargo")
+        .arg("rustc")
+        .arg("--release")
+        .args(&["--target", "wasm32-wasi"])
+        .args(&["--package", "arm-stdout"])
+        .args(&["--bin", "arm-stdout"])
+        .args(&["--manifest-path", "../../modules/arm-stdout/Cargo.toml"])
         .arg("--")
         .args(&["-C", "link-arg=--export-table"])
         .status()

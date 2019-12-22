@@ -25,6 +25,23 @@ pub const INTERFACE: [u8; 32] = [
 /// Message in destination to the hardware interface handler.
 #[derive(Debug, Encode, Decode)]
 pub enum HardwareMessage {
+    /// Allocate RAM. Must answer with a `u64`. The value `0` is returned if the allocation is
+    /// too large.
+    ///
+    /// This is useful in situations where you want to pass a pointer to a device.
+    Malloc {
+        /// Size to allocate.
+        size: u64,
+        /// Alignment of the pointer to return.
+        ///
+        /// The returned value modulo `alignment` must be equal to 0.
+        alignment: u8,
+    },
+    /// Opposite of malloc.
+    Free {
+        /// Value previously returned after a malloc message.
+        ptr: u64,
+    },
     /// Request to perform some access on the physical memory or ports.
     ///
     /// All operations must be performed in order.
@@ -46,12 +63,32 @@ pub enum HardwareMessage {
 /// Request to perform accesses to physical memory or to ports.
 #[derive(Debug, Encode, Decode)]
 pub enum Operation {
-    PhysicalMemoryWrite {
+    PhysicalMemoryWriteU8 {
         address: u64,
         data: Vec<u8>,
     },
-    PhysicalMemoryRead {
+    /// Uses the platform's native endianess.
+    PhysicalMemoryWriteU16 {
         address: u64,
+        data: Vec<u16>,
+    },
+    /// Uses the platform's native endianess.
+    PhysicalMemoryWriteU32 {
+        address: u64,
+        data: Vec<u32>,
+    },
+    PhysicalMemoryReadU8 {
+        address: u64,
+        len: u32,
+    },
+    PhysicalMemoryReadU16 {
+        address: u64,
+        /// Number of `u16`s to read.
+        len: u32,
+    },
+    PhysicalMemoryReadU32 {
+        address: u64,
+        /// Number of `u32`s to read.
         len: u32,
     },
     /// Write data to a port.
@@ -98,8 +135,12 @@ pub enum Operation {
 /// Response to a [`HardwareMessage::HardwareAccess`].
 #[derive(Debug, Encode, Decode)]
 pub enum HardwareAccessResponse {
-    /// Sent back in response to a [`Operation::PhysicalMemoryRead`].
-    PhysicalMemoryRead(Vec<u8>),
+    /// Sent back in response to a [`Operation::PhysicalMemoryReadU8`].
+    PhysicalMemoryReadU8(Vec<u8>),
+    /// Sent back in response to a [`Operation::PhysicalMemoryReadU16`].
+    PhysicalMemoryReadU16(Vec<u16>),
+    /// Sent back in response to a [`Operation::PhysicalMemoryReadU32`].
+    PhysicalMemoryReadU32(Vec<u32>),
     /// Sent back in response to a [`Operation::PortReadU8`].
     PortReadU8(u8),
     /// Sent back in response to a [`Operation::PortReadU16`].

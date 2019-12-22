@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::ffi::InterfaceOrDestroyed;
+use crate::{ffi::InterfaceOrDestroyed, Encode, MessageId};
 
 use core::{
     fmt,
@@ -21,7 +21,6 @@ use core::{
     task::{Context, Poll},
 };
 use futures::prelude::*;
-use parity_scale_codec::Encode;
 
 /// Returns a future that is ready when a new message arrives on an interface that we have
 /// registered.
@@ -32,11 +31,10 @@ pub fn next_interface_message() -> InterfaceMessageFuture {
 
 /// Answers the given message.
 // TODO: move to interface interface?
-// TODO: this ties the messaging system to parity_scale_codec; is that a good thing?
-pub fn emit_answer(message_id: u64, msg: &impl Encode) -> Result<(), EmitAnswerErr> {
+pub fn emit_answer<'a>(message_id: MessageId, msg: impl Encode<'a>) -> Result<(), EmitAnswerErr> {
     unsafe {
         let buf = msg.encode();
-        let ret = crate::ffi::emit_answer(&message_id, buf.as_ptr(), buf.len() as u32);
+        let ret = crate::ffi::emit_answer(&u64::from(message_id), buf.as_ptr(), buf.len() as u32);
         if ret == 0 {
             Ok(())
         } else {
@@ -47,9 +45,9 @@ pub fn emit_answer(message_id: u64, msg: &impl Encode) -> Result<(), EmitAnswerE
 
 /// Answers the given message by notifying of an error in the message.
 // TODO: move to interface interface?
-pub fn emit_message_error(message_id: u64) -> Result<(), EmitAnswerErr> {
+pub fn emit_message_error(message_id: MessageId) -> Result<(), EmitAnswerErr> {
     unsafe {
-        if crate::ffi::emit_message_error(&message_id) == 0 {
+        if crate::ffi::emit_message_error(&u64::from(message_id)) == 0 {
             Ok(())
         } else {
             Err(EmitAnswerErr::InvalidMessageId)
@@ -87,7 +85,7 @@ impl Future for InterfaceMessageFuture {
             self.finished = true;
             Poll::Ready(message)
         } else {
-            crate::block_on::register_message_waker(1, cx.waker().clone());
+            crate::block_on::register_message_waker(From::from(1), cx.waker().clone());
             Poll::Pending
         }
     }
