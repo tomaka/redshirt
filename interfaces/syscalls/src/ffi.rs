@@ -118,7 +118,7 @@ extern "C" {
     pub(crate) fn cancel_message(message_id: *const u64) -> u32;
 }
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub enum Message {
     Interface(InterfaceMessage),
     Response(ResponseMessage),
@@ -159,7 +159,7 @@ pub enum InterfaceOrDestroyed {
     ProcessDestroyed(ProcessDestroyedMessage),
 }
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub struct ResponseMessage {
     /// Identifier of the message whose answer we are receiving.
     pub message_id: MessageId,

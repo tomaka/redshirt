@@ -23,8 +23,7 @@ use alloc::{borrow::Cow, collections::VecDeque, vec, vec::Vec};
 use byteorder::{ByteOrder as _, LittleEndian};
 use core::{convert::TryFrom, iter, marker::PhantomData, mem};
 use hashbrown::{hash_map::Entry, HashMap, HashSet};
-use parity_scale_codec::Encode;
-use redshirt_syscalls_interface::{MessageId, Pid, ThreadId};
+use redshirt_syscalls_interface::{Encode, MessageId, Pid, ThreadId};
 use smallvec::SmallVec;
 
 /// Handles scheduling processes and inter-process communications.
@@ -744,10 +743,10 @@ impl<T: Clone> Core<T> {
     ///
     /// The message doesn't expect any answer.
     // TODO: better API
-    pub fn emit_interface_message_no_answer(
+    pub fn emit_interface_message_no_answer<'a>(
         &mut self,
         interface: [u8; 32],
-        message: impl Encode,
+        message: impl Encode<'a>,
     ) -> Result<(), ()> {
         let message = redshirt_syscalls_interface::ffi::Message::Interface(
             redshirt_syscalls_interface::ffi::InterfaceMessage {
@@ -755,7 +754,7 @@ impl<T: Clone> Core<T> {
                 message_id: None,
                 emitter_pid: None,
                 index_in_list: 0,
-                actual_data: message.encode(),
+                actual_data: message.encode().into_owned(),
             },
         );
 
@@ -777,10 +776,10 @@ impl<T: Clone> Core<T> {
     /// The message does expect an answer. The answer will be sent back as
     /// [`MessageResponse`](CoreRunOutcome::MessageResponse) event.
     // TODO: better API
-    pub fn emit_interface_message_answer(
+    pub fn emit_interface_message_answer<'a>(
         &mut self,
         interface: [u8; 32],
-        message: impl Encode,
+        message: impl Encode<'a>,
     ) -> Result<MessageId, ()> {
         let (message_id, messages_to_answer_entry) = loop {
             let id: MessageId = self.message_id_pool.assign();
@@ -799,7 +798,7 @@ impl<T: Clone> Core<T> {
                 message_id: Some(message_id),
                 emitter_pid: None,
                 index_in_list: 0,
-                actual_data: message.encode(),
+                actual_data: message.encode().into_owned(),
             },
         );
 
@@ -1127,7 +1126,7 @@ fn try_resume_message_wait_thread(
 
     // Turn said message into bytes.
     // TODO: would be great to not do that every single time
-    let msg_bytes = thread.process_user_data().messages_queue[index_in_queue].encode();
+    let msg_bytes = thread.process_user_data().messages_queue[index_in_queue].clone().encode();
 
     // TODO: don't use as
     if msg_wait.out_size as usize >= msg_bytes.len() {

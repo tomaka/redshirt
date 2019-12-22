@@ -18,8 +18,7 @@ use crate::scheduler::{Core, CoreBuilder, CoreRunOutcome};
 use crate::signature::Signature;
 use alloc::{borrow::Cow, vec, vec::Vec};
 use hashbrown::{hash_map::Entry, HashMap, HashSet};
-use parity_scale_codec::{DecodeAll, Encode};
-use redshirt_syscalls_interface::{MessageId, Pid, ThreadId};
+use redshirt_syscalls_interface::{Decode, Encode, MessageId, Pid, ThreadId};
 use smallvec::SmallVec;
 
 /// Main struct that handles a system, including the scheduler, program loader,
@@ -178,7 +177,7 @@ impl<TExtEx: Clone> System<TExtEx> {
                 } => {
                     if self.loading_programs.remove(&message_id) {
                         let redshirt_loader_interface::ffi::LoadResponse { result } =
-                            DecodeAll::decode_all(&response.unwrap()).unwrap();
+                            Decode::decode(response.unwrap()).unwrap();
                         let module = Module::from_bytes(&result.unwrap()).unwrap();
                         self.core.execute(&module).unwrap();
                     }
@@ -191,7 +190,7 @@ impl<TExtEx: Clone> System<TExtEx> {
                     message,
                 } if interface == redshirt_threads_interface::ffi::INTERFACE => {
                     let msg: redshirt_threads_interface::ffi::ThreadsMessage =
-                        DecodeAll::decode_all(&message).unwrap();
+                        Decode::decode(message).unwrap();
                     match msg {
                         redshirt_threads_interface::ffi::ThreadsMessage::New(new_thread) => {
                             assert!(message_id.is_none());
@@ -239,7 +238,7 @@ impl<TExtEx: Clone> System<TExtEx> {
                     message,
                 } if interface == redshirt_interface_interface::ffi::INTERFACE => {
                     let msg: redshirt_interface_interface::ffi::InterfaceMessage =
-                        DecodeAll::decode_all(&message).unwrap();
+                        Decode::decode(message).unwrap();
                     match msg {
                         redshirt_interface_interface::ffi::InterfaceMessage::Register(
                             interface_hash,
@@ -320,10 +319,10 @@ impl<TExtEx: Clone> System<TExtEx> {
     ///
     /// The message doesn't expect any answer.
     // TODO: better API
-    pub fn emit_interface_message_no_answer(
+    pub fn emit_interface_message_no_answer<'a>(
         &mut self,
         interface: [u8; 32],
-        message: impl Encode,
+        message: impl Encode<'a>,
     ) -> Result<(), ()> {
         self.core
             .emit_interface_message_no_answer(interface, message)
