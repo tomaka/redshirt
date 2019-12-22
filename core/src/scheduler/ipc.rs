@@ -1126,7 +1126,9 @@ fn try_resume_message_wait_thread(
 
     // Turn said message into bytes.
     // TODO: would be great to not do that every single time
-    let msg_bytes = thread.process_user_data().messages_queue[index_in_queue].clone().encode();
+    let msg_bytes = thread.process_user_data().messages_queue[index_in_queue]
+        .clone()
+        .encode();
 
     // TODO: don't use as
     if msg_wait.out_size as usize >= msg_bytes.len() {
