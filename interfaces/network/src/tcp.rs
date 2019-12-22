@@ -40,12 +40,13 @@ pub struct TcpStream {
 impl TcpStream {
     pub fn connect(socket_addr: &SocketAddr) -> impl Future<Output = Result<TcpStream, ()>> {
         let fut = TcpStream::new(socket_addr, false);
-        async move {
-            Ok(fut.await?.0)
-        }
+        async move { Ok(fut.await?.0) }
     }
 
-    fn new(socket_addr: &SocketAddr, listen: bool) -> impl Future<Output = Result<(TcpStream, SocketAddr), ()>> {
+    fn new(
+        socket_addr: &SocketAddr,
+        listen: bool,
+    ) -> impl Future<Output = Result<(TcpStream, SocketAddr), ()>> {
         let tcp_open = ffi::TcpMessage::Open(match socket_addr {
             SocketAddr::V4(addr) => ffi::TcpOpen {
                 ip: addr.ip().to_ipv6_mapped().segments(),

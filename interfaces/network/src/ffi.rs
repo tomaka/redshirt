@@ -23,6 +23,8 @@ pub const INTERFACE: [u8; 32] = [
 
 #[derive(Debug, Encode, Decode)]
 pub enum TcpMessage {
+    /// Request to open a TCP socket. The socket can either attempt to connect to a third party,
+    /// or listen on a port and wait for a third party to connect.
     Open(TcpOpen),
     Close(TcpClose),
     /// Ask to read data from a socket. The response contains the data. For each socket, only one
@@ -46,8 +48,16 @@ pub enum TcpMessage {
 
 #[derive(Debug, Encode, Decode)]
 pub struct TcpOpen {
+    /// If true, then `ip` and `port` designate a local IP and port that the socket must listen
+    /// on. A response will arrive when a remote connects to this IP and port.
+    ///
+    /// If false, then `ip` and `port` designate a remote IP and port that the socket will try to
+    /// connect to. A response will arrive when we successfully connect or fail to connect.
+    // TODO: enum instead?
     pub listen: bool,
+    /// IPv6 address.
     pub ip: [u16; 8],
+    /// TCP port.
     pub port: u16,
 }
 
