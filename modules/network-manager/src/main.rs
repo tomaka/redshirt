@@ -53,12 +53,6 @@ async fn async_main() {
         let msg_data = ffi::TcpMessage::decode_all(&msg.actual_data).unwrap();
 
         match msg_data {
-            ffi::TcpMessage::Listen(_) => {
-
-            },
-            ffi::TcpMessage::Accept(_) => {
-
-            },
             ffi::TcpMessage::Open(msg) => {
                 let result = network.tcp_connect({
                     let ip_addr = Ipv6Addr::from(msg.ip);
@@ -68,6 +62,8 @@ async fn async_main() {
                         SocketAddr::new(ip_addr.into(), msg.port)
                     }
                 });
+
+                // TODO: msg.listen
 
                 let result = match result {
                     Ok(id) => {

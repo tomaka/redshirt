@@ -78,6 +78,18 @@ pub enum NetInterfaceEvent<'a> {
     TcpWriteFinished(TcpSocket<'a>),
 }
 
+/// Internal enum similar to [`NetInterfaceEvent`], except that it is `'static`.
+///
+/// Necessary because of borrow checker issue.
+#[derive(Debug)]
+enum NetInterfaceEventStatic {
+    EthernetCableOut(Vec<u8>),
+    TcpConnected(SocketId),
+    TcpClosed(SocketId),
+    TcpReadReady(SocketId),
+    TcpWriteFinished(SocketId),
+}
+
 /// Active TCP socket within a [`NetInterfaceState`].
 pub struct TcpSocket<'a> {
     /// Reference to the interface.
@@ -108,23 +120,18 @@ pub struct SocketId(smoltcp::socket::SocketHandle);
 impl NetInterfaceState {
     /// Initializes a new TCP connection which tries to connect to the given
     /// [`SocketAddr`](std::net::SocketAddr).
-    pub fn tcp_connect(&mut self, dest: &SocketAddr) -> Result<TcpSocket, ConnectError> {
-        self.build_tcp(|socket| socket.connect(dest.clone(), dest.clone()).unwrap()) // TODO: bad source
-    }
-
-    pub fn tcp_listen(&mut self, bind_addr: &SocketAddr) -> Result<TcpSocket, ConnectError> {
-        self.build_tcp(|socket| socket.listen(bind_addr.clone()).unwrap())
-    }
-
-    /// Creates a new TCP socket. The `init` function performs the initialization.
-    fn build_tcp(&mut self, init: impl FnOnce(&mut smoltcp::socket::TcpSocket)) -> Result<TcpSocket, ConnectError> {
+    pub fn build_tcp_socket(&mut self, listen: bool, addr: &SocketAddr) -> Result<TcpSocket, ConnectError> {
         let mut socket = {
             let rx_buf = smoltcp::socket::TcpSocketBuffer::new(vec![0; 1024]);
             let tx_buf = smoltcp::socket::TcpSocketBuffer::new(vec![0; 1024]);
             smoltcp::socket::TcpSocket::new(rx_buf, tx_buf)
         };
 
-        init(&mut socket);
+        if listen {
+            socket.listen(addr.clone()).unwrap();
+        } else {
+            socket.connect(addr.clone(), addr.clone()).unwrap(); // TODO: bad source
+        }
 
         let id = SocketId(self.sockets.add(socket));
         self.sockets_state.insert(id, SocketState {
@@ -139,6 +146,18 @@ impl NetInterfaceState {
         Ok(TcpSocket { interface: self, id })
     }
 
+    /// Returns an existing TCP socket by its ID.
+    pub fn tcp_socket_by_id(&mut self, id: SocketId) -> Option<TcpSocket> {
+        if !self.sockets_state.contains_key(&id) {
+            return None;
+        }
+
+        Some(TcpSocket {
+            interface: self,
+            id,
+        })
+    }
+
     /// Injects some data coming from the Ethernet cable.
     ///
     /// Call [`NetInterfaceState::next_event`] in order to obtain the result.
@@ -149,46 +168,57 @@ impl NetInterfaceState {
     }
 
     pub async fn next_event<'a>(&'a mut self) -> NetInterfaceEvent<'a> {
+        match self.next_event_static().await {
+            NetInterfaceEventStatic::EthernetCableOut(buf) => {
+                NetInterfaceEvent::EthernetCableOut(buf)
+            },
+            NetInterfaceEventStatic::TcpConnected(id) => {
+                NetInterfaceEvent::TcpConnected(self.tcp_socket_by_id(id).unwrap())
+            },
+            NetInterfaceEventStatic::TcpClosed(id) => {
+                NetInterfaceEvent::TcpClosed(self.tcp_socket_by_id(id).unwrap())
+            },
+            NetInterfaceEventStatic::TcpReadReady(id) => {
+                NetInterfaceEvent::TcpReadReady(self.tcp_socket_by_id(id).unwrap())
+            },
+            NetInterfaceEventStatic::TcpWriteFinished(id) => {
+                NetInterfaceEvent::TcpWriteFinished(self.tcp_socket_by_id(id).unwrap())
+            },
+        }
+    }
+
+    pub async fn next_event_static(&mut self) -> NetInterfaceEventStatic {
         loop {
             // First, check the out buffer.
             {
                 let mut device_out_buffer = self.device_out_buffer.try_lock().unwrap();
                 if !device_out_buffer.is_empty() {
                     let out = mem::replace(&mut *device_out_buffer, Vec::new());
-                    return NetInterfaceEvent::EthernetCableOut(out);
+                    return NetInterfaceEventStatic::EthernetCableOut(out);
                 }
             }
 
             // Check whether any socket has changed state.
             for (socket_id, socket_state) in &mut self.sockets_state {
-                let smoltcp_socket = self.sockets.get::<smoltcp::socket::TcpSocket>(socket_id.0);
+                let mut smoltcp_socket = self.sockets.get::<smoltcp::socket::TcpSocket>(socket_id.0);
 
                 // Check if this socket got connected.
                 if !socket_state.is_connected && smoltcp_socket.may_send() {
                     socket_state.is_connected = true;
-                    return NetInterfaceEvent::TcpConnected(TcpSocket {
-                        interface: self,
-                        id: *socket_id,
-                    });
+                    return NetInterfaceEventStatic::TcpConnected(*socket_id);
                 }
 
                 // Check if this socket got closed.
                 if !socket_state.is_closed && !smoltcp_socket.is_open() {
                     socket_state.is_closed = true;
                     // TODO: also remove from list
-                    return NetInterfaceEvent::TcpClosed(TcpSocket {
-                        interface: self,
-                        id: *socket_id,
-                    });
+                    return NetInterfaceEventStatic::TcpClosed(*socket_id);
                 }
 
                 // Check if this socket has data for reading.
                 if !socket_state.read_ready && smoltcp_socket.can_recv() {
                     socket_state.read_ready = true;
-                    return NetInterfaceEvent::TcpReadReady(TcpSocket {
-                        interface: self,
-                        id: *socket_id,
-                    });
+                    return NetInterfaceEventStatic::TcpReadReady(*socket_id);
                 }
 
                 // Continue writing `write_remaining`.
@@ -200,10 +230,7 @@ impl NetInterfaceState {
                 // Report when this socket is available for writing.
                 if smoltcp_socket.may_send() && !socket_state.write_ready && socket_state.write_remaining.is_empty() {
                     socket_state.write_ready = true;
-                    return NetInterfaceEvent::TcpWriteFinished(TcpSocket {
-                        interface: self,
-                        id: *socket_id,
-                    });
+                    return NetInterfaceEventStatic::TcpWriteFinished(*socket_id);
                 }
             }
 
@@ -398,12 +425,12 @@ impl<'a> smoltcp::phy::Device<'a> for RawDevice {
             return None;
         }
 
-        let mut in_buffer = self.device_in_buffer.try_lock().unwrap();
+        let in_buffer = self.device_in_buffer.try_lock().unwrap();
         if in_buffer.is_empty() {
             return None;
         }
 
-        let mut out_buffer = self.device_out_buffer.try_lock().unwrap();
+        let out_buffer = self.device_out_buffer.try_lock().unwrap();
         if !out_buffer.is_empty() {
             return None;
         }
@@ -420,7 +447,7 @@ impl<'a> smoltcp::phy::Device<'a> for RawDevice {
     }
 
     fn transmit(&'a mut self) -> Option<Self::TxToken> {
-        let mut out_buffer = self.device_out_buffer.try_lock().unwrap();
+        let out_buffer = self.device_out_buffer.try_lock().unwrap();
         if !out_buffer.is_empty() {
             return None;
         }

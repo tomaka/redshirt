@@ -23,8 +23,6 @@ pub const INTERFACE: [u8; 32] = [
 
 #[derive(Debug, Encode, Decode)]
 pub enum TcpMessage {
-    Listen(TcpListen),
-    Accept(TcpAccept),
     Open(TcpOpen),
     Close(TcpClose),
     /// Ask to read data from a socket. The response contains the data. For each socket, only one
@@ -43,20 +41,8 @@ pub enum TcpMessage {
 }
 
 #[derive(Debug, Encode, Decode)]
-pub struct TcpListen {
-    pub local_ip: [u16; 8],
-    /// Can be 0 for auto-assign.
-    pub port: u16,
-}
-
-#[derive(Debug, Encode, Decode)]
-pub struct TcpListenResponse {
-    /// On success, the socket ID and the port it's listening on.
-    pub result: Result<(u32, u16), ()>,
-}
-
-#[derive(Debug, Encode, Decode)]
 pub struct TcpOpen {
+    pub listen: bool,
     pub ip: [u16; 8],
     pub port: u16,
 }
@@ -64,16 +50,8 @@ pub struct TcpOpen {
 #[derive(Debug, Encode, Decode)]
 pub struct TcpOpenResponse {
     pub result: Result<u32, ()>,
-}
-
-#[derive(Debug, Encode, Decode)]
-pub struct TcpAccept {
-    pub socket_id: u32,
-}
-
-#[derive(Debug, Encode, Decode)]
-pub struct TcpAcceptResponse {
-    pub accepted_socket_id: u32,
+    pub local_ip: [u16; 8],
+    pub local_port: u16,
     pub remote_ip: [u16; 8],
     pub remote_port: u16,
 }
