@@ -66,7 +66,7 @@ async fn async_main() {
     };
 
     let time = Arc::new(redshirt_time_hosted::TimerHandler::new());
-    let tap = Arc::new(redshirt_tap_hosted::TapNetworkInterface::new());
+    let tap = Arc::new(redshirt_tap_hosted::TapNetworkInterface::new().unwrap());
     let mut wasi = redshirt_wasi_hosted::WasiStateMachine::new();
 
     let mut to_answer_rx = {
