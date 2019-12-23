@@ -13,22 +13,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#![warn(missing_docs)]
-#![deny(unsafe_code)]
-#![deny(intra_doc_link_resolution_failure)]
-#![allow(dead_code)] // TODO: temporary during development
-#![no_std]
+// TODO: remove star imports
+pub use self::collection::*;
+pub use self::traits::*;
 
-extern crate alloc;
-
-pub use self::module::Module;
-pub use self::system::{System, SystemBuilder, SystemRunOutcome};
-pub use wasmi::RuntimeValue; // TODO: wrap around instead?
-
-mod id_pool;
-
-pub mod module;
-pub mod native;
-pub mod scheduler;
-pub mod signature;
-pub mod system;
+mod collection;
+mod traits;
