@@ -3,7 +3,6 @@ members = [
     "core",
     "kernel/cli",
     "kernel/hosted-stdout",
-    "kernel/hosted-tcp",
     "kernel/hosted-time",
     "kernel/hosted-wasi",
     "kernel/standalone",
