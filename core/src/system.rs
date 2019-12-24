@@ -185,7 +185,10 @@ impl<TExtEx: Clone> System<TExtEx> {
                     unimplemented!()
                 }
                 native::NativeProgramsCollectionEvent::Answer { message_id, answer } => {
-                    unimplemented!()
+                    self.core.answer_message(
+                        message_id,
+                        answer.as_ref().map(|d| &d[..]).map_err(|&()| ()),
+                    );
                 }
             }
         })

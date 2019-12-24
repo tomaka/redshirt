@@ -7,3 +7,5 @@ publish = false
 
 [dependencies]
 redshirt-stdout-interface = { path = "../../interfaces/stdout" }
+redshirt-syscalls-interface = { path = "../../interfaces/syscalls" }
+redshirt-time-interface = { path = "../../interfaces/time" }

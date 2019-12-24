@@ -769,7 +769,7 @@ impl<T: Clone> Core<T> {
                     self.pending_events.push_back(
                         CoreRunOutcomeInner::ReservedPidInterfaceMessage {
                             pid: emitter_pid,
-                            message_id: None,
+                            message_id,
                             interface,
                             message,
                         },
@@ -871,7 +871,7 @@ impl<T: Clone> Core<T> {
                 }) {
                 InterfaceState::Process(pid) => *pid,
                 InterfaceState::Requested { other, .. } => {
-                    other.push((emitter_pid, None, message.encode().to_vec()));
+                    other.push((emitter_pid, Some(message_id), message.encode().to_vec()));
                     return message_id;
                 }
             };
