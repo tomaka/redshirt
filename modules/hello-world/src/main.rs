@@ -14,9 +14,5 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 fn main() {
-    redshirt_syscalls_interface::block_on(async move {
-        redshirt_time_interface::Delay::new(std::time::Duration::from_secs(5)).await;
-    });
-
     redshirt_stdout_interface::stdout("hello world!\n".to_string())
 }

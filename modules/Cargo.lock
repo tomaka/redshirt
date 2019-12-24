@@ -608,8 +608,6 @@ name = "hello-world"
 version = "0.1.0"
 dependencies = [
  "redshirt-stdout-interface 0.1.0",
- "redshirt-syscalls-interface 0.1.0",
- "redshirt-time-interface 0.1.0",
 ]
 
 [[package]]
