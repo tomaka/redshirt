@@ -13,9 +13,12 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-// TODO: remove star imports
-pub use self::collection::*;
-pub use self::traits::*;
+pub use self::collection::{
+    NativeProgramsCollection, NativeProgramsCollectionEvent, NativeProgramsCollectionMessageIdWrite,
+};
+pub use self::traits::{
+    DummyMessageIdWrite, NativeProgramEvent, NativeProgramMessageIdWrite, NativeProgramRef,
+};
 
 mod collection;
 mod traits;

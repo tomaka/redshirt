@@ -13,8 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::native::{self, NativeProgramMessageIdWrite as _};
 use crate::module::Module;
+use crate::native::{self, NativeProgramMessageIdWrite as _};
 use crate::scheduler::{Core, CoreBuilder, CoreRunOutcome};
 use crate::signature::Signature;
 use alloc::{borrow::Cow, vec, vec::Vec};
@@ -147,34 +147,45 @@ impl<TExtEx: Clone> System<TExtEx> {
     /// >           notified.
     pub fn run<'b>(&'b mut self) -> impl Future<Output = SystemRunOutcome<TExtEx>> + 'b {
         // TODO: We use a `poll_fn` because async/await don't work in no_std yet.
-        future::poll_fn(move |cx| {
-            loop {
-                if let Some(out) = self.run_once() {
-                    return Poll::Ready(out);
+        future::poll_fn(move |cx| loop {
+            if let Some(out) = self.run_once() {
+                return Poll::Ready(out);
+            }
+
+            let next_event = self.native_programs.next_event();
+            futures::pin_mut!(next_event);
+            let event = match next_event.poll(cx) {
+                Poll::Ready(ev) => ev,
+                Poll::Pending => return Poll::Pending,
+            };
+
+            match event {
+                native::NativeProgramsCollectionEvent::Emit {
+                    interface,
+                    pid,
+                    message,
+                    message_id_write,
+                } => {
+                    if let Some(message_id_write) = message_id_write {
+                        let message_id = self.core.emit_interface_message_answer(
+                            pid,
+                            interface,
+                            EncodedMessage(message),
+                        );
+                        message_id_write.acknowledge(message_id);
+                    } else {
+                        self.core.emit_interface_message_no_answer(
+                            pid,
+                            interface,
+                            EncodedMessage(message),
+                        );
+                    }
                 }
-
-                let next_event = self.native_programs.next_event();
-                futures::pin_mut!(next_event);
-                let event = match next_event.poll(cx) {
-                    Poll::Ready(ev) => ev,
-                    Poll::Pending => return Poll::Pending,
-                };
-
-                match event {
-                    native::NativeProgramsCollectionEvent::Emit { interface, pid, message, message_id_write } => {
-                        if let Some(message_id_write) = message_id_write {
-                            let message_id = self.core.emit_interface_message_answer(pid, interface, EncodedMessage(message));
-                            message_id_write.acknowledge(message_id);
-                        } else {
-                            self.core.emit_interface_message_no_answer(pid, interface, EncodedMessage(message));
-                        }
-                    },
-                    native::NativeProgramsCollectionEvent::CancelMessage { message_id } => {
-                        unimplemented!()
-                    },
-                    native::NativeProgramsCollectionEvent::Answer { message_id, answer } => {
-                        unimplemented!()
-                    },
+                native::NativeProgramsCollectionEvent::CancelMessage { message_id } => {
+                    unimplemented!()
+                }
+                native::NativeProgramsCollectionEvent::Answer { message_id, answer } => {
+                    unimplemented!()
                 }
             }
         })
@@ -184,14 +195,12 @@ impl<TExtEx: Clone> System<TExtEx> {
         // TODO: remove loop?
         loop {
             match self.core.run() {
-                CoreRunOutcome::ProgramFinished {
-                    pid, outcome, ..
-                } => {
+                CoreRunOutcome::ProgramFinished { pid, outcome, .. } => {
                     self.native_programs.process_destroyed(pid);
                     return Some(SystemRunOutcome::ProgramFinished {
                         pid,
                         outcome: outcome.map(|_| ()).map_err(|err| err.into()),
-                    })
+                    });
                 }
                 CoreRunOutcome::ThreadWaitExtrinsic {
                     ref mut thread,
@@ -291,21 +300,18 @@ impl<TExtEx: Clone> System<TExtEx> {
                                     result,
                                 };
                             if let Some(message_id) = message_id {
-                                self.core
-                                    .answer_message(message_id, Ok(&response.encode()));
+                                self.core.answer_message(message_id, Ok(&response.encode()));
                             }
 
                             if interface_hash == redshirt_loader_interface::ffi::INTERFACE {
                                 for hash in self.main_programs.drain(..) {
                                     let msg =
                                         redshirt_loader_interface::ffi::LoaderMessage::Load(hash);
-                                    let id = self
-                                        .core
-                                        .emit_interface_message_answer(
-                                            From::from(0),      // FIXME: wrong; hacky
-                                            redshirt_loader_interface::ffi::INTERFACE,
-                                            msg,
-                                        );
+                                    let id = self.core.emit_interface_message_answer(
+                                        From::from(0), // FIXME: wrong; hacky
+                                        redshirt_loader_interface::ffi::INTERFACE,
+                                        msg,
+                                    );
                                     self.loading_programs.insert(id);
                                 }
                             }
@@ -319,7 +325,8 @@ impl<TExtEx: Clone> System<TExtEx> {
                     interface,
                     message,
                 } => {
-                    self.native_programs.interface_message(interface, message_id, pid, message);
+                    self.native_programs
+                        .interface_message(interface, message_id, pid, message);
                 }
 
                 CoreRunOutcome::Idle => return None,
@@ -441,8 +448,16 @@ impl<TExtEx: Clone> SystemBuilder<TExtEx> {
 
         // We ask the core to redirect messages for the `interface` and `threads` interfaces
         // towards our "virtual" `Pid`s.
-        core.set_interface_handler(redshirt_interface_interface::ffi::INTERFACE, self.interface_interface_pid).unwrap();
-        core.set_interface_handler(redshirt_threads_interface::ffi::INTERFACE, self.threads_interface_pid).unwrap();
+        core.set_interface_handler(
+            redshirt_interface_interface::ffi::INTERFACE,
+            self.interface_interface_pid,
+        )
+        .unwrap();
+        core.set_interface_handler(
+            redshirt_threads_interface::ffi::INTERFACE,
+            self.threads_interface_pid,
+        )
+        .unwrap();
 
         for program in self.startup_processes {
             core.execute(&program)

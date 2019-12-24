@@ -17,9 +17,9 @@
 
 use futures::prelude::*;
 use parity_scale_codec::{DecodeAll, Encode as _};
+use redshirt_core::native::{DummyMessageIdWrite, NativeProgramEvent, NativeProgramRef};
 use redshirt_core::{MessageId, Pid};
-use redshirt_core::native::{DummyMessageIdWrite, NativeProgramRef, NativeProgramEvent};
-use redshirt_stdout_interface::ffi::{INTERFACE, StdoutMessage};
+use redshirt_stdout_interface::ffi::{StdoutMessage, INTERFACE};
 use std::{
     io::{self, Write as _},
     pin::Pin,
@@ -42,7 +42,8 @@ impl StdoutHandler {
 }
 
 impl<'a> NativeProgramRef<'a> for &'a StdoutHandler {
-    type Future = Pin<Box<dyn Future<Output = NativeProgramEvent<Self::MessageIdWrite>> + Send + 'a>>;
+    type Future =
+        Pin<Box<dyn Future<Output = NativeProgramEvent<Self::MessageIdWrite>> + Send + 'a>>;
     type MessageIdWrite = DummyMessageIdWrite;
 
     fn next_event(self) -> Self::Future {
@@ -51,8 +52,11 @@ impl<'a> NativeProgramRef<'a> for &'a StdoutHandler {
                 return NativeProgramEvent::Emit {
                     interface: redshirt_interface_interface::ffi::INTERFACE,
                     message_id_write: None,
-                    message: redshirt_interface_interface::ffi::InterfaceMessage::Register(INTERFACE).encode(),
-                }
+                    message: redshirt_interface_interface::ffi::InterfaceMessage::Register(
+                        INTERFACE,
+                    )
+                    .encode(),
+                };
             }
 
             loop {
@@ -66,7 +70,7 @@ impl<'a> NativeProgramRef<'a> for &'a StdoutHandler {
         interface: [u8; 32],
         _message_id: Option<MessageId>,
         _emitter_pid: Pid,
-        message: Vec<u8>
+        message: Vec<u8>,
     ) {
         debug_assert_eq!(interface, INTERFACE);
 
@@ -75,13 +79,12 @@ impl<'a> NativeProgramRef<'a> for &'a StdoutHandler {
                 let mut stdout = io::stdout();
                 stdout.write_all(msg.as_bytes()).unwrap();
                 stdout.flush().unwrap();
-            },
+            }
             Err(_) => panic!(),
         }
     }
 
-    fn process_destroyed(self, _: Pid) {
-    }
+    fn process_destroyed(self, _: Pid) {}
 
     fn message_response(self, _: MessageId, _: Vec<u8>) {
         unreachable!()

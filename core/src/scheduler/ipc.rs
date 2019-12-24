@@ -557,7 +557,6 @@ impl<T: Clone> Core<T> {
                             process.user_data().messages_queue.push_back(message);
                             try_resume_message_wait(process);
                             CoreRunOutcomeInner::LoopAgain
-
                         } else {
                             CoreRunOutcomeInner::ReservedPidInterfaceMessage {
                                 pid: emitter_pid,
@@ -727,7 +726,9 @@ impl<T: Clone> Core<T> {
                 },
             );
 
-            self.processes.process_by_id(process).unwrap()
+            self.processes
+                .process_by_id(process)
+                .unwrap()
                 .user_data()
                 .messages_queue
                 .push_back(message);
@@ -759,18 +760,21 @@ impl<T: Clone> Core<T> {
                         },
                     );
 
-                    interface_handler_proc.user_data().messages_queue.push_back(message);
-                    // TODO: try_resume_message_wait(interface_handler_proc);
-
+                    interface_handler_proc
+                        .user_data()
+                        .messages_queue
+                        .push_back(message);
+                // TODO: try_resume_message_wait(interface_handler_proc);
                 } else {
-                    self.pending_events.push_back(CoreRunOutcomeInner::ReservedPidInterfaceMessage {
-                        pid: emitter_pid,
-                        message_id: None,
-                        interface,
-                        message,
-                    });
+                    self.pending_events.push_back(
+                        CoreRunOutcomeInner::ReservedPidInterfaceMessage {
+                            pid: emitter_pid,
+                            message_id: None,
+                            interface,
+                            message,
+                        },
+                    );
                 }
-
             } else {
                 // State inconsistency in the core.
                 unreachable!()
@@ -794,13 +798,20 @@ impl<T: Clone> Core<T> {
     ) {
         assert!(self.reserved_pids.contains(&emitter_pid));
 
-        let pid = match self.interfaces.entry(interface).or_insert_with(|| InterfaceState::Requested { threads: SmallVec::new(), other: Vec::new() }) {
-            InterfaceState::Process(pid) => *pid,
-            InterfaceState::Requested { other, .. } => {
-                other.push((emitter_pid, None, message.encode().to_vec()));
-                return;
-            }
-        };
+        let pid =
+            match self
+                .interfaces
+                .entry(interface)
+                .or_insert_with(|| InterfaceState::Requested {
+                    threads: SmallVec::new(),
+                    other: Vec::new(),
+                }) {
+                InterfaceState::Process(pid) => *pid,
+                InterfaceState::Requested { other, .. } => {
+                    other.push((emitter_pid, None, message.encode().to_vec()));
+                    return;
+                }
+            };
 
         if let Some(mut process) = self.processes.process_by_id(pid) {
             let message = redshirt_syscalls_interface::ffi::Message::Interface(
@@ -815,14 +826,14 @@ impl<T: Clone> Core<T> {
 
             process.user_data().messages_queue.push_back(message);
             try_resume_message_wait(process);
-
         } else {
-            self.pending_events.push_back(CoreRunOutcomeInner::ReservedPidInterfaceMessage {
-                pid: emitter_pid,
-                message_id: None,
-                interface,
-                message: message.encode().to_vec(),
-            });
+            self.pending_events
+                .push_back(CoreRunOutcomeInner::ReservedPidInterfaceMessage {
+                    pid: emitter_pid,
+                    message_id: None,
+                    interface,
+                    message: message.encode().to_vec(),
+                });
         }
     }
 
@@ -850,13 +861,20 @@ impl<T: Clone> Core<T> {
             };
         };
 
-        let pid = match self.interfaces.entry(interface).or_insert_with(|| InterfaceState::Requested { threads: SmallVec::new(), other: Vec::new() }) {
-            InterfaceState::Process(pid) => *pid,
-            InterfaceState::Requested { other, .. } => {
-                other.push((emitter_pid, None, message.encode().to_vec()));
-                return message_id;
-            }
-        };
+        let pid =
+            match self
+                .interfaces
+                .entry(interface)
+                .or_insert_with(|| InterfaceState::Requested {
+                    threads: SmallVec::new(),
+                    other: Vec::new(),
+                }) {
+                InterfaceState::Process(pid) => *pid,
+                InterfaceState::Requested { other, .. } => {
+                    other.push((emitter_pid, None, message.encode().to_vec()));
+                    return message_id;
+                }
+            };
 
         let message = redshirt_syscalls_interface::ffi::Message::Interface(
             redshirt_syscalls_interface::ffi::InterfaceMessage {
@@ -910,14 +928,12 @@ impl<T: Clone> Core<T> {
                     .retain(|m| *m != message_id);
                 try_resume_message_wait(process);
                 None
-
             } else {
                 Some(CoreRunOutcomeInner::MessageResponse {
                     message_id,
                     response: response.map(|data| data.to_vec()),
                 })
             }
-
         } else {
             // TODO: what to do here?
             panic!("no process found with that event")
@@ -1182,7 +1198,9 @@ fn try_resume_message_wait_thread(
 
     // Turn said message into bytes.
     // TODO: would be great to not do that every single time
-    let msg_bytes = thread.process_user_data().messages_queue[index_in_queue].clone().encode();
+    let msg_bytes = thread.process_user_data().messages_queue[index_in_queue]
+        .clone()
+        .encode();
 
     // TODO: don't use as
     if msg_wait.out_size as usize >= msg_bytes.len() {

@@ -17,10 +17,6 @@ use alloc::vec::Vec;
 use core::future::Future;
 use redshirt_syscalls_interface::{MessageId, Pid};
 
-/// Implemented on structs that act as programs running on the native architecture.
-pub trait NativeProgram {
-}
-
 /// Reference to a native program.
 pub trait NativeProgramRef<'a>: Clone {
     /// Future resolving to the next event the [`NativeProgram`] emits.
@@ -39,7 +35,7 @@ pub trait NativeProgramRef<'a>: Clone {
         interface: [u8; 32],
         message_id: Option<MessageId>,
         emitter_pid: Pid,
-        message: Vec<u8>
+        message: Vec<u8>,
     );
 
     /// Notify the [`NativeProgram`] that the program with the given [`Pid`] has terminated.
@@ -58,9 +54,7 @@ pub enum NativeProgramEvent<TMsgIdWrite> {
         message: Vec<u8>,
     },
     /// Request to cancel a previously-emitted message.
-    CancelMessage {
-        message_id: MessageId,
-    },
+    CancelMessage { message_id: MessageId },
     Answer {
         message_id: MessageId,
         answer: Result<Vec<u8>, ()>,
