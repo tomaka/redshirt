@@ -28,6 +28,9 @@ use smallvec::SmallVec;
 
 /// Handles scheduling processes and inter-process communications.
 pub struct Core<T> {
+    /// Queue of events to return in priority when `run` is called.
+    pending_events: VecDeque<CoreRunOutcomeInner<T>>,
+
     /// List of running processes.
     processes: processes::ProcessesCollection<Extrinsic<T>, Process, Thread>,
 
@@ -386,6 +389,10 @@ impl<T: Clone> Core<T> {
     /// Then `run` does the conversion in order to have a good API.
     // TODO: make multithreaded
     fn run_inner(&mut self) -> CoreRunOutcomeInner<T> {
+        if let Some(ev) = self.pending_events.pop_front() {
+            return ev;
+        }
+
         match self.processes.run() {
             processes::RunOneOutcome::ProcessFinished {
                 pid,
@@ -421,17 +428,18 @@ impl<T: Clone> Core<T> {
                 for interface in user_data.used_interfaces {
                     match self.interfaces.get(&interface) {
                         Some(InterfaceState::Process(p)) => {
-                            let message =
-                                redshirt_syscalls_interface::ffi::Message::ProcessDestroyed(
-                                    redshirt_syscalls_interface::ffi::ProcessDestroyedMessage {
-                                        index_in_list: 0,
-                                        pid: pid.into(),
-                                    },
-                                );
+                            if let Some(mut process) = self.processes.process_by_id(*p) {
+                                let message =
+                                    redshirt_syscalls_interface::ffi::Message::ProcessDestroyed(
+                                        redshirt_syscalls_interface::ffi::ProcessDestroyedMessage {
+                                            index_in_list: 0,
+                                            pid: pid.into(),
+                                        },
+                                    );
 
-                            let mut process = self.processes.process_by_id(*p).unwrap();
-                            process.user_data().messages_queue.push_back(message);
-                            try_resume_message_wait(process);
+                                process.user_data().messages_queue.push_back(message);
+                                try_resume_message_wait(process);
+                            } // TODO: notify externals as well?
                         }
                         None => unreachable!(),
                         _ => {}
@@ -736,22 +744,33 @@ impl<T: Clone> Core<T> {
             } = thread_user_data
             {
                 assert_eq!(interface, int);
-                let message = redshirt_syscalls_interface::ffi::Message::Interface(
-                    redshirt_syscalls_interface::ffi::InterfaceMessage {
-                        interface,
-                        index_in_list: 0,
-                        message_id,
-                        emitter_pid: thread.pid().into(),
-                        actual_data: message,
-                    },
-                );
 
                 thread.resume(Some(wasmi::RuntimeValue::I32(0)));
-                let mut interface_handler_proc = self.processes.process_by_id(process).unwrap();
-                interface_handler_proc
-                    .user_data()
-                    .messages_queue
-                    .push_back(message);
+                let emitter_pid = thread.pid().into();
+
+                if let Some(mut interface_handler_proc) = self.processes.process_by_id(process) {
+                    let message = redshirt_syscalls_interface::ffi::Message::Interface(
+                        redshirt_syscalls_interface::ffi::InterfaceMessage {
+                            interface,
+                            index_in_list: 0,
+                            message_id,
+                            emitter_pid,
+                            actual_data: message,
+                        },
+                    );
+
+                    interface_handler_proc.user_data().messages_queue.push_back(message);
+                    // TODO: try_resume_message_wait(interface_handler_proc);
+
+                } else {
+                    self.pending_events.push_back(CoreRunOutcomeInner::ReservedPidInterfaceMessage {
+                        pid: emitter_pid,
+                        message_id: None,
+                        interface,
+                        message,
+                    });
+                }
+
             } else {
                 // State inconsistency in the core.
                 unreachable!()
@@ -783,21 +802,28 @@ impl<T: Clone> Core<T> {
             }
         };
 
-        let message = redshirt_syscalls_interface::ffi::Message::Interface(
-            redshirt_syscalls_interface::ffi::InterfaceMessage {
-                interface,
-                emitter_pid,
+        if let Some(mut process) = self.processes.process_by_id(pid) {
+            let message = redshirt_syscalls_interface::ffi::Message::Interface(
+                redshirt_syscalls_interface::ffi::InterfaceMessage {
+                    interface,
+                    emitter_pid,
+                    message_id: None,
+                    index_in_list: 0,
+                    actual_data: message.encode().to_vec(),
+                },
+            );
+
+            process.user_data().messages_queue.push_back(message);
+            try_resume_message_wait(process);
+
+        } else {
+            self.pending_events.push_back(CoreRunOutcomeInner::ReservedPidInterfaceMessage {
+                pid: emitter_pid,
                 message_id: None,
-                index_in_list: 0,
-                actual_data: message.encode().to_vec(),
-            },
-        );
-
-        // TODO: what if reserved pid?
-        let mut process = self.processes.process_by_id(pid).unwrap();
-        process.user_data().messages_queue.push_back(message);
-
-        try_resume_message_wait(process);
+                interface,
+                message: message.encode().to_vec(),
+            });
+        }
     }
 
     /// Emits a message for the handler of the given interface.
@@ -1022,6 +1048,7 @@ impl<T> CoreBuilder<T> {
         self.reserved_pids.shrink_to_fit();
 
         Core {
+            pending_events: VecDeque::new(),
             processes: self.inner_builder.build(),
             interfaces: self.interfaces,
             reserved_pids: self.reserved_pids,

@@ -16,7 +16,7 @@
 use crate::native::traits::{NativeProgramRef, NativeProgramEvent, NativeProgramMessageIdWrite};
 
 use alloc::{boxed::Box, vec::Vec};
-use core::{pin::Pin, task::Context, task::Poll};
+use core::{mem, pin::Pin, task::Context, task::Poll};
 use futures::prelude::*;
 use hashbrown::{HashMap, hash_map::Entry};
 use redshirt_syscalls_interface::{MessageId, Pid};
@@ -30,11 +30,13 @@ pub struct NativeProgramsCollection {
 /// Wraps around a [`NativeProgram`].
 struct Adapter<T> {
     inner: T,
+    //registered_interfaces: HashSet<>,
 }
 
 /// Abstracts over [`Adapter`] so that we can box it.
 trait AdapterAbstract {
     fn poll_next_event<'a>(&'a self, cx: &mut Context) -> Poll<NativeProgramEvent<Box<dyn AbstractMessageIdWrite + 'a>>>;
+    fn deliver_interface_message(&self, interface: [u8; 32], message_id: Option<MessageId>, emitter_pid: Pid, message: Vec<u8>) -> Result<(), Vec<u8>>;
     fn process_destroyed(&self, pid: Pid);
 }
 
@@ -58,6 +60,12 @@ impl<T> AdapterAbstract for Adapter<T> where for<'r> &'r T: NativeProgramRef<'r>
             },
             Poll::Pending => Poll::Pending,
         }
+    }
+
+    fn deliver_interface_message(&self, interface: [u8; 32], message_id: Option<MessageId>, emitter_pid: Pid, message: Vec<u8>) -> Result<(), Vec<u8>> {
+        // FIXME: don't assume `interface` is handled
+        self.inner.interface_message(interface, message_id, emitter_pid, message);
+        Ok(())
     }
 
     fn process_destroyed(&self, pid: Pid) {
@@ -163,14 +171,24 @@ impl NativeProgramsCollection {
         interface: [u8; 32],
         message_id: Option<MessageId>,
         emitter_pid: Pid,
-        message: Vec<u8>
+        mut message: Vec<u8>
     ) {
-        unimplemented!()
+        for process in self.processes.values() {
+            let mut msg = mem::replace(&mut message, Vec::new());
+            match process.deliver_interface_message(interface, message_id, emitter_pid, msg) {
+                Ok(_) => return,
+                Err(msg) => message = msg,
+            }
+        }
+
+        panic!()        // TODO: what to do here?
     }
 
     /// Notify the [`NativeProgram`]s that the program with the given [`Pid`] has terminated.
     pub fn process_destroyed(&mut self, pid: Pid) {
-        unimplemented!()
+        for process in self.processes.values() {
+            process.process_destroyed(pid);
+        }
     }
 
     /// Notify the appropriate [`NativeProgram`] of a response to a message that it has previously

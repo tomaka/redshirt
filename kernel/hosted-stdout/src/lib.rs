@@ -72,9 +72,11 @@ impl<'a> NativeProgramRef<'a> for &'a StdoutHandler {
 
         match StdoutMessage::decode_all(&message) {
             Ok(StdoutMessage::Message(msg)) => {
-                io::stdout().write_all(msg.as_bytes()).unwrap();
+                let mut stdout = io::stdout();
+                stdout.write_all(msg.as_bytes()).unwrap();
+                stdout.flush().unwrap();
             },
-            Err(_) => {},
+            Err(_) => panic!(),
         }
     }
 

@@ -290,8 +290,10 @@ impl<TExtEx: Clone> System<TExtEx> {
                                 redshirt_interface_interface::ffi::InterfaceRegisterResponse {
                                     result,
                                 };
-                            self.core
-                                .answer_message(message_id.unwrap(), Ok(&response.encode()));
+                            if let Some(message_id) = message_id {
+                                self.core
+                                    .answer_message(message_id, Ok(&response.encode()));
+                            }
 
                             if interface_hash == redshirt_loader_interface::ffi::INTERFACE {
                                 for hash in self.main_programs.drain(..) {
