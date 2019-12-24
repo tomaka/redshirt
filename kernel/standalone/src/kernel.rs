@@ -84,7 +84,8 @@ impl Kernel {
         let mut wasi = redshirt_wasi_hosted::WasiStateMachine::new();
 
         loop {
-            match system.run().now_or_never().unwrap() {     // FIXME:
+            match system.run().now_or_never().unwrap() {
+                // FIXME:
                 redshirt_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
                     pid,
                     thread_id,

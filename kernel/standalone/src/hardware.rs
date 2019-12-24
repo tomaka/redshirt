@@ -22,14 +22,16 @@ use crate::arch;
 
 use alloc::{boxed::Box, vec::Vec};
 use core::{convert::TryFrom as _, marker::PhantomData, pin::Pin, sync::atomic};
-use futures::{prelude::*, channel::mpsc, lock::Mutex as FuturesMutex};
+use futures::{channel::mpsc, lock::Mutex as FuturesMutex, prelude::*};
 use hashbrown::HashMap;
 use parity_scale_codec::{DecodeAll, Encode as _};
-use redshirt_core::{MessageId, Pid};
 use redshirt_core::native::{
     DummyMessageIdWrite, NativeProgramEvent, NativeProgramMessageIdWrite, NativeProgramRef,
 };
-use redshirt_hardware_interface::ffi::{INTERFACE, HardwareAccessResponse, HardwareMessage, Operation};
+use redshirt_core::{MessageId, Pid};
+use redshirt_hardware_interface::ffi::{
+    HardwareAccessResponse, HardwareMessage, Operation, INTERFACE,
+};
 use spin::Mutex;
 
 /// State machine for `hardware` interface messages handling.
@@ -78,10 +80,7 @@ impl<'a> NativeProgramRef<'a> for &'a HardwareHandler {
 
             let mut messages_rx = self.messages_rx.lock().await;
             let (message_id, answer) = messages_rx.next().await.unwrap();
-            return NativeProgramEvent::Answer {
-                message_id,
-                answer,
-            };
+            return NativeProgramEvent::Answer { message_id, answer };
         })
     }
 
@@ -106,7 +105,9 @@ impl<'a> NativeProgramRef<'a> for &'a HardwareHandler {
                 }
 
                 if !response.is_empty() {
-                    self.messages_tx.unbounded_send((message_id.unwrap(), Ok(response.encode()))).unwrap();
+                    self.messages_tx
+                        .unbounded_send((message_id.unwrap(), Ok(response.encode())))
+                        .unwrap();
                 }
             }
             Ok(HardwareMessage::Malloc { size, alignment }) => {
@@ -121,7 +122,9 @@ impl<'a> NativeProgramRef<'a> for &'a HardwareHandler {
                 let mut allocations = self.allocations.lock();
                 allocations.entry(emitter_pid).or_default().push(buffer);
 
-                self.messages_tx.unbounded_send((message_id.unwrap(), Ok(ptr.encode()))).unwrap();
+                self.messages_tx
+                    .unbounded_send((message_id.unwrap(), Ok(ptr.encode())))
+                    .unwrap();
             }
             Ok(HardwareMessage::Free { ptr }) => {
                 if let Ok(ptr) = usize::try_from(ptr) {
@@ -135,7 +138,10 @@ impl<'a> NativeProgramRef<'a> for &'a HardwareHandler {
                 }
             }
             Ok(HardwareMessage::InterruptWait(int_id)) => unimplemented!(), // TODO:
-            Err(_) => self.messages_tx.unbounded_send((message_id.unwrap(), Err(()))).unwrap(),
+            Err(_) => self
+                .messages_tx
+                .unbounded_send((message_id.unwrap(), Err(())))
+                .unwrap(),
         }
     }
 
