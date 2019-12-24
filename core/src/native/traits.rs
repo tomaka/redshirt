@@ -61,10 +61,14 @@ pub enum NativeProgramEvent<TMsgIdWrite> {
     },
 }
 
+/// Trait used to write back the [`MessageId`] when the program emits a message.
 pub trait NativeProgramMessageIdWrite {
+    /// Write the [`MessageId`] of the emitted message.
     fn acknowledge(self, message_id: MessageId);
 }
 
+/// Dummy implementation of [`NativeProgramMessageIdWrite`] that does nothing.
+// TODO: implement trait on `!` instead, when stable
 #[derive(Debug, Default)]
 pub struct DummyMessageIdWrite;
 

@@ -50,8 +50,8 @@ async fn async_main() {
         redshirt_wasi_hosted::register_extrinsics(redshirt_core::system::SystemBuilder::<
             redshirt_wasi_hosted::WasiExtrinsic,
         >::new())
-        /*.with_native_program(redshirt_time_hosted::TimerHandler::new())
-        .with_native_program(redshirt_tcp_hosted::TcpState::new())*/
+        .with_native_program(redshirt_time_hosted::TimerHandler::new())
+        //.with_native_program(redshirt_tcp_hosted::TcpState::new())
         .with_native_program(redshirt_stdout_hosted::StdoutHandler::new())
         .build();
 

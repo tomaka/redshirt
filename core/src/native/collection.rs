@@ -18,8 +18,10 @@ use crate::native::traits::{NativeProgramEvent, NativeProgramMessageIdWrite, Nat
 use alloc::{boxed::Box, vec::Vec};
 use core::{mem, pin::Pin, task::Context, task::Poll};
 use futures::prelude::*;
-use hashbrown::{hash_map::Entry, HashMap};
-use redshirt_syscalls_interface::{MessageId, Pid};
+use hashbrown::{hash_map::Entry, HashMap, HashSet};
+use redshirt_interface_interface::ffi::InterfaceMessage;
+use redshirt_syscalls_interface::{Decode as _, MessageId, Pid};
+use spin::Mutex;
 
 /// Collection of objects that implement the [`NativeProgram`] trait.
 pub struct NativeProgramsCollection {
@@ -30,7 +32,7 @@ pub struct NativeProgramsCollection {
 /// Wraps around a [`NativeProgram`].
 struct Adapter<T> {
     inner: T,
-    //registered_interfaces: HashSet<>,
+    registered_interfaces: Mutex<HashSet<[u8; 32]>>,
 }
 
 /// Abstracts over [`Adapter`] so that we can box it.
@@ -64,11 +66,22 @@ where
                 interface,
                 message_id_write,
                 message,
-            }) => Poll::Ready(NativeProgramEvent::Emit {
-                interface,
-                message,
-                message_id_write: message_id_write.map(|w| Box::new(Some(w)) as Box<_>),
-            }),
+            }) => {
+                if interface == redshirt_interface_interface::ffi::INTERFACE {
+                    // TODO: check whether registration succeeds, but hard if `message_id_write` is `None
+                    if let Ok(msg) = InterfaceMessage::decode(message.clone()) {
+                        let InterfaceMessage::Register(to_reg) = msg;
+                        let mut registered_interfaces = self.registered_interfaces.lock();
+                        registered_interfaces.insert(to_reg);
+                    }
+                }
+
+                Poll::Ready(NativeProgramEvent::Emit {
+                    interface,
+                    message,
+                    message_id_write: message_id_write.map(|w| Box::new(Some(w)) as Box<_>),
+                })
+            }
             Poll::Ready(NativeProgramEvent::CancelMessage { message_id }) => {
                 Poll::Ready(NativeProgramEvent::CancelMessage { message_id })
             }
@@ -86,10 +99,14 @@ where
         emitter_pid: Pid,
         message: Vec<u8>,
     ) -> Result<(), Vec<u8>> {
-        // FIXME: don't assume `interface` is handled
-        self.inner
-            .interface_message(interface, message_id, emitter_pid, message);
-        Ok(())
+        let registered_interfaces = self.registered_interfaces.lock();
+        if registered_interfaces.contains(&interface) {
+            self.inner
+                .interface_message(interface, message_id, emitter_pid, message);
+            Ok(())
+        } else {
+            Err(message)
+        }
     }
 
     fn process_destroyed(&self, pid: Pid) {
@@ -147,7 +164,10 @@ impl NativeProgramsCollection {
         T: Send + 'static,
         for<'r> &'r T: NativeProgramRef<'r>,
     {
-        let adapter = Box::new(Adapter { inner: program });
+        let adapter = Box::new(Adapter {
+            inner: program,
+            registered_interfaces: Mutex::new(HashSet::new()),
+        });
 
         match self.processes.entry(pid) {
             Entry::Occupied(_) => panic!(),

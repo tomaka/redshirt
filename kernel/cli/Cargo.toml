@@ -16,7 +16,7 @@ redshirt-stdout-interface = { path = "../../interfaces/stdout" }
 redshirt-syscalls-interface = { path = "../../interfaces/syscalls" }
 #redshirt-tcp-hosted = { path = "../hosted-tcp" }
 redshirt-tcp-interface = { path = "../../interfaces/tcp" }
-#redshirt-time-hosted = { path = "../hosted-time" }
+redshirt-time-hosted = { path = "../hosted-time" }
 redshirt-time-interface = { path = "../../interfaces/time" }
 redshirt-wasi-hosted = { path = "../hosted-wasi" }
 parity-scale-codec = "1.0.5"
