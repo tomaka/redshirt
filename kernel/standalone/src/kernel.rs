@@ -84,14 +84,17 @@ impl Kernel {
         let mut wasi = redshirt_wasi_hosted::WasiStateMachine::new();
 
         loop {
-            match system.run().now_or_never().unwrap() {
-                // FIXME:
-                redshirt_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
+            match system.run().now_or_never() {
+                None => {
+                    // FIXME: use an executor rather than `now_or_never()`
+                    crate::arch::halt();
+                }
+                Some(redshirt_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
                     pid,
                     thread_id,
                     extrinsic,
                     params,
-                } => {
+                }) => {
                     let out =
                         wasi.handle_extrinsic_call(&mut system, extrinsic, pid, thread_id, params);
                     if let redshirt_wasi_hosted::HandleOut::EmitMessage {
@@ -109,7 +112,7 @@ impl Kernel {
                         }
                     }
                 }
-                redshirt_core::system::SystemRunOutcome::ProgramFinished { pid, outcome } => {
+                Some(redshirt_core::system::SystemRunOutcome::ProgramFinished { pid, outcome }) => {
                     //console.write(&format!("Program finished {:?} => {:?}\n", pid, outcome));
                 }
                 _ => panic!(),

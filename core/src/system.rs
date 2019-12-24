@@ -411,7 +411,7 @@ impl<TExtEx: Clone> SystemBuilder<TExtEx> {
         self
     }
 
-    /// Registers a . // TODO: doc
+    /// Registers native code that can communicate with the WASM programs.
     pub fn with_native_program<T>(mut self, program: T) -> Self
     where
         T: Send + 'static,
