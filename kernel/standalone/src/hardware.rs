@@ -20,9 +20,9 @@
 
 use crate::arch;
 
-use alloc::{boxed::Box, vec::Vec};
+use alloc::{boxed::Box, collections::VecDeque, vec::Vec};
 use core::{convert::TryFrom as _, marker::PhantomData, pin::Pin, sync::atomic};
-use futures::{channel::mpsc, lock::Mutex as FuturesMutex, prelude::*};
+use futures::prelude::*;
 use hashbrown::HashMap;
 use parity_scale_codec::{DecodeAll, Encode as _};
 use redshirt_core::native::{
@@ -40,22 +40,17 @@ pub struct HardwareHandler {
     registered: atomic::AtomicBool,
     /// For each PID, a list of memory allocations.
     // TODO: optimize
-    // TODO: free the list when a process gets destroyed (e.g. if it crashes)
     allocations: Mutex<HashMap<Pid, Vec<Vec<u8>>>>,
-    messages_tx: mpsc::UnboundedSender<(MessageId, Result<Vec<u8>, ()>)>,
-    messages_rx: FuturesMutex<mpsc::UnboundedReceiver<(MessageId, Result<Vec<u8>, ()>)>>,
+    pending_messages: Mutex<VecDeque<(MessageId, Result<Vec<u8>, ()>)>>,
 }
 
 impl HardwareHandler {
     /// Initializes the new state machine for hardware accesses.
     pub fn new() -> Self {
-        let (messages_tx, messages_rx) = mpsc::unbounded();
-
         HardwareHandler {
             registered: atomic::AtomicBool::new(false),
             allocations: Mutex::new(HashMap::new()),
-            messages_tx,
-            messages_rx: FuturesMutex::new(messages_rx),
+            pending_messages: Mutex::new(VecDeque::new()),
         }
     }
 }
@@ -66,22 +61,24 @@ impl<'a> NativeProgramRef<'a> for &'a HardwareHandler {
     type MessageIdWrite = DummyMessageIdWrite;
 
     fn next_event(self) -> Self::Future {
-        Box::pin(async move {
-            if !self.registered.swap(true, atomic::Ordering::Relaxed) {
-                return NativeProgramEvent::Emit {
-                    interface: redshirt_interface_interface::ffi::INTERFACE,
-                    message_id_write: None,
-                    message: redshirt_interface_interface::ffi::InterfaceMessage::Register(
-                        INTERFACE,
-                    )
+        if !self.registered.swap(true, atomic::Ordering::Relaxed) {
+            return Box::pin(future::ready(NativeProgramEvent::Emit {
+                interface: redshirt_interface_interface::ffi::INTERFACE,
+                message_id_write: None,
+                message: redshirt_interface_interface::ffi::InterfaceMessage::Register(INTERFACE)
                     .encode(),
-                };
-            }
+            }));
+        }
 
-            let mut messages_rx = self.messages_rx.lock().await;
-            let (message_id, answer) = messages_rx.next().await.unwrap();
-            return NativeProgramEvent::Answer { message_id, answer };
-        })
+        let mut messages = self.pending_messages.try_lock().unwrap();
+        if let Some((message_id, answer)) = messages.pop_front() {
+            Box::pin(future::ready(NativeProgramEvent::Answer {
+                message_id,
+                answer,
+            }))
+        } else {
+            Box::pin(future::pending())
+        }
     }
 
     fn interface_message(
@@ -105,9 +102,10 @@ impl<'a> NativeProgramRef<'a> for &'a HardwareHandler {
                 }
 
                 if !response.is_empty() {
-                    self.messages_tx
-                        .unbounded_send((message_id.unwrap(), Ok(response.encode())))
-                        .unwrap();
+                    self.pending_messages
+                        .try_lock()
+                        .unwrap()
+                        .push_back((message_id.unwrap(), Ok(response.encode())));
                 }
             }
             Ok(HardwareMessage::Malloc { size, alignment }) => {
@@ -122,9 +120,10 @@ impl<'a> NativeProgramRef<'a> for &'a HardwareHandler {
                 let mut allocations = self.allocations.lock();
                 allocations.entry(emitter_pid).or_default().push(buffer);
 
-                self.messages_tx
-                    .unbounded_send((message_id.unwrap(), Ok(ptr.encode())))
-                    .unwrap();
+                self.pending_messages
+                    .try_lock()
+                    .unwrap()
+                    .push_back((message_id.unwrap(), Ok(ptr.encode())));
             }
             Ok(HardwareMessage::Free { ptr }) => {
                 if let Ok(ptr) = usize::try_from(ptr) {
@@ -139,9 +138,10 @@ impl<'a> NativeProgramRef<'a> for &'a HardwareHandler {
             }
             Ok(HardwareMessage::InterruptWait(int_id)) => unimplemented!(), // TODO:
             Err(_) => self
-                .messages_tx
-                .unbounded_send((message_id.unwrap(), Err(())))
-                .unwrap(),
+                .pending_messages
+                .try_lock()
+                .unwrap()
+                .push_back((message_id.unwrap(), Err(()))),
         }
     }
 
