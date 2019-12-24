@@ -531,6 +531,9 @@ impl<T: Clone> Core<T> {
 
                 match (self.interfaces.get_mut(&interface), allow_delay) {
                     (Some(InterfaceState::Process(pid)), _) => {
+                        *thread.user_data() = Thread::ReadyToRun;
+                        thread.resume(Some(wasmi::RuntimeValue::I32(0)));
+
                         if let Some(mut process) = self.processes.process_by_id(*pid) {
                             let message = redshirt_syscalls_interface::ffi::Message::Interface(
                                 redshirt_syscalls_interface::ffi::InterfaceMessage {
@@ -542,18 +545,14 @@ impl<T: Clone> Core<T> {
                                 },
                             );
 
-                            *thread.user_data() = Thread::ReadyToRun;
-                            thread.resume(Some(wasmi::RuntimeValue::I32(0)));
                             let mut process = self.processes.process_by_id(*pid).unwrap();
                             process.user_data().messages_queue.push_back(message);
                             try_resume_message_wait(process);
                             CoreRunOutcomeInner::LoopAgain
 
                         } else {
-                            *thread.user_data() = Thread::ReadyToRun;
-                            thread.resume(Some(wasmi::RuntimeValue::I32(0)));
                             CoreRunOutcomeInner::ReservedPidInterfaceMessage {
-                                pid: thread.pid(),
+                                pid: emitter_pid,
                                 message_id,
                                 interface,
                                 message,

@@ -18,15 +18,20 @@
 use futures::{channel::mpsc, lock::Mutex, prelude::*, stream::FuturesUnordered};
 use futures_timer::Delay;
 use parity_scale_codec::{DecodeAll, Encode as _};
-use redshirt_time_interface::ffi::TimeMessage;
+use redshirt_core::Pid;
+use redshirt_core::native::{NativeProgram, NativeProgramEvent, NativeProgramMessageIdwrite};
+use redshirt_time_interface::ffi::{INTERFACE, TimeMessage};
 use std::{
     convert::TryFrom,
     pin::Pin,
+    sync::atomic,
     time::{Duration, Instant, SystemTime},
 };
 
 /// State machine for `time` interface messages handling.
 pub struct TimerHandler<TMsgId> {
+    /// If true, we have sent the interface registration message.
+    registered: atomic::AtomicBool,
     /// Accessed only by `next_event`.
     inner: Mutex<TimerHandlerInner<TMsgId>>,
     /// Send on this channel the new timers to insert in [`TimerHandlerInner::timers`].
@@ -69,7 +74,7 @@ where
     }
 
     /// Processes a message on the `time` interface, and optionally returns an answer to
-    /// immediately send  back.
+    /// immediately send back.
     pub fn time_message(
         &self,
         message_id: Option<TMsgId>,
@@ -114,6 +119,61 @@ where
                 future::Either::Right((None, _)) => unreachable!(),
             }
         }
+    }
+}
+
+impl<'a> NativeProgram<'a> for TimerHandler {
+    /// Future resolving to the next event the [`NativeProgram`] emits.
+    type Future: Future<Output = NativeProgramEvent<Self::MessageIdWrite>> + Send + 'a;
+    type MessageIdWrite = DummyMessageIdWrite;
+
+    fn next_event(&'a self) -> Self::Future {
+        async move {
+            if !self.registered.swap(true, atomic::Ordering::Relaxed) {
+                return NativeProgramEvent::Emit {
+                    interface: INTERFACE,
+                    message_id_write: None,
+                    message: ,
+                },
+            }
+        }
+    }
+
+    fn interface_message(
+        &self,
+        interface: [u8; 32],
+        message_id: Option<MessageId>,
+        emitter_pid: Pid,
+        message: Vec<u8>
+    ) {
+        debug_assert_eq!(interface, INTERFACE);
+
+        match TimeMessage::decode_all(&message) {
+            Ok(TimeMessage::GetMonotonic) => Some(Ok(monotonic_clock().encode())),
+            Ok(TimeMessage::GetSystem) => Some(Ok(system_clock().encode())),
+            Ok(TimeMessage::WaitMonotonic(until)) => match until.checked_sub(monotonic_clock()) {
+                None => Some(Ok(().encode())),
+                Some(dur_from_now) => {
+                    // If `dur_from_now` is larger than a `u64`, we simply don't insert any timer.
+                    // We assume that we will never reach this time ever.
+                    if let Ok(dur) = u64::try_from(dur_from_now) {
+                        let dur = Duration::from_nanos(dur);
+                        self.new_timer_tx
+                            .unbounded_send((Delay::new(dur), message_id.unwrap()))
+                            .unwrap();
+                    }
+                    None
+                }
+            },
+            Err(_) => Some(Err(())),
+        }
+    }
+
+    fn process_destroyed(&self, _: Pid) {
+    }
+
+    fn message_response(&self, _: MessageId, _: Vec<u8>) {
+        unreachable!()
     }
 }
 

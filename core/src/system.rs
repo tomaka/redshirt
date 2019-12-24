@@ -28,7 +28,7 @@ use smallvec::SmallVec;
 /// inter-process communication, and so on.
 ///
 /// Natively handles the "interface" and "threads" interfaces.  TODO: indicate hashes
-pub struct System<'a, TExtEx> {
+pub struct System<TExtEx> {
     /// Inner system with inter-process communications.
     core: Core<TExtEx>,
 
@@ -46,7 +46,7 @@ pub struct System<'a, TExtEx> {
 
     /// Collection of programs. Each is assigned a `Pid` that is reserved within `core`.
     /// Can communicate with the WASM programs that are within `core`.
-    native_programs: native::NativeProgramsCollection<'a>,
+    native_programs: native::NativeProgramsCollection,
 
     /// List of programs to load as soon as a loader interface handler is available.
     ///
@@ -65,12 +65,12 @@ pub struct System<'a, TExtEx> {
 }
 
 /// Prototype for a [`System`].
-pub struct SystemBuilder<'a, TExtEx> {
+pub struct SystemBuilder<TExtEx> {
     /// Builder for the inner core.
     core: CoreBuilder<TExtEx>,
 
     /// Native programs.
-    native_programs: native::NativeProgramsCollection<'a>,
+    native_programs: native::NativeProgramsCollection,
 
     /// "Virtual" Pid for handling messages on the `interface` interface.
     interface_interface_pid: Pid,
@@ -115,7 +115,7 @@ pub enum SystemRunOutcome<TExtEx> {
 }
 
 // TODO: we require Clone because of stupid borrowing issues; remove
-impl<'a, TExtEx: Clone> System<'a, TExtEx> {
+impl<TExtEx: Clone> System<TExtEx> {
     /// After [`SystemRunOutcome::ThreadWaitExtrinsic`] has been returned, call this method in
     /// order to inject back the result of the extrinsic call.
     // TODO: don't expose wasmi::RuntimeValue
@@ -145,7 +145,7 @@ impl<'a, TExtEx: Clone> System<'a, TExtEx> {
     /// >           produce events in case there's nothing to do. In other words, this function
     /// >           can be seen as a generator that returns only when something needs to be
     /// >           notified.
-    pub fn run(&'a mut self) -> impl Future<Output = SystemRunOutcome<TExtEx>> + 'a {
+    pub fn run<'b>(&'b mut self) -> impl Future<Output = SystemRunOutcome<TExtEx>> + 'b {
         // TODO: We use a `poll_fn` because async/await don't work in no_std yet.
         future::poll_fn(move |cx| {
             loop {
@@ -173,9 +173,6 @@ impl<'a, TExtEx: Clone> System<'a, TExtEx> {
                         unimplemented!()
                     },
                     native::NativeProgramsCollectionEvent::Answer { message_id, answer } => {
-                        unimplemented!()
-                    },
-                    native::NativeProgramsCollectionEvent::MessageError { message_id } => {
                         unimplemented!()
                     },
                 }
@@ -320,7 +317,7 @@ impl<'a, TExtEx: Clone> System<'a, TExtEx> {
                     interface,
                     message,
                 } => {
-                    // TODO: self.native_programs.somethingsomething
+                    self.native_programs.interface_message(interface, message_id, pid, message);
                 }
 
                 CoreRunOutcome::Idle => return None,
@@ -361,7 +358,7 @@ impl<'a, TExtEx: Clone> System<'a, TExtEx> {
     }
 }
 
-impl<'a, TExtEx: Clone> SystemBuilder<'a, TExtEx> {
+impl<TExtEx: Clone> SystemBuilder<TExtEx> {
     // TODO: remove Clone if possible
     /// Starts a new builder.
     pub fn new() -> Self {
@@ -403,7 +400,11 @@ impl<'a, TExtEx: Clone> SystemBuilder<'a, TExtEx> {
     }
 
     /// Registers a . // TODO: doc
-    pub fn with_native_program(mut self, program: impl native::NativeProgram<'a>) -> Self {
+    pub fn with_native_program<T>(mut self, program: T) -> Self
+    where
+        T: Send + 'static,
+        for<'r> &'r T: native::NativeProgramRef<'r>,
+    {
         self.native_programs.push(self.core.reserve_pid(), program);
         self
     }
@@ -433,7 +434,7 @@ impl<'a, TExtEx: Clone> SystemBuilder<'a, TExtEx> {
     }
 
     /// Builds the [`System`].
-    pub fn build(mut self) -> System<'a, TExtEx> {
+    pub fn build(mut self) -> System<TExtEx> {
         let mut core = self.core.build();
 
         // We ask the core to redirect messages for the `interface` and `threads` interfaces
@@ -458,7 +459,7 @@ impl<'a, TExtEx: Clone> SystemBuilder<'a, TExtEx> {
     }
 }
 
-impl<'a, TExtEx: Clone> Default for SystemBuilder<'a, TExtEx> {
+impl<TExtEx: Clone> Default for SystemBuilder<TExtEx> {
     // TODO: remove Clone if possible
     fn default() -> Self {
         SystemBuilder::new()
