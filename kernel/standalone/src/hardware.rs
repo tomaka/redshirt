@@ -20,48 +20,80 @@
 
 use crate::arch;
 
-use alloc::vec::Vec;
-use core::{convert::TryFrom as _, marker::PhantomData};
+use alloc::{boxed::Box, vec::Vec};
+use core::{convert::TryFrom as _, marker::PhantomData, pin::Pin, sync::atomic};
+use futures::{prelude::*, channel::mpsc, lock::Mutex as FuturesMutex};
 use hashbrown::HashMap;
 use parity_scale_codec::{DecodeAll, Encode as _};
-use redshirt_hardware_interface::ffi::{HardwareAccessResponse, HardwareMessage, Operation};
-use redshirt_syscalls_interface::Pid;
+use redshirt_core::{MessageId, Pid};
+use redshirt_core::native::{
+    DummyMessageIdWrite, NativeProgramEvent, NativeProgramMessageIdWrite, NativeProgramRef,
+};
+use redshirt_hardware_interface::ffi::{INTERFACE, HardwareAccessResponse, HardwareMessage, Operation};
 use spin::Mutex;
 
 /// State machine for `hardware` interface messages handling.
-pub struct HardwareHandler<TMsgId> {
+pub struct HardwareHandler {
+    /// If true, we have sent the interface registration message.
+    registered: atomic::AtomicBool,
     /// For each PID, a list of memory allocations.
     // TODO: optimize
     // TODO: free the list when a process gets destroyed (e.g. if it crashes)
     allocations: Mutex<HashMap<Pid, Vec<Vec<u8>>>>,
-    marker: PhantomData<TMsgId>,
+    messages_tx: mpsc::UnboundedSender<(MessageId, Result<Vec<u8>, ()>)>,
+    messages_rx: FuturesMutex<mpsc::UnboundedReceiver<(MessageId, Result<Vec<u8>, ()>)>>,
 }
 
-impl<TMsgId> HardwareHandler<TMsgId>
-where
-    TMsgId: Send + 'static,
-{
+impl HardwareHandler {
     /// Initializes the new state machine for hardware accesses.
     pub fn new() -> Self {
+        let (messages_tx, messages_rx) = mpsc::unbounded();
+
         HardwareHandler {
+            registered: atomic::AtomicBool::new(false),
             allocations: Mutex::new(HashMap::new()),
-            marker: PhantomData,
+            messages_tx,
+            messages_rx: FuturesMutex::new(messages_rx),
         }
     }
+}
 
-    /// Call when a process stopped in order for the hardware handler to perform cleanups.
-    pub fn process_stopped(&self, pid: Pid) {
-        self.allocations.lock().remove(&pid);
+impl<'a> NativeProgramRef<'a> for &'a HardwareHandler {
+    type Future =
+        Pin<Box<dyn Future<Output = NativeProgramEvent<Self::MessageIdWrite>> + Send + 'a>>;
+    type MessageIdWrite = DummyMessageIdWrite;
+
+    fn next_event(self) -> Self::Future {
+        Box::pin(async move {
+            if !self.registered.swap(true, atomic::Ordering::Relaxed) {
+                return NativeProgramEvent::Emit {
+                    interface: redshirt_interface_interface::ffi::INTERFACE,
+                    message_id_write: None,
+                    message: redshirt_interface_interface::ffi::InterfaceMessage::Register(
+                        INTERFACE,
+                    )
+                    .encode(),
+                };
+            }
+
+            let mut messages_rx = self.messages_rx.lock().await;
+            let (message_id, answer) = messages_rx.next().await.unwrap();
+            return NativeProgramEvent::Answer {
+                message_id,
+                answer,
+            };
+        })
     }
 
-    /// Processes a message on the `hardware` interface, and optionally returns an answer to
-    /// immediately send back.
-    pub fn hardware_message(
-        &self,
-        sender_pid: Pid,
-        message_id: Option<TMsgId>,
-        message: &[u8],
-    ) -> Option<Result<Vec<u8>, ()>> {
+    fn interface_message(
+        self,
+        interface: [u8; 32],
+        message_id: Option<MessageId>,
+        emitter_pid: Pid,
+        message: Vec<u8>,
+    ) {
+        debug_assert_eq!(interface, INTERFACE);
+
         match HardwareMessage::decode_all(&message) {
             Ok(HardwareMessage::HardwareAccess(operations)) => {
                 let mut response = Vec::with_capacity(operations.len());
@@ -74,9 +106,7 @@ where
                 }
 
                 if !response.is_empty() {
-                    Some(Ok(response.encode()))
-                } else {
-                    None
+                    self.messages_tx.unbounded_send((message_id.unwrap(), Ok(response.encode()))).unwrap();
                 }
             }
             Ok(HardwareMessage::Malloc { size, alignment }) => {
@@ -89,31 +119,33 @@ where
                 }
 
                 let mut allocations = self.allocations.lock();
-                allocations.entry(sender_pid).or_default().push(buffer);
+                allocations.entry(emitter_pid).or_default().push(buffer);
 
-                Some(Ok(ptr.encode()))
+                self.messages_tx.unbounded_send((message_id.unwrap(), Ok(ptr.encode()))).unwrap();
             }
             Ok(HardwareMessage::Free { ptr }) => {
                 if let Ok(ptr) = usize::try_from(ptr) {
                     let mut allocations = self.allocations.lock();
-                    if let Some(list) = allocations.get_mut(&sender_pid) {
+                    if let Some(list) = allocations.get_mut(&emitter_pid) {
                         // Since we adjust the returned pointer to match the alignment.
                         list.retain(|e| {
                             ptr < e.as_ptr() as usize || ptr >= (e.as_ptr() as usize) + e.len()
                         });
                     }
                 }
-                None
             }
             Ok(HardwareMessage::InterruptWait(int_id)) => unimplemented!(), // TODO:
-            Err(_) => Some(Err(())),
+            Err(_) => self.messages_tx.unbounded_send((message_id.unwrap(), Err(()))).unwrap(),
         }
     }
 
-    /*/// Returns the next message to answer, and the message to send back.
-    pub fn next_answer(&self) -> impl Future<Output = (TMsgId, Vec<u8>)> {
+    fn process_destroyed(self, pid: Pid) {
+        self.allocations.lock().remove(&pid);
+    }
 
-    }*/
+    fn message_response(self, _: MessageId, _: Vec<u8>) {
+        unreachable!()
+    }
 }
 
 unsafe fn perform_operation(operation: Operation) -> Option<HardwareAccessResponse> {

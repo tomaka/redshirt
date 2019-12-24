@@ -24,6 +24,7 @@
 
 use alloc::format;
 use core::sync::atomic::{AtomicBool, Ordering};
+use futures::prelude::*;
 use parity_scale_codec::DecodeAll;
 
 /// Main struct of this crate. Runs everything.
@@ -55,8 +56,6 @@ impl Kernel {
             crate::arch::halt();
         }
 
-        let hardware = crate::hardware::HardwareHandler::new();
-
         let hello_module = redshirt_core::module::Module::from_bytes(
             &include_bytes!("../../../modules/target/wasm32-wasi/release/hello-world.wasm")[..],
         )
@@ -76,7 +75,7 @@ impl Kernel {
 
         let mut system =
             redshirt_wasi_hosted::register_extrinsics(redshirt_core::system::SystemBuilder::new())
-                .with_interface_handler(redshirt_hardware_interface::ffi::INTERFACE)
+                .with_native_program(crate::hardware::HardwareHandler::new())
                 .with_startup_process(stdout_module)
                 .with_startup_process(hello_module)
                 .with_main_program([0; 32]) // TODO: just a test
@@ -85,14 +84,7 @@ impl Kernel {
         let mut wasi = redshirt_wasi_hosted::WasiStateMachine::new();
 
         loop {
-            match system.run() {
-                redshirt_core::system::SystemRunOutcome::Idle => {
-                    // TODO: If we don't support any interface or extrinsic, then `Idle` shouldn't
-                    // happen. In a normal situation, this is when we would check the status of the
-                    // "externalities", such as the timer.
-                    //panic!("idle");
-                    crate::arch::halt();
-                }
+            match system.run().now_or_never().unwrap() {     // FIXME:
                 redshirt_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
                     pid,
                     thread_id,
@@ -117,22 +109,7 @@ impl Kernel {
                     }
                 }
                 redshirt_core::system::SystemRunOutcome::ProgramFinished { pid, outcome } => {
-                    hardware.process_stopped(pid);
                     //console.write(&format!("Program finished {:?} => {:?}\n", pid, outcome));
-                }
-                redshirt_core::system::SystemRunOutcome::InterfaceMessage {
-                    pid,
-                    interface,
-                    message,
-                    message_id,
-                } if interface == redshirt_hardware_interface::ffi::INTERFACE => {
-                    if let Some(answer) = hardware.hardware_message(pid, message_id, &message) {
-                        let answer = match &answer {
-                            Ok(v) => Ok(&v[..]),
-                            Err(()) => Err(()),
-                        };
-                        system.answer_message(message_id.unwrap(), answer);
-                    }
                 }
                 _ => panic!(),
             }
