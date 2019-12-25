@@ -18,7 +18,10 @@ use crate::native::{self, NativeProgramMessageIdWrite as _};
 use crate::scheduler::{Core, CoreBuilder, CoreRunOutcome};
 use crate::signature::Signature;
 use alloc::{borrow::Cow, vec, vec::Vec};
-use core::{convert::Infallible, task::{Context, Poll}};
+use core::{
+    convert::Infallible,
+    task::{Context, Poll},
+};
 use futures::prelude::*;
 use hashbrown::{hash_map::Entry, HashMap, HashSet};
 use redshirt_syscalls_interface::{Decode, Encode, EncodedMessage, MessageId, Pid, ThreadId};
@@ -178,9 +181,7 @@ impl System {
                     ref mut thread,
                     ref extrinsic,
                     ref params,
-                } => {
-                    unreachable!()
-                }
+                } => unreachable!(),
                 CoreRunOutcome::ThreadWaitUnavailableInterface { .. } => {} // TODO: lazy-loading
 
                 CoreRunOutcome::MessageResponse {
