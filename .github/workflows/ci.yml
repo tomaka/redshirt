@@ -20,7 +20,7 @@ jobs:
       uses: actions-rs/toolchain@v1
       with:
         toolchain: stable
-        target: wasm32-wasi
+        target: wasm32-unknown-unknown
         override: true
     - name: Install a recent version of clang
       run: |
@@ -46,12 +46,12 @@ jobs:
         path: modules/target
         key: cargo-build-target-${{ hashFiles('modules/Cargo.lock') }}
     - name: Build modules
-      run: cargo build --manifest-path ./modules/Cargo.toml --locked --verbose --release --target=wasm32-wasi
+      run: cargo build --manifest-path ./modules/Cargo.toml --locked --verbose --release --target=wasm32-unknown-unknown
     - name: Upload WASM modules
       uses: actions/upload-artifact@v1
       with:
         name: wasm-modules
-        path: modules/target/wasm32-wasi/release
+        path: modules/target/wasm32-unknown-unknown/release
 
   build-hosted:
     name: Build hosted kernel
@@ -67,7 +67,7 @@ jobs:
       uses: actions-rs/toolchain@v1
       with:
         toolchain: stable
-        target: wasm32-wasi
+        target: wasm32-unknown-unknown
         override: true
     - name: Install a recent version of clang
       run: |
@@ -79,7 +79,7 @@ jobs:
       uses: actions/download-artifact@v1
       with:
         name: wasm-modules
-        path: modules/target/wasm32-wasi/release
+        path: modules/target/wasm32-unknown-unknown/release
     - name: Cache cargo registry
       uses: actions/cache@v1
       with:
@@ -115,7 +115,7 @@ jobs:
       uses: actions/download-artifact@v1
       with:
         name: wasm-modules
-        path: modules/target/wasm32-wasi/release
+        path: modules/target/wasm32-unknown-unknown/release
     - name: Install lld
       run: |
         apt-get update
@@ -139,7 +139,7 @@ jobs:
       uses: actions-rs/toolchain@v1
       with:
         toolchain: nightly-2019-12-05
-        target: wasm32-wasi
+        target: wasm32-unknown-unknown
         override: true
     - name: Install rust-src
       run: rustup component add rust-src

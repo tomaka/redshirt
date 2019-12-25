@@ -21,7 +21,6 @@ use alloc::{
     vec::Vec,
 };
 use core::{cell::RefCell, convert::TryInto, fmt};
-use redshirt_syscalls_interface::{MessageId, Pid};
 use smallvec::SmallVec;
 
 /// WASMI state machine dedicated to a process.
