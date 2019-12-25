@@ -47,7 +47,7 @@ async fn async_main() {
     };
 
     let mut system = redshirt_core::system::SystemBuilder::new()
-        .with_native_program(redshirt_tap_hosted::TapNetworkInterface::new())
+        .with_native_program(redshirt_tap_hosted::TapNetworkInterface::new().unwrap())
         .with_native_program(redshirt_time_hosted::TimerHandler::new())
         .with_native_program(redshirt_stdout_hosted::StdoutHandler::new())
         .build();

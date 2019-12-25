@@ -8,8 +8,11 @@ publish = false
 
 [dependencies]
 futures = "0.3.1"
+redshirt-core = { path = "../../core" }
+redshirt-interface-interface = { path = "../../interfaces/interface" }
 redshirt-network-interface = { path = "../../interfaces/network" }
-redshirt-syscalls-interface = { path = "../../interfaces/syscalls" }
 parity-scale-codec = "1.0.5"
 rand = "0.7"
+# TODO: we use Mutexes from spin because we only ever use try_lock and std MutexGuards aren't Send
+spin = "0.5.2"
 tun-tap = { version = "0.1.2", default-features = false }
