@@ -32,4 +32,12 @@ fn main() {
         .status()
         .unwrap();
     assert!(status.success());
+
+    // TODO: not a great solution
+    for entry in walkdir::WalkDir::new("../../modules/") {
+        println!("cargo:rerun-if-changed={}", entry.unwrap().path().display());
+    }
+    for entry in walkdir::WalkDir::new("../../interfaces/") {
+        println!("cargo:rerun-if-changed={}", entry.unwrap().path().display());
+    }
 }
