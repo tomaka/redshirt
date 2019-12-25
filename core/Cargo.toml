@@ -15,7 +15,6 @@ redshirt-interface-interface = { path = "../interfaces/interface", default-featu
 redshirt-loader-interface = { path = "../interfaces/loader", default-features = false }
 redshirt-syscalls-interface = { path = "../interfaces/syscalls", default-features = false }
 redshirt-threads-interface = { path = "../interfaces/threads", default-features = false }
-parity-scale-codec = { version = "1.0.5", default-features = false, features = ["derive"] } # TODO: might be unused
 rand = { version = "0.7", default-features = false }
 rand_chacha = { version = "0.2.1", default-features = false }
 rand_core = { version = "0.5.0", default-features = false }
