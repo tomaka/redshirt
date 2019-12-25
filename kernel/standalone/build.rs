@@ -72,7 +72,7 @@ fn main() {
     let status = Command::new("cargo")
         .arg("rustc")
         .arg("--release")
-        .args(&["--target", "wasm32-wasi"])
+        .args(&["--target", "wasm32-unknown-unknown"])
         .args(&["--package", "x86-pci"])
         .args(&["--bin", "x86-pci"])
         .args(&["--manifest-path", "../../modules/x86-pci/Cargo.toml"])
@@ -84,7 +84,7 @@ fn main() {
 
     let status = Command::new("cargo")
         .arg("rustc")
-        .args(&["--target", "wasm32-wasi"])
+        .args(&["--target", "wasm32-unknown-unknown"])
         .args(&["--package", "ne2000"])
         .args(&["--bin", "ne2000"])
         .args(&["--manifest-path", "../../modules/ne2000/Cargo.toml"])

@@ -80,12 +80,12 @@ impl Kernel {
         .unwrap();
 
         let pci_module = redshirt_core::module::Module::from_bytes(
-            &include_bytes!("../../../modules/target/wasm32-wasi/release/x86-pci.wasm")[..],
+            &include_bytes!("../../../modules/target/wasm32-unknown-unknown/release/x86-pci.wasm")[..],
         )
         .unwrap();
 
         let ne2000_module = redshirt_core::module::Module::from_bytes(
-            &include_bytes!("../../../modules/target/wasm32-wasi/debug/ne2000.wasm")[..],
+            &include_bytes!("../../../modules/target/wasm32-unknown-unknown/debug/ne2000.wasm")[..],
         )
         .unwrap();
 
