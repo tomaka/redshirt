@@ -57,60 +57,40 @@ impl Kernel {
         }
 
         let hello_module = redshirt_core::module::Module::from_bytes(
-            &include_bytes!("../../../modules/target/wasm32-wasi/release/hello-world.wasm")[..],
+            &include_bytes!(
+                "../../../modules/target/wasm32-unknown-unknown/release/hello-world.wasm"
+            )[..],
         )
         .unwrap();
 
         // TODO: use a better system than cfgs
         #[cfg(target_arch = "x86_64")]
         let stdout_module = redshirt_core::module::Module::from_bytes(
-            &include_bytes!("../../../modules/target/wasm32-wasi/release/x86-stdout.wasm")[..],
+            &include_bytes!(
+                "../../../modules/target/wasm32-unknown-unknown/release/x86-stdout.wasm"
+            )[..],
         )
         .unwrap();
         #[cfg(target_arch = "arm")]
         let stdout_module = redshirt_core::module::Module::from_bytes(
-            &include_bytes!("../../../modules/target/wasm32-wasi/release/arm-stdout.wasm")[..],
+            &include_bytes!(
+                "../../../modules/target/wasm32-unknown-unknown/release/arm-stdout.wasm"
+            )[..],
         )
         .unwrap();
 
-        let mut system =
-            redshirt_wasi_hosted::register_extrinsics(redshirt_core::system::SystemBuilder::new())
-                .with_native_program(crate::hardware::HardwareHandler::new())
-                .with_startup_process(stdout_module)
-                .with_startup_process(hello_module)
-                .with_main_program([0; 32]) // TODO: just a test
-                .build();
-
-        let mut wasi = redshirt_wasi_hosted::WasiStateMachine::new();
+        let mut system = redshirt_core::system::SystemBuilder::new()
+            .with_native_program(crate::hardware::HardwareHandler::new())
+            .with_startup_process(stdout_module)
+            .with_startup_process(hello_module)
+            .with_main_program([0; 32]) // TODO: just a test
+            .build();
 
         loop {
             match system.run().now_or_never() {
                 None => {
                     // FIXME: use an executor rather than `now_or_never()`
                     crate::arch::halt();
-                }
-                Some(redshirt_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
-                    pid,
-                    thread_id,
-                    extrinsic,
-                    params,
-                }) => {
-                    let out =
-                        wasi.handle_extrinsic_call(&mut system, extrinsic, pid, thread_id, params);
-                    if let redshirt_wasi_hosted::HandleOut::EmitMessage {
-                        id,
-                        interface,
-                        message,
-                    } = out
-                    {
-                        if interface == redshirt_stdout_interface::ffi::INTERFACE {
-                            let msg =
-                                redshirt_stdout_interface::ffi::StdoutMessage::decode_all(&message);
-                            system.emit_interface_message_no_answer(interface, msg.unwrap());
-                        } else {
-                            panic!()
-                        }
-                    }
                 }
                 Some(redshirt_core::system::SystemRunOutcome::ProgramFinished { pid, outcome }) => {
                     //console.write(&format!("Program finished {:?} => {:?}\n", pid, outcome));

@@ -149,7 +149,7 @@ impl<'a> NativeProgramRef<'a> for &'a HardwareHandler {
         self.allocations.lock().remove(&pid);
     }
 
-    fn message_response(self, _: MessageId, _: Vec<u8>) {
+    fn message_response(self, _: MessageId, _: Result<Vec<u8>, ()>) {
         unreachable!()
     }
 }
