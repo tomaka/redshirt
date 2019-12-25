@@ -14,20 +14,26 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use crate::module::Module;
-use crate::scheduler::{Core, CoreBuilder, CoreRunOutcome, Pid, ThreadId};
+use crate::native::{self, NativeProgramMessageIdWrite as _};
+use crate::scheduler::{Core, CoreBuilder, CoreRunOutcome};
 use crate::signature::Signature;
 use alloc::{borrow::Cow, vec, vec::Vec};
+use core::{
+    convert::Infallible,
+    task::{Context, Poll},
+};
+use futures::prelude::*;
 use hashbrown::{hash_map::Entry, HashMap, HashSet};
-use parity_scale_codec::{DecodeAll, Encode};
+use redshirt_syscalls_interface::{Decode, Encode, EncodedMessage, MessageId, Pid, ThreadId};
 use smallvec::SmallVec;
 
 /// Main struct that handles a system, including the scheduler, program loader,
 /// inter-process communication, and so on.
 ///
 /// Natively handles the "interface" and "threads" interfaces.  TODO: indicate hashes
-pub struct System<TExtEx> {
+pub struct System {
     /// Inner system with inter-process communications.
-    core: Core<TExtEx>,
+    core: Core<Infallible>,
 
     /// List of active futexes. The keys of this hashmap are process IDs and memory addresses, and
     /// the values of this hashmap are a list of "wait" messages to answer once the corresponding
@@ -39,7 +45,11 @@ pub struct System<TExtEx> {
     /// oldest message.
     ///
     /// See the "threads" interface for documentation about what a futex is.
-    futex_waits: HashMap<(Pid, u32), SmallVec<[u64; 4]>>,
+    futex_waits: HashMap<(Pid, u32), SmallVec<[MessageId; 4]>>,
+
+    /// Collection of programs. Each is assigned a `Pid` that is reserved within `core`.
+    /// Can communicate with the WASM programs that are within `core`.
+    native_programs: native::NativeProgramsCollection,
 
     /// List of programs to load as soon as a loader interface handler is available.
     ///
@@ -54,13 +64,22 @@ pub struct System<TExtEx> {
     /// Set of messages that we emitted of requests to load a program from the loader interface.
     /// All these messages expect a `redshirt_loader_interface::ffi::LoadResponse` as answer.
     // TODO: call shink_to_fit from time to time
-    loading_programs: HashSet<u64>,
+    loading_programs: HashSet<MessageId>,
 }
 
 /// Prototype for a [`System`].
-pub struct SystemBuilder<TExtEx> {
+pub struct SystemBuilder {
     /// Builder for the inner core.
-    core: CoreBuilder<TExtEx>,
+    core: CoreBuilder<Infallible>,
+
+    /// Native programs.
+    native_programs: native::NativeProgramsCollection,
+
+    /// "Virtual" Pid for handling messages on the `interface` interface.
+    interface_interface_pid: Pid,
+
+    /// "Virtual" Pid for handling messages on the `threads` interface.
+    threads_interface_pid: Pid,
 
     /// List of programs to start executing immediately after construction.
     startup_processes: Vec<Module>,
@@ -71,7 +90,7 @@ pub struct SystemBuilder<TExtEx> {
 
 /// Outcome of running the [`System`] once.
 #[derive(Debug)]
-pub enum SystemRunOutcome<TExtEx> {
+pub enum SystemRunOutcome {
     /// A program has ended, either successfully or after an error.
     ProgramFinished {
         /// Identifier of the process that has stopped.
@@ -81,83 +100,88 @@ pub enum SystemRunOutcome<TExtEx> {
         // TODO: change error type
         outcome: Result<(), wasmi::Error>,
     },
-
-    /// A thread has called an extrinsic that was registered using
-    /// [`SystemBuilder::with_extrinsic`].
-    ThreadWaitExtrinsic {
-        // TODO: return an object representing the thread
-        /// Process that called the extrinsic.
-        pid: Pid,
-        /// Thread that called the extrinsic.
-        thread_id: ThreadId,
-        /// Identifier of the extrinsic. Matches what was passed to
-        /// [`SystemBuilder::with_extrinsic`].
-        extrinsic: TExtEx,
-        /// Parameters passed to the extrinsic.
-        params: Vec<wasmi::RuntimeValue>,
-    },
-
-    /// A thread has sent a message on an interface that was registered using
-    /// [`SystemBuilder::with_interface_handler`].
-    InterfaceMessage {
-        // TODO: return an object representing the process or message
-        /// If `Some`, identifier of the message to use to send the answer. If `None`, the message
-        /// doesn't expect any answer.
-        message_id: Option<u64>,
-        /// Interface the message was emitted on. Matches what was passed to
-        /// [`SystemBuilder::with_interface_handler`].
-        interface: [u8; 32],
-        /// The bytes of the message.
-        message: Vec<u8>,
-    },
-
-    /// No thread is ready to run. Nothing to do.
-    Idle,
 }
 
-// TODO: we require Clone because of stupid borrowing issues; remove
-impl<TExtEx: Clone> System<TExtEx> {
-    /// After [`SystemRunOutcome::ThreadWaitExtrinsic`] has been returned, call this method in
-    /// order to inject back the result of the extrinsic call.
-    // TODO: don't expose wasmi::RuntimeValue
-    pub fn resolve_extrinsic_call(
-        &mut self,
-        thread: ThreadId,
-        return_value: Option<wasmi::RuntimeValue>,
-    ) {
-        // TODO: can the user badly misuse that API?
+impl System {
+    /// Start executing a program.
+    pub fn execute(&mut self, program: &Module) -> Pid {
         self.core
-            .thread_by_id(thread)
-            .unwrap()
-            .resolve_extrinsic_call(return_value);
+            .execute(program)
+            .expect("failed to start startup program")
+            .pid() // TODO: don't unwrap
     }
 
     /// Runs the [`System`] once and returns the outcome.
-    pub fn run(&mut self) -> SystemRunOutcome<TExtEx> {
+    ///
+    /// > **Note**: For now, can block a long time because it's waiting for the native programs
+    /// >           produce events in case there's nothing to do. In other words, this function
+    /// >           can be seen as a generator that returns only when something needs to be
+    /// >           notified.
+    pub fn run<'b>(&'b mut self) -> impl Future<Output = SystemRunOutcome> + 'b {
+        // TODO: We use a `poll_fn` because async/await don't work in no_std yet.
+        future::poll_fn(move |cx| loop {
+            if let Some(out) = self.run_once() {
+                return Poll::Ready(out);
+            }
+
+            let next_event = self.native_programs.next_event();
+            futures::pin_mut!(next_event);
+            let event = match next_event.poll(cx) {
+                Poll::Ready(ev) => ev,
+                Poll::Pending => return Poll::Pending,
+            };
+
+            match event {
+                native::NativeProgramsCollectionEvent::Emit {
+                    interface,
+                    pid,
+                    message,
+                    message_id_write,
+                } => {
+                    if let Some(message_id_write) = message_id_write {
+                        let message_id = self.core.emit_interface_message_answer(
+                            pid,
+                            interface,
+                            EncodedMessage(message),
+                        );
+                        message_id_write.acknowledge(message_id);
+                    } else {
+                        self.core.emit_interface_message_no_answer(
+                            pid,
+                            interface,
+                            EncodedMessage(message),
+                        );
+                    }
+                }
+                native::NativeProgramsCollectionEvent::CancelMessage { message_id } => {
+                    unimplemented!()
+                }
+                native::NativeProgramsCollectionEvent::Answer { message_id, answer } => {
+                    self.core.answer_message(
+                        message_id,
+                        answer.as_ref().map(|d| &d[..]).map_err(|&()| ()),
+                    );
+                }
+            }
+        })
+    }
+
+    fn run_once(&mut self) -> Option<SystemRunOutcome> {
         // TODO: remove loop?
         loop {
             match self.core.run() {
-                CoreRunOutcome::ProgramFinished {
-                    process, outcome, ..
-                } => {
-                    return SystemRunOutcome::ProgramFinished {
-                        pid: process,
+                CoreRunOutcome::ProgramFinished { pid, outcome, .. } => {
+                    self.native_programs.process_destroyed(pid);
+                    return Some(SystemRunOutcome::ProgramFinished {
+                        pid,
                         outcome: outcome.map(|_| ()).map_err(|err| err.into()),
-                    }
+                    });
                 }
                 CoreRunOutcome::ThreadWaitExtrinsic {
                     ref mut thread,
                     ref extrinsic,
                     ref params,
-                } => {
-                    let pid = thread.pid();
-                    return SystemRunOutcome::ThreadWaitExtrinsic {
-                        pid,
-                        thread_id: thread.tid(),
-                        extrinsic: extrinsic.clone(),
-                        params: params.clone(),
-                    };
-                }
+                } => unreachable!(),
                 CoreRunOutcome::ThreadWaitUnavailableInterface { .. } => {} // TODO: lazy-loading
 
                 CoreRunOutcome::MessageResponse {
@@ -167,20 +191,22 @@ impl<TExtEx: Clone> System<TExtEx> {
                 } => {
                     if self.loading_programs.remove(&message_id) {
                         let redshirt_loader_interface::ffi::LoadResponse { result } =
-                            DecodeAll::decode_all(&response.unwrap()).unwrap();
+                            Decode::decode(response.unwrap()).unwrap();
                         let module = Module::from_bytes(&result.unwrap()).unwrap();
                         self.core.execute(&module).unwrap();
+                    } else {
+                        self.native_programs.message_response(message_id, response);
                     }
                 }
 
-                CoreRunOutcome::InterfaceMessage {
+                CoreRunOutcome::ReservedPidInterfaceMessage {
                     pid,
                     message_id,
                     interface,
                     message,
                 } if interface == redshirt_threads_interface::ffi::INTERFACE => {
                     let msg: redshirt_threads_interface::ffi::ThreadsMessage =
-                        DecodeAll::decode_all(&message).unwrap();
+                        Decode::decode(message).unwrap();
                     match msg {
                         redshirt_threads_interface::ffi::ThreadsMessage::New(new_thread) => {
                             assert!(message_id.is_none());
@@ -221,39 +247,38 @@ impl<TExtEx: Clone> System<TExtEx> {
                     }
                 }
 
-                CoreRunOutcome::InterfaceMessage {
+                CoreRunOutcome::ReservedPidInterfaceMessage {
                     pid,
                     message_id,
                     interface,
                     message,
                 } if interface == redshirt_interface_interface::ffi::INTERFACE => {
                     let msg: redshirt_interface_interface::ffi::InterfaceMessage =
-                        DecodeAll::decode_all(&message).unwrap();
+                        Decode::decode(message).unwrap();
                     match msg {
                         redshirt_interface_interface::ffi::InterfaceMessage::Register(
                             interface_hash,
                         ) => {
-                            self.core
+                            let result = self.core
                                 .set_interface_handler(interface_hash, pid)
-                                .unwrap();
+                                .map_err(|()| redshirt_interface_interface::ffi::InterfaceRegisterError::AlreadyRegistered);
                             let response =
                                 redshirt_interface_interface::ffi::InterfaceRegisterResponse {
-                                    result: Ok(()),
+                                    result,
                                 };
-                            self.core
-                                .answer_message(message_id.unwrap(), Ok(&response.encode()));
+                            if let Some(message_id) = message_id {
+                                self.core.answer_message(message_id, Ok(&response.encode()));
+                            }
 
                             if interface_hash == redshirt_loader_interface::ffi::INTERFACE {
                                 for hash in self.main_programs.drain(..) {
                                     let msg =
                                         redshirt_loader_interface::ffi::LoaderMessage::Load(hash);
-                                    let id = self
-                                        .core
-                                        .emit_interface_message_answer(
-                                            redshirt_loader_interface::ffi::INTERFACE,
-                                            msg,
-                                        )
-                                        .unwrap();
+                                    let id = self.core.emit_interface_message_answer(
+                                        From::from(0), // FIXME: wrong; hacky
+                                        redshirt_loader_interface::ffi::INTERFACE,
+                                        msg,
+                                    );
                                     self.loading_programs.insert(id);
                                 }
                             }
@@ -261,112 +286,48 @@ impl<TExtEx: Clone> System<TExtEx> {
                     }
                 }
 
-                CoreRunOutcome::InterfaceMessage {
+                CoreRunOutcome::ReservedPidInterfaceMessage {
                     pid,
                     message_id,
                     interface,
                     message,
                 } => {
-                    return SystemRunOutcome::InterfaceMessage {
-                        message_id,
-                        interface,
-                        message,
-                    };
+                    self.native_programs
+                        .interface_message(interface, message_id, pid, message);
                 }
 
-                CoreRunOutcome::Idle => return SystemRunOutcome::Idle,
+                CoreRunOutcome::Idle => return None,
             }
         }
     }
-
-    /// Copies the given memory range of the given process into a `Vec<u8>`.
-    ///
-    /// Returns an error if the range is invalid.
-    pub fn read_memory(&mut self, pid: Pid, offset: u32, size: u32) -> Result<Vec<u8>, ()> {
-        self.core
-            .process_by_id(pid)
-            .ok_or(())?
-            .read_memory(offset, size)
-    }
-
-    pub fn write_memory(&mut self, pid: Pid, offset: u32, data: &[u8]) -> Result<(), ()> {
-        self.core
-            .process_by_id(pid)
-            .ok_or(())?
-            .write_memory(offset, data)
-    }
-
-    /// After [`SystemRunOutcome::InterfaceMessage`] has been returned, call this method in order
-    /// to send back an answer to the message.
-    // TODO: better API
-    pub fn answer_message(&mut self, message_id: u64, response: Result<&[u8], ()>) {
-        //println!("answered event {:?}", message_id);
-        self.core.answer_message(message_id, response)
-    }
-
-    /// Emits a message for the handler of the given interface.
-    ///
-    /// The message doesn't expect any answer.
-    // TODO: better API
-    pub fn emit_interface_message_no_answer(
-        &mut self,
-        interface: [u8; 32],
-        message: impl Encode,
-    ) -> Result<(), ()> {
-        self.core
-            .emit_interface_message_no_answer(interface, message)
-    }
 }
 
-impl<TExtEx: Clone> SystemBuilder<TExtEx> {
+impl SystemBuilder {
     // TODO: remove Clone if possible
     /// Starts a new builder.
-    pub fn new() -> SystemBuilder<TExtEx> {
+    pub fn new() -> Self {
         // We handle some low-level interfaces here.
-        let core = Core::new()
-            .with_interface_handler(redshirt_interface_interface::ffi::INTERFACE)
-            .with_interface_handler(redshirt_threads_interface::ffi::INTERFACE);
+        let mut core = Core::new();
+        let interface_interface_pid = core.reserve_pid();
+        let threads_interface_pid = core.reserve_pid();
 
         SystemBuilder {
             core,
+            interface_interface_pid,
+            threads_interface_pid,
             startup_processes: Vec::new(),
             main_programs: Vec::new(),
+            native_programs: native::NativeProgramsCollection::new(),
         }
     }
 
-    /// Registers an extrinsic function as available.
-    ///
-    /// If a program calls this extrinsic, a [`SystemRunOutcome::ThreadWaitExtrinsic`] event will
-    /// be generated for the user to handle.
-    ///
-    /// # Panic
-    ///
-    /// Panics if the extrinsic has already been registered, or if the extrinsic conflicts with
-    /// one of the extrinsics natively handled by the [`System`].
-    pub fn with_extrinsic(
-        mut self,
-        interface: impl Into<Cow<'static, str>>,
-        f_name: impl Into<Cow<'static, str>>,
-        signature: Signature,
-        token: TExtEx,
-    ) -> Self {
-        self.core = self
-            .core
-            .with_extrinsic(interface, f_name, signature, token);
-        self
-    }
-
-    /// Registers an interface as available.
-    ///
-    /// If a program sends a message to this interface, a [`SystemRunOutcome::InterfaceMessage`]
-    /// event will be generated for the user to handle.
-    ///
-    /// # Panic
-    ///
-    /// Panics if the interface has already been registered, or if the interface conflicts with
-    /// one of the interfaces natively handled by the [`System`].
-    pub fn with_interface_handler(mut self, interface: impl Into<[u8; 32]>) -> Self {
-        self.core = self.core.with_interface_handler(interface);
+    /// Registers native code that can communicate with the WASM programs.
+    pub fn with_native_program<T>(mut self, program: T) -> Self
+    where
+        T: Send + 'static,
+        for<'r> &'r T: native::NativeProgramRef<'r>,
+    {
+        self.native_programs.push(self.core.reserve_pid(), program);
         self
     }
 
@@ -395,8 +356,21 @@ impl<TExtEx: Clone> SystemBuilder<TExtEx> {
     }
 
     /// Builds the [`System`].
-    pub fn build(mut self) -> System<TExtEx> {
+    pub fn build(mut self) -> System {
         let mut core = self.core.build();
+
+        // We ask the core to redirect messages for the `interface` and `threads` interfaces
+        // towards our "virtual" `Pid`s.
+        core.set_interface_handler(
+            redshirt_interface_interface::ffi::INTERFACE,
+            self.interface_interface_pid,
+        )
+        .unwrap();
+        core.set_interface_handler(
+            redshirt_threads_interface::ffi::INTERFACE,
+            self.threads_interface_pid,
+        )
+        .unwrap();
 
         for program in self.startup_processes {
             core.execute(&program)
@@ -407,6 +381,7 @@ impl<TExtEx: Clone> SystemBuilder<TExtEx> {
 
         System {
             core,
+            native_programs: self.native_programs,
             futex_waits: Default::default(),
             loading_programs: Default::default(),
             main_programs: self.main_programs,
@@ -414,7 +389,7 @@ impl<TExtEx: Clone> SystemBuilder<TExtEx> {
     }
 }
 
-impl<TExtEx: Clone> Default for SystemBuilder<TExtEx> {
+impl Default for SystemBuilder {
     // TODO: remove Clone if possible
     fn default() -> Self {
         SystemBuilder::new()

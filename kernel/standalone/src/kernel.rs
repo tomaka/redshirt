@@ -24,6 +24,7 @@
 
 use alloc::format;
 use core::sync::atomic::{AtomicBool, Ordering};
+use futures::prelude::*;
 use parity_scale_codec::DecodeAll;
 
 /// Main struct of this crate. Runs everything.
@@ -55,22 +56,26 @@ impl Kernel {
             crate::arch::halt();
         }
 
-        let hardware = crate::hardware::HardwareHandler::new();
-
         let hello_module = redshirt_core::module::Module::from_bytes(
-            &include_bytes!("../../../modules/target/wasm32-wasi/release/hello-world.wasm")[..],
+            &include_bytes!(
+                "../../../modules/target/wasm32-unknown-unknown/release/hello-world.wasm"
+            )[..],
         )
         .unwrap();
 
         // TODO: use a better system than cfgs
         #[cfg(target_arch = "x86_64")]
         let stdout_module = redshirt_core::module::Module::from_bytes(
-            &include_bytes!("../../../modules/target/wasm32-wasi/release/x86-stdout.wasm")[..],
+            &include_bytes!(
+                "../../../modules/target/wasm32-unknown-unknown/release/x86-stdout.wasm"
+            )[..],
         )
         .unwrap();
         #[cfg(target_arch = "arm")]
         let stdout_module = redshirt_core::module::Module::from_bytes(
-            &include_bytes!("../../../modules/target/wasm32-wasi/release/arm-stdout.wasm")[..],
+            &include_bytes!(
+                "../../../modules/target/wasm32-unknown-unknown/release/arm-stdout.wasm"
+            )[..],
         )
         .unwrap();
 
@@ -84,65 +89,23 @@ impl Kernel {
         )
         .unwrap();
 
-        let mut system =
-            redshirt_wasi_hosted::register_extrinsics(redshirt_core::system::SystemBuilder::new())
-                .with_interface_handler(redshirt_hardware_interface::ffi::INTERFACE)
-                .with_startup_process(stdout_module)
-                .with_startup_process(hello_module)
-                .with_startup_process(pci_module)
-                .with_startup_process(ne2000_module)
-                .with_main_program([0; 32]) // TODO: just a test
-                .build();
-
-        let mut wasi = redshirt_wasi_hosted::WasiStateMachine::new();
+        let mut system = redshirt_core::system::SystemBuilder::new()
+            .with_native_program(crate::hardware::HardwareHandler::new())
+            .with_startup_process(stdout_module)
+            .with_startup_process(hello_module)
+            .with_startup_process(pci_module)
+            .with_startup_process(ne2000_module)
+            .with_main_program([0; 32]) // TODO: just a test
+            .build();
 
         loop {
-            match system.run() {
-                redshirt_core::system::SystemRunOutcome::Idle => {
-                    // TODO: If we don't support any interface or extrinsic, then `Idle` shouldn't
-                    // happen. In a normal situation, this is when we would check the status of the
-                    // "externalities", such as the timer.
-                    //panic!("idle");
+            match system.run().now_or_never() {
+                None => {
+                    // FIXME: use an executor rather than `now_or_never()`
                     crate::arch::halt();
                 }
-                redshirt_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
-                    pid,
-                    thread_id,
-                    extrinsic,
-                    params,
-                } => {
-                    let out =
-                        wasi.handle_extrinsic_call(&mut system, extrinsic, pid, thread_id, params);
-                    if let redshirt_wasi_hosted::HandleOut::EmitMessage {
-                        id,
-                        interface,
-                        message,
-                    } = out
-                    {
-                        if interface == redshirt_stdout_interface::ffi::INTERFACE {
-                            let msg =
-                                redshirt_stdout_interface::ffi::StdoutMessage::decode_all(&message);
-                            system.emit_interface_message_no_answer(interface, msg.unwrap());
-                        } else {
-                            panic!()
-                        }
-                    }
-                }
-                redshirt_core::system::SystemRunOutcome::ProgramFinished { pid, outcome } => {
+                Some(redshirt_core::system::SystemRunOutcome::ProgramFinished { pid, outcome }) => {
                     //console.write(&format!("Program finished {:?} => {:?}\n", pid, outcome));
-                }
-                redshirt_core::system::SystemRunOutcome::InterfaceMessage {
-                    interface,
-                    message,
-                    message_id,
-                } if interface == redshirt_hardware_interface::ffi::INTERFACE => {
-                    if let Some(answer) = hardware.hardware_message(message_id, &message) {
-                        let answer = match &answer {
-                            Ok(v) => Ok(&v[..]),
-                            Err(()) => Err(()),
-                        };
-                        system.answer_message(message_id.unwrap(), answer);
-                    }
                 }
                 _ => panic!(),
             }

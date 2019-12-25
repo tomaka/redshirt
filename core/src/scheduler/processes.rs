@@ -15,7 +15,7 @@
 
 use crate::id_pool::IdPool;
 use crate::module::Module;
-use crate::scheduler::{vm, Pid};
+use crate::scheduler::vm;
 use crate::signature::Signature;
 use alloc::{borrow::Cow, vec::Vec};
 use core::fmt;
@@ -24,6 +24,7 @@ use hashbrown::{
     HashMap,
 };
 use rand::seq::SliceRandom as _;
+use redshirt_syscalls_interface::{Pid, ThreadId};
 
 /// Collection of multiple [`ProcessStateMachine`](vm::ProcessStateMachine)s grouped together in a
 /// smart way.
@@ -58,16 +59,12 @@ pub struct ProcessesCollection<TExtr, TPud, TTud> {
 /// Prototype for a `ProcessesCollection` under construction.
 pub struct ProcessesCollectionBuilder<TExtr> {
     /// See the corresponding field in `ProcessesCollection`.
+    pid_pool: IdPool,
+    /// See the corresponding field in `ProcessesCollection`.
     extrinsics: HashMap<usize, TExtr>,
     /// See the corresponding field in `ProcessesCollection`.
     extrinsics_id_assign: HashMap<(Cow<'static, str>, Cow<'static, str>), (usize, Signature)>,
 }
-
-/// Identifier of a thread within the [`ProcessesCollection`].
-///
-/// No two threads share the same ID, even between multiple processes.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub struct ThreadId(u64);
 
 /// Single running process in the list.
 struct Process<TPud, TTud> {
@@ -390,6 +387,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
 impl<TExtr> Default for ProcessesCollectionBuilder<TExtr> {
     fn default() -> ProcessesCollectionBuilder<TExtr> {
         ProcessesCollectionBuilder {
+            pid_pool: IdPool::new(),
             extrinsics: Default::default(),
             extrinsics_id_assign: Default::default(),
         }
@@ -397,6 +395,18 @@ impl<TExtr> Default for ProcessesCollectionBuilder<TExtr> {
 }
 
 impl<TExtr> ProcessesCollectionBuilder<TExtr> {
+    /// Allocates a `Pid` that will not be used by any process.
+    ///
+    /// > **Note**: As of the writing of this comment, this feature is only ever used to allocate
+    /// >           `Pid`s that last forever. There is therefore no corresponding "unreserve_pid"
+    /// >           method that frees such an allocated `Pid`. If there is ever a need to free
+    /// >           these `Pid`s, such a method should be added.
+    pub fn reserve_pid(&mut self) -> Pid {
+        // Note that we take `&mut self`. It could be `&self`, but that would expose
+        // implementation details.
+        self.pid_pool.assign()
+    }
+
     /// Registers a function that is available for processes to call.
     ///
     /// The function is registered under the given interface and function name. If a WASM module
@@ -438,18 +448,12 @@ impl<TExtr> ProcessesCollectionBuilder<TExtr> {
         debug_assert_eq!(self.extrinsics.len(), self.extrinsics_id_assign.len());
 
         ProcessesCollection {
-            pid_pool: IdPool::new(),
+            pid_pool: self.pid_pool,
             tid_pool: IdPool::new(),
             processes: HashMap::with_capacity(PROCESSES_MIN_CAPACITY),
             extrinsics: self.extrinsics,
             extrinsics_id_assign: self.extrinsics_id_assign,
         }
-    }
-}
-
-impl From<u64> for ThreadId {
-    fn from(id: u64) -> ThreadId {
-        ThreadId(id)
     }
 }
 

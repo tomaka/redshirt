@@ -13,10 +13,12 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-mod ipc;
-mod processes;
-mod tests;
-mod vm;
+pub use self::collection::{
+    NativeProgramsCollection, NativeProgramsCollectionEvent, NativeProgramsCollectionMessageIdWrite,
+};
+pub use self::traits::{
+    DummyMessageIdWrite, NativeProgramEvent, NativeProgramMessageIdWrite, NativeProgramRef,
+};
 
-// TODO: move definition?
-pub use self::ipc::{Core, CoreBuilder, CoreProcess, CoreRunOutcome, CoreThread};
+mod collection;
+mod traits;

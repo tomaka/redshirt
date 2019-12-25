@@ -38,11 +38,11 @@ fn basic_module() {
 
     match core.run() {
         CoreRunOutcome::ProgramFinished {
-            process,
+            pid,
             outcome: Ok(ret_val),
             ..
         } => {
-            assert_eq!(process, expected_pid);
+            assert_eq!(pid, expected_pid);
             assert_eq!(ret_val, Some(wasmi::RuntimeValue::I32(5)));
         }
         _ => panic!(),
@@ -66,11 +66,11 @@ fn trapping_module() {
 
     match core.run() {
         CoreRunOutcome::ProgramFinished {
-            process,
+            pid,
             outcome: Err(_),
             ..
         } => {
-            assert_eq!(process, expected_pid);
+            assert_eq!(pid, expected_pid);
         }
         _ => panic!(),
     }
@@ -119,22 +119,13 @@ fn module_wait_extrinsic() {
 
     match core.run() {
         CoreRunOutcome::ProgramFinished {
-            process,
+            pid,
             outcome: Ok(ret_val),
             ..
         } => {
-            assert_eq!(process, expected_pid);
+            assert_eq!(pid, expected_pid);
             assert_eq!(ret_val, Some(wasmi::RuntimeValue::I32(713)));
         }
         _ => panic!(),
     }
-}
-
-#[test]
-#[should_panic]
-fn duplicate_interface_handler() {
-    let interface: [u8; 32] = [4; 32];
-    Core::<()>::new()
-        .with_interface_handler(interface)
-        .with_interface_handler(interface);
 }

@@ -1,0 +1,5 @@
+[target.'wasm32-wasi']
+runner = "cargo run --manifest-path=../../kernel/cli/Cargo.toml -- "
+
+[target.'wasm32-unknown-unknown']
+runner = "cargo run --manifest-path=../../kernel/cli/Cargo.toml -- "

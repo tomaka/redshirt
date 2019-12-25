@@ -13,6 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use crate::{MessageId, Pid};
+
 use alloc::vec::Vec;
 use parity_scale_codec::{Decode, Encode};
 
@@ -116,7 +118,7 @@ extern "C" {
     pub(crate) fn cancel_message(message_id: *const u64) -> u32;
 }
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub enum Message {
     Interface(InterfaceMessage),
     Response(ResponseMessage),
@@ -130,14 +132,12 @@ pub struct InterfaceMessage {
     /// Interface the message concerns.
     pub interface: [u8; 32],
     /// Id of the message. Can be used for answering. `None` if no answer is expected.
-    pub message_id: Option<u64>,
+    pub message_id: Option<MessageId>,
     /// Id of the process that emitted the message. `None` if message was emitted by kernel.
     ///
     /// This should be used for security purposes, so that a process can't modify another process'
     /// resources.
-    // TODO: consider generating a dummy PID for the kernel so that interface handlers can't treat
-    // the kernel differently.
-    pub emitter_pid: Option<u64>,
+    pub emitter_pid: Pid,
     /// Index within the list to poll where this message was.
     pub index_in_list: u32,
     pub actual_data: Vec<u8>,
@@ -146,7 +146,7 @@ pub struct InterfaceMessage {
 #[derive(Debug, Clone, Encode, Decode, PartialEq, Eq)]
 pub struct ProcessDestroyedMessage {
     /// Identifier of the process that got destroyed.
-    pub pid: u64,
+    pub pid: Pid,
     /// Index within the list to poll where this message was.
     pub index_in_list: u32,
 }
@@ -157,10 +157,10 @@ pub enum InterfaceOrDestroyed {
     ProcessDestroyed(ProcessDestroyedMessage),
 }
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub struct ResponseMessage {
     /// Identifier of the message whose answer we are receiving.
-    pub message_id: u64,
+    pub message_id: MessageId,
 
     /// Index within the list to poll where this message was.
     pub index_in_list: u32,

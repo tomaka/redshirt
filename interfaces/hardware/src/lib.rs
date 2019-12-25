@@ -26,6 +26,7 @@ use alloc::{vec, vec::Vec};
 use futures::prelude::*;
 
 pub mod ffi;
+pub mod malloc;
 
 /// Builder for write-only hardware operations.
 pub struct HardwareWriteOperationsBuilder {

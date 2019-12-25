@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::ffi::Message;
+use crate::{ffi::Message, Decode, MessageId, Pid};
 
 use alloc::vec::Vec;
 use core::{
@@ -22,13 +22,12 @@ use core::{
     task::{Context, Poll},
 };
 use futures::prelude::*;
-use parity_scale_codec::DecodeAll;
 
 /// Waits until a response to the given message comes back.
 ///
 /// Returns the undecoded response.
-pub fn message_response_sync_raw(msg_id: u64) -> Vec<u8> {
-    match crate::block_on::next_message(&mut [msg_id], true).unwrap() {
+pub fn message_response_sync_raw(msg_id: MessageId) -> Vec<u8> {
+    match crate::block_on::next_message(&mut [msg_id.into()], true).unwrap() {
         Message::Response(m) => m.actual_data.unwrap(),
         _ => panic!(),
     }
@@ -37,8 +36,7 @@ pub fn message_response_sync_raw(msg_id: u64) -> Vec<u8> {
 /// Returns a future that is ready when a response to the given message comes back.
 ///
 /// The return value is the type the message decodes to.
-// TODO: this ties the messaging system to parity_scale_codec; is that a good thing?
-pub fn message_response<T: DecodeAll>(msg_id: u64) -> MessageResponseFuture<T> {
+pub fn message_response<T: Decode>(msg_id: MessageId) -> MessageResponseFuture<T> {
     MessageResponseFuture {
         finished: false,
         msg_id,
@@ -51,14 +49,14 @@ pub fn message_response<T: DecodeAll>(msg_id: u64) -> MessageResponseFuture<T> {
 /// Future that drives `message_response` to completion.
 #[must_use]
 pub struct MessageResponseFuture<T> {
-    msg_id: u64,
+    msg_id: MessageId,
     finished: bool,
     marker: PhantomData<T>,
 }
 
 impl<T> Future for MessageResponseFuture<T>
 where
-    T: DecodeAll,
+    T: Decode,
 {
     type Output = T;
 
@@ -66,7 +64,7 @@ where
         assert!(!self.finished);
         if let Some(message) = crate::block_on::peek_response(self.msg_id) {
             self.finished = true;
-            Poll::Ready(DecodeAll::decode_all(&message.actual_data.unwrap()).unwrap())
+            Poll::Ready(Decode::decode(message.actual_data.unwrap()).unwrap())
         } else {
             crate::block_on::register_message_waker(self.msg_id, cx.waker().clone());
             Poll::Pending
