@@ -70,7 +70,11 @@ trait AdapterAbstract {
         emitter_pid: Pid,
         message: Vec<u8>,
     ) -> Result<(), Vec<u8>>;
-    fn deliver_response(&self, message_id: MessageId, response: Vec<u8>) -> Result<(), Vec<u8>>;
+    fn deliver_response(
+        &self,
+        message_id: MessageId,
+        response: Result<Vec<u8>, ()>,
+    ) -> Result<(), Result<Vec<u8>, ()>>;
     fn process_destroyed(&self, pid: Pid);
 }
 
@@ -183,9 +187,9 @@ impl NativeProgramsCollection {
 
     /// Notify the appropriate [`NativeProgram`] of a response to a message that it has previously
     /// emitted.
-    pub fn message_response(&self, message_id: MessageId, mut response: Vec<u8>) {
+    pub fn message_response(&self, message_id: MessageId, mut response: Result<Vec<u8>, ()>) {
         for process in self.processes.values() {
-            let mut msg = mem::replace(&mut response, Vec::new());
+            let mut msg = mem::replace(&mut response, Ok(Vec::new()));
             match process.deliver_response(message_id, msg) {
                 Ok(_) => return,
                 Err(msg) => response = msg,
@@ -261,7 +265,11 @@ where
         }
     }
 
-    fn deliver_response(&self, message_id: MessageId, response: Vec<u8>) -> Result<(), Vec<u8>> {
+    fn deliver_response(
+        &self,
+        message_id: MessageId,
+        response: Result<Vec<u8>, ()>,
+    ) -> Result<(), Result<Vec<u8>, ()>> {
         let mut expected_responses = self.expected_responses.lock();
         if expected_responses.remove(&message_id) {
             self.inner.message_response(message_id, response);

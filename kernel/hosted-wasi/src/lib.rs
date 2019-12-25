@@ -37,7 +37,7 @@ use byteorder::{ByteOrder as _, LittleEndian};
 use core::convert::TryFrom as _;
 use hashbrown::HashMap;
 use parity_scale_codec::{DecodeAll, Encode as _};
-use redshirt_core::system::{System, SystemBuilder};
+use redshirt_core::system::{extrinsics_convert, System, SystemBuilder};
 use redshirt_syscalls_interface::{Pid, ThreadId};
 
 // TODO: lots of unwraps as `as` conversions in this module

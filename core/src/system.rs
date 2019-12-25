@@ -24,11 +24,13 @@ use hashbrown::{hash_map::Entry, HashMap, HashSet};
 use redshirt_syscalls_interface::{Decode, Encode, EncodedMessage, MessageId, Pid, ThreadId};
 use smallvec::SmallVec;
 
+pub mod extrinsics_convert;
+
 /// Main struct that handles a system, including the scheduler, program loader,
 /// inter-process communication, and so on.
 ///
 /// Natively handles the "interface" and "threads" interfaces.  TODO: indicate hashes
-pub struct System<TExtEx> {
+pub struct System<TExtEx, TExtConv> {
     /// Inner system with inter-process communications.
     core: Core<TExtEx>,
 
@@ -48,6 +50,9 @@ pub struct System<TExtEx> {
     /// Can communicate with the WASM programs that are within `core`.
     native_programs: native::NativeProgramsCollection,
 
+    /// Object that converts extrinsic calls into messages.
+    externals_converter: TExtConv,
+
     /// List of programs to load as soon as a loader interface handler is available.
     ///
     /// As soon as a handler for the "loader" interface is registered, we start loading the
@@ -65,12 +70,15 @@ pub struct System<TExtEx> {
 }
 
 /// Prototype for a [`System`].
-pub struct SystemBuilder<TExtEx> {
+pub struct SystemBuilder<TExtEx, TExtConv> {
     /// Builder for the inner core.
     core: CoreBuilder<TExtEx>,
 
     /// Native programs.
     native_programs: native::NativeProgramsCollection,
+
+    /// Object that converts extrinsic calls into messages.
+    externals_converter: TExtConv,
 
     /// "Virtual" Pid for handling messages on the `interface` interface.
     interface_interface_pid: Pid,
@@ -87,7 +95,7 @@ pub struct SystemBuilder<TExtEx> {
 
 /// Outcome of running the [`System`] once.
 #[derive(Debug)]
-pub enum SystemRunOutcome<TExtEx> {
+pub enum SystemRunOutcome {
     /// A program has ended, either successfully or after an error.
     ProgramFinished {
         /// Identifier of the process that has stopped.
@@ -97,40 +105,13 @@ pub enum SystemRunOutcome<TExtEx> {
         // TODO: change error type
         outcome: Result<(), wasmi::Error>,
     },
-
-    /// A thread has called an extrinsic that was registered using
-    /// [`SystemBuilder::with_extrinsic`].
-    ThreadWaitExtrinsic {
-        // TODO: return an object representing the thread
-        /// Process that called the extrinsic.
-        pid: Pid,
-        /// Thread that called the extrinsic.
-        thread_id: ThreadId,
-        /// Identifier of the extrinsic. Matches what was passed to
-        /// [`SystemBuilder::with_extrinsic`].
-        extrinsic: TExtEx,
-        /// Parameters passed to the extrinsic.
-        params: Vec<wasmi::RuntimeValue>,
-    },
 }
 
 // TODO: we require Clone because of stupid borrowing issues; remove
-impl<TExtEx: Clone> System<TExtEx> {
-    /// After [`SystemRunOutcome::ThreadWaitExtrinsic`] has been returned, call this method in
-    /// order to inject back the result of the extrinsic call.
-    // TODO: don't expose wasmi::RuntimeValue
-    pub fn resolve_extrinsic_call(
-        &mut self,
-        thread: ThreadId,
-        return_value: Option<wasmi::RuntimeValue>,
-    ) {
-        // TODO: can the user badly misuse that API?
-        self.core
-            .thread_by_id(thread)
-            .unwrap()
-            .resolve_extrinsic_call(return_value);
-    }
-
+impl<TExtEx: Clone, TExtConv> System<TExtEx, TExtConv>
+where
+    TExtConv: extrinsics_convert::ExtrinsicsConvert<ExtrinsicId = TExtEx>,
+{
     /// Start executing a program.
     pub fn execute(&mut self, program: &Module) -> Pid {
         self.core
@@ -145,7 +126,7 @@ impl<TExtEx: Clone> System<TExtEx> {
     /// >           produce events in case there's nothing to do. In other words, this function
     /// >           can be seen as a generator that returns only when something needs to be
     /// >           notified.
-    pub fn run<'b>(&'b mut self) -> impl Future<Output = SystemRunOutcome<TExtEx>> + 'b {
+    pub fn run<'b>(&'b mut self) -> impl Future<Output = SystemRunOutcome> + 'b {
         // TODO: We use a `poll_fn` because async/await don't work in no_std yet.
         future::poll_fn(move |cx| loop {
             if let Some(out) = self.run_once() {
@@ -194,7 +175,7 @@ impl<TExtEx: Clone> System<TExtEx> {
         })
     }
 
-    fn run_once(&mut self) -> Option<SystemRunOutcome<TExtEx>> {
+    fn run_once(&mut self) -> Option<SystemRunOutcome> {
         // TODO: remove loop?
         loop {
             match self.core.run() {
@@ -211,12 +192,13 @@ impl<TExtEx: Clone> System<TExtEx> {
                     ref params,
                 } => {
                     let pid = thread.pid();
-                    return Some(SystemRunOutcome::ThreadWaitExtrinsic {
-                        pid,
-                        thread_id: thread.tid(),
-                        extrinsic: extrinsic.clone(),
-                        params: params.clone(),
-                    });
+                    self.externals_converter
+                        .extrinsic_call(thread, extrinsic, params);
+                    /*
+                    self.core
+                        .thread_by_id(thread)
+                        .unwrap()
+                        .resolve_extrinsic_call(return_value);*/
                 }
                 CoreRunOutcome::ThreadWaitUnavailableInterface { .. } => {} // TODO: lazy-loading
 
@@ -231,7 +213,7 @@ impl<TExtEx: Clone> System<TExtEx> {
                         let module = Module::from_bytes(&result.unwrap()).unwrap();
                         self.core.execute(&module).unwrap();
                     } else {
-                        // TODO: self.native_programs.blabla
+                        self.native_programs.message_response(message_id, response);
                     }
                 }
 
@@ -336,41 +318,9 @@ impl<TExtEx: Clone> System<TExtEx> {
             }
         }
     }
-
-    /// Copies the given memory range of the given process into a `Vec<u8>`.
-    ///
-    /// Returns an error if the range is invalid.
-    pub fn read_memory(&mut self, pid: Pid, offset: u32, size: u32) -> Result<Vec<u8>, ()> {
-        self.core
-            .process_by_id(pid)
-            .ok_or(())?
-            .read_memory(offset, size)
-    }
-
-    pub fn write_memory(&mut self, pid: Pid, offset: u32, data: &[u8]) -> Result<(), ()> {
-        self.core
-            .process_by_id(pid)
-            .ok_or(())?
-            .write_memory(offset, data)
-    }
-
-    /// Emits a message for the handler of the given interface.
-    ///
-    /// The message doesn't expect any answer.
-    // TODO: better API
-    // TODO: refactor WASI and remove
-    pub fn emit_interface_message_no_answer<'b>(
-        &mut self,
-        interface: [u8; 32],
-        message: impl Encode<'b>,
-    ) {
-        // FIXME: proper PID; hacky
-        self.core
-            .emit_interface_message_no_answer(From::from(0), interface, message)
-    }
 }
 
-impl<TExtEx: Clone> SystemBuilder<TExtEx> {
+impl SystemBuilder<<extrinsics_convert::DummyExtrinsicsConvert as extrinsics_convert::ExtrinsicsConvert>::ExtrinsicId, extrinsics_convert::DummyExtrinsicsConvert> {
     // TODO: remove Clone if possible
     /// Starts a new builder.
     pub fn new() -> Self {
@@ -386,31 +336,15 @@ impl<TExtEx: Clone> SystemBuilder<TExtEx> {
             startup_processes: Vec::new(),
             main_programs: Vec::new(),
             native_programs: native::NativeProgramsCollection::new(),
+            externals_converter: extrinsics_convert::DummyExtrinsicsConvert::default(),
         }
     }
+}
 
-    /// Registers an extrinsic function as available.
-    ///
-    /// If a program calls this extrinsic, a [`SystemRunOutcome::ThreadWaitExtrinsic`] event will
-    /// be generated for the user to handle.
-    ///
-    /// # Panic
-    ///
-    /// Panics if the extrinsic has already been registered, or if the extrinsic conflicts with
-    /// one of the extrinsics natively handled by the [`System`].
-    pub fn with_extrinsic(
-        mut self,
-        interface: impl Into<Cow<'static, str>>,
-        f_name: impl Into<Cow<'static, str>>,
-        signature: Signature,
-        token: TExtEx,
-    ) -> Self {
-        self.core = self
-            .core
-            .with_extrinsic(interface, f_name, signature, token);
-        self
-    }
-
+impl<TExtEx: Clone, TExtConv> SystemBuilder<TExtEx, TExtConv>
+where
+    TExtConv: extrinsics_convert::ExtrinsicsConvert<ExtrinsicId = TExtEx>,
+{
     /// Registers native code that can communicate with the WASM programs.
     pub fn with_native_program<T>(mut self, program: T) -> Self
     where
@@ -446,7 +380,13 @@ impl<TExtEx: Clone> SystemBuilder<TExtEx> {
     }
 
     /// Builds the [`System`].
-    pub fn build(mut self) -> System<TExtEx> {
+    pub fn build(mut self) -> System<TExtEx, TExtConv> {
+        for (token, interface, f_name, signature) in self.externals_converter.extrinsics() {
+            self.core = self
+                .core
+                .with_extrinsic(interface, f_name, signature, token);
+        }
+
         let mut core = self.core.build();
 
         // We ask the core to redirect messages for the `interface` and `threads` interfaces
@@ -472,6 +412,7 @@ impl<TExtEx: Clone> SystemBuilder<TExtEx> {
         System {
             core,
             native_programs: self.native_programs,
+            externals_converter: self.externals_converter,
             futex_waits: Default::default(),
             loading_programs: Default::default(),
             main_programs: self.main_programs,
@@ -479,7 +420,7 @@ impl<TExtEx: Clone> SystemBuilder<TExtEx> {
     }
 }
 
-impl<TExtEx: Clone> Default for SystemBuilder<TExtEx> {
+impl Default for SystemBuilder<<extrinsics_convert::DummyExtrinsicsConvert as extrinsics_convert::ExtrinsicsConvert>::ExtrinsicId, extrinsics_convert::DummyExtrinsicsConvert> {
     // TODO: remove Clone if possible
     fn default() -> Self {
         SystemBuilder::new()
