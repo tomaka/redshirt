@@ -40,11 +40,7 @@ impl Default for TcpConfig {
 }
 
 impl Transport for TcpConfig {
-<<<<<<< HEAD
     type Output = redshirt_network_interface::TcpStream;
-=======
-    type Output = redshirt_tcp_interface::TcpStream;
->>>>>>> origin/master
     type Error = io::Error;
     type Listener = Pin<
         Box<dyn Stream<Item = Result<ListenerEvent<Self::ListenerUpgrade>, Self::Error>> + Send>,
@@ -61,11 +57,7 @@ impl Transport for TcpConfig {
 
         Ok(Box::pin(
             async move {
-<<<<<<< HEAD
                 let listener = redshirt_network_interface::TcpListener::bind(&socket_addr)
-=======
-                let listener = redshirt_tcp_interface::TcpListener::bind(&socket_addr)
->>>>>>> origin/master
                     .await
                     .map_err(|()| io::Error::from(io::ErrorKind::Other))?;
                 let local_addr =
@@ -111,11 +103,7 @@ impl Transport for TcpConfig {
 
         println!("Dialing {}", addr);
         Ok(Box::pin(async move {
-<<<<<<< HEAD
             redshirt_network_interface::TcpStream::connect(&socket_addr)
-=======
-            redshirt_tcp_interface::TcpStream::connect(&socket_addr)
->>>>>>> origin/master
                 .await
                 .map_err(|()| io::Error::from(io::ErrorKind::Other))
         }))

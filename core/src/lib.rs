@@ -23,11 +23,13 @@ extern crate alloc;
 
 pub use self::module::Module;
 pub use self::system::{System, SystemBuilder, SystemRunOutcome};
+pub use redshirt_syscalls_interface::{Decode, Encode, MessageId, Pid, ThreadId};
 pub use wasmi::RuntimeValue; // TODO: wrap around instead?
 
 mod id_pool;
 
 pub mod module;
+pub mod native;
 pub mod scheduler;
 pub mod signature;
 pub mod system;

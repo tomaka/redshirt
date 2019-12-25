@@ -12,12 +12,12 @@ async-std = "1.3"
 futures = "0.3.1"
 redshirt-core = { path = "../../core" }
 redshirt-network-interface = { path = "../../interfaces/network" }
+redshirt-stdout-hosted = { path = "../hosted-stdout" }
 redshirt-stdout-interface = { path = "../../interfaces/stdout" }
 redshirt-syscalls-interface = { path = "../../interfaces/syscalls" }
 redshirt-tap-hosted = { path = "../hosted-tap" }
 redshirt-time-hosted = { path = "../hosted-time" }
 redshirt-time-interface = { path = "../../interfaces/time" }
-redshirt-wasi-hosted = { path = "../hosted-wasi" }
 parity-scale-codec = "1.0.5"
 structopt = "0.3.5"
 wasi = "0.9.0+wasi-snapshot-preview1"

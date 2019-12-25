@@ -118,7 +118,7 @@ extern "C" {
     pub(crate) fn cancel_message(message_id: *const u64) -> u32;
 }
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub enum Message {
     Interface(InterfaceMessage),
     Response(ResponseMessage),
@@ -137,9 +137,7 @@ pub struct InterfaceMessage {
     ///
     /// This should be used for security purposes, so that a process can't modify another process'
     /// resources.
-    // TODO: consider generating a dummy PID for the kernel so that interface handlers can't treat
-    // the kernel differently.
-    pub emitter_pid: Option<Pid>,
+    pub emitter_pid: Pid,
     /// Index within the list to poll where this message was.
     pub index_in_list: u32,
     pub actual_data: Vec<u8>,
@@ -159,7 +157,7 @@ pub enum InterfaceOrDestroyed {
     ProcessDestroyed(ProcessDestroyedMessage),
 }
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub struct ResponseMessage {
     /// Identifier of the message whose answer we are receiving.
     pub message_id: MessageId,
