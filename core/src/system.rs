@@ -18,21 +18,19 @@ use crate::native::{self, NativeProgramMessageIdWrite as _};
 use crate::scheduler::{Core, CoreBuilder, CoreRunOutcome};
 use crate::signature::Signature;
 use alloc::{borrow::Cow, vec, vec::Vec};
-use core::task::{Context, Poll};
+use core::{convert::Infallible, task::{Context, Poll}};
 use futures::prelude::*;
 use hashbrown::{hash_map::Entry, HashMap, HashSet};
 use redshirt_syscalls_interface::{Decode, Encode, EncodedMessage, MessageId, Pid, ThreadId};
 use smallvec::SmallVec;
 
-pub mod extrinsics_convert;
-
 /// Main struct that handles a system, including the scheduler, program loader,
 /// inter-process communication, and so on.
 ///
 /// Natively handles the "interface" and "threads" interfaces.  TODO: indicate hashes
-pub struct System<TExtEx, TExtConv> {
+pub struct System {
     /// Inner system with inter-process communications.
-    core: Core<TExtEx>,
+    core: Core<Infallible>,
 
     /// List of active futexes. The keys of this hashmap are process IDs and memory addresses, and
     /// the values of this hashmap are a list of "wait" messages to answer once the corresponding
@@ -49,9 +47,6 @@ pub struct System<TExtEx, TExtConv> {
     /// Collection of programs. Each is assigned a `Pid` that is reserved within `core`.
     /// Can communicate with the WASM programs that are within `core`.
     native_programs: native::NativeProgramsCollection,
-
-    /// Object that converts extrinsic calls into messages.
-    externals_converter: TExtConv,
 
     /// List of programs to load as soon as a loader interface handler is available.
     ///
@@ -70,15 +65,12 @@ pub struct System<TExtEx, TExtConv> {
 }
 
 /// Prototype for a [`System`].
-pub struct SystemBuilder<TExtEx, TExtConv> {
+pub struct SystemBuilder {
     /// Builder for the inner core.
-    core: CoreBuilder<TExtEx>,
+    core: CoreBuilder<Infallible>,
 
     /// Native programs.
     native_programs: native::NativeProgramsCollection,
-
-    /// Object that converts extrinsic calls into messages.
-    externals_converter: TExtConv,
 
     /// "Virtual" Pid for handling messages on the `interface` interface.
     interface_interface_pid: Pid,
@@ -107,11 +99,7 @@ pub enum SystemRunOutcome {
     },
 }
 
-// TODO: we require Clone because of stupid borrowing issues; remove
-impl<TExtEx: Clone, TExtConv> System<TExtEx, TExtConv>
-where
-    TExtConv: extrinsics_convert::ExtrinsicsConvert<ExtrinsicId = TExtEx>,
-{
+impl System {
     /// Start executing a program.
     pub fn execute(&mut self, program: &Module) -> Pid {
         self.core
@@ -191,14 +179,7 @@ where
                     ref extrinsic,
                     ref params,
                 } => {
-                    let pid = thread.pid();
-                    self.externals_converter
-                        .extrinsic_call(thread, extrinsic, params);
-                    /*
-                    self.core
-                        .thread_by_id(thread)
-                        .unwrap()
-                        .resolve_extrinsic_call(return_value);*/
+                    unreachable!()
                 }
                 CoreRunOutcome::ThreadWaitUnavailableInterface { .. } => {} // TODO: lazy-loading
 
@@ -320,7 +301,7 @@ where
     }
 }
 
-impl SystemBuilder<<extrinsics_convert::DummyExtrinsicsConvert as extrinsics_convert::ExtrinsicsConvert>::ExtrinsicId, extrinsics_convert::DummyExtrinsicsConvert> {
+impl SystemBuilder {
     // TODO: remove Clone if possible
     /// Starts a new builder.
     pub fn new() -> Self {
@@ -336,15 +317,9 @@ impl SystemBuilder<<extrinsics_convert::DummyExtrinsicsConvert as extrinsics_con
             startup_processes: Vec::new(),
             main_programs: Vec::new(),
             native_programs: native::NativeProgramsCollection::new(),
-            externals_converter: extrinsics_convert::DummyExtrinsicsConvert::default(),
         }
     }
-}
 
-impl<TExtEx: Clone, TExtConv> SystemBuilder<TExtEx, TExtConv>
-where
-    TExtConv: extrinsics_convert::ExtrinsicsConvert<ExtrinsicId = TExtEx>,
-{
     /// Registers native code that can communicate with the WASM programs.
     pub fn with_native_program<T>(mut self, program: T) -> Self
     where
@@ -380,13 +355,7 @@ where
     }
 
     /// Builds the [`System`].
-    pub fn build(mut self) -> System<TExtEx, TExtConv> {
-        for (token, interface, f_name, signature) in self.externals_converter.extrinsics() {
-            self.core = self
-                .core
-                .with_extrinsic(interface, f_name, signature, token);
-        }
-
+    pub fn build(mut self) -> System {
         let mut core = self.core.build();
 
         // We ask the core to redirect messages for the `interface` and `threads` interfaces
@@ -412,7 +381,6 @@ where
         System {
             core,
             native_programs: self.native_programs,
-            externals_converter: self.externals_converter,
             futex_waits: Default::default(),
             loading_programs: Default::default(),
             main_programs: self.main_programs,
@@ -420,7 +388,7 @@ where
     }
 }
 
-impl Default for SystemBuilder<<extrinsics_convert::DummyExtrinsicsConvert as extrinsics_convert::ExtrinsicsConvert>::ExtrinsicId, extrinsics_convert::DummyExtrinsicsConvert> {
+impl Default for SystemBuilder {
     // TODO: remove Clone if possible
     fn default() -> Self {
         SystemBuilder::new()

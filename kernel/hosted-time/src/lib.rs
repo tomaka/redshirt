@@ -168,7 +168,7 @@ impl<'a> NativeProgramRef<'a> for &'a TimerHandler {
 
     fn process_destroyed(self, _: Pid) {}
 
-    fn message_response(self, _: MessageId, _: Vec<u8>) {
+    fn message_response(self, _: MessageId, _: Result<Vec<u8>, ()>) {
         unreachable!()
     }
 }
