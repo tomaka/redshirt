@@ -20,7 +20,7 @@ fn main() {
     let status = Command::new("cargo")
         .arg("rustc")
         .arg("--release")
-        .args(&["--target", "wasm32-wasi"])
+        .args(&["--target", "wasm32-unknown-unknown"])
         .args(&["--package", "network-manager"])
         .args(&["--bin", "network-manager"])
         .args(&[

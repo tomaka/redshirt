@@ -46,10 +46,18 @@ async fn async_main() {
         }
     };
 
+    let net_manager = redshirt_core::module::Module::from_bytes(
+        &include_bytes!(
+            "../../../modules/target/wasm32-unknown-unknown/release/network-manager.wasm"
+        )[..],
+    )
+    .unwrap();
+
     let mut system = redshirt_core::system::SystemBuilder::new()
         .with_native_program(redshirt_tap_hosted::TapNetworkInterface::new().unwrap())
         .with_native_program(redshirt_time_hosted::TimerHandler::new())
         .with_native_program(redshirt_stdout_hosted::StdoutHandler::new())
+        .with_startup_process(net_manager)
         .build();
 
     let cli_pid = if let Some(cli_requested_process) = cli_requested_process {
