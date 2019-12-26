@@ -857,6 +857,7 @@ dependencies = [
  "rand 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand_chacha 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand_core 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rand_hc 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "redshirt-interface-interface 0.1.0",
  "redshirt-loader-interface 0.1.0",
  "redshirt-syscalls-interface 0.1.0",
