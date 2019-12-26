@@ -22,6 +22,8 @@ use core::{
 };
 use futures::prelude::*;
 
+// TODO: replace `InterfaceOrDestroyed` with a different enum where `actual_data` is more strongly typed
+
 /// Returns a future that is ready when a new message arrives on an interface that we have
 /// registered.
 // TODO: move to interface interface?
@@ -31,10 +33,11 @@ pub fn next_interface_message() -> InterfaceMessageFuture {
 
 /// Answers the given message.
 // TODO: move to interface interface?
-pub fn emit_answer<'a>(message_id: MessageId, msg: impl Encode<'a>) -> Result<(), EmitAnswerErr> {
+pub fn emit_answer(message_id: MessageId, msg: impl Encode) -> Result<(), EmitAnswerErr> {
     unsafe {
         let buf = msg.encode();
-        let ret = crate::ffi::emit_answer(&u64::from(message_id), buf.as_ptr(), buf.len() as u32);
+        let ret =
+            crate::ffi::emit_answer(&u64::from(message_id), buf.0.as_ptr(), buf.0.len() as u32);
         if ret == 0 {
             Ok(())
         } else {
