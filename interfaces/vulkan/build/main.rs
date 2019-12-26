@@ -190,7 +190,8 @@ fn write_commands_wrappers(mut out: impl Write, registry: &parse::VkRegistry) {
         .unwrap();
         writeln!(out, "    println!(\"got response: {{:?}}\", response);").unwrap();
 
-        writeln!(out, "    let response_read = |mut msg_buf: &[u8]| -> Result<{}, parity_scale_codec::Error> {{", print_ty(&command.ret_ty)).unwrap();
+        writeln!(out, "    let response_read = |msg_buf: redshirt_syscalls_interface::EncodedMessage| -> Result<{}, parity_scale_codec::Error> {{", print_ty(&command.ret_ty)).unwrap();
+        writeln!(out, "        let mut msg_buf = &msg_buf.0[..];").unwrap();
         let ret_value_expr = write_deserialize(&command.ret_ty, registry, &mut |_, _| panic!());
         writeln!(out, "        let ret = {};", ret_value_expr).unwrap();
         for (param_ty, param_name) in &command.params {
@@ -212,7 +213,7 @@ fn write_commands_wrappers(mut out: impl Write, registry: &parse::VkRegistry) {
         writeln!(out, "            assert!(msg_buf.is_empty(), \"Remaining after response: {{:?}}\", msg_buf.len());").unwrap(); // TODO: return Error
         writeln!(out, "        Ok(ret)").unwrap();
         writeln!(out, "    }};").unwrap();
-        writeln!(out, "    response_read(&response).unwrap()").unwrap();
+        writeln!(out, "    response_read(response).unwrap()").unwrap();
 
         writeln!(out, "}}").unwrap();
         writeln!(out, "").unwrap();
