@@ -33,7 +33,7 @@ use smallvec::SmallVec;
 /// Natively handles the "interface" and "threads" interfaces.  TODO: indicate hashes
 pub struct System {
     /// Inner system with inter-process communications.
-    core: Core<Infallible>,
+    core: Core,
 
     /// List of active futexes. The keys of this hashmap are process IDs and memory addresses, and
     /// the values of this hashmap are a list of "wait" messages to answer once the corresponding
@@ -70,7 +70,7 @@ pub struct System {
 /// Prototype for a [`System`].
 pub struct SystemBuilder {
     /// Builder for the inner core.
-    core: CoreBuilder<Infallible>,
+    core: CoreBuilder,
 
     /// Native programs.
     native_programs: native::NativeProgramsCollection<'static>,
@@ -169,11 +169,6 @@ impl System {
                         outcome: outcome.map(|_| ()).map_err(|err| err.into()),
                     });
                 }
-                CoreRunOutcome::ThreadWaitExtrinsic {
-                    ref mut thread,
-                    ref extrinsic,
-                    ref params,
-                } => unreachable!(),
                 CoreRunOutcome::ThreadWaitUnavailableInterface { .. } => {} // TODO: lazy-loading
 
                 CoreRunOutcome::MessageResponse {

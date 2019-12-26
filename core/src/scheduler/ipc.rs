@@ -21,19 +21,19 @@ use crate::signature::Signature;
 
 use alloc::{borrow::Cow, collections::VecDeque, vec, vec::Vec};
 use byteorder::{ByteOrder as _, LittleEndian};
-use core::{convert::TryFrom, iter, marker::PhantomData, mem};
+use core::{convert::TryFrom, iter, mem};
 use crossbeam_queue::SegQueue;
 use hashbrown::{hash_map::Entry, HashMap, HashSet};
 use redshirt_syscalls_interface::{Encode, EncodedMessage, MessageId, Pid, ThreadId};
 use smallvec::SmallVec;
 
 /// Handles scheduling processes and inter-process communications.
-pub struct Core<T> {
+pub struct Core {
     /// Queue of events to return in priority when `run` is called.
-    pending_events: SegQueue<CoreRunOutcomeInner<T>>,
+    pending_events: SegQueue<CoreRunOutcomeInner>,
 
     /// List of running processes.
-    processes: processes::ProcessesCollection<Extrinsic<T>, Process, Thread>,
+    processes: processes::ProcessesCollection<Extrinsic, Process, Thread>,
 
     /// List of `Pid`s that have been reserved during the construction.
     ///
@@ -68,29 +68,26 @@ enum InterfaceState {
 }
 
 /// Possible function available to processes.
-/// The [`External`](Extrinsic::External) variant corresponds to functions that the user of the
-/// [`Core`] registers. The rest are handled by the [`Core`] itself.
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum Extrinsic<T> {
+enum Extrinsic {
     NextMessage,
     EmitMessage,
     EmitMessageError,
     EmitAnswer,
     CancelMessage,
-    External(T),
 }
 
 /// Prototype for a `Core` under construction.
-pub struct CoreBuilder<T> {
+pub struct CoreBuilder {
     /// See the corresponding field in `Core`.
     reserved_pids: HashSet<Pid>,
     /// Builder for the [`processes`][Core::processes] field in `Core`.
-    inner_builder: processes::ProcessesCollectionBuilder<Extrinsic<T>>,
+    inner_builder: processes::ProcessesCollectionBuilder<Extrinsic>,
 }
 
 /// Outcome of calling [`run`](Core::run).
 // TODO: #[derive(Debug)]
-pub enum CoreRunOutcome<'a, T> {
+pub enum CoreRunOutcome<'a> {
     /// A program has stopped, either because the main function has stopped or a problem has
     /// occurred.
     ProgramFinished {
@@ -114,28 +111,12 @@ pub enum CoreRunOutcome<'a, T> {
         outcome: Result<Option<wasmi::RuntimeValue>, wasmi::Trap>,
     },
 
-    /// A thread has called a function registered using [`CoreBuilder::with_extrinsic`].
-    ///
-    /// The thread is now sleeping and must be waken up using
-    /// [`CoreThread::resolve_extrinsic_call`].
-    ThreadWaitExtrinsic {
-        /// Thread that has made the call.
-        thread: CoreThread<'a, T>,
-
-        /// Identifier for the extrinsic that was passed to [`CoreBuilder::with_extrinsic`].
-        extrinsic: T,
-
-        /// Parameters passed to the extrinsic call. Guaranteed to match the signature that was
-        /// passed to [`CoreBuilder::with_extrinsic`].
-        params: Vec<wasmi::RuntimeValue>,
-    },
-
     /// Thread has tried to emit a message on an interface that isn't registered. The thread is
     /// now in sleep mode. You can either wake it up by calling [`set_interface_handler`], or
     /// resume the thread with an "interface not available error" by calling . // TODO
     ThreadWaitUnavailableInterface {
         /// Thread that emitted the message.
-        thread: CoreThread<'a, T>,
+        thread: CoreThread<'a>,
 
         /// Interface that the thread is trying to access.
         interface: [u8; 32],
@@ -162,18 +143,13 @@ pub enum CoreRunOutcome<'a, T> {
 /// Because of lifetime issues, this is the same as `CoreRunOutcome` but that holds `Pid`s instead
 /// of `CoreProcess`es.
 // TODO: remove this enum and solve borrowing issues
-enum CoreRunOutcomeInner<T> {
+enum CoreRunOutcomeInner {
     ProgramFinished {
         pid: Pid,
         unhandled_messages: Vec<MessageId>,
         cancelled_messages: Vec<MessageId>,
         unregistered_interfaces: Vec<[u8; 32]>,
         outcome: Result<Option<wasmi::RuntimeValue>, wasmi::Trap>,
-    },
-    ThreadWaitExtrinsic {
-        thread: ThreadId,
-        extrinsic: T,
-        params: Vec<wasmi::RuntimeValue>,
     },
     ThreadWaitUnavailableInterface {
         thread: ThreadId,
@@ -265,25 +241,21 @@ struct MessageWait {
 }
 
 /// Access to a process within the core.
-pub struct CoreProcess<'a, T> {
+pub struct CoreProcess<'a> {
     /// Access to the process within the inner collection.
     process: processes::ProcessesCollectionProc<'a, Process, Thread>,
-    /// Marker to keep `T` in place.
-    marker: PhantomData<T>,
 }
 
 /// Access to a thread within the core.
-pub struct CoreThread<'a, T> {
+pub struct CoreThread<'a> {
     /// Access to the thread within the inner collection.
     thread: processes::ProcessesCollectionThread<'a, Process, Thread>,
-    /// Marker to keep `T` in place.
-    marker: PhantomData<T>,
 }
 
-impl<T: Clone> Core<T> {
+impl Core {
     // TODO: figure out borrowing issues and remove that Clone
     /// Initialies a new `Core`.
-    pub fn new() -> CoreBuilder<T> {
+    pub fn new() -> CoreBuilder {
         CoreBuilder {
             reserved_pids: HashSet::new(),
             inner_builder: processes::ProcessesCollectionBuilder::default()
@@ -322,7 +294,7 @@ impl<T: Clone> Core<T> {
 
     /// Run the core once.
     // TODO: make multithreaded
-    pub fn run(&mut self) -> CoreRunOutcome<T> {
+    pub fn run(&mut self) -> CoreRunOutcome {
         loop {
             break match self.run_inner() {
                 CoreRunOutcomeInner::Idle => CoreRunOutcome::Idle,
@@ -340,23 +312,10 @@ impl<T: Clone> Core<T> {
                     unregistered_interfaces,
                     outcome,
                 },
-                CoreRunOutcomeInner::ThreadWaitExtrinsic {
-                    thread,
-                    extrinsic,
-                    params,
-                } => CoreRunOutcome::ThreadWaitExtrinsic {
-                    thread: CoreThread {
-                        thread: self.processes.thread_by_id(thread).unwrap(),
-                        marker: PhantomData,
-                    },
-                    extrinsic,
-                    params,
-                },
                 CoreRunOutcomeInner::ThreadWaitUnavailableInterface { thread, interface } => {
                     CoreRunOutcome::ThreadWaitUnavailableInterface {
                         thread: CoreThread {
                             thread: self.processes.thread_by_id(thread).unwrap(),
-                            marker: PhantomData,
                         },
                         interface,
                     }
@@ -386,7 +345,7 @@ impl<T: Clone> Core<T> {
     /// Because of lifetime issues, we return an enum that holds `Pid`s instead of `CoreProcess`es.
     /// Then `run` does the conversion in order to have a good API.
     // TODO: make multithreaded
-    fn run_inner(&mut self) -> CoreRunOutcomeInner<T> {
+    fn run_inner(&mut self) -> CoreRunOutcomeInner {
         if let Ok(ev) = self.pending_events.pop() {
             return ev;
         }
@@ -460,20 +419,6 @@ impl<T: Clone> Core<T> {
                 debug_assert_eq!(user_data, Thread::ReadyToRun);
                 // TODO: report?
                 CoreRunOutcomeInner::LoopAgain
-            }
-
-            processes::RunOneOutcome::Interrupted {
-                ref mut thread,
-                id: Extrinsic::External(ext),
-                ref params,
-            } => {
-                debug_assert_eq!(*thread.user_data(), Thread::ReadyToRun);
-                *thread.user_data() = Thread::ExtrinsicWait;
-                CoreRunOutcomeInner::ThreadWaitExtrinsic {
-                    thread: thread.tid(),
-                    extrinsic: ext.clone(),
-                    params: params.clone(), // TODO: there's some weird borrowck error in the match block
-                }
             }
 
             processes::RunOneOutcome::Interrupted {
@@ -666,21 +611,15 @@ impl<T: Clone> Core<T> {
     }
 
     /// Returns an object granting access to a process, if it exists.
-    pub fn process_by_id(&mut self, pid: Pid) -> Option<CoreProcess<T>> {
+    pub fn process_by_id(&mut self, pid: Pid) -> Option<CoreProcess> {
         let p = self.processes.process_by_id(pid)?;
-        Some(CoreProcess {
-            process: p,
-            marker: PhantomData,
-        })
+        Some(CoreProcess { process: p })
     }
 
     /// Returns an object granting access to a thread, if it exists.
-    pub fn thread_by_id(&mut self, thread: ThreadId) -> Option<CoreThread<T>> {
+    pub fn thread_by_id(&mut self, thread: ThreadId) -> Option<CoreThread> {
         let thread = self.processes.thread_by_id(thread)?;
-        Some(CoreThread {
-            thread,
-            marker: PhantomData,
-        })
+        Some(CoreThread { thread })
     }
 
     // TODO: better API
@@ -897,7 +836,7 @@ impl<T: Clone> Core<T> {
         &mut self,
         message_id: MessageId,
         response: Result<EncodedMessage, ()>,
-    ) -> Option<CoreRunOutcomeInner<T>> {
+    ) -> Option<CoreRunOutcomeInner> {
         if let Some(emitter_pid) = self.messages_to_answer.remove(&message_id) {
             if let Some(mut process) = self.processes.process_by_id(emitter_pid) {
                 let actual_message = redshirt_syscalls_interface::ffi::Message::Response(
@@ -931,7 +870,7 @@ impl<T: Clone> Core<T> {
     /// Start executing the module passed as parameter.
     ///
     /// Each import of the [`Module`](crate::module::Module) is resolved.
-    pub fn execute(&mut self, module: &Module) -> Result<CoreProcess<T>, vm::NewErr> {
+    pub fn execute(&mut self, module: &Module) -> Result<CoreProcess, vm::NewErr> {
         let proc_metadata = Process {
             messages_queue: VecDeque::new(),
             registered_interfaces: SmallVec::new(),
@@ -944,14 +883,11 @@ impl<T: Clone> Core<T> {
             .processes
             .execute(module, proc_metadata, Thread::ReadyToRun)?;
 
-        Ok(CoreProcess {
-            process,
-            marker: PhantomData,
-        })
+        Ok(CoreProcess { process })
     }
 }
 
-impl<'a, T> CoreProcess<'a, T> {
+impl<'a> CoreProcess<'a> {
     /// Returns the [`Pid`] of the process.
     pub fn pid(&self) -> Pid {
         self.process.pid()
@@ -964,14 +900,11 @@ impl<'a, T> CoreProcess<'a, T> {
         self,
         fn_index: u32,
         params: Vec<wasmi::RuntimeValue>,
-    ) -> Result<CoreThread<'a, T>, vm::StartErr> {
+    ) -> Result<CoreThread<'a>, vm::StartErr> {
         let thread = self
             .process
             .start_thread(fn_index, params, Thread::ReadyToRun)?;
-        Ok(CoreThread {
-            thread,
-            marker: PhantomData,
-        })
+        Ok(CoreThread { thread })
     }
 
     /// Kills the process immediately.
@@ -980,7 +913,7 @@ impl<'a, T> CoreProcess<'a, T> {
     }
 }
 
-impl<'a, T> CoreThread<'a, T> {
+impl<'a> CoreThread<'a> {
     /// Returns the [`ThreadId`] of the thread.
     pub fn tid(&mut self) -> ThreadId {
         self.thread.tid()
@@ -992,25 +925,7 @@ impl<'a, T> CoreThread<'a, T> {
     }
 }
 
-impl<T> CoreBuilder<T> {
-    /// Registers a function that processes can call.
-    // TODO: more docs
-    pub fn with_extrinsic(
-        mut self,
-        interface: impl Into<Cow<'static, str>>,
-        f_name: impl Into<Cow<'static, str>>,
-        signature: Signature,
-        token: impl Into<T>,
-    ) -> Self {
-        self.inner_builder = self.inner_builder.with_extrinsic(
-            interface,
-            f_name,
-            signature,
-            Extrinsic::External(token.into()),
-        );
-        self
-    }
-
+impl CoreBuilder {
     /// Allocates a `Pid` that will not be used by any process.
     ///
     /// > **Note**: As of the writing of this comment, this feature is only ever used to allocate
@@ -1025,7 +940,7 @@ impl<T> CoreBuilder<T> {
     }
 
     /// Turns the builder into a [`Core`].
-    pub fn build(mut self) -> Core<T> {
+    pub fn build(mut self) -> Core {
         self.reserved_pids.shrink_to_fit();
 
         Core {
