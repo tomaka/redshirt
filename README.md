@@ -9,6 +9,27 @@ building it.
 
 # How to test
 
+## Pre-compiled binary
+
+GitHub Actions automatically build a bootable ISO from the master branch.
+
+GitHub Actions doesn't provide yet an easy way to access build artifacts, so follow these instructions:
+
+- Go here: https://github.com/tomaka/redshirt/actions?query=branch%3Amaster+workflow%3A%22Continuous+integration%22
+- Click on the first "Continuous integration" item of the list.
+- Click on "Artifacts" on the right of the screen.
+- Click on "bootable-x86_64". This downloads an archive containing the ISO `redshirt.iso`.
+
+You can then try it using QEMU:
+
+```
+qemu-system-x86_64 -drive file=redshirt.iso -m 1024
+```
+
+Alternatively, you can write `redshirt.iso` on a USB stick and boot an actual machine with it.
+
+## Compiling from source
+
 There are two binaries available in this repository:
 
 - The "hosted kernel" is a regular binary that executes WASM programs and uses the host operating
@@ -46,15 +67,15 @@ RUST_TARGET_PATH=`pwd` cargo +nightly build -Z build-std=core,alloc --target x86
 ```
 
 Unfortunately, the `-kernel` CLI option of QEMU doesn't support the multiboot2 standard (which we use). See https://github.com/tomaka/os/issues/75.
-You can however put the kernel on a CD-ROM, and boot from it:
+You can however put the kernel on a USB disk or CD-ROM, and boot from it:
 
 ```
 mkdir -p iso/boot/grub
 cp .github/workflows/grub.cfg iso/boot/grub
 cp target/x86_64-multiboot2/debug/redshirt-standalone-kernel iso/boot/kernel
 # Note: grub-mkrescue is sometimes called grub2-mkrescue
-grub-mkrescue -o cdrom.iso iso
-qemu-system-x86_64 -cdrom cdrom.iso -m 1024
+grub-mkrescue -o redshirt.iso iso
+qemu-system-x86_64 -drive file=redshirt.iso -m 1024
 ```
 
 # Repository structure
