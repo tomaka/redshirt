@@ -22,6 +22,7 @@ use crate::signature::Signature;
 use alloc::{borrow::Cow, collections::VecDeque, vec, vec::Vec};
 use byteorder::{ByteOrder as _, LittleEndian};
 use core::{convert::TryFrom, iter, marker::PhantomData, mem};
+use crossbeam_queue::SegQueue;
 use hashbrown::{hash_map::Entry, HashMap, HashSet};
 use redshirt_syscalls_interface::{Encode, MessageId, Pid, ThreadId};
 use smallvec::SmallVec;
@@ -29,7 +30,7 @@ use smallvec::SmallVec;
 /// Handles scheduling processes and inter-process communications.
 pub struct Core<T> {
     /// Queue of events to return in priority when `run` is called.
-    pending_events: VecDeque<CoreRunOutcomeInner<T>>,
+    pending_events: SegQueue<CoreRunOutcomeInner<T>>,
 
     /// List of running processes.
     processes: processes::ProcessesCollection<Extrinsic<T>, Process, Thread>,
@@ -389,7 +390,7 @@ impl<T: Clone> Core<T> {
     /// Then `run` does the conversion in order to have a good API.
     // TODO: make multithreaded
     fn run_inner(&mut self) -> CoreRunOutcomeInner<T> {
-        if let Some(ev) = self.pending_events.pop_front() {
+        if let Ok(ev) = self.pending_events.pop() {
             return ev;
         }
 
@@ -766,7 +767,7 @@ impl<T: Clone> Core<T> {
                         .push_back(message);
                 // TODO: try_resume_message_wait(interface_handler_proc);
                 } else {
-                    self.pending_events.push_back(
+                    self.pending_events.push(
                         CoreRunOutcomeInner::ReservedPidInterfaceMessage {
                             pid: emitter_pid,
                             message_id,
@@ -797,44 +798,8 @@ impl<T: Clone> Core<T> {
         message: impl Encode<'a>,
     ) {
         assert!(self.reserved_pids.contains(&emitter_pid));
-
-        let pid =
-            match self
-                .interfaces
-                .entry(interface)
-                .or_insert_with(|| InterfaceState::Requested {
-                    threads: SmallVec::new(),
-                    other: Vec::new(),
-                }) {
-                InterfaceState::Process(pid) => *pid,
-                InterfaceState::Requested { other, .. } => {
-                    other.push((emitter_pid, None, message.encode().to_vec()));
-                    return;
-                }
-            };
-
-        if let Some(mut process) = self.processes.process_by_id(pid) {
-            let message = redshirt_syscalls_interface::ffi::Message::Interface(
-                redshirt_syscalls_interface::ffi::InterfaceMessage {
-                    interface,
-                    emitter_pid,
-                    message_id: None,
-                    index_in_list: 0,
-                    actual_data: message.encode().to_vec(),
-                },
-            );
-
-            process.user_data().messages_queue.push_back(message);
-            try_resume_message_wait(process);
-        } else {
-            self.pending_events
-                .push_back(CoreRunOutcomeInner::ReservedPidInterfaceMessage {
-                    pid: emitter_pid,
-                    message_id: None,
-                    interface,
-                    message: message.encode().to_vec(),
-                });
-        }
+        let _out = self.emit_interface_message_inner(emitter_pid, interface, message, false);
+        debug_assert!(_out.is_none());
     }
 
     /// Emits a message for the handler of the given interface.
@@ -849,16 +814,30 @@ impl<T: Clone> Core<T> {
         message: impl Encode<'a>,
     ) -> MessageId {
         assert!(self.reserved_pids.contains(&emitter_pid));
+        self.emit_interface_message_inner(emitter_pid, interface, message, true).unwrap()
+    }
 
-        let (message_id, messages_to_answer_entry) = loop {
-            let id: MessageId = self.message_id_pool.assign();
-            if u64::from(id) == 0 || u64::from(id) == 1 {
-                continue;
+    fn emit_interface_message_inner<'a>(
+        &mut self,
+        emitter_pid: Pid,
+        interface: [u8; 32],
+        message: impl Encode<'a>,
+        needs_answer: bool,
+    ) -> Option<MessageId> {
+
+        let (message_id, messages_to_answer_entry) = if needs_answer {
+            loop {
+                let id: MessageId = self.message_id_pool.assign();
+                if u64::from(id) == 0 || u64::from(id) == 1 {
+                    continue;
+                }
+                match self.messages_to_answer.entry(id) {
+                    Entry::Vacant(e) => break (Some(id), Some(e)),
+                    Entry::Occupied(_) => continue,
+                };
             }
-            match self.messages_to_answer.entry(id) {
-                Entry::Vacant(e) => break (id, e),
-                Entry::Occupied(_) => continue,
-            };
+        } else {
+            (None, None)
         };
 
         let pid =
@@ -871,25 +850,39 @@ impl<T: Clone> Core<T> {
                 }) {
                 InterfaceState::Process(pid) => *pid,
                 InterfaceState::Requested { other, .. } => {
-                    other.push((emitter_pid, Some(message_id), message.encode().to_vec()));
+                    other.push((emitter_pid, message_id, message.encode().to_vec()));
                     return message_id;
                 }
             };
 
-        let message = redshirt_syscalls_interface::ffi::Message::Interface(
-            redshirt_syscalls_interface::ffi::InterfaceMessage {
-                interface,
-                message_id: Some(message_id),
-                emitter_pid,
-                index_in_list: 0,
-                actual_data: message.encode().to_vec(),
-            },
-        );
+        if let Some(mut process) = self.processes.process_by_id(pid) {
+            let message = redshirt_syscalls_interface::ffi::Message::Interface(
+                redshirt_syscalls_interface::ffi::InterfaceMessage {
+                    interface,
+                    message_id,
+                    emitter_pid,
+                    index_in_list: 0,
+                    actual_data: message.encode().to_vec(),
+                },
+            );
 
-        let mut process = self.processes.process_by_id(pid).unwrap();
-        process.user_data().messages_queue.push_back(message);
-        try_resume_message_wait(process);
-        messages_to_answer_entry.insert(emitter_pid);
+            process.user_data().messages_queue.push_back(message);
+            try_resume_message_wait(process);
+
+        } else {
+            assert!(self.reserved_pids.contains(&emitter_pid));
+            self.pending_events
+                .push(CoreRunOutcomeInner::ReservedPidInterfaceMessage {
+                    pid: emitter_pid,
+                    message_id: None,
+                    interface,
+                    message: message.encode().to_vec(),
+                });
+        };
+
+        if let Some(messages_to_answer_entry) = messages_to_answer_entry {
+            messages_to_answer_entry.insert(emitter_pid);
+        }
         message_id
     }
 
@@ -986,17 +979,6 @@ impl<'a, T> CoreProcess<'a, T> {
         })
     }
 
-    /// Copies the given memory range of the given process into a `Vec<u8>`.
-    ///
-    /// Returns an error if the range is invalid.
-    pub fn read_memory(&mut self, offset: u32, size: u32) -> Result<Vec<u8>, ()> {
-        self.process.read_memory(offset, size)
-    }
-
-    pub fn write_memory(&mut self, offset: u32, data: &[u8]) -> Result<(), ()> {
-        self.process.write_memory(offset, data)
-    }
-
     /// Kills the process immediately.
     pub fn abort(self) {
         self.process.abort(); // TODO: clean up
@@ -1013,18 +995,6 @@ impl<'a, T> CoreThread<'a, T> {
     pub fn pid(&self) -> Pid {
         self.thread.pid()
     }
-
-    /// After `ThreadWaitExtrinsic` has been returned, you have to call this method in order to
-    /// inject back the result of the extrinsic call.
-    // TODO: don't expose wasmi::RuntimeValue
-    pub fn resolve_extrinsic_call(&mut self, return_value: Option<wasmi::RuntimeValue>) {
-        assert_eq!(*self.thread.user_data(), Thread::ExtrinsicWait);
-        *self.thread.user_data() = Thread::ReadyToRun;
-        // TODO: check if the value type is correct
-        self.thread.resume(return_value);
-    }
-
-    // TODO: resolve interface wait with error
 }
 
 impl<T> CoreBuilder<T> {
@@ -1064,7 +1034,7 @@ impl<T> CoreBuilder<T> {
         self.reserved_pids.shrink_to_fit();
 
         Core {
-            pending_events: VecDeque::new(),
+            pending_events: SegQueue::new(),
             processes: self.inner_builder.build(),
             interfaces: self.interfaces,
             reserved_pids: self.reserved_pids,
