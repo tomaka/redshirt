@@ -27,7 +27,7 @@ use hashbrown::HashMap;
 use redshirt_core::native::{
     DummyMessageIdWrite, NativeProgramEvent, NativeProgramMessageIdWrite, NativeProgramRef,
 };
-use redshirt_core::{Decode as _, EncodedMessage, Encode as _, MessageId, Pid};
+use redshirt_core::{Decode as _, Encode as _, EncodedMessage, MessageId, Pid};
 use redshirt_hardware_interface::ffi::{
     HardwareAccessResponse, HardwareMessage, Operation, INTERFACE,
 };

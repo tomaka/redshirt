@@ -24,7 +24,7 @@ use byteorder::{ByteOrder as _, LittleEndian};
 use core::{convert::TryFrom, iter, marker::PhantomData, mem};
 use crossbeam_queue::SegQueue;
 use hashbrown::{hash_map::Entry, HashMap, HashSet};
-use redshirt_syscalls_interface::{EncodedMessage, Encode, MessageId, Pid, ThreadId};
+use redshirt_syscalls_interface::{Encode, EncodedMessage, MessageId, Pid, ThreadId};
 use smallvec::SmallVec;
 
 /// Handles scheduling processes and inter-process communications.
@@ -764,14 +764,13 @@ impl<T: Clone> Core<T> {
                         .push_back(message);
                 // TODO: try_resume_message_wait(interface_handler_proc);
                 } else {
-                    self.pending_events.push(
-                        CoreRunOutcomeInner::ReservedPidInterfaceMessage {
+                    self.pending_events
+                        .push(CoreRunOutcomeInner::ReservedPidInterfaceMessage {
                             pid: emitter_pid,
                             message_id,
                             interface,
                             message,
-                        },
-                    );
+                        });
                 }
             } else {
                 // State inconsistency in the core.
@@ -811,7 +810,8 @@ impl<T: Clone> Core<T> {
         message: impl Encode,
     ) -> MessageId {
         assert!(self.reserved_pids.contains(&emitter_pid));
-        self.emit_interface_message_inner(emitter_pid, interface, message, true).unwrap()
+        self.emit_interface_message_inner(emitter_pid, interface, message, true)
+            .unwrap()
     }
 
     fn emit_interface_message_inner<'a>(
@@ -821,7 +821,6 @@ impl<T: Clone> Core<T> {
         message: impl Encode,
         needs_answer: bool,
     ) -> Option<MessageId> {
-
         let (message_id, messages_to_answer_entry) = if needs_answer {
             loop {
                 let id: MessageId = self.message_id_pool.assign();
@@ -865,7 +864,6 @@ impl<T: Clone> Core<T> {
 
             process.user_data().messages_queue.push_back(message);
             try_resume_message_wait(process);
-
         } else {
             assert!(self.reserved_pids.contains(&emitter_pid));
             self.pending_events

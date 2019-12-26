@@ -187,7 +187,11 @@ impl NativeProgramsCollection {
 
     /// Notify the appropriate [`NativeProgram`] of a response to a message that it has previously
     /// emitted.
-    pub fn message_response(&self, message_id: MessageId, mut response: Result<EncodedMessage, ()>) {
+    pub fn message_response(
+        &self,
+        message_id: MessageId,
+        mut response: Result<EncodedMessage, ()>,
+    ) {
         for process in self.processes.values() {
             let mut msg = mem::replace(&mut response, Ok(EncodedMessage(Vec::new())));
             match process.deliver_response(message_id, msg) {

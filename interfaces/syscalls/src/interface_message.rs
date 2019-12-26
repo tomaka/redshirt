@@ -36,7 +36,8 @@ pub fn next_interface_message() -> InterfaceMessageFuture {
 pub fn emit_answer(message_id: MessageId, msg: impl Encode) -> Result<(), EmitAnswerErr> {
     unsafe {
         let buf = msg.encode();
-        let ret = crate::ffi::emit_answer(&u64::from(message_id), buf.0.as_ptr(), buf.0.len() as u32);
+        let ret =
+            crate::ffi::emit_answer(&u64::from(message_id), buf.0.as_ptr(), buf.0.len() as u32);
         if ret == 0 {
             Ok(())
         } else {

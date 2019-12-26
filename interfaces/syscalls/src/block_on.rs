@@ -34,7 +34,10 @@
 //!   Repeat until the `Future` has ended.
 //!
 
-use crate::{Decode, EncodedMessage, InterfaceMessage, InterfaceOrDestroyed, Message, MessageId, ResponseMessage};
+use crate::{
+    Decode, EncodedMessage, InterfaceMessage, InterfaceOrDestroyed, Message, MessageId,
+    ResponseMessage,
+};
 use alloc::{collections::VecDeque, sync::Arc, vec::Vec};
 use core::{
     sync::atomic::{AtomicBool, Ordering},

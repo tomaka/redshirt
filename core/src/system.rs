@@ -139,28 +139,20 @@ impl System {
                     message_id_write,
                 } => {
                     if let Some(message_id_write) = message_id_write {
-                        let message_id = self.core.emit_interface_message_answer(
-                            pid,
-                            interface,
-                            message,
-                        );
+                        let message_id = self
+                            .core
+                            .emit_interface_message_answer(pid, interface, message);
                         message_id_write.acknowledge(message_id);
                     } else {
-                        self.core.emit_interface_message_no_answer(
-                            pid,
-                            interface,
-                            message,
-                        );
+                        self.core
+                            .emit_interface_message_no_answer(pid, interface, message);
                     }
                 }
                 native::NativeProgramsCollectionEvent::CancelMessage { message_id } => {
                     unimplemented!()
                 }
                 native::NativeProgramsCollectionEvent::Answer { message_id, answer } => {
-                    self.core.answer_message(
-                        message_id,
-                        answer,
-                    );
+                    self.core.answer_message(message_id, answer);
                 }
             }
         })
@@ -221,7 +213,8 @@ impl System {
                                 while wake.nwake > 0 && !list.is_empty() {
                                     wake.nwake -= 1;
                                     let message_id = list.remove(0);
-                                    self.core.answer_message(message_id, Ok(EncodedMessage(Vec::new())));
+                                    self.core
+                                        .answer_message(message_id, Ok(EncodedMessage(Vec::new())));
                                 }
 
                                 if list.is_empty() {
