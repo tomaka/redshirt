@@ -34,7 +34,7 @@
 //!   Repeat until the `Future` has ended.
 //!
 
-use crate::{Decode, InterfaceMessage, InterfaceOrDestroyed, Message, MessageId, ResponseMessage};
+use crate::{Decode, EncodedMessage, InterfaceMessage, InterfaceOrDestroyed, Message, MessageId, ResponseMessage};
 use alloc::{collections::VecDeque, sync::Arc, vec::Vec};
 use core::{
     sync::atomic::{AtomicBool, Ordering},
@@ -231,7 +231,7 @@ pub(crate) fn next_message(to_poll: &mut [u64], block: bool) -> Option<Message> 
                 continue;
             }
             out.set_len(ret);
-            return Some(Decode::decode(out).unwrap());
+            return Some(Decode::decode(EncodedMessage(out)).unwrap());
         }
     }
 }

@@ -142,14 +142,14 @@ impl System {
                         let message_id = self.core.emit_interface_message_answer(
                             pid,
                             interface,
-                            EncodedMessage(message),
+                            message,
                         );
                         message_id_write.acknowledge(message_id);
                     } else {
                         self.core.emit_interface_message_no_answer(
                             pid,
                             interface,
-                            EncodedMessage(message),
+                            message,
                         );
                     }
                 }
@@ -159,7 +159,7 @@ impl System {
                 native::NativeProgramsCollectionEvent::Answer { message_id, answer } => {
                     self.core.answer_message(
                         message_id,
-                        answer.as_ref().map(|d| &d[..]).map_err(|&()| ()),
+                        answer,
                     );
                 }
             }
@@ -221,7 +221,7 @@ impl System {
                                 while wake.nwake > 0 && !list.is_empty() {
                                     wake.nwake -= 1;
                                     let message_id = list.remove(0);
-                                    self.core.answer_message(message_id, Ok(&[]));
+                                    self.core.answer_message(message_id, Ok(EncodedMessage(Vec::new())));
                                 }
 
                                 if list.is_empty() {
@@ -267,7 +267,7 @@ impl System {
                                     result,
                                 };
                             if let Some(message_id) = message_id {
-                                self.core.answer_message(message_id, Ok(&response.encode()));
+                                self.core.answer_message(message_id, Ok(response.encode()));
                             }
 
                             if interface_hash == redshirt_loader_interface::ffi::INTERFACE {

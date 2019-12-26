@@ -25,7 +25,6 @@
 use alloc::format;
 use core::sync::atomic::{AtomicBool, Ordering};
 use futures::prelude::*;
-use parity_scale_codec::DecodeAll;
 
 /// Main struct of this crate. Runs everything.
 pub struct Kernel {

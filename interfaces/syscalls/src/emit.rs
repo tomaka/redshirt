@@ -40,11 +40,11 @@ use futures::prelude::*;
 ///
 pub unsafe fn emit_message<'a>(
     interface_hash: &[u8; 32],
-    msg: impl Encode<'a>,
+    msg: impl Encode,
     needs_answer: bool,
 ) -> Result<Option<MessageId>, EmitErr> {
     let encoded = msg.encode();
-    emit_message_raw(interface_hash, &encoded, needs_answer).map(|r| r.map(MessageId::from))
+    emit_message_raw(interface_hash, &encoded.0, needs_answer).map(|r| r.map(MessageId::from))
 }
 
 /// Emits a message destined to the handler of the given interface.
@@ -61,7 +61,7 @@ pub unsafe fn emit_message<'a>(
 ///
 pub unsafe fn emit_message_without_response<'a>(
     interface_hash: &[u8; 32],
-    msg: impl Encode<'a>,
+    msg: impl Encode,
 ) -> Result<(), EmitErr> {
     emit_message(interface_hash, msg, false)?;
     Ok(())
@@ -126,7 +126,7 @@ pub unsafe fn emit_message_raw(
 ///
 pub unsafe fn emit_message_with_response<'a, T: Decode>(
     interface_hash: [u8; 32],
-    msg: impl Encode<'a>,
+    msg: impl Encode,
 ) -> impl Future<Output = Result<T, EmitErr>> {
     let msg_id = match emit_message(&interface_hash, msg, true) {
         Ok(m) => m.unwrap(),

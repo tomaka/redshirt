@@ -24,7 +24,7 @@ use byteorder::{ByteOrder as _, LittleEndian};
 use core::{convert::TryFrom, iter, marker::PhantomData, mem};
 use crossbeam_queue::SegQueue;
 use hashbrown::{hash_map::Entry, HashMap, HashSet};
-use redshirt_syscalls_interface::{Encode, MessageId, Pid, ThreadId};
+use redshirt_syscalls_interface::{EncodedMessage, Encode, MessageId, Pid, ThreadId};
 use smallvec::SmallVec;
 
 /// Handles scheduling processes and inter-process communications.
@@ -63,7 +63,7 @@ enum InterfaceState {
         /// the [`Thread::InterfaceNotAvailableWait`] state.
         threads: SmallVec<[ThreadId; 4]>,
         /// Other messages waiting to be delivered to this interface.
-        other: Vec<(Pid, Option<MessageId>, Vec<u8>)>,
+        other: Vec<(Pid, Option<MessageId>, EncodedMessage)>,
     },
 }
 
@@ -148,13 +148,13 @@ pub enum CoreRunOutcome<'a, T> {
         pid: Pid,
         message_id: Option<MessageId>,
         interface: [u8; 32],
-        message: Vec<u8>,
+        message: EncodedMessage,
     },
 
     /// Response to a message emitted using [`Core::emit_interface_message_answer`].
     MessageResponse {
         message_id: MessageId,
-        response: Result<Vec<u8>, ()>,
+        response: Result<EncodedMessage, ()>,
     },
 
     /// Nothing to do. No thread is ready to run.
@@ -186,11 +186,11 @@ enum CoreRunOutcomeInner<T> {
         pid: Pid,
         message_id: Option<MessageId>,
         interface: [u8; 32],
-        message: Vec<u8>,
+        message: EncodedMessage,
     },
     MessageResponse {
         message_id: MessageId,
-        response: Result<Vec<u8>, ()>,
+        response: Result<EncodedMessage, ()>,
     },
     LoopAgain,
     Idle,
@@ -241,7 +241,7 @@ enum Thread {
         /// Identifier of the message if it expects an answer.
         message_id: Option<MessageId>,
         /// Message itself. Needs to be delivered to the handler once it is registered.
-        message: Vec<u8>,
+        message: EncodedMessage,
     },
 
     /// The thread is sleeping and waiting for an external extrinsic.
@@ -508,7 +508,7 @@ impl<T: Clone> Core<T> {
                 let message = {
                     let addr = params[1].try_into::<i32>().unwrap() as u32;
                     let sz = params[2].try_into::<i32>().unwrap() as u32;
-                    thread.read_memory(addr, sz).unwrap()
+                    EncodedMessage(thread.read_memory(addr, sz).unwrap())
                 };
                 let needs_answer = params[3].try_into::<i32>().unwrap() != 0;
                 let allow_delay = params[4].try_into::<i32>().unwrap() != 0;
@@ -550,7 +550,7 @@ impl<T: Clone> Core<T> {
                                     index_in_list: 0,
                                     message_id,
                                     emitter_pid: emitter_pid.into(),
-                                    actual_data: message,
+                                    actual_data: message.0,
                                 },
                             );
 
@@ -623,11 +623,11 @@ impl<T: Clone> Core<T> {
                 let message = {
                     let addr = params[1].try_into::<i32>().unwrap() as u32;
                     let sz = params[2].try_into::<i32>().unwrap() as u32;
-                    thread.read_memory(addr, sz).unwrap()
+                    EncodedMessage(thread.read_memory(addr, sz).unwrap())
                 };
                 let pid = thread.pid();
                 // TODO: we don't resume the thread that called the extrinsic
-                self.answer_message_inner(msg_id, Ok(&message))
+                self.answer_message_inner(msg_id, Ok(message))
                     .unwrap_or(CoreRunOutcomeInner::LoopAgain)
             }
 
@@ -723,7 +723,7 @@ impl<T: Clone> Core<T> {
                     index_in_list: 0,
                     message_id,
                     emitter_pid,
-                    actual_data: message_data,
+                    actual_data: message_data.0,
                 },
             );
 
@@ -757,7 +757,7 @@ impl<T: Clone> Core<T> {
                             index_in_list: 0,
                             message_id,
                             emitter_pid,
-                            actual_data: message,
+                            actual_data: message.0,
                         },
                     );
 
@@ -795,7 +795,7 @@ impl<T: Clone> Core<T> {
         &mut self,
         emitter_pid: Pid,
         interface: [u8; 32],
-        message: impl Encode<'a>,
+        message: impl Encode,
     ) {
         assert!(self.reserved_pids.contains(&emitter_pid));
         let _out = self.emit_interface_message_inner(emitter_pid, interface, message, false);
@@ -811,7 +811,7 @@ impl<T: Clone> Core<T> {
         &mut self,
         emitter_pid: Pid,
         interface: [u8; 32],
-        message: impl Encode<'a>,
+        message: impl Encode,
     ) -> MessageId {
         assert!(self.reserved_pids.contains(&emitter_pid));
         self.emit_interface_message_inner(emitter_pid, interface, message, true).unwrap()
@@ -821,7 +821,7 @@ impl<T: Clone> Core<T> {
         &mut self,
         emitter_pid: Pid,
         interface: [u8; 32],
-        message: impl Encode<'a>,
+        message: impl Encode,
         needs_answer: bool,
     ) -> Option<MessageId> {
 
@@ -850,7 +850,7 @@ impl<T: Clone> Core<T> {
                 }) {
                 InterfaceState::Process(pid) => *pid,
                 InterfaceState::Requested { other, .. } => {
-                    other.push((emitter_pid, message_id, message.encode().to_vec()));
+                    other.push((emitter_pid, message_id, message.encode()));
                     return message_id;
                 }
             };
@@ -862,7 +862,7 @@ impl<T: Clone> Core<T> {
                     message_id,
                     emitter_pid,
                     index_in_list: 0,
-                    actual_data: message.encode().to_vec(),
+                    actual_data: message.encode().0.to_vec(),
                 },
             );
 
@@ -876,7 +876,7 @@ impl<T: Clone> Core<T> {
                     pid: emitter_pid,
                     message_id: None,
                     interface,
-                    message: message.encode().to_vec(),
+                    message: message.encode(),
                 });
         };
 
@@ -892,7 +892,7 @@ impl<T: Clone> Core<T> {
     /// [`emit_interface_message_no_answer`]. Only messages generated by processes can be answered
     /// through this method.
     // TODO: better API
-    pub fn answer_message(&mut self, message_id: MessageId, response: Result<&[u8], ()>) {
+    pub fn answer_message(&mut self, message_id: MessageId, response: Result<EncodedMessage, ()>) {
         let ret = self.answer_message_inner(message_id, response);
         assert!(ret.is_none());
     }
@@ -901,19 +901,19 @@ impl<T: Clone> Core<T> {
     fn answer_message_inner(
         &mut self,
         message_id: MessageId,
-        response: Result<&[u8], ()>,
+        response: Result<EncodedMessage, ()>,
     ) -> Option<CoreRunOutcomeInner<T>> {
-        let actual_message = redshirt_syscalls_interface::ffi::Message::Response(
-            redshirt_syscalls_interface::ffi::ResponseMessage {
-                message_id,
-                // We a dummy value here and fill it up later when actually delivering the message.
-                index_in_list: 0,
-                actual_data: response.map(|r| r.to_vec()),
-            },
-        );
-
         if let Some(emitter_pid) = self.messages_to_answer.remove(&message_id) {
             if let Some(mut process) = self.processes.process_by_id(emitter_pid) {
+                let actual_message = redshirt_syscalls_interface::ffi::Message::Response(
+                    redshirt_syscalls_interface::ffi::ResponseMessage {
+                        message_id,
+                        // We a dummy value here and fill it up later when actually delivering the message.
+                        index_in_list: 0,
+                        actual_data: response.map(|r| r.0.to_vec()),
+                    },
+                );
+
                 process.user_data().messages_queue.push_back(actual_message);
                 process
                     .user_data()
@@ -924,7 +924,7 @@ impl<T: Clone> Core<T> {
             } else {
                 Some(CoreRunOutcomeInner::MessageResponse {
                     message_id,
-                    response: response.map(|data| data.to_vec()),
+                    response,
                 })
             }
         } else {
@@ -1173,10 +1173,10 @@ fn try_resume_message_wait_thread(
         .encode();
 
     // TODO: don't use as
-    if msg_wait.out_size as usize >= msg_bytes.len() {
+    if msg_wait.out_size as usize >= msg_bytes.0.len() {
         // Write the message in the process's memory.
         thread
-            .write_memory(msg_wait.out_pointer, &msg_bytes)
+            .write_memory(msg_wait.out_pointer, &msg_bytes.0)
             .unwrap();
         // Zero the corresponding entry in the messages to wait upon.
         thread
@@ -1190,5 +1190,5 @@ fn try_resume_message_wait_thread(
     }
 
     *thread.user_data() = Thread::ReadyToRun;
-    thread.resume(Some(wasmi::RuntimeValue::I32(msg_bytes.len() as i32))); // TODO: don't use as
+    thread.resume(Some(wasmi::RuntimeValue::I32(msg_bytes.0.len() as i32))); // TODO: don't use as
 }

@@ -20,7 +20,7 @@ use core::{mem, pin::Pin, task::Context, task::Poll};
 use futures::prelude::*;
 use hashbrown::{hash_map::Entry, HashMap, HashSet};
 use redshirt_interface_interface::ffi::InterfaceMessage;
-use redshirt_syscalls_interface::{Decode as _, MessageId, Pid};
+use redshirt_syscalls_interface::{Decode as _, EncodedMessage, MessageId, Pid};
 use spin::Mutex;
 
 /// Collection of objects that implement the [`NativeProgram`] trait.
@@ -35,14 +35,14 @@ pub enum NativeProgramsCollectionEvent<'a> {
     Emit {
         interface: [u8; 32],
         pid: Pid,
-        message: Vec<u8>,
+        message: EncodedMessage,
         message_id_write: Option<NativeProgramsCollectionMessageIdWrite<'a>>,
     },
     /// Request to cancel a previously-emitted message.
     CancelMessage { message_id: MessageId },
     Answer {
         message_id: MessageId,
-        answer: Result<Vec<u8>, ()>,
+        answer: Result<EncodedMessage, ()>,
     },
 }
 
@@ -68,13 +68,13 @@ trait AdapterAbstract {
         interface: [u8; 32],
         message_id: Option<MessageId>,
         emitter_pid: Pid,
-        message: Vec<u8>,
-    ) -> Result<(), Vec<u8>>;
+        message: EncodedMessage,
+    ) -> Result<(), EncodedMessage>;
     fn deliver_response(
         &self,
         message_id: MessageId,
-        response: Result<Vec<u8>, ()>,
-    ) -> Result<(), Result<Vec<u8>, ()>>;
+        response: Result<EncodedMessage, ()>,
+    ) -> Result<(), Result<EncodedMessage, ()>>;
     fn process_destroyed(&self, pid: Pid);
 }
 
@@ -165,10 +165,10 @@ impl NativeProgramsCollection {
         interface: [u8; 32],
         message_id: Option<MessageId>,
         emitter_pid: Pid,
-        mut message: Vec<u8>,
+        mut message: EncodedMessage,
     ) {
         for process in self.processes.values() {
-            let mut msg = mem::replace(&mut message, Vec::new());
+            let mut msg = mem::replace(&mut message, EncodedMessage(Vec::new()));
             match process.deliver_interface_message(interface, message_id, emitter_pid, msg) {
                 Ok(_) => return,
                 Err(msg) => message = msg,
@@ -187,9 +187,9 @@ impl NativeProgramsCollection {
 
     /// Notify the appropriate [`NativeProgram`] of a response to a message that it has previously
     /// emitted.
-    pub fn message_response(&self, message_id: MessageId, mut response: Result<Vec<u8>, ()>) {
+    pub fn message_response(&self, message_id: MessageId, mut response: Result<EncodedMessage, ()>) {
         for process in self.processes.values() {
-            let mut msg = mem::replace(&mut response, Ok(Vec::new()));
+            let mut msg = mem::replace(&mut response, Ok(EncodedMessage(Vec::new())));
             match process.deliver_response(message_id, msg) {
                 Ok(_) => return,
                 Err(msg) => response = msg,
@@ -253,8 +253,8 @@ where
         interface: [u8; 32],
         message_id: Option<MessageId>,
         emitter_pid: Pid,
-        message: Vec<u8>,
-    ) -> Result<(), Vec<u8>> {
+        message: EncodedMessage,
+    ) -> Result<(), EncodedMessage> {
         let registered_interfaces = self.registered_interfaces.lock();
         if registered_interfaces.contains(&interface) {
             self.inner
@@ -268,8 +268,8 @@ where
     fn deliver_response(
         &self,
         message_id: MessageId,
-        response: Result<Vec<u8>, ()>,
-    ) -> Result<(), Result<Vec<u8>, ()>> {
+        response: Result<EncodedMessage, ()>,
+    ) -> Result<(), Result<EncodedMessage, ()>> {
         let mut expected_responses = self.expected_responses.lock();
         if expected_responses.remove(&message_id) {
             self.inner.message_response(message_id, response);
