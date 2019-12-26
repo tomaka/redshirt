@@ -307,3 +307,14 @@ impl<'col> NativeProgramMessageIdWrite for NativeProgramsCollectionMessageIdWrit
 }
 
 // TODO: impl<'col> NativeProgram<'col> for NativeProgramsCollection<'col>
+
+#[cfg(test)]
+mod tests {
+    use super::NativeProgramsCollection;
+
+    #[test]
+    fn is_send() {
+        fn req_send<T: Send>() {}
+        req_send::<NativeProgramsCollection>();
+    }
+}
