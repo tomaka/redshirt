@@ -111,7 +111,10 @@ impl<'ext> NativeProgramsCollection<'ext> {
             expected_responses: Mutex::new(HashSet::new()),
         });
 
-        assert!(!self.processes.iter().any(|(existing_pid, _)| *existing_pid == pid));
+        assert!(!self
+            .processes
+            .iter()
+            .any(|(existing_pid, _)| *existing_pid == pid));
         self.processes.push((pid, adapter));
 
         // We assume that `push` is only ever called at initialization.
