@@ -83,8 +83,6 @@ enum Extrinsic<T> {
 /// Prototype for a `Core` under construction.
 pub struct CoreBuilder<T> {
     /// See the corresponding field in `Core`.
-    interfaces: HashMap<[u8; 32], InterfaceState>,
-    /// See the corresponding field in `Core`.
     reserved_pids: HashSet<Pid>,
     /// Builder for the [`processes`][Core::processes] field in `Core`.
     inner_builder: processes::ProcessesCollectionBuilder<Extrinsic<T>>,
@@ -287,7 +285,6 @@ impl<T: Clone> Core<T> {
     /// Initialies a new `Core`.
     pub fn new() -> CoreBuilder<T> {
         CoreBuilder {
-            interfaces: Default::default(),
             reserved_pids: HashSet::new(),
             inner_builder: processes::ProcessesCollectionBuilder::default()
                 .with_extrinsic(
@@ -1036,7 +1033,7 @@ impl<T> CoreBuilder<T> {
         Core {
             pending_events: SegQueue::new(),
             processes: self.inner_builder.build(),
-            interfaces: self.interfaces,
+            interfaces: Default::default(),
             reserved_pids: self.reserved_pids,
             message_id_pool: IdPool::new(),
             messages_to_answer: HashMap::default(),
