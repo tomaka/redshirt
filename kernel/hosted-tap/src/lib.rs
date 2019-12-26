@@ -90,6 +90,8 @@ impl TapNetworkInterface {
                             Some(p) => p,
                         };
 
+                        println!("sending packet");
+
                         if interface.send(&packet).is_err() {
                             // Error on the tap interface. Killing this thread will close the
                             // channel and thus inform the `TapNetworkInterface` that something
@@ -115,6 +117,8 @@ impl TapNetworkInterface {
                             break;
                         }
                     };
+
+                    println!("rx packet");
 
                     if block_on(recv_tx.send(buffer)).is_err() {
                         // The `TapNetworkInterface` has been dropped.
@@ -147,10 +151,13 @@ impl<'a> NativeProgramRef<'a> for &'a TapNetworkInterface {
                     Some(id) => id,
                     None => {
                         let id: u64 = rand::random();
+                        let mut mac_address: [u8; 6] = rand::random(); // TODO: ?
+                        mac_address[0] &= !0x1; // Ensure the MAC is not multicast.
+                        println!("mac = {:?}", mac_address);
                         *registered_id = Some(id);
                         let message = ffi::TcpMessage::RegisterInterface {
                             id,
-                            mac_address: rand::random(), // TODO: ?
+                            mac_address,
                         };
                         return NativeProgramEvent::Emit {
                             interface: ffi::INTERFACE,

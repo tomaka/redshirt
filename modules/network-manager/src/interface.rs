@@ -258,7 +258,10 @@ impl NetInterfaceState {
                 self.next_event_delay = None;
             }
 
-            self.ethernet.poll(&mut self.sockets, now().await).unwrap();
+            redshirt_stdout_interface::stdout(format!("before now\n"));
+            let n = now().await;
+            redshirt_stdout_interface::stdout(format!("after now\n"));
+            self.ethernet.poll(&mut self.sockets, n).unwrap();
             self.next_event_delay = match self.ethernet.poll_delay(&mut self.sockets, now().await) {
                 Some(d) => Some(redshirt_time_interface::Delay::new(d.into())),
                 None => continue,

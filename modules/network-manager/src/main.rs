@@ -25,6 +25,10 @@ use std::{
 };
 
 fn main() {
+    std::panic::set_hook(Box::new(|info| {
+        redshirt_stdout_interface::stdout(format!("Panic: {}\n", info));
+    }));
+
     redshirt_syscalls_interface::block_on(async_main())
 }
 
@@ -46,6 +50,7 @@ async fn async_main() {
                 unimplemented!()
             }
             future::Either::Right((NetworkManagerEvent::EthernetCableOut(id, buffer), _)) => {
+                redshirt_stdout_interface::stdout(format!("data out: {:?}\n", buffer));
                 /*let rp = ffi::LoadResponse { result: Ok(data) };
                 redshirt_syscalls_interface::emit_answer(user_data, &rp);*/
                 continue;
@@ -55,6 +60,7 @@ async fn async_main() {
 
         assert_eq!(msg.interface, ffi::INTERFACE);
         let msg_data = ffi::TcpMessage::decode_all(&msg.actual_data).unwrap();
+        redshirt_stdout_interface::stdout(format!("message: {:?}\n", msg_data));
 
         match msg_data {
             ffi::TcpMessage::Open(open_msg) => {

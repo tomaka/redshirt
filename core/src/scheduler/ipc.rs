@@ -661,7 +661,7 @@ impl<T: Clone> Core<T> {
                 mut thread,
                 id: Extrinsic::CancelMessage,
                 params,
-            } => unimplemented!(),
+            } => CoreRunOutcomeInner::LoopAgain,// unimplemented!(),
 
             processes::RunOneOutcome::Idle => CoreRunOutcomeInner::Idle,
         }
@@ -910,17 +910,17 @@ impl<T: Clone> Core<T> {
         message_id: MessageId,
         response: Result<&[u8], ()>,
     ) -> Option<CoreRunOutcomeInner<T>> {
-        let actual_message = redshirt_syscalls_interface::ffi::Message::Response(
-            redshirt_syscalls_interface::ffi::ResponseMessage {
-                message_id,
-                // We a dummy value here and fill it up later when actually delivering the message.
-                index_in_list: 0,
-                actual_data: response.map(|r| r.to_vec()),
-            },
-        );
-
         if let Some(emitter_pid) = self.messages_to_answer.remove(&message_id) {
             if let Some(mut process) = self.processes.process_by_id(emitter_pid) {
+                let actual_message = redshirt_syscalls_interface::ffi::Message::Response(
+                    redshirt_syscalls_interface::ffi::ResponseMessage {
+                        message_id,
+                        // We a dummy value here and fill it up later when actually delivering the message.
+                        index_in_list: 0,
+                        actual_data: response.map(|r| r.to_vec()),
+                    },
+                );
+
                 process.user_data().messages_queue.push_back(actual_message);
                 process
                     .user_data()

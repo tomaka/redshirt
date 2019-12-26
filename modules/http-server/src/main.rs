@@ -18,6 +18,8 @@ use std::{pin::Pin, task::Context, task::Poll};
 
 fn main() {
     redshirt_syscalls_interface::block_on(async move {
+        redshirt_time_interface::Delay::new(std::time::Duration::from_secs(2)).await;
+
         let listener =
             redshirt_network_interface::TcpListener::bind(&"0.0.0.0:8000".parse().unwrap())
                 .await

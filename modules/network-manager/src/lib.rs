@@ -15,7 +15,7 @@
 
 use futures::prelude::*;
 use hashbrown::{hash_map::Entry, HashMap};
-use std::{fmt, hash::Hash, net::SocketAddr};
+use std::{fmt, hash::Hash, iter, net::SocketAddr, pin::Pin};
 
 mod interface;
 
@@ -122,7 +122,8 @@ where
         let next_event = future::select_all(
             self.devices
                 .iter_mut()
-                .map(move |(n, d)| Box::pin(d.next_event().map(move |ev| (n.clone(), ev)))),
+                .map(move |(n, d)| Box::pin(d.next_event().map(move |ev| (n.clone(), ev))) as Pin<Box<dyn Future<Output = _>>>)
+                .chain(iter::once(Box::pin(future::pending()) as Pin<Box<_>>)),
         );
         match next_event.await.0 {
             (device_id, interface::NetInterfaceEvent::EthernetCableOut(buf)) => {

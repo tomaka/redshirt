@@ -11,4 +11,5 @@ hyper = { version = "0.13.0-alpha.4", default-features = false }
 redshirt-network-interface = { path = "../../interfaces/network" }
 redshirt-stdout-interface = { path = "../../interfaces/stdout" }
 redshirt-syscalls-interface = { path = "../../interfaces/syscalls" }
+redshirt-time-interface = { path = "../../interfaces/time" }
 tokio-executor = "0.2.0-alpha.6"
