@@ -49,7 +49,7 @@ pub struct System {
 
     /// Collection of programs. Each is assigned a `Pid` that is reserved within `core`.
     /// Can communicate with the WASM programs that are within `core`.
-    native_programs: native::NativeProgramsCollection,
+    native_programs: native::NativeProgramsCollection<'static>,
 
     /// List of programs to load as soon as a loader interface handler is available.
     ///
@@ -73,7 +73,7 @@ pub struct SystemBuilder {
     core: CoreBuilder<Infallible>,
 
     /// Native programs.
-    native_programs: native::NativeProgramsCollection,
+    native_programs: native::NativeProgramsCollection<'static>,
 
     /// "Virtual" Pid for handling messages on the `interface` interface.
     interface_interface_pid: Pid,
