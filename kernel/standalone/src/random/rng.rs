@@ -39,7 +39,6 @@
 
 // TODO: I'm not a cryptographer nor a mathematician, but I guess that a ChaCha alone is a bit naive?
 
-use byteorder::{ByteOrder as _, NativeEndian};
 use rand_chacha::{ChaCha20Core, ChaCha20Rng};
 use rand_core::{RngCore, SeedableRng as _};
 use rand_jitter::JitterRng;
@@ -59,8 +58,13 @@ impl KernelRng {
     pub fn new() -> KernelRng {
         // Initialize the `JitterRng`.
         let mut jitter = {
-            // FIXME: timer
-            let mut rng = JitterRng::new_with_timer(|| unsafe { core::arch::x86_64::_rdtsc() });
+            let mut rng = JitterRng::new_with_timer(|| {
+                let dur = crate::time::monotonic_clock();
+                dur.as_secs()
+                    .wrapping_mul(1_000_000_000)
+                    .wrapping_add(u64::from(dur.subsec_nanos()))
+            });
+
             // This makes sure that the `JitterRng` is good enough. A panic here indicates that
             // our entropy would be too low.
             let rounds = rng.test_timer().unwrap();
@@ -108,6 +112,8 @@ impl RngCore for KernelRng {
 
 #[cfg(target_arch = "x86_64")]
 fn add_cpu_entropy(sha2: &mut Sha512Trunc256) {
+    use byteorder::{ByteOrder as _, NativeEndian};
+
     if let Some(rdrand) = x86_64::instructions::random::RdRand::new() {
         let mut buf = [0; 64];
         for chunk in buf.chunks_mut(8) {
