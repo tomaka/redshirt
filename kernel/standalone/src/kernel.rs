@@ -86,12 +86,10 @@ impl Kernel {
             .build();
 
         loop {
-            match system.run().now_or_never() {
-                None => {
-                    // FIXME: use an executor rather than `now_or_never()`
-                    crate::arch::halt();
-                }
-                Some(redshirt_core::system::SystemRunOutcome::ProgramFinished { pid, outcome }) => {
+            // TODO: ideally the entire function would be async, and this would be an `await`,
+            // but async functions don't work on no_std yet
+            match crate::executor::block_on(system.run()) {
+                redshirt_core::system::SystemRunOutcome::ProgramFinished { pid, outcome } => {
                     //console.write(&format!("Program finished {:?} => {:?}\n", pid, outcome));
                 }
                 _ => panic!(),
