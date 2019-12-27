@@ -36,6 +36,3 @@ walkdir = "2.2.9"
 acpi = "0.4.0"
 multiboot2 = "0.8.1"
 x86_64 = "0.8.2"
-
-[target.'cfg(target_arch = "arm")'.dependencies]
-cortex-a = "2.8.2"
