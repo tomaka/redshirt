@@ -274,19 +274,19 @@ impl Core {
                 .with_extrinsic(
                     "redshirt",
                     "emit_message_error",
-                    sig!((I32) -> I32),
+                    sig!((I32)),
                     Extrinsic::EmitMessageError,
                 )
                 .with_extrinsic(
                     "redshirt",
                     "emit_answer",
-                    sig!((I32, I32, I32) -> I32),
+                    sig!((I32, I32, I32)),
                     Extrinsic::EmitAnswer,
                 )
                 .with_extrinsic(
                     "redshirt",
                     "cancel_message",
-                    sig!((I32) -> I32),
+                    sig!((I32)),
                     Extrinsic::CancelMessage,
                 ),
         }
@@ -568,7 +568,7 @@ impl Core {
                     EncodedMessage(thread.read_memory(addr, sz).unwrap())
                 };
                 let pid = thread.pid();
-                // TODO: we don't resume the thread that called the extrinsic
+                thread.resume(None);
                 self.answer_message_inner(msg_id, Ok(message))
                     .unwrap_or(CoreRunOutcomeInner::LoopAgain)
             }
@@ -589,11 +589,8 @@ impl Core {
                     MessageId::from(byteorder::LittleEndian::read_u64(&buf))
                 };
 
-                if let Some(_) = self.messages_to_answer.remove(&msg_id) {
-                    thread.resume(Some(wasmi::RuntimeValue::I32(0)));
-                } else {
-                    thread.resume(Some(wasmi::RuntimeValue::I32(1)));
-                }
+                self.messages_to_answer.remove(&msg_id);
+                thread.resume(None);
 
                 let pid = thread.pid();
                 self.answer_message_inner(msg_id, Err(()))

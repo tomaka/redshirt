@@ -140,14 +140,8 @@ pub unsafe fn emit_message_with_response<'a, T: Decode>(
 }
 
 /// Cancel the given message. No answer will be received.
-pub fn cancel_message(message_id: MessageId) -> Result<(), CancelMessageErr> {
-    unsafe {
-        if crate::ffi::cancel_message(&u64::from(message_id)) == 0 {
-            Ok(())
-        } else {
-            Err(CancelMessageErr::InvalidMessageId)
-        }
-    }
+pub fn cancel_message(message_id: MessageId) {
+    unsafe { crate::ffi::cancel_message(&u64::from(message_id)) }
 }
 
 /// Error that can be retuend by functions that emit a message.
@@ -161,21 +155,6 @@ impl fmt::Display for EmitErr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             EmitErr::BadInterface => write!(f, "The given interface has no handler"),
-        }
-    }
-}
-
-/// Error that can be retuend by [`cancel_message`].
-#[derive(Debug)]
-pub enum CancelMessageErr {
-    /// The message ID is not valid.
-    InvalidMessageId,
-}
-
-impl fmt::Display for CancelMessageErr {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            CancelMessageErr::InvalidMessageId => write!(f, "Invalid message ID"),
         }
     }
 }
