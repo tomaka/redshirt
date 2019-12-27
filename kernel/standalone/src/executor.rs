@@ -20,7 +20,7 @@
 use alloc::sync::Arc;
 use core::future::Future;
 use core::sync::atomic;
-use core::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
+use core::task::{Context, Poll};
 use futures::task::{waker, ArcWake};
 
 /// Waits for the `Future` to resolve to a value.

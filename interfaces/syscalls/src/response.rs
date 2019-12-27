@@ -13,9 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::{ffi::Message, Decode, EncodedMessage, MessageId, Pid};
+use crate::{ffi::Message, Decode, EncodedMessage, MessageId};
 
-use alloc::vec::Vec;
 use core::{
     marker::PhantomData,
     pin::Pin,

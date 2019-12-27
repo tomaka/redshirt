@@ -16,7 +16,6 @@
 use crate::{ffi::InterfaceOrDestroyed, Encode, MessageId};
 
 use core::{
-    fmt,
     pin::Pin,
     task::{Context, Poll},
 };
