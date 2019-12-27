@@ -80,6 +80,7 @@ impl Kernel {
 
         let mut system = redshirt_core::system::SystemBuilder::new()
             .with_native_program(crate::hardware::HardwareHandler::new())
+            .with_native_program(crate::random::native::RandomNativeProgram::new())
             .with_startup_process(stdout_module)
             .with_startup_process(hello_module)
             .with_main_program([0; 32]) // TODO: just a test

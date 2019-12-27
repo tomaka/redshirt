@@ -33,6 +33,8 @@ mod hardware;
 mod kernel;
 mod mem_alloc;
 mod panic;
+mod random;
+mod time;
 
 // This contains nothing. As the main entry point of the kernel is platform-specific, it is
 // located in the `arch` module rather than here.
