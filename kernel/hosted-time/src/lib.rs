@@ -17,11 +17,10 @@
 
 use futures::{channel::mpsc, lock::Mutex, prelude::*, stream::FuturesUnordered};
 use futures_timer::Delay;
-use parity_scale_codec::{DecodeAll, Encode as _};
 use redshirt_core::native::{
     DummyMessageIdWrite, NativeProgramEvent, NativeProgramMessageIdWrite, NativeProgramRef,
 };
-use redshirt_core::{MessageId, Pid};
+use redshirt_core::{Decode as _, Encode as _, EncodedMessage, MessageId, Pid};
 use redshirt_time_interface::ffi::{TimeMessage, INTERFACE};
 use std::{
     convert::TryFrom,
@@ -152,11 +151,11 @@ impl<'a> NativeProgramRef<'a> for &'a TimerHandler {
         interface: [u8; 32],
         message_id: Option<MessageId>,
         emitter_pid: Pid,
-        message: Vec<u8>,
+        message: EncodedMessage,
     ) {
         debug_assert_eq!(interface, INTERFACE);
 
-        match TimeMessage::decode_all(&message) {
+        match TimeMessage::decode(message) {
             Ok(msg) => {
                 self.messages_tx
                     .unbounded_send((msg, message_id.unwrap()))
@@ -168,7 +167,7 @@ impl<'a> NativeProgramRef<'a> for &'a TimerHandler {
 
     fn process_destroyed(self, _: Pid) {}
 
-    fn message_response(self, _: MessageId, _: Result<Vec<u8>, ()>) {
+    fn message_response(self, _: MessageId, _: Result<EncodedMessage, ()>) {
         unreachable!()
     }
 }

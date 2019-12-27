@@ -33,7 +33,7 @@ use smallvec::SmallVec;
 /// Natively handles the "interface" and "threads" interfaces.  TODO: indicate hashes
 pub struct System {
     /// Inner system with inter-process communications.
-    core: Core<Infallible>,
+    core: Core,
 
     /// List of active futexes. The keys of this hashmap are process IDs and memory addresses, and
     /// the values of this hashmap are a list of "wait" messages to answer once the corresponding
@@ -49,7 +49,7 @@ pub struct System {
 
     /// Collection of programs. Each is assigned a `Pid` that is reserved within `core`.
     /// Can communicate with the WASM programs that are within `core`.
-    native_programs: native::NativeProgramsCollection,
+    native_programs: native::NativeProgramsCollection<'static>,
 
     /// List of programs to load as soon as a loader interface handler is available.
     ///
@@ -70,10 +70,10 @@ pub struct System {
 /// Prototype for a [`System`].
 pub struct SystemBuilder {
     /// Builder for the inner core.
-    core: CoreBuilder<Infallible>,
+    core: CoreBuilder,
 
     /// Native programs.
-    native_programs: native::NativeProgramsCollection,
+    native_programs: native::NativeProgramsCollection<'static>,
 
     /// "Virtual" Pid for handling messages on the `interface` interface.
     interface_interface_pid: Pid,
@@ -139,28 +139,20 @@ impl System {
                     message_id_write,
                 } => {
                     if let Some(message_id_write) = message_id_write {
-                        let message_id = self.core.emit_interface_message_answer(
-                            pid,
-                            interface,
-                            EncodedMessage(message),
-                        );
+                        let message_id = self
+                            .core
+                            .emit_interface_message_answer(pid, interface, message);
                         message_id_write.acknowledge(message_id);
                     } else {
-                        self.core.emit_interface_message_no_answer(
-                            pid,
-                            interface,
-                            EncodedMessage(message),
-                        );
+                        self.core
+                            .emit_interface_message_no_answer(pid, interface, message);
                     }
                 }
                 native::NativeProgramsCollectionEvent::CancelMessage { message_id } => {
                     unimplemented!()
                 }
                 native::NativeProgramsCollectionEvent::Answer { message_id, answer } => {
-                    self.core.answer_message(
-                        message_id,
-                        answer.as_ref().map(|d| &d[..]).map_err(|&()| ()),
-                    );
+                    self.core.answer_message(message_id, answer);
                 }
             }
         })
@@ -177,11 +169,6 @@ impl System {
                         outcome: outcome.map(|_| ()).map_err(|err| err.into()),
                     });
                 }
-                CoreRunOutcome::ThreadWaitExtrinsic {
-                    ref mut thread,
-                    ref extrinsic,
-                    ref params,
-                } => unreachable!(),
                 CoreRunOutcome::ThreadWaitUnavailableInterface { .. } => {} // TODO: lazy-loading
 
                 CoreRunOutcome::MessageResponse {
@@ -221,7 +208,8 @@ impl System {
                                 while wake.nwake > 0 && !list.is_empty() {
                                     wake.nwake -= 1;
                                     let message_id = list.remove(0);
-                                    self.core.answer_message(message_id, Ok(&[]));
+                                    self.core
+                                        .answer_message(message_id, Ok(EncodedMessage(Vec::new())));
                                 }
 
                                 if list.is_empty() {
@@ -267,7 +255,7 @@ impl System {
                                     result,
                                 };
                             if let Some(message_id) = message_id {
-                                self.core.answer_message(message_id, Ok(&response.encode()));
+                                self.core.answer_message(message_id, Ok(response.encode()));
                             }
 
                             if interface_hash == redshirt_loader_interface::ffi::INTERFACE {

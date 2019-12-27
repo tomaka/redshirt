@@ -21,18 +21,19 @@ use crate::signature::Signature;
 
 use alloc::{borrow::Cow, collections::VecDeque, vec, vec::Vec};
 use byteorder::{ByteOrder as _, LittleEndian};
-use core::{convert::TryFrom, iter, marker::PhantomData, mem};
+use core::{convert::TryFrom, iter, mem};
+use crossbeam_queue::SegQueue;
 use hashbrown::{hash_map::Entry, HashMap, HashSet};
-use redshirt_syscalls_interface::{Encode, MessageId, Pid, ThreadId};
+use redshirt_syscalls_interface::{Encode, EncodedMessage, MessageId, Pid, ThreadId};
 use smallvec::SmallVec;
 
 /// Handles scheduling processes and inter-process communications.
-pub struct Core<T> {
+pub struct Core {
     /// Queue of events to return in priority when `run` is called.
-    pending_events: VecDeque<CoreRunOutcomeInner<T>>,
+    pending_events: SegQueue<CoreRunOutcomeInner>,
 
     /// List of running processes.
-    processes: processes::ProcessesCollection<Extrinsic<T>, Process, Thread>,
+    processes: processes::ProcessesCollection<Extrinsic, Process, Thread>,
 
     /// List of `Pid`s that have been reserved during the construction.
     ///
@@ -62,36 +63,31 @@ enum InterfaceState {
         /// the [`Thread::InterfaceNotAvailableWait`] state.
         threads: SmallVec<[ThreadId; 4]>,
         /// Other messages waiting to be delivered to this interface.
-        other: Vec<(Pid, Option<MessageId>, Vec<u8>)>,
+        other: Vec<(Pid, Option<MessageId>, EncodedMessage)>,
     },
 }
 
 /// Possible function available to processes.
-/// The [`External`](Extrinsic::External) variant corresponds to functions that the user of the
-/// [`Core`] registers. The rest are handled by the [`Core`] itself.
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum Extrinsic<T> {
+enum Extrinsic {
     NextMessage,
     EmitMessage,
     EmitMessageError,
     EmitAnswer,
     CancelMessage,
-    External(T),
 }
 
 /// Prototype for a `Core` under construction.
-pub struct CoreBuilder<T> {
-    /// See the corresponding field in `Core`.
-    interfaces: HashMap<[u8; 32], InterfaceState>,
+pub struct CoreBuilder {
     /// See the corresponding field in `Core`.
     reserved_pids: HashSet<Pid>,
     /// Builder for the [`processes`][Core::processes] field in `Core`.
-    inner_builder: processes::ProcessesCollectionBuilder<Extrinsic<T>>,
+    inner_builder: processes::ProcessesCollectionBuilder<Extrinsic>,
 }
 
 /// Outcome of calling [`run`](Core::run).
 // TODO: #[derive(Debug)]
-pub enum CoreRunOutcome<'a, T> {
+pub enum CoreRunOutcome<'a> {
     /// A program has stopped, either because the main function has stopped or a problem has
     /// occurred.
     ProgramFinished {
@@ -115,28 +111,12 @@ pub enum CoreRunOutcome<'a, T> {
         outcome: Result<Option<wasmi::RuntimeValue>, wasmi::Trap>,
     },
 
-    /// A thread has called a function registered using [`CoreBuilder::with_extrinsic`].
-    ///
-    /// The thread is now sleeping and must be waken up using
-    /// [`CoreThread::resolve_extrinsic_call`].
-    ThreadWaitExtrinsic {
-        /// Thread that has made the call.
-        thread: CoreThread<'a, T>,
-
-        /// Identifier for the extrinsic that was passed to [`CoreBuilder::with_extrinsic`].
-        extrinsic: T,
-
-        /// Parameters passed to the extrinsic call. Guaranteed to match the signature that was
-        /// passed to [`CoreBuilder::with_extrinsic`].
-        params: Vec<wasmi::RuntimeValue>,
-    },
-
     /// Thread has tried to emit a message on an interface that isn't registered. The thread is
     /// now in sleep mode. You can either wake it up by calling [`set_interface_handler`], or
     /// resume the thread with an "interface not available error" by calling . // TODO
     ThreadWaitUnavailableInterface {
         /// Thread that emitted the message.
-        thread: CoreThread<'a, T>,
+        thread: CoreThread<'a>,
 
         /// Interface that the thread is trying to access.
         interface: [u8; 32],
@@ -147,13 +127,13 @@ pub enum CoreRunOutcome<'a, T> {
         pid: Pid,
         message_id: Option<MessageId>,
         interface: [u8; 32],
-        message: Vec<u8>,
+        message: EncodedMessage,
     },
 
     /// Response to a message emitted using [`Core::emit_interface_message_answer`].
     MessageResponse {
         message_id: MessageId,
-        response: Result<Vec<u8>, ()>,
+        response: Result<EncodedMessage, ()>,
     },
 
     /// Nothing to do. No thread is ready to run.
@@ -163,18 +143,13 @@ pub enum CoreRunOutcome<'a, T> {
 /// Because of lifetime issues, this is the same as `CoreRunOutcome` but that holds `Pid`s instead
 /// of `CoreProcess`es.
 // TODO: remove this enum and solve borrowing issues
-enum CoreRunOutcomeInner<T> {
+enum CoreRunOutcomeInner {
     ProgramFinished {
         pid: Pid,
         unhandled_messages: Vec<MessageId>,
         cancelled_messages: Vec<MessageId>,
         unregistered_interfaces: Vec<[u8; 32]>,
         outcome: Result<Option<wasmi::RuntimeValue>, wasmi::Trap>,
-    },
-    ThreadWaitExtrinsic {
-        thread: ThreadId,
-        extrinsic: T,
-        params: Vec<wasmi::RuntimeValue>,
     },
     ThreadWaitUnavailableInterface {
         thread: ThreadId,
@@ -185,11 +160,11 @@ enum CoreRunOutcomeInner<T> {
         pid: Pid,
         message_id: Option<MessageId>,
         interface: [u8; 32],
-        message: Vec<u8>,
+        message: EncodedMessage,
     },
     MessageResponse {
         message_id: MessageId,
-        response: Result<Vec<u8>, ()>,
+        response: Result<EncodedMessage, ()>,
     },
     LoopAgain,
     Idle,
@@ -240,7 +215,7 @@ enum Thread {
         /// Identifier of the message if it expects an answer.
         message_id: Option<MessageId>,
         /// Message itself. Needs to be delivered to the handler once it is registered.
-        message: Vec<u8>,
+        message: EncodedMessage,
     },
 
     /// The thread is sleeping and waiting for an external extrinsic.
@@ -266,27 +241,22 @@ struct MessageWait {
 }
 
 /// Access to a process within the core.
-pub struct CoreProcess<'a, T> {
+pub struct CoreProcess<'a> {
     /// Access to the process within the inner collection.
     process: processes::ProcessesCollectionProc<'a, Process, Thread>,
-    /// Marker to keep `T` in place.
-    marker: PhantomData<T>,
 }
 
 /// Access to a thread within the core.
-pub struct CoreThread<'a, T> {
+pub struct CoreThread<'a> {
     /// Access to the thread within the inner collection.
     thread: processes::ProcessesCollectionThread<'a, Process, Thread>,
-    /// Marker to keep `T` in place.
-    marker: PhantomData<T>,
 }
 
-impl<T: Clone> Core<T> {
+impl Core {
     // TODO: figure out borrowing issues and remove that Clone
     /// Initialies a new `Core`.
-    pub fn new() -> CoreBuilder<T> {
+    pub fn new() -> CoreBuilder {
         CoreBuilder {
-            interfaces: Default::default(),
             reserved_pids: HashSet::new(),
             inner_builder: processes::ProcessesCollectionBuilder::default()
                 .with_extrinsic(
@@ -304,19 +274,19 @@ impl<T: Clone> Core<T> {
                 .with_extrinsic(
                     "redshirt",
                     "emit_message_error",
-                    sig!((I32) -> I32),
+                    sig!((I32)),
                     Extrinsic::EmitMessageError,
                 )
                 .with_extrinsic(
                     "redshirt",
                     "emit_answer",
-                    sig!((I32, I32, I32) -> I32),
+                    sig!((I32, I32, I32)),
                     Extrinsic::EmitAnswer,
                 )
                 .with_extrinsic(
                     "redshirt",
                     "cancel_message",
-                    sig!((I32) -> I32),
+                    sig!((I32)),
                     Extrinsic::CancelMessage,
                 ),
         }
@@ -324,7 +294,7 @@ impl<T: Clone> Core<T> {
 
     /// Run the core once.
     // TODO: make multithreaded
-    pub fn run(&mut self) -> CoreRunOutcome<T> {
+    pub fn run(&mut self) -> CoreRunOutcome {
         loop {
             break match self.run_inner() {
                 CoreRunOutcomeInner::Idle => CoreRunOutcome::Idle,
@@ -342,23 +312,10 @@ impl<T: Clone> Core<T> {
                     unregistered_interfaces,
                     outcome,
                 },
-                CoreRunOutcomeInner::ThreadWaitExtrinsic {
-                    thread,
-                    extrinsic,
-                    params,
-                } => CoreRunOutcome::ThreadWaitExtrinsic {
-                    thread: CoreThread {
-                        thread: self.processes.thread_by_id(thread).unwrap(),
-                        marker: PhantomData,
-                    },
-                    extrinsic,
-                    params,
-                },
                 CoreRunOutcomeInner::ThreadWaitUnavailableInterface { thread, interface } => {
                     CoreRunOutcome::ThreadWaitUnavailableInterface {
                         thread: CoreThread {
                             thread: self.processes.thread_by_id(thread).unwrap(),
-                            marker: PhantomData,
                         },
                         interface,
                     }
@@ -388,8 +345,8 @@ impl<T: Clone> Core<T> {
     /// Because of lifetime issues, we return an enum that holds `Pid`s instead of `CoreProcess`es.
     /// Then `run` does the conversion in order to have a good API.
     // TODO: make multithreaded
-    fn run_inner(&mut self) -> CoreRunOutcomeInner<T> {
-        if let Some(ev) = self.pending_events.pop_front() {
+    fn run_inner(&mut self) -> CoreRunOutcomeInner {
+        if let Ok(ev) = self.pending_events.pop() {
             return ev;
         }
 
@@ -465,20 +422,6 @@ impl<T: Clone> Core<T> {
             }
 
             processes::RunOneOutcome::Interrupted {
-                ref mut thread,
-                id: Extrinsic::External(ext),
-                ref params,
-            } => {
-                debug_assert_eq!(*thread.user_data(), Thread::ReadyToRun);
-                *thread.user_data() = Thread::ExtrinsicWait;
-                CoreRunOutcomeInner::ThreadWaitExtrinsic {
-                    thread: thread.tid(),
-                    extrinsic: ext.clone(),
-                    params: params.clone(), // TODO: there's some weird borrowck error in the match block
-                }
-            }
-
-            processes::RunOneOutcome::Interrupted {
                 mut thread,
                 id: Extrinsic::NextMessage,
                 params,
@@ -507,7 +450,7 @@ impl<T: Clone> Core<T> {
                 let message = {
                     let addr = params[1].try_into::<i32>().unwrap() as u32;
                     let sz = params[2].try_into::<i32>().unwrap() as u32;
-                    thread.read_memory(addr, sz).unwrap()
+                    EncodedMessage(thread.read_memory(addr, sz).unwrap())
                 };
                 let needs_answer = params[3].try_into::<i32>().unwrap() != 0;
                 let allow_delay = params[4].try_into::<i32>().unwrap() != 0;
@@ -549,7 +492,7 @@ impl<T: Clone> Core<T> {
                                     index_in_list: 0,
                                     message_id,
                                     emitter_pid: emitter_pid.into(),
-                                    actual_data: message,
+                                    actual_data: message.0,
                                 },
                             );
 
@@ -622,11 +565,11 @@ impl<T: Clone> Core<T> {
                 let message = {
                     let addr = params[1].try_into::<i32>().unwrap() as u32;
                     let sz = params[2].try_into::<i32>().unwrap() as u32;
-                    thread.read_memory(addr, sz).unwrap()
+                    EncodedMessage(thread.read_memory(addr, sz).unwrap())
                 };
                 let pid = thread.pid();
-                // TODO: we don't resume the thread that called the extrinsic
-                self.answer_message_inner(msg_id, Ok(&message))
+                thread.resume(None);
+                self.answer_message_inner(msg_id, Ok(message))
                     .unwrap_or(CoreRunOutcomeInner::LoopAgain)
             }
 
@@ -646,11 +589,8 @@ impl<T: Clone> Core<T> {
                     MessageId::from(byteorder::LittleEndian::read_u64(&buf))
                 };
 
-                if let Some(_) = self.messages_to_answer.remove(&msg_id) {
-                    thread.resume(Some(wasmi::RuntimeValue::I32(0)));
-                } else {
-                    thread.resume(Some(wasmi::RuntimeValue::I32(1)));
-                }
+                self.messages_to_answer.remove(&msg_id);
+                thread.resume(None);
 
                 let pid = thread.pid();
                 self.answer_message_inner(msg_id, Err(()))
@@ -668,21 +608,15 @@ impl<T: Clone> Core<T> {
     }
 
     /// Returns an object granting access to a process, if it exists.
-    pub fn process_by_id(&mut self, pid: Pid) -> Option<CoreProcess<T>> {
+    pub fn process_by_id(&mut self, pid: Pid) -> Option<CoreProcess> {
         let p = self.processes.process_by_id(pid)?;
-        Some(CoreProcess {
-            process: p,
-            marker: PhantomData,
-        })
+        Some(CoreProcess { process: p })
     }
 
     /// Returns an object granting access to a thread, if it exists.
-    pub fn thread_by_id(&mut self, thread: ThreadId) -> Option<CoreThread<T>> {
+    pub fn thread_by_id(&mut self, thread: ThreadId) -> Option<CoreThread> {
         let thread = self.processes.thread_by_id(thread)?;
-        Some(CoreThread {
-            thread,
-            marker: PhantomData,
-        })
+        Some(CoreThread { thread })
     }
 
     // TODO: better API
@@ -722,7 +656,7 @@ impl<T: Clone> Core<T> {
                     index_in_list: 0,
                     message_id,
                     emitter_pid,
-                    actual_data: message_data,
+                    actual_data: message_data.0,
                 },
             );
 
@@ -756,7 +690,7 @@ impl<T: Clone> Core<T> {
                             index_in_list: 0,
                             message_id,
                             emitter_pid,
-                            actual_data: message,
+                            actual_data: message.0,
                         },
                     );
 
@@ -766,14 +700,13 @@ impl<T: Clone> Core<T> {
                         .push_back(message);
                 // TODO: try_resume_message_wait(interface_handler_proc);
                 } else {
-                    self.pending_events.push_back(
-                        CoreRunOutcomeInner::ReservedPidInterfaceMessage {
+                    self.pending_events
+                        .push(CoreRunOutcomeInner::ReservedPidInterfaceMessage {
                             pid: emitter_pid,
                             message_id,
                             interface,
                             message,
-                        },
-                    );
+                        });
                 }
             } else {
                 // State inconsistency in the core.
@@ -794,47 +727,11 @@ impl<T: Clone> Core<T> {
         &mut self,
         emitter_pid: Pid,
         interface: [u8; 32],
-        message: impl Encode<'a>,
+        message: impl Encode,
     ) {
         assert!(self.reserved_pids.contains(&emitter_pid));
-
-        let pid =
-            match self
-                .interfaces
-                .entry(interface)
-                .or_insert_with(|| InterfaceState::Requested {
-                    threads: SmallVec::new(),
-                    other: Vec::new(),
-                }) {
-                InterfaceState::Process(pid) => *pid,
-                InterfaceState::Requested { other, .. } => {
-                    other.push((emitter_pid, None, message.encode().to_vec()));
-                    return;
-                }
-            };
-
-        if let Some(mut process) = self.processes.process_by_id(pid) {
-            let message = redshirt_syscalls_interface::ffi::Message::Interface(
-                redshirt_syscalls_interface::ffi::InterfaceMessage {
-                    interface,
-                    emitter_pid,
-                    message_id: None,
-                    index_in_list: 0,
-                    actual_data: message.encode().to_vec(),
-                },
-            );
-
-            process.user_data().messages_queue.push_back(message);
-            try_resume_message_wait(process);
-        } else {
-            self.pending_events
-                .push_back(CoreRunOutcomeInner::ReservedPidInterfaceMessage {
-                    pid: emitter_pid,
-                    message_id: None,
-                    interface,
-                    message: message.encode().to_vec(),
-                });
-        }
+        let _out = self.emit_interface_message_inner(emitter_pid, interface, message, false);
+        debug_assert!(_out.is_none());
     }
 
     /// Emits a message for the handler of the given interface.
@@ -846,19 +743,33 @@ impl<T: Clone> Core<T> {
         &mut self,
         emitter_pid: Pid,
         interface: [u8; 32],
-        message: impl Encode<'a>,
+        message: impl Encode,
     ) -> MessageId {
         assert!(self.reserved_pids.contains(&emitter_pid));
+        self.emit_interface_message_inner(emitter_pid, interface, message, true)
+            .unwrap()
+    }
 
-        let (message_id, messages_to_answer_entry) = loop {
-            let id: MessageId = self.message_id_pool.assign();
-            if u64::from(id) == 0 || u64::from(id) == 1 {
-                continue;
+    fn emit_interface_message_inner<'a>(
+        &mut self,
+        emitter_pid: Pid,
+        interface: [u8; 32],
+        message: impl Encode,
+        needs_answer: bool,
+    ) -> Option<MessageId> {
+        let (message_id, messages_to_answer_entry) = if needs_answer {
+            loop {
+                let id: MessageId = self.message_id_pool.assign();
+                if u64::from(id) == 0 || u64::from(id) == 1 {
+                    continue;
+                }
+                match self.messages_to_answer.entry(id) {
+                    Entry::Vacant(e) => break (Some(id), Some(e)),
+                    Entry::Occupied(_) => continue,
+                };
             }
-            match self.messages_to_answer.entry(id) {
-                Entry::Vacant(e) => break (id, e),
-                Entry::Occupied(_) => continue,
-            };
+        } else {
+            (None, None)
         };
 
         let pid =
@@ -871,25 +782,38 @@ impl<T: Clone> Core<T> {
                 }) {
                 InterfaceState::Process(pid) => *pid,
                 InterfaceState::Requested { other, .. } => {
-                    other.push((emitter_pid, Some(message_id), message.encode().to_vec()));
+                    other.push((emitter_pid, message_id, message.encode()));
                     return message_id;
                 }
             };
 
-        let message = redshirt_syscalls_interface::ffi::Message::Interface(
-            redshirt_syscalls_interface::ffi::InterfaceMessage {
-                interface,
-                message_id: Some(message_id),
-                emitter_pid,
-                index_in_list: 0,
-                actual_data: message.encode().to_vec(),
-            },
-        );
+        if let Some(mut process) = self.processes.process_by_id(pid) {
+            let message = redshirt_syscalls_interface::ffi::Message::Interface(
+                redshirt_syscalls_interface::ffi::InterfaceMessage {
+                    interface,
+                    message_id,
+                    emitter_pid,
+                    index_in_list: 0,
+                    actual_data: message.encode().0.to_vec(),
+                },
+            );
 
-        let mut process = self.processes.process_by_id(pid).unwrap();
-        process.user_data().messages_queue.push_back(message);
-        try_resume_message_wait(process);
-        messages_to_answer_entry.insert(emitter_pid);
+            process.user_data().messages_queue.push_back(message);
+            try_resume_message_wait(process);
+        } else {
+            assert!(self.reserved_pids.contains(&emitter_pid));
+            self.pending_events
+                .push(CoreRunOutcomeInner::ReservedPidInterfaceMessage {
+                    pid: emitter_pid,
+                    message_id: None,
+                    interface,
+                    message: message.encode(),
+                });
+        };
+
+        if let Some(messages_to_answer_entry) = messages_to_answer_entry {
+            messages_to_answer_entry.insert(emitter_pid);
+        }
         message_id
     }
 
@@ -899,7 +823,7 @@ impl<T: Clone> Core<T> {
     /// [`emit_interface_message_no_answer`]. Only messages generated by processes can be answered
     /// through this method.
     // TODO: better API
-    pub fn answer_message(&mut self, message_id: MessageId, response: Result<&[u8], ()>) {
+    pub fn answer_message(&mut self, message_id: MessageId, response: Result<EncodedMessage, ()>) {
         let ret = self.answer_message_inner(message_id, response);
         assert!(ret.is_none());
     }
@@ -908,19 +832,19 @@ impl<T: Clone> Core<T> {
     fn answer_message_inner(
         &mut self,
         message_id: MessageId,
-        response: Result<&[u8], ()>,
-    ) -> Option<CoreRunOutcomeInner<T>> {
-        let actual_message = redshirt_syscalls_interface::ffi::Message::Response(
-            redshirt_syscalls_interface::ffi::ResponseMessage {
-                message_id,
-                // We a dummy value here and fill it up later when actually delivering the message.
-                index_in_list: 0,
-                actual_data: response.map(|r| r.to_vec()),
-            },
-        );
-
+        response: Result<EncodedMessage, ()>,
+    ) -> Option<CoreRunOutcomeInner> {
         if let Some(emitter_pid) = self.messages_to_answer.remove(&message_id) {
             if let Some(mut process) = self.processes.process_by_id(emitter_pid) {
+                let actual_message = redshirt_syscalls_interface::ffi::Message::Response(
+                    redshirt_syscalls_interface::ffi::ResponseMessage {
+                        message_id,
+                        // We a dummy value here and fill it up later when actually delivering the message.
+                        index_in_list: 0,
+                        actual_data: response.map(|r| r.0.to_vec()),
+                    },
+                );
+
                 process.user_data().messages_queue.push_back(actual_message);
                 process
                     .user_data()
@@ -931,7 +855,7 @@ impl<T: Clone> Core<T> {
             } else {
                 Some(CoreRunOutcomeInner::MessageResponse {
                     message_id,
-                    response: response.map(|data| data.to_vec()),
+                    response,
                 })
             }
         } else {
@@ -943,7 +867,7 @@ impl<T: Clone> Core<T> {
     /// Start executing the module passed as parameter.
     ///
     /// Each import of the [`Module`](crate::module::Module) is resolved.
-    pub fn execute(&mut self, module: &Module) -> Result<CoreProcess<T>, vm::NewErr> {
+    pub fn execute(&mut self, module: &Module) -> Result<CoreProcess, vm::NewErr> {
         let proc_metadata = Process {
             messages_queue: VecDeque::new(),
             registered_interfaces: SmallVec::new(),
@@ -956,14 +880,11 @@ impl<T: Clone> Core<T> {
             .processes
             .execute(module, proc_metadata, Thread::ReadyToRun)?;
 
-        Ok(CoreProcess {
-            process,
-            marker: PhantomData,
-        })
+        Ok(CoreProcess { process })
     }
 }
 
-impl<'a, T> CoreProcess<'a, T> {
+impl<'a> CoreProcess<'a> {
     /// Returns the [`Pid`] of the process.
     pub fn pid(&self) -> Pid {
         self.process.pid()
@@ -976,25 +897,11 @@ impl<'a, T> CoreProcess<'a, T> {
         self,
         fn_index: u32,
         params: Vec<wasmi::RuntimeValue>,
-    ) -> Result<CoreThread<'a, T>, vm::StartErr> {
+    ) -> Result<CoreThread<'a>, vm::StartErr> {
         let thread = self
             .process
             .start_thread(fn_index, params, Thread::ReadyToRun)?;
-        Ok(CoreThread {
-            thread,
-            marker: PhantomData,
-        })
-    }
-
-    /// Copies the given memory range of the given process into a `Vec<u8>`.
-    ///
-    /// Returns an error if the range is invalid.
-    pub fn read_memory(&mut self, offset: u32, size: u32) -> Result<Vec<u8>, ()> {
-        self.process.read_memory(offset, size)
-    }
-
-    pub fn write_memory(&mut self, offset: u32, data: &[u8]) -> Result<(), ()> {
-        self.process.write_memory(offset, data)
+        Ok(CoreThread { thread })
     }
 
     /// Kills the process immediately.
@@ -1003,7 +910,7 @@ impl<'a, T> CoreProcess<'a, T> {
     }
 }
 
-impl<'a, T> CoreThread<'a, T> {
+impl<'a> CoreThread<'a> {
     /// Returns the [`ThreadId`] of the thread.
     pub fn tid(&mut self) -> ThreadId {
         self.thread.tid()
@@ -1013,39 +920,9 @@ impl<'a, T> CoreThread<'a, T> {
     pub fn pid(&self) -> Pid {
         self.thread.pid()
     }
-
-    /// After `ThreadWaitExtrinsic` has been returned, you have to call this method in order to
-    /// inject back the result of the extrinsic call.
-    // TODO: don't expose wasmi::RuntimeValue
-    pub fn resolve_extrinsic_call(&mut self, return_value: Option<wasmi::RuntimeValue>) {
-        assert_eq!(*self.thread.user_data(), Thread::ExtrinsicWait);
-        *self.thread.user_data() = Thread::ReadyToRun;
-        // TODO: check if the value type is correct
-        self.thread.resume(return_value);
-    }
-
-    // TODO: resolve interface wait with error
 }
 
-impl<T> CoreBuilder<T> {
-    /// Registers a function that processes can call.
-    // TODO: more docs
-    pub fn with_extrinsic(
-        mut self,
-        interface: impl Into<Cow<'static, str>>,
-        f_name: impl Into<Cow<'static, str>>,
-        signature: Signature,
-        token: impl Into<T>,
-    ) -> Self {
-        self.inner_builder = self.inner_builder.with_extrinsic(
-            interface,
-            f_name,
-            signature,
-            Extrinsic::External(token.into()),
-        );
-        self
-    }
-
+impl CoreBuilder {
     /// Allocates a `Pid` that will not be used by any process.
     ///
     /// > **Note**: As of the writing of this comment, this feature is only ever used to allocate
@@ -1060,13 +937,13 @@ impl<T> CoreBuilder<T> {
     }
 
     /// Turns the builder into a [`Core`].
-    pub fn build(mut self) -> Core<T> {
+    pub fn build(mut self) -> Core {
         self.reserved_pids.shrink_to_fit();
 
         Core {
-            pending_events: VecDeque::new(),
+            pending_events: SegQueue::new(),
             processes: self.inner_builder.build(),
-            interfaces: self.interfaces,
+            interfaces: Default::default(),
             reserved_pids: self.reserved_pids,
             message_id_pool: IdPool::new(),
             messages_to_answer: HashMap::default(),
@@ -1203,10 +1080,10 @@ fn try_resume_message_wait_thread(
         .encode();
 
     // TODO: don't use as
-    if msg_wait.out_size as usize >= msg_bytes.len() {
+    if msg_wait.out_size as usize >= msg_bytes.0.len() {
         // Write the message in the process's memory.
         thread
-            .write_memory(msg_wait.out_pointer, &msg_bytes)
+            .write_memory(msg_wait.out_pointer, &msg_bytes.0)
             .unwrap();
         // Zero the corresponding entry in the messages to wait upon.
         thread
@@ -1220,5 +1097,5 @@ fn try_resume_message_wait_thread(
     }
 
     *thread.user_data() = Thread::ReadyToRun;
-    thread.resume(Some(wasmi::RuntimeValue::I32(msg_bytes.len() as i32))); // TODO: don't use as
+    thread.resume(Some(wasmi::RuntimeValue::I32(msg_bytes.0.len() as i32))); // TODO: don't use as
 }

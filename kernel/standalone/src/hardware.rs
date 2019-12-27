@@ -24,11 +24,10 @@ use alloc::{boxed::Box, collections::VecDeque, vec::Vec};
 use core::{convert::TryFrom as _, marker::PhantomData, pin::Pin, sync::atomic};
 use futures::prelude::*;
 use hashbrown::HashMap;
-use parity_scale_codec::{DecodeAll, Encode as _};
 use redshirt_core::native::{
     DummyMessageIdWrite, NativeProgramEvent, NativeProgramMessageIdWrite, NativeProgramRef,
 };
-use redshirt_core::{MessageId, Pid};
+use redshirt_core::{Decode as _, Encode as _, EncodedMessage, MessageId, Pid};
 use redshirt_hardware_interface::ffi::{
     HardwareAccessResponse, HardwareMessage, Operation, INTERFACE,
 };
@@ -41,7 +40,7 @@ pub struct HardwareHandler {
     /// For each PID, a list of memory allocations.
     // TODO: optimize
     allocations: Mutex<HashMap<Pid, Vec<Vec<u8>>>>,
-    pending_messages: Mutex<VecDeque<(MessageId, Result<Vec<u8>, ()>)>>,
+    pending_messages: Mutex<VecDeque<(MessageId, Result<EncodedMessage, ()>)>>,
 }
 
 impl HardwareHandler {
@@ -86,11 +85,11 @@ impl<'a> NativeProgramRef<'a> for &'a HardwareHandler {
         interface: [u8; 32],
         message_id: Option<MessageId>,
         emitter_pid: Pid,
-        message: Vec<u8>,
+        message: EncodedMessage,
     ) {
         debug_assert_eq!(interface, INTERFACE);
 
-        match HardwareMessage::decode_all(&message) {
+        match HardwareMessage::decode(message) {
             Ok(HardwareMessage::HardwareAccess(operations)) => {
                 let mut response = Vec::with_capacity(operations.len());
                 for operation in operations {
@@ -149,7 +148,7 @@ impl<'a> NativeProgramRef<'a> for &'a HardwareHandler {
         self.allocations.lock().remove(&pid);
     }
 
-    fn message_response(self, _: MessageId, _: Result<Vec<u8>, ()>) {
+    fn message_response(self, _: MessageId, _: Result<EncodedMessage, ()>) {
         unreachable!()
     }
 }
