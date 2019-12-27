@@ -11,4 +11,3 @@ futures = "0.3.0"
 redshirt-core = { path = "../../core" }
 redshirt-interface-interface = { path = "../../interfaces/interface" }
 redshirt-stdout-interface = { path = "../../interfaces/stdout" }
-parity-scale-codec = "1.0.5"

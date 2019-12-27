@@ -16,8 +16,6 @@
 use crate::ffi;
 
 use futures::{lock::Mutex, prelude::*, ready};
-use parity_scale_codec::{DecodeAll, Encode as _};
-use redshirt_syscalls_interface::MessageId;
 use std::{
     cmp, io, mem,
     net::{IpAddr, Ipv6Addr, SocketAddr},
@@ -200,7 +198,7 @@ impl Drop for TcpStream {
                 socket_id: self.handle,
             });
 
-            redshirt_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_close, false);
+            redshirt_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_close, false).unwrap();
         }
     }
 }

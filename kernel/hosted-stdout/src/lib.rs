@@ -16,9 +16,8 @@
 //! Implements the stdout interface.
 
 use futures::prelude::*;
-use parity_scale_codec::{DecodeAll, Encode as _};
 use redshirt_core::native::{DummyMessageIdWrite, NativeProgramEvent, NativeProgramRef};
-use redshirt_core::{MessageId, Pid};
+use redshirt_core::{Decode as _, Encode as _, EncodedMessage, MessageId, Pid};
 use redshirt_stdout_interface::ffi::{StdoutMessage, INTERFACE};
 use std::{
     io::{self, Write as _},
@@ -70,11 +69,11 @@ impl<'a> NativeProgramRef<'a> for &'a StdoutHandler {
         interface: [u8; 32],
         _message_id: Option<MessageId>,
         _emitter_pid: Pid,
-        message: Vec<u8>,
+        message: EncodedMessage,
     ) {
         debug_assert_eq!(interface, INTERFACE);
 
-        match StdoutMessage::decode_all(&message) {
+        match StdoutMessage::decode(message) {
             Ok(StdoutMessage::Message(msg)) => {
                 let mut stdout = io::stdout();
                 stdout.write_all(msg.as_bytes()).unwrap();
@@ -86,7 +85,7 @@ impl<'a> NativeProgramRef<'a> for &'a StdoutHandler {
 
     fn process_destroyed(self, _: Pid) {}
 
-    fn message_response(self, _: MessageId, _: Result<Vec<u8>, ()>) {
+    fn message_response(self, _: MessageId, _: Result<EncodedMessage, ()>) {
         unreachable!()
     }
 }

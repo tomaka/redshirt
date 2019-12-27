@@ -30,7 +30,7 @@
 //!
 
 use crate::ffi;
-use core::{fmt, marker::PhantomData};
+use core::fmt;
 use futures::lock::{Mutex, MutexGuard};
 
 /// Configuration of an interface to register.
@@ -53,7 +53,7 @@ pub fn register_interface(config: InterfaceConfig) -> NetInterfaceRegistration {
                 id,
                 mac_address: config.mac_address,
             }
-        });
+        }).unwrap();
 
         NetInterfaceRegistration {
             id,
@@ -134,7 +134,7 @@ impl Drop for NetInterfaceRegistration {
     fn drop(&mut self) {
         unsafe {
             let message = ffi::TcpMessage::UnregisterInterface(self.id);
-            redshirt_syscalls_interface::emit_message_without_response(&ffi::INTERFACE, &message);
+            redshirt_syscalls_interface::emit_message_without_response(&ffi::INTERFACE, &message).unwrap();
         }
     }
 }

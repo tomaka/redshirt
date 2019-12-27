@@ -40,11 +40,11 @@ use futures::prelude::*;
 ///
 pub unsafe fn emit_message<'a>(
     interface_hash: &[u8; 32],
-    msg: impl Encode<'a>,
+    msg: impl Encode,
     needs_answer: bool,
 ) -> Result<Option<MessageId>, EmitErr> {
     let encoded = msg.encode();
-    emit_message_raw(interface_hash, &encoded, needs_answer).map(|r| r.map(MessageId::from))
+    emit_message_raw(interface_hash, &encoded.0, needs_answer).map(|r| r.map(MessageId::from))
 }
 
 /// Emits a message destined to the handler of the given interface.
@@ -61,7 +61,7 @@ pub unsafe fn emit_message<'a>(
 ///
 pub unsafe fn emit_message_without_response<'a>(
     interface_hash: &[u8; 32],
-    msg: impl Encode<'a>,
+    msg: impl Encode,
 ) -> Result<(), EmitErr> {
     emit_message(interface_hash, msg, false)?;
     Ok(())
@@ -126,7 +126,7 @@ pub unsafe fn emit_message_raw(
 ///
 pub unsafe fn emit_message_with_response<'a, T: Decode>(
     interface_hash: [u8; 32],
-    msg: impl Encode<'a>,
+    msg: impl Encode,
 ) -> impl Future<Output = Result<T, EmitErr>> {
     let msg_id = match emit_message(&interface_hash, msg, true) {
         Ok(m) => m.unwrap(),
@@ -140,14 +140,8 @@ pub unsafe fn emit_message_with_response<'a, T: Decode>(
 }
 
 /// Cancel the given message. No answer will be received.
-pub fn cancel_message(message_id: MessageId) -> Result<(), CancelMessageErr> {
-    unsafe {
-        if crate::ffi::cancel_message(&u64::from(message_id)) == 0 {
-            Ok(())
-        } else {
-            Err(CancelMessageErr::InvalidMessageId)
-        }
-    }
+pub fn cancel_message(message_id: MessageId) {
+    unsafe { crate::ffi::cancel_message(&u64::from(message_id)) }
 }
 
 /// Error that can be retuend by functions that emit a message.
@@ -161,21 +155,6 @@ impl fmt::Display for EmitErr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             EmitErr::BadInterface => write!(f, "The given interface has no handler"),
-        }
-    }
-}
-
-/// Error that can be retuend by [`cancel_message`].
-#[derive(Debug)]
-pub enum CancelMessageErr {
-    /// The message ID is not valid.
-    InvalidMessageId,
-}
-
-impl fmt::Display for CancelMessageErr {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            CancelMessageErr::InvalidMessageId => write!(f, "Invalid message ID"),
         }
     }
 }

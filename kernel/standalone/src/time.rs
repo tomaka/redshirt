@@ -13,23 +13,24 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#![warn(missing_docs)]
-#![deny(unsafe_code)]
-#![deny(intra_doc_link_resolution_failure)]
-#![allow(dead_code)] // TODO: temporary during development
-#![no_std]
+use core::time::Duration;
 
-extern crate alloc;
+/// Returns the amount of time that has elapsed since an undeterminate moment in time.
+#[cfg(target_arch = "x86_64")]
+pub fn monotonic_clock() -> Duration {
+    // TODO: wrong unit
+    let ns = unsafe { core::arch::x86_64::_rdtsc() };
+    Duration::from_nanos(ns)
+}
 
-pub use self::module::Module;
-pub use self::system::{System, SystemBuilder, SystemRunOutcome};
-pub use redshirt_syscalls_interface::{Decode, Encode, EncodedMessage, MessageId, Pid, ThreadId};
-pub use wasmi::RuntimeValue; // TODO: wrap around instead?
-
-mod id_pool;
-
-pub mod module;
-pub mod native;
-pub mod scheduler;
-pub mod signature;
-pub mod system;
+/// Returns the amount of time that has elapsed since an undeterminate moment in time.
+#[cfg(target_arch = "arm")]
+pub fn monotonic_clock() -> Duration {
+    // TODO: ugh
+    // TODO: assumes that performance counters are supported and enabled
+    let reg: u32;
+    unsafe {
+        asm!("mrc p15, 0, $0, c9, c13, 0" : "=r"(reg) ::: "volatile");
+    }
+    Duration::from_nanos(u64::from(reg))
+}

@@ -13,23 +13,5 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#![warn(missing_docs)]
-#![deny(unsafe_code)]
-#![deny(intra_doc_link_resolution_failure)]
-#![allow(dead_code)] // TODO: temporary during development
-#![no_std]
-
-extern crate alloc;
-
-pub use self::module::Module;
-pub use self::system::{System, SystemBuilder, SystemRunOutcome};
-pub use redshirt_syscalls_interface::{Decode, Encode, EncodedMessage, MessageId, Pid, ThreadId};
-pub use wasmi::RuntimeValue; // TODO: wrap around instead?
-
-mod id_pool;
-
-pub mod module;
 pub mod native;
-pub mod scheduler;
-pub mod signature;
-pub mod system;
+pub mod rng;

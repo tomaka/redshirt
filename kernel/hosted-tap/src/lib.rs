@@ -25,7 +25,7 @@ use futures::{channel::mpsc, executor::block_on, prelude::*};
 use redshirt_core::native::{
     DummyMessageIdWrite, NativeProgramEvent, NativeProgramMessageIdWrite, NativeProgramRef,
 };
-use redshirt_core::{MessageId, Pid, Decode as _, Encode as _};
+use redshirt_core::{EncodedMessage, MessageId, Pid, Decode as _, Encode as _};
 use redshirt_network_interface::ffi;
 use spin::Mutex;
 use std::{fmt, io, pin::Pin, sync::Arc, thread};
@@ -161,7 +161,7 @@ impl<'a> NativeProgramRef<'a> for &'a TapNetworkInterface {
                         };
                         return NativeProgramEvent::Emit {
                             interface: ffi::INTERFACE,
-                            message: message.encode().into_owned(),
+                            message: message.encode(),
                             message_id_write: None,
                         };
                     }
@@ -175,8 +175,7 @@ impl<'a> NativeProgramRef<'a> for &'a TapNetworkInterface {
                 return NativeProgramEvent::Emit {
                     interface: ffi::INTERFACE,
                     message: ffi::TcpMessage::InterfaceWaitData(registered_id)
-                        .encode()
-                        .into_owned(),
+                        .encode(),
                     message_id_write: Some(MessageIdWrite {
                         interface: self,
                         ty: MessageIdWriteTy::Read,
@@ -191,8 +190,7 @@ impl<'a> NativeProgramRef<'a> for &'a TapNetworkInterface {
                 return NativeProgramEvent::Emit {
                     interface: ffi::INTERFACE,
                     message: ffi::TcpMessage::InterfaceOnData(registered_id, data)
-                        .encode()
-                        .into_owned(),
+                        .encode(),
                     message_id_write: Some(MessageIdWrite {
                         interface: self,
                         ty: MessageIdWriteTy::Write,
@@ -208,14 +206,14 @@ impl<'a> NativeProgramRef<'a> for &'a TapNetworkInterface {
         })
     }
 
-    fn interface_message(self, _: [u8; 32], _: Option<MessageId>, _: Pid, _: Vec<u8>) {
+    fn interface_message(self, _: [u8; 32], _: Option<MessageId>, _: Pid, _: EncodedMessage) {
         unreachable!()
     }
 
     fn process_destroyed(self, _: Pid) {
     }
 
-    fn message_response(self, message_id: MessageId, data: Result<Vec<u8>, ()>) {
+    fn message_response(self, message_id: MessageId, data: Result<EncodedMessage, ()>) {
         let mut read_message_id = self.read_message_id.try_lock().unwrap();
         let mut write_message_id = self.write_message_id.try_lock().unwrap();
 

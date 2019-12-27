@@ -33,7 +33,7 @@ fn basic_module() {
     )
     .unwrap();
 
-    let mut core = Core::<()>::new().build();
+    let mut core = Core::new().build();
     let expected_pid = core.execute(&module).unwrap().pid();
 
     match core.run() {
@@ -61,7 +61,7 @@ fn trapping_module() {
     )
     .unwrap();
 
-    let mut core = Core::<()>::new().build();
+    let mut core = Core::new().build();
     let expected_pid = core.execute(&module).unwrap().pid();
 
     match core.run() {
@@ -71,60 +71,6 @@ fn trapping_module() {
             ..
         } => {
             assert_eq!(pid, expected_pid);
-        }
-        _ => panic!(),
-    }
-}
-
-#[test]
-fn module_wait_extrinsic() {
-    let module = Module::from_wat(
-        r#"(module
-        (import "foo" "test" (func $test (result i32)))
-        (func $_start (result i32)
-            call $test)
-        (export "_start" (func $_start)))
-    "#,
-    )
-    .unwrap();
-
-    let mut core = Core::<u32>::new()
-        .with_extrinsic(
-            "foo",
-            "test",
-            Signature::new(iter::empty(), Some(ValueType::I32)),
-            639u32,
-        )
-        .build();
-
-    let expected_pid = core.execute(&module).unwrap().pid();
-
-    let thread_id = match core.run() {
-        CoreRunOutcome::ThreadWaitExtrinsic {
-            mut thread,
-            extrinsic,
-            params,
-        } => {
-            assert_eq!(thread.pid(), expected_pid);
-            assert_eq!(extrinsic, 639);
-            assert!(params.is_empty());
-            thread.tid()
-        }
-        _ => panic!(),
-    };
-
-    core.thread_by_id(thread_id)
-        .unwrap()
-        .resolve_extrinsic_call(Some(wasmi::RuntimeValue::I32(713)));
-
-    match core.run() {
-        CoreRunOutcome::ProgramFinished {
-            pid,
-            outcome: Ok(ret_val),
-            ..
-        } => {
-            assert_eq!(pid, expected_pid);
-            assert_eq!(ret_val, Some(wasmi::RuntimeValue::I32(713)));
         }
         _ => panic!(),
     }
