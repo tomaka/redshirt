@@ -25,6 +25,7 @@
 use alloc::format;
 use core::sync::atomic::{AtomicBool, Ordering};
 use futures::prelude::*;
+use rand_core::RngCore as _;
 
 /// Main struct of this crate. Runs everything.
 pub struct Kernel {
@@ -55,6 +56,11 @@ impl Kernel {
             crate::arch::halt();
         }
 
+        let mut rng = crate::random::rng::KernelRng::new();
+        let mut buf = [0; 32];
+        rng.fill_bytes(&mut buf);
+        panic!("{:?}", buf);
+
         let hello_module = redshirt_core::module::Module::from_bytes(
             &include_bytes!(
                 "../../../modules/target/wasm32-unknown-unknown/release/hello-world.wasm"
@@ -80,6 +86,7 @@ impl Kernel {
 
         let mut system = redshirt_core::system::SystemBuilder::new()
             .with_native_program(crate::hardware::HardwareHandler::new())
+            .with_native_program(crate::random::native::RandomNativeProgram::new())
             .with_startup_process(stdout_module)
             .with_startup_process(hello_module)
             .with_main_program([0; 32]) // TODO: just a test
