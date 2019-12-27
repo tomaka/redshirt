@@ -14,7 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use crate::monotonic_clock;
-use std::{convert::TryFrom, ops::Add, ops::Sub, time::Duration};
+use core::{convert::TryFrom, ops::Add, ops::Sub, time::Duration};
 
 /// Mimics the API of `std::time::Instant`, except that it works.
 ///
