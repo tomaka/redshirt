@@ -35,7 +35,7 @@ pub fn block_on<R>(future: impl Future<Output = R>) -> R {
 
     let waker = waker(local_wake.clone());
     let mut context = Context::from_waker(&waker);
-    
+
     loop {
         if let Poll::Ready(val) = Future::poll(future.as_mut(), &mut context) {
             return val;
