@@ -65,8 +65,5 @@ pub fn monotonic_wait(duration: Duration) -> impl Future<Output = ()> {
         .saturating_add(u128::from(duration.subsec_nanos()));
 
     // TODO: meh for two syscalls
-    monotonic_clock()
-        .then(move |now| {
-            monotonic_wait_until(now.saturating_add(dur_nanos))
-        })
+    monotonic_clock().then(move |now| monotonic_wait_until(now.saturating_add(dur_nanos)))
 }
