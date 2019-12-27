@@ -70,7 +70,7 @@ pub enum NativeProgramEvent<TMsgIdWrite> {
     /// Request to cancel a previously-emitted message.
     CancelMessage {
         /// Message to cancel.
-        message_id: MessageId
+        message_id: MessageId,
     },
     /// Answer a message previously received with [`NativeProgramRef::interface_message`].
     Answer {

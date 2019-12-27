@@ -135,18 +135,18 @@ impl System {
                     message_id_write,
                 } => {
                     if let Some(message_id_write) = message_id_write {
-                        let message_id = self
-                            .core
-                            .emit_interface_message_answer(emitter_pid, interface, message);
+                        let message_id = self.core.emit_interface_message_answer(
+                            emitter_pid,
+                            interface,
+                            message,
+                        );
                         message_id_write.acknowledge(message_id);
                     } else {
                         self.core
                             .emit_interface_message_no_answer(emitter_pid, interface, message);
                     }
                 }
-                native::NativeProgramsCollectionEvent::CancelMessage { .. } => {
-                    unimplemented!()
-                }
+                native::NativeProgramsCollectionEvent::CancelMessage { .. } => unimplemented!(),
                 native::NativeProgramsCollectionEvent::Answer { message_id, answer } => {
                     self.core.answer_message(message_id, answer);
                 }
@@ -193,10 +193,14 @@ impl System {
                     match msg {
                         redshirt_threads_interface::ffi::ThreadsMessage::New(new_thread) => {
                             assert!(message_id.is_none());
-                            self.core.process_by_id(pid).unwrap().start_thread(
-                                new_thread.fn_ptr,
-                                vec![wasmi::RuntimeValue::I32(new_thread.user_data as i32)],
-                            ).unwrap();
+                            self.core
+                                .process_by_id(pid)
+                                .unwrap()
+                                .start_thread(
+                                    new_thread.fn_ptr,
+                                    vec![wasmi::RuntimeValue::I32(new_thread.user_data as i32)],
+                                )
+                                .unwrap();
                         }
                         redshirt_threads_interface::ffi::ThreadsMessage::FutexWake(mut wake) => {
                             assert!(message_id.is_none());

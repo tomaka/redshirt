@@ -46,7 +46,7 @@ pub enum NativeProgramsCollectionEvent<'col> {
     /// Request to cancel a previously-emitted message.
     CancelMessage {
         /// Message to cancel.
-        message_id: MessageId
+        message_id: MessageId,
     },
     /// Request to answer a message received with
     /// [`interface_message`](NativeProgramsCollection::interface_message).
