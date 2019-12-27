@@ -13,7 +13,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use alloc::vec::Vec;
 use core::future::Future;
 use redshirt_syscalls_interface::{EncodedMessage, MessageId, Pid};
 
@@ -69,7 +68,10 @@ pub enum NativeProgramEvent<TMsgIdWrite> {
         message: EncodedMessage,
     },
     /// Request to cancel a previously-emitted message.
-    CancelMessage { message_id: MessageId },
+    CancelMessage {
+        /// Message to cancel.
+        message_id: MessageId
+    },
     /// Answer a message previously received with [`NativeProgramRef::interface_message`].
     Answer {
         /// Message to answer.

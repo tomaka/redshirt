@@ -20,8 +20,6 @@
 
 extern crate alloc;
 
-use core::convert::TryFrom;
-
 pub mod ffi;
 
 /// Generate `len` bytes of random data and returns them.

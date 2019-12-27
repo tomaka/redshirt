@@ -21,11 +21,11 @@
 use crate::arch;
 
 use alloc::{boxed::Box, collections::VecDeque, vec::Vec};
-use core::{convert::TryFrom as _, marker::PhantomData, pin::Pin, sync::atomic};
+use core::{convert::TryFrom as _, pin::Pin, sync::atomic};
 use futures::prelude::*;
 use hashbrown::HashMap;
 use redshirt_core::native::{
-    DummyMessageIdWrite, NativeProgramEvent, NativeProgramMessageIdWrite, NativeProgramRef,
+    DummyMessageIdWrite, NativeProgramEvent, NativeProgramRef,
 };
 use redshirt_core::{Decode as _, Encode as _, EncodedMessage, MessageId, Pid};
 use redshirt_hardware_interface::ffi::{
@@ -109,7 +109,7 @@ impl<'a> NativeProgramRef<'a> for &'a HardwareHandler {
             }
             Ok(HardwareMessage::Malloc { size, alignment }) => {
                 // TODO: this is obviously badly written
-                let mut buffer =
+                let buffer =
                     Vec::with_capacity(usize::try_from(size).unwrap() + usize::from(alignment) - 1);
                 let mut ptr = u64::try_from(buffer.as_ptr() as usize).unwrap();
                 while ptr % u64::from(alignment) != 0 {
@@ -135,7 +135,7 @@ impl<'a> NativeProgramRef<'a> for &'a HardwareHandler {
                     }
                 }
             }
-            Ok(HardwareMessage::InterruptWait(int_id)) => unimplemented!(), // TODO:
+            Ok(HardwareMessage::InterruptWait(_int_id)) => unimplemented!(), // TODO:
             Err(_) => self
                 .pending_messages
                 .try_lock()

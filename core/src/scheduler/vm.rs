@@ -338,9 +338,9 @@ impl<T> ProcessStateMachine<T> {
         match state_machine.start_thread_by_name("_start", &[][..], main_thread_user_data) {
             Ok(_) => {}
             Err((StartErr::FunctionNotFound, user_data)) => {
-                static argc_argv: [wasmi::RuntimeValue; 2] =
+                static ARGC_ARGV: [wasmi::RuntimeValue; 2] =
                     [wasmi::RuntimeValue::I32(0), wasmi::RuntimeValue::I32(0)];
-                match state_machine.start_thread_by_name("main", &argc_argv[..], user_data) {
+                match state_machine.start_thread_by_name("main", &ARGC_ARGV[..], user_data) {
                     Ok(_) => {}
                     Err((StartErr::FunctionNotFound, _)) => return Err(NewErr::StartNotFound),
                     Err((StartErr::Poisoned, _)) => unreachable!(),

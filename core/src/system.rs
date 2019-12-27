@@ -16,15 +16,11 @@
 use crate::module::Module;
 use crate::native::{self, NativeProgramMessageIdWrite as _};
 use crate::scheduler::{Core, CoreBuilder, CoreRunOutcome};
-use crate::signature::Signature;
-use alloc::{borrow::Cow, vec, vec::Vec};
-use core::{
-    convert::Infallible,
-    task::{Context, Poll},
-};
+use alloc::{vec, vec::Vec};
+use core::task::Poll;
 use futures::prelude::*;
 use hashbrown::{hash_map::Entry, HashMap, HashSet};
-use redshirt_syscalls_interface::{Decode, Encode, EncodedMessage, MessageId, Pid, ThreadId};
+use redshirt_syscalls_interface::{Decode, Encode, EncodedMessage, MessageId, Pid};
 use smallvec::SmallVec;
 
 /// Main struct that handles a system, including the scheduler, program loader,
@@ -134,21 +130,21 @@ impl System {
             match event {
                 native::NativeProgramsCollectionEvent::Emit {
                     interface,
-                    pid,
+                    emitter_pid,
                     message,
                     message_id_write,
                 } => {
                     if let Some(message_id_write) = message_id_write {
                         let message_id = self
                             .core
-                            .emit_interface_message_answer(pid, interface, message);
+                            .emit_interface_message_answer(emitter_pid, interface, message);
                         message_id_write.acknowledge(message_id);
                     } else {
                         self.core
-                            .emit_interface_message_no_answer(pid, interface, message);
+                            .emit_interface_message_no_answer(emitter_pid, interface, message);
                     }
                 }
-                native::NativeProgramsCollectionEvent::CancelMessage { message_id } => {
+                native::NativeProgramsCollectionEvent::CancelMessage { .. } => {
                     unimplemented!()
                 }
                 native::NativeProgramsCollectionEvent::Answer { message_id, answer } => {
@@ -200,7 +196,7 @@ impl System {
                             self.core.process_by_id(pid).unwrap().start_thread(
                                 new_thread.fn_ptr,
                                 vec![wasmi::RuntimeValue::I32(new_thread.user_data as i32)],
-                            );
+                            ).unwrap();
                         }
                         redshirt_threads_interface::ffi::ThreadsMessage::FutexWake(mut wake) => {
                             assert!(message_id.is_none());
@@ -291,7 +287,6 @@ impl System {
 }
 
 impl SystemBuilder {
-    // TODO: remove Clone if possible
     /// Starts a new builder.
     pub fn new() -> Self {
         // We handle some low-level interfaces here.
@@ -378,7 +373,6 @@ impl SystemBuilder {
 }
 
 impl Default for SystemBuilder {
-    // TODO: remove Clone if possible
     fn default() -> Self {
         SystemBuilder::new()
     }

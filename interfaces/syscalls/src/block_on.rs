@@ -35,7 +35,7 @@
 //!
 
 use crate::{
-    Decode, EncodedMessage, InterfaceMessage, InterfaceOrDestroyed, Message, MessageId,
+    Decode, EncodedMessage, InterfaceOrDestroyed, Message, MessageId,
     ResponseMessage,
 };
 use alloc::{collections::VecDeque, sync::Arc, vec::Vec};

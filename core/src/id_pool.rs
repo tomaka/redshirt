@@ -16,7 +16,7 @@
 use core::fmt;
 use crossbeam_queue::SegQueue;
 use rand::distributions::{Distribution as _, Uniform};
-use rand_chacha::{ChaCha20Core, ChaCha20Rng};
+use rand_chacha::ChaCha20Rng;
 use rand_core::SeedableRng as _;
 use rand_hc::Hc128Rng;
 use spin::Mutex;
