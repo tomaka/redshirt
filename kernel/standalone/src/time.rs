@@ -27,7 +27,7 @@ pub fn monotonic_clock() -> Duration {
 #[cfg(target_arch = "arm")]
 pub fn monotonic_clock() -> Duration {
     // TODO: ugh
-    // TODO: assumes that performance counters are supported
+    // TODO: assumes that performance counters are supported and enabled
     let reg: u32;
     unsafe {
         asm!("mrc p15, 0, $0, c9, c13, 0" : "=r"(reg) ::: "volatile");

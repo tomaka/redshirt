@@ -25,7 +25,6 @@
 use alloc::format;
 use core::sync::atomic::{AtomicBool, Ordering};
 use futures::prelude::*;
-use rand_core::RngCore as _;
 
 /// Main struct of this crate. Runs everything.
 pub struct Kernel {
@@ -55,11 +54,6 @@ impl Kernel {
         if self.running.swap(true, Ordering::SeqCst) {
             crate::arch::halt();
         }
-
-        let mut rng = crate::random::rng::KernelRng::new();
-        let mut buf = [0; 32];
-        rng.fill_bytes(&mut buf);
-        panic!("{:?}", buf);
 
         let hello_module = redshirt_core::module::Module::from_bytes(
             &include_bytes!(
