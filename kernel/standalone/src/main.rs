@@ -28,6 +28,7 @@ extern crate alloc;
 extern crate compiler_builtins;
 
 mod arch;
+mod executor;
 mod hardware;
 mod kernel;
 mod mem_alloc;
