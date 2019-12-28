@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::{Decode, Encode, MessageId};
+use crate::{Decode, Encode, InterfaceHash, MessageId};
 use core::{
     fmt,
     mem::MaybeUninit,
@@ -39,7 +39,7 @@ use futures::prelude::*;
 /// environment to perform actions that would lead to unsafety.
 ///
 pub unsafe fn emit_message<'a>(
-    interface_hash: &[u8; 32],
+    interface_hash: &InterfaceHash,
     msg: impl Encode,
     needs_answer: bool,
 ) -> Result<Option<MessageId>, EmitErr> {
@@ -60,7 +60,7 @@ pub unsafe fn emit_message<'a>(
 /// environment to perform actions that would lead to unsafety.
 ///
 pub unsafe fn emit_message_without_response<'a>(
-    interface_hash: &[u8; 32],
+    interface_hash: &InterfaceHash,
     msg: impl Encode,
 ) -> Result<(), EmitErr> {
     emit_message(interface_hash, msg, false)?;
@@ -84,14 +84,14 @@ pub unsafe fn emit_message_without_response<'a>(
 /// environment to perform actions that would lead to unsafety.
 ///
 pub unsafe fn emit_message_raw(
-    interface_hash: &[u8; 32],
+    interface_hash: &InterfaceHash,
     buf: &[u8],
     needs_answer: bool,
 ) -> Result<Option<MessageId>, EmitErr> {
     let mut message_id_out = MaybeUninit::uninit();
 
     let ret = crate::ffi::emit_message(
-        interface_hash as *const [u8; 32] as *const _,
+        interface_hash as *const InterfaceHash as *const _,
         buf.as_ptr(),
         buf.len() as u32,
         needs_answer,
@@ -125,7 +125,7 @@ pub unsafe fn emit_message_raw(
 /// environment to perform actions that would lead to unsafety.
 ///
 pub unsafe fn emit_message_with_response<'a, T: Decode>(
-    interface_hash: [u8; 32],
+    interface_hash: InterfaceHash,
     msg: impl Encode,
 ) -> impl Future<Output = Result<T, EmitErr>> {
     let msg_id = match emit_message(&interface_hash, msg, true) {

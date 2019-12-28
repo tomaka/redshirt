@@ -20,7 +20,7 @@ use core::{mem, task::Context, task::Poll};
 use futures::prelude::*;
 use hashbrown::HashSet;
 use redshirt_interface_interface::ffi::InterfaceMessage;
-use redshirt_syscalls_interface::{Decode as _, EncodedMessage, MessageId, Pid};
+use redshirt_syscalls_interface::{Decode as _, EncodedMessage, InterfaceHash, MessageId, Pid};
 use spin::Mutex;
 
 /// Collection of objects that implement the [`NativeProgram`] trait.
@@ -34,7 +34,7 @@ pub enum NativeProgramsCollectionEvent<'col> {
     /// Request to emit a message.
     Emit {
         /// Interface to emit the message on.
-        interface: [u8; 32],
+        interface: InterfaceHash,
         /// Pid of the program that emits the message. Same as a value that was passed to
         /// [`push`](NativeProgramsCollection::push).
         emitter_pid: Pid,
@@ -67,7 +67,7 @@ pub struct NativeProgramsCollectionMessageIdWrite<'col> {
 /// Wraps around a [`NativeProgram`].
 struct Adapter<T> {
     inner: T,
-    registered_interfaces: Mutex<HashSet<[u8; 32]>>,
+    registered_interfaces: Mutex<HashSet<InterfaceHash>>,
     expected_responses: Mutex<HashSet<MessageId>>,
 }
 
@@ -79,7 +79,7 @@ trait AdapterAbstract {
     ) -> Poll<NativeProgramEvent<Box<dyn AbstractMessageIdWrite + 'col>>>;
     fn deliver_interface_message(
         &self,
-        interface: [u8; 32],
+        interface: InterfaceHash,
         message_id: Option<MessageId>,
         emitter_pid: Pid,
         message: EncodedMessage,
@@ -181,14 +181,15 @@ impl<'ext> NativeProgramsCollection<'ext> {
     /// has registered.
     pub fn interface_message(
         &self,
-        interface: [u8; 32],
+        interface: InterfaceHash,
         message_id: Option<MessageId>,
         emitter_pid: Pid,
         mut message: EncodedMessage,
     ) {
         for (_, process) in &self.processes {
             let msg = mem::replace(&mut message, EncodedMessage(Vec::new()));
-            match process.deliver_interface_message(interface, message_id, emitter_pid, msg) {
+            match process.deliver_interface_message(interface.clone(), message_id, emitter_pid, msg)
+            {
                 Ok(_) => return,
                 Err(msg) => message = msg,
             }
@@ -273,7 +274,7 @@ where
 
     fn deliver_interface_message(
         &self,
-        interface: [u8; 32],
+        interface: InterfaceHash,
         message_id: Option<MessageId>,
         emitter_pid: Pid,
         message: EncodedMessage,

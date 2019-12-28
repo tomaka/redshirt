@@ -14,7 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use core::future::Future;
-use redshirt_syscalls_interface::{EncodedMessage, MessageId, Pid};
+use redshirt_syscalls_interface::{EncodedMessage, InterfaceHash, MessageId, Pid};
 
 /// Reference to a native program.
 ///
@@ -38,7 +38,7 @@ pub trait NativeProgramRef<'a>: Clone {
     /// has registered.
     fn interface_message(
         self,
-        interface: [u8; 32],
+        interface: InterfaceHash,
         message_id: Option<MessageId>,
         emitter_pid: Pid,
         message: EncodedMessage,
@@ -58,7 +58,7 @@ pub enum NativeProgramEvent<TMsgIdWrite> {
     /// If the interface is not available, the message will be buffered.
     Emit {
         /// Interface to emit the message on.
-        interface: [u8; 32],
+        interface: InterfaceHash,
         /// If we expect an answer, contains an object that allows indicating to the
         /// [`NativeProgramRef`] which `MessageId` has been attributed.
         ///

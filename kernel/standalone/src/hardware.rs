@@ -25,7 +25,7 @@ use core::{convert::TryFrom as _, pin::Pin, sync::atomic};
 use futures::prelude::*;
 use hashbrown::HashMap;
 use redshirt_core::native::{DummyMessageIdWrite, NativeProgramEvent, NativeProgramRef};
-use redshirt_core::{Decode as _, Encode as _, EncodedMessage, MessageId, Pid};
+use redshirt_core::{Decode as _, Encode as _, EncodedMessage, InterfaceHash, MessageId, Pid};
 use redshirt_hardware_interface::ffi::{
     HardwareAccessResponse, HardwareMessage, Operation, INTERFACE,
 };
@@ -80,7 +80,7 @@ impl<'a> NativeProgramRef<'a> for &'a HardwareHandler {
 
     fn interface_message(
         self,
-        interface: [u8; 32],
+        interface: InterfaceHash,
         message_id: Option<MessageId>,
         emitter_pid: Pid,
         message: EncodedMessage,

@@ -248,7 +248,7 @@ impl System {
                             interface_hash,
                         ) => {
                             let result = self.core
-                                .set_interface_handler(interface_hash, pid)
+                                .set_interface_handler(interface_hash.clone(), pid)
                                 .map_err(|()| redshirt_interface_interface::ffi::InterfaceRegisterError::AlreadyRegistered);
                             let response =
                                 redshirt_interface_interface::ffi::InterfaceRegisterResponse {
