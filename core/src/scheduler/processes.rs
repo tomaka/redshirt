@@ -23,7 +23,6 @@ use hashbrown::{
     hash_map::{DefaultHashBuilder, Entry, OccupiedEntry},
     HashMap,
 };
-use rand::seq::SliceRandom as _;
 use redshirt_syscalls_interface::{Pid, ThreadId};
 
 /// Collection of multiple [`ProcessStateMachine`](vm::ProcessStateMachine)s grouped together in a
@@ -235,7 +234,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
     pub fn run(&mut self) -> RunOneOutcome<TExtr, TPud, TTud> {
         // We start by finding a thread in `self.processes` that is ready to run.
         let (mut process, inner_thread_index): (OccupiedEntry<_, _, _>, usize) = {
-            let mut entries = self.processes.iter_mut().collect::<Vec<_>>();
+            let entries = self.processes.iter_mut().collect::<Vec<_>>();
             // TODO: entries.shuffle(&mut rand::thread_rng());
             let entry = entries
                 .into_iter()

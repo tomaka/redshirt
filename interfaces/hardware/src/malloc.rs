@@ -18,7 +18,7 @@
 //! There are situations where it is necessary to pass to a device a pointer to a region of
 //! memory. This is where this module comes into play.
 
-use crate::{ffi, HardwareOperationsBuilder, HardwareWriteOperationsBuilder};
+use crate::{ffi, HardwareWriteOperationsBuilder};
 
 use alloc::{boxed::Box, vec, vec::Vec};
 use core::{convert::TryFrom, marker::PhantomData, mem, ptr};
@@ -150,6 +150,6 @@ pub fn malloc(size: u64, alignment: u8) -> impl Future<Output = u64> {
 pub fn free(ptr: u64) {
     unsafe {
         let msg = ffi::HardwareMessage::Free { ptr };
-        redshirt_syscalls_interface::emit_message_without_response(&ffi::INTERFACE, &msg);
+        redshirt_syscalls_interface::emit_message_without_response(&ffi::INTERFACE, &msg).unwrap();
     }
 }

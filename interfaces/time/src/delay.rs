@@ -14,7 +14,8 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use crate::{monotonic_wait_until, Instant};
-use std::{fmt, future::Future, pin::Pin, task::Context, task::Poll, time::Duration};
+use alloc::boxed::Box;
+use core::{fmt, future::Future, pin::Pin, task::Context, task::Poll, time::Duration};
 
 /// Mimics the API of `futures_timer::Delay`.
 pub struct Delay {
