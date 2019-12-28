@@ -77,7 +77,8 @@ impl Kernel {
         .unwrap();
 
         let pci_module = redshirt_core::module::Module::from_bytes(
-            &include_bytes!("../../../modules/target/wasm32-unknown-unknown/release/x86-pci.wasm")[..],
+            &include_bytes!("../../../modules/target/wasm32-unknown-unknown/release/x86-pci.wasm")
+                [..],
         )
         .unwrap();
 
