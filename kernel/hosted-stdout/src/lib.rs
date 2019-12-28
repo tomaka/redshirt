@@ -66,7 +66,7 @@ impl<'a> NativeProgramRef<'a> for &'a StdoutHandler {
 
     fn interface_message(
         self,
-        interface: [u8; 32],
+        interface: InterfaceHash,
         _message_id: Option<MessageId>,
         _emitter_pid: Pid,
         message: EncodedMessage,

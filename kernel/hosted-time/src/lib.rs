@@ -148,7 +148,7 @@ impl<'a> NativeProgramRef<'a> for &'a TimerHandler {
 
     fn interface_message(
         self,
-        interface: [u8; 32],
+        interface: InterfaceHash,
         message_id: Option<MessageId>,
         emitter_pid: Pid,
         message: EncodedMessage,

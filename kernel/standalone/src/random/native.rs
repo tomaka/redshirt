@@ -23,7 +23,7 @@ use crossbeam_queue::SegQueue;
 use futures::prelude::*;
 use rand_core::RngCore as _;
 use redshirt_core::native::{DummyMessageIdWrite, NativeProgramEvent, NativeProgramRef};
-use redshirt_core::{Decode as _, Encode as _, EncodedMessage, MessageId, Pid};
+use redshirt_core::{Decode as _, Encode as _, EncodedMessage, InterfaceHash, MessageId, Pid};
 use redshirt_random_interface::ffi::{GenerateResponse, RandomMessage, INTERFACE};
 
 /// State machine for `random` interface messages handling.
@@ -74,7 +74,7 @@ impl<'a> NativeProgramRef<'a> for &'a RandomNativeProgram {
 
     fn interface_message(
         self,
-        interface: [u8; 32],
+        interface: InterfaceHash,
         message_id: Option<MessageId>,
         _emitter_pid: Pid,
         message: EncodedMessage,
