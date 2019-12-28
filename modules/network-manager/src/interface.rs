@@ -522,12 +522,8 @@ impl<'a> smoltcp::phy::Device<'a> for RawDevice {
         let mut caps: phy::DeviceCapabilities = Default::default();
         caps.max_transmission_unit = 9216; // FIXME:
         caps.max_burst_size = None;
-        caps.checksum = phy::ChecksumCapabilities::default();
-        caps.checksum.ipv4 = phy::Checksum::Both;
-        caps.checksum.udp = phy::Checksum::Both;
-        caps.checksum.tcp = phy::Checksum::Both;
-        caps.checksum.icmpv4 = phy::Checksum::Both;
-        caps.checksum.icmpv6 = phy::Checksum::Both;
+        caps.checksum = phy::ChecksumCapabilities::ignored();
+        // TODO: ask to write/read checksums
         caps
     }
 }

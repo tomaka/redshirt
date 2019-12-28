@@ -40,9 +40,13 @@ pub enum TcpMessage {
     UnregisterInterface(u64),
     /// Notify when an interface has received data (e.g. from the Internet). Must answer with a
     /// `()` when the send is finished and we're ready to accept a new packet.
+    ///
+    /// The packet must be an Ethernet frame without the CRC.
     InterfaceOnData(u64, Vec<u8>),
     /// Asks for the next packet of data to send out through this interface (e.g. going towards
     /// the Internet). Must answer with a `Vec<u8>`.
+    ///
+    /// The packet must be an Ethernet frame without the CRC.
     InterfaceWaitData(u64),
 }
 

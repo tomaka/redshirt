@@ -21,6 +21,8 @@
 // Since reading and writing from/to the TAP interface is blocking, we spawn two background threads
 // dedicated to these operations.
 
+use byteorder::{BigEndian, ByteOrder as _};
+use crc::crc32::{self, Hasher32 as _};
 use futures::{channel::mpsc, executor::block_on, prelude::*};
 use redshirt_core::native::{
     DummyMessageIdWrite, NativeProgramEvent, NativeProgramMessageIdWrite, NativeProgramRef,
@@ -85,17 +87,36 @@ impl TapNetworkInterface {
                 let interface = interface.clone();
                 move || {
                     loop {
-                        let packet: Vec<u8> = match block_on(to_send_rx.next()) {
+                        let mut packet: Vec<u8> = match block_on(to_send_rx.next()) {
                             None => break, // The `TapNetworkInterface` has been dropped.
                             Some(p) => p,
                         };
 
-                        println!("sending packet");
+                        // Append the CRC to the packet.
+                        //let mut crc_digest = crc32::Digest::new(crc32::IEEE);
+                        let mut crc_digest = crc32::Digest::new_custom(crc32::IEEE, !0u32, !0u32, crc::CalcType::Reverse);
+                        crc_digest.write(&packet);
+                        let mut crc_bytes = [0; 4];
+                        BigEndian::write_u32(&mut crc_bytes, !crc_digest.sum32());
+                        for b in &mut crc_bytes {
+                            *b = b.reverse_bits();
+                        }
+                        packet.extend_from_slice(&crc_bytes);
 
-                        if interface.send(&packet).is_err() {
+                        println!("sending packet: {:?}", packet.iter().map(|b| format!("{:x}", b)).collect::<Vec<_>>().join(" "));
+
+                        // Verify our own CRC.
+                        debug_assert_eq!(0xc704dd7b, {
+                            let mut crc_digest = crc32::Digest::new(crc32::IEEE);
+                            crc_digest.write(&packet);
+                            crc_digest.sum32()
+                        });
+
+                        if let Err(err) = interface.send(&packet) {
                             // Error on the tap interface. Killing this thread will close the
                             // channel and thus inform the `TapNetworkInterface` that something
                             // bad happened.
+                            println!("error: {:?}", err);
                             break;
                         }
                     }
@@ -117,6 +138,8 @@ impl TapNetworkInterface {
                             break;
                         }
                     };
+
+                    // TODO: check and discard CRC?
 
                     println!("rx packet");
 
