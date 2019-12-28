@@ -93,11 +93,11 @@ impl TapNetworkInterface {
                         };
 
                         // Append the CRC to the packet.
-                        //let mut crc_digest = crc32::Digest::new(crc32::IEEE);
-                        let mut crc_digest = crc32::Digest::new_custom(crc32::IEEE, !0u32, !0u32, crc::CalcType::Reverse);
+                        let mut crc_digest = crc32::Digest::new(crc32::IEEE);
+                        //let mut crc_digest = crc32::Digest::new_custom(crc32::IEEE, !0u32, !0u32, crc::CalcType::Reverse);
                         crc_digest.write(&packet);
                         let mut crc_bytes = [0; 4];
-                        BigEndian::write_u32(&mut crc_bytes, !crc_digest.sum32());
+                        BigEndian::write_u32(&mut crc_bytes, crc_digest.sum32());
                         for b in &mut crc_bytes {
                             *b = b.reverse_bits();
                         }
@@ -105,12 +105,12 @@ impl TapNetworkInterface {
 
                         println!("sending packet: {:?}", packet.iter().map(|b| format!("{:x}", b)).collect::<Vec<_>>().join(" "));
 
-                        // Verify our own CRC.
+                        /*// Verify our own CRC.
                         debug_assert_eq!(0xc704dd7b, {
                             let mut crc_digest = crc32::Digest::new(crc32::IEEE);
                             crc_digest.write(&packet);
                             crc_digest.sum32()
-                        });
+                        });*/
 
                         if let Err(err) = interface.send(&packet) {
                             // Error on the tap interface. Killing this thread will close the
