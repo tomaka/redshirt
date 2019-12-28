@@ -111,7 +111,7 @@ async fn async_main() {
                 }
             }
             ffi::TcpMessage::InterfaceWaitData(id) => {
-                unimplemented!()
+                // TODO: unimplemented!()
                 /*network.inject_interface_data(id, buf);
                 redshirt_syscalls_interface::emit_answer(msg.id, &());*/
             }

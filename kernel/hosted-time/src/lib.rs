@@ -105,6 +105,9 @@ impl<'a> NativeProgramRef<'a> for &'a TimerHandler {
                     future::Either::Right((Some((time_message, message_id)), _)) => {
                         match time_message {
                             TimeMessage::GetMonotonic => {
+                                /*if message_id == From::from(8738800203853899706u64) {
+                                    panic!();
+                                }*/
                                 return NativeProgramEvent::Answer {
                                     message_id,
                                     answer: Ok(monotonic_clock().encode()),

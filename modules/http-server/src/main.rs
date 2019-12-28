@@ -20,6 +20,12 @@ fn main() {
     redshirt_syscalls_interface::block_on(async move {
         redshirt_time_interface::Delay::new(std::time::Duration::from_secs(2)).await;
 
+        // Note: IPv6 = 2a00:1450:4007:80f::200e
+        let out = 
+            redshirt_network_interface::TcpStream::connect(&"10.6.0.4:80".parse().unwrap())
+                .await
+                .unwrap();
+
         let listener =
             redshirt_network_interface::TcpListener::bind(&"0.0.0.0:8000".parse().unwrap())
                 .await

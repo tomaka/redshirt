@@ -475,11 +475,6 @@ impl<'a> smoltcp::phy::Device<'a> for RawDevice {
             return None;
         }
 
-        let in_buffer = self.device_in_buffer.try_lock().unwrap();
-        if in_buffer.is_empty() {
-            return None;
-        }
-
         let out_buffer = self.device_out_buffer.try_lock().unwrap();
         if !out_buffer.is_empty() {
             return None;
@@ -495,6 +490,7 @@ impl<'a> smoltcp::phy::Device<'a> for RawDevice {
     fn transmit(&'a mut self) -> Option<Self::TxToken> {
         let out_buffer = self.device_out_buffer.try_lock().unwrap();
         if !out_buffer.is_empty() {
+            panic!();
             return None;
         }
 
@@ -505,7 +501,12 @@ impl<'a> smoltcp::phy::Device<'a> for RawDevice {
         let mut caps: phy::DeviceCapabilities = Default::default();
         caps.max_transmission_unit = 9216; // FIXME:
         caps.max_burst_size = None;
-        caps.checksum = phy::ChecksumCapabilities::ignored();
+        caps.checksum = phy::ChecksumCapabilities::default();
+        caps.checksum.ipv4 = phy::Checksum::Both;
+        caps.checksum.udp = phy::Checksum::Both;
+        caps.checksum.tcp = phy::Checksum::Both;
+        caps.checksum.icmpv4 = phy::Checksum::Both;
+        caps.checksum.icmpv6 = phy::Checksum::Both;
         caps
     }
 }
@@ -539,6 +540,7 @@ impl<'a> phy::TxToken for RawDeviceTxToken<'a> {
         unsafe {
             self.buffer.set_len(len);
         }
+        panic!("len = {:?}", len);
         f(&mut self.buffer)
     }
 }

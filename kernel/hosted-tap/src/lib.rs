@@ -155,6 +155,7 @@ impl<'a> NativeProgramRef<'a> for &'a TapNetworkInterface {
                         mac_address[0] &= !0x1; // Ensure the MAC is not multicast.
                         println!("mac = {:?}", mac_address);
                         *registered_id = Some(id);
+                        // TODO: communicate MTU to network manager
                         let message = ffi::TcpMessage::RegisterInterface {
                             id,
                             mac_address,

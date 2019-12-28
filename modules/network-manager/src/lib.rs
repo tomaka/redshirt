@@ -154,10 +154,13 @@ where
     }
 }
 
-impl<'a, TIfId> TcpSocket<'a, TIfId> {
+impl<'a, TIfId: Clone> TcpSocket<'a, TIfId> {
     /// Returns the identifier of the socket, for later retrieval.
     pub fn id(&self) -> SocketId<TIfId> {
-        unimplemented!()
+        SocketId {
+            interface: self.device_id.clone(),
+            socket: self.inner.id(),
+        }
     }
 
     /// Closes the socket.
