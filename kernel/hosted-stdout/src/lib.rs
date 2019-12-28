@@ -17,7 +17,7 @@
 
 use futures::prelude::*;
 use redshirt_core::native::{DummyMessageIdWrite, NativeProgramEvent, NativeProgramRef};
-use redshirt_core::{Decode as _, Encode as _, EncodedMessage, MessageId, Pid};
+use redshirt_core::{Decode as _, Encode as _, EncodedMessage, InterfaceHash, MessageId, Pid};
 use redshirt_stdout_interface::ffi::{StdoutMessage, INTERFACE};
 use std::{
     io::{self, Write as _},

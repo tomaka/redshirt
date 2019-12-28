@@ -20,7 +20,7 @@ use futures_timer::Delay;
 use redshirt_core::native::{
     DummyMessageIdWrite, NativeProgramEvent, NativeProgramMessageIdWrite, NativeProgramRef,
 };
-use redshirt_core::{Decode as _, Encode as _, EncodedMessage, MessageId, Pid};
+use redshirt_core::{Decode as _, Encode as _, EncodedMessage, InterfaceHash, MessageId, Pid};
 use redshirt_time_interface::ffi::{TimeMessage, INTERFACE};
 use std::{
     convert::TryFrom,
