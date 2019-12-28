@@ -188,7 +188,8 @@ impl<'ext> NativeProgramsCollection<'ext> {
     ) {
         for (_, process) in &self.processes {
             let msg = mem::replace(&mut message, EncodedMessage(Vec::new()));
-            match process.deliver_interface_message(interface.clone(), message_id, emitter_pid, msg) {
+            match process.deliver_interface_message(interface.clone(), message_id, emitter_pid, msg)
+            {
                 Ok(_) => return,
                 Err(msg) => message = msg,
             }

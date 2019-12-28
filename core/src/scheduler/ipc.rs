@@ -13,12 +13,12 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::InterfaceHash;
 use crate::id_pool::IdPool;
 use crate::module::Module;
 use crate::scheduler::{processes, vm};
 use crate::sig;
 use crate::signature::Signature;
+use crate::InterfaceHash;
 
 use alloc::{borrow::Cow, collections::VecDeque, vec, vec::Vec};
 use byteorder::{ByteOrder as _, LittleEndian};
@@ -446,7 +446,9 @@ impl Core {
                 assert_eq!(params.len(), 6);
                 let interface: InterfaceHash = {
                     let addr = params[0].try_into::<i32>().unwrap() as u32;
-                    InterfaceHash::from(<[u8; 32]>::try_from(&thread.read_memory(addr, 32).unwrap()[..]).unwrap())
+                    InterfaceHash::from(
+                        <[u8; 32]>::try_from(&thread.read_memory(addr, 32).unwrap()[..]).unwrap(),
+                    )
                 };
                 let message = {
                     let addr = params[1].try_into::<i32>().unwrap() as u32;
@@ -479,7 +481,10 @@ impl Core {
                     None
                 };
 
-                thread.process_user_data().used_interfaces.insert(interface.clone());
+                thread
+                    .process_user_data()
+                    .used_interfaces
+                    .insert(interface.clone());
 
                 match (self.interfaces.get_mut(&interface), allow_delay) {
                     (Some(InterfaceState::Process(pid)), _) => {
@@ -621,7 +626,11 @@ impl Core {
     }
 
     // TODO: better API
-    pub fn set_interface_handler(&mut self, interface: InterfaceHash, process: Pid) -> Result<(), ()> {
+    pub fn set_interface_handler(
+        &mut self,
+        interface: InterfaceHash,
+        process: Pid,
+    ) -> Result<(), ()> {
         if self.processes.process_by_id(process).is_none() {
             if !self.reserved_pids.contains(&process) {
                 return Err(());
@@ -773,20 +782,18 @@ impl Core {
             (None, None)
         };
 
-        let pid =
-            match self
-                .interfaces
-                .entry(interface.clone())
-                .or_insert_with(|| InterfaceState::Requested {
-                    threads: SmallVec::new(),
-                    other: Vec::new(),
-                }) {
-                InterfaceState::Process(pid) => *pid,
-                InterfaceState::Requested { other, .. } => {
-                    other.push((emitter_pid, message_id, message.encode()));
-                    return message_id;
-                }
-            };
+        let pid = match self.interfaces.entry(interface.clone()).or_insert_with(|| {
+            InterfaceState::Requested {
+                threads: SmallVec::new(),
+                other: Vec::new(),
+            }
+        }) {
+            InterfaceState::Process(pid) => *pid,
+            InterfaceState::Requested { other, .. } => {
+                other.push((emitter_pid, message_id, message.encode()));
+                return message_id;
+            }
+        };
 
         if let Some(mut process) = self.processes.process_by_id(pid) {
             let message = redshirt_syscalls_interface::ffi::Message::Interface(
