@@ -2033,6 +2033,10 @@ name = "zeroize"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
+[[patch.unused]]
+name = "smoltcp"
+version = "0.5.0"
+
 [metadata]
 "checksum ahash 0.2.18 (registry+https://github.com/rust-lang/crates.io-index)" = "6f33b5018f120946c1dcf279194f238a9f146725593ead1c08fa47ff22b0b5d3"
 "checksum anyhow 1.0.23 (registry+https://github.com/rust-lang/crates.io-index)" = "6f1072d8f55592084072d2d3cb23a4b680a8543c00f10d446118e85ad3718142"

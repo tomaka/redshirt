@@ -569,6 +569,7 @@ impl Core {
                 };
                 let pid = thread.pid();
                 thread.resume(None);
+                *thread.user_data() = Thread::ReadyToRun;
                 self.answer_message_inner(msg_id, Ok(message))
                     .unwrap_or(CoreRunOutcomeInner::LoopAgain)
             }
