@@ -22,9 +22,7 @@
 //! - Share the newly-created [`Kernel`] between CPUs, and call [`Kernel::run`] once for each CPU.
 //!
 
-use alloc::format;
 use core::sync::atomic::{AtomicBool, Ordering};
-use futures::prelude::*;
 
 /// Main struct of this crate. Runs everything.
 pub struct Kernel {

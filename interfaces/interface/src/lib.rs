@@ -18,9 +18,7 @@
 #![deny(intra_doc_link_resolution_failure)]
 #![no_std]
 
-use core::mem;
 use futures::prelude::*;
-use parity_scale_codec::DecodeAll;
 
 pub use ffi::InterfaceRegisterError;
 
