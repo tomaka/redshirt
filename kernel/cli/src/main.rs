@@ -46,13 +46,10 @@ async fn async_main() {
         }
     };
 
-    let mut system =
-        redshirt_wasi_hosted::register_extrinsics(redshirt_core::system::SystemBuilder::new())
-            .with_interface_handler(redshirt_stdout_interface::ffi::INTERFACE)
-            .with_interface_handler(redshirt_time_interface::ffi::INTERFACE)
-            .with_interface_handler(redshirt_tcp_interface::ffi::INTERFACE)
-            .with_main_program([0; 32]) // TODO: just a test
-            .build();
+    let mut system = redshirt_core::system::SystemBuilder::new()
+        .with_native_program(redshirt_time_hosted::TimerHandler::new())
+        .with_native_program(redshirt_stdout_hosted::StdoutHandler::new())
+        .build();
 
     let cli_pid = if let Some(cli_requested_process) = cli_requested_process {
         Some(system.execute(&cli_requested_process))
@@ -60,131 +57,9 @@ async fn async_main() {
         None
     };
 
-    let time = Arc::new(redshirt_time_hosted::TimerHandler::new());
-    let tcp = Arc::new(redshirt_tcp_hosted::TcpState::new());
-    let mut wasi = redshirt_wasi_hosted::WasiStateMachine::new();
-
-    let mut to_answer_rx = {
-        let (mut to_answer_tx, to_answer_rx) = mpsc::channel(16);
-        let tcp = tcp.clone();
-        let time = time.clone();
-        async_std::task::spawn(async move {
-            loop {
-                let tcp = tcp.next_event();
-                let time = time.next_answer();
-                pin_mut!(tcp);
-                pin_mut!(time);
-                let to_send = match future::select(tcp, time).await {
-                    future::Either::Left(((msg_id, bytes), _)) => (msg_id, bytes),
-                    future::Either::Right(((msg_id, bytes), _)) => (msg_id, bytes),
-                };
-                if to_answer_tx.send(to_send).await.is_err() {
-                    break;
-                }
-            }
-        });
-        to_answer_rx
-    };
-
     loop {
-        let result = loop {
-            let only_poll = match system.run() {
-                redshirt_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
-                    pid,
-                    thread_id,
-                    extrinsic,
-                    params,
-                } => {
-                    let out =
-                        wasi.handle_extrinsic_call(&mut system, extrinsic, pid, thread_id, params);
-                    if let redshirt_wasi_hosted::HandleOut::EmitMessage {
-                        id,
-                        interface,
-                        message,
-                    } = out
-                    {
-                        if interface == redshirt_stdout_interface::ffi::INTERFACE {
-                            let msg =
-                                redshirt_stdout_interface::ffi::StdoutMessage::decode_all(&message);
-                            let redshirt_stdout_interface::ffi::StdoutMessage::Message(msg) =
-                                msg.unwrap();
-                            print!("{}", msg);
-                        } else if interface == redshirt_time_interface::ffi::INTERFACE {
-                            if let Some(answer) =
-                                time.time_message(id.map(MessageId::Wasi), &message)
-                            {
-                                unimplemented!()
-                            }
-                        } else if interface == redshirt_tcp_interface::ffi::INTERFACE {
-                            let message: redshirt_tcp_interface::ffi::TcpMessage =
-                                DecodeAll::decode_all(&message).unwrap();
-                            tcp.handle_message(id.map(MessageId::Wasi), message).await;
-                        } else {
-                            panic!()
-                        }
-                    }
-                    true
-                }
-                redshirt_core::system::SystemRunOutcome::InterfaceMessage {
-                    interface,
-                    message,
-                    ..
-                } if interface == redshirt_stdout_interface::ffi::INTERFACE => {
-                    let msg = redshirt_stdout_interface::ffi::StdoutMessage::decode_all(&message);
-                    let redshirt_stdout_interface::ffi::StdoutMessage::Message(msg) = msg.unwrap();
-                    print!("{}", msg);
-                    continue;
-                }
-                redshirt_core::system::SystemRunOutcome::InterfaceMessage {
-                    message_id,
-                    interface,
-                    message,
-                    ..
-                } if interface == redshirt_time_interface::ffi::INTERFACE => {
-                    if let Some(answer) =
-                        time.time_message(message_id.map(MessageId::Core), &message)
-                    {
-                        let answer = match &answer {
-                            Ok(v) => Ok(&v[..]),
-                            Err(()) => Err(()),
-                        };
-                        system.answer_message(message_id.unwrap(), answer);
-                    }
-                    continue;
-                }
-                redshirt_core::system::SystemRunOutcome::InterfaceMessage {
-                    message_id,
-                    interface,
-                    message,
-                    ..
-                } if interface == redshirt_tcp_interface::ffi::INTERFACE => {
-                    let message: redshirt_tcp_interface::ffi::TcpMessage =
-                        DecodeAll::decode_all(&message).unwrap();
-                    tcp.handle_message(message_id.map(MessageId::Core), message)
-                        .await;
-                    continue;
-                }
-                redshirt_core::system::SystemRunOutcome::Idle => false,
-                other => break other,
-            };
-
-            let (msg_to_respond, response_bytes) = if only_poll {
-                match to_answer_rx.next().now_or_never() {
-                    Some(e) => e,
-                    None => continue,
-                }
-            } else {
-                to_answer_rx.next().await
-            }
-            .unwrap();
-
-            match msg_to_respond {
-                MessageId::Core(msg_id) => system.answer_message(msg_id, Ok(&response_bytes)),
-                MessageId::Wasi(msg_id) => unimplemented!(),
-            }
-        };
-
-        match result {
+        let outcome = system.run().await;
+        match outcome {
             redshirt_core::system::SystemRunOutcome::ProgramFinished { pid, outcome } => {
                 if cli_pid == Some(pid) {
                     process::exit(match outcome {
@@ -199,9 +74,4 @@ async fn async_main() {
             _ => panic!(),
         }
     }
-}
-
-enum MessageId {
-    Core(u64),
-    Wasi(redshirt_wasi_hosted::WasiMessageId),
 }

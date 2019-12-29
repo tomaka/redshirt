@@ -17,43 +17,47 @@
 
 use futures::{channel::mpsc, lock::Mutex, prelude::*, stream::FuturesUnordered};
 use futures_timer::Delay;
-use parity_scale_codec::{DecodeAll, Encode as _};
-use redshirt_time_interface::ffi::TimeMessage;
+use redshirt_core::native::{
+    DummyMessageIdWrite, NativeProgramEvent, NativeProgramMessageIdWrite, NativeProgramRef,
+};
+use redshirt_core::{Decode as _, Encode as _, EncodedMessage, InterfaceHash, MessageId, Pid};
+use redshirt_time_interface::ffi::{TimeMessage, INTERFACE};
 use std::{
     convert::TryFrom,
     pin::Pin,
+    sync::atomic,
     time::{Duration, Instant, SystemTime},
 };
 
 /// State machine for `time` interface messages handling.
-pub struct TimerHandler<TMsgId> {
+pub struct TimerHandler {
+    /// If true, we have sent the interface registration message.
+    registered: atomic::AtomicBool,
     /// Accessed only by `next_event`.
-    inner: Mutex<TimerHandlerInner<TMsgId>>,
-    /// Send on this channel the new timers to insert in [`TimerHandlerInner::timers`].
-    new_timer_tx: mpsc::UnboundedSender<(Delay, TMsgId)>,
+    inner: Mutex<TimerHandlerInner>,
+    /// Send on this channel the received interface messages.
+    messages_tx: mpsc::UnboundedSender<(TimeMessage, MessageId)>,
 }
 
 /// Separate struct behind a mutex.
-struct TimerHandlerInner<TMsgId> {
+struct TimerHandlerInner {
     /// Stream of message IDs to answer.
-    timers: FuturesUnordered<Pin<Box<dyn Future<Output = TMsgId> + Send>>>, // TODO: meh for boxing
-    /// Receiving side of [`TimerHandler::new_timer_tx`].
-    new_timer_rx: mpsc::UnboundedReceiver<(Delay, TMsgId)>,
+    timers: FuturesUnordered<Pin<Box<dyn Future<Output = MessageId> + Send>>>, // TODO: meh for boxing
+    /// Receiving side of [`TimerHandler::messages_tx`].
+    messages_rx: mpsc::UnboundedReceiver<(TimeMessage, MessageId)>,
 }
 
-impl<TMsgId> TimerHandler<TMsgId>
-where
-    TMsgId: Send + 'static,
-{
+impl TimerHandler {
     /// Initializes the new state machine for timers.
     pub fn new() -> Self {
-        let (new_timer_tx, new_timer_rx) = mpsc::unbounded();
+        let (messages_tx, messages_rx) = mpsc::unbounded();
 
         TimerHandler {
+            registered: atomic::AtomicBool::new(false),
             inner: Mutex::new(TimerHandlerInner {
                 timers: {
                     let timers =
-                        FuturesUnordered::<Pin<Box<dyn Future<Output = TMsgId> + Send>>>::new();
+                        FuturesUnordered::<Pin<Box<dyn Future<Output = MessageId> + Send>>>::new();
                     // TODO: ugh; pushing a never-ending future, otherwise we get a permanent `None` when polling
                     timers.push(Box::pin(async move {
                         loop {
@@ -62,58 +66,109 @@ where
                     }));
                     timers
                 },
-                new_timer_rx,
+                messages_rx,
             }),
-            new_timer_tx,
+            messages_tx,
         }
     }
+}
 
-    /// Processes a message on the `time` interface, and optionally returns an answer to
-    /// immediately send  back.
-    pub fn time_message(
-        &self,
-        message_id: Option<TMsgId>,
-        message: &[u8],
-    ) -> Option<Result<Vec<u8>, ()>> {
-        match TimeMessage::decode_all(&message) {
-            Ok(TimeMessage::GetMonotonic) => Some(Ok(monotonic_clock().encode())),
-            Ok(TimeMessage::GetSystem) => Some(Ok(system_clock().encode())),
-            Ok(TimeMessage::WaitMonotonic(until)) => match until.checked_sub(monotonic_clock()) {
-                None => Some(Ok(().encode())),
-                Some(dur_from_now) => {
-                    // If `dur_from_now` is larger than a `u64`, we simply don't insert any timer.
-                    // We assume that we will never reach this time ever.
-                    if let Ok(dur) = u64::try_from(dur_from_now) {
-                        let dur = Duration::from_nanos(dur);
-                        self.new_timer_tx
-                            .unbounded_send((Delay::new(dur), message_id.unwrap()))
-                            .unwrap();
-                    }
-                    None
-                }
-            },
-            Err(_) => Some(Err(())),
-        }
-    }
+impl<'a> NativeProgramRef<'a> for &'a TimerHandler {
+    type Future =
+        Pin<Box<dyn Future<Output = NativeProgramEvent<Self::MessageIdWrite>> + Send + 'a>>;
+    type MessageIdWrite = DummyMessageIdWrite;
 
-    /// Returns the next message to answer, and the message to send back.
-    pub async fn next_answer(&self) -> (TMsgId, Vec<u8>) {
-        let mut inner = self.inner.lock().await;
-        let inner = &mut *inner;
-
-        loop {
-            match future::select(inner.timers.next(), inner.new_timer_rx.next()).await {
-                future::Either::Left((Some(message_id), _)) => return (message_id, ().encode()),
-                future::Either::Right((Some((new_delay, message_id)), _)) => {
-                    inner.timers.push(Box::pin(async move {
-                        new_delay.await;
-                        message_id
-                    }));
-                }
-                future::Either::Left((None, _)) => unreachable!(),
-                future::Either::Right((None, _)) => unreachable!(),
+    fn next_event(self) -> Self::Future {
+        Box::pin(async move {
+            if !self.registered.swap(true, atomic::Ordering::Relaxed) {
+                return NativeProgramEvent::Emit {
+                    interface: redshirt_interface_interface::ffi::INTERFACE,
+                    message_id_write: None,
+                    message: redshirt_interface_interface::ffi::InterfaceMessage::Register(
+                        INTERFACE,
+                    )
+                    .encode(),
+                };
             }
+
+            let mut inner = self.inner.lock().await;
+            let inner = &mut *inner;
+
+            loop {
+                match future::select(inner.timers.next(), inner.messages_rx.next()).await {
+                    future::Either::Left((Some(message_id), _)) => {
+                        return NativeProgramEvent::Answer {
+                            message_id,
+                            answer: Ok(().encode()),
+                        };
+                    }
+                    future::Either::Right((Some((time_message, message_id)), _)) => {
+                        match time_message {
+                            TimeMessage::GetMonotonic => {
+                                return NativeProgramEvent::Answer {
+                                    message_id,
+                                    answer: Ok(monotonic_clock().encode()),
+                                };
+                            }
+                            TimeMessage::GetSystem => {
+                                return NativeProgramEvent::Answer {
+                                    message_id,
+                                    answer: Ok(system_clock().encode()),
+                                };
+                            }
+                            TimeMessage::WaitMonotonic(until) => {
+                                match until.checked_sub(monotonic_clock()) {
+                                    None => {
+                                        return NativeProgramEvent::Answer {
+                                            message_id,
+                                            answer: Ok(().encode()),
+                                        }
+                                    }
+                                    Some(dur_from_now) => {
+                                        // If `dur_from_now` is larger than a `u64`, we simply don't insert any timer.
+                                        // We assume that we will never reach this time ever.
+                                        if let Ok(dur) = u64::try_from(dur_from_now) {
+                                            let delay = Delay::new(Duration::from_nanos(dur));
+                                            inner.timers.push(Box::pin(async move {
+                                                delay.await;
+                                                message_id
+                                            }));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    future::Either::Left((None, _)) => unreachable!(),
+                    future::Either::Right((None, _)) => unreachable!(),
+                }
+            }
+        })
+    }
+
+    fn interface_message(
+        self,
+        interface: InterfaceHash,
+        message_id: Option<MessageId>,
+        emitter_pid: Pid,
+        message: EncodedMessage,
+    ) {
+        debug_assert_eq!(interface, INTERFACE);
+
+        match TimeMessage::decode(message) {
+            Ok(msg) => {
+                self.messages_tx
+                    .unbounded_send((msg, message_id.unwrap()))
+                    .unwrap();
+            }
+            Err(_) => {}
         }
+    }
+
+    fn process_destroyed(self, _: Pid) {}
+
+    fn message_response(self, _: MessageId, _: Result<EncodedMessage, ()>) {
+        unreachable!()
     }
 }
 

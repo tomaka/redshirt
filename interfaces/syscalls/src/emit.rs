@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::{Decode, Encode};
+use crate::{Decode, Encode, InterfaceHash, MessageId};
 use core::{
     fmt,
     mem::MaybeUninit,
@@ -39,12 +39,12 @@ use futures::prelude::*;
 /// environment to perform actions that would lead to unsafety.
 ///
 pub unsafe fn emit_message<'a>(
-    interface_hash: &[u8; 32],
-    msg: impl Encode<'a>,
+    interface_hash: &InterfaceHash,
+    msg: impl Encode,
     needs_answer: bool,
-) -> Result<Option<u64>, EmitErr> {
+) -> Result<Option<MessageId>, EmitErr> {
     let encoded = msg.encode();
-    emit_message_raw(interface_hash, &encoded, needs_answer)
+    emit_message_raw(interface_hash, &encoded.0, needs_answer).map(|r| r.map(MessageId::from))
 }
 
 /// Emits a message destined to the handler of the given interface.
@@ -60,8 +60,8 @@ pub unsafe fn emit_message<'a>(
 /// environment to perform actions that would lead to unsafety.
 ///
 pub unsafe fn emit_message_without_response<'a>(
-    interface_hash: &[u8; 32],
-    msg: impl Encode<'a>,
+    interface_hash: &InterfaceHash,
+    msg: impl Encode,
 ) -> Result<(), EmitErr> {
     emit_message(interface_hash, msg, false)?;
     Ok(())
@@ -84,14 +84,14 @@ pub unsafe fn emit_message_without_response<'a>(
 /// environment to perform actions that would lead to unsafety.
 ///
 pub unsafe fn emit_message_raw(
-    interface_hash: &[u8; 32],
+    interface_hash: &InterfaceHash,
     buf: &[u8],
     needs_answer: bool,
-) -> Result<Option<u64>, EmitErr> {
+) -> Result<Option<MessageId>, EmitErr> {
     let mut message_id_out = MaybeUninit::uninit();
 
     let ret = crate::ffi::emit_message(
-        interface_hash as *const [u8; 32] as *const _,
+        interface_hash as *const InterfaceHash as *const _,
         buf.as_ptr(),
         buf.len() as u32,
         needs_answer,
@@ -104,7 +104,7 @@ pub unsafe fn emit_message_raw(
     }
 
     if needs_answer {
-        Ok(Some(message_id_out.assume_init()))
+        Ok(Some(MessageId::from(message_id_out.assume_init())))
     } else {
         Ok(None)
     }
@@ -125,8 +125,8 @@ pub unsafe fn emit_message_raw(
 /// environment to perform actions that would lead to unsafety.
 ///
 pub unsafe fn emit_message_with_response<'a, T: Decode>(
-    interface_hash: [u8; 32],
-    msg: impl Encode<'a>,
+    interface_hash: InterfaceHash,
+    msg: impl Encode,
 ) -> impl Future<Output = Result<T, EmitErr>> {
     let msg_id = match emit_message(&interface_hash, msg, true) {
         Ok(m) => m.unwrap(),
@@ -140,14 +140,8 @@ pub unsafe fn emit_message_with_response<'a, T: Decode>(
 }
 
 /// Cancel the given message. No answer will be received.
-pub fn cancel_message(message_id: u64) -> Result<(), CancelMessageErr> {
-    unsafe {
-        if crate::ffi::cancel_message(&message_id) == 0 {
-            Ok(())
-        } else {
-            Err(CancelMessageErr::InvalidMessageId)
-        }
-    }
+pub fn cancel_message(message_id: MessageId) {
+    unsafe { crate::ffi::cancel_message(&u64::from(message_id)) }
 }
 
 /// Error that can be retuend by functions that emit a message.
@@ -165,21 +159,6 @@ impl fmt::Display for EmitErr {
     }
 }
 
-/// Error that can be retuend by [`cancel_message`].
-#[derive(Debug)]
-pub enum CancelMessageErr {
-    /// The message ID is not valid.
-    InvalidMessageId,
-}
-
-impl fmt::Display for CancelMessageErr {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            CancelMessageErr::InvalidMessageId => write!(f, "Invalid message ID"),
-        }
-    }
-}
-
 /// Future that drives [`emit_message_with_response`] to completion.
 #[must_use]
 #[pin_project::pin_project(PinnedDrop)]
@@ -187,7 +166,7 @@ pub struct EmitMessageWithResponse<T> {
     #[pin]
     inner: Option<crate::MessageResponseFuture<T>>,
     // TODO: redundant with `inner`
-    msg_id: u64,
+    msg_id: MessageId,
 }
 
 impl<T: Decode> Future for EmitMessageWithResponse<T> {

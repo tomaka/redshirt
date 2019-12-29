@@ -13,10 +13,24 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-mod ipc;
-mod processes;
-mod tests;
-mod vm;
+use core::time::Duration;
 
-// TODO: move definition?
-pub use self::ipc::{Core, CoreBuilder, CoreProcess, CoreRunOutcome, CoreThread};
+/// Returns the amount of time that has elapsed since an undeterminate moment in time.
+#[cfg(target_arch = "x86_64")]
+pub fn monotonic_clock() -> Duration {
+    // TODO: wrong unit
+    let ns = unsafe { core::arch::x86_64::_rdtsc() };
+    Duration::from_nanos(ns)
+}
+
+/// Returns the amount of time that has elapsed since an undeterminate moment in time.
+#[cfg(target_arch = "arm")]
+pub fn monotonic_clock() -> Duration {
+    // TODO: ugh
+    // TODO: assumes that performance counters are supported and enabled
+    let reg: u32;
+    unsafe {
+        asm!("mrc p15, 0, $0, c9, c13, 0" : "=r"(reg) ::: "volatile");
+    }
+    Duration::from_nanos(u64::from(reg))
+}

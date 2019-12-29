@@ -14,9 +14,11 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use core::fmt;
+use crossbeam_queue::SegQueue;
 use rand::distributions::{Distribution as _, Uniform};
-use rand_chacha::{ChaCha20Core, ChaCha20Rng};
+use rand_chacha::ChaCha20Rng;
 use rand_core::SeedableRng as _;
+use rand_hc::Hc128Rng;
 use spin::Mutex;
 
 // Maths note: after 3 billion iterations, there's a 2% chance of a collision
@@ -26,26 +28,41 @@ use spin::Mutex;
 
 /// Lock-free pool of identifiers. Can assign new identifiers from it.
 pub struct IdPool {
-    /// Source of randomness.
-    // TODO: don't use a Mutex here unless necessary
-    rng: Mutex<ChaCha20Rng>,
+    /// Sources of randomness.
+    /// Every time we need a random number, we pop a state from this list, then push it back when
+    /// we're done.
+    rngs: SegQueue<ChaCha20Rng>,
     /// Distribution of IDs.
     distribution: Uniform<u64>,
+    /// RNG to seed other RNGs. We use a different algorithm than ChaCha in order to not clone
+    /// the ChaCha state when we derive from it.
+    // TODO: is it actually needed to have a different algorithm, or is this comment bullshit?
+    //       using a different algorithm doesn't hurt, but it'd be better if the comment was correct
+    master_rng: Mutex<Hc128Rng>,
 }
 
 impl IdPool {
     /// Initializes a new pool.
     pub fn new() -> Self {
         IdPool {
-            rng: Mutex::new(ChaCha20Rng::from_seed([0; 32])), // FIXME: proper seed
+            rngs: SegQueue::new(),
             distribution: Uniform::from(0..=u64::max_value()),
+            master_rng: Mutex::new(Hc128Rng::from_seed([0; 32])), // FIXME: proper seed
         }
     }
 
     /// Assigns a new PID from this pool.
     pub fn assign<T: From<u64>>(&self) -> T {
-        let mut rng = self.rng.lock();
-        let id = self.distribution.sample(&mut *rng);
+        if let Ok(mut rng) = self.rngs.pop() {
+            let id = self.distribution.sample(&mut rng);
+            self.rngs.push(rng);
+            return T::from(id);
+        }
+
+        let mut master_rng = self.master_rng.lock();
+        let mut new_rng = ChaCha20Rng::from_rng(&mut *master_rng).unwrap();
+        let id = self.distribution.sample(&mut new_rng);
+        self.rngs.push(new_rng);
         T::from(id)
     }
 }

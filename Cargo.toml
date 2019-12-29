@@ -2,9 +2,8 @@
 members = [
     "core",
     "kernel/cli",
-    "kernel/hosted-tcp",
+    "kernel/hosted-stdout",
     "kernel/hosted-time",
-    "kernel/hosted-wasi",
     "kernel/standalone",
     "interfaces/hardware",
     "interfaces/interface",
