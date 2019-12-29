@@ -22,7 +22,7 @@ fn main() {
 
         // Note: IPv6 = 2a00:1450:4007:80f::200e
         let out = 
-            redshirt_network_interface::TcpStream::connect(&"10.6.0.4:80".parse().unwrap())
+            redshirt_network_interface::TcpStream::connect(&From::from(("2a00:1450:4007:80f::200e".parse::<std::net::Ipv6Addr>().unwrap(), 80)))
                 .await
                 .unwrap();
 

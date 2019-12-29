@@ -27,21 +27,17 @@ use futures::{channel::mpsc, executor::block_on, prelude::*};
 use redshirt_core::native::{
     DummyMessageIdWrite, NativeProgramEvent, NativeProgramMessageIdWrite, NativeProgramRef,
 };
-use redshirt_core::{EncodedMessage, MessageId, Pid, Decode as _, Encode as _};
+use redshirt_core::{EncodedMessage, InterfaceHash, MessageId, Pid, Decode as _, Encode as _};
 use redshirt_network_interface::ffi;
 use spin::Mutex;
 use std::{fmt, io, pin::Pin, sync::Arc, thread};
 
+mod tap;
+
 /// TAP interface that registers itself towards the network manager.
 pub struct TapNetworkInterface {
-    /// Sender for messages to output on the TAP interface.
-    ///
-    /// Uses a `Buffer` in order to be able to make sure that sends are going to succeed.
-    // TODO: if `mpsc::Sender` gets a `is_ready()` function or something, we can get rid of
-    // the `Buffer`
-    to_send: Mutex<sink::Buffer<mpsc::Sender<Vec<u8>>, Vec<u8>>>,
-    /// Receiver for messages coming from the TAP interface.
-    recv: Mutex<mpsc::Receiver<Vec<u8>>>,
+    /// TAP interface, with a convenient API.
+    tap: tap::TapInterface,
     /// If `Some`, the id under which we're registered towards the network manager.
     registered_id: Mutex<Option<u64>>,
     /// If `Some`, we have emitted a message asking for more data to send.
@@ -73,86 +69,10 @@ impl TapNetworkInterface {
     /// Initializes a new TAP interface.
     ///
     /// > **Note**: It is extremely common for this method to fail because of lack of
-    /// >           priviledges. It might be a good idea to **not** unwrap this `Result`.
-    ///
+    /// >           privilege. It might be a good idea to **not** unwrap this `Result`.
     pub fn new() -> Result<TapNetworkInterface, io::Error> {
-        let (to_send, mut to_send_rx) = mpsc::channel(4);
-        let (mut recv_tx, recv) = mpsc::channel(4);
-
-        let interface = Arc::new(tun_tap::Iface::new("redshirt-%d", tun_tap::Mode::Tap)?);
-
-        thread::Builder::new()
-            .name("tap-sender".to_string())
-            .spawn({
-                let interface = interface.clone();
-                move || {
-                    loop {
-                        let mut packet: Vec<u8> = match block_on(to_send_rx.next()) {
-                            None => break, // The `TapNetworkInterface` has been dropped.
-                            Some(p) => p,
-                        };
-
-                        // Append the CRC to the packet.
-                        let mut crc_digest = crc32::Digest::new(crc32::IEEE);
-                        //let mut crc_digest = crc32::Digest::new_custom(crc32::IEEE, !0u32, !0u32, crc::CalcType::Reverse);
-                        crc_digest.write(&packet);
-                        let mut crc_bytes = [0; 4];
-                        BigEndian::write_u32(&mut crc_bytes, crc_digest.sum32());
-                        for b in &mut crc_bytes {
-                            *b = b.reverse_bits();
-                        }
-                        packet.extend_from_slice(&crc_bytes);
-
-                        println!("sending packet: {:?}", packet.iter().map(|b| format!("{:x}", b)).collect::<Vec<_>>().join(" "));
-
-                        /*// Verify our own CRC.
-                        debug_assert_eq!(0xc704dd7b, {
-                            let mut crc_digest = crc32::Digest::new(crc32::IEEE);
-                            crc_digest.write(&packet);
-                            crc_digest.sum32()
-                        });*/
-
-                        if let Err(err) = interface.send(&packet) {
-                            // Error on the tap interface. Killing this thread will close the
-                            // channel and thus inform the `TapNetworkInterface` that something
-                            // bad happened.
-                            println!("error: {:?}", err);
-                            break;
-                        }
-                    }
-                }
-            })?;
-
-        thread::Builder::new()
-            .name("tap-receiver".to_string())
-            .spawn(move || {
-                let mut read_buffer = vec![0; 1542];
-
-                loop {
-                    let buffer = match interface.recv(&mut read_buffer) {
-                        Ok(n) => read_buffer[..n].to_owned(),
-                        Err(_) => {
-                            // Error on the tap interface. Killing this thread will close the
-                            // channel and thus inform the `TapNetworkInterface` that something
-                            // bad happened.
-                            break;
-                        }
-                    };
-
-                    // TODO: check and discard CRC?
-
-                    println!("rx packet");
-
-                    if block_on(recv_tx.send(buffer)).is_err() {
-                        // The `TapNetworkInterface` has been dropped.
-                        break;
-                    }
-                }
-            })?;
-
         Ok(TapNetworkInterface {
-            to_send: Mutex::new(to_send.buffer(1)),
-            recv: Mutex::new(recv),
+            tap: tap::TapInterface::new()?,
             registered_id: Mutex::new(None),
             read_message_id: Mutex::new(None),
             write_message_id: Mutex::new(None),
@@ -195,22 +115,23 @@ impl<'a> NativeProgramRef<'a> for &'a TapNetworkInterface {
             // Emit, if necessary, a message asking for data to send on the interface.
             let read_message_id = self.read_message_id.try_lock().unwrap();
             if read_message_id.is_none() {
-                self.to_send.try_lock().unwrap().flush().await.unwrap();
-                return NativeProgramEvent::Emit {
-                    interface: ffi::INTERFACE,
-                    message: ffi::TcpMessage::InterfaceWaitData(registered_id)
-                        .encode(),
-                    message_id_write: Some(MessageIdWrite {
-                        interface: self,
-                        ty: MessageIdWriteTy::Read,
-                    }),
-                };
+                if self.tap.is_ready_to_send() {
+                    return NativeProgramEvent::Emit {
+                        interface: ffi::INTERFACE,
+                        message: ffi::TcpMessage::InterfaceWaitData(registered_id)
+                            .encode(),
+                        message_id_write: Some(MessageIdWrite {
+                            interface: self,
+                            ty: MessageIdWriteTy::Read,
+                        }),
+                    };
+                }
             }
 
             // Emit, if possible, a message feeding data that arrived from the interface.
             let write_message_id = self.write_message_id.try_lock().unwrap();
             if write_message_id.is_none() {
-                let data = self.recv.try_lock().unwrap().next().await.unwrap();
+                let data = self.tap.recv().await;
                 return NativeProgramEvent::Emit {
                     interface: ffi::INTERFACE,
                     message: ffi::TcpMessage::InterfaceOnData(registered_id, data)
@@ -223,14 +144,14 @@ impl<'a> NativeProgramRef<'a> for &'a TapNetworkInterface {
             }
 
             // If we reach here, there's nothing we can do, and the user is expected to call
-            // `message_answer` to make progress.
+            // `message_response` to make progress.
             loop {
                 futures::pending!()
             }
         })
     }
 
-    fn interface_message(self, _: [u8; 32], _: Option<MessageId>, _: Pid, _: EncodedMessage) {
+    fn interface_message(self, _: InterfaceHash, _: Option<MessageId>, _: Pid, _: EncodedMessage) {
         unreachable!()
     }
 
@@ -246,7 +167,7 @@ impl<'a> NativeProgramRef<'a> for &'a TapNetworkInterface {
             let data = Vec::<u8>::decode(data.unwrap()).unwrap();
             // Sending on `to_send` always succeeds because we make sure that the buffer is empty
             // before emitting a read message.
-            self.to_send.try_lock().unwrap().send(data).now_or_never().unwrap().unwrap();
+            self.tap.send(data);
         } else if Some(message_id) == *write_message_id {
             *write_message_id = None;
             debug_assert!(<()>::decode(data.unwrap()).is_ok());

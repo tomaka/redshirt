@@ -278,7 +278,8 @@ impl NetInterfaceState {
             redshirt_stdout_interface::stdout(format!("before now\n"));
             let n = now().await;
             redshirt_stdout_interface::stdout(format!("after now\n"));
-            self.ethernet.poll(&mut self.sockets, n).unwrap();
+            // Errors, other than `Unrecognized`, are meant to be logged and ignored.
+            let _ = self.ethernet.poll(&mut self.sockets, n);
             self.next_event_delay = match self.ethernet.poll_delay(&mut self.sockets, now().await) {
                 Some(d) => Some(redshirt_time_interface::Delay::new(d.into())),
                 None => continue,
@@ -350,6 +351,7 @@ impl NetInterfaceStateBuilder {
 
         let mut routes = smoltcp::iface::Routes::new(BTreeMap::new());
         routes.add_default_ipv4_route("192.168.1.1".parse().unwrap()).unwrap(); // TODO:
+        routes.add_default_ipv6_route("fe80::844b:2aff:fea4:513".parse().unwrap()).unwrap();
 
         let interface = smoltcp::iface::EthernetInterfaceBuilder::new(device)
             .ethernet_addr(smoltcp::wire::EthernetAddress(self.mac_address))

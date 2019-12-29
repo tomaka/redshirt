@@ -10,11 +10,14 @@ publish = false
 byteorder = "1.3.2"
 crc = { git = "https://github.com/mrhooray/crc-rs" }
 futures = "0.3.1"
+libc = "0.2.66" # TODO: remove
+mio = "0.6.21"
+parity-scale-codec = "1.0.5"
+rand = "0.7"
 redshirt-core = { path = "../../core" }
 redshirt-interface-interface = { path = "../../interfaces/interface" }
 redshirt-network-interface = { path = "../../interfaces/network" }
-parity-scale-codec = "1.0.5"
-rand = "0.7"
 # TODO: we use Mutexes from spin because we only ever use try_lock and std MutexGuards aren't Send
 spin = "0.5.2"
+tokio = { version = "0.2.6", features = ["io-driver", "io-util", "time"] }
 tun-tap = { version = "0.1.2", default-features = false }
