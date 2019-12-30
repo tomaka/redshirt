@@ -14,7 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use crate::{Decode, Encode, InterfaceHash, MessageId};
-use byteorder::{LittleEndian, ByteOrder as _};
+use byteorder::{ByteOrder as _, LittleEndian};
 use core::{
     convert::TryFrom as _,
     fmt,
@@ -93,7 +93,10 @@ pub unsafe fn emit_message_raw(
     let mut message_id_out = MaybeUninit::uninit();
 
     let mut slice = [0u8; 8];
-    LittleEndian::write_u32(&mut slice[0..4], u32::try_from(buf.as_ptr() as usize).unwrap());
+    LittleEndian::write_u32(
+        &mut slice[0..4],
+        u32::try_from(buf.as_ptr() as usize).unwrap(),
+    );
     LittleEndian::write_u32(&mut slice[4..8], u32::try_from(buf.len()).unwrap());
 
     let ret = crate::ffi::emit_message(

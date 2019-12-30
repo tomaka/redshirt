@@ -459,7 +459,9 @@ impl Core {
                         let sub_buf_ptr = LittleEndian::read_u32(&sub_buf_ptr);
                         let sub_buf_sz = thread.read_memory(addr + 4 * buf_n + 4, 4).unwrap();
                         let sub_buf_sz = LittleEndian::read_u32(&sub_buf_sz);
-                        out_msg.extend_from_slice(&thread.read_memory(sub_buf_ptr, sub_buf_sz).unwrap());
+                        out_msg.extend_from_slice(
+                            &thread.read_memory(sub_buf_ptr, sub_buf_sz).unwrap(),
+                        );
                     }
                     EncodedMessage(out_msg)
                 };
