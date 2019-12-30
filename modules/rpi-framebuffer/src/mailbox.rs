@@ -19,8 +19,28 @@ use std::convert::TryFrom as _;
 
 /// Message to write to the mailbox, or read from the mailbox.
 pub struct Message {
-    pub channel: u8,
-    pub data: u32,
+    /// Raw representation of the message, as written in memory or read from memory.
+    ///
+    /// 4 lowest bits are the channel. 28 highest bits are the data.
+    value: u32,
+}
+
+impl Message {
+    pub fn new(channel: u8, data: u32) -> Message {
+        assert!(channel < (1 << 4));
+        assert!(data < (1 << 28));
+        Message {
+            value: (data << 4) | u32::from(channel)
+        }
+    }
+
+    pub fn channel(&self) -> u8 {
+        u8::try_from(self.value & 0xf).unwrap()
+    }
+
+    pub fn data(&self) -> u32 {
+        self.value >> 4
+    }
 }
 
 const BASE_IO_PERIPH: u64 = 0x3f000000; // 0x20000000 for raspi 1
@@ -43,13 +63,7 @@ pub async fn read_mailbox() -> Message {
         let mut out = [0];
         read.read_u32(MAILBOX_BASE + 0x0, &mut out);
         read.send().await;
-
-        let channel = u8::try_from(out[0] & 0xf).unwrap();
-        let data = out[0] >> 4;
-        Message {
-            channel,
-            data,
-        }
+        Message { value: out[0] }
     }
 }
 
@@ -66,8 +80,6 @@ pub async fn write_mailbox(message: Message) {
             if out[0] & (1 << 31) == 0 { break; }
         }
 
-        assert!(message.data < (1 << 28));
-        let message: u32 = u32::from(message.channel) | (message.data << 4);
-        redshirt_hardware_interface::write_one_u32(MAILBOX_BASE + 0x20, message);
+        redshirt_hardware_interface::write_one_u32(MAILBOX_BASE + 0x20, message.value);
     }
 }

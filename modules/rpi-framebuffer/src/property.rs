@@ -26,6 +26,7 @@ struct Packet2 {
     data: [u32; 8],
 }
 
+// TODO: make more generic and explicit, with tags and all, to be more robust to code changes
 pub async fn init() {
     let buffer1 = redshirt_hardware_interface::malloc::PhysicalBuffer::new(Packet1 {
         data: [
@@ -40,17 +41,15 @@ pub async fn init() {
     }).await;
 
     assert_eq!(buffer1.pointer() % 16, 0);
-    mailbox::write_mailbox(mailbox::Message {
-        channel: 8,
-        data: u32::try_from(buffer1.pointer() >> 4).unwrap(),      // TODO: ` | 0x40000000` ?
-    });
+    mailbox::write_mailbox(mailbox::Message::new(8, u32::try_from(buffer1.pointer() >> 4).unwrap())).await;      // TODO: ` | 0x40000000` ?
 
     mailbox::read_mailbox().await;
-    //panic!();
 
     let data1 = buffer1.take().await;
     assert_eq!(data1.data[1], 0x80000000);
-    panic!();
+
+    let actual_width = data1.data[5];
+    let actual_height = data1.data[6];
 
     let buffer2 = redshirt_hardware_interface::malloc::PhysicalBuffer::new(Packet2 {
         data: [
@@ -62,10 +61,33 @@ pub async fn init() {
     }).await;
 
     assert_eq!(buffer2.pointer() % 16, 0);
-    mailbox::write_mailbox(mailbox::Message {
-        channel: 8,
-        data: u32::try_from(buffer2.pointer() >> 4).unwrap(),
-    });
+    mailbox::write_mailbox(mailbox::Message::new(8, u32::try_from(buffer2.pointer() >> 4).unwrap())).await;
 
     mailbox::read_mailbox().await;
+
+    let data2 = buffer2.take().await;
+    assert_eq!(data2.data[1], 0x80000000);
+
+    let fb_addr = data2.data[5];
+    let fb_size = data2.data[6];
+    //panic!("{:x} size {}", fb_addr, fb_size);
+
+    for x in 0..actual_width {
+        for y in 0..actual_height {
+            let ptr = fb_addr + 3 * ((y * actual_width) + x);
+            let mut op_builder = redshirt_hardware_interface::HardwareWriteOperationsBuilder::new();
+            unsafe {
+                op_builder.write(u64::from(ptr), vec![0xff, 0xff, 0xff]);
+            }
+            op_builder.send();
+
+            // TODO: we wait for an answer, otherwise we OOM
+            unsafe {
+                let mut read = redshirt_hardware_interface::HardwareOperationsBuilder::new();
+                let mut out = [0];
+                read.read_u32(0x3f000000 + 0xb880 + 0x18, &mut out);
+                read.send().await;
+            }
+        }
+    }
 }
