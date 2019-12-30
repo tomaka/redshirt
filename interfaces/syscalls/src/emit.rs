@@ -98,8 +98,6 @@ pub unsafe fn emit_message_raw(
 
     let ret = crate::ffi::emit_message(
         interface_hash as *const InterfaceHash as *const _,
-        // wasm32 is a little-endian platform, therefore we can cast a `*const u32` into a
-        // `*const u8` while respecting the contract that values must be little endian.
         slice.as_ptr(),
         1,
         needs_answer,
