@@ -25,6 +25,10 @@ mod mailbox;
 mod property;
 
 fn main() {
+    std::panic::set_hook(Box::new(|info| {
+        redshirt_stdout_interface::stdout(format!("Panic: {}\n", info));
+    }));
+
     redshirt_syscalls_interface::block_on(async_main());
 }
 

@@ -38,18 +38,18 @@ pub async fn init() {
             0, 0, 0                         // This pads the message to by 16 byte aligned
         ]            
     }).await;
-    panic!();
 
     assert_eq!(buffer1.pointer() % 16, 0);
     mailbox::write_mailbox(mailbox::Message {
         channel: 8,
-        data: u32::try_from(buffer1.pointer() >> 4).unwrap(),
+        data: u32::try_from(buffer1.pointer() >> 4).unwrap(),      // TODO: ` | 0x40000000` ?
     });
 
     mailbox::read_mailbox().await;
+    //panic!();
 
     let data1 = buffer1.take().await;
-    assert!(data1.data[1] == 0x80000000);
+    assert_eq!(data1.data[1], 0x80000000);
     panic!();
 
     let buffer2 = redshirt_hardware_interface::malloc::PhysicalBuffer::new(Packet2 {
