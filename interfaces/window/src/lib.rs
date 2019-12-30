@@ -29,7 +29,7 @@ impl Window {
     pub async fn open() -> Result<Window, ()> {
         let open = ffi::WindowMessage::Open(ffi::WindowOpen {});
         let response: ffi::WindowOpenResponse = unsafe {
-            redshirt_syscalls_interface::emit_message_with_response(ffi::INTERFACE, open)
+            redshirt_syscalls_interface::emit_message_with_response(&ffi::INTERFACE, open)
                 .await
                 .map_err(|_| ())?
         };
