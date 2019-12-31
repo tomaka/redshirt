@@ -316,7 +316,10 @@ impl Core {
                 CoreRunOutcomeInner::ThreadWaitUnavailableInterface { thread, interface } => {
                     CoreRunOutcome::ThreadWaitUnavailableInterface {
                         thread: CoreThread {
-                            thread: self.processes.thread_by_id(thread).unwrap(),
+                            thread: match self.processes.thread_by_id(thread) {
+                                Some(t) => t,
+                                None => unreachable!(),
+                            },
                         },
                         interface,
                     }
@@ -512,7 +515,10 @@ impl Core {
                                 },
                             );
 
-                            let mut process = self.processes.process_by_id(*pid).unwrap();
+                            let mut process = match self.processes.process_by_id(*pid) {
+                                Some(p) => p,
+                                None => unreachable!(),
+                            };
                             process.user_data().messages_queue.push_back(message);
                             try_resume_message_wait(process);
                             CoreRunOutcomeInner::LoopAgain
@@ -680,17 +686,18 @@ impl Core {
                 },
             );
 
-            self.processes
-                .process_by_id(process)
-                .unwrap()
-                .user_data()
-                .messages_queue
-                .push_back(message);
+            match self.processes.process_by_id(process) {
+                Some(mut p) => p.user_data().messages_queue.push_back(message),
+                None => unreachable!(),
+            }
         }
 
         // Now process the threads that were waiting for this interface to be registered.
         for thread_id in thread_ids {
-            let mut thread = self.processes.thread_by_id(thread_id).unwrap();
+            let mut thread = match self.processes.thread_by_id(thread_id) {
+                Some(t) => t,
+                None => unreachable!(),
+            };
             let thread_user_data = mem::replace(thread.user_data(), Thread::ReadyToRun);
             if let Thread::InterfaceNotAvailableWait {
                 interface: int,
@@ -766,8 +773,10 @@ impl Core {
         message: impl Encode,
     ) -> MessageId {
         assert!(self.reserved_pids.contains(&emitter_pid));
-        self.emit_interface_message_inner(emitter_pid, interface, message, true)
-            .unwrap()
+        match self.emit_interface_message_inner(emitter_pid, interface, message, true) {
+            Some(m) => m,
+            None => unreachable!(),
+        }
     }
 
     fn emit_interface_message_inner<'a>(
@@ -1100,13 +1109,15 @@ fn try_resume_message_wait_thread(
     // TODO: don't use as
     if msg_wait.out_size as usize >= msg_bytes.0.len() {
         // Write the message in the process's memory.
-        thread
-            .write_memory(msg_wait.out_pointer, &msg_bytes.0)
-            .unwrap();
+        match thread.write_memory(msg_wait.out_pointer, &msg_bytes.0) {
+            Ok(()) => {}
+            Err(_) => panic!(),
+        };
         // Zero the corresponding entry in the messages to wait upon.
-        thread
-            .write_memory(msg_wait.msg_ids_ptr + index_in_msg_ids * 8, &[0; 8])
-            .unwrap();
+        match thread.write_memory(msg_wait.msg_ids_ptr + index_in_msg_ids * 8, &[0; 8]) {
+            Ok(()) => {}
+            Err(_) => panic!(),
+        };
         // Pop the message from the queue, so that we don't deliver it twice.
         thread
             .process_user_data()

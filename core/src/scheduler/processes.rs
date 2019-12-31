@@ -225,7 +225,10 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
             self.processes.shrink_to(PROCESSES_MIN_CAPACITY);
         }
 
-        Ok(self.process_by_id(new_pid).unwrap())
+        Ok(match self.process_by_id(new_pid) {
+            Some(p) => p,
+            None => unreachable!(),
+        })
     }
 
     /// Runs one thread amongst the collection.
@@ -257,12 +260,14 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
 
         // Now run the thread until something happens.
         let run_outcome = {
-            let mut thread = process
-                .get_mut()
-                .state_machine
-                .thread(inner_thread_index)
-                .unwrap();
-            let value_back = thread.user_data().value_back.take().unwrap();
+            let mut thread = match process.get_mut().state_machine.thread(inner_thread_index) {
+                Some(t) => t,
+                None => unreachable!(),
+            };
+            let value_back = match thread.user_data().value_back.take() {
+                Some(vb) => vb,
+                None => unreachable!(),
+            };
             thread.run(value_back)
         };
 
@@ -312,7 +317,10 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
             // Thread wants to call an extrinsic function.
             Ok(vm::ExecOutcome::Interrupted { id, params, .. }) => {
                 // TODO: check params against signature with a debug_assert
-                let extrinsic = self.extrinsics.get_mut(&id).unwrap();
+                let extrinsic = match self.extrinsics.get_mut(&id) {
+                    Some(e) => e,
+                    None => unreachable!(),
+                };
                 RunOneOutcome::Interrupted {
                     thread: ProcessesCollectionThread {
                         process,
@@ -364,7 +372,10 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
         let mut loop_out = None;
         for (pid, process) in self.processes.iter_mut() {
             for thread_index in 0..process.state_machine.num_threads() {
-                let mut thread = process.state_machine.thread(thread_index).unwrap();
+                let mut thread = match process.state_machine.thread(thread_index) {
+                    Some(t) => t,
+                    None => unreachable!(),
+                };
                 if thread.user_data().thread_id == id {
                     loop_out = Some((pid.clone(), thread_index));
                     break;
@@ -460,7 +471,10 @@ impl<TPud, TTud> Process<TPud, TTud> {
     /// Finds a thread in this process that is ready to be executed.
     fn ready_to_run_thread_index(&mut self) -> Option<usize> {
         for thread_n in 0..self.state_machine.num_threads() {
-            let mut thread = self.state_machine.thread(thread_n).unwrap();
+            let mut thread = match self.state_machine.thread(thread_n) {
+                Some(t) => t,
+                None => unreachable!(),
+            };
             if thread.user_data().value_back.is_some() {
                 return Some(thread_n);
             }
@@ -570,11 +584,15 @@ where
 
 impl<'a, TPud, TTud> ProcessesCollectionThread<'a, TPud, TTud> {
     fn inner(&mut self) -> vm::Thread<Thread<TTud>> {
-        self.process
+        match self
+            .process
             .get_mut()
             .state_machine
             .thread(self.thread_index)
-            .unwrap()
+        {
+            Some(t) => t,
+            None => unreachable!(),
+        }
     }
 
     /// Returns the id of the thread. Allows later retrieval by calling
