@@ -215,9 +215,9 @@ impl<'a> HardwareOperationsBuilder<'a> {
         unsafe {
             let msg = ffi::HardwareMessage::HardwareAccess(self.operations);
             let out = self.out;
-            redshirt_syscalls_interface::emit_message_with_response(ffi::INTERFACE, msg).then(
-                move |response| {
-                    let response: Vec<ffi::HardwareAccessResponse> = response.unwrap();
+            redshirt_syscalls_interface::emit_message_with_response(&ffi::INTERFACE, msg)
+                .unwrap()
+                .then(move |response: Vec<ffi::HardwareAccessResponse>| {
                     for (response_elem, out) in response.into_iter().zip(out) {
                         match (response_elem, out) {
                             (ffi::HardwareAccessResponse::PortReadU8(val), Out::PortU8(out)) => {
@@ -246,8 +246,7 @@ impl<'a> HardwareOperationsBuilder<'a> {
                     }
 
                     future::ready(())
-                },
-            )
+                })
         }
     }
 }

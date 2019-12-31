@@ -43,9 +43,9 @@ pub async fn generate_in(out: &mut [u8]) {
             len: u16::try_from(chunk.len()).unwrap(),
         };
         let rep: ffi::GenerateResponse = unsafe {
-            redshirt_syscalls_interface::emit_message_with_response(ffi::INTERFACE, msg)
-                .await
+            redshirt_syscalls_interface::emit_message_with_response(&ffi::INTERFACE, msg)
                 .unwrap()
+                .await
         };
         chunk.copy_from_slice(&rep.result);
     }

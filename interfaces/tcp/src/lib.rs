@@ -20,8 +20,8 @@
 // TODO: everything here is a draft
 
 use futures::{prelude::*, ready};
-use parity_scale_codec::{DecodeAll, Encode as _};
-use redshirt_syscalls_interface::MessageId;
+use parity_scale_codec::DecodeAll;
+use redshirt_syscalls_interface::{Encode as _, MessageId};
 use std::{
     cmp, io, mem, net::Ipv6Addr, net::SocketAddr, pin::Pin, sync::Arc, task::Context, task::Poll,
     task::Waker,
@@ -55,8 +55,10 @@ impl TcpStream {
         });
 
         let msg_id = unsafe {
-            redshirt_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_open, true)
-                .unwrap()
+            let msg = tcp_open.encode();
+            redshirt_syscalls_interface::MessageBuilder::new()
+                .add_data(&msg)
+                .emit_with_response_raw(&ffi::INTERFACE)
                 .unwrap()
         };
 
@@ -102,8 +104,10 @@ impl AsyncRead for TcpStream {
                 socket_id: self.handle,
             });
             let msg_id = unsafe {
-                redshirt_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_read, true)
-                    .unwrap()
+                let msg = tcp_read.encode();
+                redshirt_syscalls_interface::MessageBuilder::new()
+                    .add_data(&msg)
+                    .emit_with_response_raw(&ffi::INTERFACE)
                     .unwrap()
             };
             self.pending_read = Some(Box::pin(redshirt_syscalls_interface::message_response(
@@ -133,8 +137,10 @@ impl AsyncWrite for TcpStream {
             data: buf.to_vec(),
         });
         let msg_id = unsafe {
-            redshirt_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_write, true)
-                .unwrap()
+            let msg = tcp_write.encode();
+            redshirt_syscalls_interface::MessageBuilder::new()
+                .add_data(&msg)
+                .emit_with_response_raw(&ffi::INTERFACE)
                 .unwrap()
         };
         self.pending_write = Some(Box::pin(redshirt_syscalls_interface::message_response(
@@ -187,7 +193,7 @@ impl Drop for TcpStream {
                 socket_id: self.handle,
             });
 
-            redshirt_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_close, false);
+            redshirt_syscalls_interface::emit_message_without_response(&ffi::INTERFACE, &tcp_close);
         }
     }
 }
@@ -214,8 +220,10 @@ impl TcpListener {
         });
 
         let msg_id = unsafe {
-            redshirt_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_listen, true)
-                .unwrap()
+            let msg = tcp_listen.encode();
+            redshirt_syscalls_interface::MessageBuilder::new()
+                .add_data(&msg)
+                .emit_with_response_raw(&ffi::INTERFACE)
                 .unwrap()
         };
 
@@ -261,8 +269,10 @@ impl TcpListener {
                 socket_id: self.handle,
             });
             let msg_id = unsafe {
-                redshirt_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_accept, true)
-                    .unwrap()
+                let msg = tcp_accept.encode();
+                redshirt_syscalls_interface::MessageBuilder::new()
+                    .add_data(&msg)
+                    .emit_with_response_raw(&ffi::INTERFACE)
                     .unwrap()
             };
             self.pending_accept = Some(Box::pin(redshirt_syscalls_interface::message_response(
@@ -279,7 +289,7 @@ impl Drop for TcpListener {
                 socket_id: self.handle,
             });
 
-            redshirt_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_close, false);
+            redshirt_syscalls_interface::emit_message_without_response(&ffi::INTERFACE, &tcp_close);
         }
     }
 }
