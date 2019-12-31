@@ -69,7 +69,7 @@ impl KernelRng {
             // our entropy would be too low.
             let rounds = match rng.test_timer() {
                 Ok(r) => r,
-                Err(err) => panic!("{:?}", err)
+                Err(err) => panic!("{:?}", err),
             };
             rng.set_rounds(rounds);
             // According to the documentation, we have to discard the first `u64`.
