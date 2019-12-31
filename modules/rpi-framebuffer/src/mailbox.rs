@@ -18,6 +18,8 @@
 use std::convert::TryFrom as _;
 
 /// Message to write to the mailbox, or read from the mailbox.
+///
+/// A message is composed of a channel number and data.
 pub struct Message {
     /// Raw representation of the message, as written in memory or read from memory.
     ///
@@ -26,6 +28,12 @@ pub struct Message {
 }
 
 impl Message {
+    /// Builds a message from its raw components.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `data` doesn't fit in 28 bits or `channel` doesn't fit in 4 bits.
+    ///
     pub fn new(channel: u8, data: u32) -> Message {
         assert!(channel < (1 << 4));
         assert!(data < (1 << 28));
@@ -34,10 +42,12 @@ impl Message {
         }
     }
 
+    /// Returns the channel of this message.
     pub fn channel(&self) -> u8 {
         u8::try_from(self.value & 0xf).unwrap()
     }
 
+    /// Returns the data of this message.
     pub fn data(&self) -> u32 {
         self.value >> 4
     }
