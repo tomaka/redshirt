@@ -458,9 +458,9 @@ impl Core {
                     let num_bufs = params[2].try_into::<i32>().unwrap() as u32;
                     let mut out_msg = Vec::new();
                     for buf_n in 0..num_bufs {
-                        let sub_buf_ptr = thread.read_memory(addr + 4 * buf_n, 4).unwrap();
+                        let sub_buf_ptr = thread.read_memory(addr + 8 * buf_n, 4).unwrap();
                         let sub_buf_ptr = LittleEndian::read_u32(&sub_buf_ptr);
-                        let sub_buf_sz = thread.read_memory(addr + 4 * buf_n + 4, 4).unwrap();
+                        let sub_buf_sz = thread.read_memory(addr + 8 * buf_n + 4, 4).unwrap();
                         let sub_buf_sz = LittleEndian::read_u32(&sub_buf_sz);
                         out_msg.extend_from_slice(
                             &thread.read_memory(sub_buf_ptr, sub_buf_sz).unwrap(),
