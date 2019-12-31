@@ -385,7 +385,11 @@ impl<T> ProcessStateMachine<T> {
             .and_then(|f| f)
             .ok_or(StartErr::FunctionNotFound)?;
 
-        let execution = wasmi::FuncInstance::invoke_resumable(&function, params).unwrap();
+        let execution = match wasmi::FuncInstance::invoke_resumable(&function, params) {
+            Ok(e) => e,
+            Err(err) => unreachable!("{:?}", err),
+        };
+
         self.threads.push(ThreadState {
             execution: Some(execution),
             interrupted: false,
@@ -413,7 +417,10 @@ impl<T> ProcessStateMachine<T> {
 
         match self.module.export_by_name(symbol_name) {
             Some(wasmi::ExternVal::Func(f)) => {
-                let execution = wasmi::FuncInstance::invoke_resumable(&f, params).unwrap();
+                let execution = match wasmi::FuncInstance::invoke_resumable(&f, params) {
+                    Ok(e) => e,
+                    Err(err) => unreachable!("{:?}", err),
+                };
                 self.threads.push(ThreadState {
                     execution: Some(execution),
                     interrupted: false,
@@ -462,10 +469,12 @@ impl<T> ProcessStateMachine<T> {
     ///
     /// Returns an error if the range is invalid or out of range.
     pub fn read_memory(&self, offset: u32, size: u32) -> Result<Vec<u8>, ()> {
-        self.memory
-            .as_ref()
-            .unwrap()
-            .get(offset, size.try_into().map_err(|_| ())?)
+        let mem = match self.memory.as_ref() {
+            Some(m) => m,
+            None => unreachable!(),
+        };
+
+        mem.get(offset, size.try_into().map_err(|_| ())?)
             .map_err(|_| ())
     }
 
@@ -473,11 +482,12 @@ impl<T> ProcessStateMachine<T> {
     ///
     /// Returns an error if the range is invalid or out of range.
     pub fn write_memory(&mut self, offset: u32, value: &[u8]) -> Result<(), ()> {
-        self.memory
-            .as_ref()
-            .unwrap()
-            .set(offset, value)
-            .map_err(|_| ())
+        let mem = match self.memory.as_ref() {
+            Some(m) => m,
+            None => unreachable!(),
+        };
+
+        mem.set(offset, value).map_err(|_| ())
     }
 }
 
@@ -540,7 +550,10 @@ impl<'a, T> Thread<'a, T> {
 
         let thread_state = &mut self.vm.threads[self.index];
 
-        let mut execution = thread_state.execution.take().unwrap();
+        let mut execution = match thread_state.execution.take() {
+            Some(e) => e,
+            None => unreachable!(),
+        };
         let result = if thread_state.interrupted {
             let expected_ty = execution.resumable_value_type();
             let obtained_ty = value.as_ref().map(|v| v.value_type());
@@ -579,7 +592,10 @@ impl<'a, T> Thread<'a, T> {
             Err(wasmi::ResumableError::NotResumable) => unreachable!(),
             Err(wasmi::ResumableError::Trap(ref trap)) if trap.kind().is_host() => {
                 let interrupt: &Interrupt = match trap.kind() {
-                    wasmi::TrapKind::Host(err) => err.downcast_ref().unwrap(),
+                    wasmi::TrapKind::Host(err) => match err.downcast_ref() {
+                        Some(e) => e,
+                        None => unreachable!(),
+                    },
                     _ => unreachable!(),
                 };
                 thread_state.execution = Some(execution);

@@ -60,7 +60,10 @@ impl IdPool {
         }
 
         let mut master_rng = self.master_rng.lock();
-        let mut new_rng = ChaCha20Rng::from_rng(&mut *master_rng).unwrap();
+        let mut new_rng = match ChaCha20Rng::from_rng(&mut *master_rng) {
+            Ok(r) => r,
+            Err(_) => unreachable!(),
+        };
         let id = self.distribution.sample(&mut new_rng);
         self.rngs.push(new_rng);
         T::from(id)
