@@ -176,7 +176,10 @@ impl System {
                         let redshirt_loader_interface::ffi::LoadResponse { result } =
                             Decode::decode(response.unwrap()).unwrap();
                         let module = Module::from_bytes(&result.unwrap()).unwrap();
-                        self.core.execute(&module).unwrap();
+                        match self.core.execute(&module) {
+                            Ok(_) => {}
+                            Err(_) => panic!(),
+                        }
                     } else {
                         self.native_programs.message_response(message_id, response);
                     }
@@ -219,16 +222,17 @@ impl System {
                             // TODO: implement
                         }
                         redshirt_threads_interface::ffi::ThreadsMessage::FutexWait(wait) => {
-                            let message_id = message_id.unwrap();
-                            // TODO: val_cmp
-                            match self.futex_waits.entry((pid, wait.addr)) {
-                                Entry::Occupied(mut e) => e.get_mut().push(message_id),
-                                Entry::Vacant(e) => {
-                                    e.insert({
-                                        let mut sv = SmallVec::new();
-                                        sv.push(message_id);
-                                        sv
-                                    });
+                            if let Some(message_id) = message_id {
+                                // TODO: val_cmp
+                                match self.futex_waits.entry((pid, wait.addr)) {
+                                    Entry::Occupied(mut e) => e.get_mut().push(message_id),
+                                    Entry::Vacant(e) => {
+                                        e.insert({
+                                            let mut sv = SmallVec::new();
+                                            sv.push(message_id);
+                                            sv
+                                        });
+                                    }
                                 }
                             }
                         }
@@ -241,8 +245,12 @@ impl System {
                     interface,
                     message,
                 } if interface == redshirt_interface_interface::ffi::INTERFACE => {
-                    let msg: redshirt_interface_interface::ffi::InterfaceMessage =
-                        Decode::decode(message).unwrap();
+                    let msg = match redshirt_interface_interface::ffi::InterfaceMessage::decode(
+                        message,
+                    ) {
+                        Ok(m) => m,
+                        Err(_) => panic!(), // TODO:
+                    };
                     match msg {
                         redshirt_interface_interface::ffi::InterfaceMessage::Register(
                             interface_hash,
@@ -348,16 +356,20 @@ impl SystemBuilder {
 
         // We ask the core to redirect messages for the `interface` and `threads` interfaces
         // towards our "virtual" `Pid`s.
-        core.set_interface_handler(
+        match core.set_interface_handler(
             redshirt_interface_interface::ffi::INTERFACE,
             self.interface_interface_pid,
-        )
-        .unwrap();
-        core.set_interface_handler(
+        ) {
+            Ok(()) => {}
+            Err(_) => unreachable!(),
+        };
+        match core.set_interface_handler(
             redshirt_threads_interface::ffi::INTERFACE,
             self.threads_interface_pid,
-        )
-        .unwrap();
+        ) {
+            Ok(()) => {}
+            Err(_) => unreachable!(),
+        };
 
         for program in self.startup_processes {
             core.execute(&program)

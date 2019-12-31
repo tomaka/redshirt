@@ -182,7 +182,7 @@ fn write_commands_wrappers(mut out: impl Write, registry: &parse::VkRegistry) {
             );
         }
 
-        writeln!(out, "    let msg_id = redshirt_syscalls_interface::emit_message_raw(&INTERFACE, &msg_buf, true).unwrap().unwrap();").unwrap();
+        writeln!(out, "    let msg_id = redshirt_syscalls_interface::MessageBuilder::new().add_data(&redshirt_syscalls_interface::EncodedMessage(msg_buf)).emit_with_response_raw(&INTERFACE).unwrap();").unwrap();
         writeln!(
             out,
             "    let response = redshirt_syscalls_interface::message_response_sync_raw(msg_id);"
