@@ -138,7 +138,7 @@ where
         let ret = crate::ffi::emit_message(
             interface as *const InterfaceHash as *const _,
             self.array.as_ptr(),
-            u32::try_from(self.array.len() / 4).unwrap(),
+            u32::try_from(self.array.len() / 8).unwrap(),
             needs_answer,
             self.allow_delay,
             message_id_out.as_mut_ptr(),
