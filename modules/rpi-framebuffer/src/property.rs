@@ -96,7 +96,9 @@ impl<'a> PropertyMessageParser<'a> {
 
     /// Returns an iterator to the list of tags of the message.
     pub fn tags<'b: 'a>(&'b self) -> impl Iterator<Item = PropertyMessageParserTag<'a>> + 'b {
-        let mut cursor = 2; // start at the first tag
+        // This is the "state" of our iterator. Corresponds to the start index of the next tag
+        // within `self.data`.
+        let mut cursor = 2;
 
         iter::from_fn(move || {
             if cursor >= u32::try_from(self.data.len()).unwrap() {
