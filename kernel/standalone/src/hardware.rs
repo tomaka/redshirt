@@ -20,8 +20,9 @@
 
 use crate::arch;
 
-use alloc::{boxed::Box, collections::VecDeque, vec::Vec};
+use alloc::{boxed::Box, vec::Vec};
 use core::{convert::TryFrom as _, pin::Pin, sync::atomic};
+use crossbeam_queue::SegQueue;
 use futures::prelude::*;
 use hashbrown::HashMap;
 use redshirt_core::native::{DummyMessageIdWrite, NativeProgramEvent, NativeProgramRef};
@@ -38,7 +39,8 @@ pub struct HardwareHandler {
     /// For each PID, a list of memory allocations.
     // TODO: optimize
     allocations: Mutex<HashMap<Pid, Vec<Vec<u8>>>>,
-    pending_messages: Mutex<VecDeque<(MessageId, Result<EncodedMessage, ()>)>>,
+    /// List of messages waiting to be emitted with `next_event`.
+    pending_messages: SegQueue<(MessageId, Result<EncodedMessage, ()>)>,
 }
 
 impl HardwareHandler {
@@ -47,7 +49,7 @@ impl HardwareHandler {
         HardwareHandler {
             registered: atomic::AtomicBool::new(false),
             allocations: Mutex::new(HashMap::new()),
-            pending_messages: Mutex::new(VecDeque::new()),
+            pending_messages: SegQueue::new(),
         }
     }
 }
@@ -67,8 +69,8 @@ impl<'a> NativeProgramRef<'a> for &'a HardwareHandler {
             }));
         }
 
-        let mut messages = self.pending_messages.try_lock().unwrap();
-        if let Some((message_id, answer)) = messages.pop_front() {
+        // TODO: wrong; if a message gets pushed, we don't wake up the task
+        if let Ok((message_id, answer)) = self.pending_messages.pop() {
             Box::pin(future::ready(NativeProgramEvent::Answer {
                 message_id,
                 answer,
@@ -98,11 +100,11 @@ impl<'a> NativeProgramRef<'a> for &'a HardwareHandler {
                     }
                 }
 
-                if !response.is_empty() {
-                    self.pending_messages
-                        .try_lock()
-                        .unwrap()
-                        .push_back((message_id.unwrap(), Ok(response.encode())));
+                if let Some(message_id) = message_id {
+                    if !response.is_empty() {
+                        self.pending_messages
+                            .push((message_id, Ok(response.encode())));
+                    }
                 }
             }
             Ok(HardwareMessage::Malloc { size, alignment }) => {
@@ -117,10 +119,10 @@ impl<'a> NativeProgramRef<'a> for &'a HardwareHandler {
                 let mut allocations = self.allocations.lock();
                 allocations.entry(emitter_pid).or_default().push(buffer);
 
-                self.pending_messages
-                    .try_lock()
-                    .unwrap()
-                    .push_back((message_id.unwrap(), Ok(ptr.encode())));
+                if let Some(message_id) = message_id {
+                    self.pending_messages
+                        .push((message_id, Ok(ptr.encode())));
+                }
             }
             Ok(HardwareMessage::Free { ptr }) => {
                 if let Ok(ptr) = usize::try_from(ptr) {
@@ -134,11 +136,13 @@ impl<'a> NativeProgramRef<'a> for &'a HardwareHandler {
                 }
             }
             Ok(HardwareMessage::InterruptWait(_int_id)) => unimplemented!(), // TODO:
-            Err(_) => self
-                .pending_messages
-                .try_lock()
-                .unwrap()
-                .push_back((message_id.unwrap(), Err(()))),
+            Err(_) => {
+                if let Some(message_id) = message_id {
+                    self
+                        .pending_messages
+                        .push((message_id, Err(())))
+                }
+            },
         }
     }
 
@@ -157,7 +161,11 @@ unsafe fn perform_operation(operation: Operation) -> Option<HardwareAccessRespon
             if let Ok(mut address) = usize::try_from(address) {
                 for byte in data {
                     (address as *mut u8).write_volatile(byte);
-                    address = address.checked_add(1).unwrap();
+                    if let Some(addr_next) = address.checked_add(1) {
+                        address = addr_next;
+                    } else {
+                        break;
+                    }
                 }
             }
             None
@@ -166,7 +174,11 @@ unsafe fn perform_operation(operation: Operation) -> Option<HardwareAccessRespon
             if let Ok(mut address) = usize::try_from(address) {
                 for word in data {
                     (address as *mut u16).write_volatile(word);
-                    address = address.checked_add(2).unwrap();
+                    if let Some(addr_next) = address.checked_add(2) {
+                        address = addr_next;
+                    } else {
+                        break;
+                    }
                 }
             }
             None
@@ -175,35 +187,54 @@ unsafe fn perform_operation(operation: Operation) -> Option<HardwareAccessRespon
             if let Ok(mut address) = usize::try_from(address) {
                 for dword in data {
                     (address as *mut u32).write_volatile(dword);
-                    address = address.checked_add(4).unwrap();
+                    if let Some(addr_next) = address.checked_add(4) {
+                        address = addr_next;
+                    } else {
+                        break;
+                    }
                 }
             }
             None
         }
-        Operation::PhysicalMemoryReadU8 { mut address, len } => {
+        Operation::PhysicalMemoryReadU8 { address, len } => {
             // TODO: try allocate `len` but don't panic if `len` is too large
             let mut out = Vec::with_capacity(len as usize); // TODO: don't use `as`
+            let mut address = Some(address);
             for _ in 0..len {
-                out.push((address as *mut u8).read_volatile());
-                address = address.checked_add(1).unwrap();
+                if let Some(addr) = address {
+                    out.push((addr as *mut u8).read_volatile());
+                    address = addr.checked_add(1);
+                } else {
+                    out.push(0);
+                }
             }
             Some(HardwareAccessResponse::PhysicalMemoryReadU8(out))
         }
-        Operation::PhysicalMemoryReadU16 { mut address, len } => {
+        Operation::PhysicalMemoryReadU16 { address, len } => {
             // TODO: try allocate `len` but don't panic if `len` is too large
             let mut out = Vec::with_capacity(len as usize); // TODO: don't use `as`
+            let mut address = Some(address);
             for _ in 0..len {
-                out.push((address as *mut u16).read_volatile());
-                address = address.checked_add(2).unwrap();
+                if let Some(addr) = address {
+                    out.push((addr as *mut u16).read_volatile());
+                    address = addr.checked_add(2);
+                } else {
+                    out.push(0);
+                }
             }
             Some(HardwareAccessResponse::PhysicalMemoryReadU16(out))
         }
-        Operation::PhysicalMemoryReadU32 { mut address, len } => {
+        Operation::PhysicalMemoryReadU32 { address, len } => {
             // TODO: try allocate `len` but don't panic if `len` is too large
             let mut out = Vec::with_capacity(len as usize); // TODO: don't use `as`
+            let mut address = Some(address);
             for _ in 0..len {
-                out.push((address as *mut u32).read_volatile());
-                address = address.checked_add(4).unwrap();
+                if let Some(addr) = address {
+                    out.push((addr as *mut u32).read_volatile());
+                    address = addr.checked_add(4);
+                } else {
+                    out.push(0);
+                }
             }
             Some(HardwareAccessResponse::PhysicalMemoryReadU32(out))
         }
