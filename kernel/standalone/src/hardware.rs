@@ -120,8 +120,7 @@ impl<'a> NativeProgramRef<'a> for &'a HardwareHandler {
                 allocations.entry(emitter_pid).or_default().push(buffer);
 
                 if let Some(message_id) = message_id {
-                    self.pending_messages
-                        .push((message_id, Ok(ptr.encode())));
+                    self.pending_messages.push((message_id, Ok(ptr.encode())));
                 }
             }
             Ok(HardwareMessage::Free { ptr }) => {
@@ -138,11 +137,9 @@ impl<'a> NativeProgramRef<'a> for &'a HardwareHandler {
             Ok(HardwareMessage::InterruptWait(_int_id)) => unimplemented!(), // TODO:
             Err(_) => {
                 if let Some(message_id) = message_id {
-                    self
-                        .pending_messages
-                        .push((message_id, Err(())))
+                    self.pending_messages.push((message_id, Err(())))
                 }
-            },
+            }
         }
     }
 
