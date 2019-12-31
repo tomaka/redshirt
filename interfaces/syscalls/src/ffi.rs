@@ -65,9 +65,7 @@ extern "C" {
     ///
     /// > **Note**: This API is similar to the one of the `writev` POSIX function. The
     /// >           `msg_bufs_ptrs` parameter is similar to the `iov` parameter of `writev`, and
-    /// >           the `msg_bufs_num` parameter is similar to the `iovcnt` parameter of `writev`,
-    /// >           except that `msg_bufs_num` refers to the number of pairs rather than the
-    /// >           number of elements in the buffer.
+    /// >           the `msg_bufs_num` parameter is similar to the `iovcnt` parameter of `writev`.
     ///
     /// The message body is what will go into the [`actual_data`](Message::actual_data) field of
     /// the [`Message`] that the target will receive.
