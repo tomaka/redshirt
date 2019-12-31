@@ -34,7 +34,7 @@ pub fn get_pci_devices() -> impl Future<Output = Vec<PciDeviceInfo>> {
     unsafe {
         let msg = ffi::PciMessage::GetDevicesList;
         // TODO: don't unwrap?
-        redshirt_syscalls_interface::emit_message_with_response(ffi::INTERFACE, msg)
-            .map(|response: Result<ffi::GetDevicesListResponse, _>| response.unwrap().devices)
+        redshirt_syscalls_interface::emit_message_with_response(&ffi::INTERFACE, msg).unwrap()
+            .map(|response: ffi::GetDevicesListResponse| response.devices)
     }
 }

@@ -86,8 +86,7 @@ extern crate alloc;
 
 pub use block_on::block_on;
 pub use emit::{
-    cancel_message, emit_message, emit_message_raw, emit_message_with_response,
-    emit_message_without_response,
+    cancel_message, emit_message_with_response, emit_message_without_response, MessageBuilder,
 };
 pub use ffi::{InterfaceMessage, InterfaceOrDestroyed, Message, ResponseMessage};
 pub use interface_message::{

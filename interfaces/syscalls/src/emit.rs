@@ -13,38 +13,162 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::{Decode, Encode, InterfaceHash, MessageId};
+use crate::{Decode, Encode, EncodedMessage, InterfaceHash, MessageId};
+use byteorder::{ByteOrder as _, LittleEndian};
 use core::{
+    convert::TryFrom as _,
     fmt,
+    marker::PhantomData,
     mem::MaybeUninit,
     pin::Pin,
     task::{Context, Poll},
 };
 use futures::prelude::*;
+use generic_array::{
+    sequence::Concat as _,
+    typenum::consts::{U0, U8},
+    ArrayLength, GenericArray,
+};
 
-/// Emits a message destined to the handler of the given interface.
+/// Prototype for a message in construction.
 ///
-/// Returns `Ok` if the message has been successfully dispatched. Returns an error if no handler
-/// is available for that interface.
-/// Whether this function succeeds only depends on whether an interface handler is available. This
-/// function doesn't perform any validity check on the message itself.
-///
-/// If `needs_answer` is true, then we expect an answer to the message to come later. A message ID
-/// is generated and is returned within `Ok(Some(...))`.
-/// If `needs_answer` is false, the function always returns `Ok(None)`.
-///
-/// # Safety
-///
-/// While the action of sending a message is totally safe, the message itself might instruct the
-/// environment to perform actions that would lead to unsafety.
-///
-pub unsafe fn emit_message<'a>(
-    interface_hash: &InterfaceHash,
-    msg: impl Encode,
-    needs_answer: bool,
-) -> Result<Option<MessageId>, EmitErr> {
-    let encoded = msg.encode();
-    emit_message_raw(interface_hash, &encoded.0, needs_answer).map(|r| r.map(MessageId::from))
+/// Use this struct if you want to send out a message split between multiple slices.
+pub struct MessageBuilder<'a, TLen: ArrayLength<u8>> {
+    /// Parameter for the FFI function.
+    allow_delay: bool,
+    /// Array of slices, passed to the FFI function.
+    array: GenericArray<u8, TLen>,
+    /// Pin the lifetime. The lifetime corresponds to the lifetime of buffers pointer to
+    /// within `array`.
+    marker: PhantomData<&'a ()>,
+}
+
+impl<'a> MessageBuilder<'a, U0> {
+    /// Start building an empty message.
+    pub fn new() -> Self {
+        MessageBuilder {
+            allow_delay: true,
+            array: Default::default(),
+            marker: PhantomData,
+        }
+    }
+}
+
+impl<'a, TLen> MessageBuilder<'a, TLen>
+where
+    TLen: ArrayLength<u8>,
+{
+    /// If called, emitting the message will fail if no interface handler is available. Otherwise,
+    /// emitting the message will block the thread until a handler is available.
+    pub fn with_no_delay(mut self) -> Self {
+        self.allow_delay = false;
+        self
+    }
+
+    /// Append a slice of message data to the builder.
+    ///
+    /// > **Note**: This operation is cheap and doesn't perform any copy of the message data
+    /// >           itself.
+    pub fn add_data<TOutLen>(self, buffer: &'a EncodedMessage) -> MessageBuilder<'a, TOutLen>
+    where
+        TLen: core::ops::Add<U8, Output = TOutLen>,
+        TOutLen: ArrayLength<u8>,
+    {
+        let mut new_pair = GenericArray::<u8, U8>::default();
+        LittleEndian::write_u32(
+            &mut new_pair[0..4],
+            u32::try_from(buffer.0.as_ptr() as usize).unwrap(),
+        );
+        LittleEndian::write_u32(&mut new_pair[4..8], u32::try_from(buffer.0.len()).unwrap());
+
+        MessageBuilder {
+            allow_delay: self.allow_delay,
+            array: self.array.concat(new_pair),
+            marker: self.marker,
+        }
+    }
+
+    /// Emit the message and returns a `Future` that will yield the response.
+    // TODO: could we remove the error type?
+    pub unsafe fn emit_with_response<T>(
+        self,
+        interface: &InterfaceHash,
+    ) -> Result<impl Future<Output = T>, EmitErr>
+    where
+        T: Decode,
+    {
+        let msg_id = self.emit_with_response_raw(interface)?;
+        let response_fut = crate::message_response(msg_id);
+        Ok(EmitMessageWithResponse {
+            inner: Some(response_fut),
+            msg_id,
+        })
+    }
+
+    /// Emit the message and returns the emitted [`MessageId`].
+    // TODO: could we remove the error type?
+    pub unsafe fn emit_with_response_raw(
+        self,
+        interface: &InterfaceHash,
+    ) -> Result<MessageId, EmitErr> {
+        Ok(self.emit_raw(interface, true)?.unwrap())
+    }
+
+    /// Emit the message. The message doesn't expect any response. If the handler tries to
+    /// respond, the response will be ignored.
+    // TODO: could we remove the error type?
+    pub unsafe fn emit_without_response(self, interface: &InterfaceHash) -> Result<(), EmitErr> {
+        let out = self.emit_raw(interface, false)?;
+        debug_assert!(out.is_none());
+        Ok(())
+    }
+
+    /// Emit the message. You can decide at runtime whether or not the message expects a response.
+    ///
+    /// If `needs_answer` is `true`, then on success a `Some` will always be returned.
+    /// If `needs_answer` is `false`, then on success a `None` will always be returned.
+    // TODO: could we remove the error type?
+    pub unsafe fn emit_raw(
+        self,
+        interface: &InterfaceHash,
+        needs_answer: bool,
+    ) -> Result<Option<MessageId>, EmitErr> {
+        let mut message_id_out = MaybeUninit::uninit();
+
+        let ret = crate::ffi::emit_message(
+            interface as *const InterfaceHash as *const _,
+            self.array.as_ptr(),
+            u32::try_from(self.array.len() / 4).unwrap(),
+            needs_answer,
+            self.allow_delay,
+            message_id_out.as_mut_ptr(),
+        );
+
+        if ret != 0 {
+            return Err(EmitErr::BadInterface);
+        }
+
+        if needs_answer {
+            Ok(Some(MessageId::from(message_id_out.assume_init())))
+        } else {
+            Ok(None)
+        }
+    }
+}
+
+impl<'a> Default for MessageBuilder<'a, U0> {
+    fn default() -> Self {
+        MessageBuilder::new()
+    }
+}
+
+impl<'a, TLen> fmt::Debug for MessageBuilder<'a, TLen>
+where
+    TLen: ArrayLength<u8>,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_tuple("MessageBuilder").finish()
+    }
 }
 
 /// Emits a message destined to the handler of the given interface.
@@ -60,54 +184,13 @@ pub unsafe fn emit_message<'a>(
 /// environment to perform actions that would lead to unsafety.
 ///
 pub unsafe fn emit_message_without_response<'a>(
-    interface_hash: &InterfaceHash,
+    interface: &InterfaceHash,
     msg: impl Encode,
 ) -> Result<(), EmitErr> {
-    emit_message(interface_hash, msg, false)?;
-    Ok(())
-}
-
-/// Emits a message destined to the handler of the given interface.
-///
-/// Returns `Ok` if the message has been successfully dispatched. Returns an error if no handler
-/// is available for that interface.
-/// Whether this function succeeds only depends on whether an interface handler is available. This
-/// function doesn't perform any validity check on the message itself.
-///
-/// If `needs_answer` is true, then we expect an answer to the message to come later. A message ID
-/// is generated and is returned within `Ok(Some(...))`.
-/// If `needs_answer` is false, the function always returns `Ok(None)`.
-///
-/// # Safety
-///
-/// While the action of sending a message is totally safe, the message itself might instruct the
-/// environment to perform actions that would lead to unsafety.
-///
-pub unsafe fn emit_message_raw(
-    interface_hash: &InterfaceHash,
-    buf: &[u8],
-    needs_answer: bool,
-) -> Result<Option<MessageId>, EmitErr> {
-    let mut message_id_out = MaybeUninit::uninit();
-
-    let ret = crate::ffi::emit_message(
-        interface_hash as *const InterfaceHash as *const _,
-        buf.as_ptr(),
-        buf.len() as u32,
-        needs_answer,
-        true,
-        message_id_out.as_mut_ptr(),
-    );
-
-    if ret != 0 {
-        return Err(EmitErr::BadInterface);
-    }
-
-    if needs_answer {
-        Ok(Some(MessageId::from(message_id_out.assume_init())))
-    } else {
-        Ok(None)
-    }
+    let msg = msg.encode();
+    MessageBuilder::new()
+        .add_data(&msg)
+        .emit_without_response(interface)
 }
 
 /// Emis a message, then waits for a response to come back.
@@ -125,21 +208,18 @@ pub unsafe fn emit_message_raw(
 /// environment to perform actions that would lead to unsafety.
 ///
 pub unsafe fn emit_message_with_response<'a, T: Decode>(
-    interface_hash: InterfaceHash,
+    interface: &InterfaceHash,
     msg: impl Encode,
-) -> impl Future<Output = Result<T, EmitErr>> {
-    let msg_id = match emit_message(&interface_hash, msg, true) {
-        Ok(m) => m.unwrap(),
-        Err(err) => return future::Either::Right(future::ready(Err(err))),
-    };
-    let response_fut = crate::message_response(msg_id);
-    future::Either::Left(EmitMessageWithResponse {
-        inner: Some(response_fut),
-        msg_id,
-    })
+) -> Result<impl Future<Output = T>, EmitErr> {
+    let msg = msg.encode();
+    MessageBuilder::new()
+        .add_data(&msg)
+        .emit_with_response(interface)
 }
 
 /// Cancel the given message. No answer will be received.
+///
+/// Has no effect if the message is invalid.
 pub fn cancel_message(message_id: MessageId) {
     unsafe { crate::ffi::cancel_message(&u64::from(message_id)) }
 }
@@ -170,7 +250,7 @@ pub struct EmitMessageWithResponse<T> {
 }
 
 impl<T: Decode> Future for EmitMessageWithResponse<T> {
-    type Output = Result<T, EmitErr>;
+    type Output = T;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         unsafe {
@@ -185,7 +265,7 @@ impl<T: Decode> Future for EmitMessageWithResponse<T> {
                 Poll::Pending => return Poll::Pending,
             };
             *this.inner = None;
-            Poll::Ready(Ok(val))
+            Poll::Ready(val)
         }
     }
 }
