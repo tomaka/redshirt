@@ -67,7 +67,10 @@ impl KernelRng {
 
             // This makes sure that the `JitterRng` is good enough. A panic here indicates that
             // our entropy would be too low.
-            let rounds = rng.test_timer().unwrap();
+            let rounds = match rng.test_timer() {
+                Ok(r) => r,
+                Err(err) => panic!("{:?}", err),
+            };
             rng.set_rounds(rounds);
             // According to the documentation, we have to discard the first `u64`.
             let _ = rng.next_u64();
