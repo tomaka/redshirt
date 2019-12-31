@@ -75,7 +75,10 @@ fn main() {
         .args(&["--target", "wasm32-unknown-unknown"])
         .args(&["--package", "rpi-framebuffer"])
         .args(&["--bin", "rpi-framebuffer"])
-        .args(&["--manifest-path", "../../modules/rpi-framebuffer/Cargo.toml"])
+        .args(&[
+            "--manifest-path",
+            "../../modules/rpi-framebuffer/Cargo.toml",
+        ])
         .arg("--")
         .args(&["-C", "link-arg=--export-table"])
         .status()

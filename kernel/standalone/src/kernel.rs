@@ -77,7 +77,9 @@ impl Kernel {
         .unwrap();
 
         let rpi_fb_module = redshirt_core::module::Module::from_bytes(
-            &include_bytes!("../../../modules/target/wasm32-unknown-unknown/release/rpi-framebuffer.wasm")[..],
+            &include_bytes!(
+                "../../../modules/target/wasm32-unknown-unknown/release/rpi-framebuffer.wasm"
+            )[..],
         )
         .unwrap();
 
