@@ -44,7 +44,7 @@ impl TapInterface {
         let (to_send, mut to_send_rx) = mpsc::channel::<Vec<u8>>(4);
         let (mut recv_tx, recv) = mpsc::channel(4);
 
-        let interface = tun_tap::Iface::new("redshirt-0", tun_tap::Mode::Tap)?;
+        let interface = tun_tap::Iface::without_packet_info("redshirt-0", tun_tap::Mode::Tap)?;
         // TODO: yeah, no
         let mut nonblock: libc::c_int = 1;
         let result = unsafe { libc::ioctl(interface.as_raw_fd(), libc::FIONBIO, &mut nonblock) };
@@ -65,8 +65,7 @@ impl TapInterface {
                         match future::select(interface.read(&mut read_buf), to_send_rx.next()).await
                         {
                             future::Either::Left((Ok(n), _)) => {
-                                // TODO: we strip a header here; figure out exact situation
-                                let buffer = read_buf[4..n].to_owned();
+                                let buffer = read_buf[..n].to_owned();
                                 println!(
                                     "rx: {:?}",
                                     buffer

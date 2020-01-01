@@ -315,7 +315,7 @@ impl NetInterfaceStateBuilder {
                     )));
             }
             IpAddr::V6(addr) => {
-                assert!(prefix_len <= 64);
+                assert!(prefix_len <= 128);
                 self.ip_addresses
                     .push(From::from(smoltcp::wire::Ipv6Cidr::new(
                         From::from(addr),
@@ -354,6 +354,7 @@ impl NetInterfaceStateBuilder {
             .ethernet_addr(smoltcp::wire::EthernetAddress(self.mac_address))
             .ip_addrs(self.ip_addresses)
             .routes(routes)
+            //.ipv4_multicast_groups(Vec::new())
             .neighbor_cache(smoltcp::iface::NeighborCache::new(BTreeMap::new()))
             .finalize();
 
