@@ -313,7 +313,10 @@ where
     T: NativeProgramMessageIdWrite,
 {
     fn acknowledge(&mut self, id: MessageId) {
-        self.inner.take().unwrap().acknowledge(id);
+        match self.inner.take() {
+            Some(inner) => inner.acknowledge(id),
+            None => unreachable!(),
+        };
         let _was_inserted = self.expected_responses.lock().insert(id);
         debug_assert!(_was_inserted);
     }

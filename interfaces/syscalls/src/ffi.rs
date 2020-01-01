@@ -57,6 +57,16 @@ extern "C" {
 
     /// Sends a message to the process that has registered the given interface.
     ///
+    /// The memory area pointed to by `msg_bufs_ptrs` must contain a list of `msg_bufs_num` pairs
+    /// of two 32-bits values encoded in little endian. In other words, the list must contain
+    /// `msg_bufs_num * 2` values. Each pair is composed of a memory address and a length
+    /// referring to a buffer containing a slice of the message body.
+    /// The message body consists of the concatenation of all these buffers.
+    ///
+    /// > **Note**: This API is similar to the one of the `writev` POSIX function. The
+    /// >           `msg_bufs_ptrs` parameter is similar to the `iov` parameter of `writev`, and
+    /// >           the `msg_bufs_num` parameter is similar to the `iovcnt` parameter of `writev`.
+    ///
     /// The message body is what will go into the [`actual_data`](Message::actual_data) field of
     /// the [`Message`] that the target will receive.
     ///
@@ -70,12 +80,14 @@ extern "C" {
     /// interface handler is available, the function fails immediately.
     ///
     /// When this function is being called, a "lock" is being held on the memory pointed by
-    /// `interface_hash`, `msg` and `message_id_out`. In particular, it is invalid to modify these
-    /// buffers while the function is running.
+    /// `interface_hash`, `msg_bufs_ptrs`, `message_id_out`, and all the sub-buffers referred to
+    /// within `msg_bufs_ptrs`. In particular, it is invalid to modify these buffers while the
+    /// function is running.
+    // TODO: document error that can happen
     pub(crate) fn emit_message(
         interface_hash: *const u8,
-        msg: *const u8,
-        msg_len: u32,
+        msg_bufs_ptrs: *const u8,
+        msg_bufs_num: u32,
         needs_answer: bool,
         allow_delay: bool,
         message_id_out: *mut u64,

@@ -16,6 +16,7 @@
 use crate::ffi;
 
 use futures::{lock::Mutex, prelude::*, ready};
+use redshirt_syscalls_interface::Encode as _;
 use std::{
     cmp, io, mem,
     net::{IpAddr, Ipv6Addr, SocketAddr},
@@ -59,8 +60,10 @@ impl TcpStream {
         });
 
         let msg_id = unsafe {
-            redshirt_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_open, true)
-                .unwrap()
+            let msg = tcp_open.encode();
+            redshirt_syscalls_interface::MessageBuilder::new()
+                .add_data(&msg)
+                .emit_with_response_raw(&ffi::INTERFACE)
                 .unwrap()
         };
 
@@ -113,8 +116,10 @@ impl AsyncRead for TcpStream {
                 socket_id: self.handle,
             });
             let msg_id = unsafe {
-                redshirt_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_read, true)
-                    .unwrap()
+                let msg = tcp_read.encode();
+                redshirt_syscalls_interface::MessageBuilder::new()
+                    .add_data(&msg)
+                    .emit_with_response_raw(&ffi::INTERFACE)
                     .unwrap()
             };
             self.pending_read = Some(Box::pin(redshirt_syscalls_interface::message_response(
@@ -144,8 +149,10 @@ impl AsyncWrite for TcpStream {
             data: buf.to_vec(),
         });
         let msg_id = unsafe {
-            redshirt_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_write, true)
-                .unwrap()
+            let msg = tcp_write.encode();
+            redshirt_syscalls_interface::MessageBuilder::new()
+                .add_data(&msg)
+                .emit_with_response_raw(&ffi::INTERFACE)
                 .unwrap()
         };
         self.pending_write = Some(Box::pin(redshirt_syscalls_interface::message_response(
@@ -198,7 +205,7 @@ impl Drop for TcpStream {
                 socket_id: self.handle,
             });
 
-            redshirt_syscalls_interface::emit_message(&ffi::INTERFACE, &tcp_close, false).unwrap();
+            redshirt_syscalls_interface::emit_message_without_response(&ffi::INTERFACE, &tcp_close);
         }
     }
 }

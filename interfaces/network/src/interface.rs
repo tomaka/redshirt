@@ -32,6 +32,7 @@
 use crate::ffi;
 use core::fmt;
 use futures::lock::{Mutex, MutexGuard};
+use redshirt_syscalls_interface::Encode as _;
 
 /// Configuration of an interface to register.
 #[derive(Debug)]
@@ -84,9 +85,10 @@ fn build_packet_to_net(
     interface_id: u64,
 ) -> redshirt_syscalls_interface::MessageResponseFuture<Vec<u8>> {
     unsafe {
-        let message = ffi::TcpMessage::InterfaceWaitData(interface_id);
-        let msg_id = redshirt_syscalls_interface::emit_message(&ffi::INTERFACE, &message, true)
-            .unwrap()
+        let message = ffi::TcpMessage::InterfaceWaitData(interface_id).encode();
+        let msg_id = redshirt_syscalls_interface::MessageBuilder::new()
+            .add_data(&message)
+            .emit_with_response_raw(&ffi::INTERFACE)
             .unwrap();
         redshirt_syscalls_interface::message_response(msg_id)
     }
@@ -151,9 +153,10 @@ impl<'a> PacketFromNetwork<'a> {
     pub fn send(mut self, data: impl Into<Vec<u8>>) {
         unsafe {
             debug_assert!(self.send_future.is_none());
-            let message = ffi::TcpMessage::InterfaceOnData(self.parent.id, data.into());
-            let msg_id = redshirt_syscalls_interface::emit_message(&ffi::INTERFACE, &message, true)
-                .unwrap()
+            let message = ffi::TcpMessage::InterfaceOnData(self.parent.id, data.into()).encode();
+            let msg_id = redshirt_syscalls_interface::MessageBuilder::new()
+                .add_data(&message)
+                .emit_with_response_raw(&ffi::INTERFACE)
                 .unwrap();
             let fut = redshirt_syscalls_interface::message_response(msg_id);
             *self.send_future = Some(fut);
