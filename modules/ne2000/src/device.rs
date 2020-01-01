@@ -61,7 +61,7 @@ pub struct Device {
     pending_packet: Option<Vec<u8>>,
     /// Page that contains or will contain the next incoming Ethernet packet.
     next_to_read: u8,
-    /// MAC address of the device. // TODO: keep as a field? it isn't really useful
+    /// MAC address of the device.
     mac_address: [u8; 6],
 }
 
@@ -164,6 +164,11 @@ impl Device {
             next_to_read: READ_BUFFER_PAGES.start,
             mac_address,
         }
+    }
+
+    /// Returns the MAC address of the device.
+    pub fn mac_address(&self) -> [u8; 6] {
+        self.mac_address
     }
 
     /// Reads one packet of incoming data from the device's buffer.

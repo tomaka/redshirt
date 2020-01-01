@@ -28,6 +28,7 @@
 
 mod device;
 
+use redshirt_network_interface::interface;
 use std::convert::TryFrom as _;
 
 fn main() {
@@ -48,10 +49,15 @@ async fn async_main() {
             }).next();
 
             if let Some(port_number) = port_number {
-                unsafe {
-                    ne2k_devices.push(device::Device::reset(port_number).await);
-                    redshirt_stdout_interface::stdout(format!("Initialized ne2000 at 0x{:x}\n", port_number));
-                }
+                let device = unsafe {
+                    device::Device::reset(port_number)
+                }.await;
+                let registered_device_id = redshirt_random_interface::generate_u64().await;
+                let registration = interface::register_interface(interface::InterfaceConfig {
+                    mac_address: device.mac_address(),
+                });
+                ne2k_devices.push((registration, device));
+                redshirt_stdout_interface::stdout(format!("Initialized ne2000 at 0x{:x}\n", port_number));
             }
         }
     }
@@ -64,7 +70,7 @@ async fn async_main() {
 
     loop {
         //redshirt_stdout_interface::stdout(format!("Polling"));
-        let packet = match unsafe { ne2k_devices[0].read_one_incoming().await } {
+        let packet = match unsafe { ne2k_devices[0].1.read_one_incoming().await } {
             Some(p) => p,
             None => continue,
         };

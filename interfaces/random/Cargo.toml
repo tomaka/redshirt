@@ -6,6 +6,7 @@ authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+byteorder = { version = "1.3.2", default-features = false }
 redshirt-syscalls-interface = { path = "../syscalls", default-features = false }
 parity-scale-codec = { version = "1.0.5", default-features = false, features = ["derive"] }
 

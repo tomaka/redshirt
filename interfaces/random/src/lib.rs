@@ -20,6 +20,7 @@
 
 extern crate alloc;
 
+use byteorder::{ByteOrder as _, NativeEndian};
 use core::convert::TryFrom;
 
 pub mod ffi;
@@ -49,4 +50,44 @@ pub async fn generate_in(out: &mut [u8]) {
         };
         chunk.copy_from_slice(&rep.result);
     }
+}
+
+/// Generates a random `u8`.
+#[cfg(feature = "std")]
+pub async fn generate_u8() -> u8 {
+    let mut buf = [0; 1];
+    generate_in(&mut buf).await;
+    buf[0]
+}
+
+/// Generates a random `u16`.
+#[cfg(feature = "std")]
+pub async fn generate_u16() -> u16 {
+    let mut buf = [0; 2];
+    generate_in(&mut buf).await;
+    NativeEndian::read_u16(&buf)
+}
+
+/// Generates a random `u32`.
+#[cfg(feature = "std")]
+pub async fn generate_u32() -> u32 {
+    let mut buf = [0; 4];
+    generate_in(&mut buf).await;
+    NativeEndian::read_u32(&buf)
+}
+
+/// Generates a random `u64`.
+#[cfg(feature = "std")]
+pub async fn generate_u64() -> u64 {
+    let mut buf = [0; 8];
+    generate_in(&mut buf).await;
+    NativeEndian::read_u64(&buf)
+}
+
+/// Generates a random `u128`.
+#[cfg(feature = "std")]
+pub async fn generate_u128() -> u128 {
+    let mut buf = [0; 16];
+    generate_in(&mut buf).await;
+    NativeEndian::read_u128(&buf)
 }
