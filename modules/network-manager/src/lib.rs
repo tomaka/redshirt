@@ -107,7 +107,7 @@ where
 
         let interface = interface::NetInterfaceStateBuilder::default()
             .with_ip_addr("192.168.1.20".parse().unwrap(), 24)  // TODO: hack
-            .with_ip_addr("fe80::9d39:1765:52bd:8383".parse().unwrap(), 64)  // TODO: hack
+            .with_ip_addr("fe80::9d39:1765:52bd:8389".parse().unwrap(), 64)  // TODO: hack
             .with_mac_address(mac_address)
             .build();
         entry.insert(Device {
