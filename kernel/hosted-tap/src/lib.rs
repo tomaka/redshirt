@@ -96,7 +96,7 @@ impl<'a> NativeProgramRef<'a> for &'a TapNetworkInterface {
                         let id: u64 = rand::random();
                         let mut mac_address: [u8; 6] = rand::random(); // TODO: ?
                         mac_address[0] &= !0x1; // Ensure the MAC is not multicast.
-                        println!("mac = {:?}", mac_address);
+                        mac_address[0] |= 0x2; // Set the MAC as locally administered (i.e. artificial).
                         *registered_id = Some(id);
                         // TODO: communicate MTU to network manager
                         let message = ffi::TcpMessage::RegisterInterface { id, mac_address };

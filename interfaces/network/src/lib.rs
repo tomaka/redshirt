@@ -15,7 +15,7 @@
 
 //! Networking.
 //!
-//! This documentation provides 
+//! This documentation provides some overview of networking in general.
 //!
 //! # IP routing
 //!
@@ -46,10 +46,6 @@
 //! When we want to reach the node with a specific IP address, we look through the table until
 //! we find an entry whose pattern matches the target IP address. If multiple entries are matching,
 //! we pick the one with the most specific mask.
-//!
-//! # Neighbours (ARP/NDP)
-//!
-//! 
 //!
 
 #![deny(intra_doc_link_resolution_failure)]

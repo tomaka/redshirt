@@ -346,15 +346,11 @@ impl NetInterfaceStateBuilder {
 
         self.ip_addresses.shrink_to_fit();
 
-        let mut routes = smoltcp::iface::Routes::new(BTreeMap::new());
-        routes.add_default_ipv4_route("192.168.1.1".parse().unwrap()).unwrap(); // TODO:
-        routes.add_default_ipv6_route("fe80::844b:2aff:fea4:513".parse().unwrap()).unwrap();
-
         let interface = smoltcp::iface::EthernetInterfaceBuilder::new(device)
             .ethernet_addr(smoltcp::wire::EthernetAddress(self.mac_address))
             .ip_addrs(self.ip_addresses)
-            .routes(routes)
-            //.ipv4_multicast_groups(Vec::new())
+            .routes(smoltcp::iface::Routes::new(BTreeMap::new()))
+            //.ipv4_multicast_groups(BTreeMap::new())
             .neighbor_cache(smoltcp::iface::NeighborCache::new(BTreeMap::new()))
             .finalize();
 
@@ -523,7 +519,11 @@ impl<'a> smoltcp::phy::Device<'a> for RawDevice {
         caps.max_transmission_unit = 9216; // FIXME:
         caps.max_burst_size = None;
         caps.checksum = phy::ChecksumCapabilities::ignored();
-        // TODO: ask to write/read checksums
+        caps.checksum.ipv4 = phy::Checksum::Both;
+        caps.checksum.udp = phy::Checksum::Both;
+        caps.checksum.tcp = phy::Checksum::Both;
+        caps.checksum.icmpv4 = phy::Checksum::Both;
+        caps.checksum.icmpv6 = phy::Checksum::Both;
         caps
     }
 }
