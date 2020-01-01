@@ -8,6 +8,7 @@ members = [
     "interfaces/hardware",
     "interfaces/interface",
     "interfaces/loader",
+    "interfaces/pci",
     "interfaces/random",
     "interfaces/stdout",
     "interfaces/syscalls",

@@ -3,10 +3,12 @@ members = [
     "arm-stdout",
     "hello-world",
     "http-server",
+    "ne2000",
     "p2p-loader",
     "third-party/time",
     "third-party/wasm-timer",
     "vulkan-triangle",
+    "x86-pci",
     "x86-stdout"
 ]
 
