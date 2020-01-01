@@ -76,24 +76,36 @@ impl Kernel {
         )
         .unwrap();
 
+        // TODO: use a better system than cfgs
+        #[cfg(target_arch = "x86_64")]
         let pci_module = redshirt_core::module::Module::from_bytes(
             &include_bytes!("../../../modules/target/wasm32-unknown-unknown/release/x86-pci.wasm")
                 [..],
         )
         .unwrap();
 
+        // TODO: use a better system than cfgs
+        #[cfg(target_arch = "x86_64")]
         let ne2000_module = redshirt_core::module::Module::from_bytes(
             &include_bytes!("../../../modules/target/wasm32-unknown-unknown/debug/ne2000.wasm")[..],
         )
         .unwrap();
 
-        let mut system = redshirt_core::system::SystemBuilder::new()
+        let mut system_builder = redshirt_core::system::SystemBuilder::new()
             .with_native_program(crate::hardware::HardwareHandler::new())
             .with_native_program(crate::random::native::RandomNativeProgram::new())
             .with_startup_process(stdout_module)
-            .with_startup_process(hello_module)
-            .with_startup_process(pci_module)
-            .with_startup_process(ne2000_module)
+            .with_startup_process(hello_module);
+
+        // TODO: use a better system than cfgs
+        #[cfg(target_arch = "x86_64")]
+        {
+            system_builder = system_builder
+                .with_startup_process(pci_module)
+                .with_startup_process(ne2000_module)
+        }
+
+        let mut system = system_builder
             .with_main_program([0; 32]) // TODO: just a test
             .build();
 

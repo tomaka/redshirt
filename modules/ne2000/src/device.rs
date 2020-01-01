@@ -334,7 +334,8 @@ impl Device {
         self.transmitting = Some(page_start .. page_end);
     }
 
-    pub async unsafe fn on_interrupt(&mut self) {
+    // TODO:
+    /*pub async unsafe fn on_interrupt(&mut self) {
         // Read the ISR (Interrupt Status Register) to determine why an interrupt has been raised.
         let status = redshirt_hardware_interface::port_read_u8(self.base_port + 7).await;
         // Write back the same status in order to clear the bits and allow further interrupts to
@@ -354,7 +355,7 @@ impl Device {
             self.transmitting = None;
             self.flush_out();
         }
-    }
+    }*/
 }
 
 impl fmt::Debug for Device {
