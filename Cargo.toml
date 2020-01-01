@@ -10,6 +10,7 @@ members = [
     "interfaces/interface",
     "interfaces/loader",
     "interfaces/network",
+    "interfaces/pci",
     "interfaces/random",
     "interfaces/stdout",
     "interfaces/syscalls",
