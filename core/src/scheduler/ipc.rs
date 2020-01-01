@@ -624,7 +624,7 @@ impl Core {
                 mut thread,
                 id: Extrinsic::CancelMessage,
                 params,
-            } => CoreRunOutcomeInner::LoopAgain,// unimplemented!(),
+            } => CoreRunOutcomeInner::LoopAgain, // unimplemented!(),
 
             processes::RunOneOutcome::Idle => CoreRunOutcomeInner::Idle,
         }

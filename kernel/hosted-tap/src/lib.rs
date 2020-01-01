@@ -27,7 +27,7 @@ use futures::{channel::mpsc, executor::block_on, prelude::*};
 use redshirt_core::native::{
     DummyMessageIdWrite, NativeProgramEvent, NativeProgramMessageIdWrite, NativeProgramRef,
 };
-use redshirt_core::{EncodedMessage, InterfaceHash, MessageId, Pid, Decode as _, Encode as _};
+use redshirt_core::{Decode as _, Encode as _, EncodedMessage, InterfaceHash, MessageId, Pid};
 use redshirt_network_interface::ffi;
 use spin::Mutex;
 use std::{fmt, io, pin::Pin, sync::Arc, thread};
@@ -99,10 +99,7 @@ impl<'a> NativeProgramRef<'a> for &'a TapNetworkInterface {
                         println!("mac = {:?}", mac_address);
                         *registered_id = Some(id);
                         // TODO: communicate MTU to network manager
-                        let message = ffi::TcpMessage::RegisterInterface {
-                            id,
-                            mac_address,
-                        };
+                        let message = ffi::TcpMessage::RegisterInterface { id, mac_address };
                         return NativeProgramEvent::Emit {
                             interface: ffi::INTERFACE,
                             message: message.encode(),
@@ -118,8 +115,7 @@ impl<'a> NativeProgramRef<'a> for &'a TapNetworkInterface {
                 if self.tap.is_ready_to_send() {
                     return NativeProgramEvent::Emit {
                         interface: ffi::INTERFACE,
-                        message: ffi::TcpMessage::InterfaceWaitData(registered_id)
-                            .encode(),
+                        message: ffi::TcpMessage::InterfaceWaitData(registered_id).encode(),
                         message_id_write: Some(MessageIdWrite {
                             interface: self,
                             ty: MessageIdWriteTy::Read,
@@ -134,8 +130,7 @@ impl<'a> NativeProgramRef<'a> for &'a TapNetworkInterface {
                 let data = self.tap.recv().await;
                 return NativeProgramEvent::Emit {
                     interface: ffi::INTERFACE,
-                    message: ffi::TcpMessage::InterfaceOnData(registered_id, data)
-                        .encode(),
+                    message: ffi::TcpMessage::InterfaceOnData(registered_id, data).encode(),
                     message_id_write: Some(MessageIdWrite {
                         interface: self,
                         ty: MessageIdWriteTy::Write,
@@ -155,8 +150,7 @@ impl<'a> NativeProgramRef<'a> for &'a TapNetworkInterface {
         unreachable!()
     }
 
-    fn process_destroyed(self, _: Pid) {
-    }
+    fn process_destroyed(self, _: Pid) {}
 
     fn message_response(self, message_id: MessageId, data: Result<EncodedMessage, ()>) {
         let mut read_message_id = self.read_message_id.try_lock().unwrap();

@@ -15,10 +15,10 @@
 
 //! Convenient API around the TAP interface.
 
-use futures::{prelude::*, channel::mpsc, lock::Mutex};
-use mio::{Evented, Poll as MPoll, PollOpt, Ready, Token, unix::EventedFd};
+use futures::{channel::mpsc, lock::Mutex, prelude::*};
+use mio::{unix::EventedFd, Evented, Poll as MPoll, PollOpt, Ready, Token};
 use std::{io, os::unix::io::AsRawFd as _, thread, time::Duration};
-use tokio::{prelude::*, io::PollEvented, runtime::Runtime, time};
+use tokio::{io::PollEvented, prelude::*, runtime::Runtime, time};
 
 pub struct TapInterface {
     /// Sender for messages to output on the TAP interface.
@@ -62,29 +62,45 @@ impl TapInterface {
                     let mut read_buf = [0; 1542];
 
                     loop {
-                        match future::select(interface.read(&mut read_buf), to_send_rx.next()).await {
+                        match future::select(interface.read(&mut read_buf), to_send_rx.next()).await
+                        {
                             future::Either::Left((Ok(n), _)) => {
                                 // TODO: we strip a header here; figure out exact situation
                                 let buffer = read_buf[4..n].to_owned();
-                                println!("rx: {:?}", buffer.iter().map(|b| format!("{:x}", *b)).collect::<Vec<_>>().join(" "));
+                                println!(
+                                    "rx: {:?}",
+                                    buffer
+                                        .iter()
+                                        .map(|b| format!("{:x}", *b))
+                                        .collect::<Vec<_>>()
+                                        .join(" ")
+                                );
                                 if recv_tx.send(buffer).await.is_err() {
-                                    break Ok(())
+                                    break Ok(());
                                 }
-                            },
+                            }
                             future::Either::Right((Some(to_send), _)) => {
-                                println!("tx: {:?}", to_send.iter().map(|b| format!("{:x}", *b)).collect::<Vec<_>>().join(" "));
-                                match time::timeout(Duration::from_secs(5), interface.write_all(&to_send)).await {
-                                    Ok(Ok(())) => {},
+                                println!(
+                                    "tx: {:?}",
+                                    to_send
+                                        .iter()
+                                        .map(|b| format!("{:x}", *b))
+                                        .collect::<Vec<_>>()
+                                        .join(" ")
+                                );
+                                match time::timeout(
+                                    Duration::from_secs(5),
+                                    interface.write_all(&to_send),
+                                )
+                                .await
+                                {
+                                    Ok(Ok(())) => {}
                                     Err(err) => break Err(io::Error::from(err)),
                                     Ok(Err(err)) => break Err(err),
                                 }
-                            },
-                            future::Either::Left((Err(err), _)) => {
-                                break Err(err)
-                            },
-                            future::Either::Right((None, _)) => {
-                                break Ok(())
-                            },
+                            }
+                            future::Either::Left((Err(err), _)) => break Err(err),
+                            future::Either::Right((None, _)) => break Ok(()),
                         }
                     }
                 });
@@ -129,11 +145,23 @@ impl TapInterface {
 }
 
 impl Evented for MioWrapper {
-    fn register(&self, poll: &MPoll, token: Token, events: Ready, opts: PollOpt) -> Result<(), io::Error> {
+    fn register(
+        &self,
+        poll: &MPoll,
+        token: Token,
+        events: Ready,
+        opts: PollOpt,
+    ) -> Result<(), io::Error> {
         EventedFd(&self.inner.as_raw_fd()).register(poll, token, events, opts)
     }
 
-    fn reregister(&self, poll: &MPoll, token: Token, events: Ready, opts: PollOpt) -> Result<(), io::Error> {
+    fn reregister(
+        &self,
+        poll: &MPoll,
+        token: Token,
+        events: Ready,
+        opts: PollOpt,
+    ) -> Result<(), io::Error> {
         EventedFd(&self.inner.as_raw_fd()).reregister(poll, token, events, opts)
     }
 

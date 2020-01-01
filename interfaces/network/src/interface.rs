@@ -54,7 +54,8 @@ pub fn register_interface(config: InterfaceConfig) -> NetInterfaceRegistration {
                 id,
                 mac_address: config.mac_address,
             }
-        }).unwrap();
+        })
+        .unwrap();
 
         NetInterfaceRegistration {
             id,
@@ -136,7 +137,8 @@ impl Drop for NetInterfaceRegistration {
     fn drop(&mut self) {
         unsafe {
             let message = ffi::TcpMessage::UnregisterInterface(self.id);
-            redshirt_syscalls_interface::emit_message_without_response(&ffi::INTERFACE, &message).unwrap();
+            redshirt_syscalls_interface::emit_message_without_response(&ffi::INTERFACE, &message)
+                .unwrap();
         }
     }
 }

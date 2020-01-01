@@ -275,11 +275,8 @@ impl NetInterfaceState {
                 self.next_event_delay = None;
             }
 
-            redshirt_stdout_interface::stdout(format!("before now\n"));
-            let n = now().await;
-            redshirt_stdout_interface::stdout(format!("after now\n"));
             // Errors, other than `Unrecognized`, are meant to be logged and ignored.
-            let _ = self.ethernet.poll(&mut self.sockets, n);
+            let _ = self.ethernet.poll(&mut self.sockets, now().await);
             self.next_event_delay = match self.ethernet.poll_delay(&mut self.sockets, now().await) {
                 Some(d) => Some(redshirt_time_interface::Delay::new(d.into())),
                 None => continue,
