@@ -80,10 +80,10 @@ impl KernelRng {
         // We now build the seed for the main ChaCha PRNG.
         let chacha_seed = {
             let mut sha2 = Sha512Trunc256::default();
-            let mut jitter_bytes = [0; 32];
+            let mut jitter_bytes = [0; 64];
             jitter.fill_bytes(&mut jitter_bytes);
             sha2.input(&jitter_bytes[..]);
-            add_cpu_entropy(&mut sha2);
+            add_hardware_entropy(&mut sha2);
             let mut chacha_seed = [0; 32];
             chacha_seed.copy_from_slice(&sha2.fixed_result());
             chacha_seed
@@ -114,19 +114,23 @@ impl RngCore for KernelRng {
 }
 
 #[cfg(target_arch = "x86_64")]
-fn add_cpu_entropy(sha2: &mut Sha512Trunc256) {
+fn add_hardware_entropy(sha2: &mut Sha512Trunc256) {
     use byteorder::{ByteOrder as _, NativeEndian};
 
     if let Some(rdrand) = x86_64::instructions::random::RdRand::new() {
         let mut buf = [0; 64];
+        let mut entropy_bytes = 0;
         for chunk in buf.chunks_mut(8) {
             if let Some(val) = rdrand.get_u64() {
                 NativeEndian::write_u64(chunk, val);
+                entropy_bytes += 8;
+            } else {
+                break;
             }
         }
-        sha2.input(&buf[..]);
+        sha2.input(&buf[..entropy_bytes]);
     }
 }
 
 #[cfg(not(target_arch = "x86_64"))]
-fn add_cpu_entropy(_: &mut Sha512Trunc256) {}
+fn add_hardware_entropy(_: &mut Sha512Trunc256) {}
