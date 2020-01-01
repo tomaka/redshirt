@@ -24,6 +24,9 @@ use std::{
     task::{Context, Poll},
 };
 
+/// Active TCP connection to a remote.
+///
+/// This type is similar to [`std::net::TcpStream`].
 pub struct TcpStream {
     handle: u32,
     /// Buffer of data that has been read from the socket but not transmitted to the user yet.
@@ -37,11 +40,15 @@ pub struct TcpStream {
 }
 
 impl TcpStream {
+    /// Start connecting to the given address. Returns a `TcpStream` if the connection is
+    /// successful.
     pub fn connect(socket_addr: &SocketAddr) -> impl Future<Output = Result<TcpStream, ()>> {
         let fut = TcpStream::new(socket_addr, false);
         async move { Ok(fut.await?.0) }
     }
 
+    /// Dialing and listening use the same underlying messages. The only different being a boolean
+    /// whether the address is a binding point or a destination.
     fn new(
         socket_addr: &SocketAddr,
         listen: bool,
@@ -59,17 +66,15 @@ impl TcpStream {
             },
         });
 
-        let msg_id = unsafe {
-            let msg = tcp_open.encode();
-            redshirt_syscalls_interface::MessageBuilder::new()
-                .add_data(&msg)
-                .emit_with_response_raw(&ffi::INTERFACE)
-                .unwrap()
-        };
-
         async move {
-            let message: ffi::TcpOpenResponse =
-                redshirt_syscalls_interface::message_response(msg_id).await;
+            let message: ffi::TcpOpenResponse = unsafe {
+                let msg = tcp_open.encode();
+                redshirt_syscalls_interface::MessageBuilder::new()
+                    .add_data(&msg)
+                    .emit_with_response(&ffi::INTERFACE)
+                    .unwrap()
+                    .await
+            };
 
             let socket_open_info = message.result?;
             let remote_addr = {
