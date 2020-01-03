@@ -15,7 +15,7 @@
 
 use crate::id_pool::IdPool;
 use crate::module::Module;
-use crate::scheduler::{processes, vm};
+use crate::scheduler::{extrinsics::{self, ProcessesCollectionExtrinsicsExtrinsicsThreadAccess as _}, vm};
 use crate::sig;
 use crate::signature::Signature;
 use crate::InterfaceHash;
@@ -34,7 +34,7 @@ pub struct Core {
     pending_events: SegQueue<CoreRunOutcomeInner>,
 
     /// List of running processes.
-    processes: processes::ProcessesCollection<Extrinsic, Process, Thread>,
+    processes: extrinsics::ProcessesCollectionExtrinsics<Process, ()>,
 
     /// List of `Pid`s that have been reserved during the construction.
     ///
@@ -68,22 +68,12 @@ enum InterfaceState {
     },
 }
 
-/// Possible function available to processes.
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum Extrinsic {
-    NextMessage,
-    EmitMessage,
-    EmitMessageError,
-    EmitAnswer,
-    CancelMessage,
-}
-
 /// Prototype for a `Core` under construction.
 pub struct CoreBuilder {
     /// See the corresponding field in `Core`.
     reserved_pids: HashSet<Pid>,
     /// Builder for the [`processes`][Core::processes] field in `Core`.
-    inner_builder: processes::ProcessesCollectionBuilder<Extrinsic>,
+    inner_builder: extrinsics::ProcessesCollectionExtrinsicsBuilder,
 }
 
 /// Outcome of calling [`run`](Core::run).
@@ -196,36 +186,6 @@ struct Process {
     messages_to_answer: SmallVec<[MessageId; 8]>,
 }
 
-/// Additional information about a thread. Must be consistent with the actual state of the thread.
-#[derive(Debug, PartialEq, Eq)]
-enum Thread {
-    /// Thread is ready to run.
-    ReadyToRun,
-
-    /// The thread is sleeping and waiting for a message to come.
-    ///
-    /// Note that this can be set even if the `messages_queue` is not empty, in the case where
-    /// the thread is waiting only on messages that aren't in the queue.
-    MessageWait(MessageWait),
-
-    /// The thread called `emit_message` and wants to emit a message on an interface for which no
-    /// handler was available at the time.
-    InterfaceNotAvailableWait {
-        /// Interface we want to emit the message on.
-        interface: InterfaceHash,
-        /// Identifier of the message if it expects an answer.
-        message_id: Option<MessageId>,
-        /// Message itself. Needs to be delivered to the handler once it is registered.
-        message: EncodedMessage,
-    },
-
-    /// The thread is sleeping and waiting for an external extrinsic.
-    ExtrinsicWait,
-
-    /// Thread has been interrupted, and the call is being processed right now.
-    InProcess,
-}
-
 /// How a process is waiting for messages.
 #[derive(Debug, Clone, PartialEq, Eq)] // TODO: remove Clone
 struct MessageWait {
@@ -244,52 +204,21 @@ struct MessageWait {
 /// Access to a process within the core.
 pub struct CoreProcess<'a> {
     /// Access to the process within the inner collection.
-    process: processes::ProcessesCollectionProc<'a, Process, Thread>,
+    process: extrinsics::ProcessesCollectionExtrinsicsProc<'a, Process, ()>,
 }
 
 /// Access to a thread within the core.
 pub struct CoreThread<'a> {
     /// Access to the thread within the inner collection.
-    thread: processes::ProcessesCollectionThread<'a, Process, Thread>,
+    thread: extrinsics::ProcessesCollectionExtrinsicsThread<'a, Process, ()>,
 }
 
 impl Core {
-    // TODO: figure out borrowing issues and remove that Clone
     /// Initialies a new `Core`.
     pub fn new() -> CoreBuilder {
         CoreBuilder {
             reserved_pids: HashSet::new(),
-            inner_builder: processes::ProcessesCollectionBuilder::default()
-                .with_extrinsic(
-                    "redshirt",
-                    "next_message",
-                    sig!((I32, I32, I32, I32, I32) -> I32),
-                    Extrinsic::NextMessage,
-                )
-                .with_extrinsic(
-                    "redshirt",
-                    "emit_message",
-                    sig!((I32, I32, I32, I32, I32, I32) -> I32),
-                    Extrinsic::EmitMessage,
-                )
-                .with_extrinsic(
-                    "redshirt",
-                    "emit_message_error",
-                    sig!((I32)),
-                    Extrinsic::EmitMessageError,
-                )
-                .with_extrinsic(
-                    "redshirt",
-                    "emit_answer",
-                    sig!((I32, I32, I32)),
-                    Extrinsic::EmitAnswer,
-                )
-                .with_extrinsic(
-                    "redshirt",
-                    "cancel_message",
-                    sig!((I32)),
-                    Extrinsic::CancelMessage,
-                ),
+            inner_builder: extrinsics::ProcessesCollectionExtrinsicsExtrinsicsBuilder::default()
         }
     }
 
@@ -355,7 +284,7 @@ impl Core {
         }
 
         match self.processes.run() {
-            processes::RunOneOutcome::ProcessFinished {
+            extrinsics::RunOneOutcome::ProcessFinished {
                 pid,
                 outcome,
                 dead_threads,
@@ -419,58 +348,31 @@ impl Core {
                 }
             }
 
-            processes::RunOneOutcome::ThreadFinished { user_data, .. } => {
+            extrinsics::RunOneOutcome::ThreadFinished { user_data, .. } => {
                 debug_assert_eq!(user_data, Thread::ReadyToRun);
                 // TODO: report?
                 CoreRunOutcomeInner::LoopAgain
             }
 
-            processes::RunOneOutcome::Interrupted {
-                mut thread,
-                id: Extrinsic::NextMessage,
-                params,
-            } => {
-                debug_assert_eq!(*thread.user_data(), Thread::ReadyToRun);
-                *thread.user_data() = Thread::InProcess;
-                // TODO: refactor a bit to first parse the parameters and then update `self`
-                extrinsic_next_message(&mut thread, params);
+            extrinsics::RunOneOutcome::ThreadWaitMessage(thread) {
+                /*
+                try_resume_message_wait_thread(thread);
+
+                // If `block` is false, we put the thread to sleep anyway, then wake it up again here.
+                if !block && *thread.user_data() != Thread::ReadyToRun {
+                    debug_assert!(if let Thread::MessageWait(_) = thread.user_data() {
+                        true
+                    } else {
+                        false
+                    });
+                    *thread.user_data() = Thread::ReadyToRun;
+                    thread.resume(Some(wasmi::RuntimeValue::I32(0)));
+                }
+                */
                 CoreRunOutcomeInner::LoopAgain
             }
 
-            processes::RunOneOutcome::Interrupted {
-                mut thread,
-                id: Extrinsic::EmitMessage,
-                params,
-            } => {
-                debug_assert_eq!(*thread.user_data(), Thread::ReadyToRun);
-                *thread.user_data() = Thread::InProcess;
-
-                // TODO: lots of unwraps here
-                assert_eq!(params.len(), 6);
-                let interface: InterfaceHash = {
-                    let addr = params[0].try_into::<i32>().unwrap() as u32;
-                    InterfaceHash::from(
-                        <[u8; 32]>::try_from(&thread.read_memory(addr, 32).unwrap()[..]).unwrap(),
-                    )
-                };
-                let message = {
-                    let addr = params[1].try_into::<i32>().unwrap() as u32;
-                    let num_bufs = params[2].try_into::<i32>().unwrap() as u32;
-                    let mut out_msg = Vec::new();
-                    for buf_n in 0..num_bufs {
-                        let sub_buf_ptr = thread.read_memory(addr + 8 * buf_n, 4).unwrap();
-                        let sub_buf_ptr = LittleEndian::read_u32(&sub_buf_ptr);
-                        let sub_buf_sz = thread.read_memory(addr + 8 * buf_n + 4, 4).unwrap();
-                        let sub_buf_sz = LittleEndian::read_u32(&sub_buf_sz);
-                        out_msg.extend_from_slice(
-                            &thread.read_memory(sub_buf_ptr, sub_buf_sz).unwrap(),
-                        );
-                    }
-                    EncodedMessage(out_msg)
-                };
-                let needs_answer = params[3].try_into::<i32>().unwrap() != 0;
-                let allow_delay = params[4].try_into::<i32>().unwrap() != 0;
-                let emitter_pid = thread.pid();
+            extrinsics::RunOneOutcome::ThreadEmitMessage(thread) {
                 let message_id = if needs_answer {
                     let message_id_write = params[5].try_into::<i32>().unwrap() as u32;
                     let new_message_id = loop {
@@ -569,63 +471,19 @@ impl Core {
                 }
             }
 
-            processes::RunOneOutcome::Interrupted {
-                mut thread,
-                id: Extrinsic::EmitAnswer,
-                params,
-            } => {
-                debug_assert_eq!(*thread.user_data(), Thread::ReadyToRun);
-                *thread.user_data() = Thread::InProcess;
-
-                // TODO: lots of unwraps here
-                assert_eq!(params.len(), 3);
-                let msg_id = {
-                    let addr = params[0].try_into::<i32>().unwrap() as u32;
-                    let buf = thread.read_memory(addr, 8).unwrap();
-                    MessageId::from(byteorder::LittleEndian::read_u64(&buf))
-                };
-                let message = {
-                    let addr = params[1].try_into::<i32>().unwrap() as u32;
-                    let sz = params[2].try_into::<i32>().unwrap() as u32;
-                    EncodedMessage(thread.read_memory(addr, sz).unwrap())
-                };
-                let pid = thread.pid();
-                thread.resume(None);
-                self.answer_message_inner(msg_id, Ok(message))
+            extrinsics::RunOneOutcome::ThreadEmitAnswer { message_id, response, .. } => {
+                // TODO: check ownership of the message
+                self.answer_message_inner(message_id, Ok(response))
                     .unwrap_or(CoreRunOutcomeInner::LoopAgain)
             }
 
-            processes::RunOneOutcome::Interrupted {
-                mut thread,
-                id: Extrinsic::EmitMessageError,
-                params,
-            } => {
-                debug_assert_eq!(*thread.user_data(), Thread::ReadyToRun);
-                *thread.user_data() = Thread::InProcess;
-
-                // TODO: lots of unwraps here
-                assert_eq!(params.len(), 1);
-                let msg_id = {
-                    let addr = params[0].try_into::<i32>().unwrap() as u32;
-                    let buf = thread.read_memory(addr, 8).unwrap();
-                    MessageId::from(byteorder::LittleEndian::read_u64(&buf))
-                };
-
-                self.messages_to_answer.remove(&msg_id);
-                thread.resume(None);
-
-                let pid = thread.pid();
+            extrinsics::RunOneOutcome::ThreadEmitMessageError { message_id, .. } => {
+                // TODO: check ownership of the message
                 self.answer_message_inner(msg_id, Err(()))
                     .unwrap_or(CoreRunOutcomeInner::LoopAgain)
             }
 
-            processes::RunOneOutcome::Interrupted {
-                mut thread,
-                id: Extrinsic::CancelMessage,
-                params,
-            } => unimplemented!(),
-
-            processes::RunOneOutcome::Idle => CoreRunOutcomeInner::Idle,
+            extrinsics::RunOneOutcome::Idle => CoreRunOutcomeInner::Idle,
         }
     }
 
@@ -978,59 +836,9 @@ impl CoreBuilder {
     }
 }
 
-/// Called when a thread calls the `next_message` extrinsic.
-///
-/// Tries to resume the thread by fetching a message from the queue.
-///
-/// Returns an error if the extrinsic call was invalid.
-fn extrinsic_next_message(
-    thread: &mut processes::ProcessesCollectionThread<Process, Thread>,
-    params: Vec<wasmi::RuntimeValue>,
-) -> Result<(), ()> {
-    // TODO: lots of conversions here
-    assert_eq!(params.len(), 5);
-
-    let msg_ids_ptr = params[0].try_into::<i32>().ok_or(())? as u32;
-    let msg_ids = {
-        let addr = msg_ids_ptr;
-        let len = params[1].try_into::<i32>().ok_or(())? as u32;
-        let mem = thread.read_memory(addr, len * 8)?;
-        let mut out = vec![0u64; len as usize];
-        byteorder::LittleEndian::read_u64_into(&mem, &mut out);
-        out.into_iter().map(MessageId::from).collect::<Vec<_>>() // TODO: meh
-    };
-
-    let out_pointer = params[2].try_into::<i32>().ok_or(())? as u32;
-    let out_size = params[3].try_into::<i32>().ok_or(())? as u32;
-    let block = params[4].try_into::<i32>().ok_or(())? != 0;
-
-    assert!(*thread.user_data() == Thread::InProcess);
-    *thread.user_data() = Thread::MessageWait(MessageWait {
-        msg_ids,
-        msg_ids_ptr,
-        out_pointer,
-        out_size,
-    });
-
-    try_resume_message_wait_thread(thread);
-
-    // If `block` is false, we put the thread to sleep anyway, then wake it up again here.
-    if !block && *thread.user_data() != Thread::ReadyToRun {
-        debug_assert!(if let Thread::MessageWait(_) = thread.user_data() {
-            true
-        } else {
-            false
-        });
-        *thread.user_data() = Thread::ReadyToRun;
-        thread.resume(Some(wasmi::RuntimeValue::I32(0)));
-    }
-
-    Ok(())
-}
-
 /// If any of the threads of the given process is waiting for a message to arrive, checks the
 /// queue and tries to resume said thread.
-fn try_resume_message_wait(process: processes::ProcessesCollectionProc<Process, Thread>) {
+fn try_resume_message_wait(process: extrinsics::ProcessesCollectionExtrinsicsProc<Process, ()>) {
     // TODO: is it a good strategy to just go through threads in linear order? what about
     //       round-robin-ness instead?
     let mut thread = process.main_thread();
@@ -1049,16 +857,11 @@ fn try_resume_message_wait(process: processes::ProcessesCollectionProc<Process, 
 // TODO: in order to call this function, we essentially have to put the state machine in a "bad"
 // state (message in queue and thread would accept said message); not great
 fn try_resume_message_wait_thread(
-    thread: &mut processes::ProcessesCollectionThread<Process, Thread>,
+    thread: &mut extrinsics::ProcessesCollectionExtrinsicsThreadWaitMessage<Process, ()>,
 ) {
     if thread.process_user_data().messages_queue.is_empty() {
         return;
     }
-
-    let msg_wait = match thread.user_data() {
-        Thread::MessageWait(ref wait) => wait.clone(), // TODO: don't clone?
-        _ => return,
-    };
 
     // Try to find a message in the queue that matches something the user is waiting for.
     let mut index_in_queue = 0;
@@ -1078,7 +881,7 @@ fn try_resume_message_wait_thread(
             }
         };
 
-        if let Some(p) = msg_wait.msg_ids.iter().position(|id| *id == msg_id.into()) {
+        if let Some(p) = thread.message_ids_iter().position(|id| *id == msg_id.into()) {
             break p as u32;
         }
 
