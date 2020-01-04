@@ -24,7 +24,7 @@ use core::{convert::TryFrom as _, fmt, mem};
 use redshirt_syscalls_interface::{EncodedMessage, Pid, ThreadId};
 
 /// Wrapper around [`ProcessesCollection`](processes::ProcessesCollection), but that interprets
-/// the extrinsic calls and keeps track of the state in which threads are waiting.
+/// the extrinsic calls and keeps track of the state in which pending threads are in.
 ///
 /// The generic parameters `TPud` and `TTud` are "user data"s that are stored respectively per
 /// process and per thread, and allows the user to put extra information associated to a process
@@ -103,6 +103,40 @@ pub trait ProcessesCollectionExtrinsicsThreadAccess<'a> {
     fn user_data(&mut self) -> &mut Self::ThreadUserData;
 }
 
+/// Possible function available to processes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Extrinsic {
+    NextMessage,
+    EmitMessage,
+    EmitMessageError,
+    EmitAnswer,
+    CancelMessage,
+}
+
+/// Structure passed to the underlying [`processes::ProcessesCollection`] that tracks the state
+/// of the thread.
+#[derive(Debug)]
+struct LocalThreadUserData<TTud> {
+    /// State of a thread.
+    state: LocalThreadState,
+    /// User data decided by the user.
+    external_user_data: TTud,
+}
+
+/// State of a thread. Private. Stored within the [`processes::ProcessesCollection`].
+#[derive(Debug)]
+enum LocalThreadState {
+    /// Thread is ready to run, running, or has just called an extrinsic and the call is being
+    /// processed.
+    ReadyToRun,
+
+    /// The thread is sleeping and waiting for a message to come.
+    MessageWait(MessageWait),
+
+    /// The thread called `emit_message` and wants to emit a message on an interface.
+    EmitMessage(EmitMessage),
+}
+
 /// How a process is waiting for messages.
 #[derive(Debug, PartialEq, Eq)]
 struct MessageWait {
@@ -140,40 +174,6 @@ struct EmitAnswer {
     message_id: MessageId,
     /// The response itself.
     response: EncodedMessage,
-}
-
-/// Possible function available to processes.
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum Extrinsic {
-    NextMessage,
-    EmitMessage,
-    EmitMessageError,
-    EmitAnswer,
-    CancelMessage,
-}
-
-/// Structure passed to the underlying [`processes::ProcessesCollection`] that tracks the state
-/// of the thread.
-#[derive(Debug)]
-struct LocalThreadUserData<TTud> {
-    /// State of a thread.
-    state: LocalThreadState,
-    /// User data decided by the user.
-    external_user_data: TTud,
-}
-
-/// State of a thread. Stored within the [`processes::ProcessesCollection`].
-#[derive(Debug)]
-enum LocalThreadState {
-    /// Thread is ready to run, running, or has just called an extrinsic and the call is being
-    /// processed.
-    ReadyToRun,
-
-    /// The thread is sleeping and waiting for a message to come.
-    MessageWait(MessageWait),
-
-    /// The thread called `emit_message` and wants to emit a message on an interface.
-    EmitMessage(EmitMessage),
 }
 
 /// Outcome of the [`run`](ProcessesCollectionExtrinsics::run) function.
@@ -506,7 +506,7 @@ impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsProc<'a, TPud, TTud> {
     /// Aborts the process and returns the associated user data.
     pub fn abort(self) -> (TPud, Vec<(ThreadId, TTud)>) {
         //self.inner.abort()
-        unimplemented!()
+        unimplemented!() // TODO:
     }
 }
 
@@ -516,11 +516,7 @@ where
     TTud: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // TODO: threads user data
-        f.debug_struct("ProcessesCollectionExtrinsicsProc")
-            .field("pid", &self.pid())
-            //.field("user_data", self.user_data())     // TODO: requires &mut self :-/
-            .finish()
+        fmt::Debug::fmt(&self.inner, f)
     }
 }
 
@@ -671,22 +667,6 @@ where
         fmt::Debug::fmt(&self.inner, f)
     }
 }
-
-/*/// How a process is emitting a message.
-#[derive(Debug, PartialEq, Eq)]
-struct EmitMessage {
-    /// Interface we want to emit the message on.
-    interface: InterfaceHash,
-    /// Where to write back the message ID, or `None` if no answer is expected.
-    message_id_write: Option<u32>,
-    /// Message itself. Needs to be delivered to the handler once it is registered.
-    message: EncodedMessage,
-    /// True if we're allowed to block the thread to wait for an interface handler to be
-    /// available.
-    allow_delay: bool,
-}
-
-*/
 
 impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsThreadEmitMessage<'a, TPud, TTud> {
     /// Returns true if the caller wants an answer to the message.
