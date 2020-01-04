@@ -15,7 +15,10 @@
 
 use crate::id_pool::IdPool;
 use crate::module::Module;
-use crate::scheduler::{extrinsics::{self, ProcessesCollectionExtrinsicsExtrinsicsThreadAccess as _}, vm};
+use crate::scheduler::{
+    extrinsics::{self, ProcessesCollectionExtrinsicsThreadAccess as _},
+    vm,
+};
 use crate::sig;
 use crate::signature::Signature;
 use crate::InterfaceHash;
@@ -218,7 +221,7 @@ impl Core {
     pub fn new() -> CoreBuilder {
         CoreBuilder {
             reserved_pids: HashSet::new(),
-            inner_builder: extrinsics::ProcessesCollectionExtrinsicsExtrinsicsBuilder::default()
+            inner_builder: extrinsics::ProcessesCollectionExtrinsicsExtrinsicsBuilder::default(),
         }
     }
 
@@ -290,7 +293,6 @@ impl Core {
                 dead_threads,
                 user_data,
             } => {
-                debug_assert_eq!(dead_threads[0].1, Thread::ReadyToRun);
                 for (dead_thread_id, dead_thread_state) in dead_threads {
                     match dead_thread_state {
                         _ => {} // TODO:
@@ -348,13 +350,12 @@ impl Core {
                 }
             }
 
-            extrinsics::RunOneOutcome::ThreadFinished { user_data, .. } => {
-                debug_assert_eq!(user_data, Thread::ReadyToRun);
+            extrinsics::RunOneOutcome::ThreadFinished { .. } => {
                 // TODO: report?
                 CoreRunOutcomeInner::LoopAgain
             }
 
-            extrinsics::RunOneOutcome::ThreadWaitMessage(thread) {
+            extrinsics::RunOneOutcome::ThreadWaitMessage(thread) => {
                 /*
                 try_resume_message_wait_thread(thread);
 
@@ -372,7 +373,7 @@ impl Core {
                 CoreRunOutcomeInner::LoopAgain
             }
 
-            extrinsics::RunOneOutcome::ThreadEmitMessage(thread) {
+            extrinsics::RunOneOutcome::ThreadEmitMessage(thread) => {
                 let message_id = if needs_answer {
                     let message_id_write = params[5].try_into::<i32>().unwrap() as u32;
                     let new_message_id = loop {
@@ -471,7 +472,11 @@ impl Core {
                 }
             }
 
-            extrinsics::RunOneOutcome::ThreadEmitAnswer { message_id, response, .. } => {
+            extrinsics::RunOneOutcome::ThreadEmitAnswer {
+                message_id,
+                response,
+                ..
+            } => {
                 // TODO: check ownership of the message
                 self.answer_message_inner(message_id, Ok(response))
                     .unwrap_or(CoreRunOutcomeInner::LoopAgain)
@@ -761,9 +766,7 @@ impl Core {
             messages_to_answer: SmallVec::new(),
         };
 
-        let process = self
-            .processes
-            .execute(module, proc_metadata, Thread::ReadyToRun)?;
+        let process = self.processes.execute(module, proc_metadata, ())?;
 
         Ok(CoreProcess { process })
     }
@@ -783,9 +786,7 @@ impl<'a> CoreProcess<'a> {
         fn_index: u32,
         params: Vec<wasmi::RuntimeValue>,
     ) -> Result<CoreThread<'a>, vm::StartErr> {
-        let thread = self
-            .process
-            .start_thread(fn_index, params, Thread::ReadyToRun)?;
+        let thread = self.process.start_thread(fn_index, params, ())?;
         Ok(CoreThread { thread })
     }
 
@@ -881,8 +882,8 @@ fn try_resume_message_wait_thread(
             }
         };
 
-        if let Some(p) = thread.message_ids_iter().position(|id| *id == msg_id.into()) {
-            break p as u32;
+        if let Some(p) = thread.message_ids_iter().position(|id| id == msg_id.into()) {
+            break p;
         }
 
         index_in_queue += 1;
@@ -893,13 +894,13 @@ fn try_resume_message_wait_thread(
     // Adjust the `index_in_list` field of the message to match what we have.
     match thread.process_user_data().messages_queue[index_in_queue] {
         redshirt_syscalls_interface::ffi::Message::Response(ref mut response) => {
-            response.index_in_list = index_in_msg_ids;
+            response.index_in_list = u32::try_from(index_in_msg_ids).unwrap();
         }
         redshirt_syscalls_interface::ffi::Message::Interface(ref mut interface) => {
-            interface.index_in_list = index_in_msg_ids;
+            interface.index_in_list = u32::try_from(index_in_msg_ids).unwrap();
         }
         redshirt_syscalls_interface::ffi::Message::ProcessDestroyed(ref mut proc_destr) => {
-            proc_destr.index_in_list = index_in_msg_ids;
+            proc_destr.index_in_list = u32::try_from(index_in_msg_ids).unwrap();
         }
     }
 
@@ -909,25 +910,15 @@ fn try_resume_message_wait_thread(
         .clone()
         .encode();
 
-    // TODO: don't use as
-    if msg_wait.out_size as usize >= msg_bytes.0.len() {
-        // Write the message in the process's memory.
-        match thread.write_memory(msg_wait.out_pointer, &msg_bytes.0) {
-            Ok(()) => {}
-            Err(_) => panic!(),
-        };
-        // Zero the corresponding entry in the messages to wait upon.
-        match thread.write_memory(msg_wait.msg_ids_ptr + index_in_msg_ids * 8, &[0; 8]) {
-            Ok(()) => {}
-            Err(_) => panic!(),
-        };
+    // TODO: maybe extrinsics could have some API shortcut here
+    if msg_bytes.0.len() < thread.allowed_message_size() {
+        thread.resume_message(index_in_msg_ids, msg_bytes);
         // Pop the message from the queue, so that we don't deliver it twice.
-        thread
+        let message = thread
             .process_user_data()
             .messages_queue
             .remove(index_in_queue);
+    } else {
+        thread.resume_message_too_big(msg_bytes.0.len());
     }
-
-    *thread.user_data() = Thread::ReadyToRun;
-    thread.resume(Some(wasmi::RuntimeValue::I32(msg_bytes.0.len() as i32))); // TODO: don't use as
 }
