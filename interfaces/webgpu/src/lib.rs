@@ -20,6 +20,15 @@
 
 extern crate alloc;
 
+use alloc::{string::String, vec::Vec};
+
 pub mod ffi;
+
+/// Defined in the "ImageBitmap and animations" standard.
+///
+/// https://html.spec.whatwg.org/multipage/imagebitmap-and-animations.html#imagebitmap
+pub struct ImageBitmap {
+
+}
 
 include!(concat!(env!("OUT_DIR"), "/webgpu.rs"));

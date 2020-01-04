@@ -444,7 +444,7 @@ The {{Navigator/gpu}} attribute is used to access a {{GPU}} object from the main
 [Exposed=Window]
 interface GPU {
     // May reject with DOMException  // TODO: DOMException("OperationError")?
-    Promise<GPUAdapter> requestAdapter(optional GPURequestAdapterOptions options = null);
+    Promise<GPUAdapter> requestAdapter(optional GPURequestAdapterOptions options = 0);
 };
 </script>
 
@@ -483,7 +483,7 @@ interface GPUAdapter {
     //readonly attribute GPULimits limits; Don't expose higher limits for now.
 
     // May reject with DOMException  // TODO: DOMException("OperationError")?
-    Promise<GPUDevice> requestDevice(optional GPUDeviceDescriptor descriptor = null);
+    Promise<GPUDevice> requestDevice(optional GPUDeviceDescriptor descriptor = 0);
 };
 </script>
 
@@ -619,7 +619,7 @@ interface GPUDevice : EventTarget {
     GPUBuffer createBuffer(GPUBufferDescriptor descriptor);
     GPUMappedBuffer createBufferMapped(GPUBufferDescriptor descriptor);
     GPUTexture createTexture(GPUTextureDescriptor descriptor);
-    GPUSampler createSampler(optional GPUSamplerDescriptor descriptor = null);
+    GPUSampler createSampler(optional GPUSamplerDescriptor descriptor = 0);
 
     GPUBindGroupLayout createBindGroupLayout(GPUBindGroupLayoutDescriptor descriptor);
     GPUPipelineLayout createPipelineLayout(GPUPipelineLayoutDescriptor descriptor);
@@ -629,7 +629,7 @@ interface GPUDevice : EventTarget {
     GPUComputePipeline createComputePipeline(GPUComputePipelineDescriptor descriptor);
     GPURenderPipeline createRenderPipeline(GPURenderPipelineDescriptor descriptor);
 
-    GPUCommandEncoder createCommandEncoder(optional GPUCommandEncoderDescriptor descriptor = null);
+    GPUCommandEncoder createCommandEncoder(optional GPUCommandEncoderDescriptor descriptor = 0);
     GPURenderBundleEncoder createRenderBundleEncoder(GPURenderBundleEncoderDescriptor descriptor);
 };
 GPUDevice includes GPUObjectBase;
@@ -684,7 +684,7 @@ To get a {{GPUDevice}}, use {{GPUAdapter/requestDevice()}}.
 <script type=idl>
 dictionary GPUDeviceDescriptor : GPUObjectDescriptorBase {
     sequence<GPUExtensionName> extensions = [];
-    GPULimits limits = null;
+    GPULimits limits = 0;
 
     // TODO: are other things configurable like queues?
 };
@@ -881,7 +881,7 @@ Textures {#textures}
 <script type=idl>
 [Serializable]
 interface GPUTexture {
-    GPUTextureView createView(optional GPUTextureViewDescriptor descriptor = null);
+    GPUTextureView createView(optional GPUTextureViewDescriptor descriptor = 0);
 
     void destroy();
 };
@@ -1425,10 +1425,10 @@ dictionary GPURenderPipelineDescriptor : GPUPipelineDescriptorBase {
     GPUProgrammableStageDescriptor fragmentStage;
 
     required GPUPrimitiveTopology primitiveTopology;
-    GPURasterizationStateDescriptor rasterizationState = null;
+    GPURasterizationStateDescriptor rasterizationState = 0;
     required sequence<GPUColorStateDescriptor> colorStates;
     GPUDepthStencilStateDescriptor depthStencilState;
-    GPUVertexStateDescriptor vertexState = null;
+    GPUVertexStateDescriptor vertexState = 0;
 
     unsigned long sampleCount = 1;
     unsigned long sampleMask = 0xFFFFFFFF;
@@ -1485,8 +1485,8 @@ enum GPUCullMode {
 dictionary GPUColorStateDescriptor {
     required GPUTextureFormat format;
 
-    GPUBlendDescriptor alphaBlend = null;
-    GPUBlendDescriptor colorBlend = null;
+    GPUBlendDescriptor alphaBlend = 0;
+    GPUBlendDescriptor colorBlend = 0;
     GPUColorWriteFlags writeMask = 0xF;  // GPUColorWrite.ALL
 };
 </script>
@@ -1562,8 +1562,8 @@ dictionary GPUDepthStencilStateDescriptor {
     boolean depthWriteEnabled = false;
     GPUCompareFunction depthCompare = "always";
 
-    GPUStencilStateFaceDescriptor stencilFront = null;
-    GPUStencilStateFaceDescriptor stencilBack = null;
+    GPUStencilStateFaceDescriptor stencilFront = 0;
+    GPUStencilStateFaceDescriptor stencilBack = 0;
 
     unsigned long stencilReadMask = 0xFFFFFFFF;
     unsigned long stencilWriteMask = 0xFFFFFFFF;
@@ -1712,7 +1712,7 @@ Command Encoding {#command-encoding}
 <script type=idl>
 interface GPUCommandEncoder {
     GPURenderPassEncoder beginRenderPass(GPURenderPassDescriptor descriptor);
-    GPUComputePassEncoder beginComputePass(optional GPUComputePassDescriptor descriptor = null);
+    GPUComputePassEncoder beginComputePass(optional GPUComputePassDescriptor descriptor = 0);
 
     void copyBufferToBuffer(
         GPUBuffer source,
@@ -1740,7 +1740,7 @@ interface GPUCommandEncoder {
     void popDebugGroup();
     void insertDebugMarker(DOMString markerLabel);
 
-    GPUCommandBuffer finish(optional GPUCommandBufferDescriptor descriptor = null);
+    GPUCommandBuffer finish(optional GPUCommandBufferDescriptor descriptor = 0);
 };
 GPUCommandEncoder includes GPUObjectBase;
 </script>
@@ -1769,7 +1769,7 @@ dictionary GPUTextureCopyView {
     required GPUTexture texture;
     unsigned long mipLevel = 0;
     unsigned long arrayLayer = 0;
-    GPUOrigin3D origin = null;
+    GPUOrigin3D origin = 0;
 };
 </script>
 
@@ -1778,7 +1778,7 @@ dictionary GPUTextureCopyView {
 <script type=idl>
 dictionary GPUImageBitmapCopyView {
     required ImageBitmap imageBitmap;
-    GPUOrigin2D origin = null;
+    GPUOrigin2D origin = 0;
 };
 </script>
 
@@ -1959,7 +1959,7 @@ dictionary GPURenderBundleDescriptor : GPUObjectDescriptorBase {
 
 <script type=idl>
 interface GPURenderBundleEncoder {
-    GPURenderBundle finish(optional GPURenderBundleDescriptor descriptor = null);
+    GPURenderBundle finish(optional GPURenderBundleDescriptor descriptor = 0);
 };
 GPURenderBundleEncoder includes GPUObjectBase;
 GPURenderBundleEncoder includes GPUProgrammablePassEncoder;
@@ -1984,7 +1984,7 @@ Queues {#queues}
 interface GPUQueue {
     void submit(sequence<GPUCommandBuffer> commandBuffers);
 
-    GPUFence createFence(optional GPUFenceDescriptor descriptor = null);
+    GPUFence createFence(optional GPUFenceDescriptor descriptor = 0);
     void signal(GPUFence fence, unsigned long long signalValue);
 
     void copyImageBitmapToTexture(
