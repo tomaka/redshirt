@@ -815,6 +815,15 @@ impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsThreadWaitMessage<'a, TPud, TT
         }
     }
 
+    /// Returns true if we should block the thread waiting for a message to come.
+    pub fn block(&mut self) -> bool {
+        if let LocalThreadState::MessageWait(ref wait) = self.inner.user_data().state {
+            wait.block
+        } else {
+            unreachable!()
+        }
+    }
+
     /// Resume the thread, sending back a message.
     ///
     /// `index` must be the index within the list returned by [`message_ids_iter`].
@@ -847,7 +856,7 @@ impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsThreadWaitMessage<'a, TPud, TT
         // Write the message in the process's memory.
         match self.inner.write_memory(wait.out_pointer, &message.0) {
             Ok(()) => {}
-            Err(_) => panic!(),
+            Err(_) => panic!(), // TODO: can legit happen
         };
 
         // Zero the corresponding entry in the messages to wait upon.
@@ -856,7 +865,7 @@ impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsThreadWaitMessage<'a, TPud, TT
             &[0; 8],
         ) {
             Ok(()) => {}
-            Err(_) => panic!(),
+            Err(_) => panic!(), // TODO: can legit happen
         };
 
         self.inner.user_data().state = LocalThreadState::ReadyToRun;
@@ -884,10 +893,11 @@ impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsThreadWaitMessage<'a, TPud, TT
     ///
     /// # Panic
     ///
-    /// Panics if `block` was set to `true`.
+    /// - Panics if [`block`](ProcessesCollectionExtrinsicsThreadWaitMessage::block) would
+    /// return `true`.
+    ///
     pub fn resume_no_message(
         mut self,
-        message_size: u32,
     ) -> ProcessesCollectionExtrinsicsThreadRegular<'a, TPud, TTud> {
         if let LocalThreadState::MessageWait(ref wait) = self.inner.user_data().state {
             assert!(!wait.block);

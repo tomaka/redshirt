@@ -353,20 +353,7 @@ impl Core {
             }
 
             extrinsics::RunOneOutcome::ThreadWaitMessage(thread) => {
-                /*
                 try_resume_message_wait_thread(thread);
-
-                // If `block` is false, we put the thread to sleep anyway, then wake it up again here.
-                if !block && *thread.user_data() != Thread::ReadyToRun {
-                    debug_assert!(if let Thread::MessageWait(_) = thread.user_data() {
-                        true
-                    } else {
-                        false
-                    });
-                    *thread.user_data() = Thread::ReadyToRun;
-                    thread.resume(Some(wasmi::RuntimeValue::I32(0)));
-                }
-                */
                 CoreRunOutcomeInner::LoopAgain
             }
 
@@ -852,16 +839,16 @@ fn try_resume_message_wait(process: extrinsics::ProcessesCollectionExtrinsicsPro
 fn try_resume_message_wait_thread(
     mut thread: extrinsics::ProcessesCollectionExtrinsicsThreadWaitMessage<Process, ()>,
 ) -> extrinsics::ProcessesCollectionExtrinsicsThread<Process, ()> {
-    if thread.process_user_data().messages_queue.is_empty() {
-        return From::from(thread);
-    }
-
     // Try to find a message in the queue that matches something the user is waiting for.
     let mut index_in_queue = 0;
     let index_in_msg_ids = loop {
         if index_in_queue >= thread.process_user_data().messages_queue.len() {
             // No message found.
-            return From::from(thread);
+            return if thread.block() {
+                From::from(thread)
+            } else {
+                From::from(thread.resume_no_message())
+            };
         }
 
         // For that message in queue, grab the value that must be in `msg_ids` in order to match.
