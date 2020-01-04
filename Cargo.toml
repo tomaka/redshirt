@@ -16,6 +16,7 @@ members = [
     "interfaces/tcp",
     "interfaces/time",
     "interfaces/vulkan",
+    "interfaces/webgpu",
     "interfaces/window",
 ]
 
