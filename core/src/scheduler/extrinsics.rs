@@ -13,20 +13,14 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::id_pool::IdPool;
 use crate::module::Module;
 use crate::scheduler::{processes, vm};
 use crate::sig;
-use crate::signature::Signature;
 use crate::{InterfaceHash, MessageId};
 
-use alloc::{borrow::Cow, vec, vec::Vec};
+use alloc::{vec, vec::Vec};
 use byteorder::{ByteOrder as _, LittleEndian};
-use core::{convert::TryFrom as _, fmt};
-use hashbrown::{
-    hash_map::{DefaultHashBuilder, Entry, OccupiedEntry},
-    HashMap,
-};
+use core::{convert::TryFrom as _, fmt, mem};
 use redshirt_syscalls_interface::{EncodedMessage, Pid, ThreadId};
 
 /// Wrapper around [`ProcessesCollection`](processes::ProcessesCollection), but that interprets
@@ -71,7 +65,7 @@ pub struct ProcessesCollectionExtrinsicsThreadWaitMessage<'a, TPud, TTud> {
     inner: processes::ProcessesCollectionThread<'a, TPud, LocalThreadUserData<TTud>>,
 }
 
-pub trait ProcessesCollectionExtrinsicsThreadAccess {
+pub trait ProcessesCollectionExtrinsicsThreadAccess<'a> {
     type ProcessUserData;
     type ThreadUserData;
 
@@ -86,17 +80,12 @@ pub trait ProcessesCollectionExtrinsicsThreadAccess {
     /// [`process_by_id`](ProcessesCollectionExtrinsics::process_by_id).
     fn pid(&self) -> Pid;
 
-    /*/// Returns the following thread within the next process, or `None` if this is the last thread.
+    /// Returns the following thread within the next process, or `None` if this is the last thread.
     ///
     /// Threads are ordered arbitrarily. In particular, they are **not** ordered by [`ThreadId`].
-    fn next_thread(mut self) -> Option<ProcessesCollectionExtrinsicsThread<'a, TPud, TTud>> {
-        self.thread_index += 1;
-        if self.thread_index >= self.process.get_mut().state_machine.num_threads() {
-            return None;
-        }
-
-        Some(self)
-    }*/
+    fn next_thread(
+        self,
+    ) -> Option<ProcessesCollectionExtrinsicsThread<'a, Self::ProcessUserData, Self::ThreadUserData>>;
 
     /// Returns the user data that is associated to the process.
     fn process_user_data(&mut self) -> &mut Self::ProcessUserData;
@@ -139,7 +128,7 @@ struct EmitMessage {
 #[derive(Debug, PartialEq, Eq)]
 struct EmitAnswer {
     /// Message to answer.
-    message_id: u32,
+    message_id: MessageId,
     /// The response itself.
     response: EncodedMessage,
 }
@@ -259,8 +248,14 @@ impl<TPud, TTud> ProcessesCollectionExtrinsics<TPud, TTud> {
         proc_user_data: TPud,
         main_thread_user_data: TTud,
     ) -> Result<ProcessesCollectionExtrinsicsProc<TPud, TTud>, vm::NewErr> {
-        self.inner
-            .execute(module, proc_user_data, main_thread_user_data)
+        let main_thread_user_data = LocalThreadUserData {
+            state: LocalThreadState::ReadyToRun,
+            external_user_data: main_thread_user_data,
+        };
+        let process = self
+            .inner
+            .execute(module, proc_user_data, main_thread_user_data)?;
+        Ok(ProcessesCollectionExtrinsicsProc { inner: process })
     }
 
     /// Runs one thread amongst the collection.
@@ -276,7 +271,10 @@ impl<TPud, TTud> ProcessesCollectionExtrinsics<TPud, TTud> {
             } => RunOneOutcome::ProcessFinished {
                 pid,
                 user_data,
-                dead_threads,
+                dead_threads: dead_threads
+                    .into_iter()
+                    .map(|s| s.external_user_data)
+                    .collect(), // TODO: meh for allocation
                 outcome,
             },
             processes::RunOneOutcome::ThreadFinished {
@@ -286,7 +284,7 @@ impl<TPud, TTud> ProcessesCollectionExtrinsics<TPud, TTud> {
             } => {
                 debug_assert!(user_data.state.is_ready_to_run());
                 RunOneOutcome::ThreadFinished {
-                    process,
+                    process: ProcessesCollectionExtrinsicsProc { inner: process },
                     user_data: user_data.external_user_data,
                     value,
                 }
@@ -337,7 +335,7 @@ impl<TPud, TTud> ProcessesCollectionExtrinsics<TPud, TTud> {
                 };
                 thread.resume(None);
                 RunOneOutcome::ThreadEmitAnswer {
-                    thread: ProcessesCollectionExtrinsicsThreadEmitMessage { inner: thread },
+                    thread: ProcessesCollectionExtrinsicsThreadRegular { inner: thread },
                     message_id: emit_resp.message_id,
                     response: emit_resp.response,
                 }
@@ -355,7 +353,7 @@ impl<TPud, TTud> ProcessesCollectionExtrinsics<TPud, TTud> {
                 };
                 thread.resume(None);
                 RunOneOutcome::ThreadEmitMessageError {
-                    thread: ProcessesCollectionExtrinsicsThreadEmitMessage { inner: thread },
+                    thread: ProcessesCollectionExtrinsicsThreadRegular { inner: thread },
                     message_id: emit_msg_error,
                 }
             }
@@ -370,7 +368,7 @@ impl<TPud, TTud> ProcessesCollectionExtrinsics<TPud, TTud> {
 
     /// Returns an iterator to all the processes that exist in the collection.
     pub fn pids<'a>(&'a self) -> impl ExactSizeIterator<Item = Pid> + 'a {
-        self.processes.keys().cloned()
+        self.inner.pids()
     }
 
     /// Returns a process by its [`Pid`], if it exists.
@@ -394,7 +392,7 @@ impl<TPud, TTud> ProcessesCollectionExtrinsics<TPud, TTud> {
 
 impl Default for ProcessesCollectionExtrinsicsBuilder {
     fn default() -> ProcessesCollectionExtrinsicsBuilder {
-        let mut inner = processes::ProcessesCollection::default()
+        let mut inner = processes::ProcessesCollectionBuilder::default()
             .with_extrinsic(
                 "redshirt",
                 "next_message",
@@ -438,9 +436,7 @@ impl ProcessesCollectionExtrinsicsBuilder {
     /// >           method that frees such an allocated `Pid`. If there is ever a need to free
     /// >           these `Pid`s, such a method should be added.
     pub fn reserve_pid(&mut self) -> Pid {
-        // Note that we take `&mut self`. It could be `&self`, but that would expose
-        // implementation details.
-        self.pid_pool.assign()
+        self.inner.reserve_pid()
     }
 
     /// Turns the builder into a [`ProcessesCollectionExtrinsics`].
@@ -483,7 +479,7 @@ impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsProc<'a, TPud, TTud> {
                 state: LocalThreadState::ReadyToRun,
                 external_user_data: user_data,
             },
-        );
+        )?;
 
         Ok(From::from(ProcessesCollectionExtrinsicsThreadRegular {
             inner: thread,
@@ -532,7 +528,7 @@ impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsThread<'a, TPud, TTud> {
         let ty = match inner.user_data().state {
             LocalThreadState::ReadyToRun => Ty::Regular,
             LocalThreadState::EmitMessage(_) => Ty::Emit,
-            LocalThreadState::WaitMessage(_) => Ty::Wait,
+            LocalThreadState::MessageWait(_) => Ty::Wait,
         };
 
         match ty {
@@ -567,7 +563,7 @@ impl<'a, TPud, TTud> From<ProcessesCollectionExtrinsicsThreadWaitMessage<'a, TPu
     }
 }
 
-impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsThreadAccess
+impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsThreadAccess<'a>
     for ProcessesCollectionExtrinsicsThread<'a, TPud, TTud>
 {
     type ProcessUserData = TPud;
@@ -589,6 +585,14 @@ impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsThreadAccess
         }
     }
 
+    fn next_thread(mut self) -> Option<ProcessesCollectionExtrinsicsThread<'a, TPud, TTud>> {
+        match self {
+            ProcessesCollectionExtrinsicsThread::Regular(t) => t.next_thread(),
+            ProcessesCollectionExtrinsicsThread::EmitMessage(t) => t.next_thread(),
+            ProcessesCollectionExtrinsicsThread::WaitMessage(t) => t.next_thread(),
+        }
+    }
+
     fn process_user_data(&mut self) -> &mut TPud {
         match self {
             ProcessesCollectionExtrinsicsThread::Regular(t) => t.process_user_data(),
@@ -606,7 +610,21 @@ impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsThreadAccess
     }
 }
 
-impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsThreadAccess
+impl<'a, TPud, TTud> fmt::Debug for ProcessesCollectionExtrinsicsThread<'a, TPud, TTud>
+where
+    TPud: fmt::Debug,
+    TTud: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ProcessesCollectionExtrinsicsThread::Regular(t) => fmt::Debug::fmt(t, f),
+            ProcessesCollectionExtrinsicsThread::EmitMessage(t) => fmt::Debug::fmt(t, f),
+            ProcessesCollectionExtrinsicsThread::WaitMessage(t) => fmt::Debug::fmt(t, f),
+        }
+    }
+}
+
+impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsThreadAccess<'a>
     for ProcessesCollectionExtrinsicsThreadRegular<'a, TPud, TTud>
 {
     type ProcessUserData = TPud;
@@ -620,16 +638,32 @@ impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsThreadAccess
         self.inner.pid()
     }
 
+    fn next_thread(mut self) -> Option<ProcessesCollectionExtrinsicsThread<'a, TPud, TTud>> {
+        self.inner
+            .next_thread()
+            .map(ProcessesCollectionExtrinsicsThread::from_inner)
+    }
+
     fn process_user_data(&mut self) -> &mut TPud {
         self.inner.process_user_data()
     }
 
     fn user_data(&mut self) -> &mut TTud {
-        &mut self.inner.user_data().user_data
+        &mut self.inner.user_data().external_user_data
     }
 }
 
-impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsThreadAccess
+impl<'a, TPud, TTud> fmt::Debug for ProcessesCollectionExtrinsicsThreadRegular<'a, TPud, TTud>
+where
+    TPud: fmt::Debug,
+    TTud: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Debug::fmt(&self.inner, f)
+    }
+}
+
+impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsThreadAccess<'a>
     for ProcessesCollectionExtrinsicsThreadEmitMessage<'a, TPud, TTud>
 {
     type ProcessUserData = TPud;
@@ -643,20 +677,36 @@ impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsThreadAccess
         self.inner.pid()
     }
 
+    fn next_thread(mut self) -> Option<ProcessesCollectionExtrinsicsThread<'a, TPud, TTud>> {
+        self.inner
+            .next_thread()
+            .map(ProcessesCollectionExtrinsicsThread::from_inner)
+    }
+
     fn process_user_data(&mut self) -> &mut TPud {
         self.inner.process_user_data()
     }
 
     fn user_data(&mut self) -> &mut TTud {
-        &mut self.inner.user_data().user_data
+        &mut self.inner.user_data().external_user_data
+    }
+}
+
+impl<'a, TPud, TTud> fmt::Debug for ProcessesCollectionExtrinsicsThreadEmitMessage<'a, TPud, TTud>
+where
+    TPud: fmt::Debug,
+    TTud: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Debug::fmt(&self.inner, f)
     }
 }
 
 impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsThreadWaitMessage<'a, TPud, TTud> {
     /// Returns the list of message IDs that the thread is waiting on. In order.
-    pub fn message_ids_iter(&self) -> impl Iterator<Item = MessageId> {
-        if let LocalThreadState::WaitMessage(ref wait) = self.inner.user_data().state {
-            wait.message_ids.iter().cloned()
+    pub fn message_ids_iter<'b>(&'b self) -> impl Iterator<Item = MessageId> + 'b {
+        if let LocalThreadState::MessageWait(ref wait) = self.inner.user_data().state {
+            wait.msg_ids.iter().cloned()
         } else {
             unreachable!()
         }
@@ -664,7 +714,7 @@ impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsThreadWaitMessage<'a, TPud, TT
 
     /// Returns the maximum size allowed for a message.
     pub fn allowed_message_size(&self) -> usize {
-        if let LocalThreadState::WaitMessage(ref wait) = self.inner.user_data().state {
+        if let LocalThreadState::MessageWait(ref wait) = self.inner.user_data().state {
             usize::try_from(wait.out_size).unwrap()
         } else {
             unreachable!()
@@ -687,23 +737,23 @@ impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsThreadWaitMessage<'a, TPud, TT
                 &mut self.inner.user_data().state,
                 LocalThreadState::ReadyToRun,
             ) {
-                LocalThreadState::WaitMessage(wait) => wait,
+                LocalThreadState::MessageWait(wait) => wait,
                 _ => unreachable!(),
             }
         };
 
-        assert!(index < wait.message_ids.len());
+        assert!(index < wait.msg_ids.len());
         let message_size_u32 = u32::try_from(message.0.len()).unwrap();
         assert!(wait.out_size >= message_size_u32);
 
         // Write the message in the process's memory.
-        match thread.write_memory(wait.out_pointer, &message.0) {
+        match self.inner.write_memory(wait.out_pointer, &message.0) {
             Ok(()) => {}
             Err(_) => panic!(),
         };
 
         // Zero the corresponding entry in the messages to wait upon.
-        match thread.write_memory(
+        match self.inner.write_memory(
             wait.msg_ids_ptr + u32::try_from(index).unwrap() * 8,
             &[0; 8],
         ) {
@@ -731,7 +781,7 @@ impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsThreadWaitMessage<'a, TPud, TT
     ///
     /// Panics if `block` was set to `true`.
     pub fn resume_no_message(self, message_size: u32) {
-        if let LocalThreadState::WaitMessage(ref wait) = self.inner.user_data().state {
+        if let LocalThreadState::MessageWait(ref wait) = self.inner.user_data().state {
             assert!(!wait.block);
         } else {
             unreachable!()
@@ -742,7 +792,7 @@ impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsThreadWaitMessage<'a, TPud, TT
     }
 }
 
-impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsThreadAccess
+impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsThreadAccess<'a>
     for ProcessesCollectionExtrinsicsThreadWaitMessage<'a, TPud, TTud>
 {
     type ProcessUserData = TPud;
@@ -756,35 +806,30 @@ impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsThreadAccess
         self.inner.pid()
     }
 
+    fn next_thread(mut self) -> Option<ProcessesCollectionExtrinsicsThread<'a, TPud, TTud>> {
+        self.inner
+            .next_thread()
+            .map(ProcessesCollectionExtrinsicsThread::from_inner)
+    }
+
     fn process_user_data(&mut self) -> &mut TPud {
         self.inner.process_user_data()
     }
 
     fn user_data(&mut self) -> &mut TTud {
-        &mut self.inner.user_data().user_data
+        &mut self.inner.user_data().external_user_data
     }
 }
 
-// TODO:
-/*impl<'a, TPud, TTud> fmt::Debug for ProcessesCollectionExtrinsicsThread<'a, TPud, TTud>
+impl<'a, TPud, TTud> fmt::Debug for ProcessesCollectionExtrinsicsThreadWaitMessage<'a, TPud, TTud>
 where
     TPud: fmt::Debug,
     TTud: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        //let id = self.id();
-        let pid = self.pid();
-        // TODO: requires &mut self :-/
-        //let ready_to_run = self.inner().into_user_data().value_back.is_some();
-
-        f.debug_struct("ProcessesCollectionExtrinsicsThread")
-            .field("pid", &pid)
-            //.field("thread_id", &id)
-            //.field("user_data", self.user_data())
-            //.field("ready_to_run", &ready_to_run)
-            .finish()
+        fmt::Debug::fmt(&self.inner, f)
     }
-}*/
+}
 
 impl LocalThreadState {
     /// True if `self` is equal to [`LocalThreadState::ReadyToRun`].
@@ -810,16 +855,16 @@ fn parse_extrinsic_next_message<TPud, TTud>(
     // supposed to check the function signature.
     assert_eq!(params.len(), 5);
 
-    let msg_ids_ptr = u32::try_from(params[0].try_into::<i32>().ok_or(())?).ok_or(())?;
+    let msg_ids_ptr = u32::try_from(params[0].try_into::<i32>().ok_or(())?).map_err(|_| ())?;
     // TODO: consider not copying the message ids and read memory on demand instead
     let msg_ids = {
-        let len = u32::try_from(params[1].try_into::<i32>().ok_or(())?).ok_or(())?;
+        let len = u32::try_from(params[1].try_into::<i32>().ok_or(())?).map_err(|_| ())?;
         if len >= 512 {
             // TODO: arbitrary limit in order to not allocate too much memory below; a bit crappy
             return Err(());
         }
         let mem = thread.read_memory(msg_ids_ptr, len * 8)?;
-        let mut out = vec![MessageId::from(0u64); usize::try_from(len).ok_or(())?];
+        let mut out = vec![MessageId::from(0u64); usize::try_from(len).map_err(|_| ())?];
         for (o, i) in out.iter_mut().zip(mem.chunks(8)) {
             let val = byteorder::LittleEndian::read_u64(i);
             *o = MessageId::from(val);
@@ -827,8 +872,8 @@ fn parse_extrinsic_next_message<TPud, TTud>(
         out
     };
 
-    let out_pointer = u32::try_from(params[2].try_into::<i32>().ok_or(())?).ok_or(())?;
-    let out_size = u32::try_from(params[3].try_into::<i32>().ok_or(())?).ok_or(())?;
+    let out_pointer = u32::try_from(params[2].try_into::<i32>().ok_or(())?).map_err(|_| ())?;
+    let out_size = u32::try_from(params[3].try_into::<i32>().ok_or(())?).map_err(|_| ())?;
     let block = params[4].try_into::<i32>().ok_or(())? != 0;
 
     Ok(MessageWait {
@@ -836,6 +881,7 @@ fn parse_extrinsic_next_message<TPud, TTud>(
         msg_ids_ptr,
         out_pointer,
         out_size,
+        block,
     })
 }
 
@@ -854,25 +900,33 @@ fn parse_extrinsic_emit_message<TPud, TTud>(
     assert_eq!(params.len(), 6);
 
     let interface: InterfaceHash = {
-        let addr = u32::try_from(params[0].try_into::<i32>().ok_or(())?).ok_or(())?;
-        InterfaceHash::from(<[u8; 32]>::try_from(&thread.read_memory(addr, 32)?[..])?)
+        let addr = u32::try_from(params[0].try_into::<i32>().ok_or(())?).map_err(|_| ())?;
+        InterfaceHash::from(
+            <[u8; 32]>::try_from(&thread.read_memory(addr, 32)?[..]).map_err(|_| ())?,
+        )
     };
 
     let message = {
-        let addr = u32::try_from(params[1].try_into::<i32>().ok_or(())?).ok_or(())?;
-        let num_bufs = u32::try_from(params[2].try_into::<i32>().ok_or(())?).ok_or(())?;
+        let addr = u32::try_from(params[1].try_into::<i32>().ok_or(())?).map_err(|_| ())?;
+        let num_bufs = u32::try_from(params[2].try_into::<i32>().ok_or(())?).map_err(|_| ())?;
         let mut out_msg = Vec::new();
         for buf_n in 0..num_bufs {
-            let sub_buf_ptr = thread.read_memory(addr + 8 * buf_n, 4).ok_or(())?;
+            let sub_buf_ptr = thread.read_memory(addr + 8 * buf_n, 4).map_err(|_| ())?;
             let sub_buf_ptr = LittleEndian::read_u32(&sub_buf_ptr);
-            let sub_buf_sz = thread.read_memory(addr + 8 * buf_n + 4, 4).ok_or(())?;
+            let sub_buf_sz = thread
+                .read_memory(addr + 8 * buf_n + 4, 4)
+                .map_err(|_| ())?;
             let sub_buf_sz = LittleEndian::read_u32(&sub_buf_sz);
-            if out_msg.len() + usize::try_from(sub_buf_sz).ok_or(())? >= 16 * 1024 * 1024 {
+            if out_msg.len() + usize::try_from(sub_buf_sz).map_err(|_| ())? >= 16 * 1024 * 1024 {
                 // TODO: arbitrary maximum message length
                 panic!("Max message length reached");
                 //return Err(());
             }
-            out_msg.extend_from_slice(&thread.read_memory(sub_buf_ptr, sub_buf_sz).ok_or(())?);
+            out_msg.extend_from_slice(
+                &thread
+                    .read_memory(sub_buf_ptr, sub_buf_sz)
+                    .map_err(|_| ())?,
+            );
         }
         EncodedMessage(out_msg)
     };
@@ -880,7 +934,7 @@ fn parse_extrinsic_emit_message<TPud, TTud>(
     let needs_answer = params[3].try_into::<i32>().ok_or(())? != 0;
     let allow_delay = params[4].try_into::<i32>().ok_or(())? != 0;
     let message_id_write = if needs_answer {
-        Some(u32::try_from(params[5].try_into::<i32>().ok_or(())?).ok_or(())?)
+        Some(u32::try_from(params[5].try_into::<i32>().ok_or(())?).map_err(|_| ())?)
     } else {
         None
     };
@@ -908,14 +962,14 @@ fn parse_extrinsic_emit_answer<TPud, TTud>(
     assert_eq!(params.len(), 3);
 
     let message_id = {
-        let addr = u32::try_from(params[0].try_into::<i32>().ok_or(())?).ok_or(())?;
+        let addr = u32::try_from(params[0].try_into::<i32>().ok_or(())?).map_err(|_| ())?;
         let buf = thread.read_memory(addr, 8)?;
         MessageId::from(byteorder::LittleEndian::read_u64(&buf))
     };
 
     let response = {
-        let addr = u32::try_from(params[1].try_into::<i32>().ok_or(())?).ok_or(())?;
-        let sz = u32::try_from(params[2].try_into::<i32>().ok_or(())?).ok_or(())?;
+        let addr = u32::try_from(params[1].try_into::<i32>().ok_or(())?).map_err(|_| ())?;
+        let sz = u32::try_from(params[2].try_into::<i32>().ok_or(())?).map_err(|_| ())?;
         EncodedMessage(thread.read_memory(addr, sz)?)
     };
 
@@ -941,7 +995,7 @@ fn parse_extrinsic_emit_message_error<TPud, TTud>(
     assert_eq!(params.len(), 1);
 
     let msg_id = {
-        let addr = u32::try_from(params[0].try_into::<i32>().ok_or(())?).ok_or(())?;
+        let addr = u32::try_from(params[0].try_into::<i32>().ok_or(())?).map_err(|_| ())?;
         let buf = thread.read_memory(addr, 8)?;
         MessageId::from(byteorder::LittleEndian::read_u64(&buf))
     };

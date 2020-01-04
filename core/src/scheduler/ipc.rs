@@ -407,7 +407,7 @@ impl Core {
                         *thread.user_data() = Thread::ReadyToRun;
                         thread.resume(Some(wasmi::RuntimeValue::I32(0)));
 
-                        if let Some(mut process) = self.processes.process_by_id(*pid) {
+                        if let Some(mut process) = self.processes.process_by_id(pid) {
                             let message = redshirt_syscalls_interface::ffi::Message::Interface(
                                 redshirt_syscalls_interface::ffi::InterfaceMessage {
                                     interface: interface.into(),
@@ -418,7 +418,7 @@ impl Core {
                                 },
                             );
 
-                            let mut process = match self.processes.process_by_id(*pid) {
+                            let mut process = match self.processes.process_by_id(pid) {
                                 Some(p) => p,
                                 None => unreachable!(),
                             };
@@ -845,7 +845,9 @@ fn try_resume_message_wait(process: extrinsics::ProcessesCollectionExtrinsicsPro
     let mut thread = process.main_thread();
 
     loop {
-        try_resume_message_wait_thread(&mut thread);
+        if let extrinsics::ProcessesCollectionExtrinsicsThread::WaitMessage(t) = &mut thread {
+            try_resume_message_wait_thread(t);
+        }
         match thread.next_thread() {
             Some(t) => thread = t,
             None => break,
