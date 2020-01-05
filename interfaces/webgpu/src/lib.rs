@@ -21,15 +21,20 @@
 extern crate alloc;
 
 use alloc::{string::String, vec::Vec};
+use core::{convert::TryFrom, fmt};
+
+pub use restricted::{RestrictedF32, RestrictedF64};
 
 pub mod ffi;
+mod restricted;
 
 /// Defined in the "ImageBitmap and animations" standard.
 ///
 /// https://html.spec.whatwg.org/multipage/imagebitmap-and-animations.html#imagebitmap
 ///
 /// There is no way to construct a [`ImageBitmap`] in this crate.
+#[derive(Debug)]
 pub struct ImageBitmap {
 }
 
-include!(concat!(env!("OUT_DIR"), "/webgpu.rs"));
+//include!(concat!(env!("OUT_DIR"), "/webgpu.rs"));

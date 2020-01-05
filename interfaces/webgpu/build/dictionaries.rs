@@ -17,28 +17,7 @@ use case::CaseExt as _;
 use std::{borrow::Cow, env, fs, io::{self, Write}, path::Path};
 use webidl::ast;
 
-mod dictionaries;
-mod ffi_bindings;
-mod parse;
-
-fn main() {
-    let mut out_main = {
-        let dest_path = Path::new(&env::var("OUT_DIR").unwrap()).join("webgpu.rs");
-        fs::File::create(&dest_path).unwrap()
-    };
-
-    let mut out_ffi = {
-        let dest_path = Path::new(&env::var("OUT_DIR").unwrap()).join("ffi.rs");
-        fs::File::create(&dest_path).unwrap()
-    };
-
-    let idl = parse::gen_parsed_idl();
-
-    gen_main(&mut out_main, &idl).unwrap();
-    ffi_bindings::gen_ffi(&mut out_ffi, &idl).unwrap();
-}
-
-fn gen_main(out: &mut impl Write, idl: &ast::AST) -> Result<(), io::Error> {
+pub fn gen_types(out: &mut impl Write, idl: &ast::AST) -> Result<(), io::Error> {
     for definition in idl {
         match definition {
             ast::Definition::Callback(_) => unimplemented!(),
@@ -73,20 +52,9 @@ fn gen_main(out: &mut impl Write, idl: &ast::AST) -> Result<(), io::Error> {
             ast::Definition::Implements(_) => unimplemented!(),
             ast::Definition::Includes(_) => {},
             ast::Definition::Interface(ast::Interface::Callback(_)) => unimplemented!(),
-            ast::Definition::Interface(ast::Interface::Partial(interface)) => {} // FIXME: unimplemented!()
-            ast::Definition::Interface(ast::Interface::NonPartial(interface)) => { // FIXME: unimplemented!()
-                writeln!(out, "#[derive(Debug, Encode, Decode)]")?;
-                writeln!(out, "pub struct {} {{", interface.name)?;
-                /*for member in interface.members.iter() {
-                    // We don't support any attribute.
-                    assert!(member.extended_attributes.is_empty());
-                    writeln!(out, "    pub r#{}: {},", member.name, ty_to_rust(&member.type_))?;
-                }*/
-                writeln!(out, "}}")?;
-                writeln!(out, "impl {} {{", interface.name)?;
-                writeln!(out, "}}")?;
-            },
-            ast::Definition::Mixin(_) => {}, // FIXME: unimplemented!()
+            ast::Definition::Interface(ast::Interface::Partial(interface)) => {}
+            ast::Definition::Interface(ast::Interface::NonPartial(interface)) => {},
+            ast::Definition::Mixin(_) => {},
             ast::Definition::Namespace(_) => unimplemented!(),
             ast::Definition::Typedef(typedef) => {
                 // We don't support any attribute.

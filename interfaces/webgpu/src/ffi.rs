@@ -13,7 +13,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use alloc::string::String;
+use crate::restricted::{RestrictedF32, RestrictedF64};
+
+use alloc::{string::String, vec::Vec};
 use parity_scale_codec::{Decode, Encode};
 use redshirt_syscalls_interface::InterfaceHash;
 
@@ -24,3 +26,5 @@ pub const INTERFACE: InterfaceHash = InterfaceHash::from_raw_hash([
 ]);
 
 include!(concat!(env!("OUT_DIR"), "/ffi.rs"));
+
+pub type ImageBitmap = u64;
