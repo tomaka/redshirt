@@ -27,8 +27,9 @@ pub mod ffi;
 /// Defined in the "ImageBitmap and animations" standard.
 ///
 /// https://html.spec.whatwg.org/multipage/imagebitmap-and-animations.html#imagebitmap
+///
+/// There is no way to construct a [`ImageBitmap`] in this crate.
 pub struct ImageBitmap {
-
 }
 
 include!(concat!(env!("OUT_DIR"), "/webgpu.rs"));
