@@ -186,21 +186,6 @@ struct Process {
     messages_to_answer: SmallVec<[MessageId; 8]>,
 }
 
-/// How a process is waiting for messages.
-#[derive(Debug, Clone, PartialEq, Eq)] // TODO: remove Clone
-struct MessageWait {
-    /// Identifiers of the messages we are waiting upon. Duplicate of what is in the process's
-    /// memory.
-    msg_ids: Vec<MessageId>,
-    /// Offset within the memory of the process where the list of messages to wait upon is
-    /// located. This is necessary as we have to zero.
-    msg_ids_ptr: u32,
-    /// Offset within the memory of the process where to write the received message.
-    out_pointer: u32,
-    /// Size of the memory of the process dedicated to receiving the message.
-    out_size: u32,
-}
-
 /// Access to a process within the core.
 pub struct CoreProcess<'a> {
     /// Access to the process within the inner collection.
