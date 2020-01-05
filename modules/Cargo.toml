@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "arm-stdout",
+    "hello-triangle",
     "hello-world",
     "http-server",
     "ne2000",
