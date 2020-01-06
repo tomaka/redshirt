@@ -138,7 +138,7 @@ jobs:
       uses: actions/upload-artifact@master
       with:
         name: cli-kernel-windows
-        path: target/release/redshirt-cli-kernel
+        path: target/release/redshirt-cli-kernel.exe
 
   build-standalone:
     name: Build standalone kernel
