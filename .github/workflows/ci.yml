@@ -132,8 +132,13 @@ jobs:
       with:
         path: target
         key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('Cargo.lock') }}
-    - name: Build
-      run: cargo build --workspace --exclude redshirt-standalone-kernel --locked --verbose
+    - name: Build CLI kernel
+      run: cargo rustc --release --package redshirt-cli-kernel --locked --verbose -- -Ctarget-feature=+crt-static
+    - name: Upload generated kernel
+      uses: actions/upload-artifact@master
+      with:
+        name: cli-kernel-windows
+        path: target/release/redshirt-cli-kernel
 
   build-standalone:
     name: Build standalone kernel
