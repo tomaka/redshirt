@@ -100,6 +100,41 @@ jobs:
     - name: Run tests
       run: cargo test --workspace --exclude redshirt-standalone-kernel --locked --verbose
 
+  build-hosted-windows:
+    name: Build hosted kernel on Windows
+    needs: build-modules
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v1
+    - name: Install Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: wasm32-unknown-unknown
+        override: true
+    - name: Download WASM modules
+      uses: actions/download-artifact@v1
+      with:
+        name: wasm-modules
+        path: modules/target/wasm32-unknown-unknown/release
+    - name: Cache cargo registry
+      uses: actions/cache@v1
+      with:
+        path: ~/.cargo/registry
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('Cargo.lock') }}
+    - name: Cache cargo index
+      uses: actions/cache@v1
+      with:
+        path: ~/.cargo/git
+        key: ${{ runner.os }}-cargo-index-${{ hashFiles('Cargo.lock') }}
+    - name: Cache cargo build
+      uses: actions/cache@v1
+      with:
+        path: target
+        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('Cargo.lock') }}
+    - name: Build
+      run: cargo build --workspace --exclude redshirt-standalone-kernel --locked --verbose
+
   build-standalone:
     name: Build standalone kernel
     needs: build-modules
