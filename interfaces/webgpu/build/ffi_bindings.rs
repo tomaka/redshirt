@@ -25,7 +25,7 @@ pub fn gen_ffi(out: &mut impl Write, idl: &ast::AST) -> Result<(), io::Error> {
             ast::Definition::Interface(ast::Interface::Partial(_)) => {} // FIXME: unimplemented!()
             ast::Definition::Interface(ast::Interface::NonPartial(interface)) => {
                 write!(out, "    Destroy{} {{ ", interface.name)?;
-                write!(out, "this: u64 ")?;
+                write!(out, "this: {} ", interface.name)?;
                 writeln!(out, "}},")?;
 
                 for member in interface.members.iter() {
@@ -39,7 +39,7 @@ pub fn gen_ffi(out: &mut impl Write, idl: &ast::AST) -> Result<(), io::Error> {
                                     writeln!(out, "    // Answer: {}", message_answer_ty)?;
                                 }
                                 write!(out, "    {}{} {{ ", interface.name, name.to_camel())?;
-                                write!(out, "this: u64, ")?;
+                                write!(out, "this: {}, ", interface.name)?;
                                 //write!(out, "this: {}, ", interface.name)?;
                                 if let Some(return_value_to_pass) = return_value_to_pass(idl, &op.return_type) {
                                     write!(out, "return_value: {}, ", return_value_to_pass)?;
@@ -67,7 +67,7 @@ pub fn gen_ffi(out: &mut impl Write, idl: &ast::AST) -> Result<(), io::Error> {
 
     for definition in idl {
         if let ast::Definition::Interface(ast::Interface::NonPartial(interface)) = definition {
-            writeln!(out, "pub type {} = u64;", interface.name)?;
+            writeln!(out, "type {} = u64;", interface.name)?;
         }
     }
 
@@ -104,7 +104,8 @@ fn return_value_to_pass(idl: &ast::AST, ret_val: &ast::ReturnType) -> Option<Cow
 
 // TODO: createBufferMapped has bad output
 // TODO: also we shouldn't output `ArrayBuffer`, I guess
-fn message_answer_ty(idl: &ast::AST, ret_val: &ast::ReturnType) -> Option<Cow<'static, str>> {
+// TODO: don't use pub(crate)
+pub(crate) fn message_answer_ty(idl: &ast::AST, ret_val: &ast::ReturnType) -> Option<Cow<'static, str>> {
     match ret_val {
         ast::ReturnType::Void => None,
         ast::ReturnType::NonVoid(ty @ ast::Type { kind: ast::TypeKind::Promise(_), .. }) => {

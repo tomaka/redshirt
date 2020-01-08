@@ -13,6 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use std::convert::TryFrom;
+
 fn main() {
     redshirt_syscalls_interface::block_on(async_main());
 }
@@ -61,11 +63,11 @@ async fn async_main() {
                 front_face: redshirt_webgpu_interface::GPUFrontFace::Ccw,
                 cull_mode: redshirt_webgpu_interface::GPUCullMode::None,
                 depth_bias: 0,
-                depth_bias_slope_scale: 0.0,
-                depth_bias_clamp: 0.0,
+                depth_bias_slope_scale: TryFrom::try_from(0.0).unwrap(),
+                depth_bias_clamp: TryFrom::try_from(0.0).unwrap(),
             }),
             color_states: vec![redshirt_webgpu_interface::GPUColorStateDescriptor {
-                format: redshirt_webgpu_interface::GPUTextureFormat::Bgra8UnormSrgb,
+                format: redshirt_webgpu_interface::GPUTextureFormat::Bgra8unormSrgb,
                 color_blend: redshirt_webgpu_interface::GPUBlendDescriptor {
                     src_factor: redshirt_webgpu_interface::GPUBlendFactor::One,
                     dst_factor: redshirt_webgpu_interface::GPUBlendFactor::Zero,
@@ -79,7 +81,7 @@ async fn async_main() {
                 write_mask: 0xf,
             }],
             depth_stencil_state: redshirt_webgpu_interface::GPUDepthStencilStateDescriptor {
-                format: redshirt_webgpu_interface::GPUTextureFormat::Depth32Float,
+                format: redshirt_webgpu_interface::GPUTextureFormat::Depth32float,
                 depth_write_enabled: false,
                 depth_compare: redshirt_webgpu_interface::GPUCompareFunction::Always,
                 stencil_front: redshirt_webgpu_interface::GPUStencilStateFaceDescriptor {
@@ -123,7 +125,7 @@ async fn async_main() {
 
     let mut swapchain: redshirt_webgpu_interface::GPUSwapChain = unimplemented!(); /* = configure_swap_chain(redshirt_webgpu_interface::GPUSwapChainDescriptor {
                                                                                        device,
-                                                                                       format: redshirt_webgpu_interface::GPUTextureFormat::Bgra8UnormSrgb,
+                                                                                       format: redshirt_webgpu_interface::GPUTextureFormat::Bgra8unormSrgb,
                                                                                        usage: redshirt_webgpu_interface::GPUTextureUsage::OUTPUT_ATTACHMENT,
                                                                                    );*/
 

@@ -22,6 +22,7 @@ extern crate alloc;
 
 use alloc::{string::String, vec::Vec};
 use core::{convert::TryFrom, fmt};
+use futures::prelude::*;
 
 pub use restricted::{RestrictedF32, RestrictedF64};
 
@@ -33,8 +34,26 @@ mod restricted;
 /// https://html.spec.whatwg.org/multipage/imagebitmap-and-animations.html#imagebitmap
 ///
 /// There is no way to construct a [`ImageBitmap`] in this crate.
-#[derive(Debug)]
+#[derive(Debug, parity_scale_codec::Encode, parity_scale_codec::Decode)]
 pub struct ImageBitmap {
 }
 
-//include!(concat!(env!("OUT_DIR"), "/webgpu.rs"));
+#[derive(Debug, parity_scale_codec::Encode, parity_scale_codec::Decode)]
+pub struct ArrayBuffer {
+}
+
+pub struct Navigator {
+}
+
+pub struct WorkerNavigator {
+}
+
+// https://dom.spec.whatwg.org/#dictdef-eventinit
+#[derive(Debug, parity_scale_codec::Encode, parity_scale_codec::Decode)]
+pub struct EventInit {
+    pub bubbles: bool,
+    pub cancelable: bool,
+    pub composed: bool,
+}
+
+include!(concat!(env!("OUT_DIR"), "/webgpu.rs"));

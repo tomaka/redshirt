@@ -39,61 +39,101 @@ fn main() {
 }
 
 fn gen_main(out: &mut impl Write, idl: &ast::AST) -> Result<(), io::Error> {
+    crate::dictionaries::gen_types(out, idl)?;
+
     for definition in idl {
         match definition {
             ast::Definition::Callback(_) => unimplemented!(),
-            ast::Definition::Dictionary(ast::Dictionary::NonPartial(dictionary)) => {
-                // We don't support any attribute.
-                // TODO: assert!(dictionary.extended_attributes.is_empty());
-                // TODO: assert!(dictionary.inherits.is_none()); // TODO: not implemented
-                writeln!(out, "#[derive(Debug, Encode, Decode)]")?;
-                writeln!(out, "pub struct {} {{", dictionary.name)?;
-                for member in dictionary.members.iter() {
-                    // We don't support any attribute.
-                    assert!(member.extended_attributes.is_empty());
-                    writeln!(out, "    pub r#{}: {},", member.name.to_snake(), ty_to_rust(&member.type_))?;
-                }
-                writeln!(out, "}}")?;
-            },
+            ast::Definition::Dictionary(ast::Dictionary::NonPartial(_)) => {},
             ast::Definition::Dictionary(ast::Dictionary::Partial(_)) => unimplemented!(),
-            ast::Definition::Enum(en) => {
-                // We don't support any attribute.
-                assert!(en.extended_attributes.is_empty());
-                writeln!(out, "#[derive(Debug, Encode, Decode)]")?;
-                writeln!(out, "pub enum {} {{", en.name)?;
-                for variant in en.variants.iter() {
-                    let mut variant = variant.replace('-', "_").to_camel();
-                    if variant.chars().next().unwrap().is_digit(10) {
-                        variant = format!("V{}", variant);
-                    }
-                    writeln!(out, "    {},", variant)?;
+            ast::Definition::Enum(en) => {},
+            ast::Definition::Implements(_) => unimplemented!(),
+            ast::Definition::Includes(_) => {}, // FIXME: unimplemented!()
+            ast::Definition::Interface(ast::Interface::Callback(_)) => unimplemented!(),
+            ast::Definition::Interface(ast::Interface::Partial(interface)) => {
+                writeln!(out, "impl {} {{", interface.name)?;
+                for member in interface.members.iter() {
+                    gen_interface_member(out, idl, member)?;
                 }
                 writeln!(out, "}}")?;
             },
-            ast::Definition::Implements(_) => unimplemented!(),
-            ast::Definition::Includes(_) => {},
-            ast::Definition::Interface(ast::Interface::Callback(_)) => unimplemented!(),
-            ast::Definition::Interface(ast::Interface::Partial(interface)) => {} // FIXME: unimplemented!()
             ast::Definition::Interface(ast::Interface::NonPartial(interface)) => { // FIXME: unimplemented!()
-                writeln!(out, "#[derive(Debug, Encode, Decode)]")?;
+                writeln!(out, "#[derive(Debug, parity_scale_codec::Encode, parity_scale_codec::Decode)]")?;
                 writeln!(out, "pub struct {} {{", interface.name)?;
-                /*for member in interface.members.iter() {
-                    // We don't support any attribute.
-                    assert!(member.extended_attributes.is_empty());
-                    writeln!(out, "    pub r#{}: {},", member.name, ty_to_rust(&member.type_))?;
-                }*/
+                writeln!(out, "    inner: u64,")?;
                 writeln!(out, "}}")?;
                 writeln!(out, "impl {} {{", interface.name)?;
+                for member in interface.members.iter() {
+                    gen_interface_member(out, idl, member)?;
+                }
                 writeln!(out, "}}")?;
             },
             ast::Definition::Mixin(_) => {}, // FIXME: unimplemented!()
             ast::Definition::Namespace(_) => unimplemented!(),
-            ast::Definition::Typedef(typedef) => {
-                // We don't support any attribute.
-                assert!(typedef.extended_attributes.is_empty());
-                writeln!(out, "pub type {} = {};", typedef.name, ty_to_rust(&typedef.type_))?;
-            },
+            ast::Definition::Typedef(_) => {},
         }
+    }
+
+    Ok(())
+}
+
+fn gen_interface_member(out: &mut impl Write, idl: &ast::AST, member: &ast::InterfaceMember) -> Result<(), io::Error> {
+    match member {
+        ast::InterfaceMember::Attribute(member) => {},
+        ast::InterfaceMember::Const(member) => {
+            assert!(member.extended_attributes.is_empty());
+            assert!(!member.nullable);
+            let ty = match &member.type_ {
+                ast::ConstType::Boolean => unimplemented!(),
+                ast::ConstType::Byte => unimplemented!(),
+                ast::ConstType::Identifier(id) => format!("{}", id),
+                ast::ConstType::Octet => unimplemented!(),
+                ast::ConstType::RestrictedDouble => unimplemented!(),
+                ast::ConstType::RestrictedFloat => unimplemented!(),
+                ast::ConstType::SignedLong => unimplemented!(),
+                ast::ConstType::SignedLongLong => unimplemented!(),
+                ast::ConstType::SignedShort => unimplemented!(),
+                ast::ConstType::UnrestrictedDouble => unimplemented!(),
+                ast::ConstType::UnrestrictedFloat => unimplemented!(),
+                ast::ConstType::UnsignedLong => unimplemented!(),
+                ast::ConstType::UnsignedLongLong => unimplemented!(),
+                ast::ConstType::UnsignedShort => unimplemented!(),
+            };
+            let value = match member.value {
+                ast::ConstValue::Null => unimplemented!(),
+                ast::ConstValue::BooleanLiteral(true) => format!("true"),
+                ast::ConstValue::BooleanLiteral(false) => format!("false"),
+                ast::ConstValue::FloatLiteral(_) => unimplemented!(),
+                ast::ConstValue::SignedIntegerLiteral(val) => format!("{}", val),
+                ast::ConstValue::UnsignedIntegerLiteral(val) => format!("{}", val),
+            };
+            writeln!(out, "pub const {}: {} = {};", member.name, ty, value)?;
+        },
+        ast::InterfaceMember::Iterable(_) => unimplemented!(),
+        ast::InterfaceMember::Maplike(_) => unimplemented!(),
+        ast::InterfaceMember::Operation(ast::Operation::Regular(op)) => {
+            assert!(op.extended_attributes.is_empty());
+            if let Some(name) = op.name.as_ref() {
+                write!(out, "    pub fn {}(&self", name.to_snake())?;
+                for arg in op.arguments.iter() {
+                    write!(out, ", {}: {}", arg.name.to_snake(), crate::ty_to_rust(&arg.type_))?;
+                }
+                let message_answer_ty = crate::ffi_bindings::message_answer_ty(idl, &op.return_type);
+                if let Some(message_answer_ty) = message_answer_ty {
+                    write!(out, ") -> impl Future<Output = {}> {{ ", message_answer_ty)?;
+                } else {
+                    write!(out, ") {{ ")?;
+                }
+                writeln!(out, "        unimplemented!()")?;
+                writeln!(out, "    }}")?;
+            } else {
+                // TODO: what is that???
+            }
+        },
+        ast::InterfaceMember::Operation(ast::Operation::Special(_)) => unimplemented!(),
+        ast::InterfaceMember::Operation(ast::Operation::Static(_)) => unimplemented!(),
+        ast::InterfaceMember::Operation(ast::Operation::Stringifier(_)) => unimplemented!(),
+        ast::InterfaceMember::Setlike(_) => unimplemented!(),
     }
 
     Ok(())

@@ -24,9 +24,11 @@ pub fn gen_types(out: &mut impl Write, idl: &ast::AST) -> Result<(), io::Error> 
             ast::Definition::Dictionary(ast::Dictionary::NonPartial(dictionary)) => {
                 // We don't support any attribute.
                 // TODO: assert!(dictionary.extended_attributes.is_empty());
-                // TODO: assert!(dictionary.inherits.is_none()); // TODO: not implemented
-                writeln!(out, "#[derive(Debug, Encode, Decode)]")?;
+                writeln!(out, "#[derive(Debug, parity_scale_codec::Encode, parity_scale_codec::Decode)]")?;
                 writeln!(out, "pub struct {} {{", dictionary.name)?;
+                if let Some(inherit) = dictionary.inherits.as_ref() {
+                    writeln!(out, "    pub r#parent: {},", inherit)?;
+                }
                 for member in dictionary.members.iter() {
                     // We don't support any attribute.
                     assert!(member.extended_attributes.is_empty());
@@ -38,7 +40,7 @@ pub fn gen_types(out: &mut impl Write, idl: &ast::AST) -> Result<(), io::Error> 
             ast::Definition::Enum(en) => {
                 // We don't support any attribute.
                 assert!(en.extended_attributes.is_empty());
-                writeln!(out, "#[derive(Debug, Encode, Decode)]")?;
+                writeln!(out, "#[derive(Debug, parity_scale_codec::Encode, parity_scale_codec::Decode)]")?;
                 writeln!(out, "pub enum {} {{", en.name)?;
                 for variant in en.variants.iter() {
                     let mut variant = variant.replace('-', "_").to_camel();
