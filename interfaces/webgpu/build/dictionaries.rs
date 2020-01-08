@@ -32,7 +32,11 @@ pub fn gen_types(out: &mut impl Write, idl: &ast::AST) -> Result<(), io::Error> 
                 for member in dictionary.members.iter() {
                     // We don't support any attribute.
                     assert!(member.extended_attributes.is_empty());
-                    writeln!(out, "    pub r#{}: {},", member.name.to_snake(), ty_to_rust(&member.type_))?;
+                    let mut ty = ty_to_rust(&member.type_);
+                    if !member.required {
+                        ty = From::from(format!("Option<{}>", ty));
+                    }
+                    writeln!(out, "    pub r#{}: {},", member.name.to_snake(), ty)?;
                 }
                 writeln!(out, "}}")?;
             },

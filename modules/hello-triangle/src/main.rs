@@ -30,8 +30,8 @@ async fn async_main() {
             parent: redshirt_webgpu_interface::GPUObjectDescriptorBase {
                 label: None,
             },
-            extensions: Vec::new(),
-            limits: redshirt_webgpu_interface::GPULimits::default(),
+            extensions: None,
+            limits: None,
         })
         .await;
 
@@ -87,58 +87,40 @@ async fn async_main() {
                 module: vs_module,
                 entry_point: "main".to_owned(),
             },
-            fragment_stage: redshirt_webgpu_interface::GPUProgrammableStageDescriptor {
+            fragment_stage: Some(redshirt_webgpu_interface::GPUProgrammableStageDescriptor {
                 module: fs_module,
                 entry_point: "main".to_owned(),
-            },
+            }),
             primitive_topology: redshirt_webgpu_interface::GPUPrimitiveTopology::TriangleList,
-            rasterization_state: redshirt_webgpu_interface::GPURasterizationStateDescriptor {
-                front_face: redshirt_webgpu_interface::GPUFrontFace::Ccw,
-                cull_mode: redshirt_webgpu_interface::GPUCullMode::None,
-                depth_bias: 0,
-                depth_bias_slope_scale: TryFrom::try_from(0.0).unwrap(),
-                depth_bias_clamp: TryFrom::try_from(0.0).unwrap(),
-            },
+            rasterization_state: Some(redshirt_webgpu_interface::GPURasterizationStateDescriptor {
+                front_face: Some(redshirt_webgpu_interface::GPUFrontFace::Ccw),
+                cull_mode: Some(redshirt_webgpu_interface::GPUCullMode::None),
+                depth_bias: Some(0),
+                depth_bias_slope_scale: Some(TryFrom::try_from(0.0).unwrap()),
+                depth_bias_clamp: Some(TryFrom::try_from(0.0).unwrap()),
+            }),
             color_states: vec![redshirt_webgpu_interface::GPUColorStateDescriptor {
                 format: redshirt_webgpu_interface::GPUTextureFormat::Bgra8unormSrgb,
-                color_blend: redshirt_webgpu_interface::GPUBlendDescriptor {
-                    src_factor: redshirt_webgpu_interface::GPUBlendFactor::One,
-                    dst_factor: redshirt_webgpu_interface::GPUBlendFactor::Zero,
-                    operation: redshirt_webgpu_interface::GPUBlendOperation::Add,
-                },
-                alpha_blend: redshirt_webgpu_interface::GPUBlendDescriptor {
-                    src_factor: redshirt_webgpu_interface::GPUBlendFactor::One,
-                    dst_factor: redshirt_webgpu_interface::GPUBlendFactor::Zero,
-                    operation: redshirt_webgpu_interface::GPUBlendOperation::Add,
-                },
-                write_mask: 0xf,
+                color_blend: Some(redshirt_webgpu_interface::GPUBlendDescriptor {
+                    src_factor: Some(redshirt_webgpu_interface::GPUBlendFactor::One),
+                    dst_factor: Some(redshirt_webgpu_interface::GPUBlendFactor::Zero),
+                    operation: Some(redshirt_webgpu_interface::GPUBlendOperation::Add),
+                }),
+                alpha_blend: Some(redshirt_webgpu_interface::GPUBlendDescriptor {
+                    src_factor: Some(redshirt_webgpu_interface::GPUBlendFactor::One),
+                    dst_factor: Some(redshirt_webgpu_interface::GPUBlendFactor::Zero),
+                    operation: Some(redshirt_webgpu_interface::GPUBlendOperation::Add),
+                }),
+                write_mask: Some(0xf),
             }],
-            depth_stencil_state: redshirt_webgpu_interface::GPUDepthStencilStateDescriptor {
-                format: redshirt_webgpu_interface::GPUTextureFormat::Depth32float,
-                depth_write_enabled: false,
-                depth_compare: redshirt_webgpu_interface::GPUCompareFunction::Always,
-                stencil_front: redshirt_webgpu_interface::GPUStencilStateFaceDescriptor {
-                    compare: redshirt_webgpu_interface::GPUCompareFunction::Always,
-                    fail_op: redshirt_webgpu_interface::GPUStencilOperation::Keep,
-                    depth_fail_op: redshirt_webgpu_interface::GPUStencilOperation::Keep,
-                    pass_op: redshirt_webgpu_interface::GPUStencilOperation::Keep,
-                },
-                stencil_back: redshirt_webgpu_interface::GPUStencilStateFaceDescriptor {
-                    compare: redshirt_webgpu_interface::GPUCompareFunction::Always,
-                    fail_op: redshirt_webgpu_interface::GPUStencilOperation::Keep,
-                    depth_fail_op: redshirt_webgpu_interface::GPUStencilOperation::Keep,
-                    pass_op: redshirt_webgpu_interface::GPUStencilOperation::Keep,
-                },
-                stencil_read_mask: 0xffffffff,
-                stencil_write_mask: 0xffffffff,
-            },
-            vertex_state: redshirt_webgpu_interface::GPUVertexStateDescriptor {
-                index_format: redshirt_webgpu_interface::GPUIndexFormat::Uint16,
-                vertex_buffers: Vec::new(),
-            },
-            sample_count: 1,
-            sample_mask: !0,
-            alpha_to_coverage_enabled: false,
+            depth_stencil_state: None,
+            vertex_state: Some(redshirt_webgpu_interface::GPUVertexStateDescriptor {
+                index_format: None,
+                vertex_buffers: Some(Vec::new()),
+            }),
+            sample_count: Some(1),
+            sample_mask: Some(!0),
+            alpha_to_coverage_enabled: Some(false),
         });
 
     let mut swapchain: redshirt_webgpu_interface::GPUSwapChain = unimplemented!(); /* = configure_swap_chain(redshirt_webgpu_interface::GPUSwapChainDescriptor {
@@ -149,7 +131,19 @@ async fn async_main() {
 
     loop {
         let texture = swapchain.get_current_texture();
-        let view = texture.create_view(None);
+        let view = texture.create_view(redshirt_webgpu_interface::GPUTextureViewDescriptor {
+            parent: redshirt_webgpu_interface::GPUObjectDescriptorBase {
+                label: None,
+            },
+            format: None,
+            dimension: None,
+            aspect: Some(redshirt_webgpu_interface::GPUTextureAspect::All),
+            base_mip_level: None,
+            mip_level_count: None,
+            base_array_layer: None,
+            array_layer_count: None,
+        });
+
         let mut encoder = device
             .create_command_encoder(redshirt_webgpu_interface::GPUCommandEncoderDescriptor {
                 parent: redshirt_webgpu_interface::GPUObjectDescriptorBase {
@@ -168,7 +162,7 @@ async fn async_main() {
                             attachment: view,
                             resolve_target: None,
                             load_value: redshirt_webgpu_interface::GPUColor::GREEN,
-                            store_op: redshirt_webgpu_interface::GPUStoreOp::Store,
+                            store_op: Some(redshirt_webgpu_interface::GPUStoreOp::Store),
                         },
                     ],
                     depth_stencil_attachment: None,

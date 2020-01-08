@@ -53,7 +53,13 @@ fn gen_main(out: &mut impl Write, idl: &ast::AST) -> Result<(), io::Error> {
                 }
                 for member in dictionary.members.iter() {
                     write!(out, "            r#{}: ", member.name.to_snake())?;
-                    gen_convert_to_ffi(out, idl, &format!("val.r#{}", member.name.to_snake()), &member.type_)?;
+                    if member.required {
+                        gen_convert_to_ffi(out, idl, &format!("val.r#{}", member.name.to_snake()), &member.type_)?;
+                    } else {
+                        write!(out, "val.r#{}.map(|v| ", member.name.to_snake())?;
+                        gen_convert_to_ffi(out, idl, "v", &member.type_)?;
+                        write!(out, ")")?;
+                    }
                     writeln!(out, ",")?;
                 }
                 writeln!(out, "        }}")?;
