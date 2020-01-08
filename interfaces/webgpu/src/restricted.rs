@@ -23,7 +23,7 @@ impl TryFrom<f32> for RestrictedF32 {
     type Error = (); // TODO:
 
     fn try_from(value: f32) -> Result<Self, Self::Error> {
-        if !value.is_finite() {
+        if value.is_finite() {
             Ok(RestrictedF32(value))
         } else {
             Err(())
@@ -69,7 +69,7 @@ impl TryFrom<f64> for RestrictedF64 {
     type Error = (); // TODO:
 
     fn try_from(value: f64) -> Result<Self, Self::Error> {
-        if !value.is_finite() {
+        if value.is_finite() {
             Ok(RestrictedF64(value))
         } else {
             Err(())

@@ -8,7 +8,8 @@ publish = false
 
 [dependencies]
 futures = "0.3.0"
+parking_lot = "0.10.0"
 redshirt-core = { path = "../../core" }
 redshirt-interface-interface = { path = "../../interfaces/interface" }
 redshirt-webgpu-interface = { path = "../../interfaces/webgpu" }
-wgpu-core = { git = "https://github.com/gfx-rs/wgpu", rev = "74d83fdeddfb2195c7fad958e7fbc99fe4bbb024" }
+wgpu = { git = "https://github.com/gfx-rs/wgpu-rs", rev = "1529a88fd9f23cd1921b30c58d06ba2d8dc46ce7" }

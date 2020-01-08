@@ -17,6 +17,7 @@ redshirt-syscalls-interface = { path = "../../interfaces/syscalls" }
 redshirt-tcp-interface = { path = "../../interfaces/tcp" }
 redshirt-time-hosted = { path = "../hosted-time" }
 redshirt-time-interface = { path = "../../interfaces/time" }
+redshirt-webgpu-hosted = { path = "../hosted-webgpu" }
 parity-scale-codec = "1.0.5"
 structopt = "0.3.5"
 wasi = "0.9.0+wasi-snapshot-preview1"

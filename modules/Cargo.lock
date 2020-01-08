@@ -728,6 +728,7 @@ dependencies = [
 name = "hello-triangle"
 version = "0.1.0"
 dependencies = [
+ "redshirt-stdout-interface 0.1.0",
  "redshirt-syscalls-interface 0.1.0",
  "redshirt-webgpu-interface 0.1.0",
 ]

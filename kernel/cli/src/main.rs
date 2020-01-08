@@ -49,6 +49,7 @@ async fn async_main() {
     let mut system = redshirt_core::system::SystemBuilder::new()
         .with_native_program(redshirt_time_hosted::TimerHandler::new())
         .with_native_program(redshirt_stdout_hosted::StdoutHandler::new())
+        .with_native_program(redshirt_webgpu_hosted::WebGPUHandler::new())
         .build();
 
     let cli_pid = if let Some(cli_requested_process) = cli_requested_process {

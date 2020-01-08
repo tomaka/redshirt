@@ -60,4 +60,7 @@ pub struct EventInit {
     pub composed: bool,
 }
 
+pub const GPU: GPU = GPU { inner: 0 };      // TODO: hack
+pub const GPUCanvasContext: GPUCanvasContext = GPUCanvasContext { inner: 0 };      // TODO: hack
+
 include!(concat!(env!("OUT_DIR"), "/webgpu.rs"));

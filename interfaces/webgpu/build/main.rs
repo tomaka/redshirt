@@ -112,7 +112,8 @@ fn gen_main(out: &mut impl Write, idl: &ast::AST) -> Result<(), io::Error> {
                 writeln!(out, "}}")?;
             },
             ast::Definition::Interface(ast::Interface::NonPartial(interface)) => {
-                writeln!(out, "#[derive(Debug, parity_scale_codec::Encode, parity_scale_codec::Decode)]")?;
+                // TODO: support Clone and make it ref-counted
+                writeln!(out, "#[derive(Debug, Clone, parity_scale_codec::Encode, parity_scale_codec::Decode)]")?;
                 writeln!(out, "pub struct {} {{", interface.name)?;
                 writeln!(out, "    inner: u64,")?;
                 writeln!(out, "}}")?;

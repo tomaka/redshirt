@@ -13,17 +13,20 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto as _};
 
 fn main() {
+    std::panic::set_hook(Box::new(|info| {
+        redshirt_stdout_interface::stdout(format!("Panic: {}\n", info));
+    }));
+
     redshirt_syscalls_interface::block_on(async_main());
 }
 
 async fn async_main() {
-    let adapter: redshirt_webgpu_interface::GPUAdapter = unimplemented!(); // TODO: request
-                                                                           /*redshirt_webgpu_interface::GPURequestAdapterOptions {
-                                                                               power_preference: redshirt_webgpu_interface::GPUPowerPreference::LowPower,
-                                                                           },*/
+    let adapter = redshirt_webgpu_interface::GPU.request_adapter(redshirt_webgpu_interface::GPURequestAdapterOptions {
+        power_preference: Some(redshirt_webgpu_interface::GPUPowerPreference::LowPower),
+    }).await;
 
     let device = adapter
         .request_device(redshirt_webgpu_interface::GPUDeviceDescriptor {
@@ -39,16 +42,22 @@ async fn async_main() {
 
     let vs_module = {
         let vs = include_bytes!("shader.vert.spv");
-        device.create_shader_module(
-            &redshirt_webgpu_interface::GPUread_spirv(std::io::Cursor::new(&vs[..])).unwrap(),
-        )
+        device.create_shader_module(redshirt_webgpu_interface::GPUShaderModuleDescriptor {
+            parent: redshirt_webgpu_interface::GPUObjectDescriptorBase {
+                label: None,
+            },
+            code: read_spirv(&vs[..]),
+        })
     };
 
     let fs_module = {
         let fs = include_bytes!("shader.frag.spv");
-        device.create_shader_module(
-            &redshirt_webgpu_interface::GPUread_spirv(std::io::Cursor::new(&fs[..])).unwrap(),
-        )
+        device.create_shader_module(redshirt_webgpu_interface::GPUShaderModuleDescriptor {
+            parent: redshirt_webgpu_interface::GPUObjectDescriptorBase {
+                label: None,
+            },
+            code: read_spirv(&fs[..]),
+        })
     };
 
     let bind_group_layout =
@@ -63,7 +72,7 @@ async fn async_main() {
         parent: redshirt_webgpu_interface::GPUObjectDescriptorBase {
             label: None,
         },
-        layout: bind_group_layout,
+        layout: bind_group_layout.clone(),
         bindings: Vec::new(),
     });
 
@@ -123,11 +132,14 @@ async fn async_main() {
             alpha_to_coverage_enabled: Some(false),
         });
 
-    let mut swapchain: redshirt_webgpu_interface::GPUSwapChain = unimplemented!(); /* = configure_swap_chain(redshirt_webgpu_interface::GPUSwapChainDescriptor {
-                                                                                       device,
-                                                                                       format: redshirt_webgpu_interface::GPUTextureFormat::Bgra8unormSrgb,
-                                                                                       usage: redshirt_webgpu_interface::GPUTextureUsage::OUTPUT_ATTACHMENT,
-                                                                                   );*/
+    let mut swapchain = redshirt_webgpu_interface::GPUCanvasContext.configure_swap_chain(redshirt_webgpu_interface::GPUSwapChainDescriptor {
+        parent: redshirt_webgpu_interface::GPUObjectDescriptorBase {
+            label: None,
+        },
+        device: device.clone(),
+        format: redshirt_webgpu_interface::GPUTextureFormat::Bgra8unormSrgb,
+        usage: Some(redshirt_webgpu_interface::GPUTextureUsage::OUTPUT_ATTACHMENT),
+    });
 
     loop {
         let texture = swapchain.get_current_texture();
@@ -161,14 +173,14 @@ async fn async_main() {
                         redshirt_webgpu_interface::GPURenderPassColorAttachmentDescriptor {
                             attachment: view,
                             resolve_target: None,
-                            load_value: redshirt_webgpu_interface::GPUColor::GREEN,
+                            load_value: redshirt_webgpu_interface::GPULoadOp::Load, // TODO: clear instead vec![0.0, 1.0, 0.0, 1.0],
                             store_op: Some(redshirt_webgpu_interface::GPUStoreOp::Store),
                         },
                     ],
                     depth_stencil_attachment: None,
                 });
-            render_pass.set_pipeline(render_pipeline);
-            render_pass.set_bind_group(0, bind_group, vec![]);
+            render_pass.set_pipeline(render_pipeline.clone());
+            render_pass.set_bind_group(0, bind_group.clone(), vec![]);
             render_pass.draw(3, 1, 0, 0);
         }
 
@@ -178,4 +190,13 @@ async fn async_main() {
             }
         })]);
     }
+}
+
+fn read_spirv(input: &[u8]) -> Vec<u32> {
+    // TODO: actually check endianess
+    let mut out = vec![0; input.len() / 4];
+    for (inw, outw) in input.chunks(4).zip(out.iter_mut()) {
+        *outw = u32::from_le_bytes(inw.try_into().unwrap());
+    }
+    out
 }
