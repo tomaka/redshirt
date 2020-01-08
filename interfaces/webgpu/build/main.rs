@@ -53,7 +53,7 @@ fn gen_main(out: &mut impl Write, idl: &ast::AST) -> Result<(), io::Error> {
             ast::Definition::Interface(ast::Interface::Partial(interface)) => {
                 writeln!(out, "impl {} {{", interface.name)?;
                 for member in interface.members.iter() {
-                    gen_interface_member(out, idl, member)?;
+                    gen_interface_member(out, idl, &interface.name, member)?;
                 }
                 writeln!(out, "}}")?;
             },
@@ -64,7 +64,7 @@ fn gen_main(out: &mut impl Write, idl: &ast::AST) -> Result<(), io::Error> {
                 writeln!(out, "}}")?;
                 writeln!(out, "impl {} {{", interface.name)?;
                 for member in interface.members.iter() {
-                    gen_interface_member(out, idl, member)?;
+                    gen_interface_member(out, idl, &interface.name, member)?;
                 }
                 writeln!(out, "}}")?;
             },
@@ -77,9 +77,16 @@ fn gen_main(out: &mut impl Write, idl: &ast::AST) -> Result<(), io::Error> {
     Ok(())
 }
 
-fn gen_interface_member(out: &mut impl Write, idl: &ast::AST, member: &ast::InterfaceMember) -> Result<(), io::Error> {
+fn gen_interface_member(out: &mut impl Write, idl: &ast::AST, interface_name: &str, member: &ast::InterfaceMember) -> Result<(), io::Error> {
     match member {
-        ast::InterfaceMember::Attribute(member) => {},
+        ast::InterfaceMember::Attribute(ast::Attribute::Regular(attribute)) => {
+            // FIXME: not implemented
+            // TODO: not implemented assert!(attribute.extended_attributes.is_empty());
+            /*panic!("{:?}", attribute.type_);
+            panic!("{}", attribute.name);*/
+        }
+        ast::InterfaceMember::Attribute(ast::Attribute::Static(attribute)) => unimplemented!(),
+        ast::InterfaceMember::Attribute(ast::Attribute::Stringifier(_)) => unimplemented!(),
         ast::InterfaceMember::Const(member) => {
             assert!(member.extended_attributes.is_empty());
             assert!(!member.nullable);
@@ -107,7 +114,7 @@ fn gen_interface_member(out: &mut impl Write, idl: &ast::AST, member: &ast::Inte
                 ast::ConstValue::SignedIntegerLiteral(val) => format!("{}", val),
                 ast::ConstValue::UnsignedIntegerLiteral(val) => format!("{}", val),
             };
-            writeln!(out, "pub const {}: {} = {};", member.name, ty, value)?;
+            writeln!(out, "    pub const {}: {} = {};", member.name, ty, value)?;
         },
         ast::InterfaceMember::Iterable(_) => unimplemented!(),
         ast::InterfaceMember::Maplike(_) => unimplemented!(),
@@ -118,13 +125,38 @@ fn gen_interface_member(out: &mut impl Write, idl: &ast::AST, member: &ast::Inte
                 for arg in op.arguments.iter() {
                     write!(out, ", {}: {}", arg.name.to_snake(), crate::ty_to_rust(&arg.type_))?;
                 }
-                let message_answer_ty = crate::ffi_bindings::message_answer_ty(idl, &op.return_type);
-                if let Some(message_answer_ty) = message_answer_ty {
-                    write!(out, ") -> impl Future<Output = {}> {{ ", message_answer_ty)?;
-                } else {
-                    write!(out, ") {{ ")?;
+                let message_answer_ty = message_answer_ty(idl, &op.return_type);
+                match &message_answer_ty {
+                    MessageAnswerTy::Void => writeln!(out, ") {{ ")?,
+                    MessageAnswerTy::Injected(ty) => writeln!(out, ") -> {} {{ ", ty)?,
+                    MessageAnswerTy::Promise(ty) => writeln!(out, ") -> impl Future<Output = {}> {{ ", ty)?,
                 }
-                writeln!(out, "        unimplemented!()")?;
+                if let MessageAnswerTy::Injected(_) = message_answer_ty {
+                    writeln!(out, "        let return_value = NEXT_OBJECT_ID.fetch_add(1, atomic::Ordering::Relaxed);")?;
+                }
+                writeln!(out, "        let msg = ffi::WebGPUMessage::{}{} {{", interface_name, name.to_camel())?;
+                writeln!(out, "            this: self.inner,")?;
+                if let MessageAnswerTy::Injected(_) = message_answer_ty {
+                    writeln!(out, "            return_value,")?;
+                }
+                for arg in op.arguments.iter() {
+                    writeln!(out, "            {},", arg.name.to_snake())?;
+                }
+                writeln!(out, "        }};")?;
+                writeln!(out, "        unsafe {{")?;
+                match &message_answer_ty {
+                    MessageAnswerTy::Void => {
+                        writeln!(out, "            redshirt_syscalls_interface::emit_message_without_response(&ffi::INTERFACE, &msg).unwrap();")?;
+                    }
+                    MessageAnswerTy::Injected(ty) => {
+                        writeln!(out, "            redshirt_syscalls_interface::emit_message_without_response(&ffi::INTERFACE, &msg).unwrap();")?;
+                        writeln!(out, "            {} {{ inner: return_value }}", ty)?;
+                    }
+                    MessageAnswerTy::Promise(_) => {
+                        writeln!(out, "            redshirt_syscalls_interface::emit_message_with_response(&ffi::INTERFACE, &msg).unwrap()")?;
+                    }
+                }
+                writeln!(out, "        }}")?;
                 writeln!(out, "    }}")?;
             } else {
                 // TODO: what is that???
@@ -137,6 +169,56 @@ fn gen_interface_member(out: &mut impl Write, idl: &ast::AST, member: &ast::Inte
     }
 
     Ok(())
+}
+
+enum MessageAnswerTy<'a> {
+    /// Message is a one-shot operation that doesn't return anything.
+    Void,
+    /// Message is a one-shot operation that returns a value. We "allocate" the value locally and
+    /// pass it with the message to the interface handler.
+    Injected(Cow<'a, str>),
+    /// Message expects a response.
+    Promise(Cow<'a, str>),
+}
+
+// TODO: createBufferMapped has bad output
+// TODO: also we shouldn't output `ArrayBuffer`, I guess
+fn message_answer_ty<'a>(idl: &'a ast::AST, ret_val: &'a ast::ReturnType) -> MessageAnswerTy<'a> {
+    match ret_val {
+        ast::ReturnType::Void => MessageAnswerTy::Void,
+        ast::ReturnType::NonVoid(ty @ ast::Type { kind: ast::TypeKind::Promise(_), .. }) => {
+            let inner_ret_val = match &ty.kind {
+                ast::TypeKind::Promise(t) => t,
+                _ => unreachable!()
+            };
+
+            match &**inner_ret_val {
+                ast::ReturnType::Void => MessageAnswerTy::Promise(From::from("()")),
+                ast::ReturnType::NonVoid(inner_ty) => MessageAnswerTy::Promise(crate::ty_to_rust(inner_ty)),
+            }
+        },
+        ast::ReturnType::NonVoid(ty @ ast::Type { kind: ast::TypeKind::Identifier(_), .. }) => {
+            let id = match &ty.kind {
+                ast::TypeKind::Identifier(id) => id,
+                _ => unreachable!()
+            };
+
+            let id_is_interface = idl.iter().any(|def| {
+                match def {
+                    ast::Definition::Interface(ast::Interface::Partial(interface)) => interface.name == *id,
+                    ast::Definition::Interface(ast::Interface::NonPartial(interface)) => interface.name == *id,
+                    _ => false,
+                }
+            });
+
+            if id_is_interface {
+                MessageAnswerTy::Injected(From::from(id))
+            } else {
+                MessageAnswerTy::Promise(crate::ty_to_rust(ty))
+            }
+        },
+        ast::ReturnType::NonVoid(ty) => MessageAnswerTy::Promise(crate::ty_to_rust(ty)),
+    }
 }
 
 fn ty_to_rust(ty: &ast::Type) -> Cow<'static, str> {

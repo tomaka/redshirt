@@ -21,13 +21,17 @@
 extern crate alloc;
 
 use alloc::{string::String, vec::Vec};
-use core::{convert::TryFrom, fmt};
+use core::{convert::TryFrom, fmt, sync::atomic};
 use futures::prelude::*;
 
 pub use restricted::{RestrictedF32, RestrictedF64};
 
 pub mod ffi;
 mod restricted;
+
+/// Whenever we create a new object (e.g. a `GPUBuffer`), we decide locally of the ID of the
+/// object and pass it to the interface implementer.
+static NEXT_OBJECT_ID: atomic::AtomicU64 = atomic::AtomicU64::new(1);
 
 /// Defined in the "ImageBitmap and animations" standard.
 ///

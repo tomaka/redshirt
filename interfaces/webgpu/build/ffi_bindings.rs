@@ -22,42 +22,19 @@ pub fn gen_ffi(out: &mut impl Write, idl: &ast::AST) -> Result<(), io::Error> {
     writeln!(out, "pub enum WebGPUMessage {{")?;
     for definition in idl {
         match definition {
-            ast::Definition::Interface(ast::Interface::Partial(_)) => {} // FIXME: unimplemented!()
+            ast::Definition::Interface(ast::Interface::Partial(interface)) => {
+                for member in interface.members.iter() {
+                    gen_interface_member(out, idl, &interface.name, member)?;
+                }
+            }
             ast::Definition::Interface(ast::Interface::NonPartial(interface)) => {
-                write!(out, "    Destroy{} {{ ", interface.name)?;
+                // TODO: these destroy messages need some thinking
+                /*write!(out, "    Destroy{} {{ ", interface.name)?;
                 write!(out, "this: {} ", interface.name)?;
-                writeln!(out, "}},")?;
+                writeln!(out, "}},")?;*/
 
                 for member in interface.members.iter() {
-                    match member {
-                        ast::InterfaceMember::Iterable(_) => unimplemented!(),
-                        ast::InterfaceMember::Maplike(_) => unimplemented!(),
-                        ast::InterfaceMember::Operation(ast::Operation::Regular(op)) => {
-                            assert!(op.extended_attributes.is_empty());
-                            if let Some(name) = op.name.as_ref() {
-                                if let Some(message_answer_ty) = message_answer_ty(idl, &op.return_type) {
-                                    writeln!(out, "    // Answer: {}", message_answer_ty)?;
-                                }
-                                write!(out, "    {}{} {{ ", interface.name, name.to_camel())?;
-                                write!(out, "this: {}, ", interface.name)?;
-                                //write!(out, "this: {}, ", interface.name)?;
-                                if let Some(return_value_to_pass) = return_value_to_pass(idl, &op.return_type) {
-                                    write!(out, "return_value: {}, ", return_value_to_pass)?;
-                                }
-                                for arg in op.arguments.iter() {
-                                    write!(out, "{}: {}, ", arg.name.to_snake(), crate::ty_to_rust(&arg.type_))?;
-                                }
-                                writeln!(out, "}},")?;
-                            } else {
-                                // TODO: what is that???
-                            }
-                        },
-                        ast::InterfaceMember::Operation(ast::Operation::Special(_)) => unimplemented!(),
-                        ast::InterfaceMember::Operation(ast::Operation::Static(_)) => unimplemented!(),
-                        ast::InterfaceMember::Operation(ast::Operation::Stringifier(_)) => unimplemented!(),
-                        ast::InterfaceMember::Setlike(_) => unimplemented!(),
-                        _ => {}     // FIXME:
-                    }
+                    gen_interface_member(out, idl, &interface.name, member)?;
                 }
             },
             _ => {}
@@ -72,6 +49,40 @@ pub fn gen_ffi(out: &mut impl Write, idl: &ast::AST) -> Result<(), io::Error> {
     }
 
     crate::dictionaries::gen_types(out, idl)?;
+    Ok(())
+}
+
+fn gen_interface_member(out: &mut impl Write, idl: &ast::AST, interface_name: &str, member: &ast::InterfaceMember) -> Result<(), io::Error> {
+    match member {
+        ast::InterfaceMember::Iterable(_) => unimplemented!(),
+        ast::InterfaceMember::Maplike(_) => unimplemented!(),
+        ast::InterfaceMember::Operation(ast::Operation::Regular(op)) => {
+            assert!(op.extended_attributes.is_empty());
+            if let Some(name) = op.name.as_ref() {
+                if let Some(message_answer_ty) = message_answer_ty(idl, &op.return_type) {
+                    writeln!(out, "    // Answer: {}", message_answer_ty)?;
+                }
+                write!(out, "    {}{} {{ ", interface_name, name.to_camel())?;
+                write!(out, "this: {}, ", interface_name)?;
+                //write!(out, "this: {}, ", interface_name)?;
+                if let Some(return_value_to_pass) = return_value_to_pass(idl, &op.return_type) {
+                    write!(out, "return_value: {}, ", return_value_to_pass)?;
+                }
+                for arg in op.arguments.iter() {
+                    write!(out, "{}: {}, ", arg.name.to_snake(), crate::ty_to_rust(&arg.type_))?;
+                }
+                writeln!(out, "}},")?;
+            } else {
+                // TODO: what is that???
+            }
+        },
+        ast::InterfaceMember::Operation(ast::Operation::Special(_)) => unimplemented!(),
+        ast::InterfaceMember::Operation(ast::Operation::Static(_)) => unimplemented!(),
+        ast::InterfaceMember::Operation(ast::Operation::Stringifier(_)) => unimplemented!(),
+        ast::InterfaceMember::Setlike(_) => unimplemented!(),
+        _ => {}     // FIXME:
+    }
+
     Ok(())
 }
 
@@ -104,8 +115,7 @@ fn return_value_to_pass(idl: &ast::AST, ret_val: &ast::ReturnType) -> Option<Cow
 
 // TODO: createBufferMapped has bad output
 // TODO: also we shouldn't output `ArrayBuffer`, I guess
-// TODO: don't use pub(crate)
-pub(crate) fn message_answer_ty(idl: &ast::AST, ret_val: &ast::ReturnType) -> Option<Cow<'static, str>> {
+fn message_answer_ty(idl: &ast::AST, ret_val: &ast::ReturnType) -> Option<Cow<'static, str>> {
     match ret_val {
         ast::ReturnType::Void => None,
         ast::ReturnType::NonVoid(ty @ ast::Type { kind: ast::TypeKind::Promise(_), .. }) => {
