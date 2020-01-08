@@ -13,7 +13,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use alloc::{string::String, vec::Vec};
 use core::{convert::TryFrom, fmt};
 
 /// Wrapper around `f32` that only allows finite values, and no infinite/NaN.

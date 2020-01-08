@@ -44,6 +44,40 @@ fn gen_main(out: &mut impl Write, idl: &ast::AST) -> Result<(), io::Error> {
     for definition in idl {
         match definition {
             ast::Definition::Callback(_) => unimplemented!(),
+            ast::Definition::Dictionary(ast::Dictionary::NonPartial(dictionary)) => {
+                writeln!(out, "impl From<{}> for ffi::{} {{", dictionary.name, dictionary.name)?;
+                writeln!(out, "    fn from(val: {}) -> Self {{", dictionary.name)?;
+                writeln!(out, "        ffi::{} {{", dictionary.name)?;
+                if dictionary.inherits.is_some() {
+                    writeln!(out, "            r#parent: From::from(val.parent),")?;
+                }
+                for member in dictionary.members.iter() {
+                    write!(out, "            r#{}: ", member.name.to_snake())?;
+                    gen_convert_to_ffi(out, idl, &format!("val.r#{}", member.name.to_snake()), &member.type_)?;
+                    writeln!(out, ",")?;
+                }
+                writeln!(out, "        }}")?;
+                writeln!(out, "    }}")?;
+                writeln!(out, "}}")?;
+            },
+            ast::Definition::Dictionary(ast::Dictionary::Partial(_)) => unimplemented!(),
+            ast::Definition::Enum(en) => {
+                writeln!(out, "pub use crate::ffi::{};", en.name)?;
+            },
+            ast::Definition::Implements(_) => unimplemented!(),
+            ast::Definition::Includes(_) => {},
+            ast::Definition::Interface(ast::Interface::Callback(_)) => unimplemented!(),
+            ast::Definition::Interface(ast::Interface::Partial(interface)) => {}
+            ast::Definition::Interface(ast::Interface::NonPartial(interface)) => {},
+            ast::Definition::Mixin(_) => {},
+            ast::Definition::Namespace(_) => unimplemented!(),
+            ast::Definition::Typedef(_) => {},
+        }
+    }
+
+    for definition in idl {
+        match definition {
+            ast::Definition::Callback(_) => unimplemented!(),
             ast::Definition::Dictionary(ast::Dictionary::NonPartial(_)) => {},
             ast::Definition::Dictionary(ast::Dictionary::Partial(_)) => unimplemented!(),
             ast::Definition::Enum(en) => {},
@@ -140,20 +174,23 @@ fn gen_interface_member(out: &mut impl Write, idl: &ast::AST, interface_name: &s
                     writeln!(out, "            return_value,")?;
                 }
                 for arg in op.arguments.iter() {
-                    writeln!(out, "            {},", arg.name.to_snake())?;
+                    write!(out, "{}: ", arg.name.to_snake())?;
+                    gen_convert_to_ffi(out, idl, &arg.name.to_snake(), &arg.type_)?;
+                    writeln!(out, ",")?;
                 }
                 writeln!(out, "        }};")?;
                 writeln!(out, "        unsafe {{")?;
                 match &message_answer_ty {
                     MessageAnswerTy::Void => {
-                        writeln!(out, "            redshirt_syscalls_interface::emit_message_without_response(&ffi::INTERFACE, &msg).unwrap();")?;
+                        writeln!(out, "            redshirt_syscalls_interface::emit_message_without_response(&ffi::INTERFACE, msg).unwrap();")?;
                     }
                     MessageAnswerTy::Injected(ty) => {
-                        writeln!(out, "            redshirt_syscalls_interface::emit_message_without_response(&ffi::INTERFACE, &msg).unwrap();")?;
+                        writeln!(out, "            redshirt_syscalls_interface::emit_message_without_response(&ffi::INTERFACE, msg).unwrap();")?;
                         writeln!(out, "            {} {{ inner: return_value }}", ty)?;
                     }
                     MessageAnswerTy::Promise(_) => {
-                        writeln!(out, "            redshirt_syscalls_interface::emit_message_with_response(&ffi::INTERFACE, &msg).unwrap()")?;
+                        // TODO: this can be a trap, as we might need a conversion between the return value and the actual value
+                        writeln!(out, "            redshirt_syscalls_interface::emit_message_with_response(&ffi::INTERFACE, msg).unwrap()")?;
                     }
                 }
                 writeln!(out, "        }}")?;
@@ -168,6 +205,67 @@ fn gen_interface_member(out: &mut impl Write, idl: &ast::AST, interface_name: &s
         ast::InterfaceMember::Setlike(_) => unimplemented!(),
     }
 
+    Ok(())
+}
+
+fn is_interface(idl: &ast::AST, ty: &ast::Type) -> bool {
+    if let ast::TypeKind::Identifier(id) = &ty.kind {
+        idl.iter().any(|def| {
+            match def {
+                ast::Definition::Interface(ast::Interface::Partial(interface)) => interface.name == *id,
+                ast::Definition::Interface(ast::Interface::NonPartial(interface)) => interface.name == *id,
+                _ => false,
+            }
+        })
+    } else {
+        false
+    }
+}
+
+fn gen_convert_to_ffi(out: &mut impl Write, idl: &ast::AST, val_name: &str, ty: &ast::Type) -> Result<(), io::Error> {
+    // We hard-code some interfaces that aren't defined in the IDL.
+    // TODO: good idea?
+    if let ast::TypeKind::Identifier(id) = &ty.kind {
+        if id == "ArrayBuffer" || id == "ImageBitmap" {
+            write!(out, "panic!()")?;
+            return Ok(());
+        }
+    }
+
+    // TODO: hack since we don't generate these enums wrappers
+    if let ast::TypeKind::Union(list) = &ty.kind {
+        return gen_convert_to_ffi(out, idl, val_name, &list[0]);
+    }
+
+    if let ast::TypeKind::Identifier(id) = &ty.kind {
+        for def in idl.iter() {
+            match def {
+                ast::Definition::Typedef(td) if td.name == *id => {
+                    return gen_convert_to_ffi(out, idl, val_name, &td.type_);
+                }
+                _ => {},
+            }
+        }
+    }
+
+    if is_interface(idl, ty) {
+        write!(out, "{}.inner", val_name)?;
+        return Ok(());
+    }
+
+    if let ast::TypeKind::Sequence(inner) = &ty.kind {
+        write!(out, "{}.into_iter().map(|v| ", val_name)?;
+        gen_convert_to_ffi(out, idl, "v", inner)?;
+        write!(out, ").collect()")?;
+        return Ok(());
+    }
+
+    // TODO: inline the call to `from` here?
+    if ty.nullable {
+        write!(out, "{}.map(From::from)", val_name)?;
+    } else {
+        write!(out, "From::from({})", val_name)?;
+    }
     Ok(())
 }
 

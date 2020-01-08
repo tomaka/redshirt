@@ -37,20 +37,7 @@ pub fn gen_types(out: &mut impl Write, idl: &ast::AST) -> Result<(), io::Error> 
                 writeln!(out, "}}")?;
             },
             ast::Definition::Dictionary(ast::Dictionary::Partial(_)) => unimplemented!(),
-            ast::Definition::Enum(en) => {
-                // We don't support any attribute.
-                assert!(en.extended_attributes.is_empty());
-                writeln!(out, "#[derive(Debug, parity_scale_codec::Encode, parity_scale_codec::Decode)]")?;
-                writeln!(out, "pub enum {} {{", en.name)?;
-                for variant in en.variants.iter() {
-                    let mut variant = variant.replace('-', "_").to_camel();
-                    if variant.chars().next().unwrap().is_digit(10) {
-                        variant = format!("V{}", variant);
-                    }
-                    writeln!(out, "    {},", variant)?;
-                }
-                writeln!(out, "}}")?;
-            },
+            ast::Definition::Enum(_) => {},
             ast::Definition::Implements(_) => unimplemented!(),
             ast::Definition::Includes(_) => {},
             ast::Definition::Interface(ast::Interface::Callback(_)) => unimplemented!(),
@@ -63,6 +50,27 @@ pub fn gen_types(out: &mut impl Write, idl: &ast::AST) -> Result<(), io::Error> 
                 assert!(typedef.extended_attributes.is_empty());
                 writeln!(out, "pub type {} = {};", typedef.name, ty_to_rust(&typedef.type_))?;
             },
+        }
+    }
+
+    Ok(())
+}
+
+pub fn gen_enums(out: &mut impl Write, idl: &ast::AST) -> Result<(), io::Error> {
+    for definition in idl {
+        if let ast::Definition::Enum(en) = definition {
+            // We don't support any attribute.
+            assert!(en.extended_attributes.is_empty());
+            writeln!(out, "#[derive(Debug, parity_scale_codec::Encode, parity_scale_codec::Decode)]")?;
+            writeln!(out, "pub enum {} {{", en.name)?;
+            for variant in en.variants.iter() {
+                let mut variant = variant.replace('-', "_").to_camel();
+                if variant.chars().next().unwrap().is_digit(10) {
+                    variant = format!("V{}", variant);
+                }
+                writeln!(out, "    {},", variant)?;
+            }
+            writeln!(out, "}}")?;
         }
     }
 

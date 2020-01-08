@@ -28,7 +28,7 @@ pub fn gen_ffi(out: &mut impl Write, idl: &ast::AST) -> Result<(), io::Error> {
                 }
             }
             ast::Definition::Interface(ast::Interface::NonPartial(interface)) => {
-                // TODO: these destroy messages need some thinking
+                // TODO: these destroy messages need some brainstorming
                 /*write!(out, "    Destroy{} {{ ", interface.name)?;
                 write!(out, "this: {} ", interface.name)?;
                 writeln!(out, "}},")?;*/
@@ -49,6 +49,7 @@ pub fn gen_ffi(out: &mut impl Write, idl: &ast::AST) -> Result<(), io::Error> {
     }
 
     crate::dictionaries::gen_types(out, idl)?;
+    crate::dictionaries::gen_enums(out, idl)?;
     Ok(())
 }
 
