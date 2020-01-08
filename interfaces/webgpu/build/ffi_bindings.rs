@@ -37,6 +37,19 @@ pub fn gen_ffi(out: &mut impl Write, idl: &ast::AST) -> Result<(), io::Error> {
                     gen_interface_member(out, idl, &interface.name, member)?;
                 }
             },
+            ast::Definition::Includes(include) => {
+                assert!(include.extended_attributes.is_empty());
+                for def in idl {
+                    match def {
+                        ast::Definition::Mixin(ast::Mixin::NonPartial(mixin)) if mixin.name == include.includee => {
+                            for member in mixin.members.iter() {
+                                gen_mixin_member(out, idl, &include.includer, member)?;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            },
             _ => {}
         }
     }
@@ -53,11 +66,36 @@ pub fn gen_ffi(out: &mut impl Write, idl: &ast::AST) -> Result<(), io::Error> {
     Ok(())
 }
 
+/// > Note: `member` doesn't necessarily need to belong to `interface_name`. This is useful for
+/// >       `includes` definitions.
 fn gen_interface_member(out: &mut impl Write, idl: &ast::AST, interface_name: &str, member: &ast::InterfaceMember) -> Result<(), io::Error> {
     match member {
         ast::InterfaceMember::Iterable(_) => unimplemented!(),
         ast::InterfaceMember::Maplike(_) => unimplemented!(),
-        ast::InterfaceMember::Operation(ast::Operation::Regular(op)) => {
+        ast::InterfaceMember::Operation(op) => gen_interface_op(out, idl, interface_name, op)?,
+        ast::InterfaceMember::Setlike(_) => unimplemented!(),
+        _ => {}     // FIXME:
+    }
+
+    Ok(())
+}
+
+/// > Note: `member` doesn't necessarily need to belong to `interface_name`. This is useful for
+/// >       `includes` definitions.
+fn gen_mixin_member(out: &mut impl Write, idl: &ast::AST, interface_name: &str, member: &ast::MixinMember) -> Result<(), io::Error> {
+    match member {
+        ast::MixinMember::Operation(op) => gen_interface_op(out, idl, interface_name, op)?,
+        _ => {}     // FIXME:
+    }
+
+    Ok(())
+}
+
+/// > Note: `member` doesn't necessarily need to belong to `interface_name`. This is useful for
+/// >       `includes` definitions.
+fn gen_interface_op(out: &mut impl Write, idl: &ast::AST, interface_name: &str, op: &ast::Operation) -> Result<(), io::Error> {
+    match op {
+        ast::Operation::Regular(op) => {
             assert!(op.extended_attributes.is_empty());
             if let Some(name) = op.name.as_ref() {
                 if let Some(message_answer_ty) = message_answer_ty(idl, &op.return_type) {
@@ -77,11 +115,9 @@ fn gen_interface_member(out: &mut impl Write, idl: &ast::AST, interface_name: &s
                 // TODO: what is that???
             }
         },
-        ast::InterfaceMember::Operation(ast::Operation::Special(_)) => unimplemented!(),
-        ast::InterfaceMember::Operation(ast::Operation::Static(_)) => unimplemented!(),
-        ast::InterfaceMember::Operation(ast::Operation::Stringifier(_)) => unimplemented!(),
-        ast::InterfaceMember::Setlike(_) => unimplemented!(),
-        _ => {}     // FIXME:
+        ast::Operation::Special(_) => unimplemented!(),
+        ast::Operation::Static(_) => unimplemented!(),
+        ast::Operation::Stringifier(_) => unimplemented!(),
     }
 
     Ok(())

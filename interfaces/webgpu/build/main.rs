@@ -80,9 +80,23 @@ fn gen_main(out: &mut impl Write, idl: &ast::AST) -> Result<(), io::Error> {
             ast::Definition::Callback(_) => unimplemented!(),
             ast::Definition::Dictionary(ast::Dictionary::NonPartial(_)) => {},
             ast::Definition::Dictionary(ast::Dictionary::Partial(_)) => unimplemented!(),
-            ast::Definition::Enum(en) => {},
+            ast::Definition::Enum(_) => {},
             ast::Definition::Implements(_) => unimplemented!(),
-            ast::Definition::Includes(_) => {}, // FIXME: unimplemented!()
+            ast::Definition::Includes(include) => {
+                assert!(include.extended_attributes.is_empty());
+                writeln!(out, "impl {} {{", include.includer)?;
+                for def in idl {
+                    match def {
+                        ast::Definition::Mixin(ast::Mixin::NonPartial(mixin)) if mixin.name == include.includee => {
+                            for member in mixin.members.iter() {
+                                gen_mixin_member(out, idl, &include.includer, member)?;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                writeln!(out, "}}")?;
+            },
             ast::Definition::Interface(ast::Interface::Callback(_)) => unimplemented!(),
             ast::Definition::Interface(ast::Interface::Partial(interface)) => {
                 writeln!(out, "impl {} {{", interface.name)?;
@@ -91,7 +105,7 @@ fn gen_main(out: &mut impl Write, idl: &ast::AST) -> Result<(), io::Error> {
                 }
                 writeln!(out, "}}")?;
             },
-            ast::Definition::Interface(ast::Interface::NonPartial(interface)) => { // FIXME: unimplemented!()
+            ast::Definition::Interface(ast::Interface::NonPartial(interface)) => {
                 writeln!(out, "#[derive(Debug, parity_scale_codec::Encode, parity_scale_codec::Decode)]")?;
                 writeln!(out, "pub struct {} {{", interface.name)?;
                 writeln!(out, "    inner: u64,")?;
@@ -102,7 +116,7 @@ fn gen_main(out: &mut impl Write, idl: &ast::AST) -> Result<(), io::Error> {
                 }
                 writeln!(out, "}}")?;
             },
-            ast::Definition::Mixin(_) => {}, // FIXME: unimplemented!()
+            ast::Definition::Mixin(_) => {},
             ast::Definition::Namespace(_) => unimplemented!(),
             ast::Definition::Typedef(_) => {},
         }
@@ -152,7 +166,31 @@ fn gen_interface_member(out: &mut impl Write, idl: &ast::AST, interface_name: &s
         },
         ast::InterfaceMember::Iterable(_) => unimplemented!(),
         ast::InterfaceMember::Maplike(_) => unimplemented!(),
-        ast::InterfaceMember::Operation(ast::Operation::Regular(op)) => {
+        ast::InterfaceMember::Operation(op) => {
+            gen_interface_op(out, idl, interface_name, op)?;
+        },
+        ast::InterfaceMember::Setlike(_) => unimplemented!(),
+    }
+
+    Ok(())
+}
+
+/// > Note: `member` doesn't necessarily need to belong to `interface_name`. This is useful for
+/// >       `includes` definitions.
+fn gen_mixin_member(out: &mut impl Write, idl: &ast::AST, interface_name: &str, member: &ast::MixinMember) -> Result<(), io::Error> {
+    match member {
+        ast::MixinMember::Operation(op) => gen_interface_op(out, idl, interface_name, op)?,
+        _ => {}     // FIXME:
+    }
+
+    Ok(())
+}
+
+/// > Note: `member` doesn't necessarily need to belong to `interface_name`. This is useful for
+/// >       `includes` definitions.
+fn gen_interface_op(out: &mut impl Write, idl: &ast::AST, interface_name: &str, op: &ast::Operation) -> Result<(), io::Error> {
+    match op {
+        ast::Operation::Regular(op) => {
             assert!(op.extended_attributes.is_empty());
             if let Some(name) = op.name.as_ref() {
                 write!(out, "    pub fn {}(&self", name.to_snake())?;
@@ -199,10 +237,9 @@ fn gen_interface_member(out: &mut impl Write, idl: &ast::AST, interface_name: &s
                 // TODO: what is that???
             }
         },
-        ast::InterfaceMember::Operation(ast::Operation::Special(_)) => unimplemented!(),
-        ast::InterfaceMember::Operation(ast::Operation::Static(_)) => unimplemented!(),
-        ast::InterfaceMember::Operation(ast::Operation::Stringifier(_)) => unimplemented!(),
-        ast::InterfaceMember::Setlike(_) => unimplemented!(),
+        ast::Operation::Special(_) => unimplemented!(),
+        ast::Operation::Static(_) => unimplemented!(),
+        ast::Operation::Stringifier(_) => unimplemented!(),
     }
 
     Ok(())

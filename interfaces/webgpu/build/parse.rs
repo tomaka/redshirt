@@ -19,6 +19,8 @@ use webidl::ast;
 pub fn gen_parsed_idl() -> ast::AST {
     let idl = gen_unparsed_idl();
     // TODO: specs have been modified because of https://github.com/gpuweb/gpuweb/issues/533
+    // TODO: specs have also been modified to remove a duplicate setBindGroup that was causing issues
+    // TODO: specs have also been modified to turn an attribute into a regular function, again for convenience
     match webidl::parse_string(&idl) {
         Ok(ast) => ast,
         Err(err) => {

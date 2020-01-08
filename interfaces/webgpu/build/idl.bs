@@ -614,7 +614,7 @@ interface GPUDevice : EventTarget {
     readonly attribute sequence<GPUExtensionName> extensions;
     readonly attribute object limits;
 
-    [SameObject] readonly attribute GPUQueue defaultQueue;
+    GPUQueue getDefaultQueue();
 
     GPUBuffer createBuffer(GPUBufferDescriptor descriptor);
     GPUMappedBuffer createBufferMapped(GPUBufferDescriptor descriptor);
@@ -1791,10 +1791,10 @@ interface mixin GPUProgrammablePassEncoder {
     void setBindGroup(unsigned long index, GPUBindGroup bindGroup,
                       optional sequence<unsigned long> dynamicOffsets = []);
 
-    void setBindGroup(unsigned long index, GPUBindGroup bindGroup,
-                      Uint32Array dynamicOffsetsData,
-                      unsigned long long dynamicOffsetsDataStart,
-                      unsigned long long dynamicOffsetsDataLength);
+    //void setBindGroup(unsigned long index, GPUBindGroup bindGroup,
+    //                  Uint32Array dynamicOffsetsData,
+    //                  unsigned long long dynamicOffsetsDataStart,
+    //                  unsigned long long dynamicOffsetsDataLength);
 
     void pushDebugGroup(DOMString groupLabel);
     void popDebugGroup();
