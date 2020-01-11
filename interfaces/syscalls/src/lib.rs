@@ -126,7 +126,7 @@ impl From<Pid> for u64 {
 
 impl fmt::Debug for Pid {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "#{}", self.0)
+        write!(f, "#{:020}", self.0)
     }
 }
 
@@ -151,7 +151,7 @@ impl From<ThreadId> for u64 {
 
 impl fmt::Debug for ThreadId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "#{}", self.0)
+        write!(f, "#{:020}", self.0)
     }
 }
 
@@ -176,7 +176,7 @@ impl From<MessageId> for u64 {
 
 impl fmt::Debug for MessageId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "#{}", self.0)
+        write!(f, "#{:020}", self.0)
     }
 }
 
@@ -219,7 +219,7 @@ impl fmt::Debug for InterfaceHash {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "InterfaceHash(0x")?;
         for byte in &self.0 {
-            write!(f, "{:x}", *byte)?
+            write!(f, "{:016x}", *byte)?
         }
         write!(f, ")")?;
         Ok(())
