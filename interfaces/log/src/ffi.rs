@@ -13,9 +13,22 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use alloc::string::String;
-use parity_scale_codec::{Decode, Encode};
-use redshirt_syscalls_interface::InterfaceHash;
+/// Communication between a process and the interface handler.
+///
+/// A log message consists of one byte indicating the log level, followed with the log message
+/// itself encoded in UTF-8.
+///
+/// Log levels:
+///
+/// - Error: 4
+/// - Warn: 3
+/// - Info: 2
+/// - Debug: 1
+/// - Trace: 0
+///
+
+use core::{convert::TryFrom, str};
+use redshirt_syscalls_interface::{Decode, EncodedMessage, InterfaceHash};
 
 // TODO: this has been randomly generated; instead should be a hash or something
 pub const INTERFACE: InterfaceHash = InterfaceHash::from_raw_hash([
@@ -23,20 +36,74 @@ pub const INTERFACE: InterfaceHash = InterfaceHash::from_raw_hash([
     0x25, 0x57, 0x23, 0x91, 0x79, 0xc8, 0x16, 0x07, 0x6f, 0xab, 0xa9, 0xd6, 0x38, 0xca, 0x01, 0x8b,
 ]);
 
-#[derive(Debug, Encode, Decode)]
-pub enum LogMessage {
-    /// Send text to logs.
-    ///
-    /// > **Note**: There's no concept of piping, and logging is meant to be used only for
-    /// >           interfacing with the user.
-    Message(Level, String),
-}
-
-#[derive(Debug, Encode, Decode)]
+/// Log level of a message.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Level {
     Error,
     Warn,
     Info,
     Debug,
     Trace,
+}
+
+impl From<Level> for u8 {
+    fn from(level: Level) -> u8 {
+        match level {
+            Level::Error => 4,
+            Level::Warn => 3,
+            Level::Info => 2,
+            Level::Debug => 1,
+            Level::Trace => 0,
+        }
+    }
+}
+
+impl TryFrom<u8> for Level {
+    type Error = (); // TODO:
+
+    fn try_from(value: u8) -> Result<Self, ()> {
+        Ok(match value {
+            4 => Level::Error,
+            3 => Level::Warn,
+            2 => Level::Info,
+            1 => Level::Debug,
+            0 => Level::Trace,
+            _ => return Err(())
+        })
+    }
+}
+
+impl Decode for DecodedLogMessage {
+    type Error = (); // TODO:
+
+    fn decode(buffer: EncodedMessage) -> Result<Self, ()> {
+        if buffer.0.is_empty() {
+            return Err(())
+        }
+        let level = Level::try_from(buffer.0[0])?;
+        let _ = str::from_utf8(&buffer.0[1..]).map_err(|_| ())?;
+        Ok(DecodedLogMessage {
+            level,
+            buffer,
+        })
+    }
+}
+
+/// Decoded version of a message on the log interface.
+pub struct DecodedLogMessage {
+    level: Level,
+    buffer: EncodedMessage,
+}
+
+impl DecodedLogMessage {
+    /// Returns the log level of the message.
+    pub fn level(&self) -> Level {
+        self.level
+    }
+
+    /// Returns the message itself.
+    pub fn message(&self) -> &str {
+        // We checked the validity when decoding.
+        str::from_utf8(&self.buffer.0[1..]).unwrap()
+    }
 }

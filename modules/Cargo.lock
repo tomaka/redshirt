@@ -25,8 +25,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 name = "arm-log"
 version = "0.1.0"
 dependencies = [
- "byteorder 1.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "redshirt-hardware-interface 0.1.0",
  "redshirt-interface-interface 0.1.0",
  "redshirt-log-interface 0.1.0",
@@ -1358,7 +1356,6 @@ name = "redshirt-log-interface"
 version = "0.1.0"
 dependencies = [
  "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
- "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "redshirt-syscalls-interface 0.1.0",
 ]
 
@@ -2039,7 +2036,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 name = "x86-log"
 version = "0.1.0"
 dependencies = [
- "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "redshirt-hardware-interface 0.1.0",
  "redshirt-interface-interface 0.1.0",
  "redshirt-log-interface 0.1.0",

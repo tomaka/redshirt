@@ -8,4 +8,3 @@ edition = "2018"
 [dependencies]
 log = "0.4.8"
 redshirt-syscalls-interface = { path = "../syscalls", default-features = false }
-parity-scale-codec = { version = "1.0.5", default-features = false, features = ["derive", "full"] }

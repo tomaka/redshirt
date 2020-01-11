@@ -119,7 +119,7 @@ async unsafe fn read_bus_pci_devices(bus_idx: u8) -> Vec<redshirt_pci_interface:
 
             redshirt_log_interface::log(
                 redshirt_log_interface::Level::Info,
-                format!("PCI device: {} - {}", vendor_name, device_name)
+                &format!("PCI device: {} - {}", vendor_name, device_name)
             );
 
             // TODO: wrong; need to enumerate other PCI buses

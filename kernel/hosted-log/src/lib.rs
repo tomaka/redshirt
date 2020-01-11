@@ -18,7 +18,7 @@
 use futures::prelude::*;
 use redshirt_core::native::{DummyMessageIdWrite, NativeProgramEvent, NativeProgramRef};
 use redshirt_core::{Decode as _, Encode as _, EncodedMessage, InterfaceHash, MessageId, Pid};
-use redshirt_log_interface::ffi::{Level, LogMessage, INTERFACE};
+use redshirt_log_interface::ffi::{DecodedLogMessage, Level, INTERFACE};
 use std::{pin::Pin, sync::atomic};
 
 /// Native program for `log` interface messages handling.
@@ -72,13 +72,14 @@ impl<'a> NativeProgramRef<'a> for &'a LogHandler {
     ) {
         debug_assert_eq!(interface, INTERFACE);
 
-        match LogMessage::decode(message) {
-            Ok(LogMessage::Message(level, mut msg)) => {
+        match DecodedLogMessage::decode(message) {
+            Ok(decoded) => {
                 // Remove any control character from log messages, in order to prevent programs
                 // from polluting the terminal.
-                msg.retain(|c| !c.is_control());
+                let mut message = decoded.message().to_string(); // TODO: only clone if any control character
+                message.retain(|c| !c.is_control());
                 let mut header_style = ansi_term::Style::default();
-                let level = match level {
+                let level = match decoded.level() {
                     Level::Error => "ERROR",
                     Level::Warn => "WARN",
                     Level::Info => "INFO",
@@ -94,7 +95,7 @@ impl<'a> NativeProgramRef<'a> for &'a LogHandler {
                     emitter_pid,
                     level,
                     header_style.suffix(),
-                    msg
+                    message
                 );
             }
             Err(_) => println!("bad log message from {:?}", emitter_pid),

@@ -16,6 +16,6 @@
 fn main() {
     redshirt_log_interface::log(
         redshirt_log_interface::Level::Info,
-        "hello world!".to_string(),
+        &"hello world!",
     )
 }
