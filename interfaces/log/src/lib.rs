@@ -13,7 +13,12 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-//! Stdout.
+//! Logging.
+//!
+//! This interface allows a program to send out messages for the purpose of being logged.
+//!
+//! How these logged are handled is at the discretion of the rest of the system, but the intent
+//! is for them to be shown to a human being in case of necessity.
 
 #![deny(intra_doc_link_resolution_failure)]
 #![no_std]
@@ -39,10 +44,10 @@ pub fn log(level: Level, msg: String) {
     }
 }
 
-pub struct EnvLogger;
+pub struct GlobalLogger;
 
 pub fn try_init() -> Result<(), log::SetLoggerError> {
-    static LOGGER: EnvLogger = EnvLogger;
+    static LOGGER: GlobalLogger = GlobalLogger;
     log::set_logger(&LOGGER)
 }
 
@@ -50,7 +55,7 @@ pub fn init() {
     try_init().unwrap();
 }
 
-impl log::Log for EnvLogger {
+impl log::Log for GlobalLogger {
     fn enabled(&self, _: &log::Metadata) -> bool {
         true
     }
