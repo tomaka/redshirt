@@ -13,7 +13,6 @@ raw-window-handle = "0.3.3"
 redshirt-core = { path = "../../core" }
 redshirt-interface-interface = { path = "../../interfaces/interface" }
 redshirt-webgpu-interface = { path = "../../interfaces/webgpu" }
-send_wrapper = "0.4.0"
 wgpu-core = { git = "https://github.com/gfx-rs/wgpu", rev = "c293d6dcea0170bfa3835cfbd919f300560e0da6" }
 wgpu-native = { git = "https://github.com/gfx-rs/wgpu", rev = "c293d6dcea0170bfa3835cfbd919f300560e0da6" }
 winit = "0.20.0"
