@@ -80,11 +80,11 @@ impl<'a> NativeProgramRef<'a> for &'a LogHandler {
                 message.retain(|c| !c.is_control());
                 let mut header_style = ansi_term::Style::default();
                 let level = match decoded.level() {
-                    Level::Error => "ERROR",
+                    Level::Error => "ERR ",
                     Level::Warn => "WARN",
                     Level::Info => "INFO",
-                    Level::Debug => "DEBUG",
-                    Level::Trace => "TRACE",
+                    Level::Debug => "DEBG",
+                    Level::Trace => "TRCE",
                 };
                 if self.enable_colors {
                     header_style.is_dimmed = true;
