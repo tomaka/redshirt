@@ -50,7 +50,10 @@ async fn async_main() {
             if let Some(port_number) = port_number {
                 unsafe {
                     ne2k_devices.push(device::Device::reset(port_number).await);
-                    redshirt_stdout_interface::stdout(format!("Initialized ne2000 at 0x{:x}\n", port_number));
+                    redshirt_log_interface::log(
+                        redshirt_log_interface::Level::Info,
+                        format!("Initialized ne2000 at 0x{:x}", port_number)
+                    );
                 }
             }
         }
@@ -63,7 +66,7 @@ async fn async_main() {
     ne2k_devices.shrink_to_fit();
 
     loop {
-        //redshirt_stdout_interface::stdout(format!("Polling"));
+        //redshirt_log_interface::log(redshirt_log_interface::Level::Info, format!("Polling"));
         let packet = match unsafe { ne2k_devices[0].read_one_incoming().await } {
             Some(p) => p,
             None => continue,
@@ -74,10 +77,13 @@ async fn async_main() {
             let (ip_header, ip_data) = etherparse::Ipv6Header::read_from_slice(&data).unwrap();
             if ip_header.next_header == 0x11 {
                 let (udp_header, udp_data) = etherparse::UdpHeader::read_from_slice(&ip_data).unwrap();
-                redshirt_stdout_interface::stdout(format!("Headers: {:?} {:?}\n", ip_header, udp_header));
+                redshirt_log_interface::log(
+                    redshirt_log_interface::Level::Info,
+                    format!("Headers: {:?} {:?}", ip_header, udp_header)
+                );
             }
         }
 
-        //redshirt_stdout_interface::stdout(format!("Header: {:?}\n", header));
+        //redshirt_log_interface::log(redshirt_log_interface::Level::Info, format!("Header: {:?}", header));
     }
 }

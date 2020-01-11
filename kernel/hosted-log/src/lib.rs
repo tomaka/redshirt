@@ -13,34 +13,33 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-//! Implements the stdout interface.
+//! Implements the log interface by printing logs to stdout.
 
 use futures::prelude::*;
 use redshirt_core::native::{DummyMessageIdWrite, NativeProgramEvent, NativeProgramRef};
 use redshirt_core::{Decode as _, Encode as _, EncodedMessage, InterfaceHash, MessageId, Pid};
-use redshirt_stdout_interface::ffi::{StdoutMessage, INTERFACE};
-use std::{
-    io::{self, Write as _},
-    pin::Pin,
-    sync::atomic,
-};
+use redshirt_log_interface::ffi::{Level, LogMessage, INTERFACE};
+use std::{pin::Pin, sync::atomic};
 
-/// Native program for `stdout` interface messages handling.
-pub struct StdoutHandler {
+/// Native program for `log` interface messages handling.
+pub struct LogHandler {
     /// If true, we have sent the interface registration message.
     registered: atomic::AtomicBool,
+    /// If true, enable terminal colors when printing the log messages.
+    enable_colors: bool,
 }
 
-impl StdoutHandler {
-    /// Initializes the new state machine for stdout.
+impl LogHandler {
+    /// Initializes the new state machine for logging.
     pub fn new() -> Self {
-        StdoutHandler {
+        LogHandler {
             registered: atomic::AtomicBool::new(false),
+            enable_colors: atty::is(atty::Stream::Stdout),
         }
     }
 }
 
-impl<'a> NativeProgramRef<'a> for &'a StdoutHandler {
+impl<'a> NativeProgramRef<'a> for &'a LogHandler {
     type Future =
         Pin<Box<dyn Future<Output = NativeProgramEvent<Self::MessageIdWrite>> + Send + 'a>>;
     type MessageIdWrite = DummyMessageIdWrite;
@@ -68,18 +67,37 @@ impl<'a> NativeProgramRef<'a> for &'a StdoutHandler {
         self,
         interface: InterfaceHash,
         _message_id: Option<MessageId>,
-        _emitter_pid: Pid,
+        emitter_pid: Pid,
         message: EncodedMessage,
     ) {
         debug_assert_eq!(interface, INTERFACE);
 
-        match StdoutMessage::decode(message) {
-            Ok(StdoutMessage::Message(msg)) => {
-                let mut stdout = io::stdout();
-                stdout.write_all(msg.as_bytes()).unwrap();
-                stdout.flush().unwrap();
+        match LogMessage::decode(message) {
+            Ok(LogMessage::Message(level, mut msg)) => {
+                // Remove any control character from log messages, in order to prevent programs
+                // from polluting the terminal.
+                msg.retain(|c| !c.is_control());
+                let mut header_style = ansi_term::Style::default();
+                let level = match level {
+                    Level::Error => "ERROR",
+                    Level::Warn => "WARN",
+                    Level::Info => "INFO",
+                    Level::Debug => "DEBUG",
+                    Level::Trace => "TRACE",
+                };
+                if self.enable_colors {
+                    header_style.is_dimmed = true;
+                }
+                println!(
+                    "{}[{:?}] [{}]{} {}",
+                    header_style.prefix(),
+                    emitter_pid,
+                    level,
+                    header_style.suffix(),
+                    msg
+                );
             }
-            Err(_) => panic!(),
+            Err(_) => println!("bad log message from {:?}", emitter_pid),
         }
     }
 

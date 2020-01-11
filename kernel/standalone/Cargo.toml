@@ -23,7 +23,7 @@ redshirt-core = { path = "../../core" }
 redshirt-interface-interface = { path = "../../interfaces/interface", default-features = false }
 redshirt-hardware-interface = { path = "../../interfaces/hardware", default-features = false }
 redshirt-random-interface = { path = "../../interfaces/random", default-features = false }
-redshirt-stdout-interface = { path = "../../interfaces/stdout", default-features = false }
+redshirt-log-interface = { path = "../../interfaces/log", default-features = false }
 redshirt-syscalls-interface = { path = "../../interfaces/syscalls", default-features = false }
 sha2 = { version = "0.8.0", default-features = false }
 spin = "0.5.2"

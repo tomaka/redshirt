@@ -62,17 +62,15 @@ impl Kernel {
 
         // TODO: use a better system than cfgs
         #[cfg(target_arch = "x86_64")]
-        let stdout_module = redshirt_core::module::Module::from_bytes(
-            &include_bytes!(
-                "../../../modules/target/wasm32-unknown-unknown/release/x86-stdout.wasm"
-            )[..],
+        let log_module = redshirt_core::module::Module::from_bytes(
+            &include_bytes!("../../../modules/target/wasm32-unknown-unknown/release/x86-log.wasm")
+                [..],
         )
         .unwrap();
         #[cfg(target_arch = "arm")]
-        let stdout_module = redshirt_core::module::Module::from_bytes(
-            &include_bytes!(
-                "../../../modules/target/wasm32-unknown-unknown/release/arm-stdout.wasm"
-            )[..],
+        let log_module = redshirt_core::module::Module::from_bytes(
+            &include_bytes!("../../../modules/target/wasm32-unknown-unknown/release/arm-log.wasm")
+                [..],
         )
         .unwrap();
 
@@ -94,7 +92,7 @@ impl Kernel {
         let mut system_builder = redshirt_core::system::SystemBuilder::new()
             .with_native_program(crate::hardware::HardwareHandler::new())
             .with_native_program(crate::random::native::RandomNativeProgram::new())
-            .with_startup_process(stdout_module)
+            .with_startup_process(log_module)
             .with_startup_process(hello_module);
 
         // TODO: use a better system than cfgs

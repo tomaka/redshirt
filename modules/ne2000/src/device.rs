@@ -110,8 +110,9 @@ impl Device {
         };
 
         // TODO: remove
-        redshirt_stdout_interface::stdout(
-            format!("MAC: {:x} {:x} {:x} {:x} {:x} {:x}\n", mac_address[0], mac_address[1], mac_address[2], mac_address[3], mac_address[4], mac_address[5])
+        redshirt_log_interface::log(
+            redshirt_log_interface::Level::Info,
+            format!("MAC: {:x} {:x} {:x} {:x} {:x} {:x}", mac_address[0], mac_address[1], mac_address[2], mac_address[3], mac_address[4], mac_address[5])
         );
 
         // Start page address of the packet to be transmitted.

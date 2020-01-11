@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-//! Implements the stdout interface by writing in text mode.
+//! Implements the log interface by writing in text mode.
 
 use parity_scale_codec::DecodeAll;
 use std::{convert::TryFrom as _, fmt};
@@ -23,7 +23,7 @@ fn main() {
 }
 
 async fn async_main() -> ! {
-    redshirt_interface_interface::register_interface(redshirt_stdout_interface::ffi::INTERFACE)
+    redshirt_interface_interface::register_interface(redshirt_log_interface::ffi::INTERFACE)
         .await.unwrap();
 
     // TODO: properly initialize VGA? https://gist.github.com/tomaka/8a007d0e3c7064f419b24b044e152c22
@@ -35,10 +35,11 @@ async fn async_main() -> ! {
             redshirt_syscalls_interface::InterfaceOrDestroyed::Interface(m) => m,
             redshirt_syscalls_interface::InterfaceOrDestroyed::ProcessDestroyed(_) => continue,
         };
-        assert_eq!(msg.interface, redshirt_stdout_interface::ffi::INTERFACE);
-        let redshirt_stdout_interface::ffi::StdoutMessage::Message(message) =
+        assert_eq!(msg.interface, redshirt_log_interface::ffi::INTERFACE);
+        let redshirt_log_interface::ffi::LogMessage::Message(_, message) =
             DecodeAll::decode_all(&msg.actual_data).unwrap();       // TODO: don't unwrap
         console.write(&message);
+        console.write("\n");
     }
 }
 

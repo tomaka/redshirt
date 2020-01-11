@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "arm-stdout",
+    "arm-log",
     "hello-world",
     "http-server",
     "ne2000",
@@ -8,8 +8,8 @@ members = [
     "third-party/time",
     "third-party/wasm-timer",
     "vulkan-triangle",
+    "x86-log",
     "x86-pci",
-    "x86-stdout"
 ]
 
 [profile.dev]

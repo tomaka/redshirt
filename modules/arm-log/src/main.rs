@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-//! Implements the stdout interface by writing in text mode.
+//! Implements the log interface by writing in text mode.
 
 use byteorder::{ByteOrder as _, LittleEndian};
 use parity_scale_codec::DecodeAll;
@@ -24,7 +24,7 @@ fn main() {
 }
 
 async fn async_main() -> ! {
-    redshirt_interface_interface::register_interface(redshirt_stdout_interface::ffi::INTERFACE)
+    redshirt_interface_interface::register_interface(redshirt_log_interface::ffi::INTERFACE)
         .await.unwrap();
     init_uart();
 
@@ -33,13 +33,14 @@ async fn async_main() -> ! {
             redshirt_syscalls_interface::InterfaceOrDestroyed::Interface(m) => m,
             redshirt_syscalls_interface::InterfaceOrDestroyed::ProcessDestroyed(_) => continue,
         };
-        assert_eq!(msg.interface, redshirt_stdout_interface::ffi::INTERFACE);
+        assert_eq!(msg.interface, redshirt_log_interface::ffi::INTERFACE);
 
-        let redshirt_stdout_interface::ffi::StdoutMessage::Message(message) =
+        let redshirt_log_interface::ffi::LogMessage::Message(_, message) =
             DecodeAll::decode_all(&msg.actual_data).unwrap();       // TODO: don't unwrap
         for byte in message.as_bytes() {
             write_uart(*byte).await;
         }
+        write_uart(b'\n').await;
     }
 }
 
