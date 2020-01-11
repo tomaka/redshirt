@@ -19,6 +19,7 @@
 
 use futures::{channel::mpsc, lock::Mutex as AsyncMutex, prelude::*, stream::FuturesUnordered};
 use parking_lot::Mutex;
+use raw_window_handle::HasRawWindowHandle as _;
 use redshirt_core::native::{
     DummyMessageIdWrite, NativeProgramEvent, NativeProgramMessageIdWrite, NativeProgramRef,
 };
@@ -29,6 +30,7 @@ use std::{
     collections::HashMap,
     ffi::CString,
     pin::Pin,
+    ptr,
     sync::atomic,
 };
 
@@ -214,6 +216,9 @@ impl<'a> NativeProgramRef<'a> for &'a WebGPUHandler {
                             ffi::GPUBindingType::SampledTexture => unimplemented!(),//wgpu_core::BindingType::SampledTexture,
                             ffi::GPUBindingType::StorageTexture => unimplemented!(),//wgpu_core::BindingType::StorageTexture,
                         },
+                        dynamic: false, // TODO:
+                        multisampled: false, // TODO:
+                        texture_dimension: wgpu_core::resource::TextureViewDimension::D2, // TODO:
                     }
                 }).collect::<Vec<_>>();
                 let bind_group_layout = wgpu_native::wgpu_device_create_bind_group_layout(
@@ -240,7 +245,7 @@ impl<'a> NativeProgramRef<'a> for &'a WebGPUHandler {
                 let bind_group = wgpu_native::wgpu_device_create_bind_group(
                     device.0,
                     &wgpu_core::binding_model::BindGroupDescriptor {
-                        layout: state.bind_group_layouts.get(&descriptor.layout).unwrap(), // TODO:
+                        layout: *state.bind_group_layouts.get(&descriptor.layout).unwrap(), // TODO:
                         bindings: bindings.as_ptr(),
                         bindings_length: bindings.len(),
                     },
@@ -279,10 +284,36 @@ impl<'a> NativeProgramRef<'a> for &'a WebGPUHandler {
                 }).collect::<Vec<_>>();
                 let vertex_entry_point = CString::new(descriptor.vertex_stage.entry_point).unwrap();
                 let fragment_entry_point = if let Some(fragment_stage) = &descriptor.fragment_stage {
-                    CString::new(fragment_stage.entry_point).unwrap()
+                    CString::new(fragment_stage.entry_point.clone()).unwrap()
                 } else {
                     CString::default()
                 };
+                let fragment_stage = descriptor.fragment_stage.as_ref().map(|fragment_stage| {
+                    wgpu_core::pipeline::ProgrammableStageDescriptor {
+                        module: *state.shader_modules.get(&fragment_stage.module).unwrap(),    // TODO:
+                        entry_point: fragment_entry_point.as_ptr(),
+                    }
+                });
+
+                let rasterization_state = descriptor.rasterization_state.as_ref().map(|raster| {
+                    wgpu_core::pipeline::RasterizationStateDescriptor {
+                        front_face: match raster.front_face {
+                            Some(ffi::GPUFrontFace::Ccw) => wgpu_core::pipeline::FrontFace::Ccw,
+                            Some(ffi::GPUFrontFace::Cw) => wgpu_core::pipeline::FrontFace::Cw,
+                            None => wgpu_core::pipeline::FrontFace::Ccw,
+                        },
+                        cull_mode: match raster.cull_mode {
+                            Some(ffi::GPUCullMode::Front) => wgpu_core::pipeline::CullMode::Front,
+                            Some(ffi::GPUCullMode::Back) => wgpu_core::pipeline::CullMode::Back,
+                            Some(ffi::GPUCullMode::None) | None => wgpu_core::pipeline::CullMode::None,
+                        },
+                        depth_bias: raster.depth_bias.unwrap_or(0),
+                        depth_bias_slope_scale: raster.depth_bias_slope_scale.map(|f| f32::from(f)).unwrap_or(0.0),
+                        depth_bias_clamp: raster.depth_bias_clamp.map(|f| f32::from(f)).unwrap_or(0.0),
+                    }
+                });
+
+                let vertex_buffers = Vec::new(); // FIXME:
 
                 let render_pipeline = wgpu_native::wgpu_device_create_render_pipeline(device.0, &wgpu_core::pipeline::RenderPipelineDescriptor {
                     layout: *state.pipeline_layouts.get(&descriptor.parent.layout).unwrap(),
@@ -290,29 +321,8 @@ impl<'a> NativeProgramRef<'a> for &'a WebGPUHandler {
                         module: *state.shader_modules.get(&descriptor.vertex_stage.module).unwrap(),    // TODO:
                         entry_point: vertex_entry_point.as_ptr(),
                     },
-                    fragment_stage: descriptor.fragment_stage.as_ref().map(|fragment_stage| {
-                        wgpu_core::pipeline::ProgrammableStageDescriptor {
-                            module: *state.shader_modules.get(&fragment_stage.module).unwrap(),    // TODO:
-                            entry_point: fragment_entry_point.as_ptr(),
-                        }
-                    }),
-                    rasterization_state: descriptor.rasterization_state.as_ref().map(|raster| {
-                        wgpu_core::pipeline::RasterizationStateDescriptor {
-                            front_face: match raster.front_face {
-                                Some(ffi::GPUFrontFace::Ccw) => wgpu_core::pipeline::FrontFace::Ccw,
-                                Some(ffi::GPUFrontFace::Cw) => wgpu_core::pipeline::FrontFace::Cw,
-                                None => wgpu_core::pipeline::FrontFace::Ccw,
-                            },
-                            cull_mode: match raster.cull_mode {
-                                Some(ffi::GPUCullMode::Front) => wgpu_core::pipeline::CullMode::Front,
-                                Some(ffi::GPUCullMode::Back) => wgpu_core::pipeline::CullMode::Back,
-                                Some(ffi::GPUCullMode::None) | None => wgpu_core::pipeline::CullMode::None,
-                            },
-                            depth_bias: raster.depth_bias.unwrap_or(0),
-                            depth_bias_slope_scale: raster.depth_bias_slope_scale.map(|f| f32::from(f)).unwrap_or(0.0),
-                            depth_bias_clamp: raster.depth_bias_clamp.map(|f| f32::from(f)).unwrap_or(0.0),
-                        }
-                    }),
+                    fragment_stage: fragment_stage.as_ref().map_or(ptr::null(), |p| p as *const _),
+                    rasterization_state: rasterization_state.as_ref().map_or(ptr::null(), |p| p as *const _),
                     primitive_topology: match descriptor.primitive_topology {
                         ffi::GPUPrimitiveTopology::PointList => wgpu_core::pipeline::PrimitiveTopology::PointList,
                         ffi::GPUPrimitiveTopology::LineList => wgpu_core::pipeline::PrimitiveTopology::LineList,
@@ -320,13 +330,17 @@ impl<'a> NativeProgramRef<'a> for &'a WebGPUHandler {
                         ffi::GPUPrimitiveTopology::TriangleList => wgpu_core::pipeline::PrimitiveTopology::TriangleList,
                         ffi::GPUPrimitiveTopology::TriangleStrip => wgpu_core::pipeline::PrimitiveTopology::TriangleStrip,
                     },
-                    color_states: &color_states,
-                    depth_stencil_state: None, // FIXME:
-                    index_format: match descriptor.vertex_state.as_ref().and_then(|vs| vs.index_format.as_ref()) {
-                        Some(ffi::GPUIndexFormat::Uint16) => wgpu_core::pipeline::IndexFormat::Uint16,
-                        None | Some(ffi::GPUIndexFormat::Uint32) => wgpu_core::pipeline::IndexFormat::Uint32,
+                    color_states: color_states.as_ptr(),
+                    color_states_length: color_states.len(),
+                    depth_stencil_state: ptr::null(), // FIXME:
+                    vertex_input: wgpu_core::pipeline::VertexInputDescriptor {
+                        index_format: match descriptor.vertex_state.as_ref().and_then(|vs| vs.index_format.as_ref()) {
+                            Some(ffi::GPUIndexFormat::Uint16) => wgpu_core::pipeline::IndexFormat::Uint16,
+                            None | Some(ffi::GPUIndexFormat::Uint32) => wgpu_core::pipeline::IndexFormat::Uint32,
+                        },
+                        vertex_buffers: vertex_buffers.as_ptr(),
+                        vertex_buffers_length: vertex_buffers.len(),
                     },
-                    vertex_buffers: &[], // FIXME:
                     sample_count: descriptor.sample_count.unwrap_or(1),
                     sample_mask: descriptor.sample_mask.unwrap_or(0xffffffff),
                     alpha_to_coverage_enabled: descriptor.alpha_to_coverage_enabled.unwrap_or(false),
@@ -370,43 +384,46 @@ impl<'a> NativeProgramRef<'a> for &'a WebGPUHandler {
                 let state = active.as_mut().unwrap();     // TODO:
                 assert_eq!(state.pid, emitter_pid);
                 let device = state.devices.get(&this).unwrap();
-                let command_encoder = wgpu_native::wgpu_device_create_command_encoder(device.0, Some(&wgpu_core::CommandEncoderDescriptor {
+                let command_encoder = wgpu_native::wgpu_device_create_command_encoder(device.0, Some(&wgpu_core::command::CommandEncoderDescriptor {
                     todo: 0,
                 }));
-                state.command_encoders.insert(return_value, SendWrapper::new(command_encoder));
+                state.command_encoders.insert(return_value, command_encoder);
             },
 
             Ok(WebGPUMessage::GPUCommandEncoderBeginRenderPass { this, return_value, descriptor }) => {
                 let state = active.as_mut().unwrap();     // TODO:
                 assert_eq!(state.pid, emitter_pid);
-                let command_encoder = state.command_encoders.get_mut(&this).unwrap();
-                let view = state.swap_chains.values_mut().next().unwrap().1.get_next_texture().unwrap().view; // FIXME: hack
-                let color_attachments = {
-                    let view = &view;
-                    descriptor.color_attachments.into_iter().map(move |atch| {
-                        wgpu_core::RenderPassColorAttachmentDescriptor {
-                            attachment: view,  // FIXME:
-                            resolve_target: None,   // FIXME:
-                            load_op: wgpu_core::command::LoadOp::Clear, // FIXME:
-                            store_op: match atch.store_op {
-                                Some(ffi::GPUStoreOp::Clear) => wgpu_core::command::StoreOp::Clear,
-                                Some(ffi::GPUStoreOp::Store) | None => wgpu_core::command::StoreOp::Store,
-                            },
-                            clear_color: wgpu_core::Color { // FIXME:
-                                r: 0.0,
-                                g: 1.0,
-                                b: 0.0,
-                                a: 0.0,
-                            }
+                let command_encoder = *state.command_encoders.get_mut(&this).unwrap();
+                // FIXME: hack
+                let view = wgpu_native::wgpu_swap_chain_get_next_texture(state.swap_chains.values_mut().next().unwrap().1).view_id;
+                assert_ne!(view, wgpu_core::id::Id::ERROR);     // TODO:
+                let color_attachments = descriptor.color_attachments.into_iter().map(move |atch| {
+                    wgpu_core::command::RenderPassColorAttachmentDescriptor {
+                        attachment: view,  // FIXME:
+                        resolve_target: ptr::null(),   // FIXME:
+                        load_op: wgpu_core::command::LoadOp::Clear, // FIXME:
+                        store_op: match atch.store_op {
+                            Some(ffi::GPUStoreOp::Clear) => wgpu_core::command::StoreOp::Clear,
+                            Some(ffi::GPUStoreOp::Store) | None => wgpu_core::command::StoreOp::Store,
+                        },
+                        clear_color: wgpu_core::Color { // FIXME:
+                            r: 0.0,
+                            g: 1.0,
+                            b: 0.0,
+                            a: 0.0,
                         }
-                    }).collect::<Vec<_>>()
-                };
+                    }
+                }).collect::<Vec<_>>();
                 let next_idx = state.texture_views.len() as u64;
                 state.texture_views.insert(next_idx, view); // FIXME: hack:
-                let render_pass = command_encoder.begin_render_pass(&wgpu_core::RenderPassDescriptor {
-                    color_attachments: &color_attachments,
-                    depth_stencil_attachment: None,        // FIXME:
-                });
+                let render_pass = wgpu_native::wgpu_command_encoder_begin_render_pass(
+                    command_encoder,
+                    &wgpu_core::command::RenderPassDescriptor {
+                        color_attachments: color_attachments.as_ptr(),
+                        color_attachments_length: color_attachments.len(),
+                        depth_stencil_attachment: ptr::null(),  // FIXME:
+                    },
+                );
                 state.render_passes.insert(return_value, render_pass);
             },
 
@@ -491,7 +508,7 @@ impl<'a> NativeProgramRef<'a> for &'a WebGPUHandler {
     }
 }
 
-fn convert_texture_format(format: ffi::GPUTextureFormat) -> wgpu_core::TextureFormat {
+fn convert_texture_format(format: ffi::GPUTextureFormat) -> wgpu_core::resource::TextureFormat {
     match format {
         ffi::GPUTextureFormat::R8unorm => wgpu_core::resource::TextureFormat::R8Unorm,
         ffi::GPUTextureFormat::R8snorm => wgpu_core::resource::TextureFormat::R8Snorm,

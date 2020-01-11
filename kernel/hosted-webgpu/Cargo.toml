@@ -9,6 +9,7 @@ publish = false
 [dependencies]
 futures = "0.3.0"
 parking_lot = "0.10.0"
+raw-window-handle = "0.3.3"
 redshirt-core = { path = "../../core" }
 redshirt-interface-interface = { path = "../../interfaces/interface" }
 redshirt-webgpu-interface = { path = "../../interfaces/webgpu" }
