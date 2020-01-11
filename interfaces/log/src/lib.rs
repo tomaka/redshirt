@@ -65,9 +65,16 @@ impl log::Log for EnvLogger {
         };
 
         // TODO: ideally we wouldn't allocate any memory in order to print out
-        log(level, format!("{}:{} -- {}", record.level(), record.target(), record.args()));
+        log(
+            level,
+            format!(
+                "{}:{} -- {}",
+                record.level(),
+                record.target(),
+                record.args()
+            ),
+        );
     }
 
-    fn flush(&self) {
-    }
+    fn flush(&self) {}
 }

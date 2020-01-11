@@ -63,16 +63,14 @@ impl Kernel {
         // TODO: use a better system than cfgs
         #[cfg(target_arch = "x86_64")]
         let log_module = redshirt_core::module::Module::from_bytes(
-            &include_bytes!(
-                "../../../modules/target/wasm32-unknown-unknown/release/x86-log.wasm"
-            )[..],
+            &include_bytes!("../../../modules/target/wasm32-unknown-unknown/release/x86-log.wasm")
+                [..],
         )
         .unwrap();
         #[cfg(target_arch = "arm")]
         let log_module = redshirt_core::module::Module::from_bytes(
-            &include_bytes!(
-                "../../../modules/target/wasm32-unknown-unknown/release/arm-log.wasm"
-            )[..],
+            &include_bytes!("../../../modules/target/wasm32-unknown-unknown/release/arm-log.wasm")
+                [..],
         )
         .unwrap();
 
