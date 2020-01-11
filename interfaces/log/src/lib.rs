@@ -20,19 +20,54 @@
 
 extern crate alloc;
 
-use alloc::string::String;
+use alloc::{format, string::String};
 
 pub mod ffi;
 
-/// Sends a string to be printed on stdout.
+pub use ffi::Level;
+
+/// Appends a string to the logs of the program.
 ///
 /// # About `\r` vs `\n`
 ///
 /// In order to follow the Unix world, the character `\n` (LF, 0xA) means "new line". The
 /// character `\r` (CR, 0xD) is ignored.
-pub fn stdout(msg: String) {
+pub fn log(level: Level, msg: String) {
     unsafe {
-        let msg = ffi::StdoutMessage::Message(msg);
+        let msg = ffi::LogMessage::Message(level, msg);
         redshirt_syscalls_interface::emit_message_without_response(&ffi::INTERFACE, &msg).unwrap();
+    }
+}
+
+pub struct EnvLogger;
+
+pub fn try_init() -> Result<(), log::SetLoggerError> {
+    static LOGGER: EnvLogger = EnvLogger;
+    log::set_logger(&LOGGER)
+}
+
+pub fn init() {
+    try_init().unwrap();
+}
+
+impl log::Log for EnvLogger {
+    fn enabled(&self, _: &log::Metadata) -> bool {
+        true
+    }
+
+    fn log(&self, record: &log::Record) {
+        let level = match record.level() {
+            log::Level::Error => Level::Error,
+            log::Level::Warn => Level::Warn,
+            log::Level::Info => Level::Info,
+            log::Level::Debug => Level::Debug,
+            log::Level::Trace => Level::Trace,
+        };
+
+        // TODO: ideally we wouldn't allocate any memory in order to print out
+        log(level, format!("{}:{} -- {}", record.level(), record.target(), record.args()));
+    }
+
+    fn flush(&self) {
     }
 }

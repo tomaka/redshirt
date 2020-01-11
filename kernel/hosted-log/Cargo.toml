@@ -1,5 +1,5 @@
 [package]
-name = "redshirt-stdout-hosted"
+name = "redshirt-log-hosted"
 version = "0.1.0"
 license = "GPL-3.0-or-later"
 authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
@@ -10,4 +10,4 @@ publish = false
 futures = "0.3.0"
 redshirt-core = { path = "../../core" }
 redshirt-interface-interface = { path = "../../interfaces/interface" }
-redshirt-stdout-interface = { path = "../../interfaces/stdout" }
+redshirt-log-interface = { path = "../../interfaces/log" }

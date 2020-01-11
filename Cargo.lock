@@ -852,8 +852,8 @@ dependencies = [
  "futures 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "redshirt-core 0.1.0",
- "redshirt-stdout-hosted 0.1.0",
- "redshirt-stdout-interface 0.1.0",
+ "redshirt-log-hosted 0.1.0",
+ "redshirt-log-interface 0.1.0",
  "redshirt-syscalls-interface 0.1.0",
  "redshirt-tcp-interface 0.1.0",
  "redshirt-time-hosted 0.1.0",
@@ -915,6 +915,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "redshirt-log-hosted"
+version = "0.1.0"
+dependencies = [
+ "futures 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "redshirt-core 0.1.0",
+ "redshirt-interface-interface 0.1.0",
+ "redshirt-log-interface 0.1.0",
+]
+
+[[package]]
+name = "redshirt-log-interface"
+version = "0.1.0"
+dependencies = [
+ "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
+ "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "redshirt-syscalls-interface 0.1.0",
+]
+
+[[package]]
 name = "redshirt-pci-interface"
 version = "0.1.0"
 dependencies = [
@@ -952,31 +971,13 @@ dependencies = [
  "redshirt-core 0.1.0",
  "redshirt-hardware-interface 0.1.0",
  "redshirt-interface-interface 0.1.0",
+ "redshirt-log-interface 0.1.0",
  "redshirt-random-interface 0.1.0",
- "redshirt-stdout-interface 0.1.0",
  "redshirt-syscalls-interface 0.1.0",
  "sha2 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "spin 0.5.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "walkdir 2.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
  "x86_64 0.8.2 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "redshirt-stdout-hosted"
-version = "0.1.0"
-dependencies = [
- "futures 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "redshirt-core 0.1.0",
- "redshirt-interface-interface 0.1.0",
- "redshirt-stdout-interface 0.1.0",
-]
-
-[[package]]
-name = "redshirt-stdout-interface"
-version = "0.1.0"
-dependencies = [
- "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "redshirt-syscalls-interface 0.1.0",
 ]
 
 [[package]]
