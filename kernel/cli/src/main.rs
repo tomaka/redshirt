@@ -15,18 +15,17 @@
 
 #![deny(intra_doc_link_resolution_failure)]
 
-use futures::{channel::mpsc, pin_mut, prelude::*};
-use parity_scale_codec::DecodeAll;
-use std::{fs, path::PathBuf, process, sync::Arc};
+use futures::prelude::*;
+use std::{fs, path::PathBuf, process};
 use structopt::StructOpt;
 use winit::event_loop::EventLoop;
 
 #[derive(Debug, StructOpt)]
-#[structopt(name = "redshirt", about = "Redshirt modules executor.")]
+#[structopt(name = "redshirt-cli", about = "Redshirt modules executor.")]
 struct CliOptions {
-    /// Input file.
+    /// WASM file to run.
     #[structopt(parse(from_os_str))]
-    input: Option<PathBuf>,
+    wasm_file: PathBuf,
 }
 
 fn main() {
@@ -38,15 +37,9 @@ async fn async_main() {
 
     let cli_requested_process = {
         let cli_opts = CliOptions::from_args();
-        if let Some(input) = cli_opts.input {
-            let file_content = fs::read(input).expect("failed to read input file");
-            Some(
-                redshirt_core::module::Module::from_bytes(&file_content)
-                    .expect("failed to parse input file"),
-            )
-        } else {
-            None
-        }
+        let wasm_file_content = fs::read(cli_opts.wasm_file).expect("failed to read input file");
+        redshirt_core::module::Module::from_bytes(&wasm_file_content)
+            .expect("failed to parse input file")
     };
 
     let window = winit::window::Window::new(&event_loop).unwrap();
@@ -57,11 +50,7 @@ async fn async_main() {
         .with_native_program(redshirt_webgpu_hosted::WebGPUHandler::new(window))
         .build();
 
-    let cli_pid = if let Some(cli_requested_process) = cli_requested_process {
-        Some(system.execute(&cli_requested_process))
-    } else {
-        None
-    };
+    let cli_pid = system.execute(&cli_requested_process);
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = winit::event_loop::ControlFlow::Poll;
@@ -83,16 +72,16 @@ async fn async_main() {
         let outcome = system.run().now_or_never();
         match outcome {
             None => {},
-            Some(redshirt_core::system::SystemRunOutcome::ProgramFinished { pid, outcome }) => {
-                if cli_pid == Some(pid) {
-                    process::exit(match outcome {
-                        Ok(_) => 0,
-                        Err(err) => {
-                            println!("{:?}", err);
-                            1
-                        }
-                    });
-                }
+            Some(redshirt_core::system::SystemRunOutcome::ProgramFinished { pid, outcome })
+                if pid == cli_pid =>
+            {
+                process::exit(match outcome {
+                    Ok(_) => 0,
+                    Err(err) => {
+                        println!("{:?}", err);
+                        1
+                    }
+                });
             }
             _ => panic!(),
         }
