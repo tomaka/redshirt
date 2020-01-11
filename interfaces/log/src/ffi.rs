@@ -26,7 +26,6 @@
 /// - Debug: 1
 /// - Trace: 0
 ///
-
 use core::{convert::TryFrom, str};
 use redshirt_syscalls_interface::{Decode, EncodedMessage, InterfaceHash};
 
@@ -68,7 +67,7 @@ impl TryFrom<u8> for Level {
             2 => Level::Info,
             1 => Level::Debug,
             0 => Level::Trace,
-            _ => return Err(())
+            _ => return Err(()),
         })
     }
 }
@@ -78,14 +77,11 @@ impl Decode for DecodedLogMessage {
 
     fn decode(buffer: EncodedMessage) -> Result<Self, ()> {
         if buffer.0.is_empty() {
-            return Err(())
+            return Err(());
         }
         let level = Level::try_from(buffer.0[0])?;
         let _ = str::from_utf8(&buffer.0[1..]).map_err(|_| ())?;
-        Ok(DecodedLogMessage {
-            level,
-            buffer,
-        })
+        Ok(DecodedLogMessage { level, buffer })
     }
 }
 
