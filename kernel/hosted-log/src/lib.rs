@@ -18,9 +18,8 @@
 use futures::prelude::*;
 use redshirt_core::native::{DummyMessageIdWrite, NativeProgramEvent, NativeProgramRef};
 use redshirt_core::{Decode as _, Encode as _, EncodedMessage, InterfaceHash, MessageId, Pid};
-use redshirt_log_interface::ffi::{LogMessage, INTERFACE};
+use redshirt_log_interface::ffi::{LogMessage, Level, INTERFACE};
 use std::{
-    io::{self, Write as _},
     pin::Pin,
     sync::atomic,
 };
@@ -29,6 +28,8 @@ use std::{
 pub struct LogHandler {
     /// If true, we have sent the interface registration message.
     registered: atomic::AtomicBool,
+    /// If true, enable terminal colors when printing the log messages.
+    enable_colors: bool,
 }
 
 impl LogHandler {
@@ -36,6 +37,7 @@ impl LogHandler {
     pub fn new() -> Self {
         LogHandler {
             registered: atomic::AtomicBool::new(false),
+            enable_colors: atty::is(atty::Stream::Stdout),
         }
     }
 }
@@ -68,19 +70,30 @@ impl<'a> NativeProgramRef<'a> for &'a LogHandler {
         self,
         interface: InterfaceHash,
         _message_id: Option<MessageId>,
-        _emitter_pid: Pid,
+        emitter_pid: Pid,
         message: EncodedMessage,
     ) {
         debug_assert_eq!(interface, INTERFACE);
 
         match LogMessage::decode(message) {
-            Ok(LogMessage::Message(_, msg)) => {
-                let mut stdout = io::stdout();
-                stdout.write_all(msg.as_bytes()).unwrap();
-                stdout.write_all(&[b'\n']).unwrap();
-                stdout.flush().unwrap();
-            }
-            Err(_) => panic!(),
+            Ok(LogMessage::Message(level, mut msg)) => {
+                // Remove any control character from log messages, in order to prevent programs
+                // from polluting the terminal.
+                msg.retain(|c| !c.is_control());
+                let mut header_style = ansi_term::Style::default();
+                let level = match level {
+                    Level::Error => "ERROR",
+                    Level::Warn => "WARN",
+                    Level::Info => "INFO",
+                    Level::Debug => "DEBUG",
+                    Level::Trace => "TRACE",
+                };
+                if self.enable_colors {
+                    header_style.is_dimmed = true;
+                }
+                println!("{}[{:?}] [{}]{} {}", header_style.prefix(), emitter_pid, level, header_style.suffix(), msg);
+            },
+            Err(_) => println!("bad log message from {:?}", emitter_pid),
         }
     }
 
