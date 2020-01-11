@@ -219,7 +219,7 @@ impl fmt::Debug for InterfaceHash {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "InterfaceHash(0x")?;
         for byte in &self.0 {
-            write!(f, "{:016x}", *byte)?
+            write!(f, "{:02x}", *byte)?
         }
         write!(f, ")")?;
         Ok(())
