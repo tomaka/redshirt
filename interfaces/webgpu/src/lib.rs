@@ -70,18 +70,14 @@ static NEXT_OBJECT_ID: atomic::AtomicU64 = atomic::AtomicU64::new(1);
 ///
 /// There is no way to construct a [`ImageBitmap`] in this crate.
 #[derive(Debug, parity_scale_codec::Encode, parity_scale_codec::Decode)]
-pub struct ImageBitmap {
-}
+pub struct ImageBitmap {}
 
 #[derive(Debug, parity_scale_codec::Encode, parity_scale_codec::Decode)]
-pub struct ArrayBuffer {
-}
+pub struct ArrayBuffer {}
 
-pub struct Navigator {
-}
+pub struct Navigator {}
 
-pub struct WorkerNavigator {
-}
+pub struct WorkerNavigator {}
 
 // https://dom.spec.whatwg.org/#dictdef-eventinit
 #[derive(Debug, parity_scale_codec::Encode, parity_scale_codec::Decode)]
@@ -91,7 +87,7 @@ pub struct EventInit {
     pub composed: bool,
 }
 
-pub const GPU: GPU = GPU { inner: 0 };      // TODO: hack
-pub const GPUCanvasContext: GPUCanvasContext = GPUCanvasContext { inner: 0 };      // TODO: hack
+pub const GPU: GPU = GPU { inner: 0 }; // TODO: hack
+pub const GPUCanvasContext: GPUCanvasContext = GPUCanvasContext { inner: 0 }; // TODO: hack
 
 include!(concat!(env!("OUT_DIR"), "/webgpu.rs"));

@@ -70,7 +70,10 @@ async fn async_main() {
     })
 }
 
-fn block_on(event_loop: EventLoop<()>, future: impl Future<Output = std::convert::Infallible> + 'static) -> ! {
+fn block_on(
+    event_loop: EventLoop<()>,
+    future: impl Future<Output = std::convert::Infallible> + 'static,
+) -> ! {
     struct Waker {
         proxy: Mutex<winit::event_loop::EventLoopProxy<()>>,
     }
@@ -101,15 +104,18 @@ fn block_on(event_loop: EventLoop<()>, future: impl Future<Output = std::convert
             } => {
                 println!("The close button was pressed; stopping");
                 *control_flow = winit::event_loop::ControlFlow::Exit;
-            },
+            }
             winit::event::Event::MainEventsCleared => {
-                match Future::poll(future.as_mut(), &mut futures::task::Context::from_waker(&waker)) {
+                match Future::poll(
+                    future.as_mut(),
+                    &mut futures::task::Context::from_waker(&waker),
+                ) {
                     Poll::Ready(v) => match v {}, // unreachable
                     Poll::Pending => {}
                 }
-            },
+            }
             // TODO: handle RedrawRequested as well?
-            msg => { println!("{:?}", msg) }  // TODO: remove println
+            msg => println!("{:?}", msg), // TODO: remove println
         }
 
         // FIXME: we get stuck during the polling

@@ -25,13 +25,7 @@ use redshirt_core::native::{
 };
 use redshirt_core::{Decode as _, Encode as _, EncodedMessage, InterfaceHash, MessageId, Pid};
 use redshirt_webgpu_interface::ffi::{self, WebGPUMessage, INTERFACE};
-use std::{
-    collections::HashMap,
-    ffi::CString,
-    pin::Pin,
-    ptr,
-    sync::atomic,
-};
+use std::{collections::HashMap, ffi::CString, pin::Pin, ptr, sync::atomic};
 
 /// State machine for `webgpu` interface messages handling.
 pub struct WebGPUHandler {
@@ -99,10 +93,7 @@ impl<'a> NativeProgramRef<'a> for &'a WebGPUHandler {
 
             let mut pending_messages = self.pending_messages.lock().await;
             let (message_id, answer) = pending_messages.next().await.unwrap();
-            NativeProgramEvent::Answer {
-                message_id,
-                answer,
-            }
+            NativeProgramEvent::Answer { message_id, answer }
         })
     }
 
@@ -118,19 +109,27 @@ impl<'a> NativeProgramRef<'a> for &'a WebGPUHandler {
         let mut active = self.active.lock();
         match WebGPUMessage::decode(message) {
             Ok(msg) => match handle_message(&mut active, emitter_pid, &self.window, msg) {
-                Ok(None) => {},
-                Ok(Some(answer)) => if let Some(message_id) = message_id {
-                    self.pending_messages_tx.unbounded_send((message_id, Ok(answer))).unwrap();
+                Ok(None) => {}
+                Ok(Some(answer)) => {
+                    if let Some(message_id) = message_id {
+                        self.pending_messages_tx
+                            .unbounded_send((message_id, Ok(answer)))
+                            .unwrap();
+                    }
                 }
                 Err(()) => {
                     if let Some(message_id) = message_id {
-                        self.pending_messages_tx.unbounded_send((message_id, Err(()))).unwrap();
+                        self.pending_messages_tx
+                            .unbounded_send((message_id, Err(())))
+                            .unwrap();
                     }
-                },
+                }
             },
             Err(_) => {
                 if let Some(message_id) = message_id {
-                    self.pending_messages_tx.unbounded_send((message_id, Err(()))).unwrap();
+                    self.pending_messages_tx
+                        .unbounded_send((message_id, Err(())))
+                        .unwrap();
                 }
             }
         }
@@ -150,10 +149,15 @@ impl<'a> NativeProgramRef<'a> for &'a WebGPUHandler {
     }
 }
 
-fn handle_message(active: &mut Option<ActiveState>, emitter_pid: Pid, window: &winit::window::Window, message: WebGPUMessage) -> Result<Option<EncodedMessage>, ()> {
+fn handle_message(
+    active: &mut Option<ActiveState>,
+    emitter_pid: Pid,
+    window: &winit::window::Window,
+    message: WebGPUMessage,
+) -> Result<Option<EncodedMessage>, ()> {
     match message {
         WebGPUMessage::GPURequestAdapter { options, .. } => {
-            assert!(active.is_none());      // TODO: return error instead
+            assert!(active.is_none()); // TODO: return error instead
 
             unsafe extern "C" fn adapter_callback(
                 id: wgpu_core::id::AdapterId,
@@ -167,8 +171,12 @@ fn handle_message(active: &mut Option<ActiveState>, emitter_pid: Pid, window: &w
                 Some(&wgpu_core::instance::RequestAdapterOptions {
                     power_preference: match options.power_preference {
                         None => wgpu_core::instance::PowerPreference::Default,
-                        Some(ffi::GPUPowerPreference::LowPower) => wgpu_core::instance::PowerPreference::LowPower,
-                        Some(ffi::GPUPowerPreference::HighPerformance) => wgpu_core::instance::PowerPreference::HighPerformance,
+                        Some(ffi::GPUPowerPreference::LowPower) => {
+                            wgpu_core::instance::PowerPreference::LowPower
+                        }
+                        Some(ffi::GPUPowerPreference::HighPerformance) => {
+                            wgpu_core::instance::PowerPreference::HighPerformance
+                        }
                     },
                 }),
                 wgpu_core::instance::BackendBit::all(),
@@ -196,28 +204,35 @@ fn handle_message(active: &mut Option<ActiveState>, emitter_pid: Pid, window: &w
             });
 
             Ok(Some(0xdeadbeefu64.encode()))
-        },
+        }
 
         WebGPUMessage::GPUAdapterRequestDevice { this, descriptor } => {
-            let state = active.as_mut().unwrap();     // TODO:
+            let state = active.as_mut().unwrap(); // TODO:
             assert_eq!(state.pid, emitter_pid);
 
             // TODO: options
-            let device = wgpu_native::wgpu_adapter_request_device(state.adapter, Some(&wgpu_core::instance::DeviceDescriptor::default()));
+            let device = wgpu_native::wgpu_adapter_request_device(
+                state.adapter,
+                Some(&wgpu_core::instance::DeviceDescriptor::default()),
+            );
             let queue = wgpu_native::wgpu_device_get_queue(device);
             let device_id = state.next_device_id;
             state.next_device_id += 1;
             state.devices.insert(device_id, (device, queue));
             Ok(Some(device_id.encode()))
-        },
+        }
 
         WebGPUMessage::GPUDeviceGetDefaultQueue { .. } => {
             // TODO: we don't do anything; this message is badly-designed right now and we should normally return a QueueID
             Ok(None)
-        },
+        }
 
-        WebGPUMessage::GPUDeviceCreateShaderModule { this, return_value, descriptor } => {
-            let state = active.as_mut().unwrap();     // TODO:
+        WebGPUMessage::GPUDeviceCreateShaderModule {
+            this,
+            return_value,
+            descriptor,
+        } => {
+            let state = active.as_mut().unwrap(); // TODO:
             assert_eq!(state.pid, emitter_pid);
             let device = state.devices.get(&this).unwrap();
             let desc = wgpu_core::pipeline::ShaderModuleDescriptor {
@@ -229,29 +244,42 @@ fn handle_message(active: &mut Option<ActiveState>, emitter_pid: Pid, window: &w
             let shader_module = wgpu_native::wgpu_device_create_shader_module(device.0, &desc);
             state.shader_modules.insert(return_value, shader_module);
             Ok(None)
-        },
+        }
 
-        WebGPUMessage::GPUDeviceCreateBindGroupLayout { this, return_value, descriptor } => {
-            let state = active.as_mut().unwrap();     // TODO:
+        WebGPUMessage::GPUDeviceCreateBindGroupLayout {
+            this,
+            return_value,
+            descriptor,
+        } => {
+            let state = active.as_mut().unwrap(); // TODO:
             assert_eq!(state.pid, emitter_pid);
             let device = state.devices.get(&this).unwrap();
-            let bindings = descriptor.bindings.iter().map(|layout| {
-                wgpu_core::binding_model::BindGroupLayoutBinding {
-                    binding: layout.binding,
-                    visibility: wgpu_core::binding_model::ShaderStage::from_bits(layout.visibility).unwrap(),       // TODO:
-                    ty: match layout.r#type {
-                        ffi::GPUBindingType::UniformBuffer => unimplemented!(),//wgpu_core::BindingType::UniformBuffer,
-                        ffi::GPUBindingType::StorageBuffer => unimplemented!(),//wgpu_core::BindingType::StorageBuffer,
-                        ffi::GPUBindingType::ReadonlyStorageBuffer => unimplemented!(),//wgpu_core::BindingType::ReadonlyStorageBuffer,
-                        ffi::GPUBindingType::Sampler => wgpu_core::binding_model::BindingType::Sampler,
-                        ffi::GPUBindingType::SampledTexture => unimplemented!(),//wgpu_core::BindingType::SampledTexture,
-                        ffi::GPUBindingType::StorageTexture => unimplemented!(),//wgpu_core::BindingType::StorageTexture,
-                    },
-                    dynamic: false, // TODO:
-                    multisampled: false, // TODO:
-                    texture_dimension: wgpu_core::resource::TextureViewDimension::D2, // TODO:
-                }
-            }).collect::<Vec<_>>();
+            let bindings = descriptor
+                .bindings
+                .iter()
+                .map(|layout| {
+                    wgpu_core::binding_model::BindGroupLayoutBinding {
+                        binding: layout.binding,
+                        visibility: wgpu_core::binding_model::ShaderStage::from_bits(
+                            layout.visibility,
+                        )
+                        .unwrap(), // TODO:
+                        ty: match layout.r#type {
+                            ffi::GPUBindingType::UniformBuffer => unimplemented!(), //wgpu_core::BindingType::UniformBuffer,
+                            ffi::GPUBindingType::StorageBuffer => unimplemented!(), //wgpu_core::BindingType::StorageBuffer,
+                            ffi::GPUBindingType::ReadonlyStorageBuffer => unimplemented!(), //wgpu_core::BindingType::ReadonlyStorageBuffer,
+                            ffi::GPUBindingType::Sampler => {
+                                wgpu_core::binding_model::BindingType::Sampler
+                            }
+                            ffi::GPUBindingType::SampledTexture => unimplemented!(), //wgpu_core::BindingType::SampledTexture,
+                            ffi::GPUBindingType::StorageTexture => unimplemented!(), //wgpu_core::BindingType::StorageTexture,
+                        },
+                        dynamic: false,      // TODO:
+                        multisampled: false, // TODO:
+                        texture_dimension: wgpu_core::resource::TextureViewDimension::D2, // TODO:
+                    }
+                })
+                .collect::<Vec<_>>();
             let bind_group_layout = wgpu_native::wgpu_device_create_bind_group_layout(
                 device.0,
                 &wgpu_core::binding_model::BindGroupLayoutDescriptor {
@@ -259,21 +287,31 @@ fn handle_message(active: &mut Option<ActiveState>, emitter_pid: Pid, window: &w
                     bindings_length: bindings.len(),
                 },
             );
-            state.bind_group_layouts.insert(return_value, bind_group_layout);
+            state
+                .bind_group_layouts
+                .insert(return_value, bind_group_layout);
             Ok(None)
-        },
+        }
 
-        WebGPUMessage::GPUDeviceCreateBindGroup { this, return_value, descriptor } => {
-            let state = active.as_mut().unwrap();     // TODO:
+        WebGPUMessage::GPUDeviceCreateBindGroup {
+            this,
+            return_value,
+            descriptor,
+        } => {
+            let state = active.as_mut().unwrap(); // TODO:
             assert_eq!(state.pid, emitter_pid);
             let device = state.devices.get(&this).unwrap();
-            let bindings = descriptor.bindings.iter().map(|binding| {
-                /*wgpu_core::binding_model::BindGroupBinding {
-                    binding: binding.binding,
-                    resource: 
-                }*/
-                unimplemented!()
-            }).collect::<Vec<_>>();
+            let bindings = descriptor
+                .bindings
+                .iter()
+                .map(|binding| {
+                    /*wgpu_core::binding_model::BindGroupBinding {
+                        binding: binding.binding,
+                        resource:
+                    }*/
+                    unimplemented!()
+                })
+                .collect::<Vec<_>>();
             let bind_group = wgpu_native::wgpu_device_create_bind_group(
                 device.0,
                 &wgpu_core::binding_model::BindGroupDescriptor {
@@ -284,15 +322,23 @@ fn handle_message(active: &mut Option<ActiveState>, emitter_pid: Pid, window: &w
             );
             state.bind_groups.insert(return_value, bind_group);
             Ok(None)
-        },
+        }
 
-        WebGPUMessage::GPUDeviceCreatePipelineLayout { this, return_value, descriptor } => {
-            let state = active.as_mut().unwrap();     // TODO:
+        WebGPUMessage::GPUDeviceCreatePipelineLayout {
+            this,
+            return_value,
+            descriptor,
+        } => {
+            let state = active.as_mut().unwrap(); // TODO:
             assert_eq!(state.pid, emitter_pid);
             let device = state.devices.get(&this).unwrap();
-            let bind_group_layouts = descriptor.bind_group_layouts.iter().map(|gr| {
-                *state.bind_group_layouts.get(&gr).unwrap()  // TODO:
-            }).collect::<Vec<_>>();
+            let bind_group_layouts = descriptor
+                .bind_group_layouts
+                .iter()
+                .map(|gr| {
+                    *state.bind_group_layouts.get(&gr).unwrap() // TODO:
+                })
+                .collect::<Vec<_>>();
             let pipeline_layout = wgpu_native::wgpu_device_create_pipeline_layout(
                 device.0,
                 &wgpu_core::binding_model::PipelineLayoutDescriptor {
@@ -302,20 +348,31 @@ fn handle_message(active: &mut Option<ActiveState>, emitter_pid: Pid, window: &w
             );
             state.pipeline_layouts.insert(return_value, pipeline_layout);
             Ok(None)
-        },
+        }
 
-        WebGPUMessage::GPUDeviceCreateRenderPipeline { this, return_value, descriptor } => {
-            let state = active.as_mut().unwrap();     // TODO:
+        WebGPUMessage::GPUDeviceCreateRenderPipeline {
+            this,
+            return_value,
+            descriptor,
+        } => {
+            let state = active.as_mut().unwrap(); // TODO:
             assert_eq!(state.pid, emitter_pid);
             let device = state.devices.get(&this).unwrap();
-            let color_states = descriptor.color_states.into_iter().map(|cs| {
-                wgpu_core::pipeline::ColorStateDescriptor {
-                    format: convert_texture_format(cs.format),
-                    alpha_blend: Default::default(),  // FIXME:
-                    color_blend: Default::default(),  // FIXME:
-                    write_mask: wgpu_core::pipeline::ColorWrite::from_bits(cs.write_mask.unwrap_or(0xf)).unwrap(), // TODO:
-                }
-            }).collect::<Vec<_>>();
+            let color_states = descriptor
+                .color_states
+                .into_iter()
+                .map(|cs| {
+                    wgpu_core::pipeline::ColorStateDescriptor {
+                        format: convert_texture_format(cs.format),
+                        alpha_blend: Default::default(), // FIXME:
+                        color_blend: Default::default(), // FIXME:
+                        write_mask: wgpu_core::pipeline::ColorWrite::from_bits(
+                            cs.write_mask.unwrap_or(0xf),
+                        )
+                        .unwrap(), // TODO:
+                    }
+                })
+                .collect::<Vec<_>>();
             let vertex_entry_point = CString::new(descriptor.vertex_stage.entry_point).unwrap();
             let fragment_entry_point = if let Some(fragment_stage) = &descriptor.fragment_stage {
                 CString::new(fragment_stage.entry_point.clone()).unwrap()
@@ -324,7 +381,7 @@ fn handle_message(active: &mut Option<ActiveState>, emitter_pid: Pid, window: &w
             };
             let fragment_stage = descriptor.fragment_stage.as_ref().map(|fragment_stage| {
                 wgpu_core::pipeline::ProgrammableStageDescriptor {
-                    module: *state.shader_modules.get(&fragment_stage.module).unwrap(),    // TODO:
+                    module: *state.shader_modules.get(&fragment_stage.module).unwrap(), // TODO:
                     entry_point: fragment_entry_point.as_ptr(),
                 }
             });
@@ -342,65 +399,114 @@ fn handle_message(active: &mut Option<ActiveState>, emitter_pid: Pid, window: &w
                         Some(ffi::GPUCullMode::None) | None => wgpu_core::pipeline::CullMode::None,
                     },
                     depth_bias: raster.depth_bias.unwrap_or(0),
-                    depth_bias_slope_scale: raster.depth_bias_slope_scale.map(|f| f32::from(f)).unwrap_or(0.0),
+                    depth_bias_slope_scale: raster
+                        .depth_bias_slope_scale
+                        .map(|f| f32::from(f))
+                        .unwrap_or(0.0),
                     depth_bias_clamp: raster.depth_bias_clamp.map(|f| f32::from(f)).unwrap_or(0.0),
                 }
             });
 
             let vertex_buffers = Vec::new(); // FIXME:
 
-            let render_pipeline = wgpu_native::wgpu_device_create_render_pipeline(device.0, &wgpu_core::pipeline::RenderPipelineDescriptor {
-                layout: *state.pipeline_layouts.get(&descriptor.parent.layout).unwrap(),
-                vertex_stage: wgpu_core::pipeline::ProgrammableStageDescriptor {
-                    module: *state.shader_modules.get(&descriptor.vertex_stage.module).unwrap(),    // TODO:
-                    entry_point: vertex_entry_point.as_ptr(),
-                },
-                fragment_stage: fragment_stage.as_ref().map_or(ptr::null(), |p| p as *const _),
-                rasterization_state: rasterization_state.as_ref().map_or(ptr::null(), |p| p as *const _),
-                primitive_topology: match descriptor.primitive_topology {
-                    ffi::GPUPrimitiveTopology::PointList => wgpu_core::pipeline::PrimitiveTopology::PointList,
-                    ffi::GPUPrimitiveTopology::LineList => wgpu_core::pipeline::PrimitiveTopology::LineList,
-                    ffi::GPUPrimitiveTopology::LineStrip => wgpu_core::pipeline::PrimitiveTopology::LineStrip,
-                    ffi::GPUPrimitiveTopology::TriangleList => wgpu_core::pipeline::PrimitiveTopology::TriangleList,
-                    ffi::GPUPrimitiveTopology::TriangleStrip => wgpu_core::pipeline::PrimitiveTopology::TriangleStrip,
-                },
-                color_states: color_states.as_ptr(),
-                color_states_length: color_states.len(),
-                depth_stencil_state: ptr::null(), // FIXME:
-                vertex_input: wgpu_core::pipeline::VertexInputDescriptor {
-                    index_format: match descriptor.vertex_state.as_ref().and_then(|vs| vs.index_format.as_ref()) {
-                        Some(ffi::GPUIndexFormat::Uint16) => wgpu_core::pipeline::IndexFormat::Uint16,
-                        None | Some(ffi::GPUIndexFormat::Uint32) => wgpu_core::pipeline::IndexFormat::Uint32,
+            let render_pipeline = wgpu_native::wgpu_device_create_render_pipeline(
+                device.0,
+                &wgpu_core::pipeline::RenderPipelineDescriptor {
+                    layout: *state
+                        .pipeline_layouts
+                        .get(&descriptor.parent.layout)
+                        .unwrap(),
+                    vertex_stage: wgpu_core::pipeline::ProgrammableStageDescriptor {
+                        module: *state
+                            .shader_modules
+                            .get(&descriptor.vertex_stage.module)
+                            .unwrap(), // TODO:
+                        entry_point: vertex_entry_point.as_ptr(),
                     },
-                    vertex_buffers: vertex_buffers.as_ptr(),
-                    vertex_buffers_length: vertex_buffers.len(),
+                    fragment_stage: fragment_stage
+                        .as_ref()
+                        .map_or(ptr::null(), |p| p as *const _),
+                    rasterization_state: rasterization_state
+                        .as_ref()
+                        .map_or(ptr::null(), |p| p as *const _),
+                    primitive_topology: match descriptor.primitive_topology {
+                        ffi::GPUPrimitiveTopology::PointList => {
+                            wgpu_core::pipeline::PrimitiveTopology::PointList
+                        }
+                        ffi::GPUPrimitiveTopology::LineList => {
+                            wgpu_core::pipeline::PrimitiveTopology::LineList
+                        }
+                        ffi::GPUPrimitiveTopology::LineStrip => {
+                            wgpu_core::pipeline::PrimitiveTopology::LineStrip
+                        }
+                        ffi::GPUPrimitiveTopology::TriangleList => {
+                            wgpu_core::pipeline::PrimitiveTopology::TriangleList
+                        }
+                        ffi::GPUPrimitiveTopology::TriangleStrip => {
+                            wgpu_core::pipeline::PrimitiveTopology::TriangleStrip
+                        }
+                    },
+                    color_states: color_states.as_ptr(),
+                    color_states_length: color_states.len(),
+                    depth_stencil_state: ptr::null(), // FIXME:
+                    vertex_input: wgpu_core::pipeline::VertexInputDescriptor {
+                        index_format: match descriptor
+                            .vertex_state
+                            .as_ref()
+                            .and_then(|vs| vs.index_format.as_ref())
+                        {
+                            Some(ffi::GPUIndexFormat::Uint16) => {
+                                wgpu_core::pipeline::IndexFormat::Uint16
+                            }
+                            None | Some(ffi::GPUIndexFormat::Uint32) => {
+                                wgpu_core::pipeline::IndexFormat::Uint32
+                            }
+                        },
+                        vertex_buffers: vertex_buffers.as_ptr(),
+                        vertex_buffers_length: vertex_buffers.len(),
+                    },
+                    sample_count: descriptor.sample_count.unwrap_or(1),
+                    sample_mask: descriptor.sample_mask.unwrap_or(0xffffffff),
+                    alpha_to_coverage_enabled: descriptor
+                        .alpha_to_coverage_enabled
+                        .unwrap_or(false),
                 },
-                sample_count: descriptor.sample_count.unwrap_or(1),
-                sample_mask: descriptor.sample_mask.unwrap_or(0xffffffff),
-                alpha_to_coverage_enabled: descriptor.alpha_to_coverage_enabled.unwrap_or(false),
-            });
+            );
             state.render_pipelines.insert(return_value, render_pipeline);
             Ok(None)
-        },
+        }
 
-        WebGPUMessage::GPUCanvasContextConfigureSwapChain { this, return_value, descriptor } => {
-            let state = active.as_mut().unwrap();     // TODO:
+        WebGPUMessage::GPUCanvasContextConfigureSwapChain {
+            this,
+            return_value,
+            descriptor,
+        } => {
+            let state = active.as_mut().unwrap(); // TODO:
             assert_eq!(state.pid, emitter_pid);
             let device = state.devices.get(&descriptor.device).unwrap(); // TODO: don't unwrap
-            // TODO: this function destroys all previous swapchains including textures
+                                                                         // TODO: this function destroys all previous swapchains including textures
             let size = window.inner_size();
             let surface = wgpu_native::wgpu_create_surface(window.raw_window_handle());
             let surface = wgpu_native::wgpu_create_surface(window.raw_window_handle());
-            let swap_chain = wgpu_native::wgpu_device_create_swap_chain(device.0, surface, &wgpu_core::swap_chain::SwapChainDescriptor {
-                usage: wgpu_core::resource::TextureUsage::from_bits(descriptor.usage.unwrap_or(0x10)).unwrap(), // TODO:
-                format: convert_texture_format(descriptor.format),
-                width: size.width,
-                height: size.height,
-                present_mode: wgpu_core::swap_chain::PresentMode::NoVsync, // TODO:
-            });
-            state.swap_chains.insert(return_value, (surface, swap_chain));
+            let swap_chain = wgpu_native::wgpu_device_create_swap_chain(
+                device.0,
+                surface,
+                &wgpu_core::swap_chain::SwapChainDescriptor {
+                    usage: wgpu_core::resource::TextureUsage::from_bits(
+                        descriptor.usage.unwrap_or(0x10),
+                    )
+                    .unwrap(), // TODO:
+                    format: convert_texture_format(descriptor.format),
+                    width: size.width,
+                    height: size.height,
+                    present_mode: wgpu_core::swap_chain::PresentMode::NoVsync, // TODO:
+                },
+            );
+            state
+                .swap_chains
+                .insert(return_value, (surface, swap_chain));
             Ok(None)
-        },
+        }
 
         WebGPUMessage::GPUSwapChainGetCurrentTexture { this, return_value } => {
             // TODO: this message is badly-designed
@@ -408,51 +514,74 @@ fn handle_message(active: &mut Option<ActiveState>, emitter_pid: Pid, window: &w
             assert_eq!(state.pid, emitter_pid);
             let swap_chain = state.swap_chains.get(&this).unwrap(); // TODO: don't unwrap*/
             Ok(None)
-        },
+        }
 
-        WebGPUMessage::GPUTextureCreateView { this, return_value, descriptor } => {
+        WebGPUMessage::GPUTextureCreateView {
+            this,
+            return_value,
+            descriptor,
+        } => {
             // TODO: we assume that this is the swap chain texture view for now
             /*let state = active.as_mut().unwrap();     // TODO:
             assert_eq!(state.pid, emitter_pid);
             let texture = state.textures.get(&this).unwrap();*/
             Ok(None)
-        },
+        }
 
-        WebGPUMessage::GPUDeviceCreateCommandEncoder { this, return_value, descriptor } => {
-            let state = active.as_mut().unwrap();     // TODO:
+        WebGPUMessage::GPUDeviceCreateCommandEncoder {
+            this,
+            return_value,
+            descriptor,
+        } => {
+            let state = active.as_mut().unwrap(); // TODO:
             assert_eq!(state.pid, emitter_pid);
             let device = state.devices.get(&this).unwrap();
-            let command_encoder = wgpu_native::wgpu_device_create_command_encoder(device.0, Some(&wgpu_core::command::CommandEncoderDescriptor {
-                todo: 0,
-            }));
+            let command_encoder = wgpu_native::wgpu_device_create_command_encoder(
+                device.0,
+                Some(&wgpu_core::command::CommandEncoderDescriptor { todo: 0 }),
+            );
             state.command_encoders.insert(return_value, command_encoder);
             Ok(None)
-        },
+        }
 
-        WebGPUMessage::GPUCommandEncoderBeginRenderPass { this, return_value, descriptor } => {
-            let state = active.as_mut().unwrap();     // TODO:
+        WebGPUMessage::GPUCommandEncoderBeginRenderPass {
+            this,
+            return_value,
+            descriptor,
+        } => {
+            let state = active.as_mut().unwrap(); // TODO:
             assert_eq!(state.pid, emitter_pid);
             let command_encoder = *state.command_encoders.get_mut(&this).unwrap();
             // FIXME: hack
-            let view = wgpu_native::wgpu_swap_chain_get_next_texture(state.swap_chains.values_mut().next().unwrap().1).view_id;
-            assert_ne!(view, wgpu_core::id::Id::ERROR);     // TODO:
-            let color_attachments = descriptor.color_attachments.into_iter().map(move |atch| {
-                wgpu_core::command::RenderPassColorAttachmentDescriptor {
-                    attachment: view,  // FIXME:
-                    resolve_target: ptr::null(),   // FIXME:
-                    load_op: wgpu_core::command::LoadOp::Clear, // FIXME:
-                    store_op: match atch.store_op {
-                        Some(ffi::GPUStoreOp::Clear) => wgpu_core::command::StoreOp::Clear,
-                        Some(ffi::GPUStoreOp::Store) | None => wgpu_core::command::StoreOp::Store,
-                    },
-                    clear_color: wgpu_core::Color { // FIXME:
-                        r: 0.0,
-                        g: 1.0,
-                        b: 0.0,
-                        a: 0.0,
+            let view = wgpu_native::wgpu_swap_chain_get_next_texture(
+                state.swap_chains.values_mut().next().unwrap().1,
+            )
+            .view_id;
+            assert_ne!(view, wgpu_core::id::Id::ERROR); // TODO:
+            let color_attachments = descriptor
+                .color_attachments
+                .into_iter()
+                .map(move |atch| {
+                    wgpu_core::command::RenderPassColorAttachmentDescriptor {
+                        attachment: view,                           // FIXME:
+                        resolve_target: ptr::null(),                // FIXME:
+                        load_op: wgpu_core::command::LoadOp::Clear, // FIXME:
+                        store_op: match atch.store_op {
+                            Some(ffi::GPUStoreOp::Clear) => wgpu_core::command::StoreOp::Clear,
+                            Some(ffi::GPUStoreOp::Store) | None => {
+                                wgpu_core::command::StoreOp::Store
+                            }
+                        },
+                        clear_color: wgpu_core::Color {
+                            // FIXME:
+                            r: 0.0,
+                            g: 1.0,
+                            b: 0.0,
+                            a: 0.0,
+                        },
                     }
-                }
-            }).collect::<Vec<_>>();
+                })
+                .collect::<Vec<_>>();
             let next_idx = state.texture_views.len() as u64;
             state.texture_views.insert(next_idx, view); // FIXME: hack:
             let render_pass = wgpu_native::wgpu_command_encoder_begin_render_pass(
@@ -460,27 +589,35 @@ fn handle_message(active: &mut Option<ActiveState>, emitter_pid: Pid, window: &w
                 &wgpu_core::command::RenderPassDescriptor {
                     color_attachments: color_attachments.as_ptr(),
                     color_attachments_length: color_attachments.len(),
-                    depth_stencil_attachment: ptr::null(),  // FIXME:
+                    depth_stencil_attachment: ptr::null(), // FIXME:
                 },
             );
             state.render_passes.insert(return_value, render_pass);
             Ok(None)
-        },
+        }
 
         WebGPUMessage::GPURenderPassEncoderSetPipeline { this, pipeline } => {
-            let state = active.as_mut().unwrap();     // TODO:
+            let state = active.as_mut().unwrap(); // TODO:
             assert_eq!(state.pid, emitter_pid);
             let render_pass = *state.render_passes.get_mut(&this).unwrap();
             let pipeline = *state.render_pipelines.get(&pipeline).unwrap();
             wgpu_native::wgpu_render_pass_set_pipeline(render_pass, pipeline);
             Ok(None)
-        },
+        }
 
-        WebGPUMessage::GPURenderPassEncoderSetBindGroup { this, index, bind_group, dynamic_offsets } => {
-            let state = active.as_mut().unwrap();     // TODO:
+        WebGPUMessage::GPURenderPassEncoderSetBindGroup {
+            this,
+            index,
+            bind_group,
+            dynamic_offsets,
+        } => {
+            let state = active.as_mut().unwrap(); // TODO:
             assert_eq!(state.pid, emitter_pid);
             let render_pass = *state.render_passes.get_mut(&this).unwrap();
-            let offsets = dynamic_offsets.into_iter().map(u64::from).collect::<Vec<_>>();
+            let offsets = dynamic_offsets
+                .into_iter()
+                .map(u64::from)
+                .collect::<Vec<_>>();
             wgpu_native::wgpu_render_pass_set_bind_group(
                 render_pass,
                 index,
@@ -489,10 +626,16 @@ fn handle_message(active: &mut Option<ActiveState>, emitter_pid: Pid, window: &w
                 offsets.len(),
             );
             Ok(None)
-        },
+        }
 
-        WebGPUMessage::GPURenderPassEncoderDraw { this, vertex_count, instance_count, first_vertex, first_instance } => {
-            let state = active.as_mut().unwrap();     // TODO:
+        WebGPUMessage::GPURenderPassEncoderDraw {
+            this,
+            vertex_count,
+            instance_count,
+            first_vertex,
+            first_instance,
+        } => {
+            let state = active.as_mut().unwrap(); // TODO:
             assert_eq!(state.pid, emitter_pid);
             let render_pass = *state.render_passes.get_mut(&this).unwrap();
             wgpu_native::wgpu_render_pass_draw(
@@ -500,13 +643,17 @@ fn handle_message(active: &mut Option<ActiveState>, emitter_pid: Pid, window: &w
                 vertex_count,
                 instance_count,
                 first_vertex,
-                first_instance
+                first_instance,
             );
             Ok(None)
-        },
+        }
 
-        WebGPUMessage::GPUCommandEncoderFinish { this, return_value, descriptor } => {
-            let state = active.as_mut().unwrap();     // TODO:
+        WebGPUMessage::GPUCommandEncoderFinish {
+            this,
+            return_value,
+            descriptor,
+        } => {
+            let state = active.as_mut().unwrap(); // TODO:
             assert_eq!(state.pid, emitter_pid);
             // FIXME: hack because of other hacks
             for (_, rp) in state.render_passes.drain() {
@@ -516,27 +663,26 @@ fn handle_message(active: &mut Option<ActiveState>, emitter_pid: Pid, window: &w
             let command_buffer = wgpu_native::wgpu_command_encoder_finish(command_encoder, None);
             state.command_buffers.insert(return_value, command_buffer);
             Ok(None)
-        },
+        }
 
-        WebGPUMessage::GPUQueueSubmit { this, command_buffers } => {
-            let state = active.as_mut().unwrap();     // TODO:
+        WebGPUMessage::GPUQueueSubmit {
+            this,
+            command_buffers,
+        } => {
+            let state = active.as_mut().unwrap(); // TODO:
             assert_eq!(state.pid, emitter_pid);
             let command_buffers = command_buffers
                 .into_iter()
                 .map(|cb| state.command_buffers.remove(&cb).unwrap()) // TODO:
                 .collect::<Vec<_>>();
-            let queue = state.devices.values().next().unwrap().1;  // FIXME: hack
-            wgpu_native::wgpu_queue_submit(
-                queue,
-                command_buffers.as_ptr(),
-                command_buffers.len(),
-            );
+            let queue = state.devices.values().next().unwrap().1; // FIXME: hack
+            wgpu_native::wgpu_queue_submit(queue, command_buffers.as_ptr(), command_buffers.len());
             // FIXME: hack
             wgpu_native::wgpu_swap_chain_present(state.swap_chains.values().next().unwrap().1);
             Ok(None)
-        },
+        }
 
-        msg => unimplemented!("{:?}", msg),  // TODO: there are quite a few unimplemented messages
+        msg => unimplemented!("{:?}", msg), // TODO: there are quite a few unimplemented messages
     }
 }
 
@@ -579,6 +725,8 @@ fn convert_texture_format(format: ffi::GPUTextureFormat) -> wgpu_core::resource:
         ffi::GPUTextureFormat::Rgba32float => wgpu_core::resource::TextureFormat::Rgba32Float,
         ffi::GPUTextureFormat::Depth32float => wgpu_core::resource::TextureFormat::Depth32Float,
         ffi::GPUTextureFormat::Depth24plus => wgpu_core::resource::TextureFormat::Depth24Plus,
-        ffi::GPUTextureFormat::Depth24plusStencil8 => wgpu_core::resource::TextureFormat::Depth24PlusStencil8,
+        ffi::GPUTextureFormat::Depth24plusStencil8 => {
+            wgpu_core::resource::TextureFormat::Depth24PlusStencil8
+        }
     }
 }

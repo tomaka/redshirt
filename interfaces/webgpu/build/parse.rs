@@ -25,7 +25,11 @@ pub fn gen_parsed_idl() -> ast::AST {
         Ok(ast) => ast,
         Err(err) => {
             let lexing = webidl::Lexer::new(&idl).collect::<Vec<_>>();
-            let lexing = lexing.into_iter().map(|v| format!("{:?}", v)).collect::<Vec<_>>().join("\n");
+            let lexing = lexing
+                .into_iter()
+                .map(|v| format!("{:?}", v))
+                .collect::<Vec<_>>()
+                .join("\n");
             panic!("Parse error: {}\nAST: {}\nLexing: {}\n", err, idl, lexing);
         }
     }

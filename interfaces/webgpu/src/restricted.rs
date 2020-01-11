@@ -38,11 +38,13 @@ impl From<RestrictedF32> for f32 {
 }
 
 impl parity_scale_codec::Decode for RestrictedF32 {
-    fn decode<I: parity_scale_codec::Input>(value: &mut I) -> Result<Self, parity_scale_codec::Error> {
+    fn decode<I: parity_scale_codec::Input>(
+        value: &mut I,
+    ) -> Result<Self, parity_scale_codec::Error> {
         let bits = u32::decode(value)?;
         let float = f32::from_bits(bits);
         if !float.is_finite() {
-            return Err(parity_scale_codec::Error::from("Decoded Infinite or NaN"))
+            return Err(parity_scale_codec::Error::from("Decoded Infinite or NaN"));
         }
         Ok(RestrictedF32(float))
     }
@@ -84,11 +86,13 @@ impl From<RestrictedF64> for f64 {
 }
 
 impl parity_scale_codec::Decode for RestrictedF64 {
-    fn decode<I: parity_scale_codec::Input>(value: &mut I) -> Result<Self, parity_scale_codec::Error> {
+    fn decode<I: parity_scale_codec::Input>(
+        value: &mut I,
+    ) -> Result<Self, parity_scale_codec::Error> {
         let bits = u64::decode(value)?;
         let float = f64::from_bits(bits);
         if !float.is_finite() {
-            return Err(parity_scale_codec::Error::from("Decoded Infinite or NaN"))
+            return Err(parity_scale_codec::Error::from("Decoded Infinite or NaN"));
         }
         Ok(RestrictedF64(float))
     }

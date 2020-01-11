@@ -14,7 +14,12 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use case::CaseExt as _;
-use std::{borrow::Cow, env, fs, io::{self, Write}, path::Path};
+use std::{
+    borrow::Cow,
+    env, fs,
+    io::{self, Write},
+    path::Path,
+};
 use webidl::ast;
 
 mod dictionaries;
@@ -45,7 +50,11 @@ fn gen_main(out: &mut impl Write, idl: &ast::AST) -> Result<(), io::Error> {
         match definition {
             ast::Definition::Callback(_) => unimplemented!(),
             ast::Definition::Dictionary(ast::Dictionary::NonPartial(dictionary)) => {
-                writeln!(out, "impl From<{}> for ffi::{} {{", dictionary.name, dictionary.name)?;
+                writeln!(
+                    out,
+                    "impl From<{}> for ffi::{} {{",
+                    dictionary.name, dictionary.name
+                )?;
                 writeln!(out, "    fn from(val: {}) -> Self {{", dictionary.name)?;
                 writeln!(out, "        ffi::{} {{", dictionary.name)?;
                 if dictionary.inherits.is_some() {
@@ -54,7 +63,12 @@ fn gen_main(out: &mut impl Write, idl: &ast::AST) -> Result<(), io::Error> {
                 for member in dictionary.members.iter() {
                     write!(out, "            r#{}: ", member.name.to_snake())?;
                     if member.required {
-                        gen_convert_to_ffi(out, idl, &format!("val.r#{}", member.name.to_snake()), &member.type_)?;
+                        gen_convert_to_ffi(
+                            out,
+                            idl,
+                            &format!("val.r#{}", member.name.to_snake()),
+                            &member.type_,
+                        )?;
                     } else {
                         write!(out, "val.r#{}.map(|v| ", member.name.to_snake())?;
                         gen_convert_to_ffi(out, idl, "v", &member.type_)?;
@@ -65,35 +79,37 @@ fn gen_main(out: &mut impl Write, idl: &ast::AST) -> Result<(), io::Error> {
                 writeln!(out, "        }}")?;
                 writeln!(out, "    }}")?;
                 writeln!(out, "}}")?;
-            },
+            }
             ast::Definition::Dictionary(ast::Dictionary::Partial(_)) => unimplemented!(),
             ast::Definition::Enum(en) => {
                 writeln!(out, "pub use crate::ffi::{};", en.name)?;
-            },
+            }
             ast::Definition::Implements(_) => unimplemented!(),
-            ast::Definition::Includes(_) => {},
+            ast::Definition::Includes(_) => {}
             ast::Definition::Interface(ast::Interface::Callback(_)) => unimplemented!(),
             ast::Definition::Interface(ast::Interface::Partial(interface)) => {}
-            ast::Definition::Interface(ast::Interface::NonPartial(interface)) => {},
-            ast::Definition::Mixin(_) => {},
+            ast::Definition::Interface(ast::Interface::NonPartial(interface)) => {}
+            ast::Definition::Mixin(_) => {}
             ast::Definition::Namespace(_) => unimplemented!(),
-            ast::Definition::Typedef(_) => {},
+            ast::Definition::Typedef(_) => {}
         }
     }
 
     for definition in idl {
         match definition {
             ast::Definition::Callback(_) => unimplemented!(),
-            ast::Definition::Dictionary(ast::Dictionary::NonPartial(_)) => {},
+            ast::Definition::Dictionary(ast::Dictionary::NonPartial(_)) => {}
             ast::Definition::Dictionary(ast::Dictionary::Partial(_)) => unimplemented!(),
-            ast::Definition::Enum(_) => {},
+            ast::Definition::Enum(_) => {}
             ast::Definition::Implements(_) => unimplemented!(),
             ast::Definition::Includes(include) => {
                 assert!(include.extended_attributes.is_empty());
                 writeln!(out, "impl {} {{", include.includer)?;
                 for def in idl {
                     match def {
-                        ast::Definition::Mixin(ast::Mixin::NonPartial(mixin)) if mixin.name == include.includee => {
+                        ast::Definition::Mixin(ast::Mixin::NonPartial(mixin))
+                            if mixin.name == include.includee =>
+                        {
                             for member in mixin.members.iter() {
                                 gen_mixin_member(out, idl, &include.includer, member)?;
                             }
@@ -102,7 +118,7 @@ fn gen_main(out: &mut impl Write, idl: &ast::AST) -> Result<(), io::Error> {
                     }
                 }
                 writeln!(out, "}}")?;
-            },
+            }
             ast::Definition::Interface(ast::Interface::Callback(_)) => unimplemented!(),
             ast::Definition::Interface(ast::Interface::Partial(interface)) => {
                 writeln!(out, "impl {} {{", interface.name)?;
@@ -110,7 +126,7 @@ fn gen_main(out: &mut impl Write, idl: &ast::AST) -> Result<(), io::Error> {
                     gen_interface_member(out, idl, &interface.name, member)?;
                 }
                 writeln!(out, "}}")?;
-            },
+            }
             ast::Definition::Interface(ast::Interface::NonPartial(interface)) => {
                 // TODO: support Clone and make it ref-counted
                 writeln!(out, "#[derive(Debug, Clone, parity_scale_codec::Encode, parity_scale_codec::Decode)]")?;
@@ -122,17 +138,22 @@ fn gen_main(out: &mut impl Write, idl: &ast::AST) -> Result<(), io::Error> {
                     gen_interface_member(out, idl, &interface.name, member)?;
                 }
                 writeln!(out, "}}")?;
-            },
-            ast::Definition::Mixin(_) => {},
+            }
+            ast::Definition::Mixin(_) => {}
             ast::Definition::Namespace(_) => unimplemented!(),
-            ast::Definition::Typedef(_) => {},
+            ast::Definition::Typedef(_) => {}
         }
     }
 
     Ok(())
 }
 
-fn gen_interface_member(out: &mut impl Write, idl: &ast::AST, interface_name: &str, member: &ast::InterfaceMember) -> Result<(), io::Error> {
+fn gen_interface_member(
+    out: &mut impl Write,
+    idl: &ast::AST,
+    interface_name: &str,
+    member: &ast::InterfaceMember,
+) -> Result<(), io::Error> {
     match member {
         ast::InterfaceMember::Attribute(ast::Attribute::Regular(attribute)) => {
             // FIXME: not implemented
@@ -170,12 +191,12 @@ fn gen_interface_member(out: &mut impl Write, idl: &ast::AST, interface_name: &s
                 ast::ConstValue::UnsignedIntegerLiteral(val) => format!("{}", val),
             };
             writeln!(out, "    pub const {}: {} = {};", member.name, ty, value)?;
-        },
+        }
         ast::InterfaceMember::Iterable(_) => unimplemented!(),
         ast::InterfaceMember::Maplike(_) => unimplemented!(),
         ast::InterfaceMember::Operation(op) => {
             gen_interface_op(out, idl, interface_name, op)?;
-        },
+        }
         ast::InterfaceMember::Setlike(_) => unimplemented!(),
     }
 
@@ -184,10 +205,15 @@ fn gen_interface_member(out: &mut impl Write, idl: &ast::AST, interface_name: &s
 
 /// > Note: `member` doesn't necessarily need to belong to `interface_name`. This is useful for
 /// >       `includes` definitions.
-fn gen_mixin_member(out: &mut impl Write, idl: &ast::AST, interface_name: &str, member: &ast::MixinMember) -> Result<(), io::Error> {
+fn gen_mixin_member(
+    out: &mut impl Write,
+    idl: &ast::AST,
+    interface_name: &str,
+    member: &ast::MixinMember,
+) -> Result<(), io::Error> {
     match member {
         ast::MixinMember::Operation(op) => gen_interface_op(out, idl, interface_name, op)?,
-        _ => {}     // FIXME:
+        _ => {} // FIXME:
     }
 
     Ok(())
@@ -195,25 +221,42 @@ fn gen_mixin_member(out: &mut impl Write, idl: &ast::AST, interface_name: &str, 
 
 /// > Note: `member` doesn't necessarily need to belong to `interface_name`. This is useful for
 /// >       `includes` definitions.
-fn gen_interface_op(out: &mut impl Write, idl: &ast::AST, interface_name: &str, op: &ast::Operation) -> Result<(), io::Error> {
+fn gen_interface_op(
+    out: &mut impl Write,
+    idl: &ast::AST,
+    interface_name: &str,
+    op: &ast::Operation,
+) -> Result<(), io::Error> {
     match op {
         ast::Operation::Regular(op) => {
             assert!(op.extended_attributes.is_empty());
             if let Some(name) = op.name.as_ref() {
                 write!(out, "    pub fn {}(&self", name.to_snake())?;
                 for arg in op.arguments.iter() {
-                    write!(out, ", {}: {}", arg.name.to_snake(), crate::ty_to_rust(&arg.type_))?;
+                    write!(
+                        out,
+                        ", {}: {}",
+                        arg.name.to_snake(),
+                        crate::ty_to_rust(&arg.type_)
+                    )?;
                 }
                 let message_answer_ty = message_answer_ty(idl, &op.return_type);
                 match &message_answer_ty {
                     MessageAnswerTy::Void => writeln!(out, ") {{ ")?,
                     MessageAnswerTy::Injected(ty) => writeln!(out, ") -> {} {{ ", ty)?,
-                    MessageAnswerTy::Promise(ty) => writeln!(out, ") -> impl Future<Output = {}> {{ ", ty)?,
+                    MessageAnswerTy::Promise(ty) => {
+                        writeln!(out, ") -> impl Future<Output = {}> {{ ", ty)?
+                    }
                 }
                 if let MessageAnswerTy::Injected(_) = message_answer_ty {
                     writeln!(out, "        let return_value = NEXT_OBJECT_ID.fetch_add(1, atomic::Ordering::Relaxed);")?;
                 }
-                writeln!(out, "        let msg = ffi::WebGPUMessage::{}{} {{", interface_name, name.to_camel())?;
+                writeln!(
+                    out,
+                    "        let msg = ffi::WebGPUMessage::{}{} {{",
+                    interface_name,
+                    name.to_camel()
+                )?;
                 writeln!(out, "            this: self.inner,")?;
                 if let MessageAnswerTy::Injected(_) = message_answer_ty {
                     writeln!(out, "            return_value,")?;
@@ -243,7 +286,7 @@ fn gen_interface_op(out: &mut impl Write, idl: &ast::AST, interface_name: &str, 
             } else {
                 // TODO: what is that???
             }
-        },
+        }
         ast::Operation::Special(_) => unimplemented!(),
         ast::Operation::Static(_) => unimplemented!(),
         ast::Operation::Stringifier(_) => unimplemented!(),
@@ -254,19 +297,24 @@ fn gen_interface_op(out: &mut impl Write, idl: &ast::AST, interface_name: &str, 
 
 fn is_interface(idl: &ast::AST, ty: &ast::Type) -> bool {
     if let ast::TypeKind::Identifier(id) = &ty.kind {
-        idl.iter().any(|def| {
-            match def {
-                ast::Definition::Interface(ast::Interface::Partial(interface)) => interface.name == *id,
-                ast::Definition::Interface(ast::Interface::NonPartial(interface)) => interface.name == *id,
-                _ => false,
+        idl.iter().any(|def| match def {
+            ast::Definition::Interface(ast::Interface::Partial(interface)) => interface.name == *id,
+            ast::Definition::Interface(ast::Interface::NonPartial(interface)) => {
+                interface.name == *id
             }
+            _ => false,
         })
     } else {
         false
     }
 }
 
-fn gen_convert_to_ffi(out: &mut impl Write, idl: &ast::AST, val_name: &str, ty: &ast::Type) -> Result<(), io::Error> {
+fn gen_convert_to_ffi(
+    out: &mut impl Write,
+    idl: &ast::AST,
+    val_name: &str,
+    ty: &ast::Type,
+) -> Result<(), io::Error> {
     // We hard-code some interfaces that aren't defined in the IDL.
     // TODO: good idea?
     if let ast::TypeKind::Identifier(id) = &ty.kind {
@@ -287,7 +335,7 @@ fn gen_convert_to_ffi(out: &mut impl Write, idl: &ast::AST, val_name: &str, ty: 
                 ast::Definition::Typedef(td) if td.name == *id => {
                     return gen_convert_to_ffi(out, idl, val_name, &td.type_);
                 }
-                _ => {},
+                _ => {}
             }
         }
     }
@@ -328,29 +376,43 @@ enum MessageAnswerTy<'a> {
 fn message_answer_ty<'a>(idl: &'a ast::AST, ret_val: &'a ast::ReturnType) -> MessageAnswerTy<'a> {
     match ret_val {
         ast::ReturnType::Void => MessageAnswerTy::Void,
-        ast::ReturnType::NonVoid(ty @ ast::Type { kind: ast::TypeKind::Promise(_), .. }) => {
+        ast::ReturnType::NonVoid(
+            ty @ ast::Type {
+                kind: ast::TypeKind::Promise(_),
+                ..
+            },
+        ) => {
             let inner_ret_val = match &ty.kind {
                 ast::TypeKind::Promise(t) => t,
-                _ => unreachable!()
+                _ => unreachable!(),
             };
 
             match &**inner_ret_val {
                 ast::ReturnType::Void => MessageAnswerTy::Promise(From::from("()")),
-                ast::ReturnType::NonVoid(inner_ty) => MessageAnswerTy::Promise(crate::ty_to_rust(inner_ty)),
+                ast::ReturnType::NonVoid(inner_ty) => {
+                    MessageAnswerTy::Promise(crate::ty_to_rust(inner_ty))
+                }
             }
-        },
-        ast::ReturnType::NonVoid(ty @ ast::Type { kind: ast::TypeKind::Identifier(_), .. }) => {
+        }
+        ast::ReturnType::NonVoid(
+            ty @ ast::Type {
+                kind: ast::TypeKind::Identifier(_),
+                ..
+            },
+        ) => {
             let id = match &ty.kind {
                 ast::TypeKind::Identifier(id) => id,
-                _ => unreachable!()
+                _ => unreachable!(),
             };
 
-            let id_is_interface = idl.iter().any(|def| {
-                match def {
-                    ast::Definition::Interface(ast::Interface::Partial(interface)) => interface.name == *id,
-                    ast::Definition::Interface(ast::Interface::NonPartial(interface)) => interface.name == *id,
-                    _ => false,
+            let id_is_interface = idl.iter().any(|def| match def {
+                ast::Definition::Interface(ast::Interface::Partial(interface)) => {
+                    interface.name == *id
                 }
+                ast::Definition::Interface(ast::Interface::NonPartial(interface)) => {
+                    interface.name == *id
+                }
+                _ => false,
             });
 
             if id_is_interface {
@@ -358,7 +420,7 @@ fn message_answer_ty<'a>(idl: &'a ast::AST, ret_val: &'a ast::ReturnType) -> Mes
             } else {
                 MessageAnswerTy::Promise(crate::ty_to_rust(ty))
             }
-        },
+        }
         ast::ReturnType::NonVoid(ty) => MessageAnswerTy::Promise(crate::ty_to_rust(ty)),
     }
 }
@@ -380,7 +442,7 @@ fn ty_to_rust(ty: &ast::Type) -> Cow<'static, str> {
                 ast::ReturnType::NonVoid(ty) => ty_to_rust(ty),
             };
             From::from(format!("Pin<Box<dyn Future<Output = {}>>>", out_ty))
-        },
+        }
         ast::TypeKind::RestrictedFloat => From::from("RestrictedF32"),
         ast::TypeKind::RestrictedDouble => From::from("RestrictedF64"),
         ast::TypeKind::Sequence(elem_ty) => From::from(format!("Vec<{}>", ty_to_rust(elem_ty))),
@@ -388,7 +450,7 @@ fn ty_to_rust(ty: &ast::Type) -> Cow<'static, str> {
         ast::TypeKind::SignedLongLong => From::from("i64"),
         ast::TypeKind::SignedShort => From::from("i16"),
         ast::TypeKind::Uint32Array => From::from("Vec<u32>"),
-        ast::TypeKind::Union(ty_list) => ty_to_rust(&ty_list[0]),       // FIXME: hack
+        ast::TypeKind::Union(ty_list) => ty_to_rust(&ty_list[0]), // FIXME: hack
         ast::TypeKind::UnrestrictedFloat => From::from("f32"),
         ast::TypeKind::UnsignedLong => From::from("u32"),
         ast::TypeKind::UnrestrictedDouble => From::from("f64"),

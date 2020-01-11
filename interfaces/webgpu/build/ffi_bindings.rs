@@ -14,7 +14,10 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use case::CaseExt as _;
-use std::{borrow::Cow, io::{self, Write}};
+use std::{
+    borrow::Cow,
+    io::{self, Write},
+};
 use webidl::ast;
 
 pub fn gen_ffi(out: &mut impl Write, idl: &ast::AST) -> Result<(), io::Error> {
@@ -36,12 +39,14 @@ pub fn gen_ffi(out: &mut impl Write, idl: &ast::AST) -> Result<(), io::Error> {
                 for member in interface.members.iter() {
                     gen_interface_member(out, idl, &interface.name, member)?;
                 }
-            },
+            }
             ast::Definition::Includes(include) => {
                 assert!(include.extended_attributes.is_empty());
                 for def in idl {
                     match def {
-                        ast::Definition::Mixin(ast::Mixin::NonPartial(mixin)) if mixin.name == include.includee => {
+                        ast::Definition::Mixin(ast::Mixin::NonPartial(mixin))
+                            if mixin.name == include.includee =>
+                        {
                             for member in mixin.members.iter() {
                                 gen_mixin_member(out, idl, &include.includer, member)?;
                             }
@@ -49,7 +54,7 @@ pub fn gen_ffi(out: &mut impl Write, idl: &ast::AST) -> Result<(), io::Error> {
                         _ => {}
                     }
                 }
-            },
+            }
             _ => {}
         }
     }
@@ -68,13 +73,18 @@ pub fn gen_ffi(out: &mut impl Write, idl: &ast::AST) -> Result<(), io::Error> {
 
 /// > Note: `member` doesn't necessarily need to belong to `interface_name`. This is useful for
 /// >       `includes` definitions.
-fn gen_interface_member(out: &mut impl Write, idl: &ast::AST, interface_name: &str, member: &ast::InterfaceMember) -> Result<(), io::Error> {
+fn gen_interface_member(
+    out: &mut impl Write,
+    idl: &ast::AST,
+    interface_name: &str,
+    member: &ast::InterfaceMember,
+) -> Result<(), io::Error> {
     match member {
         ast::InterfaceMember::Iterable(_) => unimplemented!(),
         ast::InterfaceMember::Maplike(_) => unimplemented!(),
         ast::InterfaceMember::Operation(op) => gen_interface_op(out, idl, interface_name, op)?,
         ast::InterfaceMember::Setlike(_) => unimplemented!(),
-        _ => {}     // FIXME:
+        _ => {} // FIXME:
     }
 
     Ok(())
@@ -82,10 +92,15 @@ fn gen_interface_member(out: &mut impl Write, idl: &ast::AST, interface_name: &s
 
 /// > Note: `member` doesn't necessarily need to belong to `interface_name`. This is useful for
 /// >       `includes` definitions.
-fn gen_mixin_member(out: &mut impl Write, idl: &ast::AST, interface_name: &str, member: &ast::MixinMember) -> Result<(), io::Error> {
+fn gen_mixin_member(
+    out: &mut impl Write,
+    idl: &ast::AST,
+    interface_name: &str,
+    member: &ast::MixinMember,
+) -> Result<(), io::Error> {
     match member {
         ast::MixinMember::Operation(op) => gen_interface_op(out, idl, interface_name, op)?,
-        _ => {}     // FIXME:
+        _ => {} // FIXME:
     }
 
     Ok(())
@@ -93,7 +108,12 @@ fn gen_mixin_member(out: &mut impl Write, idl: &ast::AST, interface_name: &str, 
 
 /// > Note: `member` doesn't necessarily need to belong to `interface_name`. This is useful for
 /// >       `includes` definitions.
-fn gen_interface_op(out: &mut impl Write, idl: &ast::AST, interface_name: &str, op: &ast::Operation) -> Result<(), io::Error> {
+fn gen_interface_op(
+    out: &mut impl Write,
+    idl: &ast::AST,
+    interface_name: &str,
+    op: &ast::Operation,
+) -> Result<(), io::Error> {
     match op {
         ast::Operation::Regular(op) => {
             assert!(op.extended_attributes.is_empty());
@@ -108,13 +128,18 @@ fn gen_interface_op(out: &mut impl Write, idl: &ast::AST, interface_name: &str, 
                     write!(out, "return_value: {}, ", return_value_to_pass)?;
                 }
                 for arg in op.arguments.iter() {
-                    write!(out, "{}: {}, ", arg.name.to_snake(), crate::ty_to_rust(&arg.type_))?;
+                    write!(
+                        out,
+                        "{}: {}, ",
+                        arg.name.to_snake(),
+                        crate::ty_to_rust(&arg.type_)
+                    )?;
                 }
                 writeln!(out, "}},")?;
             } else {
                 // TODO: what is that???
             }
-        },
+        }
         ast::Operation::Special(_) => unimplemented!(),
         ast::Operation::Static(_) => unimplemented!(),
         ast::Operation::Stringifier(_) => unimplemented!(),
@@ -126,18 +151,25 @@ fn gen_interface_op(out: &mut impl Write, idl: &ast::AST, interface_name: &str, 
 fn return_value_to_pass(idl: &ast::AST, ret_val: &ast::ReturnType) -> Option<Cow<'static, str>> {
     match ret_val {
         ast::ReturnType::Void => None,
-        ast::ReturnType::NonVoid(ty @ ast::Type { kind: ast::TypeKind::Identifier(_), .. }) => {
+        ast::ReturnType::NonVoid(
+            ty @ ast::Type {
+                kind: ast::TypeKind::Identifier(_),
+                ..
+            },
+        ) => {
             let id = match &ty.kind {
                 ast::TypeKind::Identifier(id) => id,
-                _ => unreachable!()
+                _ => unreachable!(),
             };
 
-            let id_is_interface = idl.iter().any(|def| {
-                match def {
-                    ast::Definition::Interface(ast::Interface::Partial(interface)) => interface.name == *id,
-                    ast::Definition::Interface(ast::Interface::NonPartial(interface)) => interface.name == *id,
-                    _ => false,
+            let id_is_interface = idl.iter().any(|def| match def {
+                ast::Definition::Interface(ast::Interface::Partial(interface)) => {
+                    interface.name == *id
                 }
+                ast::Definition::Interface(ast::Interface::NonPartial(interface)) => {
+                    interface.name == *id
+                }
+                _ => false,
             });
 
             if id_is_interface {
@@ -145,7 +177,7 @@ fn return_value_to_pass(idl: &ast::AST, ret_val: &ast::ReturnType) -> Option<Cow
             } else {
                 None
             }
-        },
+        }
         ast::ReturnType::NonVoid(_) => None,
     }
 }
@@ -155,29 +187,41 @@ fn return_value_to_pass(idl: &ast::AST, ret_val: &ast::ReturnType) -> Option<Cow
 fn message_answer_ty(idl: &ast::AST, ret_val: &ast::ReturnType) -> Option<Cow<'static, str>> {
     match ret_val {
         ast::ReturnType::Void => None,
-        ast::ReturnType::NonVoid(ty @ ast::Type { kind: ast::TypeKind::Promise(_), .. }) => {
+        ast::ReturnType::NonVoid(
+            ty @ ast::Type {
+                kind: ast::TypeKind::Promise(_),
+                ..
+            },
+        ) => {
             let inner_ret_val = match &ty.kind {
                 ast::TypeKind::Promise(t) => t,
-                _ => unreachable!()
+                _ => unreachable!(),
             };
 
             match &**inner_ret_val {
                 ast::ReturnType::Void => Some(From::from("()")),
                 ast::ReturnType::NonVoid(inner_ty) => Some(crate::ty_to_rust(inner_ty)),
             }
-        },
-        ast::ReturnType::NonVoid(ty @ ast::Type { kind: ast::TypeKind::Identifier(_), .. }) => {
+        }
+        ast::ReturnType::NonVoid(
+            ty @ ast::Type {
+                kind: ast::TypeKind::Identifier(_),
+                ..
+            },
+        ) => {
             let id = match &ty.kind {
                 ast::TypeKind::Identifier(id) => id,
-                _ => unreachable!()
+                _ => unreachable!(),
             };
 
-            let id_is_interface = idl.iter().any(|def| {
-                match def {
-                    ast::Definition::Interface(ast::Interface::Partial(interface)) => interface.name == *id,
-                    ast::Definition::Interface(ast::Interface::NonPartial(interface)) => interface.name == *id,
-                    _ => false,
+            let id_is_interface = idl.iter().any(|def| match def {
+                ast::Definition::Interface(ast::Interface::Partial(interface)) => {
+                    interface.name == *id
                 }
+                ast::Definition::Interface(ast::Interface::NonPartial(interface)) => {
+                    interface.name == *id
+                }
+                _ => false,
             });
 
             if id_is_interface {
@@ -185,7 +229,7 @@ fn message_answer_ty(idl: &ast::AST, ret_val: &ast::ReturnType) -> Option<Cow<'s
             } else {
                 Some(crate::ty_to_rust(ty))
             }
-        },
+        }
         ast::ReturnType::NonVoid(ty) => Some(crate::ty_to_rust(ty)),
     }
 }
