@@ -939,7 +939,6 @@ name = "redshirt-log-interface"
 version = "0.1.0"
 dependencies = [
  "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
- "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "redshirt-syscalls-interface 0.1.0",
 ]
 

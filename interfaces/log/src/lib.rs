@@ -17,8 +17,8 @@
 //!
 //! This interface allows a program to send out messages for the purpose of being logged.
 //!
-//! How these logged are handled is at the discretion of the rest of the system, but the intent
-//! is for them to be shown to a human being in case of necessity.
+//! How these logs are handled is at the discretion of the rest of the system, but the intent is
+//! for them to be shown to a human being if desired.
 
 #![deny(intra_doc_link_resolution_failure)]
 #![no_std]
@@ -26,34 +26,58 @@
 extern crate alloc;
 
 use alloc::{format, string::String};
+use core::fmt::{self, Write as _};
 
 pub mod ffi;
 
 pub use ffi::Level;
 
-/// Appends a string to the logs of the program.
+/// Appends a single string to the logs of the program.
+///
+/// This function always adds a single entry to the logs. An entry can made up of multiple lines
+/// (separated with `\n`), but the lines are notably *not* split into multiple entries.
 ///
 /// # About `\r` vs `\n`
 ///
 /// In order to follow the Unix world, the character `\n` (LF, 0xA) means "new line". The
 /// character `\r` (CR, 0xD) is ignored.
-pub fn log(level: Level, msg: String) {
+///
+pub fn log(level: Level, msg: &str) {
     unsafe {
-        let msg = ffi::LogMessage::Message(level, msg);
-        redshirt_syscalls_interface::emit_message_without_response(&ffi::INTERFACE, &msg).unwrap();
+        let level: [u8; 1] = [u8::from(level)];
+        redshirt_syscalls_interface::MessageBuilder::new()
+            .add_data_raw(&level[..])
+            .add_data_raw(msg.as_bytes())
+            .emit_without_response(&ffi::INTERFACE)
+            .unwrap();
     }
 }
 
-pub struct GlobalLogger;
-
+/// Attempts to initializes the global logger.
+///
+/// # Panic
+///
+/// This function will panic if it is called more than once, or if another library has already
+/// initialized a global logger.
 pub fn try_init() -> Result<(), log::SetLoggerError> {
     static LOGGER: GlobalLogger = GlobalLogger;
     log::set_logger(&LOGGER)
 }
 
+/// Initializes the global logger.
+///
+/// # Panic
+///
+/// This function will panic if it is called more than once, or if another library has already
+/// initialized a global logger.
 pub fn init() {
     try_init().unwrap();
 }
+
+/// The logger.
+///
+/// Implements the [`Log`](log::Log) trait.
+pub struct GlobalLogger;
 
 impl log::Log for GlobalLogger {
     fn enabled(&self, _: &log::Metadata) -> bool {
@@ -69,16 +93,14 @@ impl log::Log for GlobalLogger {
             log::Level::Trace => Level::Trace,
         };
 
-        // TODO: ideally we wouldn't allocate any memory in order to print out
-        log(
-            level,
-            format!(
-                "{}:{} -- {}",
-                record.level(),
-                record.target(),
-                record.args()
-            ),
+        let message = format!(
+            "{}:{} -- {}",
+            record.level(),
+            record.target(),
+            record.args()
         );
+
+        log(level, &message)
     }
 
     fn flush(&self) {}

@@ -15,8 +15,7 @@
 
 //! Implements the log interface by writing in text mode.
 
-use byteorder::{ByteOrder as _, LittleEndian};
-use parity_scale_codec::DecodeAll;
+use redshirt_syscalls_interface::{Decode, EncodedMessage};
 use std::{convert::TryFrom as _, fmt};
 
 fn main() {
@@ -35,9 +34,9 @@ async fn async_main() -> ! {
         };
         assert_eq!(msg.interface, redshirt_log_interface::ffi::INTERFACE);
 
-        let redshirt_log_interface::ffi::LogMessage::Message(_, message) =
-            DecodeAll::decode_all(&msg.actual_data).unwrap();       // TODO: don't unwrap
-        for byte in message.as_bytes() {
+        let message: redshirt_log_interface::ffi::DecodedLogMessage =
+            Decode::decode(EncodedMessage(msg.actual_data)).unwrap();       // TODO: don't unwrap
+        for byte in message.message().as_bytes() {
             write_uart(*byte).await;
         }
         write_uart(b'\n').await;

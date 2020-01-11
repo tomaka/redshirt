@@ -15,7 +15,7 @@
 
 //! Implements the log interface by writing in text mode.
 
-use parity_scale_codec::DecodeAll;
+use redshirt_syscalls_interface::{Decode, EncodedMessage};
 use std::{convert::TryFrom as _, fmt};
 
 fn main() {
@@ -36,9 +36,9 @@ async fn async_main() -> ! {
             redshirt_syscalls_interface::InterfaceOrDestroyed::ProcessDestroyed(_) => continue,
         };
         assert_eq!(msg.interface, redshirt_log_interface::ffi::INTERFACE);
-        let redshirt_log_interface::ffi::LogMessage::Message(_, message) =
-            DecodeAll::decode_all(&msg.actual_data).unwrap();       // TODO: don't unwrap
-        console.write(&message);
+        let message: redshirt_log_interface::ffi::DecodedLogMessage =
+            Decode::decode(EncodedMessage(msg.actual_data)).unwrap();       // TODO: don't unwrap
+        console.write(&message.message());
         console.write("\n");
     }
 }
