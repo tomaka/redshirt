@@ -18,11 +18,8 @@
 use futures::prelude::*;
 use redshirt_core::native::{DummyMessageIdWrite, NativeProgramEvent, NativeProgramRef};
 use redshirt_core::{Decode as _, Encode as _, EncodedMessage, InterfaceHash, MessageId, Pid};
-use redshirt_log_interface::ffi::{LogMessage, Level, INTERFACE};
-use std::{
-    pin::Pin,
-    sync::atomic,
-};
+use redshirt_log_interface::ffi::{Level, LogMessage, INTERFACE};
+use std::{pin::Pin, sync::atomic};
 
 /// Native program for `log` interface messages handling.
 pub struct LogHandler {
@@ -91,8 +88,15 @@ impl<'a> NativeProgramRef<'a> for &'a LogHandler {
                 if self.enable_colors {
                     header_style.is_dimmed = true;
                 }
-                println!("{}[{:?}] [{}]{} {}", header_style.prefix(), emitter_pid, level, header_style.suffix(), msg);
-            },
+                println!(
+                    "{}[{:?}] [{}]{} {}",
+                    header_style.prefix(),
+                    emitter_pid,
+                    level,
+                    header_style.suffix(),
+                    msg
+                );
+            }
             Err(_) => println!("bad log message from {:?}", emitter_pid),
         }
     }
