@@ -12,4 +12,7 @@ parking_lot = "0.10.0"
 redshirt-core = { path = "../../core" }
 redshirt-interface-interface = { path = "../../interfaces/interface" }
 redshirt-webgpu-interface = { path = "../../interfaces/webgpu" }
-wgpu = { git = "https://github.com/gfx-rs/wgpu-rs", rev = "1529a88fd9f23cd1921b30c58d06ba2d8dc46ce7" }
+send_wrapper = "0.4.0"
+wgpu-core = { git = "https://github.com/gfx-rs/wgpu", rev = "c293d6dcea0170bfa3835cfbd919f300560e0da6" }
+wgpu-native = { git = "https://github.com/gfx-rs/wgpu", rev = "c293d6dcea0170bfa3835cfbd919f300560e0da6" }
+winit = "0.20.0"

@@ -19,6 +19,7 @@ use futures::{channel::mpsc, pin_mut, prelude::*};
 use parity_scale_codec::DecodeAll;
 use std::{fs, path::PathBuf, process, sync::Arc};
 use structopt::StructOpt;
+use winit::event_loop::EventLoop;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "redshirt", about = "Redshirt modules executor.")]
@@ -33,6 +34,8 @@ fn main() {
 }
 
 async fn async_main() {
+    let event_loop = EventLoop::new();
+
     let cli_requested_process = {
         let cli_opts = CliOptions::from_args();
         if let Some(input) = cli_opts.input {
@@ -46,10 +49,12 @@ async fn async_main() {
         }
     };
 
+    let window = winit::window::Window::new(&event_loop).unwrap();
+
     let mut system = redshirt_core::system::SystemBuilder::new()
         .with_native_program(redshirt_time_hosted::TimerHandler::new())
         .with_native_program(redshirt_stdout_hosted::StdoutHandler::new())
-        .with_native_program(redshirt_webgpu_hosted::WebGPUHandler::new())
+        .with_native_program(redshirt_webgpu_hosted::WebGPUHandler::new(window))
         .build();
 
     let cli_pid = if let Some(cli_requested_process) = cli_requested_process {
@@ -58,10 +63,27 @@ async fn async_main() {
         None
     };
 
-    loop {
-        let outcome = system.run().await;
+    event_loop.run(move |event, _, control_flow| {
+        *control_flow = winit::event_loop::ControlFlow::Poll;
+
+        match event {
+            winit::event::Event::WindowEvent {
+                event: winit::event::WindowEvent::CloseRequested,
+                ..
+            } => {
+                println!("The close button was pressed; stopping");
+                *control_flow = winit::event_loop::ControlFlow::Exit;
+            },
+            winit::event::Event::MainEventsCleared => {
+                // TODO: put application code here only
+            },
+            _ => {}     // TODO: RedrawRequested as well
+        }
+
+        let outcome = system.run().now_or_never();
         match outcome {
-            redshirt_core::system::SystemRunOutcome::ProgramFinished { pid, outcome } => {
+            None => {},
+            Some(redshirt_core::system::SystemRunOutcome::ProgramFinished { pid, outcome }) => {
                 if cli_pid == Some(pid) {
                     process::exit(match outcome {
                         Ok(_) => 0,
@@ -74,5 +96,5 @@ async fn async_main() {
             }
             _ => panic!(),
         }
-    }
+    });
 }

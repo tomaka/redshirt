@@ -14,6 +14,37 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 //! WebGPU.
+//!
+//! The WebGPU API is a graphical rendering API. In other words, it is used in order to show
+//! something on the screen.
+//!
+//! This documentation doesn't explain how to use this API. While WebGPU is a fairly complex API,
+//! it is also expected that it becomes an official W3C standard, and that documentation and
+//! tutorials about it become widely available.
+//!
+//! References:
+//!
+//! - https://en.wikipedia.org/wiki/WebGPU
+//! - https://gpuweb.github.io/gpuweb/
+//!
+//! # Interfaces
+//!
+//! > **Note**: This is not implemented yet.
+//!
+//! Contrary to most other redshirt interfaces, there exists *two* interfaces related to WebGPU:
+//! TODO: name them or something
+//!
+//! - The first one allows drawing to the entire screen. Only one process can use it at any given
+//! point in time. TODO: what if multiple screens?
+//! - The second one allows drawing on a window. Multiple processes can all create adapters and
+//! devices and draw simultaneously, each on their own window.
+//!
+//! An implementation of the second one is typically expected to use the first one under the
+//! hood.
+//!
+//! > **Note**: An implementation of the second one is typically called a windows compositor in
+//! >           most operating systems.
+//!
 
 #![deny(intra_doc_link_resolution_failure)]
 #![no_std]

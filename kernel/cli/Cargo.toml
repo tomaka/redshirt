@@ -21,6 +21,7 @@ redshirt-webgpu-hosted = { path = "../hosted-webgpu" }
 parity-scale-codec = "1.0.5"
 structopt = "0.3.5"
 wasi = "0.9.0+wasi-snapshot-preview1"
+winit = "0.20.0"
 
 [build-dependencies]
 walkdir = "2.2.9"
