@@ -481,12 +481,14 @@ impl<'a> NativeProgramRef<'a> for &'a WebGPUHandler {
                     .into_iter()
                     .map(|cb| state.command_buffers.remove(&cb).unwrap()) // TODO:
                     .collect::<Vec<_>>();
-                let queue = state.devices.values_mut().next().unwrap().1;  // FIXME: hack
+                let queue = state.devices.values().next().unwrap().1;  // FIXME: hack
                 wgpu_native::wgpu_queue_submit(
                     queue,
                     command_buffers.as_ptr(),
                     command_buffers.len(),
                 );
+                // FIXME: hack
+                wgpu_native::wgpu_swap_chain_present(state.swap_chains.values().next().unwrap().1);
             },
 
             Ok(msg) => unimplemented!("{:?}", msg),  // TODO: there are quite a few unimplemented messages
