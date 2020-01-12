@@ -53,7 +53,6 @@ fn basic_module() {
 }
 
 #[test]
-#[ignore] // TODO: test fails
 fn trapping_module() {
     let module = Module::from_wat(
         r#"(module

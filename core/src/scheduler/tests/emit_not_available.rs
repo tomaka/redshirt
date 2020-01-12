@@ -39,54 +39,54 @@ fn emit_not_available() {
     (type $t1 (func (param i32 i32) (result i32)))
     (import "redshirt" "emit_message" (func $_ZN27redshirt_syscalls_interface3ffi12emit_message17h508280f1400e36efE (type $t0)))
     (func $main (type $t1) (param $p0 i32) (param $p1 i32) (result i32)
-      (local $l0 i32)
-      get_global $g0
-      i32.const 64
-      i32.sub
-      tee_local $l0
-      set_global $g0
-      get_local $l0
-      i64.const 3978425819141910832
-      i64.store offset=32
-      get_local $l0
-      i64.const 2820983053732684064
-      i64.store offset=24
-      get_local $l0
-      i64.const 1663540288323457296
-      i64.store offset=16
-      get_local $l0
-      i64.const 506097522914230528
-      i64.store offset=8
-      get_local $l0
-      i32.const 1048576
-      i64.extend_u/i32
-      i64.const 34359738368
-      i64.or
-      i64.store offset=41 align=1
-      get_local $l0
-      i32.const 1
-      i32.store8 offset=40
-      get_local $l0
-      i32.const 8
-      i32.add
-      get_local $l0
-      i32.const 40
-      i32.add
-      i32.const 1
-      i32.or
-      i32.const 1
-      i32.const 0
-      i32.const 1
-      get_local $l0
-      i32.const 56
-      i32.add
-      call $_ZN27redshirt_syscalls_interface3ffi12emit_message17h508280f1400e36efE
-      drop
-      get_local $l0
-      i32.const 64
-      i32.add
-      set_global $g0
-      i32.const 0)
+        (local $l0 i32)
+        get_global $g0
+        i32.const 64
+        i32.sub
+        tee_local $l0
+        set_global $g0
+        get_local $l0
+        i64.const 3978425819141910832
+        i64.store offset=32
+        get_local $l0
+        i64.const 2820983053732684064
+        i64.store offset=24
+        get_local $l0
+        i64.const 1663540288323457296
+        i64.store offset=16
+        get_local $l0
+        i64.const 506097522914230528
+        i64.store offset=8
+        get_local $l0
+        i32.const 1048576
+        i64.extend_u/i32
+        i64.const 34359738368
+        i64.or
+        i64.store offset=41 align=1
+        get_local $l0
+        i32.const 1
+        i32.store8 offset=40
+        get_local $l0
+        i32.const 8
+        i32.add
+        get_local $l0
+        i32.const 40
+        i32.add
+        i32.const 1
+        i32.or
+        i32.const 1
+        i32.const 0
+        i32.const 1
+        get_local $l0
+        i32.const 56
+        i32.add
+        call $_ZN27redshirt_syscalls_interface3ffi12emit_message17h508280f1400e36efE
+        drop
+        get_local $l0
+        i32.const 64
+        i32.add
+        set_global $g0
+        i32.const 0)
     (table $T0 1 1 anyfunc)
     (memory $memory 17)
     (global $g0 (mut i32) (i32.const 1048576))
