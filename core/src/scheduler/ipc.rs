@@ -369,7 +369,6 @@ impl Core {
                         };
 
                         let message = thread.accept_emit(message_id);
-
                         if let Some(process) = self.processes.process_by_id(*pid) {
                             let message = redshirt_syscalls_interface::ffi::Message::Interface(
                                 redshirt_syscalls_interface::ffi::InterfaceMessage {
@@ -388,13 +387,18 @@ impl Core {
                             process.user_data().messages_queue.push_back(message);
                             try_resume_message_wait(process);
                             CoreRunOutcomeInner::LoopAgain
-                        } else {
+                        } else if self.reserved_pids.contains(pid) {
                             CoreRunOutcomeInner::ReservedPidInterfaceMessage {
                                 pid: emitter_pid,
                                 message_id,
                                 interface,
                                 message,
                             }
+                        } else {
+                            // This can be reached if a process has been killed but the list of
+                            // interface handlers hasn't been updated yet.
+                            // TODO: this is wrong; don't just ignore the message
+                            CoreRunOutcomeInner::LoopAgain
                         }
                     }
                     (None, false) | (Some(InterfaceState::Requested { .. }), false) => {
@@ -551,6 +555,7 @@ impl Core {
                     .messages_queue
                     .push_back(message);
             } else {
+                debug_assert!(self.reserved_pids.contains(&process));
                 self.pending_events
                     .push(CoreRunOutcomeInner::ReservedPidInterfaceMessage {
                         pid: emitter_pid,
@@ -649,8 +654,7 @@ impl Core {
 
             process.user_data().messages_queue.push_back(message);
             try_resume_message_wait(process);
-        } else {
-            assert!(self.reserved_pids.contains(&emitter_pid));
+        } else if self.reserved_pids.contains(&emitter_pid) {
             self.pending_events
                 .push(CoreRunOutcomeInner::ReservedPidInterfaceMessage {
                     pid: emitter_pid,
@@ -658,6 +662,8 @@ impl Core {
                     interface,
                     message: message.encode(),
                 });
+        } else {
+            unimplemented!()
         };
 
         if let Some(messages_to_answer_entry) = messages_to_answer_entry {
