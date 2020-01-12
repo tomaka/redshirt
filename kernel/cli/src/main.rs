@@ -38,7 +38,7 @@ async fn async_main() {
             .expect("failed to parse input file")
     };
 
-    let mut system = redshirt_core::system::SystemBuilder::new()
+    let system = redshirt_core::system::SystemBuilder::new()
         .with_native_program(redshirt_time_hosted::TimerHandler::new())
         .with_native_program(redshirt_log_hosted::LogHandler::new())
         .build();

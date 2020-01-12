@@ -199,7 +199,7 @@ impl<'ext> NativeProgramsCollection<'ext> {
     }
 
     /// Notify the [`NativeProgram`]s that the program with the given [`Pid`] has terminated.
-    pub fn process_destroyed(&mut self, pid: Pid) {
+    pub fn process_destroyed(&self, pid: Pid) {
         for (_, process) in &self.processes {
             process.process_destroyed(pid);
         }
