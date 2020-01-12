@@ -416,7 +416,7 @@ impl<TPud, TTud> ProcessesCollectionExtrinsics<TPud, TTud> {
                 params,
             } => {
                 debug_assert!(thread.user_data().state.is_ready_to_run());
-                debug_assert!(!thread.user_data().external_user_data.is_some());
+                debug_assert!(thread.user_data().external_user_data.is_some());
                 let emit_resp = match parse_extrinsic_emit_answer(&mut thread, params) {
                     Ok(m) => m,
                     Err(_) => panic!(), // TODO:
@@ -436,7 +436,7 @@ impl<TPud, TTud> ProcessesCollectionExtrinsics<TPud, TTud> {
                 params,
             } => {
                 debug_assert!(thread.user_data().state.is_ready_to_run());
-                debug_assert!(!thread.user_data().external_user_data.is_some());
+                debug_assert!(thread.user_data().external_user_data.is_some());
                 let emit_msg_error = match parse_extrinsic_emit_message_error(&mut thread, params) {
                     Ok(m) => m,
                     Err(_) => panic!(), // TODO:
