@@ -5,6 +5,7 @@ members = [
     "http-server",
     "ne2000",
     "p2p-loader",
+    "stub",
     "third-party/time",
     "third-party/wasm-timer",
     "vulkan-triangle",
