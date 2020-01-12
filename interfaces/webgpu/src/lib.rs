@@ -58,6 +58,7 @@ use futures::prelude::*;
 pub use restricted::{RestrictedF32, RestrictedF64};
 
 pub mod ffi;
+mod bindings;
 mod restricted;
 
 /// Whenever we create a new object (e.g. a `GPUBuffer`), we decide locally of the ID of the
