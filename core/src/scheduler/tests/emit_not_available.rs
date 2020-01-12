@@ -94,7 +94,7 @@ fn emit_not_available() {
     (export "main" (func $main))
     (data (i32.const 1048576) "\01\02\03\04\05\06\07\08"))"#).unwrap();
 
-    let mut core = Core::new().build();
+    let core = Core::new().build();
     core.execute(&module).unwrap();
 
     match core.run() {

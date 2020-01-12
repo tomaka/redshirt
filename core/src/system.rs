@@ -352,7 +352,7 @@ impl SystemBuilder {
 
     /// Builds the [`System`].
     pub fn build(mut self) -> System {
-        let mut core = self.core.build();
+        let core = self.core.build();
 
         // We ask the core to redirect messages for the `interface` and `threads` interfaces
         // towards our "virtual" `Pid`s.
