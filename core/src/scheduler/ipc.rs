@@ -257,7 +257,10 @@ impl Core {
             return ev;
         }
 
-        match self.processes.run() {
+        // Note: we use a temporary `run_outcome` variable in order to solve weird borrowing
+        // issues. Feel free to try to remove it if you manage.
+        let run_outcome = self.processes.run();
+        match run_outcome {
             extrinsics::RunOneOutcome::ProcessFinished {
                 pid,
                 outcome,
@@ -426,16 +429,19 @@ impl Core {
 
             extrinsics::RunOneOutcome::ThreadEmitAnswer {
                 message_id,
-                response,
+                ref response,
                 ..
             } => {
                 // TODO: check ownership of the message
+                let response = response.clone();
+                drop(run_outcome);
                 self.answer_message_inner(message_id, Ok(response))
                     .unwrap_or(CoreRunOutcomeInner::LoopAgain)
             }
 
             extrinsics::RunOneOutcome::ThreadEmitMessageError { message_id, .. } => {
                 // TODO: check ownership of the message
+                drop(run_outcome);
                 self.answer_message_inner(message_id, Err(()))
                     .unwrap_or(CoreRunOutcomeInner::LoopAgain)
             }
