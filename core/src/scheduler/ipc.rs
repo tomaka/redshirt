@@ -42,7 +42,7 @@ pub struct Core {
     reserved_pids: HashSet<Pid>,
 
     /// For each interface, which program is fulfilling it.
-    interfaces: HashMap<InterfaceHash, InterfaceState>,
+    interfaces: RefCell<HashMap<InterfaceHash, InterfaceState>>,
 
     /// Pool of identifiers for messages.
     message_id_pool: IdPool,
@@ -50,7 +50,7 @@ pub struct Core {
     /// List of messages that have been emitted by a process and that are waiting for a response.
     // TODO: doc about hash safety
     // TODO: call shrink_to from time to time
-    messages_to_answer: HashMap<MessageId, Pid>,
+    messages_to_answer: RefCell<HashMap<MessageId, Pid>>,
 }
 
 /// Which way an interface is handled.
@@ -202,8 +202,7 @@ impl Core {
     }
 
     /// Run the core once.
-    // TODO: make multithreaded
-    pub fn run(&mut self) -> CoreRunOutcome {
+    pub fn run(&self) -> CoreRunOutcome {
         loop {
             break match self.run_inner() {
                 CoreRunOutcomeInner::Idle => CoreRunOutcome::Idle,
@@ -251,8 +250,7 @@ impl Core {
 
     /// Because of lifetime issues, we return an enum that holds `Pid`s instead of `CoreProcess`es.
     /// Then `run` does the conversion in order to have a good API.
-    // TODO: make multithreaded
-    fn run_inner(&mut self) -> CoreRunOutcomeInner {
+    fn run_inner(&self) -> CoreRunOutcomeInner {
         if let Ok(ev) = self.pending_events.pop() {
             return ev;
         }
@@ -278,7 +276,7 @@ impl Core {
                 // Unregister the interfaces this program had registered.
                 let mut unregistered_interfaces = Vec::new();
                 for interface in user_data.registered_interfaces {
-                    let _interface = self.interfaces.remove(&interface);
+                    let _interface = self.interfaces.borrow_mut().remove(&interface);
                     debug_assert_eq!(_interface, Some(InterfaceState::Process(pid)));
                     unregistered_interfaces.push(interface);
                 }
@@ -287,14 +285,17 @@ impl Core {
                 // TODO: this only handles messages emitted through the external API
                 let mut cancelled_messages = Vec::new();
                 for emitted_message in user_data.emitted_messages {
-                    let _emitter = self.messages_to_answer.remove(&emitted_message);
+                    let _emitter = self
+                        .messages_to_answer
+                        .borrow_mut()
+                        .remove(&emitted_message);
                     debug_assert_eq!(_emitter, Some(pid));
                     cancelled_messages.push(emitted_message);
                 }
 
                 // Notify interface handlers about the process stopping.
                 for interface in user_data.used_interfaces {
-                    match self.interfaces.get(&interface) {
+                    match self.interfaces.borrow().get(&interface) {
                         Some(InterfaceState::Process(p)) => {
                             if let Some(process) = self.processes.process_by_id(*p) {
                                 let message =
@@ -349,7 +350,11 @@ impl Core {
                     .used_interfaces
                     .insert(interface.clone());
 
-                match (self.interfaces.get_mut(&interface), thread.allow_delay()) {
+                let mut self_interfaces_borrow = self.interfaces.borrow_mut();
+                match (
+                    self_interfaces_borrow.get_mut(&interface),
+                    thread.allow_delay(),
+                ) {
                     (Some(InterfaceState::Process(pid)), _) => {
                         let message_id = if thread.needs_answer() {
                             Some(loop {
@@ -357,7 +362,7 @@ impl Core {
                                 if u64::from(id) == 0 || u64::from(id) == 1 {
                                     continue;
                                 }
-                                match self.messages_to_answer.entry(id) {
+                                match self.messages_to_answer.borrow_mut().entry(id) {
                                     Entry::Occupied(_) => continue,
                                     Entry::Vacant(e) => e.insert(emitter_pid),
                                 };
@@ -412,7 +417,7 @@ impl Core {
                         }
                     }
                     (None, true) => {
-                        self.interfaces.insert(
+                        self_interfaces_borrow.insert(
                             interface.clone(),
                             InterfaceState::Requested {
                                 threads: iter::once(thread.tid()).collect(),
@@ -451,17 +456,13 @@ impl Core {
     }
 
     /// Returns an object granting access to a process, if it exists.
-    pub fn process_by_id(&mut self, pid: Pid) -> Option<CoreProcess> {
+    pub fn process_by_id(&self, pid: Pid) -> Option<CoreProcess> {
         let p = self.processes.process_by_id(pid)?;
         Some(CoreProcess { process: p })
     }
 
     // TODO: better API
-    pub fn set_interface_handler(
-        &mut self,
-        interface: InterfaceHash,
-        process: Pid,
-    ) -> Result<(), ()> {
+    pub fn set_interface_handler(&self, interface: InterfaceHash, process: Pid) -> Result<(), ()> {
         if self.processes.process_by_id(process).is_none() {
             if !self.reserved_pids.contains(&process) {
                 return Err(());
@@ -470,23 +471,24 @@ impl Core {
             debug_assert!(!self.reserved_pids.contains(&process));
         }
 
-        let (thread_ids, other_messages) = match self.interfaces.entry(interface.clone()) {
-            Entry::Vacant(e) => {
-                e.insert(InterfaceState::Process(process));
-                return Ok(());
-            }
-            Entry::Occupied(mut e) => {
-                // Check whether interface was already registered.
-                if let InterfaceState::Requested { .. } = *e.get_mut() {
-                } else {
-                    return Err(());
-                };
-                match mem::replace(e.get_mut(), InterfaceState::Process(process)) {
-                    InterfaceState::Requested { threads, other } => (threads, other),
-                    _ => unreachable!(),
+        let (thread_ids, other_messages) =
+            match self.interfaces.borrow_mut().entry(interface.clone()) {
+                Entry::Vacant(e) => {
+                    e.insert(InterfaceState::Process(process));
+                    return Ok(());
                 }
-            }
-        };
+                Entry::Occupied(mut e) => {
+                    // Check whether interface was already registered.
+                    if let InterfaceState::Requested { .. } = *e.get_mut() {
+                    } else {
+                        return Err(());
+                    };
+                    match mem::replace(e.get_mut(), InterfaceState::Process(process)) {
+                        InterfaceState::Requested { threads, other } => (threads, other),
+                        _ => unreachable!(),
+                    }
+                }
+            };
 
         // Send the `other_messages`.
         // TODO: should we preserve the order w.r.t. `threads`?
@@ -523,7 +525,7 @@ impl Core {
                     if u64::from(id) == 0 || u64::from(id) == 1 {
                         continue;
                     }
-                    match self.messages_to_answer.entry(id) {
+                    match self.messages_to_answer.borrow_mut().entry(id) {
                         Entry::Occupied(_) => continue,
                         Entry::Vacant(e) => e.insert(emitter_pid),
                     };
@@ -575,7 +577,7 @@ impl Core {
     /// The message doesn't expect any answer.
     // TODO: better API
     pub fn emit_interface_message_no_answer<'a>(
-        &mut self,
+        &self,
         emitter_pid: Pid,
         interface: InterfaceHash,
         message: impl Encode,
@@ -591,7 +593,7 @@ impl Core {
     /// [`MessageResponse`](CoreRunOutcome::MessageResponse) event.
     // TODO: better API
     pub fn emit_interface_message_answer<'a>(
-        &mut self,
+        &self,
         emitter_pid: Pid,
         interface: InterfaceHash,
         message: impl Encode,
@@ -604,19 +606,21 @@ impl Core {
     }
 
     fn emit_interface_message_inner<'a>(
-        &mut self,
+        &self,
         emitter_pid: Pid,
         interface: InterfaceHash,
         message: impl Encode,
         needs_answer: bool,
     ) -> Option<MessageId> {
+        let mut messages_to_answer = self.messages_to_answer.borrow_mut();
+
         let (message_id, messages_to_answer_entry) = if needs_answer {
             loop {
                 let id: MessageId = self.message_id_pool.assign();
                 if u64::from(id) == 0 || u64::from(id) == 1 {
                     continue;
                 }
-                match self.messages_to_answer.entry(id) {
+                match messages_to_answer.entry(id) {
                     Entry::Vacant(e) => break (Some(id), Some(e)),
                     Entry::Occupied(_) => continue,
                 };
@@ -625,12 +629,14 @@ impl Core {
             (None, None)
         };
 
-        let pid = match self.interfaces.entry(interface.clone()).or_insert_with(|| {
-            InterfaceState::Requested {
+        let pid = match self
+            .interfaces
+            .borrow_mut()
+            .entry(interface.clone())
+            .or_insert_with(|| InterfaceState::Requested {
                 threads: SmallVec::new(),
                 other: Vec::new(),
-            }
-        }) {
+            }) {
             InterfaceState::Process(pid) => *pid,
             InterfaceState::Requested { other, .. } => {
                 other.push((emitter_pid, message_id, message.encode()));
@@ -679,18 +685,18 @@ impl Core {
     /// [`emit_interface_message_no_answer`]. Only messages generated by processes can be answered
     /// through this method.
     // TODO: better API
-    pub fn answer_message(&mut self, message_id: MessageId, response: Result<EncodedMessage, ()>) {
+    pub fn answer_message(&self, message_id: MessageId, response: Result<EncodedMessage, ()>) {
         let ret = self.answer_message_inner(message_id, response);
         assert!(ret.is_none());
     }
 
     // TODO: better API
     fn answer_message_inner(
-        &mut self,
+        &self,
         message_id: MessageId,
         response: Result<EncodedMessage, ()>,
     ) -> Option<CoreRunOutcomeInner> {
-        if let Some(emitter_pid) = self.messages_to_answer.remove(&message_id) {
+        if let Some(emitter_pid) = self.messages_to_answer.borrow_mut().remove(&message_id) {
             if let Some(process) = self.processes.process_by_id(emitter_pid) {
                 let actual_message = redshirt_syscalls_interface::ffi::Message::Response(
                     redshirt_syscalls_interface::ffi::ResponseMessage {
@@ -728,7 +734,7 @@ impl Core {
     /// Start executing the module passed as parameter.
     ///
     /// Each import of the [`Module`](crate::module::Module) is resolved.
-    pub fn execute(&mut self, module: &Module) -> Result<CoreProcess, vm::NewErr> {
+    pub fn execute(&self, module: &Module) -> Result<CoreProcess, vm::NewErr> {
         let proc_metadata = Process {
             messages_queue: VecDeque::new(),
             registered_interfaces: SmallVec::new(),
@@ -764,7 +770,7 @@ impl<'a> CoreProcess<'a> {
     }
 
     /// Kills the process immediately.
-    pub fn abort(self) {
+    pub fn abort(&self) {
         self.process.abort(); // TODO: clean up
     }
 }
@@ -790,10 +796,10 @@ impl CoreBuilder {
         Core {
             pending_events: SegQueue::new(),
             processes: self.inner_builder.build(),
-            interfaces: Default::default(),
+            interfaces: RefCell::new(Default::default()),
             reserved_pids: self.reserved_pids,
             message_id_pool: IdPool::new(),
-            messages_to_answer: HashMap::default(),
+            messages_to_answer: RefCell::new(HashMap::default()),
         }
     }
 }

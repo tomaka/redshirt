@@ -60,7 +60,7 @@ fn wasm_recv_interface_msg() {
 
     let mut builder = Core::new();
     let reserved_pid = builder.reserve_pid();
-    let mut core = builder.build();
+    let core = builder.build();
     let wasm_proc_pid = core.execute(&module).unwrap().pid();
     core.set_interface_handler(interface.clone(), wasm_proc_pid)
         .unwrap();

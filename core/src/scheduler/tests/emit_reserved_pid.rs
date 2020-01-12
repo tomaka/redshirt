@@ -102,7 +102,7 @@ fn emit_reserved_pid() {
 
     let mut builder = Core::new();
     let reserved_pid = builder.reserve_pid();
-    let mut core = builder.build();
+    let core = builder.build();
     core.set_interface_handler(interface.clone(), reserved_pid)
         .unwrap();
 
