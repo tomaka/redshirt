@@ -22,7 +22,7 @@ use crate::scheduler::{
 use crate::InterfaceHash;
 
 use alloc::{collections::VecDeque, vec::Vec};
-use core::{convert::TryFrom, iter, mem};
+use core::{cell::RefCell, convert::TryFrom, iter, mem};
 use crossbeam_queue::SegQueue;
 use hashbrown::{hash_map::Entry, HashMap, HashSet};
 use redshirt_syscalls_interface::{Encode, EncodedMessage, MessageId, Pid, ThreadId};
@@ -34,7 +34,7 @@ pub struct Core {
     pending_events: SegQueue<CoreRunOutcomeInner>,
 
     /// List of running processes.
-    processes: extrinsics::ProcessesCollectionExtrinsics<Process, ()>,
+    processes: extrinsics::ProcessesCollectionExtrinsics<RefCell<Process>, ()>,
 
     /// List of `Pid`s that have been reserved during the construction.
     ///
@@ -78,7 +78,7 @@ pub struct CoreBuilder {
 
 /// Outcome of calling [`run`](Core::run).
 // TODO: #[derive(Debug)]
-pub enum CoreRunOutcome<'a> {
+pub enum CoreRunOutcome {
     /// A program has stopped, either because the main function has stopped or a problem has
     /// occurred.
     ProgramFinished {
@@ -107,7 +107,7 @@ pub enum CoreRunOutcome<'a> {
     /// resume the thread with an "interface not available error" by calling . // TODO
     ThreadWaitUnavailableInterface {
         /// Thread that emitted the message.
-        thread: CoreThread<'a>,
+        thread_id: ThreadId,
 
         /// Interface that the thread is trying to access.
         interface: InterfaceHash,
@@ -133,7 +133,7 @@ pub enum CoreRunOutcome<'a> {
 
 /// Because of lifetime issues, this is the same as `CoreRunOutcome` but that holds `Pid`s instead
 /// of `CoreProcess`es.
-// TODO: remove this enum and solve borrowing issues
+// TODO: remove this enum
 enum CoreRunOutcomeInner {
     ProgramFinished {
         pid: Pid,
@@ -189,13 +189,7 @@ struct Process {
 /// Access to a process within the core.
 pub struct CoreProcess<'a> {
     /// Access to the process within the inner collection.
-    process: extrinsics::ProcessesCollectionExtrinsicsProc<'a, Process, ()>,
-}
-
-/// Access to a thread within the core.
-pub struct CoreThread<'a> {
-    /// Access to the thread within the inner collection.
-    thread: extrinsics::ProcessesCollectionExtrinsicsThread<'a, Process, ()>,
+    process: extrinsics::ProcessesCollectionExtrinsicsProc<'a, RefCell<Process>, ()>,
 }
 
 impl Core {
@@ -229,12 +223,7 @@ impl Core {
                 },
                 CoreRunOutcomeInner::ThreadWaitUnavailableInterface { thread, interface } => {
                     CoreRunOutcome::ThreadWaitUnavailableInterface {
-                        thread: CoreThread {
-                            thread: match self.processes.thread_by_id(thread) {
-                                Some(t) => t,
-                                None => unreachable!(),
-                            },
-                        },
+                        thread_id: thread,
                         interface,
                     }
                 }
@@ -281,6 +270,8 @@ impl Core {
                     }
                 }
 
+                let user_data = user_data.into_inner();
+
                 // Unregister the interfaces this program had registered.
                 let mut unregistered_interfaces = Vec::new();
                 for interface in user_data.registered_interfaces {
@@ -302,7 +293,7 @@ impl Core {
                 for interface in user_data.used_interfaces {
                     match self.interfaces.get(&interface) {
                         Some(InterfaceState::Process(p)) => {
-                            if let Some(mut process) = self.processes.process_by_id(*p) {
+                            if let Some(process) = self.processes.process_by_id(*p) {
                                 let message =
                                     redshirt_syscalls_interface::ffi::Message::ProcessDestroyed(
                                         redshirt_syscalls_interface::ffi::ProcessDestroyedMessage {
@@ -311,7 +302,11 @@ impl Core {
                                         },
                                     );
 
-                                process.user_data().messages_queue.push_back(message);
+                                process
+                                    .user_data()
+                                    .borrow_mut()
+                                    .messages_queue
+                                    .push_back(message);
                                 try_resume_message_wait(process);
                             } // TODO: notify externals as well?
                         }
@@ -347,6 +342,7 @@ impl Core {
                 let interface = thread.emit_interface().clone();
                 thread
                     .process_user_data()
+                    .borrow_mut()
                     .used_interfaces
                     .insert(interface.clone());
 
@@ -380,11 +376,11 @@ impl Core {
                                 },
                             );
 
-                            let mut process = match self.processes.process_by_id(*pid) {
-                                Some(p) => p,
-                                None => unreachable!(),
-                            };
-                            process.user_data().messages_queue.push_back(message);
+                            process
+                                .user_data()
+                                .borrow_mut()
+                                .messages_queue
+                                .push_back(message);
                             try_resume_message_wait(process);
                             CoreRunOutcomeInner::LoopAgain
                         } else if self.reserved_pids.contains(pid) {
@@ -454,12 +450,6 @@ impl Core {
         Some(CoreProcess { process: p })
     }
 
-    /// Returns an object granting access to a thread, if it exists.
-    pub fn thread_by_id(&mut self, thread: ThreadId) -> Option<CoreThread> {
-        let thread = self.processes.thread_by_id(thread)?;
-        Some(CoreThread { thread })
-    }
-
     // TODO: better API
     pub fn set_interface_handler(
         &mut self,
@@ -506,19 +496,19 @@ impl Core {
             );
 
             match self.processes.process_by_id(process) {
-                Some(mut p) => p.user_data().messages_queue.push_back(message),
+                Some(p) => p.user_data().borrow_mut().messages_queue.push_back(message),
                 None => unreachable!(),
             }
         }
 
         // Now process the threads that were waiting for this interface to be registered.
         for thread_id in thread_ids {
-            let mut thread = match self.processes.thread_by_id(thread_id) {
-                Some(extrinsics::ProcessesCollectionExtrinsicsThread::EmitMessage(t)) => t,
+            let mut thread = match self.processes.interrupted_thread_by_id(thread_id) {
+                Ok(extrinsics::ProcessesCollectionExtrinsicsThread::EmitMessage(t)) => t,
                 _ => unreachable!(),
             };
 
-            debug_assert_eq!(*thread.emit_interface(), interface);
+            debug_assert_eq!(thread.emit_interface(), interface);
             let emitter_pid = thread.pid().into();
 
             let message_id = if thread.needs_answer() {
@@ -539,7 +529,7 @@ impl Core {
 
             let message = thread.accept_emit(message_id);
 
-            if let Some(mut interface_handler_proc) = self.processes.process_by_id(process) {
+            if let Some(interface_handler_proc) = self.processes.process_by_id(process) {
                 let message = redshirt_syscalls_interface::ffi::Message::Interface(
                     redshirt_syscalls_interface::ffi::InterfaceMessage {
                         interface: interface.clone().into(),
@@ -552,6 +542,7 @@ impl Core {
 
                 interface_handler_proc
                     .user_data()
+                    .borrow_mut()
                     .messages_queue
                     .push_back(message);
             } else {
@@ -641,7 +632,7 @@ impl Core {
             }
         };
 
-        if let Some(mut process) = self.processes.process_by_id(pid) {
+        if let Some(process) = self.processes.process_by_id(pid) {
             let message = redshirt_syscalls_interface::ffi::Message::Interface(
                 redshirt_syscalls_interface::ffi::InterfaceMessage {
                     interface: interface.into(),
@@ -652,7 +643,11 @@ impl Core {
                 },
             );
 
-            process.user_data().messages_queue.push_back(message);
+            process
+                .user_data()
+                .borrow_mut()
+                .messages_queue
+                .push_back(message);
             try_resume_message_wait(process);
         } else if self.reserved_pids.contains(&emitter_pid) {
             self.pending_events
@@ -690,7 +685,7 @@ impl Core {
         response: Result<EncodedMessage, ()>,
     ) -> Option<CoreRunOutcomeInner> {
         if let Some(emitter_pid) = self.messages_to_answer.remove(&message_id) {
-            if let Some(mut process) = self.processes.process_by_id(emitter_pid) {
+            if let Some(process) = self.processes.process_by_id(emitter_pid) {
                 let actual_message = redshirt_syscalls_interface::ffi::Message::Response(
                     redshirt_syscalls_interface::ffi::ResponseMessage {
                         message_id,
@@ -700,9 +695,14 @@ impl Core {
                     },
                 );
 
-                process.user_data().messages_queue.push_back(actual_message);
                 process
                     .user_data()
+                    .borrow_mut()
+                    .messages_queue
+                    .push_back(actual_message);
+                process
+                    .user_data()
+                    .borrow_mut()
                     .emitted_messages
                     .retain(|m| *m != message_id);
                 try_resume_message_wait(process);
@@ -731,7 +731,9 @@ impl Core {
             messages_to_answer: SmallVec::new(),
         };
 
-        let process = self.processes.execute(module, proc_metadata, ())?;
+        let process = self
+            .processes
+            .execute(module, RefCell::new(proc_metadata), ())?;
 
         Ok(CoreProcess { process })
     }
@@ -750,26 +752,14 @@ impl<'a> CoreProcess<'a> {
         self,
         fn_index: u32,
         params: Vec<wasmi::RuntimeValue>,
-    ) -> Result<CoreThread<'a>, vm::StartErr> {
-        let thread = self.process.start_thread(fn_index, params, ())?;
-        Ok(CoreThread { thread })
+    ) -> Result<(), vm::StartErr> {
+        self.process.start_thread(fn_index, params, ())?;
+        Ok(())
     }
 
     /// Kills the process immediately.
     pub fn abort(self) {
         self.process.abort(); // TODO: clean up
-    }
-}
-
-impl<'a> CoreThread<'a> {
-    /// Returns the [`ThreadId`] of the thread.
-    pub fn tid(&mut self) -> ThreadId {
-        self.thread.tid()
-    }
-
-    /// Returns the [`Pid`] of the process associated to this thread.
-    pub fn pid(&self) -> Pid {
-        self.thread.pid()
     }
 }
 
@@ -804,22 +794,15 @@ impl CoreBuilder {
 
 /// If any of the threads of the given process is waiting for a message to arrive, checks the
 /// queue and tries to resume said thread.
-fn try_resume_message_wait(process: extrinsics::ProcessesCollectionExtrinsicsProc<Process, ()>) {
+fn try_resume_message_wait(
+    process: extrinsics::ProcessesCollectionExtrinsicsProc<RefCell<Process>, ()>,
+) {
     // TODO: is it a good strategy to just go through threads in linear order? what about
     //       round-robin-ness instead?
-    let mut thread = process.main_thread();
-
-    loop {
-        let t = if let extrinsics::ProcessesCollectionExtrinsicsThread::WaitMessage(t) = thread {
+    for thread in process.interrupted_threads() {
+        if let extrinsics::ProcessesCollectionExtrinsicsThread::WaitMessage(t) = thread {
             try_resume_message_wait_thread(t)
-        } else {
-            thread
-        };
-
-        match t.next_thread() {
-            Some(t) => thread = t,
-            None => break,
-        };
+        }
     }
 }
 
@@ -828,22 +811,18 @@ fn try_resume_message_wait(process: extrinsics::ProcessesCollectionExtrinsicsPro
 // TODO: in order to call this function, we essentially have to put the state machine in a "bad"
 // state (message in queue and thread would accept said message); not great
 fn try_resume_message_wait_thread(
-    mut thread: extrinsics::ProcessesCollectionExtrinsicsThreadWaitMessage<Process, ()>,
-) -> extrinsics::ProcessesCollectionExtrinsicsThread<Process, ()> {
+    mut thread: extrinsics::ProcessesCollectionExtrinsicsThreadWaitMessage<RefCell<Process>, ()>,
+) {
     // Try to find a message in the queue that matches something the user is waiting for.
     let mut index_in_queue = 0;
     let index_in_msg_ids = loop {
-        if index_in_queue >= thread.process_user_data().messages_queue.len() {
+        if index_in_queue >= thread.process_user_data().borrow_mut().messages_queue.len() {
             // No message found.
-            return if thread.block() {
-                From::from(thread)
-            } else {
-                From::from(thread.resume_no_message())
-            };
+            return;
         }
 
         // For that message in queue, grab the value that must be in `msg_ids` in order to match.
-        let msg_id = match &thread.process_user_data().messages_queue[index_in_queue] {
+        let msg_id = match &thread.process_user_data().borrow_mut().messages_queue[index_in_queue] {
             redshirt_syscalls_interface::ffi::Message::Interface(_) => MessageId::from(1),
             redshirt_syscalls_interface::ffi::Message::ProcessDestroyed(_) => MessageId::from(1),
             redshirt_syscalls_interface::ffi::Message::Response(response) => {
@@ -862,7 +841,7 @@ fn try_resume_message_wait_thread(
     // If we reach here, we have found a message that matches what the user wants.
 
     // Adjust the `index_in_list` field of the message to match what we have.
-    match thread.process_user_data().messages_queue[index_in_queue] {
+    match thread.process_user_data().borrow_mut().messages_queue[index_in_queue] {
         redshirt_syscalls_interface::ffi::Message::Response(ref mut response) => {
             response.index_in_list = u32::try_from(index_in_msg_ids).unwrap();
         }
@@ -876,7 +855,7 @@ fn try_resume_message_wait_thread(
 
     // Turn said message into bytes.
     // TODO: would be great to not do that every single time
-    let msg_bytes = thread.process_user_data().messages_queue[index_in_queue]
+    let msg_bytes = thread.process_user_data().borrow_mut().messages_queue[index_in_queue]
         .clone()
         .encode();
 
@@ -885,10 +864,11 @@ fn try_resume_message_wait_thread(
         // Pop the message from the queue, so that we don't deliver it twice.
         let message = thread
             .process_user_data()
+            .borrow_mut()
             .messages_queue
             .remove(index_in_queue);
-        From::from(thread.resume_message(index_in_msg_ids, msg_bytes))
+        thread.resume_message(index_in_msg_ids, msg_bytes)
     } else {
-        From::from(thread.resume_message_too_big(msg_bytes.0.len()))
+        thread.resume_message_too_big(msg_bytes.0.len())
     }
 }

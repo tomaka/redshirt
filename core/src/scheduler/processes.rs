@@ -129,6 +129,9 @@ pub enum RunOneOutcome<'a, TExtr, TPud, TTud> {
 
     /// A thread in a process has finished.
     ThreadFinished {
+        /// Thread which has finished.
+        thread_id: ThreadId,
+
         /// Process whose thread has finished.
         process: ProcessesCollectionProc<'a, TPud, TTud>,
 
@@ -306,6 +309,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
                 user_data,
                 ..
             }) => RunOneOutcome::ThreadFinished {
+                thread_id: user_data.thread_id,
                 process: ProcessesCollectionProc {
                     process,
                     tid_pool: &mut self.tid_pool,
@@ -492,8 +496,8 @@ impl<'a, TPud, TTud> ProcessesCollectionProc<'a, TPud, TTud> {
     }
 
     /// Returns the user data that is associated to the process.
-    pub fn user_data(&mut self) -> &mut TPud {
-        &mut self.process.get_mut().user_data
+    pub fn user_data(&self) -> &TPud {
+        &self.process.get().user_data
     }
 
     /// Adds a new thread to the process, starting the function with the given index and passing
@@ -574,7 +578,7 @@ where
     TTud: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // TODO: threads user data
+        // TODO: threads user datas
         f.debug_struct("ProcessesCollectionProc")
             .field("pid", &self.pid())
             //.field("user_data", self.user_data())     // TODO: requires &mut self :-/
