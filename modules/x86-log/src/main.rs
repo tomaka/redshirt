@@ -20,6 +20,22 @@ use redshirt_syscalls_interface::{Decode, EncodedMessage};
 use std::{convert::TryFrom as _, mem};
 
 fn main() {
+    std::panic::set_hook(Box::new(move |panic_info| {
+        // TODO: make this code alloc-free?
+
+        let mut console = Console {
+            cursor_x: 0,
+            cursor_y: 0,
+            screen_width: 80,
+            screen_height: 25,
+            ops_buffer: redshirt_hardware_interface::HardwareWriteOperationsBuilder::new(),
+        };
+
+        console.write("x86-log has panicked\n", 0xc);
+        console.write(&panic_info.to_string(), 0xc);
+        console.flush();
+    }));
+
     redshirt_syscalls_interface::block_on(async_main());
 }
 
