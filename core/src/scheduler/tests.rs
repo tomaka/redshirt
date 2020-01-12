@@ -22,6 +22,8 @@ use crate::{
 };
 use core::iter;
 
+mod emit_not_available;
+
 #[test]
 fn basic_module() {
     let module = Module::from_wat(
