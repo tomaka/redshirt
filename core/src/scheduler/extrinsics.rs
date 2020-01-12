@@ -321,7 +321,8 @@ impl<TPud, TTud> ProcessesCollectionExtrinsics<TPud, TTud> {
     ///
     /// Which thread is run is implementation-defined and no guarantee is made.
     pub fn run(&self) -> RunOneOutcome<TPud, TTud> {
-        match self.inner.borrow_mut().run() {
+        let mut inner = self.inner.borrow_mut();
+        match inner.run() {
             processes::RunOneOutcome::ProcessFinished {
                 pid,
                 user_data,
@@ -422,9 +423,21 @@ impl<TPud, TTud> ProcessesCollectionExtrinsics<TPud, TTud> {
                     Err(_) => panic!(), // TODO:
                 };
                 thread.resume(None);
+                let pid = thread.pid();
+                let thread_id = thread.tid();
+                let proc_user_data = inner
+                    .process_by_id(pid)
+                    .unwrap()
+                    .user_data()
+                    .external_user_data
+                    .clone();
                 RunOneOutcome::ThreadEmitAnswer {
-                    process: self.process_by_id(thread.pid()).unwrap(),
-                    thread_id: thread.tid(),
+                    process: ProcessesCollectionExtrinsicsProc {
+                        parent: self,
+                        pid,
+                        user_data: proc_user_data,
+                    },
+                    thread_id,
                     message_id: emit_resp.message_id,
                     response: emit_resp.response,
                 }
@@ -442,9 +455,21 @@ impl<TPud, TTud> ProcessesCollectionExtrinsics<TPud, TTud> {
                     Err(_) => panic!(), // TODO:
                 };
                 thread.resume(None);
+                let pid = thread.pid();
+                let thread_id = thread.tid();
+                let proc_user_data = inner
+                    .process_by_id(pid)
+                    .unwrap()
+                    .user_data()
+                    .external_user_data
+                    .clone();
                 RunOneOutcome::ThreadEmitMessageError {
-                    process: self.process_by_id(thread.pid()).unwrap(),
-                    thread_id: thread.tid(),
+                    process: ProcessesCollectionExtrinsicsProc {
+                        parent: self,
+                        pid,
+                        user_data: proc_user_data,
+                    },
+                    thread_id,
                     message_id: emit_msg_error,
                 }
             }
