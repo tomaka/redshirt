@@ -824,6 +824,9 @@ fn try_resume_message_wait_thread(
     let index_in_msg_ids = loop {
         if index_in_queue >= thread.process_user_data().borrow_mut().messages_queue.len() {
             // No message found.
+            if !thread.block() {
+                thread.resume_no_message();
+            }
             return;
         }
 
