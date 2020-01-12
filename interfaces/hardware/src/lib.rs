@@ -131,6 +131,7 @@ enum Out<'a> {
     PortU8(&'a mut u8),
     PortU16(&'a mut u16),
     PortU32(&'a mut u32),
+    Discard,
 }
 
 impl<'a> HardwareOperationsBuilder<'a> {
@@ -211,6 +212,21 @@ impl<'a> HardwareOperationsBuilder<'a> {
         self.out.push(Out::PortU32(out));
     }
 
+    pub unsafe fn port_read_u8_discard(&mut self, port: u32) {
+        self.operations.push(ffi::Operation::PortReadU8 { port });
+        self.out.push(Out::Discard);
+    }
+
+    pub unsafe fn port_read_u16_discard(&mut self, port: u32) {
+        self.operations.push(ffi::Operation::PortReadU16 { port });
+        self.out.push(Out::Discard);
+    }
+
+    pub unsafe fn port_read_u32_discard(&mut self, port: u32) {
+        self.operations.push(ffi::Operation::PortReadU32 { port });
+        self.out.push(Out::Discard);
+    }
+
     pub fn send(self) -> impl Future<Output = ()> + 'a {
         unsafe {
             let msg = ffi::HardwareMessage::HardwareAccess(self.operations);
@@ -220,6 +236,7 @@ impl<'a> HardwareOperationsBuilder<'a> {
                 .then(move |response: Vec<ffi::HardwareAccessResponse>| {
                     for (response_elem, out) in response.into_iter().zip(out) {
                         match (response_elem, out) {
+                            (_, Out::Discard) => {}
                             (ffi::HardwareAccessResponse::PortReadU8(val), Out::PortU8(out)) => {
                                 *out = val
                             }
