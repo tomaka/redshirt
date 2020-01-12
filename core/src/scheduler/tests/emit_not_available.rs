@@ -95,17 +95,18 @@ fn emit_not_available() {
     (data (i32.const 1048576) "\01\02\03\04\05\06\07\08"))"#).unwrap();
 
     let mut core = Core::new().build();
-    let pid = core.execute(&module).unwrap().pid();
+    core.execute(&module).unwrap();
 
     match core.run() {
-        CoreRunOutcome::ThreadWaitUnavailableInterface { thread, interface } => {
-            assert_eq!(thread.pid(), pid);
-            let expected = InterfaceHash::from_raw_hash([
-                0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15,
-                0x16, 0x17, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x30, 0x31, 0x32, 0x33,
-                0x34, 0x35, 0x36, 0x37,
-            ]);
-            assert_eq!(interface, expected);
+        CoreRunOutcome::ThreadWaitUnavailableInterface { interface, .. } => {
+            assert_eq!(
+                interface,
+                InterfaceHash::from_raw_hash([
+                    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x10, 0x11, 0x12, 0x13, 0x14,
+                    0x15, 0x16, 0x17, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x30, 0x31,
+                    0x32, 0x33, 0x34, 0x35, 0x36, 0x37,
+                ])
+            );
         }
         _ => panic!(),
     }
