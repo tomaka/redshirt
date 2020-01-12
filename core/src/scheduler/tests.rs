@@ -23,6 +23,7 @@ use crate::{
 use core::iter;
 
 mod emit_not_available;
+mod emit_reserved_pid;
 
 #[test]
 fn basic_module() {
