@@ -13,9 +13,32 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#![cfg(test)]
+use crate::InterfaceHash;
+use crate::module::Module;
+use crate::scheduler::{Core, CoreRunOutcome};
 
-mod basic_module;
-mod emit_not_available;
-mod emit_reserved_pid;
-mod trapping_module;
+#[test]
+fn trapping_module() {
+    let module = Module::from_wat(
+        r#"(module
+        (func $main (param $p0 i32) (param $p1 i32) (result i32)
+            unreachable)
+        (export "main" (func $main)))
+    "#,
+    )
+    .unwrap();
+
+    let mut core = Core::new().build();
+    let expected_pid = core.execute(&module).unwrap().pid();
+
+    match core.run() {
+        CoreRunOutcome::ProgramFinished {
+            pid,
+            outcome: Err(_),
+            ..
+        } => {
+            assert_eq!(pid, expected_pid);
+        }
+        _ => panic!(),
+    }
+}
