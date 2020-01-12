@@ -25,8 +25,10 @@ use redshirt_syscalls_interface::{EncodedMessage, InterfaceHash, MessageId, Pid}
 pub trait NativeProgramRef<'a>: Clone {
     /// Future resolving to the next event the [`NativeProgram`] emits.
     ///
-    /// Typically set to `Pin<Box<dyn Future<Output = NativeProgramEvent<Self::MessageIdWrite>> + Send + 'a>>`.
+    /// Because Rust doesn't have async trait methods yet, this is typically set to
+    /// `Pin<Box<dyn Future<Output = NativeProgramEvent<Self::MessageIdWrite>> + Send + 'a>>`.
     type Future: Future<Output = NativeProgramEvent<Self::MessageIdWrite>> + Send + 'a;
+
     /// When the [`NativeProgram`] emits a message, this item is used by the caller to notify of
     /// the [`MessageId`] that has been emitted.
     type MessageIdWrite: NativeProgramMessageIdWrite;

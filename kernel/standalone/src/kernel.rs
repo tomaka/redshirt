@@ -103,7 +103,7 @@ impl Kernel {
                 .with_startup_process(ne2000_module)
         }
 
-        let mut system = system_builder
+        let system = system_builder
             .with_main_program([0; 32]) // TODO: just a test
             .build();
 

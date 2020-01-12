@@ -17,7 +17,8 @@ use crate::module::Module;
 use crate::native::{self, NativeProgramMessageIdWrite as _};
 use crate::scheduler::{Core, CoreBuilder, CoreRunOutcome};
 use alloc::{vec, vec::Vec};
-use core::task::Poll;
+use core::{cell::RefCell, task::Poll};
+use crossbeam_queue::SegQueue;
 use futures::prelude::*;
 use hashbrown::{hash_map::Entry, HashMap, HashSet};
 use redshirt_syscalls_interface::{Decode, Encode, EncodedMessage, MessageId, Pid};
@@ -41,7 +42,7 @@ pub struct System {
     /// oldest message.
     ///
     /// See the "threads" interface for documentation about what a futex is.
-    futex_waits: HashMap<(Pid, u32), SmallVec<[MessageId; 4]>>,
+    futex_waits: RefCell<HashMap<(Pid, u32), SmallVec<[MessageId; 4]>>>,
 
     /// Collection of programs. Each is assigned a `Pid` that is reserved within `core`.
     /// Can communicate with the WASM programs that are within `core`.
@@ -52,15 +53,14 @@ pub struct System {
     /// As soon as a handler for the "loader" interface is registered, we start loading the
     /// programs in this list. Afterwards, the list will always be empty.
     ///
-    /// Because this list is only filled at initialization, emptied at once, and then never filled
-    /// again, the most straight-forward container is a `Vec`.
+    /// This list is only filled at initialization and then never pushed again.
     // TODO: add timeout for loader interface availability
-    main_programs: Vec<[u8; 32]>,
+    main_programs: SegQueue<[u8; 32]>,
 
     /// Set of messages that we emitted of requests to load a program from the loader interface.
     /// All these messages expect a `redshirt_loader_interface::ffi::LoadResponse` as answer.
     // TODO: call shink_to_fit from time to time
-    loading_programs: HashSet<MessageId>,
+    loading_programs: RefCell<HashSet<MessageId>>,
 }
 
 /// Prototype for a [`System`].
@@ -81,7 +81,7 @@ pub struct SystemBuilder {
     startup_processes: Vec<Module>,
 
     /// Same field as [`System::main_programs`].
-    main_programs: Vec<[u8; 32]>,
+    main_programs: SegQueue<[u8; 32]>,
 }
 
 /// Outcome of running the [`System`] once.
@@ -100,7 +100,7 @@ pub enum SystemRunOutcome {
 
 impl System {
     /// Start executing a program.
-    pub fn execute(&mut self, program: &Module) -> Pid {
+    pub fn execute(&self, program: &Module) -> Pid {
         self.core
             .execute(program)
             .expect("failed to start startup program")
@@ -113,7 +113,7 @@ impl System {
     /// >           produce events in case there's nothing to do. In other words, this function
     /// >           can be seen as a generator that returns only when something needs to be
     /// >           notified.
-    pub fn run<'b>(&'b mut self) -> impl Future<Output = SystemRunOutcome> + 'b {
+    pub fn run<'b>(&'b self) -> impl Future<Output = SystemRunOutcome> + 'b {
         // TODO: We use a `poll_fn` because async/await don't work in no_std yet.
         future::poll_fn(move |cx| loop {
             if let Some(out) = self.run_once() {
@@ -154,7 +154,7 @@ impl System {
         })
     }
 
-    fn run_once(&mut self) -> Option<SystemRunOutcome> {
+    fn run_once(&self) -> Option<SystemRunOutcome> {
         // TODO: remove loop?
         loop {
             match self.core.run() {
@@ -172,7 +172,7 @@ impl System {
                     response,
                     ..
                 } => {
-                    if self.loading_programs.remove(&message_id) {
+                    if self.loading_programs.borrow_mut().remove(&message_id) {
                         let redshirt_loader_interface::ffi::LoadResponse { result } =
                             Decode::decode(response.unwrap()).unwrap();
                         let module = Module::from_bytes(&result.unwrap()).unwrap();
@@ -207,7 +207,8 @@ impl System {
                         }
                         redshirt_threads_interface::ffi::ThreadsMessage::FutexWake(mut wake) => {
                             assert!(message_id.is_none());
-                            if let Some(list) = self.futex_waits.get_mut(&(pid, wake.addr)) {
+                            let mut futex_waits = self.futex_waits.borrow_mut();
+                            if let Some(list) = futex_waits.get_mut(&(pid, wake.addr)) {
                                 while wake.nwake > 0 && !list.is_empty() {
                                     wake.nwake -= 1;
                                     let message_id = list.remove(0);
@@ -216,7 +217,7 @@ impl System {
                                 }
 
                                 if list.is_empty() {
-                                    self.futex_waits.remove(&(pid, wake.addr));
+                                    futex_waits.remove(&(pid, wake.addr));
                                 }
                             }
                             // TODO: implement
@@ -224,7 +225,7 @@ impl System {
                         redshirt_threads_interface::ffi::ThreadsMessage::FutexWait(wait) => {
                             if let Some(message_id) = message_id {
                                 // TODO: val_cmp
-                                match self.futex_waits.entry((pid, wait.addr)) {
+                                match self.futex_waits.borrow_mut().entry((pid, wait.addr)) {
                                     Entry::Occupied(mut e) => e.get_mut().push(message_id),
                                     Entry::Vacant(e) => {
                                         e.insert({
@@ -267,7 +268,7 @@ impl System {
                             }
 
                             if interface_hash == redshirt_loader_interface::ffi::INTERFACE {
-                                for hash in self.main_programs.drain(..) {
+                                while let Ok(hash) = self.main_programs.pop() {
                                     let msg =
                                         redshirt_loader_interface::ffi::LoaderMessage::Load(hash);
                                     let id = self.core.emit_interface_message_answer(
@@ -275,7 +276,7 @@ impl System {
                                         redshirt_loader_interface::ffi::INTERFACE,
                                         msg,
                                     );
-                                    self.loading_programs.insert(id);
+                                    self.loading_programs.borrow_mut().insert(id);
                                 }
                             }
                         }
@@ -311,7 +312,7 @@ impl SystemBuilder {
             interface_interface_pid,
             threads_interface_pid,
             startup_processes: Vec::new(),
-            main_programs: Vec::new(),
+            main_programs: SegQueue::new(),
             native_programs: native::NativeProgramsCollection::new(),
         }
     }
@@ -345,13 +346,13 @@ impl SystemBuilder {
     /// The program will be loaded through the `loader` interface. The loading starts as soon as
     /// the `loader` interface has been registered by one of the processes passed to
     /// [`with_startup_process`](SystemBuilder::with_startup_process).
-    pub fn with_main_program(mut self, hash: [u8; 32]) -> Self {
+    pub fn with_main_program(self, hash: [u8; 32]) -> Self {
         self.main_programs.push(hash);
         self
     }
 
     /// Builds the [`System`].
-    pub fn build(mut self) -> System {
+    pub fn build(self) -> System {
         let core = self.core.build();
 
         // We ask the core to redirect messages for the `interface` and `threads` interfaces
@@ -376,13 +377,11 @@ impl SystemBuilder {
                 .expect("failed to start startup program"); // TODO:
         }
 
-        self.main_programs.shrink_to_fit();
-
         System {
             core,
             native_programs: self.native_programs,
-            futex_waits: Default::default(),
-            loading_programs: Default::default(),
+            futex_waits: RefCell::new(Default::default()),
+            loading_programs: RefCell::new(Default::default()),
             main_programs: self.main_programs,
         }
     }
