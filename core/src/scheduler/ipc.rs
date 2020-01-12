@@ -31,7 +31,7 @@ use smallvec::SmallVec;
 /// Handles scheduling processes and inter-process communications.
 pub struct Core {
     /// Queue of events to return in priority when `run` is called.
-    pending_events: SegQueue<CoreRunOutcomeInner>,
+    pending_events: SegQueue<CoreRunOutcome>,
 
     /// List of running processes.
     processes: extrinsics::ProcessesCollectionExtrinsics<RefCell<Process>, ()>,
@@ -131,36 +131,6 @@ pub enum CoreRunOutcome {
     Idle,
 }
 
-/// Because of lifetime issues, this is the same as `CoreRunOutcome` but that holds `Pid`s instead
-/// of `CoreProcess`es.
-// TODO: remove this enum
-enum CoreRunOutcomeInner {
-    ProgramFinished {
-        pid: Pid,
-        unhandled_messages: Vec<MessageId>,
-        cancelled_messages: Vec<MessageId>,
-        unregistered_interfaces: Vec<InterfaceHash>,
-        outcome: Result<Option<wasmi::RuntimeValue>, wasmi::Trap>,
-    },
-    ThreadWaitUnavailableInterface {
-        thread: ThreadId,
-        interface: InterfaceHash,
-    },
-    ReservedPidInterfaceMessage {
-        // TODO: `pid` is redundant with `message_id`; should just be a better API with an `Event` handle struct
-        pid: Pid,
-        message_id: Option<MessageId>,
-        interface: InterfaceHash,
-        message: EncodedMessage,
-    },
-    MessageResponse {
-        message_id: MessageId,
-        response: Result<EncodedMessage, ()>,
-    },
-    LoopAgain,
-    Idle,
-}
-
 /// Additional information about a process.
 #[derive(Debug)]
 struct Process {
@@ -204,55 +174,17 @@ impl Core {
     /// Run the core once.
     pub fn run(&self) -> CoreRunOutcome {
         loop {
-            break match self.run_inner() {
-                CoreRunOutcomeInner::Idle => CoreRunOutcome::Idle,
-                CoreRunOutcomeInner::LoopAgain => continue,
-                CoreRunOutcomeInner::ProgramFinished {
-                    pid,
-                    unhandled_messages,
-                    cancelled_messages,
-                    unregistered_interfaces,
-                    outcome,
-                } => CoreRunOutcome::ProgramFinished {
-                    pid,
-                    unhandled_messages,
-                    cancelled_messages,
-                    unregistered_interfaces,
-                    outcome,
-                },
-                CoreRunOutcomeInner::ThreadWaitUnavailableInterface { thread, interface } => {
-                    CoreRunOutcome::ThreadWaitUnavailableInterface {
-                        thread_id: thread,
-                        interface,
-                    }
-                }
-                CoreRunOutcomeInner::ReservedPidInterfaceMessage {
-                    pid,
-                    message_id,
-                    interface,
-                    message,
-                } => CoreRunOutcome::ReservedPidInterfaceMessage {
-                    pid,
-                    message_id,
-                    interface,
-                    message,
-                },
-                CoreRunOutcomeInner::MessageResponse {
-                    message_id,
-                    response,
-                } => CoreRunOutcome::MessageResponse {
-                    message_id,
-                    response,
-                },
-            };
+            match self.run_inner() {
+                Some(ev) => break ev,
+                None => {}
+            }
         }
     }
 
-    /// Because of lifetime issues, we return an enum that holds `Pid`s instead of `CoreProcess`es.
-    /// Then `run` does the conversion in order to have a good API.
-    fn run_inner(&self) -> CoreRunOutcomeInner {
+    /// Same as [`run`]. Returns `None` if no event should be returned and we should loop again.
+    fn run_inner(&self) -> Option<CoreRunOutcome> {
         if let Ok(ev) = self.pending_events.pop() {
-            return ev;
+            return Some(ev);
         }
 
         // Note: we use a temporary `run_outcome` variable in order to solve weird borrowing
@@ -321,24 +253,24 @@ impl Core {
 
                 // TODO: also, what do we do with the pending messages and all?
 
-                CoreRunOutcomeInner::ProgramFinished {
+                Some(CoreRunOutcome::ProgramFinished {
                     pid,
                     unregistered_interfaces,
                     // TODO: this only handles messages emitted through the external API
                     unhandled_messages: user_data.messages_to_answer.to_vec(), // TODO: to_vec overhead
                     cancelled_messages,
                     outcome,
-                }
+                })
             }
 
             extrinsics::RunOneOutcome::ThreadFinished { .. } => {
                 // TODO: report?
-                CoreRunOutcomeInner::LoopAgain
+                None
             }
 
             extrinsics::RunOneOutcome::ThreadWaitMessage(thread) => {
                 try_resume_message_wait_thread(thread);
-                CoreRunOutcomeInner::LoopAgain
+                None
             }
 
             extrinsics::RunOneOutcome::ThreadEmitMessage(mut thread) => {
@@ -390,31 +322,31 @@ impl Core {
                                 .messages_queue
                                 .push_back(message);
                             try_resume_message_wait(process);
-                            CoreRunOutcomeInner::LoopAgain
+                            None
                         } else if self.reserved_pids.contains(pid) {
-                            CoreRunOutcomeInner::ReservedPidInterfaceMessage {
+                            Some(CoreRunOutcome::ReservedPidInterfaceMessage {
                                 pid: emitter_pid,
                                 message_id,
                                 interface,
                                 message,
-                            }
+                            })
                         } else {
                             // This can be reached if a process has been killed but the list of
                             // interface handlers hasn't been updated yet.
                             // TODO: this is wrong; don't just ignore the message
-                            CoreRunOutcomeInner::LoopAgain
+                            None
                         }
                     }
                     (None, false) | (Some(InterfaceState::Requested { .. }), false) => {
                         thread.refuse_emit();
-                        CoreRunOutcomeInner::LoopAgain
+                        None
                     }
                     (Some(InterfaceState::Requested { threads, .. }), true) => {
                         threads.push(thread.tid());
-                        CoreRunOutcomeInner::ThreadWaitUnavailableInterface {
-                            thread: thread.tid(),
+                        Some(CoreRunOutcome::ThreadWaitUnavailableInterface {
+                            thread_id: thread.tid(),
                             interface,
-                        }
+                        })
                     }
                     (None, true) => {
                         self_interfaces_borrow.insert(
@@ -424,10 +356,10 @@ impl Core {
                                 other: Vec::new(),
                             },
                         );
-                        CoreRunOutcomeInner::ThreadWaitUnavailableInterface {
-                            thread: thread.tid(),
+                        Some(CoreRunOutcome::ThreadWaitUnavailableInterface {
+                            thread_id: thread.tid(),
                             interface,
-                        }
+                        })
                     }
                 }
             }
@@ -441,17 +373,15 @@ impl Core {
                 let response = response.clone();
                 drop(run_outcome);
                 self.answer_message_inner(message_id, Ok(response))
-                    .unwrap_or(CoreRunOutcomeInner::LoopAgain)
             }
 
             extrinsics::RunOneOutcome::ThreadEmitMessageError { message_id, .. } => {
                 // TODO: check ownership of the message
                 drop(run_outcome);
                 self.answer_message_inner(message_id, Err(()))
-                    .unwrap_or(CoreRunOutcomeInner::LoopAgain)
             }
 
-            extrinsics::RunOneOutcome::Idle => CoreRunOutcomeInner::Idle,
+            extrinsics::RunOneOutcome::Idle => Some(CoreRunOutcome::Idle),
         }
     }
 
@@ -556,7 +486,7 @@ impl Core {
             } else {
                 debug_assert!(self.reserved_pids.contains(&process));
                 self.pending_events
-                    .push(CoreRunOutcomeInner::ReservedPidInterfaceMessage {
+                    .push(CoreRunOutcome::ReservedPidInterfaceMessage {
                         pid: emitter_pid,
                         message_id,
                         interface: interface.clone(),
@@ -663,7 +593,7 @@ impl Core {
             try_resume_message_wait(process);
         } else if self.reserved_pids.contains(&emitter_pid) {
             self.pending_events
-                .push(CoreRunOutcomeInner::ReservedPidInterfaceMessage {
+                .push(CoreRunOutcome::ReservedPidInterfaceMessage {
                     pid: emitter_pid,
                     message_id: None,
                     interface,
@@ -695,7 +625,7 @@ impl Core {
         &self,
         message_id: MessageId,
         response: Result<EncodedMessage, ()>,
-    ) -> Option<CoreRunOutcomeInner> {
+    ) -> Option<CoreRunOutcome> {
         if let Some(emitter_pid) = self.messages_to_answer.borrow_mut().remove(&message_id) {
             if let Some(process) = self.processes.process_by_id(emitter_pid) {
                 let actual_message = redshirt_syscalls_interface::ffi::Message::Response(
@@ -720,7 +650,7 @@ impl Core {
                 try_resume_message_wait(process);
                 None
             } else {
-                Some(CoreRunOutcomeInner::MessageResponse {
+                Some(CoreRunOutcome::MessageResponse {
                     message_id,
                     response,
                 })
