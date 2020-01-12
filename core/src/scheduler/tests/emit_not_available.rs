@@ -13,9 +13,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::InterfaceHash;
 use crate::module::Module;
 use crate::scheduler::{Core, CoreRunOutcome};
+use crate::InterfaceHash;
 
 #[test]
 fn emit_not_available() {
@@ -101,16 +101,17 @@ fn emit_not_available() {
         CoreRunOutcome::ThreadWaitUnavailableInterface { thread, interface } => {
             assert_eq!(thread.pid(), pid);
             let expected = InterfaceHash::from_raw_hash([
-                0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
-                0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37,
+                0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15,
+                0x16, 0x17, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x30, 0x31, 0x32, 0x33,
+                0x34, 0x35, 0x36, 0x37,
             ]);
             assert_eq!(interface, expected);
-        },
-        _ => panic!()
+        }
+        _ => panic!(),
     }
 
     match core.run() {
-        CoreRunOutcome::Idle => {},
-        _ => panic!()
+        CoreRunOutcome::Idle => {}
+        _ => panic!(),
     }
 }

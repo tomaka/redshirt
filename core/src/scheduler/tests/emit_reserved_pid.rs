@@ -13,9 +13,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::InterfaceHash;
 use crate::module::Module;
 use crate::scheduler::{Core, CoreRunOutcome};
+use crate::InterfaceHash;
 
 #[test]
 fn emit_reserved_pid() {
@@ -95,37 +95,48 @@ fn emit_reserved_pid() {
     (data (i32.const 1048576) "\01\02\03\04\05\06\07\08"))"#).unwrap();
 
     let interface = InterfaceHash::from_raw_hash([
-        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
-        0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37,
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16,
+        0x17, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35,
+        0x36, 0x37,
     ]);
 
     let mut builder = Core::new();
     let reserved_pid = builder.reserve_pid();
     let mut core = builder.build();
-    core.set_interface_handler(interface.clone(), reserved_pid).unwrap();
+    core.set_interface_handler(interface.clone(), reserved_pid)
+        .unwrap();
 
     let pid = core.execute(&module).unwrap().pid();
 
     match core.run() {
-        CoreRunOutcome::ReservedPidInterfaceMessage { pid: emitter_pid, message_id, interface: interface_obtained, message } => {
+        CoreRunOutcome::ReservedPidInterfaceMessage {
+            pid: emitter_pid,
+            message_id,
+            interface: interface_obtained,
+            message,
+        } => {
             assert!(message_id.is_none());
             assert_eq!(emitter_pid, pid);
             assert_eq!(interface_obtained, interface);
             assert_eq!(message.0, &[1, 2, 3, 4, 5, 6, 7, 8]);
-        },
-        _ => panic!()
+        }
+        _ => panic!(),
     }
 
     match core.run() {
-        CoreRunOutcome::ProgramFinished { pid: finished_pid, outcome, .. } => {
+        CoreRunOutcome::ProgramFinished {
+            pid: finished_pid,
+            outcome,
+            ..
+        } => {
             assert_eq!(finished_pid, pid);
             assert!(outcome.is_ok());
-        },
-        _ => panic!()
+        }
+        _ => panic!(),
     }
 
     match core.run() {
-        CoreRunOutcome::Idle => {},
-        _ => panic!()
+        CoreRunOutcome::Idle => {}
+        _ => panic!(),
     }
 }
