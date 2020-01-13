@@ -111,7 +111,7 @@
 //!
 
 #![warn(missing_docs)]
-#![deny(unsafe_code)]
+//#![deny(unsafe_code)] // TODO: 🤷
 #![deny(intra_doc_link_resolution_failure)]
 #![allow(dead_code)] // TODO: temporary during development
 #![no_std]
