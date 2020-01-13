@@ -491,6 +491,16 @@ impl<T> ProcessStateMachine<T> {
     }
 }
 
+// The fields related to `wasmi` are do not implement `Send` because they use `std::rc::Rc`. `Rc`
+// does not implement `Send` because incrementing/decrementing the reference counter from
+// multiple threads simultaneously would be racy. It is however perfectly sound to move all the
+// instances of `Rc`s at once between threads, which is what we're doing here.
+//
+// This importantly means that we should never return a `Rc` (even by reference) across the API
+// boundary.
+// TODO: really annoying to have to use unsafe code
+unsafe impl<T: Send> Send for ProcessStateMachine<T> {}
+
 impl<T> fmt::Debug for ProcessStateMachine<T>
 where
     T: fmt::Debug,
