@@ -23,6 +23,8 @@ use alloc::vec;
 fn wasm_recv_interface_msg() {
     /* Original code:
 
+    extern crate alloc;
+    use alloc::vec;
     use futures::prelude::*;
 
     #[start]
@@ -44,7 +46,7 @@ fn wasm_recv_interface_msg() {
                     redshirt_syscalls_interface::DecodedInterfaceOrDestroyed::ProcessDestroyed(_) => panic!(),
                 };
                 assert_eq!(msg.interface, interface);
-                assert_eq!(msg.actual_data, &[1, 2, 3, 4, 5, 6, 7, 8]);
+                assert_eq!(msg.actual_data, redshirt_syscalls_interface::EncodedMessage(vec![1, 2, 3, 4, 5, 6, 7, 8]));
                 future::ready(())
             })
     }
