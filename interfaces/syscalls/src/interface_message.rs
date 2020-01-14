@@ -13,15 +13,13 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::{ffi::InterfaceOrDestroyed, Encode, MessageId};
+use crate::{ffi::DecodedInterfaceOrDestroyed, Encode, MessageId};
 
 use core::{
     pin::Pin,
     task::{Context, Poll},
 };
 use futures::prelude::*;
-
-// TODO: replace `InterfaceOrDestroyed` with a different enum where `actual_data` is more strongly typed
 
 /// Returns a future that is ready when a new message arrives on an interface that we have
 /// registered.
@@ -52,7 +50,7 @@ pub struct InterfaceMessageFuture {
 }
 
 impl Future for InterfaceMessageFuture {
-    type Output = InterfaceOrDestroyed;
+    type Output = DecodedInterfaceOrDestroyed;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         assert!(!self.finished);

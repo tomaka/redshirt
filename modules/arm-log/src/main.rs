@@ -29,13 +29,13 @@ async fn async_main() -> ! {
 
     loop {
         let msg = match redshirt_syscalls_interface::next_interface_message().await {
-            redshirt_syscalls_interface::InterfaceOrDestroyed::Interface(m) => m,
-            redshirt_syscalls_interface::InterfaceOrDestroyed::ProcessDestroyed(_) => continue,
+            redshirt_syscalls_interface::DecodedInterfaceOrDestroyed::Interface(m) => m,
+            redshirt_syscalls_interface::DecodedInterfaceOrDestroyed::ProcessDestroyed(_) => continue,
         };
         assert_eq!(msg.interface, redshirt_log_interface::ffi::INTERFACE);
 
         let message: redshirt_log_interface::ffi::DecodedLogMessage =
-            Decode::decode(EncodedMessage(msg.actual_data)).unwrap();       // TODO: don't unwrap
+            Decode::decode(msg.actual_data).unwrap();       // TODO: don't unwrap
         for byte in message.message().as_bytes() {
             write_uart(*byte).await;
         }

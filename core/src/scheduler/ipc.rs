@@ -140,7 +140,7 @@ struct Process {
     /// and [`InterfaceMessage::index_in_list`](redshirt_syscalls_interface::ffi::InterfaceMessage::index_in_list) fields are
     /// set to a dummy value, and must be filled before actually delivering the message.
     // TODO: call shrink_to_fit from time to time
-    messages_queue: VecDeque<redshirt_syscalls_interface::ffi::Message>,
+    messages_queue: VecDeque<redshirt_syscalls_interface::ffi::MessageBuilder>,
 
     /// Interfaces that the process has registered.
     registered_interfaces: SmallVec<[InterfaceHash; 1]>,
@@ -230,13 +230,9 @@ impl Core {
                     match self.interfaces.borrow().get(&interface) {
                         Some(InterfaceState::Process(p)) => {
                             if let Some(process) = self.processes.process_by_id(*p) {
-                                let message =
-                                    redshirt_syscalls_interface::ffi::Message::ProcessDestroyed(
-                                        redshirt_syscalls_interface::ffi::ProcessDestroyedMessage {
-                                            index_in_list: 0,
-                                            pid: pid.into(),
-                                        },
-                                    );
+                                let message = From::from(
+                                    redshirt_syscalls_interface::ffi::build_process_destroyed_message(pid.into(), 0)
+                                );
 
                                 process
                                     .user_data()
@@ -306,15 +302,15 @@ impl Core {
 
                         let message = thread.accept_emit(message_id);
                         if let Some(process) = self.processes.process_by_id(*pid) {
-                            let message = redshirt_syscalls_interface::ffi::Message::Interface(
-                                redshirt_syscalls_interface::ffi::InterfaceMessage {
-                                    interface: interface.into(),
-                                    index_in_list: 0,
+                            let message =
+                                redshirt_syscalls_interface::ffi::build_interface_message(
+                                    &interface,
                                     message_id,
-                                    emitter_pid: emitter_pid.into(),
-                                    actual_data: message.0,
-                                },
-                            );
+                                    emitter_pid,
+                                    0,
+                                    &message,
+                                )
+                                .into();
 
                             process
                                 .user_data()
@@ -423,15 +419,13 @@ impl Core {
         // Send the `other_messages`.
         // TODO: should we preserve the order w.r.t. `threads`?
         for (emitter_pid, message_id, message_data) in other_messages {
-            let message = redshirt_syscalls_interface::ffi::Message::Interface(
-                redshirt_syscalls_interface::ffi::InterfaceMessage {
-                    interface: interface.clone().into(),
-                    index_in_list: 0,
-                    message_id,
-                    emitter_pid,
-                    actual_data: message_data.0,
-                },
-            );
+            let message = From::from(redshirt_syscalls_interface::ffi::build_interface_message(
+                &interface,
+                message_id,
+                emitter_pid,
+                0,
+                &message_data,
+            ));
 
             match self.processes.process_by_id(process) {
                 Some(p) => p.user_data().borrow_mut().messages_queue.push_back(message),
@@ -468,15 +462,14 @@ impl Core {
             let message = thread.accept_emit(message_id);
 
             if let Some(interface_handler_proc) = self.processes.process_by_id(process) {
-                let message = redshirt_syscalls_interface::ffi::Message::Interface(
-                    redshirt_syscalls_interface::ffi::InterfaceMessage {
-                        interface: interface.clone().into(),
-                        index_in_list: 0,
+                let message =
+                    From::from(redshirt_syscalls_interface::ffi::build_interface_message(
+                        &interface,
                         message_id,
                         emitter_pid,
-                        actual_data: message.0,
-                    },
-                );
+                        0,
+                        &message,
+                    ));
 
                 interface_handler_proc
                     .user_data()
@@ -575,21 +568,19 @@ impl Core {
         };
 
         if let Some(process) = self.processes.process_by_id(pid) {
-            let message = redshirt_syscalls_interface::ffi::Message::Interface(
-                redshirt_syscalls_interface::ffi::InterfaceMessage {
-                    interface: interface.into(),
-                    message_id,
-                    emitter_pid,
-                    index_in_list: 0,
-                    actual_data: message.encode().0.to_vec(),
-                },
+            let message = redshirt_syscalls_interface::ffi::build_interface_message(
+                &interface,
+                message_id,
+                emitter_pid,
+                0,
+                &message.encode(),
             );
 
             process
                 .user_data()
                 .borrow_mut()
                 .messages_queue
-                .push_back(message);
+                .push_back(From::from(message));
             try_resume_message_wait(process);
         } else if self.reserved_pids.contains(&emitter_pid) {
             self.pending_events
@@ -628,14 +619,16 @@ impl Core {
     ) -> Option<CoreRunOutcome> {
         if let Some(emitter_pid) = self.messages_to_answer.borrow_mut().remove(&message_id) {
             if let Some(process) = self.processes.process_by_id(emitter_pid) {
-                let actual_message = redshirt_syscalls_interface::ffi::Message::Response(
-                    redshirt_syscalls_interface::ffi::ResponseMessage {
+                let actual_message =
+                    From::from(redshirt_syscalls_interface::ffi::build_response_message(
                         message_id,
                         // We a dummy value here and fill it up later when actually delivering the message.
-                        index_in_list: 0,
-                        actual_data: response.map(|r| r.0.to_vec()),
-                    },
-                );
+                        0,
+                        match &response {
+                            Ok(r) => Ok(r),
+                            Err(()) => Err(()),
+                        },
+                    ));
 
                 process
                     .user_data()
@@ -768,11 +761,13 @@ fn try_resume_message_wait_thread(
 
         // For that message in queue, grab the value that must be in `msg_ids` in order to match.
         let msg_id = match &thread.process_user_data().borrow_mut().messages_queue[index_in_queue] {
-            redshirt_syscalls_interface::ffi::Message::Interface(_) => MessageId::from(1),
-            redshirt_syscalls_interface::ffi::Message::ProcessDestroyed(_) => MessageId::from(1),
-            redshirt_syscalls_interface::ffi::Message::Response(response) => {
-                debug_assert!(u64::from(response.message_id) >= 2);
-                response.message_id
+            redshirt_syscalls_interface::ffi::MessageBuilder::Interface(_) => MessageId::from(1),
+            redshirt_syscalls_interface::ffi::MessageBuilder::ProcessDestroyed(_) => {
+                MessageId::from(1)
+            }
+            redshirt_syscalls_interface::ffi::MessageBuilder::Response(response) => {
+                debug_assert!(u64::from(response.message_id()) >= 2);
+                response.message_id()
             }
         };
 
@@ -785,35 +780,24 @@ fn try_resume_message_wait_thread(
 
     // If we reach here, we have found a message that matches what the user wants.
 
-    // Adjust the `index_in_list` field of the message to match what we have.
-    match thread.process_user_data().borrow_mut().messages_queue[index_in_queue] {
-        redshirt_syscalls_interface::ffi::Message::Response(ref mut response) => {
-            response.index_in_list = u32::try_from(index_in_msg_ids).unwrap();
-        }
-        redshirt_syscalls_interface::ffi::Message::Interface(ref mut interface) => {
-            interface.index_in_list = u32::try_from(index_in_msg_ids).unwrap();
-        }
-        redshirt_syscalls_interface::ffi::Message::ProcessDestroyed(ref mut proc_destr) => {
-            proc_destr.index_in_list = u32::try_from(index_in_msg_ids).unwrap();
-        }
-    }
-
-    // Turn said message into bytes.
-    // TODO: would be great to not do that every single time
-    let msg_bytes = thread.process_user_data().borrow_mut().messages_queue[index_in_queue]
-        .clone()
-        .encode();
+    let message_length =
+        thread.process_user_data().borrow_mut().messages_queue[index_in_queue].len();
 
     // TODO: maybe extrinsics could have some API shortcut here
-    if msg_bytes.0.len() < thread.allowed_message_size() {
+    if message_length <= thread.allowed_message_size() {
         // Pop the message from the queue, so that we don't deliver it twice.
-        let message = thread
+        let mut message = thread
             .process_user_data()
             .borrow_mut()
             .messages_queue
-            .remove(index_in_queue);
-        thread.resume_message(index_in_msg_ids, msg_bytes)
+            .remove(index_in_queue)
+            .unwrap();
+
+        // Adjust the `index_in_list` field of the message to match what we have.
+        message.set_index_in_list(u32::try_from(index_in_msg_ids).unwrap());
+        // TODO: crappy to pass an EncodedMessage
+        thread.resume_message(index_in_msg_ids, EncodedMessage(message.into_bytes()))
     } else {
-        thread.resume_message_too_big(msg_bytes.0.len())
+        thread.resume_message_too_big(message_length)
     }
 }

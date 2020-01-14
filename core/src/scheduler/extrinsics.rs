@@ -978,6 +978,14 @@ impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsThreadWaitMessage<'a, TPud, TT
         let mut inner = self.parent.inner.borrow_mut();
         let mut inner = inner.thread_by_id(self.tid).unwrap();
 
+        debug_assert!({
+            let expected = match &mut inner.user_data().state {
+                LocalThreadState::MessageWait(wait) => wait.out_size,
+                _ => unreachable!(),
+            };
+            expected < u32::try_from(message_size).unwrap()
+        });
+
         inner.user_data().state = LocalThreadState::ReadyToRun;
         inner.resume(Some(wasmi::RuntimeValue::I32(
             i32::try_from(message_size).unwrap(),
