@@ -15,8 +15,7 @@ futures = { git = "https://github.com/tomaka/futures-rs", branch = "const-new-at
 hashbrown = { version = "0.6.3", default-features = false }
 lazy_static = "1.4"
 libm = "0.2.1"
-# TODO: replace with upstream after https://github.com/phil-opp/linked-list-allocator/pull/18
-linked_list_allocator = { git = "https://github.com/tomaka/linked-list-allocator", rev = "13470135a553d9cb42d999c03056d89a1cb74642" }
+linked_list_allocator = "0.6.5"
 rand_chacha = { version = "0.2.1", default-features = false }
 rand_core = { version = "0.5.1", default-features = false }
 rand_jitter = { version = "0.2.0", default-features = false }
