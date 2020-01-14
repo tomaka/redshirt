@@ -21,19 +21,21 @@ use std::{convert::TryFrom as _, mem};
 
 fn main() {
     std::panic::set_hook(Box::new(move |panic_info| {
-        // TODO: make this code alloc-free?
+        redshirt_syscalls_interface::block_on(async move {
+            // TODO: make this code alloc-free?
 
-        let mut console = Console {
-            cursor_x: 0,
-            cursor_y: 0,
-            screen_width: 80,
-            screen_height: 25,
-            ops_buffer: redshirt_hardware_interface::HardwareWriteOperationsBuilder::new(),
-        };
+            let mut console = Console {
+                cursor_x: 0,
+                cursor_y: 0,
+                screen_width: 80,
+                screen_height: 25,
+                ops_buffer: redshirt_hardware_interface::HardwareWriteOperationsBuilder::new(),
+            };
 
-        console.write("x86-log has panicked\n", 0xc);
-        console.write(&panic_info.to_string(), 0xc);
-        console.flush();
+            console.write("x86-log has panicked\n", 0xc).await;
+            console.write(&panic_info.to_string(), 0xc).await;
+            console.flush();
+        });
     }));
 
     redshirt_syscalls_interface::block_on(async_main());
@@ -72,18 +74,18 @@ async fn async_main() -> ! {
                 ffi::Level::Trace => "TRCE",
             };
     
-            console.write("[", 0x8);
-            console.write(&format!("{:?}", msg.emitter_pid), 0x8);
-            console.write("] [", 0x8);
-            console.write(level, 0x8);
-            console.write("] ", 0x8);
-            console.write(&message.message(), 0xf);
-            console.write("\n", 0xf);
+            console.write("[", 0x8).await;
+            console.write(&format!("{:?}", msg.emitter_pid), 0x8).await;
+            console.write("] [", 0x8).await;
+            console.write(level, 0x8).await;
+            console.write("] ", 0x8).await;
+            console.write(&message.message(), 0xf).await;
+            console.write("\n", 0xf).await;
 
         } else {
-            console.write("[", 0x8);
-            console.write(&format!("{:?}", msg.emitter_pid), 0x8);
-            console.write("] Bad log message\n", 0x8);
+            console.write("[", 0x8).await;
+            console.write(&format!("{:?}", msg.emitter_pid), 0x8).await;
+            console.write("] Bad log message\n", 0x8).await;
         }
 
         console.flush();
@@ -115,6 +117,8 @@ impl Console {
     }
 
     fn flush(&mut self) {
+        self.update_cursor();
+
         let new_ops = redshirt_hardware_interface::HardwareWriteOperationsBuilder::new();
         mem::replace(&mut self.ops_buffer, new_ops).send();
     }
@@ -128,7 +132,7 @@ impl Console {
     }
 
     /// Writes a message on the console.
-    fn write(&mut self, message: &str, color: u8) {
+    async fn write(&mut self, message: &str, color: u8) {
         unsafe {
             for chr in message.chars() {
                 if !chr.is_ascii() {
@@ -139,7 +143,7 @@ impl Console {
                     self.cursor_x = 0;
                     self.cursor_y += 1;
                     if self.cursor_y == self.screen_height {
-                        self.line_up();
+                        self.line_up().await;
                     }
                     continue;
                 }
@@ -159,12 +163,15 @@ impl Console {
                     debug_assert!(self.cursor_y < self.screen_height);
                     self.cursor_y += 1;
                     if self.cursor_y == self.screen_height {
-                        self.line_up();
+                        self.line_up().await;
                     }
                 }
             }
+        }
+    }
 
-            // Update the VGA cursor to match self.cursor_x and self.cursor_y.
+    fn update_cursor(&mut self) {
+        unsafe {
             let cursor_pos = u64::from(self.cursor_y) * u64::from(self.screen_width) + u64::from(self.cursor_x);
             self.ops_buffer.port_write_u8(0x3d4, 0xf);
             self.ops_buffer.port_write_u8(0x3d5, u8::try_from(cursor_pos & 0xff).unwrap());
@@ -173,21 +180,20 @@ impl Console {
         }
     }
 
-    fn line_up(&mut self) {
-        self.cursor_y -= 1;
+    async fn line_up(&mut self) {
+        unsafe {
+            self.flush();
 
-        // TODO:
-        /*unsafe {
-            for y in 1..25 {
-                for x in 0..80 {
-                    let val = ptr_of(x, y).read_volatile();
-                    ptr_of(x, y - 1).write_volatile(val);
-                }
-            }
-    
-            for x in 0..80 {
-                ptr_of(x, 24).write_volatile(0);
-            }
-        }*/
+            let mut fb_content = vec![0; 2 * usize::from(self.screen_width) * (usize::from(self.screen_height) - 1)];
+
+            let mut read_ops = redshirt_hardware_interface::HardwareOperationsBuilder::new();
+            read_ops.read(self.ptr_of(0, 1), &mut fb_content);
+            read_ops.send().await;
+
+            self.ops_buffer.write(self.ptr_of(0, 0), fb_content);
+            self.ops_buffer.write(self.ptr_of(0, self.screen_height - 1), vec![0; 2 * usize::from(self.screen_width)]);
+
+            self.cursor_y -= 1;
+        }
     }
 }
