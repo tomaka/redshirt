@@ -14,7 +14,6 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use core::fmt;
-use sha2::Digest as _;
 
 /// Represents a successfully-parsed binary.
 ///
@@ -77,7 +76,7 @@ impl fmt::Debug for Module {
 impl ModuleHash {
     /// Returns the hash of the given bytes.
     pub fn from_bytes(buffer: impl AsRef<[u8]>) -> Self {
-        ModuleHash(sha2::Sha256::digest(buffer.as_ref()).into())
+        ModuleHash(blake3::hash(buffer.as_ref()).into())
     }
 }
 
