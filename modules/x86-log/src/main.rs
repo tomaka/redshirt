@@ -58,12 +58,12 @@ async fn async_main() -> ! {
 
     loop {
         let msg = match redshirt_syscalls_interface::next_interface_message().await {
-            redshirt_syscalls_interface::InterfaceOrDestroyed::Interface(m) => m,
-            redshirt_syscalls_interface::InterfaceOrDestroyed::ProcessDestroyed(_) => continue,
+            redshirt_syscalls_interface::DecodedInterfaceOrDestroyed::Interface(m) => m,
+            redshirt_syscalls_interface::DecodedInterfaceOrDestroyed::ProcessDestroyed(_) => continue,
         };
         assert_eq!(msg.interface, ffi::INTERFACE);
 
-        if let Ok(message) = ffi::DecodedLogMessage::decode(EncodedMessage(msg.actual_data)) {
+        if let Ok(message) = ffi::DecodedLogMessage::decode(msg.actual_data) {
             let level = match message.level() {
                 ffi::Level::Error => "ERR ",
                 ffi::Level::Warn => "WARN",

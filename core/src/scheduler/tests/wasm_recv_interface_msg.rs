@@ -40,8 +40,8 @@ fn wasm_recv_interface_msg() {
         redshirt_syscalls_interface::next_interface_message()
             .then(move |msg| {
                 let msg = match msg {
-                    redshirt_syscalls_interface::InterfaceOrDestroyed::Interface(m) => m,
-                    redshirt_syscalls_interface::InterfaceOrDestroyed::ProcessDestroyed(_) => panic!(),
+                    redshirt_syscalls_interface::DecodedInterfaceOrDestroyed::Interface(m) => m,
+                    redshirt_syscalls_interface::DecodedInterfaceOrDestroyed::ProcessDestroyed(_) => panic!(),
                 };
                 assert_eq!(msg.interface, interface);
                 assert_eq!(msg.actual_data, &[1, 2, 3, 4, 5, 6, 7, 8]);

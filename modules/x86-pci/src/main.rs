@@ -38,12 +38,12 @@ async fn async_main() {
 
     loop {
         let msg = match redshirt_syscalls_interface::next_interface_message().await {
-            redshirt_syscalls_interface::InterfaceOrDestroyed::Interface(m) => m,
-            redshirt_syscalls_interface::InterfaceOrDestroyed::ProcessDestroyed(_) => continue,
+            redshirt_syscalls_interface::DecodedInterfaceOrDestroyed::Interface(m) => m,
+            redshirt_syscalls_interface::DecodedInterfaceOrDestroyed::ProcessDestroyed(_) => continue,
         };
         assert_eq!(msg.interface, redshirt_pci_interface::ffi::INTERFACE);
         let redshirt_pci_interface::ffi::PciMessage::GetDevicesList =
-            DecodeAll::decode_all(&msg.actual_data).unwrap();       // TODO: don't unwrap
+            DecodeAll::decode_all(&msg.actual_data.0).unwrap();       // TODO: don't unwrap; also, crappy decoding
         redshirt_syscalls_interface::emit_answer(msg.message_id.unwrap(), &redshirt_pci_interface::ffi::GetDevicesListResponse {
             devices: devices.clone(),
         });

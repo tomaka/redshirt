@@ -88,7 +88,9 @@ pub use block_on::block_on;
 pub use emit::{
     cancel_message, emit_message_with_response, emit_message_without_response, MessageBuilder,
 };
-pub use ffi::{InterfaceMessage, InterfaceOrDestroyed, Message, ResponseMessage};
+pub use ffi::{
+    DecodedInterfaceMessage, DecodedInterfaceOrDestroyed, DecodedMessage, DecodedResponseMessage,
+};
 pub use interface_message::{
     emit_answer, emit_message_error, next_interface_message, InterfaceMessageFuture,
 };
@@ -160,7 +162,7 @@ impl fmt::Debug for ThreadId {
 #[derive(
     Copy, Clone, PartialEq, Eq, Hash, parity_scale_codec::Encode, parity_scale_codec::Decode,
 )]
-pub struct MessageId(u64);
+pub struct MessageId(u64); // TODO: should be NonZeroU64
 
 impl From<u64> for MessageId {
     fn from(id: u64) -> MessageId {
