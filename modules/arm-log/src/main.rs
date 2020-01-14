@@ -13,17 +13,18 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-//! Implements the log interface by writing in text mode.
+//! Implements the log interface by writing on the UART.
 
+use redshirt_log_interface::ffi;
 use redshirt_syscalls_interface::{Decode, EncodedMessage};
-use std::{convert::TryFrom as _, fmt};
+use std::{convert::TryFrom as _, fmt, sync::atomic};
 
 fn main() {
     redshirt_syscalls_interface::block_on(async_main());
 }
 
 async fn async_main() -> ! {
-    redshirt_interface_interface::register_interface(redshirt_log_interface::ffi::INTERFACE)
+    redshirt_interface_interface::register_interface(ffi::INTERFACE)
         .await.unwrap();
     init_uart();
 
@@ -32,14 +33,31 @@ async fn async_main() -> ! {
             redshirt_syscalls_interface::DecodedInterfaceOrDestroyed::Interface(m) => m,
             redshirt_syscalls_interface::DecodedInterfaceOrDestroyed::ProcessDestroyed(_) => continue,
         };
-        assert_eq!(msg.interface, redshirt_log_interface::ffi::INTERFACE);
 
-        let message: redshirt_log_interface::ffi::DecodedLogMessage =
-            Decode::decode(msg.actual_data).unwrap();       // TODO: don't unwrap
-        for byte in message.message().as_bytes() {
-            write_uart(*byte).await;
+        assert_eq!(msg.interface, ffi::INTERFACE);
+
+        if let Ok(message) = ffi::DecodedLogMessage::decode(msg.actual_data) {
+            let level = match message.level() {
+                ffi::Level::Error => b"ERR ",
+                ffi::Level::Warn => b"WARN",
+                ffi::Level::Info => b"INFO",
+                ffi::Level::Debug => b"DEBG",
+                ffi::Level::Trace => b"TRCE",
+            };
+    
+            write_utf8_bytes(b"[").await;
+            write_utf8_bytes(format!("{:?}", msg.emitter_pid).as_bytes()).await;
+            write_utf8_bytes(b"] [").await;
+            write_utf8_bytes(level).await;
+            write_utf8_bytes(b"] ").await;
+            write_untrusted_str(message.message()).await;
+            write_utf8_bytes(b"\n").await;
+
+        } else {
+            write_utf8_bytes(b"[").await;
+            write_untrusted_str(&format!("{:?}", msg.emitter_pid)).await;
+            write_utf8_bytes(b"] Bad log message\n").await;
         }
-        write_uart(b'\n').await;
     }
 }
 
@@ -52,10 +70,16 @@ fn init_uart() {
 
         ops.write_one_u32(UART0_BASE + 0x30, 0x0);
         ops.write_one_u32(GPIO_BASE + 0x94, 0x0);
-        delay(150);
+        for _ in 0..150 {
+            // TODO: does this actually do what it looks like it's doing?
+            atomic::spin_loop_hint();
+        }
 
         ops.write_one_u32(GPIO_BASE + 0x98, (1 << 14) | (1 << 15));
-        delay(150);
+        for _ in 0..150 {
+            // TODO: does this actually do what it looks like it's doing?
+            atomic::spin_loop_hint();
+        }
 
         ops.write_one_u32(GPIO_BASE + 0x98, 0x0);
 
@@ -75,22 +99,38 @@ fn init_uart() {
     }
 }
 
-async fn write_uart(byte: u8) {
+/// Writes a string after stripping down all undesired control characters.
+async fn write_untrusted_str(s: &str) {
+    for chr in s.chars() {
+        if chr.is_control() {
+            let s = chr.escape_unicode().collect::<String>();
+            write_utf8_bytes(s.as_bytes()).await;
+        } else {
+            let mut utf8 = [0; 4];
+            let len = chr.encode_utf8(&mut utf8[..]).len();
+            write_utf8_bytes(&utf8[..len]).await;
+        }
+    }
+}
+
+/// Writes a list of bytes.
+async fn write_utf8_bytes(bytes: &[u8]) {
+    for byte in bytes {
+        write_byte(*byte).await;
+    }
+}
+
+/// Writes a single byte.
+async fn write_byte(byte: u8) {
     unsafe {
         // Wait for UART to become ready to transmit.
         loop {
-            // TODO: add shortcut in hardware-interface
-            let mut read = redshirt_hardware_interface::HardwareOperationsBuilder::new();
-            let mut out = [0];
-            read.read_u32(UART0_BASE + 0x18, &mut out);
-            read.send().await;
-            if out[0] & (1 << 5) == 0 { break; }
+            let val = redshirt_hardware_interface::read_one_u32(UART0_BASE + 0x18).await;
+            if val & (1 << 5) == 0 {
+                break;
+            }
         }
 
         redshirt_hardware_interface::write_one_u32(UART0_BASE + 0x0, u32::from(byte));
     }
-}
-
-fn delay(count: i32) {
-    // TODO: asm!("__delay_%=: subs %[count], %[count], #1; bne __delay_%=\n" : "=r"(count): [count]"0"(count) : "cc");
 }
