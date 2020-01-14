@@ -96,6 +96,16 @@ pub unsafe fn write(address: u64, data: impl Into<Vec<u8>>) {
     builder.send();
 }
 
+/// Reads a single `u32` from the given memory address.
+#[cfg(feature = "std")]
+pub async unsafe fn read_one_u32(address: u64) -> u32 {
+    let mut ops = HardwareOperationsBuilder::new();
+    let mut out = [0];
+    ops.read_u32(address, &mut out);
+    ops.send().await;
+    out[0]
+}
+
 pub unsafe fn write_one_u32(address: u64, data: u32) {
     let mut builder = HardwareWriteOperationsBuilder::with_capacity(1);
     builder.write_one_u32(address, data);
