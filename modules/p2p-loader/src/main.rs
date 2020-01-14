@@ -57,7 +57,7 @@ async fn async_main() {
 
         assert_eq!(msg.interface, redshirt_loader_interface::ffi::INTERFACE);
         let msg_data =
-            redshirt_loader_interface::ffi::LoaderMessage::decode_all(&msg.actual_data).unwrap();
+            redshirt_loader_interface::ffi::LoaderMessage::decode_all(&msg.actual_data.0).unwrap();
         let redshirt_loader_interface::ffi::LoaderMessage::Load(hash_to_load) = msg_data;
         network.start_fetch(&hash_to_load, msg.message_id.unwrap());
     }
