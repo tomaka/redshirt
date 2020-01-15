@@ -7,6 +7,7 @@ edition = "2018"
 publish = false
 
 [dependencies]
+blake3 = { version = "0.1.1", default-features = false }
 byteorder = { version = "1.3.2", default-features = false }
 compiler_builtins = { version = "0.1.23", features = ["mem"] }
 crossbeam-queue = { version = "0.2.1", default-features = false, features = ["alloc"] }
@@ -25,7 +26,6 @@ redshirt-hardware-interface = { path = "../../interfaces/hardware", default-feat
 redshirt-random-interface = { path = "../../interfaces/random", default-features = false }
 redshirt-log-interface = { path = "../../interfaces/log", default-features = false }
 redshirt-syscalls-interface = { path = "../../interfaces/syscalls", default-features = false }
-sha2 = { version = "0.8.0", default-features = false }
 spin = "0.5.2"
 
 [build-dependencies]

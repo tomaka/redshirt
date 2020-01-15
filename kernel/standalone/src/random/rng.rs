@@ -42,10 +42,6 @@
 use rand_chacha::{ChaCha20Core, ChaCha20Rng};
 use rand_core::{RngCore, SeedableRng as _};
 use rand_jitter::JitterRng;
-use sha2::{
-    digest::{FixedOutput as _, Input as _},
-    Sha512Trunc256,
-};
 
 /// Kernel random number generator.
 pub struct KernelRng {
@@ -79,14 +75,13 @@ impl KernelRng {
 
         // We now build the seed for the main ChaCha PRNG.
         let chacha_seed = {
-            let mut sha2 = Sha512Trunc256::default();
+            let mut hasher = blake3::Hasher::new();
             let mut jitter_bytes = [0; 64];
             jitter.fill_bytes(&mut jitter_bytes);
-            sha2.input(&jitter_bytes[..]);
-            add_hardware_entropy(&mut sha2);
+            hasher.update(&jitter_bytes[..]);
+            add_hardware_entropy(&mut hasher);
             let mut chacha_seed = [0; 32];
-            chacha_seed.copy_from_slice(&sha2.fixed_result());
-            chacha_seed
+            <[u8; 32]>::from(hasher.finalize())
         };
 
         KernelRng {
@@ -114,7 +109,7 @@ impl RngCore for KernelRng {
 }
 
 #[cfg(target_arch = "x86_64")]
-fn add_hardware_entropy(sha2: &mut Sha512Trunc256) {
+fn add_hardware_entropy(hasher: &mut blake3::Hasher) {
     use byteorder::{ByteOrder as _, NativeEndian};
 
     if let Some(rdrand) = x86_64::instructions::random::RdRand::new() {
@@ -128,9 +123,9 @@ fn add_hardware_entropy(sha2: &mut Sha512Trunc256) {
                 break;
             }
         }
-        sha2.input(&buf[..entropy_bytes]);
+        hasher.update(&buf[..entropy_bytes]);
     }
 }
 
 #[cfg(not(target_arch = "x86_64"))]
-fn add_hardware_entropy(_: &mut Sha512Trunc256) {}
+fn add_hardware_entropy(_: &mut blake3::Hasher) {}
