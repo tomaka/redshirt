@@ -32,9 +32,11 @@ pub fn build_wasm_module(tokens: proc_macro::TokenStream) -> proc_macro::TokenSt
             loop {
                 let src_file = span.source_file();
                 if src_file.is_real() {
-                    break src_file.path().parent().unwrap().to_owned()
+                    break src_file.path().parent().unwrap().to_owned();
                 }
-                span = span.parent().expect("Couldn't find any Span which a real source file");
+                span = span
+                    .parent()
+                    .expect("Couldn't find any Span which a real source file");
             }
         };
 
