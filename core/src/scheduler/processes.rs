@@ -23,7 +23,7 @@ use hashbrown::{
     hash_map::{DefaultHashBuilder, Entry, OccupiedEntry},
     HashMap,
 };
-use redshirt_syscalls_interface::{Pid, ThreadId};
+use redshirt_syscalls::{Pid, ThreadId};
 
 /// Collection of multiple [`ProcessStateMachine`](vm::ProcessStateMachine)s grouped together in a
 /// smart way.

@@ -20,7 +20,7 @@ use core::{mem, task::Context, task::Poll};
 use futures::prelude::*;
 use hashbrown::HashSet;
 use redshirt_interface_interface::ffi::InterfaceMessage;
-use redshirt_syscalls_interface::{Decode as _, EncodedMessage, InterfaceHash, MessageId, Pid};
+use redshirt_syscalls::{Decode as _, EncodedMessage, InterfaceHash, MessageId, Pid};
 use spin::Mutex;
 
 /// Collection of objects that implement the [`NativeProgram`] trait.

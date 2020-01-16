@@ -19,7 +19,7 @@
 #![no_std]
 
 use futures::prelude::*;
-use redshirt_syscalls_interface::InterfaceHash;
+use redshirt_syscalls::InterfaceHash;
 
 pub use ffi::InterfaceRegisterError;
 
@@ -37,7 +37,7 @@ pub fn register_interface(
     let msg = ffi::InterfaceMessage::Register(hash);
     // TODO: we unwrap cause there's always something that handles interface registration; is that correct?
     unsafe {
-        redshirt_syscalls_interface::emit_message_with_response(&ffi::INTERFACE, msg)
+        redshirt_syscalls::emit_message_with_response(&ffi::INTERFACE, msg)
             .unwrap()
             .map(|response: ffi::InterfaceRegisterResponse| response.result)
     }

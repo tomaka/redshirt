@@ -25,7 +25,7 @@ use alloc::{collections::VecDeque, vec::Vec};
 use core::{cell::RefCell, convert::TryFrom, iter, mem};
 use crossbeam_queue::SegQueue;
 use hashbrown::{hash_map::Entry, HashMap, HashSet};
-use redshirt_syscalls_interface::{Encode, EncodedMessage, MessageId, Pid, ThreadId};
+use redshirt_syscalls::{Encode, EncodedMessage, MessageId, Pid, ThreadId};
 use smallvec::SmallVec;
 
 /// Handles scheduling processes and inter-process communications.
@@ -136,11 +136,11 @@ pub enum CoreRunOutcome {
 struct Process {
     /// Messages available for retrieval by the process by calling `next_message`.
     ///
-    /// Note that the [`ResponseMessage::index_in_list`](redshirt_syscalls_interface::ffi::ResponseMessage::index_in_list)
-    /// and [`InterfaceMessage::index_in_list`](redshirt_syscalls_interface::ffi::InterfaceMessage::index_in_list) fields are
+    /// Note that the [`ResponseMessage::index_in_list`](redshirt_syscalls::ffi::ResponseMessage::index_in_list)
+    /// and [`InterfaceMessage::index_in_list`](redshirt_syscalls::ffi::InterfaceMessage::index_in_list) fields are
     /// set to a dummy value, and must be filled before actually delivering the message.
     // TODO: call shrink_to_fit from time to time
-    messages_queue: VecDeque<redshirt_syscalls_interface::ffi::MessageBuilder>,
+    messages_queue: VecDeque<redshirt_syscalls::ffi::MessageBuilder>,
 
     /// Interfaces that the process has registered.
     registered_interfaces: SmallVec<[InterfaceHash; 1]>,
@@ -231,7 +231,10 @@ impl Core {
                         Some(InterfaceState::Process(p)) => {
                             if let Some(process) = self.processes.process_by_id(*p) {
                                 let message = From::from(
-                                    redshirt_syscalls_interface::ffi::build_process_destroyed_message(pid.into(), 0)
+                                    redshirt_syscalls::ffi::build_process_destroyed_message(
+                                        pid.into(),
+                                        0,
+                                    ),
                                 );
 
                                 process
@@ -302,15 +305,14 @@ impl Core {
 
                         let message = thread.accept_emit(message_id);
                         if let Some(process) = self.processes.process_by_id(*pid) {
-                            let message =
-                                redshirt_syscalls_interface::ffi::build_interface_message(
-                                    &interface,
-                                    message_id,
-                                    emitter_pid,
-                                    0,
-                                    &message,
-                                )
-                                .into();
+                            let message = redshirt_syscalls::ffi::build_interface_message(
+                                &interface,
+                                message_id,
+                                emitter_pid,
+                                0,
+                                &message,
+                            )
+                            .into();
 
                             process
                                 .user_data()
@@ -419,7 +421,7 @@ impl Core {
         // Send the `other_messages`.
         // TODO: should we preserve the order w.r.t. `threads`?
         for (emitter_pid, message_id, message_data) in other_messages {
-            let message = From::from(redshirt_syscalls_interface::ffi::build_interface_message(
+            let message = From::from(redshirt_syscalls::ffi::build_interface_message(
                 &interface,
                 message_id,
                 emitter_pid,
@@ -462,14 +464,13 @@ impl Core {
             let message = thread.accept_emit(message_id);
 
             if let Some(interface_handler_proc) = self.processes.process_by_id(process) {
-                let message =
-                    From::from(redshirt_syscalls_interface::ffi::build_interface_message(
-                        &interface,
-                        message_id,
-                        emitter_pid,
-                        0,
-                        &message,
-                    ));
+                let message = From::from(redshirt_syscalls::ffi::build_interface_message(
+                    &interface,
+                    message_id,
+                    emitter_pid,
+                    0,
+                    &message,
+                ));
 
                 interface_handler_proc
                     .user_data()
@@ -568,7 +569,7 @@ impl Core {
         };
 
         if let Some(process) = self.processes.process_by_id(pid) {
-            let message = redshirt_syscalls_interface::ffi::build_interface_message(
+            let message = redshirt_syscalls::ffi::build_interface_message(
                 &interface,
                 message_id,
                 emitter_pid,
@@ -619,16 +620,15 @@ impl Core {
     ) -> Option<CoreRunOutcome> {
         if let Some(emitter_pid) = self.messages_to_answer.borrow_mut().remove(&message_id) {
             if let Some(process) = self.processes.process_by_id(emitter_pid) {
-                let actual_message =
-                    From::from(redshirt_syscalls_interface::ffi::build_response_message(
-                        message_id,
-                        // We a dummy value here and fill it up later when actually delivering the message.
-                        0,
-                        match &response {
-                            Ok(r) => Ok(r),
-                            Err(()) => Err(()),
-                        },
-                    ));
+                let actual_message = From::from(redshirt_syscalls::ffi::build_response_message(
+                    message_id,
+                    // We a dummy value here and fill it up later when actually delivering the message.
+                    0,
+                    match &response {
+                        Ok(r) => Ok(r),
+                        Err(()) => Err(()),
+                    },
+                ));
 
                 process
                     .user_data()
@@ -761,11 +761,9 @@ fn try_resume_message_wait_thread(
 
         // For that message in queue, grab the value that must be in `msg_ids` in order to match.
         let msg_id = match &thread.process_user_data().borrow_mut().messages_queue[index_in_queue] {
-            redshirt_syscalls_interface::ffi::MessageBuilder::Interface(_) => MessageId::from(1),
-            redshirt_syscalls_interface::ffi::MessageBuilder::ProcessDestroyed(_) => {
-                MessageId::from(1)
-            }
-            redshirt_syscalls_interface::ffi::MessageBuilder::Response(response) => {
+            redshirt_syscalls::ffi::MessageBuilder::Interface(_) => MessageId::from(1),
+            redshirt_syscalls::ffi::MessageBuilder::ProcessDestroyed(_) => MessageId::from(1),
+            redshirt_syscalls::ffi::MessageBuilder::Response(response) => {
                 debug_assert!(u64::from(response.message_id()) >= 2);
                 response.message_id()
             }

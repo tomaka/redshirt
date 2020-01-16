@@ -21,7 +21,7 @@ use crate::{InterfaceHash, MessageId};
 use alloc::{rc::Rc, vec, vec::Vec};
 use byteorder::{ByteOrder as _, LittleEndian};
 use core::{cell::RefCell, convert::TryFrom as _, fmt, mem};
-use redshirt_syscalls_interface::{EncodedMessage, Pid, ThreadId};
+use redshirt_syscalls::{EncodedMessage, Pid, ThreadId};
 
 /// Wrapper around [`ProcessesCollection`](processes::ProcessesCollection), but that interprets
 /// the extrinsic calls and keeps track of the state in which pending threads are in.

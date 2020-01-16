@@ -21,13 +21,13 @@ use crate::InterfaceHash;
 fn emit_not_available() {
     /* Original code:
 
-    let interface = redshirt_syscalls_interface::InterfaceHash::from_raw_hash([
+    let interface = redshirt_syscalls::InterfaceHash::from_raw_hash([
         0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
         0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37,
     ]);
 
     unsafe {
-        let _ = redshirt_syscalls_interface::MessageBuilder::default()
+        let _ = redshirt_syscalls::MessageBuilder::default()
             .add_data_raw(&[1, 2, 3, 4, 5, 6, 7, 8])
             .emit_without_response(&interface);
     }
@@ -37,7 +37,7 @@ fn emit_not_available() {
 (module
     (type $t0 (func (param i32 i32 i32 i32 i32 i32) (result i32)))
     (type $t1 (func (param i32 i32) (result i32)))
-    (import "redshirt" "emit_message" (func $_ZN27redshirt_syscalls_interface3ffi12emit_message17h508280f1400e36efE (type $t0)))
+    (import "redshirt" "emit_message" (func $_ZN27redshirt_syscalls3ffi12emit_message17h508280f1400e36efE (type $t0)))
     (func $main (type $t1) (param $p0 i32) (param $p1 i32) (result i32)
         (local $l0 i32)
         get_global $g0
@@ -80,7 +80,7 @@ fn emit_not_available() {
         get_local $l0
         i32.const 56
         i32.add
-        call $_ZN27redshirt_syscalls_interface3ffi12emit_message17h508280f1400e36efE
+        call $_ZN27redshirt_syscalls3ffi12emit_message17h508280f1400e36efE
         drop
         get_local $l0
         i32.const 64

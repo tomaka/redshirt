@@ -31,7 +31,7 @@ mod device;
 use std::convert::TryFrom as _;
 
 fn main() {
-    redshirt_syscalls_interface::block_on(async_main());
+    redshirt_syscalls::block_on(async_main());
 }
 
 async fn async_main() {

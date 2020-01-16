@@ -35,7 +35,7 @@ pub mod ffi;
 pub fn monotonic_clock() -> impl Future<Output = u128> {
     unsafe {
         let msg = ffi::TimeMessage::GetMonotonic;
-        redshirt_syscalls_interface::emit_message_with_response(&ffi::INTERFACE, msg).unwrap()
+        redshirt_syscalls::emit_message_with_response(&ffi::INTERFACE, msg).unwrap()
     }
 }
 
@@ -43,7 +43,7 @@ pub fn monotonic_clock() -> impl Future<Output = u128> {
 pub fn system_clock() -> impl Future<Output = u128> {
     unsafe {
         let msg = ffi::TimeMessage::GetSystem;
-        redshirt_syscalls_interface::emit_message_with_response(&ffi::INTERFACE, msg).unwrap()
+        redshirt_syscalls::emit_message_with_response(&ffi::INTERFACE, msg).unwrap()
     }
 }
 
@@ -51,7 +51,7 @@ pub fn system_clock() -> impl Future<Output = u128> {
 pub fn monotonic_wait_until(until: u128) -> impl Future<Output = ()> {
     unsafe {
         let msg = ffi::TimeMessage::WaitMonotonic(until);
-        redshirt_syscalls_interface::emit_message_with_response(&ffi::INTERFACE, msg).unwrap()
+        redshirt_syscalls::emit_message_with_response(&ffi::INTERFACE, msg).unwrap()
     }
 }
 

@@ -10,4 +10,4 @@ publish = false
 redshirt-hardware-interface = { path = "../../interfaces/hardware", default-features = false }
 redshirt-interface-interface = { path = "../../interfaces/interface" }
 redshirt-log-interface = { path = "../../interfaces/log" }
-redshirt-syscalls-interface = { path = "../../interfaces/syscalls" }
+redshirt-syscalls = { path = "../../interfaces/syscalls" }

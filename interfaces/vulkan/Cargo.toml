@@ -8,7 +8,7 @@ build = "build/main.rs"
 
 [dependencies]
 hashbrown = "0.6.0"
-redshirt-syscalls-interface = { path = "../syscalls" }
+redshirt-syscalls = { path = "../syscalls" }
 parity-scale-codec = "1.0.5"
 
 [build-dependencies]

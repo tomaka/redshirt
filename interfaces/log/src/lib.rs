@@ -45,7 +45,7 @@ pub use ffi::Level;
 pub fn log(level: Level, msg: &str) {
     unsafe {
         let level: [u8; 1] = [u8::from(level)];
-        redshirt_syscalls_interface::MessageBuilder::new()
+        redshirt_syscalls::MessageBuilder::new()
             .add_data_raw(&level[..])
             .add_data_raw(msg.as_bytes())
             .emit_without_response(&ffi::INTERFACE)

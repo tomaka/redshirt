@@ -182,15 +182,15 @@ fn write_commands_wrappers(mut out: impl Write, registry: &parse::VkRegistry) {
             );
         }
 
-        writeln!(out, "    let msg_id = redshirt_syscalls_interface::MessageBuilder::new().add_data(&redshirt_syscalls_interface::EncodedMessage(msg_buf)).emit_with_response_raw(&INTERFACE).unwrap();").unwrap();
+        writeln!(out, "    let msg_id = redshirt_syscalls::MessageBuilder::new().add_data(&redshirt_syscalls::EncodedMessage(msg_buf)).emit_with_response_raw(&INTERFACE).unwrap();").unwrap();
         writeln!(
             out,
-            "    let response = redshirt_syscalls_interface::message_response_sync_raw(msg_id);"
+            "    let response = redshirt_syscalls::message_response_sync_raw(msg_id);"
         )
         .unwrap();
         writeln!(out, "    println!(\"got response: {{:?}}\", response);").unwrap();
 
-        writeln!(out, "    let response_read = |msg_buf: redshirt_syscalls_interface::EncodedMessage| -> Result<{}, parity_scale_codec::Error> {{", print_ty(&command.ret_ty)).unwrap();
+        writeln!(out, "    let response_read = |msg_buf: redshirt_syscalls::EncodedMessage| -> Result<{}, parity_scale_codec::Error> {{", print_ty(&command.ret_ty)).unwrap();
         writeln!(out, "        let mut msg_buf = &msg_buf.0[..];").unwrap();
         let ret_value_expr = write_deserialize(&command.ret_ty, registry, &mut |_, _| panic!());
         writeln!(out, "        let ret = {};", ret_value_expr).unwrap();

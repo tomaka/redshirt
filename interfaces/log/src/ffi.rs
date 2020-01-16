@@ -27,7 +27,7 @@
 /// - Trace: 0
 ///
 use core::{convert::TryFrom, str};
-use redshirt_syscalls_interface::{Decode, EncodedMessage, InterfaceHash};
+use redshirt_syscalls::{Decode, EncodedMessage, InterfaceHash};
 
 // TODO: this has been randomly generated; instead should be a hash or something
 pub const INTERFACE: InterfaceHash = InterfaceHash::from_raw_hash([

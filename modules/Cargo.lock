@@ -28,7 +28,7 @@ dependencies = [
  "redshirt-hardware-interface 0.1.0",
  "redshirt-interface-interface 0.1.0",
  "redshirt-log-interface 0.1.0",
- "redshirt-syscalls-interface 0.1.0",
+ "redshirt-syscalls 0.1.0",
 ]
 
 [[package]]
@@ -685,7 +685,7 @@ dependencies = [
  "futures 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "hyper 0.13.0-alpha.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "redshirt-log-interface 0.1.0",
- "redshirt-syscalls-interface 0.1.0",
+ "redshirt-syscalls 0.1.0",
  "redshirt-tcp-interface 0.1.0",
  "tokio-executor 0.2.0-alpha.6 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
@@ -961,7 +961,7 @@ dependencies = [
  "redshirt-interface-interface 0.1.0",
  "redshirt-log-interface 0.1.0",
  "redshirt-pci-interface 0.1.0",
- "redshirt-syscalls-interface 0.1.0",
+ "redshirt-syscalls 0.1.0",
  "smallvec 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -1002,7 +1002,7 @@ dependencies = [
  "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "redshirt-interface-interface 0.1.0",
  "redshirt-loader-interface 0.1.0",
- "redshirt-syscalls-interface 0.1.0",
+ "redshirt-syscalls 0.1.0",
  "redshirt-tcp-interface 0.1.0",
  "redshirt-time-interface 0.1.0",
 ]
@@ -1335,7 +1335,7 @@ version = "0.1.0"
 dependencies = [
  "futures 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "redshirt-syscalls-interface 0.1.0",
+ "redshirt-syscalls 0.1.0",
 ]
 
 [[package]]
@@ -1344,7 +1344,7 @@ version = "0.1.0"
 dependencies = [
  "futures 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "redshirt-syscalls-interface 0.1.0",
+ "redshirt-syscalls 0.1.0",
 ]
 
 [[package]]
@@ -1353,7 +1353,7 @@ version = "0.1.0"
 dependencies = [
  "futures 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "redshirt-syscalls-interface 0.1.0",
+ "redshirt-syscalls 0.1.0",
 ]
 
 [[package]]
@@ -1361,7 +1361,7 @@ name = "redshirt-log-interface"
 version = "0.1.0"
 dependencies = [
  "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
- "redshirt-syscalls-interface 0.1.0",
+ "redshirt-syscalls 0.1.0",
 ]
 
 [[package]]
@@ -1370,11 +1370,11 @@ version = "0.1.0"
 dependencies = [
  "futures 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "redshirt-syscalls-interface 0.1.0",
+ "redshirt-syscalls 0.1.0",
 ]
 
 [[package]]
-name = "redshirt-syscalls-interface"
+name = "redshirt-syscalls"
 version = "0.1.0"
 dependencies = [
  "byteorder 1.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1393,7 +1393,7 @@ version = "0.1.0"
 dependencies = [
  "futures 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "redshirt-syscalls-interface 0.1.0",
+ "redshirt-syscalls 0.1.0",
  "tokio-io 0.2.0-alpha.6 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -1404,7 +1404,7 @@ dependencies = [
  "futures 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "pin-project 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
- "redshirt-syscalls-interface 0.1.0",
+ "redshirt-syscalls 0.1.0",
 ]
 
 [[package]]
@@ -1413,7 +1413,7 @@ version = "0.1.0"
 dependencies = [
  "hashbrown 0.6.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "redshirt-syscalls-interface 0.1.0",
+ "redshirt-syscalls 0.1.0",
  "xml-rs 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -1423,7 +1423,7 @@ version = "0.1.0"
 dependencies = [
  "futures 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "parity-scale-codec 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "redshirt-syscalls-interface 0.1.0",
+ "redshirt-syscalls 0.1.0",
 ]
 
 [[package]]
@@ -1622,7 +1622,7 @@ name = "stub"
 version = "0.1.0"
 dependencies = [
  "futures 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "redshirt-syscalls-interface 0.1.0",
+ "redshirt-syscalls 0.1.0",
  "wee_alloc 0.4.5 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -1875,7 +1875,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 name = "vulkan-triangle"
 version = "0.1.0"
 dependencies = [
- "redshirt-syscalls-interface 0.1.0",
+ "redshirt-syscalls 0.1.0",
  "redshirt-vulkan-interface 0.1.0",
  "redshirt-window-interface 0.1.0",
  "vk-sys 0.4.0 (git+https://github.com/tomaka/vulkano?branch=wasm)",
@@ -2064,7 +2064,7 @@ dependencies = [
  "redshirt-hardware-interface 0.1.0",
  "redshirt-interface-interface 0.1.0",
  "redshirt-log-interface 0.1.0",
- "redshirt-syscalls-interface 0.1.0",
+ "redshirt-syscalls 0.1.0",
 ]
 
 [[package]]
@@ -2078,7 +2078,7 @@ dependencies = [
  "redshirt-interface-interface 0.1.0",
  "redshirt-log-interface 0.1.0",
  "redshirt-pci-interface 0.1.0",
- "redshirt-syscalls-interface 0.1.0",
+ "redshirt-syscalls 0.1.0",
  "regex 1.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
