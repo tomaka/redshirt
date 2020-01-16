@@ -16,62 +16,51 @@
 //! Time.
 
 #![deny(intra_doc_link_resolution_failure)]
-#![cfg_attr(not(feature = "std"), no_std)]
+#![no_std]
+
+extern crate alloc;
 
 use core::time::Duration;
+use futures::prelude::*;
 
-#[cfg(feature = "std")]
 pub use self::delay::Delay;
-#[cfg(feature = "std")]
 pub use self::instant::Instant;
 
-#[cfg(feature = "std")]
 mod delay;
-pub mod ffi;
-#[cfg(feature = "std")]
 mod instant;
 
+pub mod ffi;
+
 /// Returns the number of nanoseconds since an arbitrary point in time in the past.
-#[cfg(feature = "std")]
-pub async fn monotonic_clock() -> u128 {
+pub fn monotonic_clock() -> impl Future<Output = u128> {
     unsafe {
         let msg = ffi::TimeMessage::GetMonotonic;
-        redshirt_syscalls_interface::emit_message_with_response(ffi::INTERFACE, msg)
-            .await
-            .unwrap()
+        redshirt_syscalls_interface::emit_message_with_response(&ffi::INTERFACE, msg).unwrap()
     }
 }
 
 /// Returns the number of nanoseconds since the Epoch (January 1st, 1970 at midnight UTC).
-#[cfg(feature = "std")]
-pub async fn system_clock() -> u128 {
+pub fn system_clock() -> impl Future<Output = u128> {
     unsafe {
         let msg = ffi::TimeMessage::GetSystem;
-        redshirt_syscalls_interface::emit_message_with_response(ffi::INTERFACE, msg)
-            .await
-            .unwrap()
+        redshirt_syscalls_interface::emit_message_with_response(&ffi::INTERFACE, msg).unwrap()
     }
 }
 
 /// Returns a `Future` that yields when the monotonic clock reaches this value.
-#[cfg(feature = "std")]
-pub async fn monotonic_wait_until(until: u128) {
+pub fn monotonic_wait_until(until: u128) -> impl Future<Output = ()> {
     unsafe {
         let msg = ffi::TimeMessage::WaitMonotonic(until);
-        redshirt_syscalls_interface::emit_message_with_response(ffi::INTERFACE, msg)
-            .await
-            .unwrap()
+        redshirt_syscalls_interface::emit_message_with_response(&ffi::INTERFACE, msg).unwrap()
     }
 }
 
 /// Returns a `Future` that outputs after `duration` has elapsed.
-#[cfg(feature = "std")]
-pub async fn monotonic_wait(duration: Duration) {
+pub fn monotonic_wait(duration: Duration) -> impl Future<Output = ()> {
     let dur_nanos = u128::from(duration.as_secs())
         .saturating_mul(1_000_000_000)
         .saturating_add(u128::from(duration.subsec_nanos()));
 
     // TODO: meh for two syscalls
-    let now = monotonic_clock().await;
-    monotonic_wait_until(now.saturating_add(dur_nanos)).await;
+    monotonic_clock().then(move |now| monotonic_wait_until(now.saturating_add(dur_nanos)))
 }

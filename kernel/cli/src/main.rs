@@ -15,17 +15,15 @@
 
 #![deny(intra_doc_link_resolution_failure)]
 
-use futures::{channel::mpsc, pin_mut, prelude::*};
-use parity_scale_codec::DecodeAll;
-use std::{fs, path::PathBuf, process, sync::Arc};
+use std::{fs, path::PathBuf, process};
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
-#[structopt(name = "redshirt", about = "Redshirt modules executor.")]
+#[structopt(name = "redshirt-cli", about = "Redshirt modules executor.")]
 struct CliOptions {
-    /// Input file.
+    /// WASM file to run.
     #[structopt(parse(from_os_str))]
-    input: Option<PathBuf>,
+    wasm_file: PathBuf,
 }
 
 fn main() {
@@ -35,173 +33,33 @@ fn main() {
 async fn async_main() {
     let cli_requested_process = {
         let cli_opts = CliOptions::from_args();
-        if let Some(input) = cli_opts.input {
-            let file_content = fs::read(input).expect("failed to read input file");
-            Some(
-                redshirt_core::module::Module::from_bytes(&file_content)
-                    .expect("failed to parse input file"),
-            )
-        } else {
-            None
-        }
+        let wasm_file_content = fs::read(cli_opts.wasm_file).expect("failed to read input file");
+        redshirt_core::module::Module::from_bytes(&wasm_file_content)
+            .expect("failed to parse input file")
     };
 
-    let mut system =
-        redshirt_wasi_hosted::register_extrinsics(redshirt_core::system::SystemBuilder::new())
-            .with_interface_handler(redshirt_stdout_interface::ffi::INTERFACE)
-            .with_interface_handler(redshirt_time_interface::ffi::INTERFACE)
-            .with_interface_handler(redshirt_tcp_interface::ffi::INTERFACE)
-            .with_main_program([0; 32]) // TODO: just a test
-            .build();
+    let system = redshirt_core::system::SystemBuilder::new()
+        .with_native_program(redshirt_time_hosted::TimerHandler::new())
+        .with_native_program(redshirt_log_hosted::LogHandler::new())
+        .build();
 
-    let cli_pid = if let Some(cli_requested_process) = cli_requested_process {
-        Some(system.execute(&cli_requested_process))
-    } else {
-        None
-    };
-
-    let time = Arc::new(redshirt_time_hosted::TimerHandler::new());
-    let tcp = Arc::new(redshirt_tcp_hosted::TcpState::new());
-    let mut wasi = redshirt_wasi_hosted::WasiStateMachine::new();
-
-    let mut to_answer_rx = {
-        let (mut to_answer_tx, to_answer_rx) = mpsc::channel(16);
-        let tcp = tcp.clone();
-        let time = time.clone();
-        async_std::task::spawn(async move {
-            loop {
-                let tcp = tcp.next_event();
-                let time = time.next_answer();
-                pin_mut!(tcp);
-                pin_mut!(time);
-                let to_send = match future::select(tcp, time).await {
-                    future::Either::Left(((msg_id, bytes), _)) => (msg_id, bytes),
-                    future::Either::Right(((msg_id, bytes), _)) => (msg_id, bytes),
-                };
-                if to_answer_tx.send(to_send).await.is_err() {
-                    break;
-                }
-            }
-        });
-        to_answer_rx
-    };
+    let cli_pid = system.execute(&cli_requested_process);
 
     loop {
-        let result = loop {
-            let only_poll = match system.run() {
-                redshirt_core::system::SystemRunOutcome::ThreadWaitExtrinsic {
-                    pid,
-                    thread_id,
-                    extrinsic,
-                    params,
-                } => {
-                    let out =
-                        wasi.handle_extrinsic_call(&mut system, extrinsic, pid, thread_id, params);
-                    if let redshirt_wasi_hosted::HandleOut::EmitMessage {
-                        id,
-                        interface,
-                        message,
-                    } = out
-                    {
-                        if interface == redshirt_stdout_interface::ffi::INTERFACE {
-                            let msg =
-                                redshirt_stdout_interface::ffi::StdoutMessage::decode_all(&message);
-                            let redshirt_stdout_interface::ffi::StdoutMessage::Message(msg) =
-                                msg.unwrap();
-                            print!("{}", msg);
-                        } else if interface == redshirt_time_interface::ffi::INTERFACE {
-                            if let Some(answer) =
-                                time.time_message(id.map(MessageId::Wasi), &message)
-                            {
-                                unimplemented!()
-                            }
-                        } else if interface == redshirt_tcp_interface::ffi::INTERFACE {
-                            let message: redshirt_tcp_interface::ffi::TcpMessage =
-                                DecodeAll::decode_all(&message).unwrap();
-                            tcp.handle_message(id.map(MessageId::Wasi), message).await;
-                        } else {
-                            panic!()
-                        }
+        let outcome = system.run().await;
+        match outcome {
+            redshirt_core::system::SystemRunOutcome::ProgramFinished { pid, outcome }
+                if pid == cli_pid =>
+            {
+                process::exit(match outcome {
+                    Ok(_) => 0,
+                    Err(err) => {
+                        println!("{:?}", err);
+                        1
                     }
-                    true
-                }
-                redshirt_core::system::SystemRunOutcome::InterfaceMessage {
-                    interface,
-                    message,
-                    ..
-                } if interface == redshirt_stdout_interface::ffi::INTERFACE => {
-                    let msg = redshirt_stdout_interface::ffi::StdoutMessage::decode_all(&message);
-                    let redshirt_stdout_interface::ffi::StdoutMessage::Message(msg) = msg.unwrap();
-                    print!("{}", msg);
-                    continue;
-                }
-                redshirt_core::system::SystemRunOutcome::InterfaceMessage {
-                    message_id,
-                    interface,
-                    message,
-                    ..
-                } if interface == redshirt_time_interface::ffi::INTERFACE => {
-                    if let Some(answer) =
-                        time.time_message(message_id.map(MessageId::Core), &message)
-                    {
-                        let answer = match &answer {
-                            Ok(v) => Ok(&v[..]),
-                            Err(()) => Err(()),
-                        };
-                        system.answer_message(message_id.unwrap(), answer);
-                    }
-                    continue;
-                }
-                redshirt_core::system::SystemRunOutcome::InterfaceMessage {
-                    message_id,
-                    interface,
-                    message,
-                    ..
-                } if interface == redshirt_tcp_interface::ffi::INTERFACE => {
-                    let message: redshirt_tcp_interface::ffi::TcpMessage =
-                        DecodeAll::decode_all(&message).unwrap();
-                    tcp.handle_message(message_id.map(MessageId::Core), message)
-                        .await;
-                    continue;
-                }
-                redshirt_core::system::SystemRunOutcome::Idle => false,
-                other => break other,
-            };
-
-            let (msg_to_respond, response_bytes) = if only_poll {
-                match to_answer_rx.next().now_or_never() {
-                    Some(e) => e,
-                    None => continue,
-                }
-            } else {
-                to_answer_rx.next().await
-            }
-            .unwrap();
-
-            match msg_to_respond {
-                MessageId::Core(msg_id) => system.answer_message(msg_id, Ok(&response_bytes)),
-                MessageId::Wasi(msg_id) => unimplemented!(),
-            }
-        };
-
-        match result {
-            redshirt_core::system::SystemRunOutcome::ProgramFinished { pid, outcome } => {
-                if cli_pid == Some(pid) {
-                    process::exit(match outcome {
-                        Ok(_) => 0,
-                        Err(err) => {
-                            println!("{:?}", err);
-                            1
-                        }
-                    });
-                }
+                });
             }
             _ => panic!(),
         }
     }
-}
-
-enum MessageId {
-    Core(u64),
-    Wasi(redshirt_wasi_hosted::WasiMessageId),
 }

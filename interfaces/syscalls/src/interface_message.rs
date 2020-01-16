@@ -13,10 +13,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::{ffi::InterfaceOrDestroyed, Encode};
+use crate::{ffi::DecodedInterfaceOrDestroyed, Encode, MessageId};
 
 use core::{
-    fmt,
     pin::Pin,
     task::{Context, Poll},
 };
@@ -31,43 +30,17 @@ pub fn next_interface_message() -> InterfaceMessageFuture {
 
 /// Answers the given message.
 // TODO: move to interface interface?
-pub fn emit_answer<'a>(message_id: u64, msg: impl Encode<'a>) -> Result<(), EmitAnswerErr> {
+pub fn emit_answer(message_id: MessageId, msg: impl Encode) {
     unsafe {
         let buf = msg.encode();
-        let ret = crate::ffi::emit_answer(&message_id, buf.as_ptr(), buf.len() as u32);
-        if ret == 0 {
-            Ok(())
-        } else {
-            Err(EmitAnswerErr::InvalidMessageId)
-        }
+        crate::ffi::emit_answer(&u64::from(message_id), buf.0.as_ptr(), buf.0.len() as u32);
     }
 }
 
 /// Answers the given message by notifying of an error in the message.
 // TODO: move to interface interface?
-pub fn emit_message_error(message_id: u64) -> Result<(), EmitAnswerErr> {
-    unsafe {
-        if crate::ffi::emit_message_error(&message_id) == 0 {
-            Ok(())
-        } else {
-            Err(EmitAnswerErr::InvalidMessageId)
-        }
-    }
-}
-
-/// Error that can be retuend by [`emit_answer`].
-#[derive(Debug)]
-pub enum EmitAnswerErr {
-    /// The message ID is not valid or has already been answered.
-    InvalidMessageId,
-}
-
-impl fmt::Display for EmitAnswerErr {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            EmitAnswerErr::InvalidMessageId => write!(f, "Invalid message ID"),
-        }
-    }
+pub fn emit_message_error(message_id: MessageId) {
+    unsafe { crate::ffi::emit_message_error(&u64::from(message_id)) }
 }
 
 /// Future that drives [`next_interface_message`] to completion.
@@ -77,7 +50,7 @@ pub struct InterfaceMessageFuture {
 }
 
 impl Future for InterfaceMessageFuture {
-    type Output = InterfaceOrDestroyed;
+    type Output = DecodedInterfaceOrDestroyed;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         assert!(!self.finished);
@@ -85,7 +58,7 @@ impl Future for InterfaceMessageFuture {
             self.finished = true;
             Poll::Ready(message)
         } else {
-            crate::block_on::register_message_waker(1, cx.waker().clone());
+            crate::block_on::register_message_waker(From::from(1), cx.waker().clone());
             Poll::Pending
         }
     }

@@ -34,7 +34,7 @@
 //!   Repeat until the `Future` has ended.
 //!
 
-use crate::{Decode, InterfaceMessage, InterfaceOrDestroyed, Message, ResponseMessage};
+use crate::{ffi, DecodedInterfaceOrDestroyed, DecodedMessage, DecodedResponseMessage, MessageId};
 use alloc::{collections::VecDeque, sync::Arc, vec::Vec};
 use core::{
     sync::atomic::{AtomicBool, Ordering},
@@ -50,28 +50,32 @@ use spin::Mutex;
 ///
 /// For non-interface messages, there can only ever be one registered `Waker`. Registering a
 /// `Waker` a second time overrides the one previously registered.
-pub(crate) fn register_message_waker(message_id: u64, waker: Waker) {
+pub(crate) fn register_message_waker(message_id: MessageId, waker: Waker) {
     let mut state = (&*STATE).lock();
 
-    if message_id != 1 {
-        if let Some(pos) = state.message_ids.iter().position(|msg| *msg == message_id) {
+    if message_id != From::from(1) {
+        if let Some(pos) = state
+            .message_ids
+            .iter()
+            .position(|msg| *msg == From::from(message_id))
+        {
             state.wakers[pos] = waker;
             return;
         }
     }
 
-    state.message_ids.push(message_id);
+    state.message_ids.push(From::from(message_id));
     state.wakers.push(waker);
 }
 
 /// Removes one element from the global buffer of interface messages waiting to be processed.
-pub(crate) fn peek_interface_message() -> Option<InterfaceOrDestroyed> {
+pub(crate) fn peek_interface_message() -> Option<DecodedInterfaceOrDestroyed> {
     let mut state = (&*STATE).lock();
     state.interface_messages_queue.pop_front()
 }
 
 /// If a response to this message ID has previously been obtained, extracts it for processing.
-pub(crate) fn peek_response(msg_id: u64) -> Option<ResponseMessage> {
+pub(crate) fn peek_response(msg_id: MessageId) -> Option<DecodedResponseMessage> {
     let mut state = (&*STATE).lock();
     state.pending_messages.remove(&msg_id)
 }
@@ -124,7 +128,7 @@ pub fn block_on<T>(future: impl Future<Output = T>) -> T {
             block = false;
 
             match msg {
-                Message::Response(msg) => {
+                DecodedMessage::Response(msg) => {
                     let _was_in = state.message_ids.remove(msg.index_in_list as usize);
                     debug_assert_eq!(_was_in, 0); // Value is zero-ed by the kernel.
 
@@ -134,24 +138,24 @@ pub fn block_on<T>(future: impl Future<Output = T>) -> T {
                     let _was_in = state.pending_messages.insert(msg.message_id, msg);
                     debug_assert!(_was_in.is_none());
                 }
-                Message::Interface(msg) => {
+                DecodedMessage::Interface(msg) => {
                     let _was_in = state.message_ids.remove(msg.index_in_list as usize);
                     debug_assert_eq!(_was_in, 0); // Value is zero-ed by the kernel.
 
                     let waker = state.wakers.remove(msg.index_in_list as usize);
                     waker.wake();
 
-                    let msg = InterfaceOrDestroyed::Interface(msg);
+                    let msg = DecodedInterfaceOrDestroyed::Interface(msg);
                     state.interface_messages_queue.push_back(msg);
                 }
-                Message::ProcessDestroyed(msg) => {
+                DecodedMessage::ProcessDestroyed(msg) => {
                     let _was_in = state.message_ids.remove(msg.index_in_list as usize);
                     debug_assert_eq!(_was_in, 0); // Value is zero-ed by the kernel.
 
                     let waker = state.wakers.remove(msg.index_in_list as usize);
                     waker.wake();
 
-                    let msg = InterfaceOrDestroyed::ProcessDestroyed(msg);
+                    let msg = DecodedInterfaceOrDestroyed::ProcessDestroyed(msg);
                     state.interface_messages_queue.push_back(msg);
                 }
             };
@@ -192,14 +196,14 @@ struct BlockOnState {
     /// > **Note**: We have to maintain this queue as a global variable rather than a per-future
     /// >           channel, otherwise dropping a `Future` would silently drop messages that have
     /// >           already been received.
-    pending_messages: HashMap<u64, ResponseMessage>,
+    pending_messages: HashMap<MessageId, DecodedResponseMessage>,
 
     /// Queue of interface messages waiting to be delivered.
     ///
     /// > **Note**: We have to maintain this queue as a global variable rather than a per-future
     /// >           channel, otherwise dropping a `Future` would silently drop messages that have
     /// >           already been received.
-    interface_messages_queue: VecDeque<InterfaceOrDestroyed>,
+    interface_messages_queue: VecDeque<DecodedInterfaceOrDestroyed>,
 }
 
 /// Checks whether a new message arrives, optionally blocking the thread.
@@ -208,9 +212,9 @@ struct BlockOnState {
 ///
 /// See the [`next_message`](crate::ffi::next_message) FFI function for the semantics of
 /// `to_poll`.
-pub(crate) fn next_message(to_poll: &mut [u64], block: bool) -> Option<Message> {
+pub(crate) fn next_message(to_poll: &mut [u64], block: bool) -> Option<DecodedMessage> {
     unsafe {
-        let mut out = Vec::with_capacity(32);
+        let mut out = Vec::<u8>::with_capacity(32);
         loop {
             let ret = crate::ffi::next_message(
                 to_poll.as_mut_ptr(),
@@ -227,7 +231,7 @@ pub(crate) fn next_message(to_poll: &mut [u64], block: bool) -> Option<Message> 
                 continue;
             }
             out.set_len(ret);
-            return Some(Decode::decode(out).unwrap());
+            return Some(ffi::decode_message(&out).unwrap());
         }
     }
 }

@@ -54,7 +54,7 @@ cp .github/workflows/grub.cfg iso/boot/grub
 cp target/x86_64-multiboot2/debug/redshirt-standalone-kernel iso/boot/kernel
 # Note: grub-mkrescue is sometimes called grub2-mkrescue
 grub-mkrescue -o cdrom.iso iso
-qemu-system-x86_64 -cdrom cdrom.iso -m 1024
+qemu-system-x86_64 -cdrom cdrom.iso -m 1024 -netdev user,id=nd0 -device ne2k_pci,netdev=nd0
 ```
 
 # Repository structure

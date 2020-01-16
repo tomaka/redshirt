@@ -14,12 +14,13 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use parity_scale_codec::{Decode, Encode};
+use redshirt_syscalls_interface::InterfaceHash;
 
 // TODO: this has been randomly generated; instead should be a hash or something
-pub const INTERFACE: [u8; 32] = [
+pub const INTERFACE: InterfaceHash = InterfaceHash::from_raw_hash([
     0x19, 0x97, 0x70, 0x2f, 0x6f, 0xd9, 0x52, 0xcd, 0xb2, 0xc3, 0x75, 0x1c, 0x11, 0xb4, 0x95, 0x41,
     0x81, 0xa6, 0x4f, 0x91, 0x67, 0x63, 0xb5, 0xb1, 0x8d, 0x31, 0xdf, 0xb1, 0x47, 0x03, 0xa6, 0xbf,
-];
+]);
 
 #[derive(Debug, Encode, Decode)]
 pub enum TimeMessage {

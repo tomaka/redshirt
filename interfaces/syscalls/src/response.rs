@@ -13,9 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::{ffi::Message, Decode};
+use crate::{ffi::DecodedMessage, Decode, EncodedMessage, MessageId};
 
-use alloc::vec::Vec;
 use core::{
     marker::PhantomData,
     pin::Pin,
@@ -26,9 +25,9 @@ use futures::prelude::*;
 /// Waits until a response to the given message comes back.
 ///
 /// Returns the undecoded response.
-pub fn message_response_sync_raw(msg_id: u64) -> Vec<u8> {
-    match crate::block_on::next_message(&mut [msg_id], true).unwrap() {
-        Message::Response(m) => m.actual_data.unwrap(),
+pub fn message_response_sync_raw(msg_id: MessageId) -> EncodedMessage {
+    match crate::block_on::next_message(&mut [msg_id.into()], true).unwrap() {
+        DecodedMessage::Response(m) => m.actual_data.unwrap(),
         _ => panic!(),
     }
 }
@@ -36,7 +35,7 @@ pub fn message_response_sync_raw(msg_id: u64) -> Vec<u8> {
 /// Returns a future that is ready when a response to the given message comes back.
 ///
 /// The return value is the type the message decodes to.
-pub fn message_response<T: Decode>(msg_id: u64) -> MessageResponseFuture<T> {
+pub fn message_response<T: Decode>(msg_id: MessageId) -> MessageResponseFuture<T> {
     MessageResponseFuture {
         finished: false,
         msg_id,
@@ -49,7 +48,7 @@ pub fn message_response<T: Decode>(msg_id: u64) -> MessageResponseFuture<T> {
 /// Future that drives `message_response` to completion.
 #[must_use]
 pub struct MessageResponseFuture<T> {
-    msg_id: u64,
+    msg_id: MessageId,
     finished: bool,
     marker: PhantomData<T>,
 }

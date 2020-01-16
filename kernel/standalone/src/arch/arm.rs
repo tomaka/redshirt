@@ -74,6 +74,15 @@ fn cpu_enter(_r0: u32, _r1: u32, _r2: u32) -> ! {
     // points either to ATAGS or a DTB (device tree) indicating what the hardware supports. This
     // is unfortunately not supported by QEMU as of the writing of this comment.
 
+    // Initialize performance counters.
+    // TODO: do that properly and well isolated
+    // TODO: also, we just assume that counters are supported
+    unsafe {
+        asm!("mcr p15, 0, $0, c9, c12, 0"::"r"(0b111u32)::"volatile");
+        asm!("mcr p15, 0, $0, c9, c12, 1"::"r"(0x8000000fu32)::"volatile");
+        asm!("mcr p15, 0, $0, c9, c12, 3"::"r"(0x8000000fu32)::"volatile");
+    }
+
     let kernel = crate::kernel::Kernel::init(crate::kernel::KernelConfig {
         num_cpus: 1,
         ..Default::default()

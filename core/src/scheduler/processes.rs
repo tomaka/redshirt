@@ -15,7 +15,7 @@
 
 use crate::id_pool::IdPool;
 use crate::module::Module;
-use crate::scheduler::{vm, Pid};
+use crate::scheduler::vm;
 use crate::signature::Signature;
 use alloc::{borrow::Cow, vec::Vec};
 use core::fmt;
@@ -23,7 +23,7 @@ use hashbrown::{
     hash_map::{DefaultHashBuilder, Entry, OccupiedEntry},
     HashMap,
 };
-use rand::seq::SliceRandom as _;
+use redshirt_syscalls_interface::{Pid, ThreadId};
 
 /// Collection of multiple [`ProcessStateMachine`](vm::ProcessStateMachine)s grouped together in a
 /// smart way.
@@ -58,16 +58,12 @@ pub struct ProcessesCollection<TExtr, TPud, TTud> {
 /// Prototype for a `ProcessesCollection` under construction.
 pub struct ProcessesCollectionBuilder<TExtr> {
     /// See the corresponding field in `ProcessesCollection`.
+    pid_pool: IdPool,
+    /// See the corresponding field in `ProcessesCollection`.
     extrinsics: HashMap<usize, TExtr>,
     /// See the corresponding field in `ProcessesCollection`.
     extrinsics_id_assign: HashMap<(Cow<'static, str>, Cow<'static, str>), (usize, Signature)>,
 }
-
-/// Identifier of a thread within the [`ProcessesCollection`].
-///
-/// No two threads share the same ID, even between multiple processes.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub struct ThreadId(u64);
 
 /// Single running process in the list.
 struct Process<TPud, TTud> {
@@ -133,6 +129,9 @@ pub enum RunOneOutcome<'a, TExtr, TPud, TTud> {
 
     /// A thread in a process has finished.
     ThreadFinished {
+        /// Thread which has finished.
+        thread_id: ThreadId,
+
         /// Process whose thread has finished.
         process: ProcessesCollectionProc<'a, TPud, TTud>,
 
@@ -229,7 +228,10 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
             self.processes.shrink_to(PROCESSES_MIN_CAPACITY);
         }
 
-        Ok(self.process_by_id(new_pid).unwrap())
+        Ok(match self.process_by_id(new_pid) {
+            Some(p) => p,
+            None => unreachable!(),
+        })
     }
 
     /// Runs one thread amongst the collection.
@@ -238,7 +240,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
     pub fn run(&mut self) -> RunOneOutcome<TExtr, TPud, TTud> {
         // We start by finding a thread in `self.processes` that is ready to run.
         let (mut process, inner_thread_index): (OccupiedEntry<_, _, _>, usize) = {
-            let mut entries = self.processes.iter_mut().collect::<Vec<_>>();
+            let entries = self.processes.iter_mut().collect::<Vec<_>>();
             // TODO: entries.shuffle(&mut rand::thread_rng());
             let entry = entries
                 .into_iter()
@@ -261,12 +263,14 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
 
         // Now run the thread until something happens.
         let run_outcome = {
-            let mut thread = process
-                .get_mut()
-                .state_machine
-                .thread(inner_thread_index)
-                .unwrap();
-            let value_back = thread.user_data().value_back.take().unwrap();
+            let mut thread = match process.get_mut().state_machine.thread(inner_thread_index) {
+                Some(t) => t,
+                None => unreachable!(),
+            };
+            let value_back = match thread.user_data().value_back.take() {
+                Some(vb) => vb,
+                None => unreachable!(),
+            };
             thread.run(value_back)
         };
 
@@ -305,6 +309,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
                 user_data,
                 ..
             }) => RunOneOutcome::ThreadFinished {
+                thread_id: user_data.thread_id,
                 process: ProcessesCollectionProc {
                     process,
                     tid_pool: &mut self.tid_pool,
@@ -316,7 +321,10 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
             // Thread wants to call an extrinsic function.
             Ok(vm::ExecOutcome::Interrupted { id, params, .. }) => {
                 // TODO: check params against signature with a debug_assert
-                let extrinsic = self.extrinsics.get_mut(&id).unwrap();
+                let extrinsic = match self.extrinsics.get_mut(&id) {
+                    Some(e) => e,
+                    None => unreachable!(),
+                };
                 RunOneOutcome::Interrupted {
                     thread: ProcessesCollectionThread {
                         process,
@@ -368,7 +376,10 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
         let mut loop_out = None;
         for (pid, process) in self.processes.iter_mut() {
             for thread_index in 0..process.state_machine.num_threads() {
-                let mut thread = process.state_machine.thread(thread_index).unwrap();
+                let mut thread = match process.state_machine.thread(thread_index) {
+                    Some(t) => t,
+                    None => unreachable!(),
+                };
                 if thread.user_data().thread_id == id {
                     loop_out = Some((pid.clone(), thread_index));
                     break;
@@ -390,6 +401,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
 impl<TExtr> Default for ProcessesCollectionBuilder<TExtr> {
     fn default() -> ProcessesCollectionBuilder<TExtr> {
         ProcessesCollectionBuilder {
+            pid_pool: IdPool::new(),
             extrinsics: Default::default(),
             extrinsics_id_assign: Default::default(),
         }
@@ -397,6 +409,18 @@ impl<TExtr> Default for ProcessesCollectionBuilder<TExtr> {
 }
 
 impl<TExtr> ProcessesCollectionBuilder<TExtr> {
+    /// Allocates a `Pid` that will not be used by any process.
+    ///
+    /// > **Note**: As of the writing of this comment, this feature is only ever used to allocate
+    /// >           `Pid`s that last forever. There is therefore no corresponding "unreserve_pid"
+    /// >           method that frees such an allocated `Pid`. If there is ever a need to free
+    /// >           these `Pid`s, such a method should be added.
+    pub fn reserve_pid(&mut self) -> Pid {
+        // Note that we take `&mut self`. It could be `&self`, but that would expose
+        // implementation details.
+        self.pid_pool.assign()
+    }
+
     /// Registers a function that is available for processes to call.
     ///
     /// The function is registered under the given interface and function name. If a WASM module
@@ -438,7 +462,7 @@ impl<TExtr> ProcessesCollectionBuilder<TExtr> {
         debug_assert_eq!(self.extrinsics.len(), self.extrinsics_id_assign.len());
 
         ProcessesCollection {
-            pid_pool: IdPool::new(),
+            pid_pool: self.pid_pool,
             tid_pool: IdPool::new(),
             processes: HashMap::with_capacity(PROCESSES_MIN_CAPACITY),
             extrinsics: self.extrinsics,
@@ -447,17 +471,14 @@ impl<TExtr> ProcessesCollectionBuilder<TExtr> {
     }
 }
 
-impl From<u64> for ThreadId {
-    fn from(id: u64) -> ThreadId {
-        ThreadId(id)
-    }
-}
-
 impl<TPud, TTud> Process<TPud, TTud> {
     /// Finds a thread in this process that is ready to be executed.
     fn ready_to_run_thread_index(&mut self) -> Option<usize> {
         for thread_n in 0..self.state_machine.num_threads() {
-            let mut thread = self.state_machine.thread(thread_n).unwrap();
+            let mut thread = match self.state_machine.thread(thread_n) {
+                Some(t) => t,
+                None => unreachable!(),
+            };
             if thread.user_data().value_back.is_some() {
                 return Some(thread_n);
             }
@@ -475,8 +496,8 @@ impl<'a, TPud, TTud> ProcessesCollectionProc<'a, TPud, TTud> {
     }
 
     /// Returns the user data that is associated to the process.
-    pub fn user_data(&mut self) -> &mut TPud {
-        &mut self.process.get_mut().user_data
+    pub fn user_data(&self) -> &TPud {
+        &self.process.get().user_data
     }
 
     /// Adds a new thread to the process, starting the function with the given index and passing
@@ -557,7 +578,7 @@ where
     TTud: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // TODO: threads user data
+        // TODO: threads user datas
         f.debug_struct("ProcessesCollectionProc")
             .field("pid", &self.pid())
             //.field("user_data", self.user_data())     // TODO: requires &mut self :-/
@@ -567,11 +588,15 @@ where
 
 impl<'a, TPud, TTud> ProcessesCollectionThread<'a, TPud, TTud> {
     fn inner(&mut self) -> vm::Thread<Thread<TTud>> {
-        self.process
+        match self
+            .process
             .get_mut()
             .state_machine
             .thread(self.thread_index)
-            .unwrap()
+        {
+            Some(t) => t,
+            None => unreachable!(),
+        }
     }
 
     /// Returns the id of the thread. Allows later retrieval by calling

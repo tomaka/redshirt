@@ -86,13 +86,18 @@ extern crate alloc;
 
 pub use block_on::block_on;
 pub use emit::{
-    cancel_message, emit_message, emit_message_raw, emit_message_with_response,
-    emit_message_without_response,
+    cancel_message, emit_message_with_response, emit_message_without_response, MessageBuilder,
 };
-pub use ffi::{InterfaceMessage, InterfaceOrDestroyed, Message, ResponseMessage};
-pub use interface_message::{emit_answer, next_interface_message, InterfaceMessageFuture};
+pub use ffi::{
+    DecodedInterfaceMessage, DecodedInterfaceOrDestroyed, DecodedMessage, DecodedResponseMessage,
+};
+pub use interface_message::{
+    emit_answer, emit_message_error, next_interface_message, InterfaceMessageFuture,
+};
 pub use response::{message_response, message_response_sync_raw, MessageResponseFuture};
 pub use traits::{Decode, Encode, EncodedMessage};
+
+use core::{cmp::PartialEq, fmt};
 
 mod block_on;
 mod emit;
@@ -101,3 +106,124 @@ mod response;
 mod traits;
 
 pub mod ffi;
+
+/// Identifier of a running process within a core.
+// TODO: move to a Pid module?
+#[derive(
+    Copy, Clone, PartialEq, Eq, Hash, parity_scale_codec::Encode, parity_scale_codec::Decode,
+)]
+pub struct Pid(u64);
+
+impl From<u64> for Pid {
+    fn from(id: u64) -> Pid {
+        Pid(id)
+    }
+}
+
+impl From<Pid> for u64 {
+    fn from(pid: Pid) -> u64 {
+        pid.0
+    }
+}
+
+impl fmt::Debug for Pid {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "#{:020}", self.0)
+    }
+}
+
+/// Identifier of a running thread within a core.
+// TODO: move to a separate module?
+#[derive(
+    Copy, Clone, PartialEq, Eq, Hash, parity_scale_codec::Encode, parity_scale_codec::Decode,
+)]
+pub struct ThreadId(u64);
+
+impl From<u64> for ThreadId {
+    fn from(id: u64) -> ThreadId {
+        ThreadId(id)
+    }
+}
+
+impl From<ThreadId> for u64 {
+    fn from(tid: ThreadId) -> u64 {
+        tid.0
+    }
+}
+
+impl fmt::Debug for ThreadId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "#{:020}", self.0)
+    }
+}
+
+/// Identifier of a message to answer.
+// TODO: move to a MessageId module?
+#[derive(
+    Copy, Clone, PartialEq, Eq, Hash, parity_scale_codec::Encode, parity_scale_codec::Decode,
+)]
+pub struct MessageId(u64); // TODO: should be NonZeroU64
+
+impl From<u64> for MessageId {
+    fn from(id: u64) -> MessageId {
+        MessageId(id)
+    }
+}
+
+impl From<MessageId> for u64 {
+    fn from(mid: MessageId) -> u64 {
+        mid.0
+    }
+}
+
+impl fmt::Debug for MessageId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "#{:020}", self.0)
+    }
+}
+
+/// Hash of a module.
+#[derive(Clone, parity_scale_codec::Encode, parity_scale_codec::Decode, PartialEq, Eq, Hash)]
+pub struct InterfaceHash([u8; 32]);
+
+impl InterfaceHash {
+    /// Builds the [`InterfaceHash`] given the raw bytes.
+    pub const fn from_raw_hash(hash: [u8; 32]) -> Self {
+        InterfaceHash(hash)
+    }
+}
+
+impl From<InterfaceHash> for [u8; 32] {
+    fn from(interface: InterfaceHash) -> [u8; 32] {
+        interface.0
+    }
+}
+
+impl From<[u8; 32]> for InterfaceHash {
+    fn from(hash: [u8; 32]) -> InterfaceHash {
+        InterfaceHash(hash)
+    }
+}
+
+impl PartialEq<[u8; 32]> for InterfaceHash {
+    fn eq(&self, other: &[u8; 32]) -> bool {
+        self.0 == *other
+    }
+}
+
+impl PartialEq<InterfaceHash> for [u8; 32] {
+    fn eq(&self, other: &InterfaceHash) -> bool {
+        *self == other.0
+    }
+}
+
+impl fmt::Debug for InterfaceHash {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "InterfaceHash(0x")?;
+        for byte in &self.0 {
+            write!(f, "{:02x}", *byte)?
+        }
+        write!(f, ")")?;
+        Ok(())
+    }
+}

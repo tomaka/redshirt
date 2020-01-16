@@ -96,6 +96,16 @@ pub unsafe fn write(address: u64, data: impl Into<Vec<u8>>) {
     builder.send();
 }
 
+/// Reads a single `u32` from the given memory address.
+#[cfg(feature = "std")]
+pub async unsafe fn read_one_u32(address: u64) -> u32 {
+    let mut ops = HardwareOperationsBuilder::new();
+    let mut out = [0];
+    ops.read_u32(address, &mut out);
+    ops.send().await;
+    out[0]
+}
+
 pub unsafe fn write_one_u32(address: u64, data: u32) {
     let mut builder = HardwareWriteOperationsBuilder::with_capacity(1);
     builder.write_one_u32(address, data);
@@ -131,6 +141,7 @@ enum Out<'a> {
     PortU8(&'a mut u8),
     PortU16(&'a mut u16),
     PortU32(&'a mut u32),
+    Discard,
 }
 
 impl<'a> HardwareOperationsBuilder<'a> {
@@ -211,15 +222,31 @@ impl<'a> HardwareOperationsBuilder<'a> {
         self.out.push(Out::PortU32(out));
     }
 
+    pub unsafe fn port_read_u8_discard(&mut self, port: u32) {
+        self.operations.push(ffi::Operation::PortReadU8 { port });
+        self.out.push(Out::Discard);
+    }
+
+    pub unsafe fn port_read_u16_discard(&mut self, port: u32) {
+        self.operations.push(ffi::Operation::PortReadU16 { port });
+        self.out.push(Out::Discard);
+    }
+
+    pub unsafe fn port_read_u32_discard(&mut self, port: u32) {
+        self.operations.push(ffi::Operation::PortReadU32 { port });
+        self.out.push(Out::Discard);
+    }
+
     pub fn send(self) -> impl Future<Output = ()> + 'a {
         unsafe {
             let msg = ffi::HardwareMessage::HardwareAccess(self.operations);
             let out = self.out;
-            redshirt_syscalls_interface::emit_message_with_response(ffi::INTERFACE, msg).then(
-                move |response| {
-                    let response: Vec<ffi::HardwareAccessResponse> = response.unwrap();
+            redshirt_syscalls_interface::emit_message_with_response(&ffi::INTERFACE, msg)
+                .unwrap()
+                .then(move |response: Vec<ffi::HardwareAccessResponse>| {
                     for (response_elem, out) in response.into_iter().zip(out) {
                         match (response_elem, out) {
+                            (_, Out::Discard) => {}
                             (ffi::HardwareAccessResponse::PortReadU8(val), Out::PortU8(out)) => {
                                 *out = val
                             }
@@ -246,8 +273,7 @@ impl<'a> HardwareOperationsBuilder<'a> {
                     }
 
                     future::ready(())
-                },
-            )
+                })
         }
     }
 }

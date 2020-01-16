@@ -18,7 +18,7 @@
 //! There are situations where it is necessary to pass to a device a pointer to a region of
 //! memory. This is where this module comes into play.
 
-use crate::{ffi, HardwareOperationsBuilder, HardwareWriteOperationsBuilder};
+use crate::{ffi, HardwareWriteOperationsBuilder};
 
 use alloc::{boxed::Box, vec, vec::Vec};
 use core::{convert::TryFrom, marker::PhantomData, mem, ptr};
@@ -106,17 +106,16 @@ impl<T> PhysicalBuffer<T> {
                 len: u32::try_from(mem::size_of::<T>()).unwrap(),
             }]);
 
-        redshirt_syscalls_interface::emit_message_with_response(ffi::INTERFACE, msg).map(
-            move |response: Result<Vec<ffi::HardwareAccessResponse>, _>| {
-                let mut response = response.unwrap();
+        redshirt_syscalls_interface::emit_message_with_response(&ffi::INTERFACE, msg)
+            .unwrap()
+            .map(move |mut response: Vec<ffi::HardwareAccessResponse>| {
                 debug_assert_eq!(response.len(), 1);
                 let buf = match response.remove(0) {
                     ffi::HardwareAccessResponse::PhysicalMemoryReadU8(val) => val,
                     _ => unreachable!(),
                 };
                 ptr::read_unaligned(buf.as_ptr() as *const T)
-            },
-        )
+            })
     }
 }
 
@@ -135,14 +134,13 @@ impl<T: ?Sized> Drop for PhysicalBuffer<T> {
 pub fn malloc(size: u64, alignment: u8) -> impl Future<Output = u64> {
     unsafe {
         let msg = ffi::HardwareMessage::Malloc { size, alignment };
-        redshirt_syscalls_interface::emit_message_with_response(ffi::INTERFACE, msg).map(
-            move |out: Result<u64, _>| {
-                let ptr = out.unwrap();
+        redshirt_syscalls_interface::emit_message_with_response(&ffi::INTERFACE, msg)
+            .unwrap()
+            .map(move |ptr: u64| {
                 assert_ne!(ptr, 0);
                 debug_assert_eq!(ptr % u64::from(alignment), 0);
                 ptr
-            },
-        )
+            })
     }
 }
 
@@ -150,6 +148,6 @@ pub fn malloc(size: u64, alignment: u8) -> impl Future<Output = u64> {
 pub fn free(ptr: u64) {
     unsafe {
         let msg = ffi::HardwareMessage::Free { ptr };
-        redshirt_syscalls_interface::emit_message_without_response(&ffi::INTERFACE, &msg);
+        redshirt_syscalls_interface::emit_message_without_response(&ffi::INTERFACE, &msg).unwrap();
     }
 }

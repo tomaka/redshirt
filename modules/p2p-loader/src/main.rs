@@ -36,11 +36,11 @@ async fn async_main() {
         let next_net_event = Box::pin(network.next_event());
         let msg = match future::select(next_interface, next_net_event).await {
             future::Either::Left((
-                redshirt_syscalls_interface::InterfaceOrDestroyed::Interface(m),
+                redshirt_syscalls_interface::DecodedInterfaceOrDestroyed::Interface(m),
                 _,
             )) => m,
             future::Either::Left((
-                redshirt_syscalls_interface::InterfaceOrDestroyed::ProcessDestroyed(_),
+                redshirt_syscalls_interface::DecodedInterfaceOrDestroyed::ProcessDestroyed(_),
                 _,
             )) => continue,
             future::Either::Right((NetworkEvent::FetchSuccess { data, user_data }, _)) => {
@@ -57,7 +57,7 @@ async fn async_main() {
 
         assert_eq!(msg.interface, redshirt_loader_interface::ffi::INTERFACE);
         let msg_data =
-            redshirt_loader_interface::ffi::LoaderMessage::decode_all(&msg.actual_data).unwrap();
+            redshirt_loader_interface::ffi::LoaderMessage::decode_all(&msg.actual_data.0).unwrap();
         let redshirt_loader_interface::ffi::LoaderMessage::Load(hash_to_load) = msg_data;
         network.start_fetch(&hash_to_load, msg.message_id.unwrap());
     }

@@ -20,7 +20,7 @@ jobs:
       uses: actions-rs/toolchain@v1
       with:
         toolchain: stable
-        target: wasm32-wasi
+        target: wasm32-unknown-unknown
         override: true
     - name: Install a recent version of clang
       run: |
@@ -46,12 +46,12 @@ jobs:
         path: modules/target
         key: cargo-build-target-${{ hashFiles('modules/Cargo.lock') }}
     - name: Build modules
-      run: cargo build --manifest-path ./modules/Cargo.toml --locked --verbose --release --target=wasm32-wasi
+      run: cargo build --manifest-path ./modules/Cargo.toml --workspace --exclude stub --locked --verbose --release --target=wasm32-unknown-unknown
     - name: Upload WASM modules
       uses: actions/upload-artifact@v1
       with:
         name: wasm-modules
-        path: modules/target/wasm32-wasi/release
+        path: modules/target/wasm32-unknown-unknown/release
 
   build-hosted:
     name: Build hosted kernel
@@ -67,7 +67,7 @@ jobs:
       uses: actions-rs/toolchain@v1
       with:
         toolchain: stable
-        target: wasm32-wasi
+        target: wasm32-unknown-unknown
         override: true
     - name: Install a recent version of clang
       run: |
@@ -79,7 +79,7 @@ jobs:
       uses: actions/download-artifact@v1
       with:
         name: wasm-modules
-        path: modules/target/wasm32-wasi/release
+        path: modules/target/wasm32-unknown-unknown/release
     - name: Cache cargo registry
       uses: actions/cache@v1
       with:
@@ -100,6 +100,46 @@ jobs:
     - name: Run tests
       run: cargo test --workspace --exclude redshirt-standalone-kernel --locked --verbose
 
+  build-hosted-windows:
+    name: Build hosted kernel on Windows
+    needs: build-modules
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v1
+    - name: Install Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: wasm32-unknown-unknown
+        override: true
+    - name: Download WASM modules
+      uses: actions/download-artifact@v1
+      with:
+        name: wasm-modules
+        path: modules/target/wasm32-unknown-unknown/release
+    - name: Cache cargo registry
+      uses: actions/cache@v1
+      with:
+        path: ~/.cargo/registry
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('Cargo.lock') }}
+    - name: Cache cargo index
+      uses: actions/cache@v1
+      with:
+        path: ~/.cargo/git
+        key: ${{ runner.os }}-cargo-index-${{ hashFiles('Cargo.lock') }}
+    - name: Cache cargo build
+      uses: actions/cache@v1
+      with:
+        path: target
+        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('Cargo.lock') }}
+    - name: Build CLI kernel
+      run: cargo rustc --release --package redshirt-cli-kernel --locked --verbose -- -Ctarget-feature=+crt-static
+    - name: Upload generated kernel
+      uses: actions/upload-artifact@master
+      with:
+        name: cli-kernel-windows
+        path: target/release/redshirt-cli-kernel.exe
+
   build-standalone:
     name: Build standalone kernel
     needs: build-modules
@@ -115,7 +155,7 @@ jobs:
       uses: actions/download-artifact@v1
       with:
         name: wasm-modules
-        path: modules/target/wasm32-wasi/release
+        path: modules/target/wasm32-unknown-unknown/release
     - name: Install lld
       run: |
         apt-get update
@@ -138,15 +178,15 @@ jobs:
     - name: Install nightly Rust
       uses: actions-rs/toolchain@v1
       with:
-        toolchain: nightly
-        target: wasm32-wasi
+        toolchain: nightly-2019-12-05
+        target: wasm32-unknown-unknown
         override: true
     - name: Install rust-src
       run: rustup component add rust-src
     - name: Build core
-      run: RUST_TARGET_PATH=`pwd` cargo +nightly build -Z build-std=core,alloc --target ${{ matrix.target }} --package redshirt-core --release
+      run: RUST_TARGET_PATH=`pwd` cargo +nightly-2019-12-05 build -Z build-std=core,alloc --target ${{ matrix.target }} --package redshirt-core --release
     - name: Build kernel
-      run: RUST_TARGET_PATH=`pwd` cargo +nightly build -Z build-std=core,alloc --target ${{ matrix.target }} --package redshirt-standalone-kernel --release
+      run: RUST_TARGET_PATH=`pwd` cargo +nightly-2019-12-05 build -Z build-std=core,alloc --target ${{ matrix.target }} --package redshirt-standalone-kernel --release
     - name: Upload generated kernel
       uses: actions/upload-artifact@master
       with:
