@@ -71,7 +71,7 @@ pub fn build(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
         assert!(bin_targets_iter.next().is_none());
         metadata
             .target_directory
-            .join("wasm32-wasi")
+            .join("wasm32-unknown-unknown")
             .join("release")
             .join(format!("{}.wasm", bin_target.name))
     };
@@ -80,10 +80,10 @@ pub fn build(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
     assert!(Command::new("cargo")
         .arg("rustc")
         .arg("--release")
-        .args(&["--target", "wasm32-wasi"])
+        .args(&["--target", "wasm32-unknown-unknown"])
         .arg("--")
         .args(&["-C", "link-arg=--export-table"])
-        .current_dir(&wasm_crate_path)
+        .current_dir(&wasm_crate_path)<
         .status()
         .unwrap()
         .success());
