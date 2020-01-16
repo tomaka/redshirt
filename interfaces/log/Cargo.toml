@@ -7,4 +7,4 @@ edition = "2018"
 
 [dependencies]
 log = "0.4.8"
-redshirt-syscalls-interface = { path = "../syscalls", default-features = false }
+redshirt-syscalls = { path = "../syscalls", default-features = false }

@@ -21,7 +21,7 @@ use core::{cell::RefCell, task::Poll};
 use crossbeam_queue::SegQueue;
 use futures::prelude::*;
 use hashbrown::{hash_map::Entry, HashMap, HashSet};
-use redshirt_syscalls_interface::{Decode, Encode, EncodedMessage, MessageId, Pid};
+use redshirt_syscalls::{Decode, Encode, EncodedMessage, MessageId, Pid};
 use smallvec::SmallVec;
 
 /// Main struct that handles a system, including the scheduler, program loader,

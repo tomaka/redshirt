@@ -12,5 +12,5 @@ redshirt-hardware-interface = { path = "../../interfaces/hardware" }
 redshirt-interface-interface = { path = "../../interfaces/interface" }
 redshirt-pci-interface = { path = "../../interfaces/pci" }
 redshirt-log-interface = { path = "../../interfaces/log" }
-redshirt-syscalls-interface = { path = "../../interfaces/syscalls" }
+redshirt-syscalls = { path = "../../interfaces/syscalls" }
 smallvec = "1.0.0"

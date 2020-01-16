@@ -83,7 +83,7 @@ impl HardwareWriteOperationsBuilder {
             }
 
             let msg = ffi::HardwareMessage::HardwareAccess(self.operations);
-            redshirt_syscalls_interface::emit_message_without_response(&ffi::INTERFACE, &msg)
+            redshirt_syscalls::emit_message_without_response(&ffi::INTERFACE, &msg)
                 .unwrap();
         }
     }
@@ -241,7 +241,7 @@ impl<'a> HardwareOperationsBuilder<'a> {
         unsafe {
             let msg = ffi::HardwareMessage::HardwareAccess(self.operations);
             let out = self.out;
-            redshirt_syscalls_interface::emit_message_with_response(&ffi::INTERFACE, msg)
+            redshirt_syscalls::emit_message_with_response(&ffi::INTERFACE, msg)
                 .unwrap()
                 .then(move |response: Vec<ffi::HardwareAccessResponse>| {
                     for (response_elem, out) in response.into_iter().zip(out) {
