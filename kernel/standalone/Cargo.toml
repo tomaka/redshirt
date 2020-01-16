@@ -20,7 +20,7 @@ linked_list_allocator = "0.6.5"
 rand_chacha = { version = "0.2.1", default-features = false }
 rand_core = { version = "0.5.1", default-features = false }
 rand_jitter = { version = "0.2.0", default-features = false }
-redshirt-core = { path = "../../core" }
+redshirt-core = { path = "../../core", features = ["nightly"] }
 redshirt-interface-interface = { path = "../../interfaces/interface", default-features = false }
 redshirt-hardware-interface = { path = "../../interfaces/hardware", default-features = false }
 redshirt-random-interface = { path = "../../interfaces/random", default-features = false }

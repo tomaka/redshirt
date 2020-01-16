@@ -14,7 +14,7 @@ crossbeam-queue = { version = "0.2.1", default-features = false, features = ["al
 futures = { version = "0.3.1", default-features = false }      # TODO: necessary?
 hashbrown = { version = "0.6.0", default-features = false }
 proc-macro-hack = "0.5.11"
-redshirt-core-proc-macros = { path = "../core-proc-macros" }
+redshirt-core-proc-macros = { path = "../core-proc-macros", optional = true }
 redshirt-interface-interface = { path = "../interfaces/interface", default-features = false }
 redshirt-loader-interface = { path = "../interfaces/loader", default-features = false }
 redshirt-syscalls = { path = "../interfaces/syscalls", default-features = false }
@@ -30,3 +30,7 @@ wasmi = { git = "https://github.com/tomaka/wasmi", branch = "no-std", default-fe
 
 [dev-dependencies]
 wat = "1.0.6"
+
+[features]
+default = []
+nightly = ["redshirt-core-proc-macros"]

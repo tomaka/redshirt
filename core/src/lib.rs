@@ -125,6 +125,8 @@ pub use redshirt_syscalls::{
 };
 pub use wasmi::RuntimeValue; // TODO: wrap around instead?
 
+#[cfg(feature = "nightly")]
+#[cfg_attr(docsrs, doc(cfg(feature = "nightly")))]
 #[proc_macro_hack::proc_macro_hack]
 pub use redshirt_core_proc_macros::build_wasm_module;
 
