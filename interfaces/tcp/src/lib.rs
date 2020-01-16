@@ -63,8 +63,7 @@ impl TcpStream {
         };
 
         async move {
-            let message: ffi::TcpOpenResponse =
-                redshirt_syscalls::message_response(msg_id).await;
+            let message: ffi::TcpOpenResponse = redshirt_syscalls::message_response(msg_id).await;
             let handle = message.result?;
 
             Ok(TcpStream {
@@ -110,9 +109,7 @@ impl AsyncRead for TcpStream {
                     .emit_with_response_raw(&ffi::INTERFACE)
                     .unwrap()
             };
-            self.pending_read = Some(Box::pin(redshirt_syscalls::message_response(
-                msg_id,
-            )));
+            self.pending_read = Some(Box::pin(redshirt_syscalls::message_response(msg_id)));
         }
     }
 
@@ -143,9 +140,7 @@ impl AsyncWrite for TcpStream {
                 .emit_with_response_raw(&ffi::INTERFACE)
                 .unwrap()
         };
-        self.pending_write = Some(Box::pin(redshirt_syscalls::message_response(
-            msg_id,
-        )));
+        self.pending_write = Some(Box::pin(redshirt_syscalls::message_response(msg_id)));
         Poll::Ready(Ok(buf.len()))
     }
 
@@ -230,8 +225,7 @@ impl TcpListener {
         let mut local_addr = socket_addr.clone();
 
         async move {
-            let message: ffi::TcpListenResponse =
-                redshirt_syscalls::message_response(msg_id).await;
+            let message: ffi::TcpListenResponse = redshirt_syscalls::message_response(msg_id).await;
             let (handle, local_port) = message.result?;
             local_addr.set_port(local_port);
 
@@ -275,9 +269,7 @@ impl TcpListener {
                     .emit_with_response_raw(&ffi::INTERFACE)
                     .unwrap()
             };
-            self.pending_accept = Some(Box::pin(redshirt_syscalls::message_response(
-                msg_id,
-            )));
+            self.pending_accept = Some(Box::pin(redshirt_syscalls::message_response(msg_id)));
         }
     }
 }

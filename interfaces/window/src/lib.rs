@@ -46,8 +46,7 @@ impl Drop for Window {
                 window_id: self.handle,
             });
 
-            let _ =
-                redshirt_syscalls::emit_message_without_response(&ffi::INTERFACE, &close);
+            let _ = redshirt_syscalls::emit_message_without_response(&ffi::INTERFACE, &close);
         }
     }
 }

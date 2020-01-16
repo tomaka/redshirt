@@ -83,8 +83,7 @@ impl HardwareWriteOperationsBuilder {
             }
 
             let msg = ffi::HardwareMessage::HardwareAccess(self.operations);
-            redshirt_syscalls::emit_message_without_response(&ffi::INTERFACE, &msg)
-                .unwrap();
+            redshirt_syscalls::emit_message_without_response(&ffi::INTERFACE, &msg).unwrap();
         }
     }
 }
