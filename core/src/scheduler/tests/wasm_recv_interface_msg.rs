@@ -29,24 +29,24 @@ fn wasm_recv_interface_msg() {
 
     #[start]
     fn main(_: isize, _: *const *const u8) -> isize {
-        redshirt_syscalls_interface::block_on(async_main());
+        redshirt_syscalls::block_on(async_main());
         0
     }
 
     fn async_main() -> impl Future<Output = ()> {
-        let interface = redshirt_syscalls_interface::InterfaceHash::from_raw_hash([
+        let interface = redshirt_syscalls::InterfaceHash::from_raw_hash([
             0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
             0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37,
         ]);
 
-        redshirt_syscalls_interface::next_interface_message()
+        redshirt_syscalls::next_interface_message()
             .then(move |msg| {
                 let msg = match msg {
-                    redshirt_syscalls_interface::DecodedInterfaceOrDestroyed::Interface(m) => m,
-                    redshirt_syscalls_interface::DecodedInterfaceOrDestroyed::ProcessDestroyed(_) => panic!(),
+                    redshirt_syscalls::DecodedInterfaceOrDestroyed::Interface(m) => m,
+                    redshirt_syscalls::DecodedInterfaceOrDestroyed::ProcessDestroyed(_) => panic!(),
                 };
                 assert_eq!(msg.interface, interface);
-                assert_eq!(msg.actual_data, redshirt_syscalls_interface::EncodedMessage(vec![1, 2, 3, 4, 5, 6, 7, 8]));
+                assert_eq!(msg.actual_data, redshirt_syscalls::EncodedMessage(vec![1, 2, 3, 4, 5, 6, 7, 8]));
                 future::ready(())
             })
     }
@@ -54,7 +54,7 @@ fn wasm_recv_interface_msg() {
     */
     let module = Module::from_bytes(&include_bytes!("./wasm_recv_interface_msg.wasm")[..]).unwrap();
 
-    let interface = redshirt_syscalls_interface::InterfaceHash::from_raw_hash([
+    let interface = redshirt_syscalls::InterfaceHash::from_raw_hash([
         0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16,
         0x17, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35,
         0x36, 0x37,

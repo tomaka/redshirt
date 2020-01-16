@@ -16,12 +16,12 @@
 //! Implements the log interface by writing in text mode.
 
 use redshirt_log_interface::ffi;
-use redshirt_syscalls_interface::{Decode, EncodedMessage};
+use redshirt_syscalls::{Decode, EncodedMessage};
 use std::{convert::TryFrom as _, mem};
 
 fn main() {
     std::panic::set_hook(Box::new(move |panic_info| {
-        redshirt_syscalls_interface::block_on(async move {
+        redshirt_syscalls::block_on(async move {
             // TODO: make this code alloc-free?
 
             let mut console = Console {
@@ -38,7 +38,7 @@ fn main() {
         });
     }));
 
-    redshirt_syscalls_interface::block_on(async_main());
+    redshirt_syscalls::block_on(async_main());
 }
 
 async fn async_main() -> ! {
@@ -59,9 +59,9 @@ async fn async_main() -> ! {
     console.flush();
 
     loop {
-        let msg = match redshirt_syscalls_interface::next_interface_message().await {
-            redshirt_syscalls_interface::DecodedInterfaceOrDestroyed::Interface(m) => m,
-            redshirt_syscalls_interface::DecodedInterfaceOrDestroyed::ProcessDestroyed(_) => continue,
+        let msg = match redshirt_syscalls::next_interface_message().await {
+            redshirt_syscalls::DecodedInterfaceOrDestroyed::Interface(m) => m,
+            redshirt_syscalls::DecodedInterfaceOrDestroyed::ProcessDestroyed(_) => continue,
         };
         assert_eq!(msg.interface, ffi::INTERFACE);
 

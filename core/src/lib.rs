@@ -120,7 +120,7 @@ extern crate alloc;
 
 pub use self::module::Module;
 pub use self::system::{System, SystemBuilder, SystemRunOutcome};
-pub use redshirt_syscalls_interface::{
+pub use redshirt_syscalls::{
     Decode, Encode, EncodedMessage, InterfaceHash, MessageId, Pid, ThreadId,
 };
 pub use wasmi::RuntimeValue; // TODO: wrap around instead?

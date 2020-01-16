@@ -19,7 +19,7 @@ use parity_scale_codec::DecodeAll;
 use std::time::Duration;
 
 fn main() {
-    redshirt_syscalls_interface::block_on(async_main())
+    redshirt_syscalls::block_on(async_main())
 }
 
 async fn async_main() {
@@ -32,25 +32,25 @@ async fn async_main() {
     let mut network = Network::start();
 
     loop {
-        let next_interface = redshirt_syscalls_interface::next_interface_message();
+        let next_interface = redshirt_syscalls::next_interface_message();
         let next_net_event = Box::pin(network.next_event());
         let msg = match future::select(next_interface, next_net_event).await {
             future::Either::Left((
-                redshirt_syscalls_interface::DecodedInterfaceOrDestroyed::Interface(m),
+                redshirt_syscalls::DecodedInterfaceOrDestroyed::Interface(m),
                 _,
             )) => m,
             future::Either::Left((
-                redshirt_syscalls_interface::DecodedInterfaceOrDestroyed::ProcessDestroyed(_),
+                redshirt_syscalls::DecodedInterfaceOrDestroyed::ProcessDestroyed(_),
                 _,
             )) => continue,
             future::Either::Right((NetworkEvent::FetchSuccess { data, user_data }, _)) => {
                 let rp = redshirt_loader_interface::ffi::LoadResponse { result: Ok(data) };
-                redshirt_syscalls_interface::emit_answer(user_data, &rp);
+                redshirt_syscalls::emit_answer(user_data, &rp);
                 continue;
             }
             future::Either::Right((NetworkEvent::FetchFail { user_data }, _)) => {
                 let rp = redshirt_loader_interface::ffi::LoadResponse { result: Err(()) };
-                redshirt_syscalls_interface::emit_answer(user_data, &rp);
+                redshirt_syscalls::emit_answer(user_data, &rp);
                 continue;
             }
         };

@@ -43,7 +43,7 @@ pub async fn generate_in(out: &mut [u8]) {
             len: u16::try_from(chunk.len()).unwrap(),
         };
         let rep: ffi::GenerateResponse = unsafe {
-            redshirt_syscalls_interface::emit_message_with_response(&ffi::INTERFACE, msg)
+            redshirt_syscalls::emit_message_with_response(&ffi::INTERFACE, msg)
                 .unwrap()
                 .await
         };

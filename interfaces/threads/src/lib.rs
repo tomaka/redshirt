@@ -55,8 +55,7 @@ unsafe fn spawn_thread_inner(function: impl FnOnce()) {
         user_data: Box::into_raw(function_box) as usize as u32,
     });
 
-    redshirt_syscalls_interface::emit_message_without_response(&ffi::INTERFACE, &thread_new)
-        .unwrap();
+    redshirt_syscalls::emit_message_without_response(&ffi::INTERFACE, &thread_new).unwrap();
 }
 
 #[cfg(not(target_pointer_width = "32"))]
