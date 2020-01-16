@@ -27,7 +27,6 @@ redshirt-random-interface = { path = "../../interfaces/random", default-features
 redshirt-log-interface = { path = "../../interfaces/log", default-features = false }
 redshirt-syscalls = { path = "../../interfaces/syscalls", default-features = false }
 spin = "0.5.2"
-wasi-module-builder = { path = "../module-builder" }
 
 [build-dependencies]
 cc = "1.0"

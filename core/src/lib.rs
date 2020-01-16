@@ -125,6 +125,9 @@ pub use redshirt_syscalls::{
 };
 pub use wasmi::RuntimeValue; // TODO: wrap around instead?
 
+#[proc_macro_hack::proc_macro_hack]
+pub use redshirt_core_proc_macros::build_wasm_module;
+
 mod id_pool;
 
 pub mod module;

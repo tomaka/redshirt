@@ -1,10 +1,10 @@
 [workspace]
 members = [
     "core",
+    "core-proc-macros",
     "kernel/cli",
     "kernel/hosted-log",
     "kernel/hosted-time",
-    "kernel/module-builder",
     "kernel/standalone",
     "interfaces/hardware",
     "interfaces/interface",

@@ -19,15 +19,23 @@ extern crate proc_macro;
 
 use std::{fs, process::Command};
 
-#[proc_macro]
-pub fn build(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
+/// Compiles a WASM module and includes it similar to `include_bytes!`.
+/// Must be passed the path to a directory containing a `Cargo.toml`.
+#[proc_macro_hack::proc_macro_hack]
+pub fn build_wasm_module(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
     // Find the absolute path requested by the user.
     let wasm_crate_path = {
         let macro_param = syn::parse_macro_input!(tokens as syn::LitStr);
         let macro_call_file = {
-            let src_file = proc_macro::Span::call_site().source_file();
-            assert!(src_file.is_real());
-            src_file.path().parent().unwrap().to_owned()
+            // We go through the stack of Spans until we find one with a file path.
+            let mut span = proc_macro::Span::call_site();
+            loop {
+                let src_file = span.source_file();
+                if src_file.is_real() {
+                    break src_file.path().parent().unwrap().to_owned()
+                }
+                span = span.parent().expect("Couldn't find any Span which a real source file");
+            }
         };
 
         macro_call_file.join(macro_param.value())
@@ -83,7 +91,7 @@ pub fn build(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
         .args(&["--target", "wasm32-unknown-unknown"])
         .arg("--")
         .args(&["-C", "link-arg=--export-table"])
-        .current_dir(&wasm_crate_path)<
+        .current_dir(&wasm_crate_path)
         .status()
         .unwrap()
         .success());
@@ -91,8 +99,12 @@ pub fn build(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
     // Read the output `.wasm` file.
     let wasm_content = fs::read(wasm_output).unwrap();
 
+    // TODO: handle if the user renames `redshirt_core` to something else?
     let rust_out = format!(
-        "pub(super) const MODULE_BYTES: [u8; {}] = [{}];",
+        "{{
+            const MODULE_BYTES: [u8; {}] = [{}];
+            redshirt_core::module::Module::from_bytes(&MODULE_BYTES[..]).unwrap()
+        }}",
         wasm_content.len(),
         wasm_content
             .iter()
