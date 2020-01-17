@@ -104,14 +104,17 @@ pub fn build_wasm_module(tokens: proc_macro::TokenStream) -> proc_macro::TokenSt
         let dependencies_content = fs::read_to_string(dependencies_output).unwrap();
         let mut list_iter = dependencies_content.lines().next().unwrap().split(" ");
         let _ = list_iter.next(); // First entry is the output file.
-        // TODO: this is missing Cargo.tomls and stuff I think
-        list_iter.filter_map(|file| {
-            if Path::new(file).exists() { // TODO: figure out why some files are missing
-                Some(file.to_owned())
-            } else {
-                None
-            }
-        }).collect()
+                                  // TODO: this is missing Cargo.tomls and stuff I think
+        list_iter
+            .filter_map(|file| {
+                if Path::new(file).exists() {
+                    // TODO: figure out why some files are missing
+                    Some(file.to_owned())
+                } else {
+                    None
+                }
+            })
+            .collect()
     };
 
     // Final output.
@@ -122,8 +125,13 @@ pub fn build_wasm_module(tokens: proc_macro::TokenStream) -> proc_macro::TokenSt
             {}
             redshirt_core::module::Module::from_bytes(&MODULE_BYTES[..]).unwrap()
         }}",
-        wasm_output.display().to_string().escape_default().to_string(),
-        dependended_files.iter()
+        wasm_output
+            .display()
+            .to_string()
+            .escape_default()
+            .to_string(),
+        dependended_files
+            .iter()
             .map(|v| format!("include_str!(\"{}\");", v.escape_default().to_string()))
             .collect::<Vec<_>>()
             .join("\n"),
