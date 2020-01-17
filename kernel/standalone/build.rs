@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use std::{env, process::Command};
+use std::env;
 
 fn main() {
     // Builds additional platform-specific code to link to the kernel.
@@ -27,78 +27,5 @@ fn main() {
         // Nothing more to do.
     } else {
         panic!("Unsupported target: {:?}", target)
-    }
-
-    // Build the WASM module.
-    let status = Command::new("cargo")
-        .arg("rustc")
-        .arg("--release")
-        .args(&["--target", "wasm32-unknown-unknown"])
-        .args(&["--package", "hello-world"])
-        .args(&["--bin", "hello-world"])
-        .args(&["--manifest-path", "../../modules/hello-world/Cargo.toml"])
-        .arg("--")
-        .args(&["-C", "link-arg=--export-table"])
-        .status()
-        .unwrap();
-    assert!(status.success());
-
-    let status = Command::new("cargo")
-        .arg("rustc")
-        .arg("--release")
-        .args(&["--target", "wasm32-unknown-unknown"])
-        .args(&["--package", "arm-log"])
-        .args(&["--bin", "arm-log"])
-        .args(&["--manifest-path", "../../modules/arm-log/Cargo.toml"])
-        .arg("--")
-        .args(&["-C", "link-arg=--export-table"])
-        .status()
-        .unwrap();
-    assert!(status.success());
-
-    let status = Command::new("cargo")
-        .arg("rustc")
-        .arg("--release")
-        .args(&["--target", "wasm32-unknown-unknown"])
-        .args(&["--package", "x86-log"])
-        .args(&["--bin", "x86-log"])
-        .args(&["--manifest-path", "../../modules/x86-log/Cargo.toml"])
-        .arg("--")
-        .args(&["-C", "link-arg=--export-table"])
-        .status()
-        .unwrap();
-    assert!(status.success());
-
-    let status = Command::new("cargo")
-        .arg("rustc")
-        .arg("--release")
-        .args(&["--target", "wasm32-unknown-unknown"])
-        .args(&["--package", "x86-pci"])
-        .args(&["--bin", "x86-pci"])
-        .args(&["--manifest-path", "../../modules/x86-pci/Cargo.toml"])
-        .arg("--")
-        .args(&["-C", "link-arg=--export-table"])
-        .status()
-        .unwrap();
-    assert!(status.success());
-
-    let status = Command::new("cargo")
-        .arg("rustc")
-        .args(&["--target", "wasm32-unknown-unknown"])
-        .args(&["--package", "ne2000"])
-        .args(&["--bin", "ne2000"])
-        .args(&["--manifest-path", "../../modules/ne2000/Cargo.toml"])
-        .arg("--")
-        .args(&["-C", "link-arg=--export-table"])
-        .status()
-        .unwrap();
-    assert!(status.success());
-
-    // TODO: not a great solution
-    for entry in walkdir::WalkDir::new("../../modules/") {
-        println!("cargo:rerun-if-changed={}", entry.unwrap().path().display());
-    }
-    for entry in walkdir::WalkDir::new("../../interfaces/") {
-        println!("cargo:rerun-if-changed={}", entry.unwrap().path().display());
     }
 }

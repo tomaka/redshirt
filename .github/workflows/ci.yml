@@ -96,9 +96,9 @@ jobs:
         path: target
         key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('Cargo.lock') }}
     - name: Build
-      run: cargo build --workspace --exclude redshirt-standalone-kernel --locked --verbose
+      run: cargo build --workspace --exclude redshirt-standalone-kernel --exclude redshirt-core-proc-macros --locked --verbose
     - name: Run tests
-      run: cargo test --workspace --exclude redshirt-standalone-kernel --locked --verbose
+      run: cargo test --workspace --exclude redshirt-standalone-kernel --exclude redshirt-core-proc-macros --locked --verbose
 
   build-hosted-windows:
     name: Build hosted kernel on Windows

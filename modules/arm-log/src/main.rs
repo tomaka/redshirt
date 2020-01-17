@@ -44,7 +44,7 @@ async fn async_main() -> ! {
                 ffi::Level::Debug => b"DEBG",
                 ffi::Level::Trace => b"TRCE",
             };
-    
+
             write_utf8_bytes(b"[").await;
             write_utf8_bytes(format!("{:?}", msg.emitter_pid).as_bytes()).await;
             write_utf8_bytes(b"] [").await;
