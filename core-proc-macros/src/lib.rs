@@ -59,8 +59,8 @@ pub fn build_wasm_module(tokens: proc_macro::TokenStream) -> proc_macro::TokenSt
             .to_owned()
     };
 
-    // Determine the path to the `.wasm` that Cargo will generate.
-    let wasm_output = {
+    // Determine the path to the `.wasm` and `.d` files that Cargo will generate.
+    let (wasm_output, dependencies_output) = {
         let metadata = cargo_metadata::MetadataCommand::new()
             .current_dir(&wasm_crate_path)
             .no_deps()
@@ -77,11 +77,13 @@ pub fn build_wasm_module(tokens: proc_macro::TokenStream) -> proc_macro::TokenSt
             .filter(|t| t.kind.iter().any(|k| k == "bin"));
         let bin_target = bin_targets_iter.next().unwrap();
         assert!(bin_targets_iter.next().is_none());
-        metadata
+        let base = metadata
             .target_directory
             .join("wasm32-unknown-unknown")
-            .join("release")
-            .join(format!("{}.wasm", bin_target.name))
+            .join("release");
+        let wasm = base.join(format!("{}.wasm", bin_target.name));
+        let deps = base.join(format!("{}.d", bin_target.name));
+        (wasm, deps)
     };
 
     // Actually build the module.
@@ -96,13 +98,26 @@ pub fn build_wasm_module(tokens: proc_macro::TokenStream) -> proc_macro::TokenSt
         .unwrap()
         .success());
 
+    // Read the list of source files that we must depend upon.
+    let dependended_files: Vec<String> = {
+        // Read the output `.d` file.
+        let dependencies_content = fs::read(dependencies_output).unwrap();
+        let mut list_iter = dependencies_content.split(|b| *b == b' ');
+        let _ = list_iter.next(); // First entry is the output file.
+        list_iter.map(|file| {
+            String::from_utf8(file.to_owned()).unwrap()
+        }).collect()
+    };
+
     // Read the output `.wasm` file.
     let wasm_content = fs::read(wasm_output).unwrap();
 
     // TODO: handle if the user renames `redshirt_core` to something else?
+    // TODO: use `include_bytes!` for the final wasm instead?
     let rust_out = format!(
         "{{
             const MODULE_BYTES: [u8; {}] = [{}];
+            /* {} */
             redshirt_core::module::Module::from_bytes(&MODULE_BYTES[..]).unwrap()
         }}",
         wasm_content.len(),
@@ -110,7 +125,13 @@ pub fn build_wasm_module(tokens: proc_macro::TokenStream) -> proc_macro::TokenSt
             .iter()
             .map(|byte| byte.to_string())
             .collect::<Vec<_>>()
-            .join(", ")
+            .join(", "),
+        dependended_files.iter()
+            .map(|v| format!("include_str!(\"{}\");", v))//.escape_default().to_string()))
+            .collect::<Vec<_>>()
+            .join("\n"),
     );
+
+    //panic!("{}", rust_out);
     rust_out.parse().unwrap()
 }
