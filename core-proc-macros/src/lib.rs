@@ -17,7 +17,7 @@
 
 extern crate proc_macro;
 
-use std::{fs, process::Command};
+use std::{fs, path::Path, process::Command};
 
 /// Compiles a WASM module and includes it similar to `include_bytes!`.
 /// Must be passed the path to a directory containing a `Cargo.toml`.
@@ -101,37 +101,36 @@ pub fn build_wasm_module(tokens: proc_macro::TokenStream) -> proc_macro::TokenSt
     // Read the list of source files that we must depend upon.
     let dependended_files: Vec<String> = {
         // Read the output `.d` file.
-        let dependencies_content = fs::read(dependencies_output).unwrap();
-        let mut list_iter = dependencies_content.split(|b| *b == b' ');
+        let dependencies_content = fs::read_to_string(dependencies_output).unwrap();
+        let mut list_iter = dependencies_content.lines().next().unwrap().split(" ");
         let _ = list_iter.next(); // First entry is the output file.
-        list_iter.map(|file| {
-            String::from_utf8(file.to_owned()).unwrap()
+        // TODO: this is missing Cargo.tomls and stuff I think
+        list_iter.filter_map(|file| {
+            if Path::new(file).exists() { // TODO: figure out why some files are missing
+                Some(file.to_owned())
+            } else {
+                None
+            }
         }).collect()
     };
 
-    // Read the output `.wasm` file.
-    let wasm_content = fs::read(wasm_output).unwrap();
-
+    // Final output.
     // TODO: handle if the user renames `redshirt_core` to something else?
-    // TODO: use `include_bytes!` for the final wasm instead?
     let rust_out = format!(
         "{{
-            const MODULE_BYTES: [u8; {}] = [{}];
-            /* {} */
+            const MODULE_BYTES: &'static [u8] = include_bytes!(\"{}\");
+            {}
             redshirt_core::module::Module::from_bytes(&MODULE_BYTES[..]).unwrap()
         }}",
-        wasm_content.len(),
-        wasm_content
-            .iter()
-            .map(|byte| byte.to_string())
-            .collect::<Vec<_>>()
-            .join(", "),
+        wasm_output.display().to_string().escape_default().to_string(),
         dependended_files.iter()
-            .map(|v| format!("include_str!(\"{}\");", v))//.escape_default().to_string()))
+            .map(|v| format!("include_str!(\"{}\");", v.escape_default().to_string()))
             .collect::<Vec<_>>()
             .join("\n"),
     );
 
+    // Uncomment to debug.
     //panic!("{}", rust_out);
+
     rust_out.parse().unwrap()
 }
