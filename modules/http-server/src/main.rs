@@ -18,10 +18,10 @@ use std::{pin::Pin, task::Context, task::Poll};
 
 fn main() {
     std::panic::set_hook(Box::new(|info| {
-        redshirt_stdout_interface::stdout(format!("Panic: {}\n", info));
+        redshirt_log_interface::log(format!("Panic: {}\n", info));
     }));
 
-    redshirt_syscalls_interface::block_on(async move {
+    redshirt_syscalls::block_on(async move {
         redshirt_time_interface::Delay::new(std::time::Duration::from_secs(2)).await;
 
         // Note: IPv6 = 2a00:1450:4007:80f::200e

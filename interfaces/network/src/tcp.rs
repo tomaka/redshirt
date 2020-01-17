@@ -16,7 +16,7 @@
 use crate::ffi;
 
 use futures::{lock::Mutex, prelude::*, ready};
-use redshirt_syscalls_interface::Encode as _;
+use redshirt_syscalls::Encode as _;
 use std::{
     cmp, io, mem,
     net::{IpAddr, Ipv6Addr, SocketAddr},
@@ -69,7 +69,7 @@ impl TcpStream {
         async move {
             let message: ffi::TcpOpenResponse = unsafe {
                 let msg = tcp_open.encode();
-                redshirt_syscalls_interface::MessageBuilder::new()
+                redshirt_syscalls::MessageBuilder::new()
                     .add_data(&msg)
                     .emit_with_response(&ffi::INTERFACE)
                     .unwrap()
@@ -122,14 +122,12 @@ impl AsyncRead for TcpStream {
             });
             let msg_id = unsafe {
                 let msg = tcp_read.encode();
-                redshirt_syscalls_interface::MessageBuilder::new()
+                redshirt_syscalls::MessageBuilder::new()
                     .add_data(&msg)
                     .emit_with_response_raw(&ffi::INTERFACE)
                     .unwrap()
             };
-            self.pending_read = Some(Box::pin(redshirt_syscalls_interface::message_response(
-                msg_id,
-            )));
+            self.pending_read = Some(Box::pin(redshirt_syscalls::message_response(msg_id)));
         }
     }
 
@@ -155,14 +153,12 @@ impl AsyncWrite for TcpStream {
         });
         let msg_id = unsafe {
             let msg = tcp_write.encode();
-            redshirt_syscalls_interface::MessageBuilder::new()
+            redshirt_syscalls::MessageBuilder::new()
                 .add_data(&msg)
                 .emit_with_response_raw(&ffi::INTERFACE)
                 .unwrap()
         };
-        self.pending_write = Some(Box::pin(redshirt_syscalls_interface::message_response(
-            msg_id,
-        )));
+        self.pending_write = Some(Box::pin(redshirt_syscalls::message_response(msg_id)));
         Poll::Ready(Ok(buf.len()))
     }
 
@@ -210,7 +206,7 @@ impl Drop for TcpStream {
                 socket_id: self.handle,
             });
 
-            redshirt_syscalls_interface::emit_message_without_response(&ffi::INTERFACE, &tcp_close);
+            redshirt_syscalls::emit_message_without_response(&ffi::INTERFACE, &tcp_close);
         }
     }
 }

@@ -74,12 +74,24 @@ where
         TLen: core::ops::Add<U8, Output = TOutLen>,
         TOutLen: ArrayLength<u8>,
     {
+        self.add_data_raw(&buffer.0)
+    }
+
+    /// Append a slice of message data to the builder.
+    ///
+    /// > **Note**: This operation is cheap and doesn't perform any copy of the message data
+    /// >           itself.
+    pub fn add_data_raw<TOutLen>(self, buffer: &'a [u8]) -> MessageBuilder<'a, TOutLen>
+    where
+        TLen: core::ops::Add<U8, Output = TOutLen>,
+        TOutLen: ArrayLength<u8>,
+    {
         let mut new_pair = GenericArray::<u8, U8>::default();
         LittleEndian::write_u32(
             &mut new_pair[0..4],
-            u32::try_from(buffer.0.as_ptr() as usize).unwrap(),
+            u32::try_from(buffer.as_ptr() as usize).unwrap(),
         );
-        LittleEndian::write_u32(&mut new_pair[4..8], u32::try_from(buffer.0.len()).unwrap());
+        LittleEndian::write_u32(&mut new_pair[4..8], u32::try_from(buffer.len()).unwrap());
 
         MessageBuilder {
             allow_delay: self.allow_delay,

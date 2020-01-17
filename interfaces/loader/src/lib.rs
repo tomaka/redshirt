@@ -35,7 +35,7 @@ pub mod ffi;
 pub fn load(hash: [u8; 32]) -> impl Future<Output = Result<Vec<u8>, ()>> {
     unsafe {
         let msg = ffi::LoaderMessage::Load(hash);
-        match redshirt_syscalls_interface::emit_message_with_response(&ffi::INTERFACE, msg) {
+        match redshirt_syscalls::emit_message_with_response(&ffi::INTERFACE, msg) {
             Ok(fut) => fut.map(|rep: ffi::LoadResponse| rep.result).left_future(),
             Err(_) => future::ready(Err(())).right_future(),
         }

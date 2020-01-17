@@ -18,8 +18,8 @@ use hashbrown::HashMap;
 use network_manager::{NetworkManager, NetworkManagerEvent};
 use parity_scale_codec::DecodeAll;
 use redshirt_network_interface::ffi;
-use redshirt_syscalls_interface::ffi::InterfaceOrDestroyed;
-use redshirt_syscalls_interface::MessageId;
+use redshirt_syscalls::ffi::InterfaceOrDestroyed;
+use redshirt_syscalls::MessageId;
 use std::{
     mem,
     net::{Ipv6Addr, SocketAddr},
@@ -28,10 +28,10 @@ use std::{
 
 fn main() {
     std::panic::set_hook(Box::new(|info| {
-        redshirt_stdout_interface::stdout(format!("Panic: {}\n", info));
+        redshirt_log_interface::log(format!("Panic: {}\n", info));
     }));
 
-    redshirt_syscalls_interface::block_on(async_main())
+    redshirt_syscalls::block_on(async_main())
 }
 
 async fn async_main() {
@@ -44,7 +44,7 @@ async fn async_main() {
     let mut next_socket_id = 0u32;
 
     loop {
-        let next_interface = redshirt_syscalls_interface::next_interface_message();
+        let next_interface = redshirt_syscalls::next_interface_message();
         let next_net_event = Box::pin(network.next_event());
         let msg = match future::select(next_interface, next_net_event).await {
             future::Either::Left((InterfaceOrDestroyed::Interface(msg), _)) => msg,
@@ -55,7 +55,7 @@ async fn async_main() {
                 if let Some(msg_id) = msg_id.take() {
                     let data = mem::replace(&mut *buffer, Vec::new());
                     debug_assert!(!data.is_empty());
-                    redshirt_syscalls_interface::emit_answer(msg_id, &data);
+                    redshirt_syscalls::emit_answer(msg_id, &data);
                 }
                 continue;
             }
@@ -64,7 +64,7 @@ async fn async_main() {
 
         assert_eq!(msg.interface, ffi::INTERFACE);
         let msg_data = ffi::TcpMessage::decode_all(&msg.actual_data).unwrap();
-        redshirt_stdout_interface::stdout(format!("message: {:?}\n", msg_data));
+        redshirt_log_interface::log(format!("message: {:?}\n", msg_data));
 
         match msg_data {
             ffi::TcpMessage::Open(open_msg) => {
@@ -92,7 +92,7 @@ async fn async_main() {
                     result
                 };
                 if let Some(message_id) = msg.message_id {
-                    redshirt_syscalls_interface::emit_answer(message_id, &rp);
+                    redshirt_syscalls::emit_answer(message_id, &rp);
                 }*/
             }
             ffi::TcpMessage::Close(msg) => {
@@ -111,14 +111,14 @@ async fn async_main() {
             ffi::TcpMessage::InterfaceOnData(id, buf) => {
                 network.inject_interface_data(&(msg.emitter_pid, id), buf);
                 if let Some(message_id) = msg.message_id {
-                    redshirt_syscalls_interface::emit_answer(message_id, &());
+                    redshirt_syscalls::emit_answer(message_id, &());
                 }
             }
             ffi::TcpMessage::InterfaceWaitData(id) => {
                 let data = network.read_ethernet_cable_out(&(msg.emitter_pid, id));
                 if !data.is_empty() {
                     // TODO: don't unwrap message_id
-                    redshirt_syscalls_interface::emit_answer(msg.message_id.unwrap(), &data);
+                    redshirt_syscalls::emit_answer(msg.message_id.unwrap(), &data);
                 } else {
                     // TODO: check if already set
                     // TODO: don't unwrap message_id

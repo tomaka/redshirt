@@ -15,17 +15,15 @@
 
 #![deny(intra_doc_link_resolution_failure)]
 
-use futures::{channel::mpsc, pin_mut, prelude::*};
-use parity_scale_codec::DecodeAll;
-use std::{fs, path::PathBuf, process, sync::Arc};
+use std::{fs, path::PathBuf, process};
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
-#[structopt(name = "redshirt", about = "Redshirt modules executor.")]
+#[structopt(name = "redshirt-cli", about = "Redshirt modules executor.")]
 struct CliOptions {
-    /// Input file.
+    /// WASM file to run.
     #[structopt(parse(from_os_str))]
-    input: Option<PathBuf>,
+    wasm_file: PathBuf,
 }
 
 fn main() {
@@ -35,50 +33,33 @@ fn main() {
 async fn async_main() {
     let cli_requested_process = {
         let cli_opts = CliOptions::from_args();
-        if let Some(input) = cli_opts.input {
-            let file_content = fs::read(input).expect("failed to read input file");
-            Some(
-                redshirt_core::module::Module::from_bytes(&file_content)
-                    .expect("failed to parse input file"),
-            )
-        } else {
-            None
-        }
+        let wasm_file_content = fs::read(cli_opts.wasm_file).expect("failed to read input file");
+        redshirt_core::module::Module::from_bytes(&wasm_file_content)
+            .expect("failed to parse input file")
     };
 
-    let net_manager = redshirt_core::module::Module::from_bytes(
-        &include_bytes!(
-            "../../../modules/target/wasm32-unknown-unknown/release/network-manager.wasm"
-        )[..],
-    )
-    .unwrap();
-
-    let mut system = redshirt_core::system::SystemBuilder::new()
+    let system = redshirt_core::system::SystemBuilder::new()
         .with_native_program(redshirt_tap_hosted::TapNetworkInterface::new().unwrap())
+        .with_native_program(build!("../../../modules/network-manager"))
         .with_native_program(redshirt_time_hosted::TimerHandler::new())
-        .with_native_program(redshirt_stdout_hosted::StdoutHandler::new())
-        .with_startup_process(net_manager)
+        .with_native_program(redshirt_log_hosted::LogHandler::new())
         .build();
 
-    let cli_pid = if let Some(cli_requested_process) = cli_requested_process {
-        Some(system.execute(&cli_requested_process))
-    } else {
-        None
-    };
+    let cli_pid = system.execute(&cli_requested_process);
 
     loop {
         let outcome = system.run().await;
         match outcome {
-            redshirt_core::system::SystemRunOutcome::ProgramFinished { pid, outcome } => {
-                if cli_pid == Some(pid) {
-                    process::exit(match outcome {
-                        Ok(_) => 0,
-                        Err(err) => {
-                            println!("{:?}", err);
-                            1
-                        }
-                    });
-                }
+            redshirt_core::system::SystemRunOutcome::ProgramFinished { pid, outcome }
+                if pid == cli_pid =>
+            {
+                process::exit(match outcome {
+                    Ok(_) => 0,
+                    Err(err) => {
+                        println!("{:?}", err);
+                        1
+                    }
+                });
             }
             _ => panic!(),
         }

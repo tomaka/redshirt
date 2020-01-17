@@ -106,7 +106,7 @@ impl<T> PhysicalBuffer<T> {
                 len: u32::try_from(mem::size_of::<T>()).unwrap(),
             }]);
 
-        redshirt_syscalls_interface::emit_message_with_response(&ffi::INTERFACE, msg)
+        redshirt_syscalls::emit_message_with_response(&ffi::INTERFACE, msg)
             .unwrap()
             .map(move |mut response: Vec<ffi::HardwareAccessResponse>| {
                 debug_assert_eq!(response.len(), 1);
@@ -134,7 +134,7 @@ impl<T: ?Sized> Drop for PhysicalBuffer<T> {
 pub fn malloc(size: u64, alignment: u8) -> impl Future<Output = u64> {
     unsafe {
         let msg = ffi::HardwareMessage::Malloc { size, alignment };
-        redshirt_syscalls_interface::emit_message_with_response(&ffi::INTERFACE, msg)
+        redshirt_syscalls::emit_message_with_response(&ffi::INTERFACE, msg)
             .unwrap()
             .map(move |ptr: u64| {
                 assert_ne!(ptr, 0);
@@ -148,6 +148,6 @@ pub fn malloc(size: u64, alignment: u8) -> impl Future<Output = u64> {
 pub fn free(ptr: u64) {
     unsafe {
         let msg = ffi::HardwareMessage::Free { ptr };
-        redshirt_syscalls_interface::emit_message_without_response(&ffi::INTERFACE, &msg).unwrap();
+        redshirt_syscalls::emit_message_without_response(&ffi::INTERFACE, &msg).unwrap();
     }
 }

@@ -32,7 +32,7 @@
 use crate::ffi;
 use core::fmt;
 use futures::lock::{Mutex, MutexGuard};
-use redshirt_syscalls_interface::Encode as _;
+use redshirt_syscalls::Encode as _;
 
 /// Configuration of an interface to register.
 #[derive(Debug)]
@@ -49,7 +49,7 @@ pub fn register_interface(config: InterfaceConfig) -> NetInterfaceRegistration {
     unsafe {
         let id = 0xdeadbeef; // FIXME: generate randomly
 
-        redshirt_syscalls_interface::emit_message_without_response(&ffi::INTERFACE, &{
+        redshirt_syscalls::emit_message_without_response(&ffi::INTERFACE, &{
             ffi::TcpMessage::RegisterInterface {
                 id,
                 mac_address: config.mac_address,
@@ -73,10 +73,10 @@ pub struct NetInterfaceRegistration {
     id: u64,
     /// Future that will resolve once we receive a packet from the network manager to send to the
     /// network. Must always be `Some`.
-    packet_to_net: Mutex<redshirt_syscalls_interface::MessageResponseFuture<Vec<u8>>>,
+    packet_to_net: Mutex<redshirt_syscalls::MessageResponseFuture<Vec<u8>>>,
     /// Future that will resolve once we have successfully delivered a packet from the network,
     /// and are ready to deliver a next one.
-    packet_from_net: Mutex<Option<redshirt_syscalls_interface::MessageResponseFuture<()>>>,
+    packet_from_net: Mutex<Option<redshirt_syscalls::MessageResponseFuture<()>>>,
 }
 
 /// Build a `Future` resolving to the next packet to send to the network.
@@ -84,14 +84,14 @@ pub struct NetInterfaceRegistration {
 /// Only one such `Future` must be alive at any given point in time.
 fn build_packet_to_net(
     interface_id: u64,
-) -> redshirt_syscalls_interface::MessageResponseFuture<Vec<u8>> {
+) -> redshirt_syscalls::MessageResponseFuture<Vec<u8>> {
     unsafe {
         let message = ffi::TcpMessage::InterfaceWaitData(interface_id).encode();
-        let msg_id = redshirt_syscalls_interface::MessageBuilder::new()
+        let msg_id = redshirt_syscalls::MessageBuilder::new()
             .add_data(&message)
             .emit_with_response_raw(&ffi::INTERFACE)
             .unwrap();
-        redshirt_syscalls_interface::message_response(msg_id)
+        redshirt_syscalls::message_response(msg_id)
     }
 }
 
@@ -137,7 +137,7 @@ impl Drop for NetInterfaceRegistration {
     fn drop(&mut self) {
         unsafe {
             let message = ffi::TcpMessage::UnregisterInterface(self.id);
-            redshirt_syscalls_interface::emit_message_without_response(&ffi::INTERFACE, &message)
+            redshirt_syscalls::emit_message_without_response(&ffi::INTERFACE, &message)
                 .unwrap();
         }
     }
@@ -147,7 +147,7 @@ impl Drop for NetInterfaceRegistration {
 #[must_use]
 pub struct PacketFromNetwork<'a> {
     parent: &'a NetInterfaceRegistration,
-    send_future: MutexGuard<'a, Option<redshirt_syscalls_interface::MessageResponseFuture<()>>>,
+    send_future: MutexGuard<'a, Option<redshirt_syscalls::MessageResponseFuture<()>>>,
 }
 
 impl<'a> PacketFromNetwork<'a> {
@@ -156,11 +156,11 @@ impl<'a> PacketFromNetwork<'a> {
         unsafe {
             debug_assert!(self.send_future.is_none());
             let message = ffi::TcpMessage::InterfaceOnData(self.parent.id, data.into()).encode();
-            let msg_id = redshirt_syscalls_interface::MessageBuilder::new()
+            let msg_id = redshirt_syscalls::MessageBuilder::new()
                 .add_data(&message)
                 .emit_with_response_raw(&ffi::INTERFACE)
                 .unwrap();
-            let fut = redshirt_syscalls_interface::message_response(msg_id);
+            let fut = redshirt_syscalls::message_response(msg_id);
             *self.send_future = Some(fut);
         }
     }

@@ -11,9 +11,9 @@ futures = "0.3"
 hashbrown = "0.6.3"
 parity-scale-codec = "1.0.5"
 redshirt-interface-interface = { path = "../../interfaces/interface" }
+redshirt-log-interface = { path = "../../interfaces/log" } # TODO: remove
 redshirt-network-interface = { path = "../../interfaces/network" }
-redshirt-stdout-interface = { path = "../../interfaces/stdout" } # TODO: remove
-redshirt-syscalls-interface = { path = "../../interfaces/syscalls" }
+redshirt-syscalls = { path = "../../interfaces/syscalls" }
 redshirt-time-interface = { path = "../../interfaces/time" }
 smoltcp = { git = "https://github.com/m-labs/smoltcp", default-features = false, features = ["ethernet", "proto-ipv4", "proto-ipv6", "socket-udp", "socket-tcp", "std"] }
 # TODO:

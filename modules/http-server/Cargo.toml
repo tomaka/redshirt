@@ -8,8 +8,8 @@ publish = false
 [dependencies]
 futures = "0.3.1"
 hyper = { version = "0.13.0-alpha.4", default-features = false }
+redshirt-log-interface = { path = "../../interfaces/log" }
 redshirt-network-interface = { path = "../../interfaces/network" }
-redshirt-stdout-interface = { path = "../../interfaces/stdout" }
-redshirt-syscalls-interface = { path = "../../interfaces/syscalls" }
+redshirt-syscalls = { path = "../../interfaces/syscalls" }
 redshirt-time-interface = { path = "../../interfaces/time" }
 tokio-executor = "0.2.0-alpha.6"

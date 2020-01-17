@@ -17,6 +17,6 @@ log = "0.4"
 redshirt-interface-interface = { path = "../../interfaces/interface" }
 redshirt-loader-interface = { path = "../../interfaces/loader" }
 redshirt-network-interface = { path = "../../interfaces/network" }
-redshirt-syscalls-interface = { path = "../../interfaces/syscalls" }
+redshirt-syscalls = { path = "../../interfaces/syscalls" }
 redshirt-time-interface = { path = "../../interfaces/time" }
 parity-scale-codec = "1.0.5"

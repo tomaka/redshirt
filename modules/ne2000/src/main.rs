@@ -32,7 +32,7 @@ use redshirt_network_interface::interface;
 use std::convert::TryFrom as _;
 
 fn main() {
-    redshirt_syscalls_interface::block_on(async_main());
+    redshirt_syscalls::block_on(async_main());
 }
 
 async fn async_main() {
@@ -57,7 +57,10 @@ async fn async_main() {
                     mac_address: device.mac_address(),
                 });
                 ne2k_devices.push((registration, device));
-                redshirt_stdout_interface::stdout(format!("Initialized ne2000 at 0x{:x}\n", port_number));
+                redshirt_log_interface::log(
+                    redshirt_log_interface::Level::Info,
+                    &format!("Initialized ne2000 at 0x{:x}", port_number)
+                );
             }
         }
     }
@@ -69,7 +72,7 @@ async fn async_main() {
     ne2k_devices.shrink_to_fit();
 
     loop {
-        //redshirt_stdout_interface::stdout(format!("Polling"));
+        //redshirt_log_interface::log(redshirt_log_interface::Level::Info, "Polling");
         let packet = match unsafe { ne2k_devices[0].1.read_one_incoming().await } {
             Some(p) => p,
             None => continue,
@@ -80,10 +83,13 @@ async fn async_main() {
             let (ip_header, ip_data) = etherparse::Ipv6Header::read_from_slice(&data).unwrap();
             if ip_header.next_header == 0x11 {
                 let (udp_header, udp_data) = etherparse::UdpHeader::read_from_slice(&ip_data).unwrap();
-                redshirt_stdout_interface::stdout(format!("Headers: {:?} {:?}\n", ip_header, udp_header));
+                redshirt_log_interface::log(
+                    redshirt_log_interface::Level::Info,
+                    &format!("Headers: {:?} {:?}", ip_header, udp_header)
+                );
             }
         }
 
-        //redshirt_stdout_interface::stdout(format!("Header: {:?}\n", header));
+        //redshirt_log_interface::log(redshirt_log_interface::Level::Info, &format!("Header: {:?}", header));
     }
 }

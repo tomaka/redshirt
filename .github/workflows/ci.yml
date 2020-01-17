@@ -46,7 +46,7 @@ jobs:
         path: modules/target
         key: cargo-build-target-${{ hashFiles('modules/Cargo.lock') }}
     - name: Build modules
-      run: cargo build --manifest-path ./modules/Cargo.toml --locked --verbose --release --target=wasm32-unknown-unknown
+      run: cargo build --manifest-path ./modules/Cargo.toml --workspace --exclude stub --locked --verbose --release --target=wasm32-unknown-unknown
     - name: Upload WASM modules
       uses: actions/upload-artifact@v1
       with:
@@ -96,9 +96,9 @@ jobs:
         path: target
         key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('Cargo.lock') }}
     - name: Build
-      run: cargo build --workspace --exclude redshirt-standalone-kernel --locked --verbose
+      run: cargo build --workspace --exclude redshirt-standalone-kernel --exclude redshirt-core-proc-macros --locked --verbose
     - name: Run tests
-      run: cargo test --workspace --exclude redshirt-standalone-kernel --locked --verbose
+      run: cargo test --workspace --exclude redshirt-standalone-kernel --exclude redshirt-core-proc-macros --locked --verbose
 
   build-hosted-windows:
     name: Build hosted kernel on Windows
