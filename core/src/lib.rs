@@ -126,7 +126,7 @@ pub use redshirt_syscalls::{
 pub use wasmi::RuntimeValue; // TODO: wrap around instead?
 
 #[cfg(feature = "nightly")]
-#[cfg(docsrs, doc(cfg(feature = "nightly")))] // TODO: enable unconditonally after https://github.com/rust-lang/rust/issues/43781
+#[cfg_attr(docsrs, doc(cfg(feature = "nightly")))] // TODO: enable unconditonally after https://github.com/rust-lang/rust/issues/43781
 #[proc_macro_hack::proc_macro_hack]
 pub use redshirt_core_proc_macros::build_wasm_module;
 
