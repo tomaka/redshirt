@@ -23,6 +23,7 @@
 //!
 
 use core::sync::atomic::{AtomicBool, Ordering};
+use redshirt_core::build_wasm_module;
 
 /// Main struct of this crate. Runs everything.
 pub struct Kernel {
@@ -56,27 +57,20 @@ impl Kernel {
         let mut system_builder = redshirt_core::system::SystemBuilder::new()
             .with_native_program(crate::hardware::HardwareHandler::new())
             .with_native_program(crate::random::native::RandomNativeProgram::new())
-            .with_startup_process(redshirt_core::build_wasm_module!(
-                "../../../modules/hello-world"
-            ));
+            .with_startup_process(build_wasm_module!("../../../modules/hello-world"));
 
         // TODO: use a better system than cfgs
         #[cfg(target_arch = "x86_64")]
         {
             system_builder = system_builder
-                .with_startup_process(redshirt_core::build_wasm_module!(
-                    "../../../modules/x86-log"
-                ))
-                .with_startup_process(redshirt_core::build_wasm_module!(
-                    "../../../modules/x86-pci"
-                ))
-                .with_startup_process(redshirt_core::build_wasm_module!("../../../modules/ne2000"))
+                .with_startup_process(build_wasm_module!("../../../modules/x86-log"))
+                .with_startup_process(build_wasm_module!("../../../modules/x86-pci"))
+                .with_startup_process(build_wasm_module!("../../../modules/ne2000"))
         }
         #[cfg(target_arch = "arm")]
         {
-            system_builder = system_builder.with_startup_process(redshirt_core::build_wasm_module!(
-                "../../../modules/arm-log"
-            ))
+            system_builder =
+                system_builder.with_startup_process(build_wasm_module!("../../../modules/arm-log"))
         }
 
         let system = system_builder
