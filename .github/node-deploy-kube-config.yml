@@ -1,0 +1,42 @@
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: passive-node
+spec:
+  type: LoadBalancer
+  selector:
+    app: passive-node
+  ports:
+    - name: libp2p
+      protocol: TCP
+      port: 30333
+      targetPort: 30333
+---
+apiVersion: apps/v1
+kind: Deployment # TODO: shouldn't that be a StatefulSet?
+metadata:
+  name: passive-node
+spec:
+  replicas: 1
+  minReadySeconds: 5
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: passive-node
+  template:
+    metadata:
+      labels:
+        app: passive-node
+    spec:
+      containers:
+      - name: passive-node
+        # Note: `<TAG>` is replaced by a script before deployment
+        image: tomaka/redshirt-passive-node:<TAG>
+        env:
+        - name: RUST_LOG
+          value: p2p_loader=TRACE
+        ports:
+        - containerPort: 30333
+          protocol: TCP

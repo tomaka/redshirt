@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::{ffi::Message, Decode, EncodedMessage, MessageId};
+use crate::{ffi::DecodedMessage, Decode, EncodedMessage, MessageId};
 
 use core::{
     marker::PhantomData,
@@ -27,7 +27,7 @@ use futures::prelude::*;
 /// Returns the undecoded response.
 pub fn message_response_sync_raw(msg_id: MessageId) -> EncodedMessage {
     match crate::block_on::next_message(&mut [msg_id.into()], true).unwrap() {
-        Message::Response(m) => EncodedMessage(m.actual_data.unwrap()),
+        DecodedMessage::Response(m) => m.actual_data.unwrap(),
         _ => panic!(),
     }
 }
@@ -63,7 +63,7 @@ where
         assert!(!self.finished);
         if let Some(message) = crate::block_on::peek_response(self.msg_id) {
             self.finished = true;
-            Poll::Ready(Decode::decode(EncodedMessage(message.actual_data.unwrap())).unwrap())
+            Poll::Ready(Decode::decode(message.actual_data.unwrap()).unwrap())
         } else {
             crate::block_on::register_message_waker(self.msg_id, cx.waker().clone());
             Poll::Pending

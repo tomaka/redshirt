@@ -34,8 +34,8 @@ use smallvec::SmallVec;
 // All methods require `&mut self`, guaranteed the lack of race conditions.
 // If there's a need to change the registers page, it must be set back to 0 afterwards.
 //
-// We use pages 0x40..0x4c (12 pages) to store the pages to transmit out. While the device is
-// sending it the packet at pages 0x40..0x46, we can write the packet at 0x46..0x4c, and
+// We use pages 0x40..0x4c (12 pages) to store the pages to transmit out. For example, while the
+// device is sending it the packet at pages 0x40..0x46, we can write the packet at 0x46..0x4c, and
 // vice-versa.
 //
 // We use pages 0x4c..0x60 (20 pages) for the device to read Ethereum packets in. When the
@@ -110,8 +110,9 @@ impl Device {
         };
 
         // TODO: remove
-        redshirt_stdout_interface::stdout(
-            format!("MAC: {:x} {:x} {:x} {:x} {:x} {:x}\n", mac_address[0], mac_address[1], mac_address[2], mac_address[3], mac_address[4], mac_address[5])
+        redshirt_log_interface::log(
+            redshirt_log_interface::Level::Info,
+            &format!("MAC: {:x} {:x} {:x} {:x} {:x} {:x}", mac_address[0], mac_address[1], mac_address[2], mac_address[3], mac_address[4], mac_address[5])
         );
 
         // Start page address of the packet to be transmitted.
@@ -179,14 +180,14 @@ impl Device {
             let mut ops = redshirt_hardware_interface::HardwareOperationsBuilder::new();
 
             // Registers to page 1. Abort/complete DMA and start.
-            redshirt_hardware_interface::port_write_u8(self.base_port + 0, (1 << 6) | (1 << 5) | (1 << 1));
+            ops.port_write_u8(self.base_port + 0, (1 << 6) | (1 << 5) | (1 << 1));
 
             // Read the register.
             let mut out = 0;
             ops.port_read_u8(self.base_port + 16, &mut out);
 
             // Registers to page 0. Abort/complete DMA and start.
-            redshirt_hardware_interface::port_write_u8(self.base_port + 0, (1 << 5) | (1 << 1));
+            ops.port_write_u8(self.base_port + 0, (1 << 5) | (1 << 1));
 
             // Note: since the write, read, and write is sent in one chunk, it would be safe to
             // interrupt the `Future` here.

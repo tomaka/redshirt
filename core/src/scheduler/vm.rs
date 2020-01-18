@@ -491,6 +491,16 @@ impl<T> ProcessStateMachine<T> {
     }
 }
 
+// The fields related to `wasmi` do not implement `Send` because they use `std::rc::Rc`. `Rc`
+// does not implement `Send` because incrementing/decrementing the reference counter from
+// multiple threads simultaneously would be racy. It is however perfectly sound to move all the
+// instances of `Rc`s at once between threads, which is what we're doing here.
+//
+// This importantly means that we should never return a `Rc` (even by reference) across the API
+// boundary.
+// TODO: really annoying to have to use unsafe code
+unsafe impl<T: Send> Send for ProcessStateMachine<T> {}
+
 impl<T> fmt::Debug for ProcessStateMachine<T>
 where
     T: fmt::Debug,
@@ -690,14 +700,14 @@ mod tests {
 
     #[test]
     fn starts_if_main() {
-        let module = Module::from_wat(
+        let module = from_wat!(
+            local,
             r#"(module
             (func $_start (result i32)
                 i32.const 5)
             (export "_start" (func $_start)))
-        "#,
-        )
-        .unwrap();
+        "#
+        );
 
         let _state_machine =
             ProcessStateMachine::new(&module, (), |_, _, _| unreachable!()).unwrap();
@@ -705,14 +715,14 @@ mod tests {
 
     #[test]
     fn error_if_no_main() {
-        let module = Module::from_wat(
+        let module = from_wat!(
+            local,
             r#"(module
             (func $_start (result i32)
                 i32.const 5)
             (export "foo" (func $_start)))
-        "#,
-        )
-        .unwrap();
+        "#
+        );
 
         match ProcessStateMachine::new(&module, (), |_, _, _| unreachable!()) {
             Err(NewErr::StartNotFound) => {}
@@ -722,14 +732,14 @@ mod tests {
 
     #[test]
     fn main_executes() {
-        let module = Module::from_wat(
+        let module = from_wat!(
+            local,
             r#"(module
             (func $_start (result i32)
                 i32.const 5)
             (export "_start" (func $_start)))
-        "#,
-        )
-        .unwrap();
+        "#
+        );
 
         let mut state_machine =
             ProcessStateMachine::new(&module, (), |_, _, _| unreachable!()).unwrap();
@@ -745,15 +755,15 @@ mod tests {
 
     #[test]
     fn external_call_then_resume() {
-        let module = Module::from_wat(
+        let module = from_wat!(
+            local,
             r#"(module
             (import "" "test" (func $test (result i32)))
             (func $_start (result i32)
                 call $test)
             (export "_start" (func $_start)))
-        "#,
-        )
-        .unwrap();
+        "#
+        );
 
         let mut state_machine = ProcessStateMachine::new(&module, (), |_, _, _| Ok(9876)).unwrap();
         match state_machine.thread(0).unwrap().run(None) {
@@ -781,14 +791,14 @@ mod tests {
 
     #[test]
     fn poisoning_works() {
-        let module = Module::from_wat(
+        let module = from_wat!(
+            local,
             r#"(module
             (func $_start
                 unreachable)
             (export "_start" (func $_start)))
-        "#,
-        )
-        .unwrap();
+        "#
+        );
 
         let mut state_machine =
             ProcessStateMachine::new(&module, (), |_, _, _| unreachable!()).unwrap();

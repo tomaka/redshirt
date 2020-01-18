@@ -14,7 +14,6 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use core::fmt;
-use sha2::Digest as _;
 
 /// Represents a successfully-parsed binary.
 ///
@@ -40,13 +39,6 @@ impl Module {
         let hash = ModuleHash::from_bytes(buffer);
 
         Ok(Module { inner, hash })
-    }
-
-    /// Turns some WASM text source into a `Module`.
-    #[cfg(test)] // TODO: is `#[cfg(test)]` a good idea?
-    pub fn from_wat(source: impl AsRef<[u8]>) -> Result<Self, wat::Error> {
-        let wasm = wat::parse_bytes(source.as_ref())?;
-        Ok(Self::from_bytes(wasm).unwrap())
     }
 
     /// Returns a reference to the internal module.
@@ -77,7 +69,7 @@ impl fmt::Debug for Module {
 impl ModuleHash {
     /// Returns the hash of the given bytes.
     pub fn from_bytes(buffer: impl AsRef<[u8]>) -> Self {
-        ModuleHash(sha2::Sha256::digest(buffer.as_ref()).into())
+        ModuleHash(blake3::hash(buffer.as_ref()).into())
     }
 }
 
@@ -99,12 +91,13 @@ mod tests {
 
     #[test]
     fn empty_wat_works() {
-        let _ = Module::from_wat("(module)").unwrap();
+        let _ = from_wat!(local, "(module)");
     }
 
     #[test]
     fn simple_wat_works() {
-        let _ = Module::from_wat(
+        let _ = from_wat!(
+            local,
             r#"
             (module
                 (func $add (param i32 i32) (result i32)
@@ -112,8 +105,7 @@ mod tests {
                     get_local 1
                     i32.add)
                 (export "add" (func $add)))
-            "#,
-        )
-        .unwrap();
+            "#
+        );
     }
 }

@@ -19,7 +19,7 @@ use parity_scale_codec::DecodeAll;
 use std::time::Duration;
 
 fn main() {
-    redshirt_syscalls_interface::block_on(async_main())
+    redshirt_syscalls::block_on(async_main())
 }
 
 async fn async_main() {
@@ -32,32 +32,36 @@ async fn async_main() {
     let mut network = Network::start();
 
     loop {
-        let next_interface = redshirt_syscalls_interface::next_interface_message();
-        let next_net_event = Box::pin(network.next_event());
-        let msg = match future::select(next_interface, next_net_event).await {
-            future::Either::Left((
-                redshirt_syscalls_interface::InterfaceOrDestroyed::Interface(m),
-                _,
-            )) => m,
-            future::Either::Left((
-                redshirt_syscalls_interface::InterfaceOrDestroyed::ProcessDestroyed(_),
-                _,
-            )) => continue,
-            future::Either::Right((NetworkEvent::FetchSuccess { data, user_data }, _)) => {
+        let next_interface = redshirt_syscalls::next_interface_message();
+        let event = {
+            let next_net_event = network.next_event();
+            futures::pin_mut!(next_net_event);
+            match future::select(next_interface, next_net_event).await {
+                future::Either::Left((v, _)) => future::Either::Left(v),
+                future::Either::Right((v, _)) => future::Either::Right(v),
+            }
+        };
+
+        let msg = match event {
+            future::Either::Left(redshirt_syscalls::DecodedInterfaceOrDestroyed::Interface(m)) => m,
+            future::Either::Left(
+                redshirt_syscalls::DecodedInterfaceOrDestroyed::ProcessDestroyed(_),
+            ) => continue,
+            future::Either::Right(NetworkEvent::FetchSuccess { data, user_data }) => {
                 let rp = redshirt_loader_interface::ffi::LoadResponse { result: Ok(data) };
-                redshirt_syscalls_interface::emit_answer(user_data, &rp);
+                redshirt_syscalls::emit_answer(user_data, &rp);
                 continue;
             }
-            future::Either::Right((NetworkEvent::FetchFail { user_data }, _)) => {
+            future::Either::Right(NetworkEvent::FetchFail { user_data }) => {
                 let rp = redshirt_loader_interface::ffi::LoadResponse { result: Err(()) };
-                redshirt_syscalls_interface::emit_answer(user_data, &rp);
+                redshirt_syscalls::emit_answer(user_data, &rp);
                 continue;
             }
         };
 
         assert_eq!(msg.interface, redshirt_loader_interface::ffi::INTERFACE);
         let msg_data =
-            redshirt_loader_interface::ffi::LoaderMessage::decode_all(&msg.actual_data).unwrap();
+            redshirt_loader_interface::ffi::LoaderMessage::decode_all(&msg.actual_data.0).unwrap();
         let redshirt_loader_interface::ffi::LoaderMessage::Load(hash_to_load) = msg_data;
         network.start_fetch(&hash_to_load, msg.message_id.unwrap());
     }
