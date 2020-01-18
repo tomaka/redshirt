@@ -25,7 +25,7 @@ use libp2p_core::{identity, muxing::StreamMuxerBox, nodes::node::Substream, upgr
 use libp2p_kad::{record::store::MemoryStore, record::Key, Kademlia, Quorum};
 use libp2p_mplex::MplexConfig;
 use libp2p_plaintext::PlainText2Config;
-use libp2p_swarm::Swarm;
+use libp2p_swarm::{Swarm, SwarmEvent};
 use std::io;
 
 /// Active set of connections to the network.
@@ -63,6 +63,7 @@ impl<T> Network<T> {
 
         let transport = TcpConfig::default()
             .upgrade(upgrade::Version::V1)
+            // TODO: proper encryption
             .authenticate(PlainText2Config {
                 local_public_key: local_keypair.public(),
             })
@@ -101,8 +102,15 @@ impl<T> Network<T> {
     /// Returns a future that returns the next event that happens on the network.
     pub async fn next_event(&mut self) -> NetworkEvent<T> {
         loop {
-            let ev = self.swarm.next().await;
-            println!("{:?}", ev);
+            match self.swarm.next_event().await {
+                SwarmEvent::Behaviour(ev) => log::info!("{:?}", ev),
+                SwarmEvent::Connected(peer) => log::trace!("Connected to {:?}", peer),
+                SwarmEvent::Disconnected(peer) => log::trace!("Disconnected from {:?}", peer),
+                SwarmEvent::NewListenAddr(_) => {},
+                SwarmEvent::ExpiredListenAddr(_) => {},
+                SwarmEvent::UnreachableAddr { .. } => {},
+                SwarmEvent::StartConnect(_) => {},
+            }
         }
     }
 }

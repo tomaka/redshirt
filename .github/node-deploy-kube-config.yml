@@ -33,6 +33,9 @@ spec:
       containers:
       - name: passive-node
         image: tomaka/redshirt-passive-node:latest
+        env:
+        - name: RUST_LOG
+          value: p2p_loader=TRACE
         ports:
         - containerPort: 30333
           protocol: TCP
