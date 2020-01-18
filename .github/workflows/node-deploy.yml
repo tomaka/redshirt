@@ -18,3 +18,14 @@ jobs:
       run: docker build -f ./modules/p2p-loader/Dockerfile -t tomaka/redshirt-passive-node:latest .
     - name: Push Docker image
       run: docker push tomaka/redshirt-passive-node:latest
+    - name: Save DigitalOcean kubeconfig
+      uses: digitalocean/action-doctl@v1
+      env:
+        DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+      with:
+        args: kubernetes cluster kubeconfig show redshirt > ${{ github.workspace }}/.kubeconfig
+    - name: Deploy to DigitalOcean Kubernetes
+      # TODO: use `--prune`?
+      run: kubectl --kubeconfig=${{ github.workspace }}/.kubeconfig apply -f ${{ github.workspace }}/.github/node-deploy-kube-config.yml
+    - name: Verify deployment
+      run: kubectl --kubeconfig=${{ github.workspace }}/.kubeconfig rollout status deployment/passive-node
