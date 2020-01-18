@@ -22,14 +22,15 @@ use tcp_transport::TcpConfig;
 
 use libp2p_core::transport::{boxed::Boxed, Transport};
 use libp2p_core::{identity, muxing::StreamMuxerBox, nodes::node::Substream, upgrade, PeerId};
-use libp2p_kad::{record::store::MemoryStore, record::Key, Kademlia, Quorum};
+use libp2p_kad::{record::store::MemoryStore, record::Key, Kademlia, KademliaConfig, Quorum};
 use libp2p_mplex::MplexConfig;
 use libp2p_plaintext::PlainText2Config;
-use libp2p_swarm::Swarm;
-use std::io;
+use libp2p_swarm::{Swarm, SwarmEvent};
+use std::{io, time::Duration};
 
 /// Active set of connections to the network.
 pub struct Network<T> {
+    // TODO: should have identify and ping as well
     swarm: Swarm<
         Boxed<(PeerId, StreamMuxerBox), io::Error>,
         Kademlia<Substream<StreamMuxerBox>, MemoryStore>,
@@ -63,6 +64,7 @@ impl<T> Network<T> {
 
         let transport = TcpConfig::default()
             .upgrade(upgrade::Version::V1)
+            // TODO: proper encryption
             .authenticate(PlainText2Config {
                 local_public_key: local_keypair.public(),
             })
@@ -72,17 +74,31 @@ impl<T> Network<T> {
             .map_err(|err| io::Error::new(io::ErrorKind::Other, err))
             .boxed();
 
-        let kademlia = Kademlia::new(
+        let kademlia = Kademlia::with_config(
             local_peer_id.clone(),
             MemoryStore::new(local_peer_id.clone()),
+            {
+                let mut cfg = KademliaConfig::default();
+                cfg.set_replication_interval(Some(Duration::from_secs(60)));
+                cfg
+            }
         );
 
         let mut swarm = Swarm::new(transport, kademlia, local_peer_id);
         Swarm::listen_on(&mut swarm, "/ip6/::/tcp/30333".parse().unwrap()).unwrap();
         Swarm::listen_on(&mut swarm, "/ip4/0.0.0.0/tcp/30333".parse().unwrap()).unwrap();
-        // Bootnode. // TODO: add public key
-        Swarm::dial_addr(&mut swarm, "/ip4/138.68.126.243/tcp/30333".parse().unwrap()).unwrap();
+
+        // Bootnode.
+        swarm.add_address(
+            &"QmfR3LRERsUu6LeEX3XqhykWGqY7Mj49u4yQoMiXuH8ijm" // TODO: wrong; changes at each restart
+                .parse()
+                .unwrap(),
+            "/ip4/138.68.126.243/tcp/30333".parse().unwrap(),
+        );
+
         swarm.bootstrap();
+
+        swarm.put_record(libp2p_kad::Record::new(vec![0; 32], vec![5, 6, 7, 8]), libp2p_kad::Quorum::Majority);
 
         Network {
             swarm,
@@ -101,8 +117,15 @@ impl<T> Network<T> {
     /// Returns a future that returns the next event that happens on the network.
     pub async fn next_event(&mut self) -> NetworkEvent<T> {
         loop {
-            let ev = self.swarm.next().await;
-            println!("{:?}", ev);
+            match self.swarm.next_event().await {
+                SwarmEvent::Behaviour(ev) => log::info!("{:?}", ev),
+                SwarmEvent::Connected(peer) => log::trace!("Connected to {:?}", peer),
+                SwarmEvent::Disconnected(peer) => log::trace!("Disconnected from {:?}", peer),
+                SwarmEvent::NewListenAddr(_) => {}
+                SwarmEvent::ExpiredListenAddr(_) => {}
+                SwarmEvent::UnreachableAddr { .. } => {}
+                SwarmEvent::StartConnect(_) => {}
+            }
         }
     }
 }
