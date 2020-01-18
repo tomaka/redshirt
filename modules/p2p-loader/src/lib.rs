@@ -15,10 +15,10 @@
 
 #[cfg(target_arch = "wasm32")] // TODO: not great to have cfg blocks
 mod tcp_transport;
-#[cfg(target_arch = "wasm32")]
-use tcp_transport::TcpConfig;
 #[cfg(not(target_arch = "wasm32"))]
 use libp2p_tcp::TcpConfig;
+#[cfg(target_arch = "wasm32")]
+use tcp_transport::TcpConfig;
 
 use libp2p_core::transport::{boxed::Boxed, Transport};
 use libp2p_core::{identity, muxing::StreamMuxerBox, nodes::node::Substream, upgrade, PeerId};

@@ -33,23 +33,26 @@ async fn async_main() {
 
     loop {
         let next_interface = redshirt_syscalls::next_interface_message();
-        let mut next_net_event = network.next_event();
-        futures::pin_mut!(next_net_event);
-        let msg = match future::select(next_interface, next_net_event).await {
-            future::Either::Left((
-                redshirt_syscalls::DecodedInterfaceOrDestroyed::Interface(m),
-                _,
-            )) => m,
-            future::Either::Left((
+        let event = {
+            let next_net_event = network.next_event();
+            futures::pin_mut!(next_net_event);
+            match future::select(next_interface, next_net_event).await {
+                future::Either::Left((v, _)) => future::Either::Left(v),
+                future::Either::Right((v, _)) => future::Either::Right(v),
+            }
+        };
+
+        let msg = match event {
+            future::Either::Left(redshirt_syscalls::DecodedInterfaceOrDestroyed::Interface(m)) => m,
+            future::Either::Left(
                 redshirt_syscalls::DecodedInterfaceOrDestroyed::ProcessDestroyed(_),
-                _,
-            )) => continue,
-            future::Either::Right((NetworkEvent::FetchSuccess { data, user_data }, _)) => {
+            ) => continue,
+            future::Either::Right(NetworkEvent::FetchSuccess { data, user_data }) => {
                 let rp = redshirt_loader_interface::ffi::LoadResponse { result: Ok(data) };
                 redshirt_syscalls::emit_answer(user_data, &rp);
                 continue;
             }
-            future::Either::Right((NetworkEvent::FetchFail { user_data }, _)) => {
+            future::Either::Right(NetworkEvent::FetchFail { user_data }) => {
                 let rp = redshirt_loader_interface::ffi::LoadResponse { result: Err(()) };
                 redshirt_syscalls::emit_answer(user_data, &rp);
                 continue;
