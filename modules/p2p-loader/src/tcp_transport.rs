@@ -84,7 +84,7 @@ impl Transport for TcpConfig {
 
                 Ok(first.chain(then))
             }
-                .try_flatten_stream(),
+            .try_flatten_stream(),
         ))
     }
 

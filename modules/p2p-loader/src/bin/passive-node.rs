@@ -1,4 +1,4 @@
-// Copyright (C) 2020  Pierre Krieger
+// Copyright (C) 2019  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -13,31 +13,24 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::scheduler::{Core, CoreRunOutcome};
-use crate::InterfaceHash;
+use p2p_loader::Network;
 
-#[test]
-fn trapping_module() {
-    let module = from_wat!(
-        local,
-        r#"(module
-        (func $main (param $p0 i32) (param $p1 i32) (result i32)
-            unreachable)
-        (export "main" (func $main)))
-    "#
-    );
+#[cfg(target_arch = "wasm32")]
+fn main() {
+    redshirt_log_interface::init();
+    redshirt_syscalls::block_on(async_main())
+}
 
-    let core = Core::new().build();
-    let expected_pid = core.execute(&module).unwrap().pid();
+#[cfg(not(target_arch = "wasm32"))]
+fn main() {
+    env_logger::init();
+    futures::executor::block_on(async_main())
+}
 
-    match core.run() {
-        CoreRunOutcome::ProgramFinished {
-            pid,
-            outcome: Err(_),
-            ..
-        } => {
-            assert_eq!(pid, expected_pid);
-        }
-        _ => panic!(),
+async fn async_main() {
+    let mut network = Network::<std::convert::Infallible>::start(); // TODO: use `!`
+
+    loop {
+        let _ = network.next_event().await;
     }
 }

@@ -5,5 +5,10 @@ authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-redshirt-time-interface = { path = "../../../interfaces/time" }
 pin-project = "0.4.6"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+futures-timer = "2.0.2"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+redshirt-time-interface = { path = "../../../interfaces/time" }
