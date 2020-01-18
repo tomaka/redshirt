@@ -23,6 +23,7 @@
 //!
 
 use core::sync::atomic::{AtomicBool, Ordering};
+use redshirt_core::build_wasm_module;
 
 /// Main struct of this crate. Runs everything.
 pub struct Kernel {
@@ -53,42 +54,27 @@ impl Kernel {
             crate::arch::halt();
         }
 
-        let hello_module = redshirt_core::module::Module::from_bytes(
-            &include_bytes!(
-                "../../../modules/target/wasm32-unknown-unknown/release/hello-world.wasm"
-            )[..],
-        )
-        .unwrap();
+        let mut system_builder = redshirt_core::system::SystemBuilder::new()
+            .with_native_program(crate::hardware::HardwareHandler::new())
+            .with_native_program(crate::random::native::RandomNativeProgram::new())
+            .with_startup_process(build_wasm_module!("../../../modules/hello-world"));
 
         // TODO: use a better system than cfgs
         #[cfg(target_arch = "x86_64")]
-        let stdout_module = redshirt_core::module::Module::from_bytes(
-            &include_bytes!(
-                "../../../modules/target/wasm32-unknown-unknown/release/x86-stdout.wasm"
-            )[..],
-        )
-        .unwrap();
+        {
+            system_builder = system_builder
+                .with_startup_process(build_wasm_module!("../../../modules/x86-log"))
+                .with_startup_process(build_wasm_module!("../../../modules/x86-pci"))
+                .with_startup_process(build_wasm_module!("../../../modules/ne2000"))
+        }
         #[cfg(target_arch = "arm")]
-        let stdout_module = redshirt_core::module::Module::from_bytes(
-            &include_bytes!(
-                "../../../modules/target/wasm32-unknown-unknown/release/arm-stdout.wasm"
-            )[..],
-        )
-        .unwrap();
+        {
+            system_builder =
+                system_builder.with_startup_process(build_wasm_module!("../../../modules/arm-log"))
+                system_builder.with_startup_process(build_wasm_module!("../../../modules/rpi-framebuffer"))
+        }
 
-        let rpi_fb_module = redshirt_core::module::Module::from_bytes(
-            &include_bytes!(
-                "../../../modules/target/wasm32-unknown-unknown/release/rpi-framebuffer.wasm"
-            )[..],
-        )
-        .unwrap();
-
-        let mut system = redshirt_core::system::SystemBuilder::new()
-            .with_native_program(crate::hardware::HardwareHandler::new())
-            .with_native_program(crate::random::native::RandomNativeProgram::new())
-            .with_startup_process(stdout_module)
-            .with_startup_process(hello_module)
-            .with_startup_process(rpi_fb_module)
+        let system = system_builder
             .with_main_program([0; 32]) // TODO: just a test
             .build();
 

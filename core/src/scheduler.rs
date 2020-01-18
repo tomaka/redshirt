@@ -13,10 +13,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+mod extrinsics;
 mod ipc;
 mod processes;
 mod tests;
 mod vm;
 
 // TODO: move definition?
-pub use self::ipc::{Core, CoreBuilder, CoreProcess, CoreRunOutcome, CoreThread};
+pub use self::ipc::{Core, CoreBuilder, CoreProcess, CoreRunOutcome};

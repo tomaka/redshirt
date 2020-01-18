@@ -60,7 +60,7 @@
 use core::{ffi::c_void, mem, ptr};
 use hashbrown::HashMap;
 use parity_scale_codec::{Compact, Decode, Encode};
-use redshirt_syscalls_interface::InterfaceHash;
+use redshirt_syscalls::InterfaceHash;
 use std::ffi::CStr;
 
 // TODO: this has been randomly generated; instead should be a hash or something
