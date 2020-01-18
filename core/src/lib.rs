@@ -130,6 +130,20 @@ pub use wasmi::RuntimeValue; // TODO: wrap around instead?
 #[proc_macro_hack::proc_macro_hack]
 pub use redshirt_core_proc_macros::build_wasm_module;
 
+#[proc_macro_hack::proc_macro_hack]
+#[doc(hidden)]
+pub use redshirt_core_proc_macros::wat_to_bin;
+
+/// Builds a [`Module`](module::Module) from a WASM text representation.
+///
+/// The WASM text representation is parsed and transformed at compile time.
+macro_rules! from_wat {
+    ($wat:expr) => {{
+        // TODO: also build the hash at compile-time? https://github.com/tomaka/redshirt/issues/218
+        $crate::Module::from_bytes(wat_to_bin!($wat)).unwrap()
+    }};
+}
+
 mod id_pool;
 
 pub mod module;

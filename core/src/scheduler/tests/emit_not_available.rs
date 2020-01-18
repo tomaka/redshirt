@@ -13,7 +13,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::module::Module;
 use crate::scheduler::{Core, CoreRunOutcome};
 use crate::InterfaceHash;
 
@@ -33,7 +32,7 @@ fn emit_not_available() {
     }
 
     */
-    let module = Module::from_wat(r#"
+    let module = from_wat!(r#"
 (module
     (type $t0 (func (param i32 i32 i32 i32 i32 i32) (result i32)))
     (type $t1 (func (param i32 i32) (result i32)))
@@ -92,7 +91,7 @@ fn emit_not_available() {
     (global $g0 (mut i32) (i32.const 1048576))
     (export "memory" (memory 0))
     (export "main" (func $main))
-    (data (i32.const 1048576) "\01\02\03\04\05\06\07\08"))"#).unwrap();
+    (data (i32.const 1048576) "\01\02\03\04\05\06\07\08"))"#);
 
     let core = Core::new().build();
     core.execute(&module).unwrap();
