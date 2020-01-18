@@ -12,8 +12,9 @@ jobs:
     steps:
     - uses: actions/checkout@v1
     - name: Docker log in
-      run: docker login -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }} docker.pkg.github.com
+      # TODO: publish on github registry instead, once possible https://github.com/containerd/containerd/issues/3291
+      run: docker login -u tomaka -p ${{ secrets.DOCKERHUB_PASSWORD }}
     - name: Build Docker image
-      run: docker build -f ./modules/p2p-loader/Dockerfile -t docker.pkg.github.com/${{ github.repository }}/passive-node:latest .
+      run: docker build -f ./modules/p2p-loader/Dockerfile -t tomaka/redshirt-passive-node:latest .
     - name: Push Docker image
-      run: docker push docker.pkg.github.com/${{ github.repository }}/passive-node:latest
+      run: docker push tomaka/redshirt-passive-node:latest
