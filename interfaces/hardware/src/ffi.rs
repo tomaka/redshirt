@@ -64,6 +64,11 @@ pub enum HardwareMessage {
 /// Request to perform accesses to physical memory or to ports.
 #[derive(Debug, Encode, Decode)]
 pub enum Operation {
+    PhysicalMemoryMemset {
+        address: u64,
+        len: u64,
+        value: u8,
+    },
     PhysicalMemoryWriteU8 {
         address: u64,
         data: Vec<u8>,

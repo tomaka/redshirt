@@ -160,6 +160,19 @@ impl<'a> NativeProgramRef<'a> for &'a HardwareHandler {
 
 unsafe fn perform_operation(operation: Operation) -> Option<HardwareAccessResponse> {
     match operation {
+        Operation::PhysicalMemoryMemset { address, len, value } => {
+            if let Ok(mut address) = usize::try_from(address) {
+                for _ in 0..len {
+                    (address as *mut u8).write_volatile(value);
+                    if let Some(addr_next) = address.checked_add(1) {
+                        address = addr_next;
+                    } else {
+                        break;
+                    }
+                }
+            }
+            None
+        }
         Operation::PhysicalMemoryWriteU8 { address, data } => {
             if let Ok(mut address) = usize::try_from(address) {
                 for byte in data {

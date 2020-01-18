@@ -183,22 +183,9 @@ pub async fn init() {
     let fb_size = data2.data[6];
     //panic!("{:x} size {}", fb_addr, fb_size);
 
-    for x in 0..actual_width {
-        for y in 0..actual_height {
-            let ptr = fb_addr + 3 * ((y * actual_width) + x);
-            let mut op_builder = redshirt_hardware_interface::HardwareWriteOperationsBuilder::new();
-            unsafe {
-                op_builder.write(u64::from(ptr), vec![0xff, 0xff, 0xff]);
-            }
-            op_builder.send();
-
-            // TODO: we wait for an answer, otherwise we OOM
-            unsafe {
-                let mut read = redshirt_hardware_interface::HardwareOperationsBuilder::new();
-                let mut out = [0];
-                read.read_u32(0x3f000000 + 0xb880 + 0x18, &mut out);
-                read.send().await;
-            }
-        }
+    let mut op_builder = redshirt_hardware_interface::HardwareWriteOperationsBuilder::new();
+    unsafe {
+        op_builder.memset(u64::from(fb_addr), 3 * u64::from(actual_height) * u64::from(actual_width), 0xff);
     }
+    op_builder.send();
 }
