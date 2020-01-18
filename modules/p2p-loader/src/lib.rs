@@ -30,6 +30,7 @@ use std::io;
 
 /// Active set of connections to the network.
 pub struct Network<T> {
+    // TODO: should have identify and ping as well
     swarm: Swarm<
         Boxed<(PeerId, StreamMuxerBox), io::Error>,
         Kademlia<Substream<StreamMuxerBox>, MemoryStore>,
@@ -81,9 +82,18 @@ impl<T> Network<T> {
         let mut swarm = Swarm::new(transport, kademlia, local_peer_id);
         Swarm::listen_on(&mut swarm, "/ip6/::/tcp/30333".parse().unwrap()).unwrap();
         Swarm::listen_on(&mut swarm, "/ip4/0.0.0.0/tcp/30333".parse().unwrap()).unwrap();
-        // Bootnode. // TODO: add public key
-        Swarm::dial_addr(&mut swarm, "/ip4/138.68.126.243/tcp/30333".parse().unwrap()).unwrap();
+
+        // Bootnode.
+        swarm.add_address(
+            &"QmfR3LRERsUu6LeEX3XqhykWGqY7Mj49u4yQoMiXuH8ijm"  // TODO: wrong; changes at each restart
+                .parse()
+                .unwrap(),
+            "/ip4/138.68.126.243/tcp/30333".parse().unwrap(),
+        );
+
         swarm.bootstrap();
+
+        //swarm.put_record(libp2p_kad::Record::new(vec![0; 32], vec![5, 6, 7, 8]), libp2p_kad::Quorum::Majority);
 
         Network {
             swarm,
@@ -106,10 +116,10 @@ impl<T> Network<T> {
                 SwarmEvent::Behaviour(ev) => log::info!("{:?}", ev),
                 SwarmEvent::Connected(peer) => log::trace!("Connected to {:?}", peer),
                 SwarmEvent::Disconnected(peer) => log::trace!("Disconnected from {:?}", peer),
-                SwarmEvent::NewListenAddr(_) => {},
-                SwarmEvent::ExpiredListenAddr(_) => {},
-                SwarmEvent::UnreachableAddr { .. } => {},
-                SwarmEvent::StartConnect(_) => {},
+                SwarmEvent::NewListenAddr(_) => {}
+                SwarmEvent::ExpiredListenAddr(_) => {}
+                SwarmEvent::UnreachableAddr { .. } => {}
+                SwarmEvent::StartConnect(_) => {}
             }
         }
     }
