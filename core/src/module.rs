@@ -96,7 +96,8 @@ mod tests {
 
     #[test]
     fn simple_wat_works() {
-        let _ = from_wat!(local, 
+        let _ = from_wat!(
+            local,
             r#"
             (module
                 (func $add (param i32 i32) (result i32)
@@ -104,6 +105,7 @@ mod tests {
                     get_local 1
                     i32.add)
                 (export "add" (func $add)))
-            "#);
+            "#
+        );
     }
 }

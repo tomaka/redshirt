@@ -18,12 +18,14 @@ use crate::InterfaceHash;
 
 #[test]
 fn basic_module() {
-    let module = from_wat!(local, 
+    let module = from_wat!(
+        local,
         r#"(module
         (func $_start (result i32)
             i32.const 5)
         (export "_start" (func $_start)))
-    "#);
+    "#
+    );
 
     let core = Core::new().build();
     let expected_pid = core.execute(&module).unwrap().pid();

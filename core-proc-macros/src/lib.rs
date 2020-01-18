@@ -33,7 +33,10 @@ pub fn wat_to_bin(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
             &MODULE_BYTES[..]
         }}",
         wasm.len(),
-        wasm.iter().map(|c| format!("0x{:x}", c)).collect::<Vec<String>>().join(", "),
+        wasm.iter()
+            .map(|c| format!("0x{:x}", c))
+            .collect::<Vec<String>>()
+            .join(", "),
     );
 
     // Uncomment to debug.

@@ -32,7 +32,9 @@ fn emit_not_available() {
     }
 
     */
-    let module = from_wat!(local, r#"
+    let module = from_wat!(
+        local,
+        r#"
 (module
     (type $t0 (func (param i32 i32 i32 i32 i32 i32) (result i32)))
     (type $t1 (func (param i32 i32) (result i32)))
@@ -91,7 +93,8 @@ fn emit_not_available() {
     (global $g0 (mut i32) (i32.const 1048576))
     (export "memory" (memory 0))
     (export "main" (func $main))
-    (data (i32.const 1048576) "\01\02\03\04\05\06\07\08"))"#);
+    (data (i32.const 1048576) "\01\02\03\04\05\06\07\08"))"#
+    );
 
     let core = Core::new().build();
     core.execute(&module).unwrap();

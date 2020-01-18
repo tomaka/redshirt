@@ -700,12 +700,14 @@ mod tests {
 
     #[test]
     fn starts_if_main() {
-        let module = from_wat!(local, 
+        let module = from_wat!(
+            local,
             r#"(module
             (func $_start (result i32)
                 i32.const 5)
             (export "_start" (func $_start)))
-        "#);
+        "#
+        );
 
         let _state_machine =
             ProcessStateMachine::new(&module, (), |_, _, _| unreachable!()).unwrap();
@@ -713,12 +715,14 @@ mod tests {
 
     #[test]
     fn error_if_no_main() {
-        let module = from_wat!(local, 
+        let module = from_wat!(
+            local,
             r#"(module
             (func $_start (result i32)
                 i32.const 5)
             (export "foo" (func $_start)))
-        "#);
+        "#
+        );
 
         match ProcessStateMachine::new(&module, (), |_, _, _| unreachable!()) {
             Err(NewErr::StartNotFound) => {}
@@ -728,12 +732,14 @@ mod tests {
 
     #[test]
     fn main_executes() {
-        let module = from_wat!(local, 
+        let module = from_wat!(
+            local,
             r#"(module
             (func $_start (result i32)
                 i32.const 5)
             (export "_start" (func $_start)))
-        "#);
+        "#
+        );
 
         let mut state_machine =
             ProcessStateMachine::new(&module, (), |_, _, _| unreachable!()).unwrap();
@@ -749,13 +755,15 @@ mod tests {
 
     #[test]
     fn external_call_then_resume() {
-        let module = from_wat!(local, 
+        let module = from_wat!(
+            local,
             r#"(module
             (import "" "test" (func $test (result i32)))
             (func $_start (result i32)
                 call $test)
             (export "_start" (func $_start)))
-        "#);
+        "#
+        );
 
         let mut state_machine = ProcessStateMachine::new(&module, (), |_, _, _| Ok(9876)).unwrap();
         match state_machine.thread(0).unwrap().run(None) {
@@ -783,12 +791,14 @@ mod tests {
 
     #[test]
     fn poisoning_works() {
-        let module = from_wat!(local, 
+        let module = from_wat!(
+            local,
             r#"(module
             (func $_start
                 unreachable)
             (export "_start" (func $_start)))
-        "#);
+        "#
+        );
 
         let mut state_machine =
             ProcessStateMachine::new(&module, (), |_, _, _| unreachable!()).unwrap();

@@ -18,12 +18,14 @@ use crate::InterfaceHash;
 
 #[test]
 fn trapping_module() {
-    let module = from_wat!(local, 
+    let module = from_wat!(
+        local,
         r#"(module
         (func $main (param $p0 i32) (param $p1 i32) (result i32)
             unreachable)
         (export "main" (func $main)))
-    "#);
+    "#
+    );
 
     let core = Core::new().build();
     let expected_pid = core.execute(&module).unwrap().pid();
