@@ -32,7 +32,7 @@ spec:
     spec:
       containers:
       - name: passive-node
-        image: tomaka/redshirt-passive-node:latest
+        image: tomaka/redshirt-passive-node:<TAG>
         ports:
         - containerPort: 30333
           protocol: TCP
