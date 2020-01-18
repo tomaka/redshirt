@@ -85,7 +85,7 @@ impl<T> Network<T> {
 
         // Bootnode.
         swarm.add_address(
-            &"QmfR3LRERsUu6LeEX3XqhykWGqY7Mj49u4yQoMiXuH8ijm"  // TODO: wrong; changes at each restart
+            &"QmfR3LRERsUu6LeEX3XqhykWGqY7Mj49u4yQoMiXuH8ijm" // TODO: wrong; changes at each restart
                 .parse()
                 .unwrap(),
             "/ip4/138.68.126.243/tcp/30333".parse().unwrap(),
