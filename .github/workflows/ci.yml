@@ -239,17 +239,17 @@ jobs:
       uses: actions/cache@v1
       with:
         path: ~/.cargo/registry
-        key: passive-node-check-cargo-registry-${{ hashFiles('modules/Cargo.lock') }}
+        key: cargo-registry-${{ hashFiles('modules/Cargo.lock') }}
     - name: Cache cargo index
       uses: actions/cache@v1
       with:
         path: ~/.cargo/git
-        key: passive-node-check-cargo-index-${{ hashFiles('modules/Cargo.lock') }}
+        key: cargo-index-${{ hashFiles('modules/Cargo.lock') }}
     - name: Cache cargo build
       uses: actions/cache@v1
       with:
         path: modules/target
-        key: cargo-build-target-${{ hashFiles('modules/Cargo.lock') }}
+        key: passive-node-check-target-${{ hashFiles('modules/Cargo.lock') }}
     - name: Check peer-to-peer passive node
       run: cargo check --manifest-path ./modules/Cargo.toml --package p2p-loader --locked --verbose
       
