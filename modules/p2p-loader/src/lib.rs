@@ -13,9 +13,13 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+#[cfg(target_arch = "wasm32")] // TODO: not great to have cfg blocks
 mod tcp_transport;
+#[cfg(not(target_arch = "wasm32"))]
+use libp2p_tcp::TcpConfig;
+#[cfg(target_arch = "wasm32")]
+use tcp_transport::TcpConfig;
 
-use futures::prelude::*;
 use libp2p_core::transport::{boxed::Boxed, Transport};
 use libp2p_core::{identity, muxing::StreamMuxerBox, nodes::node::Substream, upgrade, PeerId};
 use libp2p_kad::{record::store::MemoryStore, record::Key, Kademlia, Quorum};
@@ -57,7 +61,7 @@ impl<T> Network<T> {
         let local_keypair = identity::Keypair::generate_ed25519();
         let local_peer_id = local_keypair.public().into_peer_id();
 
-        let transport = tcp_transport::TcpConfig::default()
+        let transport = TcpConfig::default()
             .upgrade(upgrade::Version::V1)
             .authenticate(PlainText2Config {
                 local_public_key: local_keypair.public(),
@@ -74,8 +78,10 @@ impl<T> Network<T> {
         );
 
         let mut swarm = Swarm::new(transport, kademlia, local_peer_id);
+        Swarm::listen_on(&mut swarm, "/ip6/::/tcp/30333".parse().unwrap()).unwrap();
         Swarm::listen_on(&mut swarm, "/ip4/0.0.0.0/tcp/30333".parse().unwrap()).unwrap();
-        Swarm::dial_addr(&mut swarm, "/ip4/127.0.0.1/tcp/30333".parse().unwrap()).unwrap();
+        // Bootnode. // TODO: add public key
+        Swarm::dial_addr(&mut swarm, "/ip4/138.68.126.243/tcp/30333".parse().unwrap()).unwrap();
         swarm.bootstrap();
 
         Network {

@@ -111,7 +111,7 @@
 //!
 
 #![warn(missing_docs)]
-#![deny(unsafe_code)]
+//#![deny(unsafe_code)] // TODO: 🤷
 #![deny(intra_doc_link_resolution_failure)]
 #![allow(dead_code)] // TODO: temporary during development
 #![no_std]
@@ -120,10 +120,15 @@ extern crate alloc;
 
 pub use self::module::Module;
 pub use self::system::{System, SystemBuilder, SystemRunOutcome};
-pub use redshirt_syscalls_interface::{
+pub use redshirt_syscalls::{
     Decode, Encode, EncodedMessage, InterfaceHash, MessageId, Pid, ThreadId,
 };
 pub use wasmi::RuntimeValue; // TODO: wrap around instead?
+
+#[cfg(feature = "nightly")]
+#[cfg_attr(docsrs, doc(cfg(feature = "nightly")))] // TODO: enable unconditonally after https://github.com/rust-lang/rust/issues/43781
+#[proc_macro_hack::proc_macro_hack]
+pub use redshirt_core_proc_macros::build_wasm_module;
 
 mod id_pool;
 

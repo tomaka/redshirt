@@ -20,7 +20,7 @@ use core::{mem, task::Context, task::Poll};
 use futures::prelude::*;
 use hashbrown::HashSet;
 use redshirt_interface_interface::ffi::InterfaceMessage;
-use redshirt_syscalls_interface::{Decode as _, EncodedMessage, InterfaceHash, MessageId, Pid};
+use redshirt_syscalls::{Decode as _, EncodedMessage, InterfaceHash, MessageId, Pid};
 use spin::Mutex;
 
 /// Collection of objects that implement the [`NativeProgram`] trait.
@@ -199,7 +199,7 @@ impl<'ext> NativeProgramsCollection<'ext> {
     }
 
     /// Notify the [`NativeProgram`]s that the program with the given [`Pid`] has terminated.
-    pub fn process_destroyed(&mut self, pid: Pid) {
+    pub fn process_destroyed(&self, pid: Pid) {
         for (_, process) in &self.processes {
             process.process_destroyed(pid);
         }

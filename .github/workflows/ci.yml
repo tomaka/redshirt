@@ -46,7 +46,7 @@ jobs:
         path: modules/target
         key: cargo-build-target-${{ hashFiles('modules/Cargo.lock') }}
     - name: Build modules
-      run: cargo build --manifest-path ./modules/Cargo.toml --locked --verbose --release --target=wasm32-unknown-unknown
+      run: cargo build --manifest-path ./modules/Cargo.toml --workspace --exclude stub --locked --verbose --release --target=wasm32-unknown-unknown
     - name: Upload WASM modules
       uses: actions/upload-artifact@v1
       with:
@@ -96,9 +96,9 @@ jobs:
         path: target
         key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('Cargo.lock') }}
     - name: Build
-      run: cargo build --workspace --exclude redshirt-standalone-kernel --locked --verbose
+      run: cargo build --workspace --exclude redshirt-standalone-kernel --exclude redshirt-core-proc-macros --locked --verbose
     - name: Run tests
-      run: cargo test --workspace --exclude redshirt-standalone-kernel --locked --verbose
+      run: cargo test --workspace --exclude redshirt-standalone-kernel --exclude redshirt-core-proc-macros --locked --verbose
 
   build-hosted-windows:
     name: Build hosted kernel on Windows
@@ -213,7 +213,7 @@ jobs:
     - name: Prepare file structure
       run: |
         mkdir -p iso/boot/grub
-        cp .github/workflows/grub.cfg iso/boot/grub
+        cp .github/grub.cfg iso/boot/grub
         mv redshirt-standalone-kernel iso/boot/kernel
     - name: Build ISO
       run: grub-mkrescue -o redshirt.iso iso
@@ -223,6 +223,36 @@ jobs:
         name: bootable-cdrom-x86_64
         path: redshirt.iso
 
+  check-passive-node:
+    name: Check p2p passive node
+    runs-on: ubuntu-latest
+    container:
+      image: rust
+    steps:
+    - uses: actions/checkout@v1
+    - name: Install Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        override: true
+    - name: Cache cargo registry
+      uses: actions/cache@v1
+      with:
+        path: ~/.cargo/registry
+        key: cargo-registry-${{ hashFiles('modules/Cargo.lock') }}
+    - name: Cache cargo index
+      uses: actions/cache@v1
+      with:
+        path: ~/.cargo/git
+        key: cargo-index-${{ hashFiles('modules/Cargo.lock') }}
+    - name: Cache cargo build
+      uses: actions/cache@v1
+      with:
+        path: modules/target
+        key: passive-node-check-target-${{ hashFiles('modules/Cargo.lock') }}
+    - name: Check peer-to-peer passive node
+      run: cargo check --manifest-path ./modules/Cargo.toml --package p2p-loader --bin passive-node --locked --verbose
+      
   fmt:
     name: Rustfmt
     runs-on: ubuntu-latest

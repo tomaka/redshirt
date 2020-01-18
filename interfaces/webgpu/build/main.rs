@@ -270,15 +270,15 @@ fn gen_interface_op(
                 writeln!(out, "        unsafe {{")?;
                 match &message_answer_ty {
                     MessageAnswerTy::Void => {
-                        writeln!(out, "            redshirt_syscalls_interface::emit_message_without_response(&ffi::INTERFACE, msg).unwrap();")?;
+                        writeln!(out, "            redshirt_syscalls::emit_message_without_response(&ffi::INTERFACE, msg).unwrap();")?;
                     }
                     MessageAnswerTy::Injected(ty) => {
-                        writeln!(out, "            redshirt_syscalls_interface::emit_message_without_response(&ffi::INTERFACE, msg).unwrap();")?;
+                        writeln!(out, "            redshirt_syscalls::emit_message_without_response(&ffi::INTERFACE, msg).unwrap();")?;
                         writeln!(out, "            {} {{ inner: return_value }}", ty)?;
                     }
                     MessageAnswerTy::Promise(_) => {
                         // TODO: this can be a trap, as we might need a conversion between the return value and the actual value
-                        writeln!(out, "            redshirt_syscalls_interface::emit_message_with_response(&ffi::INTERFACE, msg).unwrap()")?;
+                        writeln!(out, "            redshirt_syscalls::emit_message_with_response(&ffi::INTERFACE, msg).unwrap()")?;
                     }
                 }
                 writeln!(out, "        }}")?;

@@ -25,7 +25,7 @@ use std::{borrow::Cow, convert::TryFrom as _};
 include!(concat!(env!("OUT_DIR"), "/build-pci.rs"));
 
 fn main() {
-    redshirt_syscalls_interface::block_on(async_main());
+    redshirt_syscalls::block_on(async_main());
 }
 
 async fn async_main() {
@@ -37,14 +37,14 @@ async fn async_main() {
     };
 
     loop {
-        let msg = match redshirt_syscalls_interface::next_interface_message().await {
-            redshirt_syscalls_interface::InterfaceOrDestroyed::Interface(m) => m,
-            redshirt_syscalls_interface::InterfaceOrDestroyed::ProcessDestroyed(_) => continue,
+        let msg = match redshirt_syscalls::next_interface_message().await {
+            redshirt_syscalls::DecodedInterfaceOrDestroyed::Interface(m) => m,
+            redshirt_syscalls::DecodedInterfaceOrDestroyed::ProcessDestroyed(_) => continue,
         };
         assert_eq!(msg.interface, redshirt_pci_interface::ffi::INTERFACE);
         let redshirt_pci_interface::ffi::PciMessage::GetDevicesList =
-            DecodeAll::decode_all(&msg.actual_data).unwrap();       // TODO: don't unwrap
-        redshirt_syscalls_interface::emit_answer(msg.message_id.unwrap(), &redshirt_pci_interface::ffi::GetDevicesListResponse {
+            DecodeAll::decode_all(&msg.actual_data.0).unwrap();       // TODO: don't unwrap; also, crappy decoding
+        redshirt_syscalls::emit_answer(msg.message_id.unwrap(), &redshirt_pci_interface::ffi::GetDevicesListResponse {
             devices: devices.clone(),
         });
     }
@@ -117,7 +117,10 @@ async unsafe fn read_bus_pci_devices(bus_idx: u8) -> Vec<redshirt_pci_interface:
                 },
             });
 
-            redshirt_stdout_interface::stdout(format!("PCI device: {} - {}\n", vendor_name, device_name));
+            redshirt_log_interface::log(
+                redshirt_log_interface::Level::Info,
+                &format!("PCI device: {} - {}", vendor_name, device_name)
+            );
 
             // TODO: wrong; need to enumerate other PCI buses
         }

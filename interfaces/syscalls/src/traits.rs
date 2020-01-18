@@ -19,6 +19,7 @@ use core::fmt;
 /// Message already encoded.
 ///
 /// The [`Encode`] and [`Decode`] trait implementations are no-op.
+// TODO: make field private
 #[derive(Clone, PartialEq, Eq)]
 pub struct EncodedMessage(pub Vec<u8>);
 

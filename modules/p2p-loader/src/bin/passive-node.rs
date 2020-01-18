@@ -13,26 +13,22 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-//! Stdout.
+use p2p_loader::Network;
 
-#![deny(intra_doc_link_resolution_failure)]
-#![no_std]
+#[cfg(target_os = "wasm32")]
+fn main() {
+    redshirt_syscalls::block_on(async_main())
+}
 
-extern crate alloc;
+#[cfg(not(target_os = "wasm32"))]
+fn main() {
+    futures::executor::block_on(async_main())
+}
 
-use alloc::string::String;
+async fn async_main() {
+    let mut network = Network::<std::convert::Infallible>::start(); // TODO: use `!`
 
-pub mod ffi;
-
-/// Sends a string to be printed on stdout.
-///
-/// # About `\r` vs `\n`
-///
-/// In order to follow the Unix world, the character `\n` (LF, 0xA) means "new line". The
-/// character `\r` (CR, 0xD) is ignored.
-pub fn stdout(msg: String) {
-    unsafe {
-        let msg = ffi::StdoutMessage::Message(msg);
-        redshirt_syscalls_interface::emit_message_without_response(&ffi::INTERFACE, &msg).unwrap();
+    loop {
+        let _ = network.next_event().await;
     }
 }

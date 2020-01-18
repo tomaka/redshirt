@@ -12,9 +12,9 @@ async-std = "1.3"
 futures = "0.3.1"
 parking_lot = "0.10.0"
 redshirt-core = { path = "../../core" }
-redshirt-stdout-hosted = { path = "../hosted-stdout" }
-redshirt-stdout-interface = { path = "../../interfaces/stdout" }
-redshirt-syscalls-interface = { path = "../../interfaces/syscalls" }
+redshirt-log-hosted = { path = "../hosted-log" }
+redshirt-log-interface = { path = "../../interfaces/log" }
+redshirt-syscalls = { path = "../../interfaces/syscalls" }
 redshirt-tcp-interface = { path = "../../interfaces/tcp" }
 redshirt-time-hosted = { path = "../hosted-time" }
 redshirt-time-interface = { path = "../../interfaces/time" }

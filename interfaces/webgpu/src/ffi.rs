@@ -17,7 +17,7 @@ use crate::restricted::{RestrictedF32, RestrictedF64};
 
 use alloc::{string::String, vec::Vec};
 use parity_scale_codec::{Decode, Encode};
-use redshirt_syscalls_interface::InterfaceHash;
+use redshirt_syscalls::InterfaceHash;
 
 // TODO: this has been randomly generated; instead should be a hash or something
 pub const INTERFACE: InterfaceHash = InterfaceHash::from_raw_hash([
