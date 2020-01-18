@@ -80,7 +80,8 @@ impl<T> Network<T> {
         let mut swarm = Swarm::new(transport, kademlia, local_peer_id);
         Swarm::listen_on(&mut swarm, "/ip6/::/tcp/30333".parse().unwrap()).unwrap();
         Swarm::listen_on(&mut swarm, "/ip4/0.0.0.0/tcp/30333".parse().unwrap()).unwrap();
-        Swarm::dial_addr(&mut swarm, "/ip4/127.0.0.1/tcp/30333".parse().unwrap()).unwrap();
+        // Bootnode. // TODO: add public key
+        Swarm::dial_addr(&mut swarm, "/ip4/138.68.126.243/tcp/30333".parse().unwrap()).unwrap();
         swarm.bootstrap();
 
         Network {
