@@ -15,13 +15,15 @@
 
 use p2p_loader::Network;
 
-#[cfg(target_os = "wasm32")]
+#[cfg(target_arch = "wasm32")]
 fn main() {
+    redshirt_log_interface::init();
     redshirt_syscalls::block_on(async_main())
 }
 
-#[cfg(not(target_os = "wasm32"))]
+#[cfg(not(target_arch = "wasm32"))]
 fn main() {
+    env_logger::init();
     futures::executor::block_on(async_main())
 }
 
