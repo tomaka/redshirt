@@ -1,0 +1,19 @@
+name: Node deployment
+
+on:
+  push:
+    branches:    
+      - master
+
+jobs:
+  build-push-docker-image:
+    name: Build and push passive node Docker image
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v1
+    - name: Docker log in
+      run: docker login -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }} docker.pkg.github.com
+    - name: Build Docker image
+      run: docker build -f ./modules/p2p-loader/Dockerfile -t docker.pkg.github.com/${{ github.repository }}/passive-node:latest .
+    - name: Push Docker image
+      run: docker push docker.pkg.github.com/${{ github.repository }}/passive-node:latest
