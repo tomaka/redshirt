@@ -17,10 +17,10 @@ jobs:
     - name: Build Docker image
       run: docker build -f ./modules/p2p-loader/Dockerfile -t tomaka/redshirt-passive-node:$(echo $GITHUB_SHA | head -c7) .
     - name: Push Docker image
-      run:
-        - docker push tomaka/redshirt-passive-node:$(echo $GITHUB_SHA | head -c7)
-        - docker tag tomaka/redshirt-passive-node:$(echo $GITHUB_SHA | head -c7) tomaka/redshirt-passive-node:latest
-        - docker push tomaka/redshirt-passive-node:latest
+      run: |
+        docker push tomaka/redshirt-passive-node:$(echo $GITHUB_SHA | head -c7)
+        docker tag tomaka/redshirt-passive-node:$(echo $GITHUB_SHA | head -c7) tomaka/redshirt-passive-node:latest
+        docker push tomaka/redshirt-passive-node:latest
     - name: Update deployment config
       run: TAG=$(echo $GITHUB_SHA | head -c7) && sed -i 's|<TAG>|'${TAG}'|' .github/node-deploy-kube-config.yml
     - name: Save DigitalOcean kubeconfig
