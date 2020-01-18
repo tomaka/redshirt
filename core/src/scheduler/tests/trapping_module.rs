@@ -18,7 +18,7 @@ use crate::InterfaceHash;
 
 #[test]
 fn trapping_module() {
-    let module = from_wat!(
+    let module = from_wat!(local, 
         r#"(module
         (func $main (param $p0 i32) (param $p1 i32) (result i32)
             unreachable)

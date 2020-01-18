@@ -91,12 +91,12 @@ mod tests {
 
     #[test]
     fn empty_wat_works() {
-        let _ = from_wat!("(module)");
+        let _ = from_wat!(local, "(module)");
     }
 
     #[test]
     fn simple_wat_works() {
-        let _ = from_wat!(
+        let _ = from_wat!(local, 
             r#"
             (module
                 (func $add (param i32 i32) (result i32)

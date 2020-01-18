@@ -18,7 +18,7 @@ use crate::InterfaceHash;
 
 #[test]
 fn basic_module() {
-    let module = from_wat!(
+    let module = from_wat!(local, 
         r#"(module
         (func $_start (result i32)
             i32.const 5)

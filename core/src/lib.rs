@@ -137,10 +137,15 @@ pub use redshirt_core_proc_macros::wat_to_bin;
 /// Builds a [`Module`](module::Module) from a WASM text representation.
 ///
 /// The WASM text representation is parsed and transformed at compile time.
+#[macro_export]
 macro_rules! from_wat {
-    ($wat:expr) => {{
-        // TODO: also build the hash at compile-time? https://github.com/tomaka/redshirt/issues/218
+    // TODO: also build the hash at compile-time? https://github.com/tomaka/redshirt/issues/218
+    // TODO: we need this hack with a special `local` tag because of macro paths resolution issues
+    (local, $wat:expr) => {{
         $crate::Module::from_bytes(wat_to_bin!($wat)).unwrap()
+    }};
+    ($wat:expr) => {{
+        $crate::Module::from_bytes($crate::wat_to_bin!($wat)).unwrap()
     }};
 }
 

@@ -32,7 +32,7 @@ fn emit_reserved_pid() {
     }
 
     */
-    let module = from_wat!(r#"
+    let module = from_wat!(local, r#"
 (module
     (type $t0 (func (param i32 i32 i32 i32 i32 i32) (result i32)))
     (type $t1 (func (param i32 i32) (result i32)))
