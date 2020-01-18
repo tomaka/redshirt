@@ -32,6 +32,7 @@ spec:
     spec:
       containers:
       - name: passive-node
+        # Note: `<TAG>` is replaced by a script before deployment
         image: tomaka/redshirt-passive-node:<TAG>
         ports:
         - containerPort: 30333
