@@ -11,7 +11,7 @@ RUN cargo build --bin passive-node --release --verbose
 
 FROM debian:buster
 LABEL maintainer "Pierre Krieger <pierre.krieger1708@gmail.com>"
-COPY --from=builder /build/target/release/passive-node /usr/local/bin
+COPY --from=builder /build/modules/target/release/passive-node /usr/local/bin
 
 EXPOSE 30333
 CMD ["/usr/local/bin/passive-node"]
