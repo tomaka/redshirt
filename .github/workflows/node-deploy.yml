@@ -26,6 +26,6 @@ jobs:
         args: kubernetes cluster kubeconfig show redshirt > ${{ github.workspace }}/.kubeconfig
     - name: Deploy to DigitalOcean Kubernetes
       # TODO: use `--prune`?
-      run: kubectl --kubeconfig=${{ github.workspace }}/.kubeconfig apply -f ${{ github.workspace }}/.github/workflows/node-deploy-kube-config.yml
+      run: kubectl --kubeconfig=${{ github.workspace }}/.kubeconfig apply -f ${{ github.workspace }}/.github/node-deploy-kube-config.yml
     - name: Verify deployment
       run: kubectl --kubeconfig=${{ github.workspace }}/.kubeconfig rollout status deployment/passive-node

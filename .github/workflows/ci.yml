@@ -213,7 +213,7 @@ jobs:
     - name: Prepare file structure
       run: |
         mkdir -p iso/boot/grub
-        cp .github/workflows/grub.cfg iso/boot/grub
+        cp .github/grub.cfg iso/boot/grub
         mv redshirt-standalone-kernel iso/boot/kernel
     - name: Build ISO
       run: grub-mkrescue -o redshirt.iso iso
