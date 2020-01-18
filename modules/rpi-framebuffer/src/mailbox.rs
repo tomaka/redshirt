@@ -61,12 +61,8 @@ pub async fn read_mailbox() -> Message {
     unsafe {
         // Wait for status register to indicate a message.
         loop {
-            // TODO: add shortcut in hardware-interface
-            let mut read = redshirt_hardware_interface::HardwareOperationsBuilder::new();
-            let mut out = [0];
-            read.read_u32(MAILBOX_BASE + 0x18, &mut out);
-            read.send().await;
-            if out[0] & (1 << 30) == 0 { break; }
+            let val = redshirt_hardware_interface::read_one_u32(MAILBOX_BASE + 0x18).await;
+            if val & (1 << 30) == 0 { break; }
         }
 
         let mut read = redshirt_hardware_interface::HardwareOperationsBuilder::new();
@@ -82,12 +78,8 @@ pub async fn write_mailbox(message: Message) {
     unsafe {
         // Wait for status register to indicate a message.
         loop {
-            // TODO: add shortcut in hardware-interface
-            let mut read = redshirt_hardware_interface::HardwareOperationsBuilder::new();
-            let mut out = [0];
-            read.read_u32(MAILBOX_BASE + 0x18, &mut out);
-            read.send().await;
-            if out[0] & (1 << 31) == 0 { break; }
+            let val = redshirt_hardware_interface::read_one_u32(MAILBOX_BASE + 0x18).await;
+            if val & (1 << 31) == 0 { break; }
         }
 
         redshirt_hardware_interface::write_one_u32(MAILBOX_BASE + 0x20, message.value);

@@ -69,9 +69,9 @@ impl Kernel {
         }
         #[cfg(target_arch = "arm")]
         {
-            system_builder =
-                system_builder.with_startup_process(build_wasm_module!("../../../modules/arm-log"))
-                system_builder.with_startup_process(build_wasm_module!("../../../modules/rpi-framebuffer"))
+            system_builder = system_builder
+                .with_startup_process(build_wasm_module!("../../../modules/arm-log"))
+                .with_startup_process(build_wasm_module!("../../../modules/rpi-framebuffer"))
         }
 
         let system = system_builder

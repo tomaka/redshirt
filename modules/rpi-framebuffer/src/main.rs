@@ -13,8 +13,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-//! Implements the stdout interface by writing in text mode.
-
 // TODO: doc https://jsandler18.github.io/
 
 use byteorder::{ByteOrder as _, LittleEndian};
@@ -26,10 +24,10 @@ mod property;
 
 fn main() {
     std::panic::set_hook(Box::new(|info| {
-        redshirt_stdout_interface::stdout(format!("Panic: {}\n", info));
+        redshirt_log_interface::log(redshirt_log_interface::Level::Error, &format!("Panic: {}\n", info));
     }));
 
-    redshirt_syscalls_interface::block_on(async_main());
+    redshirt_syscalls::block_on(async_main());
 }
 
 async fn async_main()  {
