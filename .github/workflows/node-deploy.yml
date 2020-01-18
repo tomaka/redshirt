@@ -19,7 +19,7 @@ jobs:
     - name: Push Docker image
       run: docker push tomaka/redshirt-passive-node:latest
     - name: Save DigitalOcean kubeconfig
-      uses: digitalocean/action-doctl@v1
+      uses: digitalocean/action-doctl@master
       env:
         DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
       with:
