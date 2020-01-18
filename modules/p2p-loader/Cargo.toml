@@ -7,16 +7,21 @@ publish = false
 
 [dependencies]
 futures = "0.3"
-libp2p-core = { git = "https://github.com/tomaka/libp2p-rs", branch = "stable-fut-wasi" }
-libp2p-kad = { git = "https://github.com/tomaka/libp2p-rs", branch = "stable-fut-wasi" }
-libp2p-mplex = { git = "https://github.com/tomaka/libp2p-rs", branch = "stable-fut-wasi" }
-#libp2p-secio = { git = "https://github.com/tomaka/libp2p-rs", branch = "stable-fut-wasi" }
-libp2p-plaintext = { git = "https://github.com/tomaka/libp2p-rs", branch = "stable-fut-wasi" }
-libp2p-swarm = { git = "https://github.com/tomaka/libp2p-rs", branch = "stable-fut-wasi" }
+libp2p-core = "0.14.0-alpha.1"
+libp2p-kad = "0.14.0-alpha.1"
+libp2p-mplex = "0.14.0-alpha.1"
+#libp2p-secio = "0.14.0-alpha.1"
+libp2p-plaintext = "0.14.0-alpha.1"
+libp2p-swarm = "0.4.0-alpha.1"
 log = "0.4"
+parity-scale-codec = "1.0.5"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+libp2p-tcp = "0.14.0-alpha.1"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
 redshirt-interface-interface = { path = "../../interfaces/interface" }
 redshirt-loader-interface = { path = "../../interfaces/loader" }
 redshirt-syscalls = { path = "../../interfaces/syscalls" }
 redshirt-tcp-interface = { path = "../../interfaces/tcp" }
 redshirt-time-interface = { path = "../../interfaces/time" }
-parity-scale-codec = "1.0.5"

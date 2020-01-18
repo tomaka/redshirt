@@ -33,7 +33,8 @@ async fn async_main() {
 
     loop {
         let next_interface = redshirt_syscalls::next_interface_message();
-        let next_net_event = Box::pin(network.next_event());
+        let mut next_net_event = network.next_event();
+        futures::pin_mut(next_net_event);
         let msg = match future::select(next_interface, next_net_event).await {
             future::Either::Left((
                 redshirt_syscalls::DecodedInterfaceOrDestroyed::Interface(m),
