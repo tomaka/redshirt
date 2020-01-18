@@ -22,11 +22,11 @@ use tcp_transport::TcpConfig;
 
 use libp2p_core::transport::{boxed::Boxed, Transport};
 use libp2p_core::{identity, muxing::StreamMuxerBox, nodes::node::Substream, upgrade, PeerId};
-use libp2p_kad::{record::store::MemoryStore, record::Key, Kademlia, Quorum};
+use libp2p_kad::{record::store::MemoryStore, record::Key, Kademlia, KademliaConfig, Quorum};
 use libp2p_mplex::MplexConfig;
 use libp2p_plaintext::PlainText2Config;
 use libp2p_swarm::{Swarm, SwarmEvent};
-use std::io;
+use std::{io, time::Duration};
 
 /// Active set of connections to the network.
 pub struct Network<T> {
@@ -74,9 +74,14 @@ impl<T> Network<T> {
             .map_err(|err| io::Error::new(io::ErrorKind::Other, err))
             .boxed();
 
-        let kademlia = Kademlia::new(
+        let kademlia = Kademlia::with_config(
             local_peer_id.clone(),
             MemoryStore::new(local_peer_id.clone()),
+            {
+                let mut cfg = KademliaConfig::default();
+                cfg.set_replication_interval(Some(Duration::from_secs(60)));
+                cfg
+            }
         );
 
         let mut swarm = Swarm::new(transport, kademlia, local_peer_id);
@@ -93,7 +98,7 @@ impl<T> Network<T> {
 
         swarm.bootstrap();
 
-        //swarm.put_record(libp2p_kad::Record::new(vec![0; 32], vec![5, 6, 7, 8]), libp2p_kad::Quorum::Majority);
+        swarm.put_record(libp2p_kad::Record::new(vec![0; 32], vec![5, 6, 7, 8]), libp2p_kad::Quorum::Majority);
 
         Network {
             swarm,
