@@ -43,7 +43,8 @@ fn main() {
 
 async fn async_main() -> ! {
     redshirt_interface_interface::register_interface(ffi::INTERFACE)
-        .await.unwrap();
+        .await
+        .unwrap();
 
     // TODO: properly initialize VGA? https://gist.github.com/tomaka/8a007d0e3c7064f419b24b044e152c22
 
@@ -73,7 +74,7 @@ async fn async_main() -> ! {
                 ffi::Level::Debug => "DEBG",
                 ffi::Level::Trace => "TRCE",
             };
-    
+
             console.write("[", 0x8).await;
             console.write(&format!("{:?}", msg.emitter_pid), 0x8).await;
             console.write("] [", 0x8).await;
@@ -81,7 +82,6 @@ async fn async_main() -> ! {
             console.write("] ", 0x8).await;
             console.write(&message.message(), 0xf).await;
             console.write("\n", 0xf).await;
-
         } else {
             console.write("[", 0x8).await;
             console.write(&format!("{:?}", msg.emitter_pid), 0x8).await;
@@ -108,7 +108,9 @@ impl Console {
         unsafe {
             self.ops_buffer.write(
                 self.ptr_of(0, 0),
-                (0..(self.screen_width * self.screen_height * 2)).map(|_| 0).collect::<Vec<_>>()
+                (0..(self.screen_width * self.screen_height * 2))
+                    .map(|_| 0)
+                    .collect::<Vec<_>>(),
             );
 
             self.cursor_x = 0;
@@ -149,12 +151,10 @@ impl Console {
                 }
 
                 // We checked `chr.is_ascii()` above
-                let chr = u8::try_from(u32::from(chr)).unwrap(); 
+                let chr = u8::try_from(u32::from(chr)).unwrap();
 
-                self.ops_buffer.write(
-                    self.ptr_of(self.cursor_x, self.cursor_y),
-                    vec![chr, color]
-                );
+                self.ops_buffer
+                    .write(self.ptr_of(self.cursor_x, self.cursor_y), vec![chr, color]);
 
                 debug_assert!(self.cursor_x < self.screen_width);
                 self.cursor_x += 1;
@@ -172,11 +172,14 @@ impl Console {
 
     fn update_cursor(&mut self) {
         unsafe {
-            let cursor_pos = u64::from(self.cursor_y) * u64::from(self.screen_width) + u64::from(self.cursor_x);
+            let cursor_pos =
+                u64::from(self.cursor_y) * u64::from(self.screen_width) + u64::from(self.cursor_x);
             self.ops_buffer.port_write_u8(0x3d4, 0xf);
-            self.ops_buffer.port_write_u8(0x3d5, u8::try_from(cursor_pos & 0xff).unwrap());
+            self.ops_buffer
+                .port_write_u8(0x3d5, u8::try_from(cursor_pos & 0xff).unwrap());
             self.ops_buffer.port_write_u8(0x3d4, 0xe);
-            self.ops_buffer.port_write_u8(0x3d5, u8::try_from((cursor_pos >> 8) & 0xff).unwrap());
+            self.ops_buffer
+                .port_write_u8(0x3d5, u8::try_from((cursor_pos >> 8) & 0xff).unwrap());
         }
     }
 
@@ -184,14 +187,18 @@ impl Console {
         unsafe {
             self.flush();
 
-            let mut fb_content = vec![0; 2 * usize::from(self.screen_width) * (usize::from(self.screen_height) - 1)];
+            let mut fb_content =
+                vec![0; 2 * usize::from(self.screen_width) * (usize::from(self.screen_height) - 1)];
 
             let mut read_ops = redshirt_hardware_interface::HardwareOperationsBuilder::new();
             read_ops.read(self.ptr_of(0, 1), &mut fb_content);
             read_ops.send().await;
 
             self.ops_buffer.write(self.ptr_of(0, 0), fb_content);
-            self.ops_buffer.write(self.ptr_of(0, self.screen_height - 1), vec![0; 2 * usize::from(self.screen_width)]);
+            self.ops_buffer.write(
+                self.ptr_of(0, self.screen_height - 1),
+                vec![0; 2 * usize::from(self.screen_width)],
+            );
 
             self.cursor_y -= 1;
         }

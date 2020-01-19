@@ -77,13 +77,15 @@ impl Device {
         // Reads the RESET register and write its value back in order to reset the device.
         redshirt_hardware_interface::port_write_u8(
             base_port + 0x1f,
-            redshirt_hardware_interface::port_read_u8(base_port + 0x1f).await
+            redshirt_hardware_interface::port_read_u8(base_port + 0x1f).await,
         );
 
         // Wait for reset to be complete.
         loop {
             let val = redshirt_hardware_interface::port_read_u8(base_port + 7).await;
-            if (val & 0x80) != 0 { break }      // TODO: fail after trying too many times
+            if (val & 0x80) != 0 {
+                break;
+            } // TODO: fail after trying too many times
         }
 
         // Clear interrupts.
@@ -106,13 +108,23 @@ impl Device {
         let mac_address: [u8; 6] = {
             let mut buffer = [0; 32];
             dma_read(base_port, &mut buffer, 0, 0).await;
-            [buffer[0], buffer[2], buffer[4], buffer[6], buffer[8], buffer[10]]
+            [
+                buffer[0], buffer[2], buffer[4], buffer[6], buffer[8], buffer[10],
+            ]
         };
 
         // TODO: remove
         redshirt_log_interface::log(
             redshirt_log_interface::Level::Info,
-            &format!("MAC: {:x} {:x} {:x} {:x} {:x} {:x}", mac_address[0], mac_address[1], mac_address[2], mac_address[3], mac_address[4], mac_address[5])
+            &format!(
+                "MAC: {:x} {:x} {:x} {:x} {:x} {:x}",
+                mac_address[0],
+                mac_address[1],
+                mac_address[2],
+                mac_address[3],
+                mac_address[4],
+                mac_address[5]
+            ),
         );
 
         // Start page address of the packet to be transmitted.
@@ -135,7 +147,7 @@ impl Device {
         for n in 0..6u8 {
             redshirt_hardware_interface::port_write_u8(
                 base_port + 1 + u32::from(n),
-                mac_address[usize::from(n)]
+                mac_address[usize::from(n)],
             );
         }
 
@@ -229,7 +241,7 @@ impl Device {
         assert!(next_packet_page >= READ_BUFFER_PAGES.start);
         assert!(next_packet_page <= READ_BUFFER_PAGES.end);
 
-        debug_assert!(current_packet_len < 15522);       // TODO: is that correct?
+        debug_assert!(current_packet_len < 15522); // TODO: is that correct?
         let mut out_packet = vec![0; usize::from(current_packet_len)];
         dma_read(self.base_port, &mut out_packet, self.next_to_read, 4).await;
 
@@ -243,7 +255,10 @@ impl Device {
         // Write in the BNRY (Boundary) register the address of the last page that we read.
         // This prevents the device from potentially overwriting packets we haven't read yet.
         if self.next_to_read == READ_BUFFER_PAGES.start {
-            redshirt_hardware_interface::port_write_u8(self.base_port + 3, READ_BUFFER_PAGES.end - 1);
+            redshirt_hardware_interface::port_write_u8(
+                self.base_port + 3,
+                READ_BUFFER_PAGES.end - 1,
+            );
         } else {
             redshirt_hardware_interface::port_write_u8(self.base_port + 3, self.next_to_read - 1);
         }
@@ -260,7 +275,7 @@ impl Device {
     ///
     unsafe fn send_packet(&mut self, packet: impl Into<Vec<u8>>) -> Result<(), ()> {
         if self.pending_packet.is_some() {
-            return Err(())
+            return Err(());
         }
 
         let packet = packet.into();
@@ -282,7 +297,8 @@ impl Device {
 
         // Copy, if possible, `pending_packet` to the device's memory and transfer it out.
         if self.pending_packet.is_some() {
-            let pending_packet_len = u16::try_from(self.pending_packet.as_ref().unwrap().len()).unwrap();
+            let pending_packet_len =
+                u16::try_from(self.pending_packet.as_ref().unwrap().len()).unwrap();
             let pending_packet_pages = u8::try_from(1 + (pending_packet_len - 1) / 256).unwrap();
 
             // Reset `next_write_page` to the start of the circular buffer if necessary.
@@ -307,7 +323,8 @@ impl Device {
                 let data = self.pending_packet.take().unwrap();
                 dma_write(self.base_port, &data, self.next_write_page);
                 if self.transmitting.is_some() {
-                    self.pending_transmit.push((self.next_write_page, pending_packet_len));
+                    self.pending_transmit
+                        .push((self.next_write_page, pending_packet_len));
                 } else {
                     self.send_transmit_command(self.next_write_page, pending_packet_len);
                 }
@@ -337,7 +354,7 @@ impl Device {
         ops.send();
 
         let page_end = page_start + u8::try_from(((len - 1) / 256) + 1).unwrap();
-        self.transmitting = Some(page_start .. page_end);
+        self.transmitting = Some(page_start..page_end);
     }
 
     // TODO:
@@ -392,7 +409,7 @@ async unsafe fn dma_read(base_port: u32, data: &mut [u8], page_start: u8, page_o
         let len_bytes = len.to_le_bytes();
         (len_bytes[0], len_bytes[1])
     } else {
-        panic!()        // TODO:
+        panic!() // TODO:
     };
 
     let mut ops = redshirt_hardware_interface::HardwareOperationsBuilder::new();
@@ -432,7 +449,7 @@ unsafe fn dma_write(base_port: u32, data: &[u8], page_start: u8) {
         let len_bytes = len.to_le_bytes();
         (len_bytes[0], len_bytes[1])
     } else {
-        panic!()        // TODO:
+        panic!() // TODO:
     };
 
     let mut ops = redshirt_hardware_interface::HardwareWriteOperationsBuilder::new();
@@ -441,7 +458,7 @@ unsafe fn dma_write(base_port: u32, data: &[u8], page_start: u8) {
     ops.port_write_u8(base_port + 10, data_len_lo);
     ops.port_write_u8(base_port + 11, data_len_hi);
     // DMA remote start address.
-    ops.port_write_u8(base_port + 8, 0);   // A page is 256 bytes, so the low is always 0
+    ops.port_write_u8(base_port + 8, 0); // A page is 256 bytes, so the low is always 0
     ops.port_write_u8(base_port + 9, page_start);
     // Remote write + start.
     ops.port_write_u8(base_port + 0, (1 << 4) | (1 << 1));

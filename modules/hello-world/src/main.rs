@@ -14,8 +14,5 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 fn main() {
-    redshirt_log_interface::log(
-        redshirt_log_interface::Level::Info,
-        &"hello world!",
-    )
+    redshirt_log_interface::log(redshirt_log_interface::Level::Info, &"hello world!")
 }

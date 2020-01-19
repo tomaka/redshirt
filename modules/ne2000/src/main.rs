@@ -41,17 +41,21 @@ async fn async_main() {
     let pci_devices = redshirt_pci_interface::get_pci_devices().await;
     for device in pci_devices {
         if device.vendor_id == 0x10ec && device.device_id == 0x8029 {
-            let port_number = device.base_address_registers.iter().filter_map(|bar| {
-                match bar {
-                    redshirt_pci_interface::PciBaseAddressRegister::Io { base_address } if *base_address != 0 => Some(*base_address),
-                    _ => None
-                }
-            }).next();
+            let port_number = device
+                .base_address_registers
+                .iter()
+                .filter_map(|bar| match bar {
+                    redshirt_pci_interface::PciBaseAddressRegister::Io { base_address }
+                        if *base_address != 0 =>
+                    {
+                        Some(*base_address)
+                    }
+                    _ => None,
+                })
+                .next();
 
             if let Some(port_number) = port_number {
-                let device = unsafe {
-                    device::Device::reset(port_number)
-                }.await;
+                let device = unsafe { device::Device::reset(port_number) }.await;
                 let registered_device_id = redshirt_random_interface::generate_u64().await;
                 let registration = interface::register_interface(interface::InterfaceConfig {
                     mac_address: device.mac_address(),
@@ -59,7 +63,7 @@ async fn async_main() {
                 ne2k_devices.push((registration, device));
                 redshirt_log_interface::log(
                     redshirt_log_interface::Level::Info,
-                    &format!("Initialized ne2000 at 0x{:x}", port_number)
+                    &format!("Initialized ne2000 at 0x{:x}", port_number),
                 );
             }
         }
@@ -82,10 +86,11 @@ async fn async_main() {
         if header.ether_type == 0x86dd {
             let (ip_header, ip_data) = etherparse::Ipv6Header::read_from_slice(&data).unwrap();
             if ip_header.next_header == 0x11 {
-                let (udp_header, udp_data) = etherparse::UdpHeader::read_from_slice(&ip_data).unwrap();
+                let (udp_header, udp_data) =
+                    etherparse::UdpHeader::read_from_slice(&ip_data).unwrap();
                 redshirt_log_interface::log(
                     redshirt_log_interface::Level::Info,
-                    &format!("Headers: {:?} {:?}", ip_header, udp_header)
+                    &format!("Headers: {:?} {:?}", ip_header, udp_header),
                 );
             }
         }

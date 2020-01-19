@@ -96,8 +96,7 @@ fn main() {
     let mut events_loop = EventsLoop::new();
     let surface = WindowBuilder::new().build_vk_surface(&events_loop, instance.clone()).unwrap();
     let window = surface.window();*/
-    let window =
-        redshirt_syscalls::block_on(redshirt_window_interface::Window::open()).unwrap();
+    let window = redshirt_syscalls::block_on(redshirt_window_interface::Window::open()).unwrap();
 
     // The next step is to choose which GPU queue will execute our draw commands.
     //

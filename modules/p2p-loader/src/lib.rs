@@ -81,7 +81,7 @@ impl<T> Network<T> {
                 let mut cfg = KademliaConfig::default();
                 cfg.set_replication_interval(Some(Duration::from_secs(60)));
                 cfg
-            }
+            },
         );
 
         let mut swarm = Swarm::new(transport, kademlia, local_peer_id);
@@ -98,7 +98,10 @@ impl<T> Network<T> {
 
         swarm.bootstrap();
 
-        swarm.put_record(libp2p_kad::Record::new(vec![0; 32], vec![5, 6, 7, 8]), libp2p_kad::Quorum::Majority);
+        swarm.put_record(
+            libp2p_kad::Record::new(vec![0; 32], vec![5, 6, 7, 8]),
+            libp2p_kad::Quorum::Majority,
+        );
 
         Network {
             swarm,

@@ -25,7 +25,8 @@ fn main() {
 
 async fn async_main() -> ! {
     redshirt_interface_interface::register_interface(ffi::INTERFACE)
-        .await.unwrap();
+        .await
+        .unwrap();
     init_uart();
 
     loop {
@@ -52,7 +53,6 @@ async fn async_main() -> ! {
             write_utf8_bytes(b"] ").await;
             write_untrusted_str(message.message()).await;
             write_utf8_bytes(b"\n").await;
-
         } else {
             write_utf8_bytes(b"[").await;
             write_untrusted_str(&format!("{:?}", msg.emitter_pid)).await;
@@ -90,8 +90,9 @@ fn init_uart() {
 
         ops.write_one_u32(UART0_BASE + 0x2C, (1 << 4) | (1 << 5) | (1 << 6));
 
-        ops.write_one_u32(UART0_BASE + 0x38, 
-            (1 << 1) | (1 << 4) | (1 << 5) | (1 << 6) | (1 << 7) | (1 << 8) | (1 << 9) | (1 << 10)
+        ops.write_one_u32(
+            UART0_BASE + 0x38,
+            (1 << 1) | (1 << 4) | (1 << 5) | (1 << 6) | (1 << 7) | (1 << 8) | (1 << 9) | (1 << 10),
         );
 
         ops.write_one_u32(UART0_BASE + 0x30, (1 << 0) | (1 << 8) | (1 << 9));

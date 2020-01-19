@@ -27,7 +27,10 @@ use std::{
 
 fn main() {
     std::panic::set_hook(Box::new(|info| {
-        redshirt_log_interface::log(redshirt_log_interface::Level::Error, &format!("Panic: {}", info));
+        redshirt_log_interface::log(
+            redshirt_log_interface::Level::Error,
+            &format!("Panic: {}", info),
+        );
     }));
 
     redshirt_syscalls::block_on(async_main())
@@ -50,7 +53,10 @@ async fn async_main() {
             future::Either::Left((DecodedInterfaceOrDestroyed::ProcessDestroyed(_), _)) => {
                 unimplemented!()
             }
-            future::Either::Right((NetworkManagerEvent::EthernetCableOut(id, msg_id, mut buffer), _)) => {
+            future::Either::Right((
+                NetworkManagerEvent::EthernetCableOut(id, msg_id, mut buffer),
+                _,
+            )) => {
                 if let Some(msg_id) = msg_id.take() {
                     let data = mem::replace(&mut *buffer, Vec::new());
                     debug_assert!(!data.is_empty());
@@ -63,7 +69,10 @@ async fn async_main() {
 
         assert_eq!(msg.interface, ffi::INTERFACE);
         let msg_data = ffi::TcpMessage::decode(msg.actual_data).unwrap();
-        redshirt_log_interface::log(redshirt_log_interface::Level::Debug, &format!("message: {:?}", msg_data));
+        redshirt_log_interface::log(
+            redshirt_log_interface::Level::Debug,
+            &format!("message: {:?}", msg_data),
+        );
 
         match msg_data {
             ffi::TcpMessage::Open(open_msg) => {
@@ -121,7 +130,8 @@ async fn async_main() {
                 } else {
                     // TODO: check if already set
                     // TODO: don't unwrap message_id
-                    *network.interface_user_data(&(msg.emitter_pid, id)) = Some(msg.message_id.unwrap());
+                    *network.interface_user_data(&(msg.emitter_pid, id)) =
+                        Some(msg.message_id.unwrap());
                 }
             }
         }

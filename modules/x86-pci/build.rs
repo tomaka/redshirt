@@ -21,10 +21,14 @@ fn main() {
     let dest_path = Path::new(&out_dir).join("build-pci.rs");
     let mut f = File::create(&dest_path).unwrap();
 
-    write!(f, r#"
+    write!(
+        f,
+        r#"
         fn build_pci_info() -> hashbrown::HashMap<(u16, u16), (&'static str, &'static str)> {{
             [
-    "#).unwrap();
+    "#
+    )
+    .unwrap();
 
     let mut current_vendor_id = None::<u16>;
     let mut current_vendor_name = None;
@@ -44,23 +48,39 @@ fn main() {
             let device_id = u16::from_str_radix(regex_match.get(1).unwrap().as_str(), 16).unwrap();
             let device_name = regex_match.get(2).unwrap().as_str();
 
-            write!(f, r##"
+            write!(
+                f,
+                r##"
                 ((0x{:x}, 0x{:x}), (r#"{}"#, r#"{}"#)),
-            "##, current_vendor_id.unwrap(), device_id, current_vendor_name.clone().unwrap(), device_name).unwrap();
-
+            "##,
+                current_vendor_id.unwrap(),
+                device_id,
+                current_vendor_name.clone().unwrap(),
+                device_name
+            )
+            .unwrap();
         } else if let Some(regex_match) = vendor_regex.captures(line) {
-            current_vendor_id = Some(u16::from_str_radix(regex_match.get(1).unwrap().as_str(), 16).unwrap());
+            current_vendor_id =
+                Some(u16::from_str_radix(regex_match.get(1).unwrap().as_str(), 16).unwrap());
             current_vendor_name = Some(regex_match.get(2).unwrap().as_str().to_string());
-
         } else if !line.is_empty() && !line.starts_with("\t\t") {
-            write!(f, r##"
+            write!(
+                f,
+                r##"
                 // Couldn't parse line: {}
-            "##, line).unwrap();
+            "##,
+                line
+            )
+            .unwrap();
         }
     }
 
-    write!(f, r#"
+    write!(
+        f,
+        r#"
             ].iter().cloned().collect()
         }}
-    "#).unwrap();
+    "#
+    )
+    .unwrap();
 }

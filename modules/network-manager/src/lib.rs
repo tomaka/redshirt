@@ -99,15 +99,20 @@ where
 
     /// Registers an interface with the given ID. Returns an error if an interface with that ID
     /// already exists.
-    pub fn register_interface(&mut self, id: TIfId, mac_address: [u8; 6], user_data: TIfUser) -> Result<(), ()> {
+    pub fn register_interface(
+        &mut self,
+        id: TIfId,
+        mac_address: [u8; 6],
+        user_data: TIfUser,
+    ) -> Result<(), ()> {
         let entry = match self.devices.entry(id) {
             Entry::Occupied(_) => return Err(()),
             Entry::Vacant(e) => e,
         };
 
         let interface = interface::NetInterfaceStateBuilder::default()
-            .with_ip_addr("192.168.1.20".parse().unwrap(), 24)  // TODO: hack
-            .with_ip_addr("fe80::9d39:1765:52bd:8389".parse().unwrap(), 64)  // TODO: hack
+            .with_ip_addr("192.168.1.20".parse().unwrap(), 24) // TODO: hack
+            .with_ip_addr("fe80::9d39:1765:52bd:8389".parse().unwrap(), 64) // TODO: hack
             .with_mac_address(mac_address)
             .build();
         entry.insert(Device {
@@ -128,7 +133,8 @@ where
     /// Returns an empty buffer if nothing is ready.
     // TODO: better API?
     pub fn interface_user_data(&mut self, id: &TIfId) -> &mut TIfUser {
-        &mut self.devices
+        &mut self
+            .devices
             .get_mut(id)
             .unwrap() // TODO: don't unwrap
             .user_data
@@ -164,7 +170,11 @@ where
                 .iter_mut()
                 .map(move |(n, d)| {
                     let user_data = &mut d.user_data;
-                    Box::pin(d.inner.next_event().map(move |ev| (n.clone(), user_data, ev))) as Pin<Box<dyn Future<Output = _>>>
+                    Box::pin(
+                        d.inner
+                            .next_event()
+                            .map(move |ev| (n.clone(), user_data, ev)),
+                    ) as Pin<Box<dyn Future<Output = _>>>
                 })
                 .chain(iter::once(Box::pin(future::pending()) as Pin<Box<_>>)),
         );

@@ -30,11 +30,10 @@ fn main() {
 
 async fn async_main() {
     redshirt_interface_interface::register_interface(redshirt_pci_interface::ffi::INTERFACE)
-        .await.unwrap();
+        .await
+        .unwrap();
 
-    let devices = unsafe {
-        read_pci_devices().await
-    };
+    let devices = unsafe { read_pci_devices().await };
 
     loop {
         let msg = match redshirt_syscalls::next_interface_message().await {
@@ -43,10 +42,13 @@ async fn async_main() {
         };
         assert_eq!(msg.interface, redshirt_pci_interface::ffi::INTERFACE);
         let redshirt_pci_interface::ffi::PciMessage::GetDevicesList =
-            DecodeAll::decode_all(&msg.actual_data.0).unwrap();       // TODO: don't unwrap; also, crappy decoding
-        redshirt_syscalls::emit_answer(msg.message_id.unwrap(), &redshirt_pci_interface::ffi::GetDevicesListResponse {
-            devices: devices.clone(),
-        });
+            DecodeAll::decode_all(&msg.actual_data.0).unwrap(); // TODO: don't unwrap; also, crappy decoding
+        redshirt_syscalls::emit_answer(
+            msg.message_id.unwrap(),
+            &redshirt_pci_interface::ffi::GetDevicesListResponse {
+                devices: devices.clone(),
+            },
+        );
     }
 }
 
@@ -63,8 +65,9 @@ async unsafe fn read_pci_devices() -> Vec<redshirt_pci_interface::PciDeviceInfo>
 async unsafe fn read_bus_pci_devices(bus_idx: u8) -> Vec<redshirt_pci_interface::PciDeviceInfo> {
     let mut out = Vec::new();
 
-    for device_idx in 0 .. 32 {
-        for func_idx in 0 .. 8 {    // TODO: check function 0 only first
+    for device_idx in 0..32 {
+        for func_idx in 0..8 {
+            // TODO: check function 0 only first
             let (vendor_id, device_id) = {
                 let vendor_device = pci_cfg_read_u32(bus_idx, device_idx, func_idx, 0).await;
                 let vendor_id = u16::try_from(vendor_device & 0xffff).unwrap();
@@ -86,7 +89,7 @@ async unsafe fn read_bus_pci_devices(bus_idx: u8) -> Vec<redshirt_pci_interface:
                 Some((v, d)) => (Cow::Borrowed(*v), Cow::Borrowed(*d)),
                 None => (
                     Cow::Owned(format!("Unknown <0x{:x}>", vendor_id)),
-                    Cow::Owned(format!("Unknown <0x{:x}>", device_id))
+                    Cow::Owned(format!("Unknown <0x{:x}>", device_id)),
                 ),
             };
 
@@ -98,7 +101,9 @@ async unsafe fn read_bus_pci_devices(bus_idx: u8) -> Vec<redshirt_pci_interface:
                 base_address_registers: {
                     let mut list = Vec::with_capacity(6);
                     for bar_n in 0..6 {
-                        let bar = pci_cfg_read_u32(bus_idx, device_idx, func_idx, 0x10 + bar_n * 0x4).await;
+                        let bar =
+                            pci_cfg_read_u32(bus_idx, device_idx, func_idx, 0x10 + bar_n * 0x4)
+                                .await;
                         list.push(if (bar & 0x1) == 0 {
                             let prefetchable = (bar & (1 << 3)) != 0;
                             let base_address = bar & !0b1111;
@@ -108,9 +113,7 @@ async unsafe fn read_bus_pci_devices(bus_idx: u8) -> Vec<redshirt_pci_interface:
                             }
                         } else {
                             let base_address = bar & !0b11;
-                            redshirt_pci_interface::PciBaseAddressRegister::Io {
-                                base_address,
-                            }
+                            redshirt_pci_interface::PciBaseAddressRegister::Io { base_address }
                         });
                     }
                     list
@@ -119,7 +122,7 @@ async unsafe fn read_bus_pci_devices(bus_idx: u8) -> Vec<redshirt_pci_interface:
 
             redshirt_log_interface::log(
                 redshirt_log_interface::Level::Info,
-                &format!("PCI device: {} - {}", vendor_name, device_name)
+                &format!("PCI device: {} - {}", vendor_name, device_name),
             );
 
             // TODO: wrong; need to enumerate other PCI buses
@@ -137,11 +140,11 @@ async unsafe fn pci_cfg_read_u32(bus: u8, slot: u8, func: u8, offset: u8) -> u32
     //assert!(offset < 256) // commented out because always true
     assert_eq!(offset & 3, 0);
 
-    let addr: u32 = 0x80000000 |
-        (u32::from(bus) << 16) |
-        (u32::from(slot) << 11) |
-        (u32::from(func) << 8) |
-        u32::from(offset);
+    let addr: u32 = 0x80000000
+        | (u32::from(bus) << 16)
+        | (u32::from(slot) << 11)
+        | (u32::from(func) << 8)
+        | u32::from(offset);
 
     let mut operations_builder = redshirt_hardware_interface::HardwareOperationsBuilder::new();
     operations_builder.port_write_u32(0xcf8, addr);
