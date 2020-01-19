@@ -16,10 +16,9 @@
 use futures::prelude::*;
 use hashbrown::HashMap;
 use network_manager::{NetworkManager, NetworkManagerEvent};
-use parity_scale_codec::DecodeAll;
 use redshirt_network_interface::ffi;
-use redshirt_syscalls::ffi::InterfaceOrDestroyed;
-use redshirt_syscalls::MessageId;
+use redshirt_syscalls::ffi::DecodedInterfaceOrDestroyed;
+use redshirt_syscalls::{Decode as _, MessageId};
 use std::{
     mem,
     net::{Ipv6Addr, SocketAddr},
@@ -28,7 +27,7 @@ use std::{
 
 fn main() {
     std::panic::set_hook(Box::new(|info| {
-        redshirt_log_interface::log(format!("Panic: {}\n", info));
+        redshirt_log_interface::log(redshirt_log_interface::Level::Error, &format!("Panic: {}", info));
     }));
 
     redshirt_syscalls::block_on(async_main())
@@ -47,8 +46,8 @@ async fn async_main() {
         let next_interface = redshirt_syscalls::next_interface_message();
         let next_net_event = Box::pin(network.next_event());
         let msg = match future::select(next_interface, next_net_event).await {
-            future::Either::Left((InterfaceOrDestroyed::Interface(msg), _)) => msg,
-            future::Either::Left((InterfaceOrDestroyed::ProcessDestroyed(_), _)) => {
+            future::Either::Left((DecodedInterfaceOrDestroyed::Interface(msg), _)) => msg,
+            future::Either::Left((DecodedInterfaceOrDestroyed::ProcessDestroyed(_), _)) => {
                 unimplemented!()
             }
             future::Either::Right((NetworkManagerEvent::EthernetCableOut(id, msg_id, mut buffer), _)) => {
@@ -63,8 +62,8 @@ async fn async_main() {
         };
 
         assert_eq!(msg.interface, ffi::INTERFACE);
-        let msg_data = ffi::TcpMessage::decode_all(&msg.actual_data).unwrap();
-        redshirt_log_interface::log(format!("message: {:?}\n", msg_data));
+        let msg_data = ffi::TcpMessage::decode(msg.actual_data).unwrap();
+        redshirt_log_interface::log(redshirt_log_interface::Level::Debug, &format!("message: {:?}", msg_data));
 
         match msg_data {
             ffi::TcpMessage::Open(open_msg) => {

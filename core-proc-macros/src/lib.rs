@@ -87,7 +87,7 @@ pub fn build_wasm_module(tokens: proc_macro::TokenStream) -> proc_macro::TokenSt
     };
 
     // Determine the path to the `.wasm` and `.d` files that Cargo will generate.
-    let (wasm_output, dependencies_output) = {
+    let (wasm_output, dependencies_output, bin_target_name) = {
         let metadata = cargo_metadata::MetadataCommand::new()
             .current_dir(&wasm_crate_path)
             .no_deps()
@@ -110,7 +110,7 @@ pub fn build_wasm_module(tokens: proc_macro::TokenStream) -> proc_macro::TokenSt
             .join("release");
         let wasm = base.join(format!("{}.wasm", bin_target.name));
         let deps = base.join(format!("{}.d", bin_target.name));
-        (wasm, deps)
+        (wasm, deps, bin_target.name.clone())
     };
 
     // Actually build the module.
@@ -118,6 +118,7 @@ pub fn build_wasm_module(tokens: proc_macro::TokenStream) -> proc_macro::TokenSt
         .arg("rustc")
         .arg("--release")
         .args(&["--target", "wasm32-unknown-unknown"])
+        .args(&["--bin", &bin_target_name])
         .arg("--")
         .args(&["-C", "link-arg=--export-table"])
         .current_dir(&wasm_crate_path)
