@@ -273,7 +273,7 @@ impl Device {
     ///
     /// Panics if the packet is too large.
     ///
-    unsafe fn send_packet(&mut self, packet: impl Into<Vec<u8>>) -> Result<(), ()> {
+    pub unsafe fn send_packet(&mut self, packet: impl Into<Vec<u8>>) -> Result<(), ()> {
         if self.pending_packet.is_some() {
             return Err(());
         }

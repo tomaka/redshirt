@@ -8,6 +8,7 @@ publish = false
 
 [dependencies]
 etherparse = "0.9.0"    # TODO: temporary for debugging; remove
+futures = "0.3.1"
 redshirt-hardware-interface = { path = "../../interfaces/hardware" }
 redshirt-log-interface = { path = "../../interfaces/log" }
 redshirt-network-interface = { path = "../../interfaces/network" }
