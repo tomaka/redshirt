@@ -34,7 +34,7 @@ pub struct Core {
     pending_events: SegQueue<CoreRunOutcome>,
 
     /// List of running processes.
-    processes: extrinsics::ProcessesCollectionExtrinsics<RefCell<Process>, ()>,
+    processes: extrinsics::ProcessesCollectionExtrinsics<RefCell<Process>, (), crate::extrinsics::NoExtrinsics, core::convert::Infallible, core::convert::Infallible>,
 
     /// List of `Pid`s that have been reserved during the construction.
     ///
@@ -73,7 +73,7 @@ pub struct CoreBuilder {
     /// See the corresponding field in `Core`.
     reserved_pids: HashSet<Pid>,
     /// Builder for the [`processes`][Core::processes] field in `Core`.
-    inner_builder: extrinsics::ProcessesCollectionExtrinsicsBuilder,
+    inner_builder: extrinsics::ProcessesCollectionExtrinsicsBuilder<crate::extrinsics::NoExtrinsics, core::convert::Infallible>,
 }
 
 /// Outcome of calling [`run`](Core::run).
@@ -159,7 +159,7 @@ struct Process {
 /// Access to a process within the core.
 pub struct CoreProcess<'a> {
     /// Access to the process within the inner collection.
-    process: extrinsics::ProcessesCollectionExtrinsicsProc<'a, RefCell<Process>, ()>,
+    process: extrinsics::ProcessesCollectionExtrinsicsProc<'a, RefCell<Process>, (), crate::extrinsics::NoExtrinsics, core::convert::Infallible, core::convert::Infallible>,
 }
 
 impl Core {
@@ -730,7 +730,7 @@ impl CoreBuilder {
 /// If any of the threads of the given process is waiting for a message to arrive, checks the
 /// queue and tries to resume said thread.
 fn try_resume_message_wait(
-    process: extrinsics::ProcessesCollectionExtrinsicsProc<RefCell<Process>, ()>,
+    process: extrinsics::ProcessesCollectionExtrinsicsProc<RefCell<Process>, (), crate::extrinsics::NoExtrinsics, core::convert::Infallible, core::convert::Infallible>,
 ) {
     // TODO: is it a good strategy to just go through threads in linear order? what about
     //       round-robin-ness instead?
@@ -746,7 +746,7 @@ fn try_resume_message_wait(
 // TODO: in order to call this function, we essentially have to put the state machine in a "bad"
 // state (message in queue and thread would accept said message); not great
 fn try_resume_message_wait_thread(
-    mut thread: extrinsics::ProcessesCollectionExtrinsicsThreadWaitMessage<RefCell<Process>, ()>,
+    mut thread: extrinsics::ProcessesCollectionExtrinsicsThreadWaitMessage<RefCell<Process>, (), crate::extrinsics::NoExtrinsics, core::convert::Infallible, core::convert::Infallible>,
 ) {
     // Try to find a message in the queue that matches something the user is waiting for.
     let mut index_in_queue = 0;
