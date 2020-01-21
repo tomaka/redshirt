@@ -124,7 +124,7 @@ pub fn block_on<T>(future: impl Future<Output = T>) -> T {
         let mut block = true;
 
         // We process in a loop all pending messages.
-        while let Some(msg) = next_message(&mut state.message_ids, block) {
+        while let Some(msg) = next_notification(&mut state.message_ids, block) {
             block = false;
 
             match msg {
@@ -210,13 +210,13 @@ struct BlockOnState {
 ///
 /// If `block` is true, then the return value is always `Some`.
 ///
-/// See the [`next_message`](crate::ffi::next_message) FFI function for the semantics of
+/// See the [`next_notification`](crate::ffi::next_notification) FFI function for the semantics of
 /// `to_poll`.
-pub(crate) fn next_message(to_poll: &mut [u64], block: bool) -> Option<DecodedMessage> {
+pub(crate) fn next_notification(to_poll: &mut [u64], block: bool) -> Option<DecodedMessage> {
     unsafe {
         let mut out = Vec::<u8>::with_capacity(32);
         loop {
-            let ret = crate::ffi::next_message(
+            let ret = crate::ffi::next_notification(
                 to_poll.as_mut_ptr(),
                 to_poll.len() as u32,
                 out.as_mut_ptr(),

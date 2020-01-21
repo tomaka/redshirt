@@ -46,7 +46,7 @@ extern "C" {
     /// When this function is being called, a "lock" is being held on the memory pointed by
     /// `to_poll` and `out`. In particular, it is invalid to modify these buffers while the
     /// function is running.
-    pub(crate) fn next_message(
+    pub(crate) fn next_notification(
         to_poll: *mut u64,
         to_poll_len: u32,
         out: *mut u8,

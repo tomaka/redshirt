@@ -26,7 +26,7 @@ use futures::prelude::*;
 ///
 /// Returns the undecoded response.
 pub fn message_response_sync_raw(msg_id: MessageId) -> EncodedMessage {
-    match crate::block_on::next_message(&mut [msg_id.into()], true).unwrap() {
+    match crate::block_on::next_notification(&mut [msg_id.into()], true).unwrap() {
         DecodedMessage::Response(m) => m.actual_data.unwrap(),
         _ => panic!(),
     }

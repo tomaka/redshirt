@@ -375,7 +375,7 @@ impl<TPud, TTud> ProcessesCollectionExtrinsics<TPud, TTud> {
                 params,
             } => {
                 debug_assert!(thread.user_data().state.is_ready_to_run());
-                let next_msg = match parse_extrinsic_next_message(&mut thread, params) {
+                let next_msg = match parse_extrinsic_next_notification(&mut thread, params) {
                     Ok(m) => m,
                     Err(_) => panic!(), // TODO:
                 };
@@ -558,7 +558,7 @@ impl Default for ProcessesCollectionExtrinsicsBuilder {
         let inner = processes::ProcessesCollectionBuilder::default()
             .with_extrinsic(
                 "redshirt",
-                "next_message",
+                "next_notification",
                 sig!((I32, I32, I32, I32, I32) -> I32),
                 Extrinsic::NextMessage,
             )
@@ -937,7 +937,7 @@ impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsThreadWaitMessage<'a, TPud, TT
     /// calling this function.
     /// - Panics if `index` is too large.
     ///
-    pub fn resume_message(self, index: usize, message: EncodedMessage) {
+    pub fn resume_notification(self, index: usize, message: EncodedMessage) {
         let mut inner = self.parent.inner.borrow_mut();
         let mut inner = inner.thread_by_id(self.tid).unwrap();
 
@@ -974,7 +974,7 @@ impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsThreadWaitMessage<'a, TPud, TT
     }
 
     /// Resume the thread, indicating that the message is too large for the provided buffer.
-    pub fn resume_message_too_big(self, message_size: usize) {
+    pub fn resume_notification_too_big(self, message_size: usize) {
         let mut inner = self.parent.inner.borrow_mut();
         let mut inner = inner.thread_by_id(self.tid).unwrap();
 
@@ -999,7 +999,7 @@ impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsThreadWaitMessage<'a, TPud, TT
     /// - Panics if [`block`](ProcessesCollectionExtrinsicsThreadWaitMessage::block) would
     /// return `true`.
     ///
-    pub fn resume_no_message(self) {
+    pub fn resume_no_notification(self) {
         let mut inner = self.parent.inner.borrow_mut();
         let mut inner = inner.thread_by_id(self.tid).unwrap();
 
@@ -1070,13 +1070,13 @@ impl LocalThreadState {
     }
 }
 
-/// Analyzes a call to `next_message` made by the given thread.
+/// Analyzes a call to `next_notification` made by the given thread.
 ///
 /// The `thread` parameter is only used in order to read memory from the process. This function
 /// has no side effect.
 ///
 /// Returns an error if the call is invalid.
-fn parse_extrinsic_next_message<TPud, TTud>(
+fn parse_extrinsic_next_notification<TPud, TTud>(
     thread: &mut processes::ProcessesCollectionThread<TPud, LocalThreadUserData<TTud>>,
     params: Vec<wasmi::RuntimeValue>,
 ) -> Result<MessageWait, ()> {

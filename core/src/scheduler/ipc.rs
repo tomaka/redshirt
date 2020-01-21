@@ -134,7 +134,7 @@ pub enum CoreRunOutcome {
 /// Additional information about a process.
 #[derive(Debug)]
 struct Process {
-    /// Messages available for retrieval by the process by calling `next_message`.
+    /// Notifications available for retrieval by the process by calling `next_notification`.
     ///
     /// Note that the [`ResponseMessage::index_in_list`](redshirt_syscalls::ffi::ResponseMessage::index_in_list)
     /// and [`InterfaceMessage::index_in_list`](redshirt_syscalls::ffi::InterfaceMessage::index_in_list) fields are
@@ -242,7 +242,7 @@ impl Core {
                                     .borrow_mut()
                                     .messages_queue
                                     .push_back(message);
-                                try_resume_message_wait(process);
+                                try_resume_notification_wait(process);
                             } // TODO: notify externals as well?
                         }
                         None => unreachable!(),
@@ -268,7 +268,7 @@ impl Core {
             }
 
             extrinsics::RunOneOutcome::ThreadWaitMessage(thread) => {
-                try_resume_message_wait_thread(thread);
+                try_resume_notification_wait_thread(thread);
                 None
             }
 
@@ -319,7 +319,7 @@ impl Core {
                                 .borrow_mut()
                                 .messages_queue
                                 .push_back(message);
-                            try_resume_message_wait(process);
+                            try_resume_notification_wait(process);
                             None
                         } else if self.reserved_pids.contains(pid) {
                             Some(CoreRunOutcome::ReservedPidInterfaceMessage {
@@ -490,7 +490,7 @@ impl Core {
         }
 
         if let Some(interface_handler_proc) = self.processes.process_by_id(process) {
-            try_resume_message_wait(interface_handler_proc);
+            try_resume_notification_wait(interface_handler_proc);
         }
 
         Ok(())
@@ -582,7 +582,7 @@ impl Core {
                 .borrow_mut()
                 .messages_queue
                 .push_back(From::from(message));
-            try_resume_message_wait(process);
+            try_resume_notification_wait(process);
         } else if self.reserved_pids.contains(&emitter_pid) {
             self.pending_events
                 .push(CoreRunOutcome::ReservedPidInterfaceMessage {
@@ -640,7 +640,7 @@ impl Core {
                     .borrow_mut()
                     .emitted_messages
                     .retain(|m| *m != message_id);
-                try_resume_message_wait(process);
+                try_resume_notification_wait(process);
                 None
             } else {
                 Some(CoreRunOutcome::MessageResponse {
@@ -729,14 +729,14 @@ impl CoreBuilder {
 
 /// If any of the threads of the given process is waiting for a message to arrive, checks the
 /// queue and tries to resume said thread.
-fn try_resume_message_wait(
+fn try_resume_notification_wait(
     process: extrinsics::ProcessesCollectionExtrinsicsProc<RefCell<Process>, ()>,
 ) {
     // TODO: is it a good strategy to just go through threads in linear order? what about
     //       round-robin-ness instead?
     for thread in process.interrupted_threads() {
         if let extrinsics::ProcessesCollectionExtrinsicsThread::WaitMessage(t) = thread {
-            try_resume_message_wait_thread(t)
+            try_resume_notification_wait_thread(t)
         }
     }
 }
@@ -745,7 +745,7 @@ fn try_resume_message_wait(
 /// said thread.
 // TODO: in order to call this function, we essentially have to put the state machine in a "bad"
 // state (message in queue and thread would accept said message); not great
-fn try_resume_message_wait_thread(
+fn try_resume_notification_wait_thread(
     mut thread: extrinsics::ProcessesCollectionExtrinsicsThreadWaitMessage<RefCell<Process>, ()>,
 ) {
     // Try to find a message in the queue that matches something the user is waiting for.
@@ -754,7 +754,7 @@ fn try_resume_message_wait_thread(
         if index_in_queue >= thread.process_user_data().borrow_mut().messages_queue.len() {
             // No message found.
             if !thread.block() {
-                thread.resume_no_message();
+                thread.resume_no_notification();
             }
             return;
         }
@@ -794,8 +794,8 @@ fn try_resume_message_wait_thread(
         // Adjust the `index_in_list` field of the message to match what we have.
         message.set_index_in_list(u32::try_from(index_in_msg_ids).unwrap());
         // TODO: crappy to pass an EncodedMessage
-        thread.resume_message(index_in_msg_ids, EncodedMessage(message.into_bytes()))
+        thread.resume_notification(index_in_msg_ids, EncodedMessage(message.into_bytes()))
     } else {
-        thread.resume_message_too_big(message_length)
+        thread.resume_notification_too_big(message_length)
     }
 }
