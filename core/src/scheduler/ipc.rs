@@ -430,7 +430,11 @@ impl Core {
             ));
 
             match self.processes.process_by_id(process) {
-                Some(p) => p.user_data().borrow_mut().notifications_queue.push_back(notif),
+                Some(p) => p
+                    .user_data()
+                    .borrow_mut()
+                    .notifications_queue
+                    .push_back(notif),
                 None => unreachable!(),
             }
         }
@@ -746,12 +750,21 @@ fn try_resume_notification_wait(
 // TODO: in order to call this function, we essentially have to put the state machine in a "bad"
 // state (notifications in queue and thread would accept said notification); not great
 fn try_resume_notification_wait_thread(
-    mut thread: extrinsics::ProcessesCollectionExtrinsicsThreadWaitNotification<RefCell<Process>, ()>,
+    mut thread: extrinsics::ProcessesCollectionExtrinsicsThreadWaitNotification<
+        RefCell<Process>,
+        (),
+    >,
 ) {
     // Try to find a notification in the queue that matches something the user is waiting for.
     let mut index_in_queue = 0;
     let index_in_msg_ids = loop {
-        if index_in_queue >= thread.process_user_data().borrow_mut().notifications_queue.len() {
+        if index_in_queue
+            >= thread
+                .process_user_data()
+                .borrow_mut()
+                .notifications_queue
+                .len()
+        {
             // No notification found.
             if !thread.block() {
                 thread.resume_no_notification();
@@ -760,7 +773,9 @@ fn try_resume_notification_wait_thread(
         }
 
         // For that notification in queue, grab the value that must be in `msg_ids` in order to match.
-        let msg_id = match &thread.process_user_data().borrow_mut().notifications_queue[index_in_queue] {
+        let msg_id = match &thread.process_user_data().borrow_mut().notifications_queue
+            [index_in_queue]
+        {
             redshirt_syscalls::ffi::NotificationBuilder::Interface(_) => MessageId::from(1),
             redshirt_syscalls::ffi::NotificationBuilder::ProcessDestroyed(_) => MessageId::from(1),
             redshirt_syscalls::ffi::NotificationBuilder::Response(response) => {

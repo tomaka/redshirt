@@ -383,12 +383,14 @@ impl<TPud, TTud> ProcessesCollectionExtrinsics<TPud, TTud> {
                 thread.user_data().state = LocalThreadState::NotificationWait(next_msg);
                 let process_user_data = thread.process_user_data().external_user_data.clone();
                 let thread_user_data = thread.user_data().external_user_data.take().unwrap();
-                RunOneOutcome::ThreadWaitNotification(ProcessesCollectionExtrinsicsThreadWaitNotification {
-                    parent: self,
-                    tid: thread.tid(),
-                    process_user_data,
-                    thread_user_data: Some(thread_user_data),
-                })
+                RunOneOutcome::ThreadWaitNotification(
+                    ProcessesCollectionExtrinsicsThreadWaitNotification {
+                        parent: self,
+                        tid: thread.tid(),
+                        process_user_data,
+                        thread_user_data: Some(thread_user_data),
+                    },
+                )
             }
 
             processes::RunOneOutcome::Interrupted {
@@ -543,12 +545,14 @@ impl<TPud, TTud> ProcessesCollectionExtrinsics<TPud, TTud> {
                 let process_user_data = inner.process_user_data().external_user_data.clone();
                 let thread_user_data = inner.user_data().external_user_data.take().unwrap();
 
-                Ok(From::from(ProcessesCollectionExtrinsicsThreadWaitNotification {
-                    parent: self,
-                    tid: id,
-                    process_user_data,
-                    thread_user_data: Some(thread_user_data),
-                }))
+                Ok(From::from(
+                    ProcessesCollectionExtrinsicsThreadWaitNotification {
+                        parent: self,
+                        tid: id,
+                        process_user_data,
+                        thread_user_data: Some(thread_user_data),
+                    },
+                ))
             }
         }
     }
@@ -899,7 +903,11 @@ impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsThreadWaitNotification<'a, TPu
 
         if let LocalThreadState::NotificationWait(ref wait) = inner.user_data().state {
             // TODO: annoying allocation
-            wait.notifs_ids.iter().cloned().collect::<Vec<_>>().into_iter()
+            wait.notifs_ids
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>()
+                .into_iter()
         } else {
             unreachable!()
         }
@@ -1050,7 +1058,8 @@ impl<'a, TPud, TTud> Drop for ProcessesCollectionExtrinsicsThreadWaitNotificatio
     }
 }
 
-impl<'a, TPud, TTud> fmt::Debug for ProcessesCollectionExtrinsicsThreadWaitNotification<'a, TPud, TTud>
+impl<'a, TPud, TTud> fmt::Debug
+    for ProcessesCollectionExtrinsicsThreadWaitNotification<'a, TPud, TTud>
 where
     TPud: fmt::Debug,
     TTud: fmt::Debug,

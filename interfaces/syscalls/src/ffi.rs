@@ -207,7 +207,9 @@ pub fn decode_notification(buffer: &[u8]) -> Result<DecodedNotification, ()> {
     match buffer[0] {
         0 => decode_interface_notification(buffer).map(DecodedNotification::Interface),
         1 => decode_response_notification(buffer).map(DecodedNotification::Response),
-        2 => decode_process_destroyed_notification(buffer).map(DecodedNotification::ProcessDestroyed),
+        2 => {
+            decode_process_destroyed_notification(buffer).map(DecodedNotification::ProcessDestroyed)
+        }
         _ => Err(()),
     }
 }
