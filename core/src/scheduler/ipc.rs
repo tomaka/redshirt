@@ -140,7 +140,7 @@ struct Process {
     /// and [`InterfaceMessage::index_in_list`](redshirt_syscalls::ffi::InterfaceMessage::index_in_list) fields are
     /// set to a dummy value, and must be filled before actually delivering the message.
     // TODO: call shrink_to_fit from time to time
-    messages_queue: VecDeque<redshirt_syscalls::ffi::NotificationBuilder>,
+    notifications_queue: VecDeque<redshirt_syscalls::ffi::NotificationBuilder>,
 
     /// Interfaces that the process has registered.
     registered_interfaces: SmallVec<[InterfaceHash; 1]>,
@@ -240,7 +240,7 @@ impl Core {
                                 process
                                     .user_data()
                                     .borrow_mut()
-                                    .messages_queue
+                                    .notifications_queue
                                     .push_back(message);
                                 try_resume_notification_wait(process);
                             } // TODO: notify externals as well?
@@ -267,7 +267,7 @@ impl Core {
                 None
             }
 
-            extrinsics::RunOneOutcome::ThreadWaitMessage(thread) => {
+            extrinsics::RunOneOutcome::ThreadWaitNotification(thread) => {
                 try_resume_notification_wait_thread(thread);
                 None
             }
@@ -317,7 +317,7 @@ impl Core {
                             process
                                 .user_data()
                                 .borrow_mut()
-                                .messages_queue
+                                .notifications_queue
                                 .push_back(message);
                             try_resume_notification_wait(process);
                             None
@@ -430,7 +430,7 @@ impl Core {
             ));
 
             match self.processes.process_by_id(process) {
-                Some(p) => p.user_data().borrow_mut().messages_queue.push_back(message),
+                Some(p) => p.user_data().borrow_mut().notifications_queue.push_back(message),
                 None => unreachable!(),
             }
         }
@@ -475,7 +475,7 @@ impl Core {
                 interface_handler_proc
                     .user_data()
                     .borrow_mut()
-                    .messages_queue
+                    .notifications_queue
                     .push_back(message);
             } else {
                 debug_assert!(self.reserved_pids.contains(&process));
@@ -580,7 +580,7 @@ impl Core {
             process
                 .user_data()
                 .borrow_mut()
-                .messages_queue
+                .notifications_queue
                 .push_back(From::from(message));
             try_resume_notification_wait(process);
         } else if self.reserved_pids.contains(&emitter_pid) {
@@ -633,7 +633,7 @@ impl Core {
                 process
                     .user_data()
                     .borrow_mut()
-                    .messages_queue
+                    .notifications_queue
                     .push_back(actual_message);
                 process
                     .user_data()
@@ -659,7 +659,7 @@ impl Core {
     /// Each import of the [`Module`](crate::module::Module) is resolved.
     pub fn execute(&self, module: &Module) -> Result<CoreProcess, vm::NewErr> {
         let proc_metadata = Process {
-            messages_queue: VecDeque::new(),
+            notifications_queue: VecDeque::new(),
             registered_interfaces: SmallVec::new(),
             used_interfaces: HashSet::new(),
             emitted_messages: SmallVec::new(),
@@ -735,7 +735,7 @@ fn try_resume_notification_wait(
     // TODO: is it a good strategy to just go through threads in linear order? what about
     //       round-robin-ness instead?
     for thread in process.interrupted_threads() {
-        if let extrinsics::ProcessesCollectionExtrinsicsThread::WaitMessage(t) = thread {
+        if let extrinsics::ProcessesCollectionExtrinsicsThread::WaitNotification(t) = thread {
             try_resume_notification_wait_thread(t)
         }
     }
@@ -746,12 +746,12 @@ fn try_resume_notification_wait(
 // TODO: in order to call this function, we essentially have to put the state machine in a "bad"
 // state (message in queue and thread would accept said message); not great
 fn try_resume_notification_wait_thread(
-    mut thread: extrinsics::ProcessesCollectionExtrinsicsThreadWaitMessage<RefCell<Process>, ()>,
+    mut thread: extrinsics::ProcessesCollectionExtrinsicsThreadWaitNotification<RefCell<Process>, ()>,
 ) {
     // Try to find a message in the queue that matches something the user is waiting for.
     let mut index_in_queue = 0;
     let index_in_msg_ids = loop {
-        if index_in_queue >= thread.process_user_data().borrow_mut().messages_queue.len() {
+        if index_in_queue >= thread.process_user_data().borrow_mut().notifications_queue.len() {
             // No message found.
             if !thread.block() {
                 thread.resume_no_notification();
@@ -760,7 +760,7 @@ fn try_resume_notification_wait_thread(
         }
 
         // For that message in queue, grab the value that must be in `msg_ids` in order to match.
-        let msg_id = match &thread.process_user_data().borrow_mut().messages_queue[index_in_queue] {
+        let msg_id = match &thread.process_user_data().borrow_mut().notifications_queue[index_in_queue] {
             redshirt_syscalls::ffi::NotificationBuilder::Interface(_) => MessageId::from(1),
             redshirt_syscalls::ffi::NotificationBuilder::ProcessDestroyed(_) => MessageId::from(1),
             redshirt_syscalls::ffi::NotificationBuilder::Response(response) => {
@@ -778,16 +778,16 @@ fn try_resume_notification_wait_thread(
 
     // If we reach here, we have found a message that matches what the user wants.
 
-    let message_length =
-        thread.process_user_data().borrow_mut().messages_queue[index_in_queue].len();
+    let notif_length =
+        thread.process_user_data().borrow_mut().notifications_queue[index_in_queue].len();
 
     // TODO: maybe extrinsics could have some API shortcut here
-    if message_length <= thread.allowed_message_size() {
+    if notif_length <= thread.allowed_notification_size() {
         // Pop the message from the queue, so that we don't deliver it twice.
         let mut message = thread
             .process_user_data()
             .borrow_mut()
-            .messages_queue
+            .notifications_queue
             .remove(index_in_queue)
             .unwrap();
 
@@ -796,6 +796,6 @@ fn try_resume_notification_wait_thread(
         // TODO: crappy to pass an EncodedMessage
         thread.resume_notification(index_in_msg_ids, EncodedMessage(message.into_bytes()))
     } else {
-        thread.resume_notification_too_big(message_length)
+        thread.resume_notification_too_big(notif_length)
     }
 }
