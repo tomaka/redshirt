@@ -90,7 +90,7 @@ to get in touch if you want to contribute anything non-trivial.
   "execute /usr/bin/foo". Instead you say "execute A45d9a21c3a7". The WASM binary, if it doesn't
   exist locally, is fetched from a peer-to-peer network similar to IPFS.
 
-- There exists 3 core syscalls (send a message, send an answer, wait for a message), and
+- There exists 3 core syscalls (send a message, send an answer, wait for a notification), and
   everything else is done by passing messages between processes or between a process and the
   "kernel". Programs don't know who they are sending the message to.
 
