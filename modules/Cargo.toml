@@ -23,5 +23,6 @@ codegen-units = 1
 panic = 'abort'
 
 [patch.crates-io]
+getrandom = { path = "./third-party/getrandom" }
 time = { path = "./third-party/time" }
 wasm-timer = { path = "./third-party/wasm-timer" }

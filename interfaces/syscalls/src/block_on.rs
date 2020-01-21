@@ -44,6 +44,7 @@ use core::{
 };
 use futures::{prelude::*, task};
 use hashbrown::HashMap;
+use nohash_hasher::BuildNoHashHasher;
 use spin::Mutex;
 
 /// Registers a message ID (or 1 for interface messages) and a waker. The `block_on` function will
@@ -174,7 +175,7 @@ lazy_static::lazy_static! {
         Mutex::new(BlockOnState {
             message_ids: Vec::new(),
             wakers: Vec::new(),
-            pending_messages: HashMap::with_capacity(6),
+            pending_messages: HashMap::with_capacity_and_hasher(6, Default::default()),
             interface_messages_queue: VecDeque::with_capacity(2),
         })
     };
@@ -198,7 +199,7 @@ struct BlockOnState {
     /// > **Note**: We have to maintain this queue as a global variable rather than a per-future
     /// >           channel, otherwise dropping a `Future` would silently drop messages that have
     /// >           already been received.
-    pending_messages: HashMap<MessageId, DecodedResponseNotification>,
+    pending_messages: HashMap<MessageId, DecodedResponseNotification, BuildNoHashHasher<u64>>,
 
     /// Queue of interface messages waiting to be delivered.
     ///
