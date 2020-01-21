@@ -19,7 +19,7 @@ metadata:
   name: p2p-loader-private-key
 type: Opaque
 data:
-  private_key: cCzPG7dMwMIOJ25gBUFgC1cooYQmiZ54HKfzH2W8AmQ=   # TODO: that's not exactly "secret"
+  private_key: Y0N6UEc3ZE13TUlPSjI1Z0JVRmdDMWNvb1lRbWlaNTRIS2Z6SDJXOEFtUT0=   # TODO: that's not exactly "secret"
 ---
 apiVersion: apps/v1
 kind: Deployment # TODO: shouldn't that be a StatefulSet?
