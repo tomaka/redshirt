@@ -7,7 +7,7 @@ edition = "2018"
 build = "build/main.rs"
 
 [dependencies]
-hashbrown = "0.6.0"
+hashbrown = { version = "0.6.0", default-features = false }
 redshirt-syscalls = { path = "../syscalls" }
 parity-scale-codec = "1.0.5"
 
