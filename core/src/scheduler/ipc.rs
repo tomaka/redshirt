@@ -136,7 +136,7 @@ pub enum CoreRunOutcome {
 struct Process {
     /// Notifications available for retrieval by the process by calling `next_notification`.
     ///
-    /// Note that the [`ResponseMessage::index_in_list`](redshirt_syscalls::ffi::ResponseMessage::index_in_list)
+    /// Note that the [`ResponseNotification::index_in_list`](redshirt_syscalls::ffi::ResponseNotification::index_in_list)
     /// and [`InterfaceMessage::index_in_list`](redshirt_syscalls::ffi::InterfaceMessage::index_in_list) fields are
     /// set to a dummy value, and must be filled before actually delivering the notification.
     // TODO: call shrink_to_fit from time to time
