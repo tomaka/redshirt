@@ -13,7 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use p2p_loader::Network;
+use p2p_loader::{Network, NetworkConfig};
+use std::env;
 
 #[cfg(target_arch = "wasm32")]
 fn main() {
@@ -28,7 +29,19 @@ fn main() {
 }
 
 async fn async_main() {
-    let mut network = Network::<std::convert::Infallible>::start(); // TODO: use `!`
+    let config = NetworkConfig {
+        private_key: if let Ok(key) = env::var("PRIVATE_KEY") {
+            let bytes = base64::decode(&key).unwrap();
+            assert_eq!(bytes.len(), 32);
+            let mut out = [0; 32];
+            out.copy_from_slice(&bytes);
+            Some(out)
+        } else {
+            None
+        },
+    };
+
+    let mut network = Network::<std::convert::Infallible>::start(config); // TODO: use `!`
 
     loop {
         let _ = network.next_event().await;

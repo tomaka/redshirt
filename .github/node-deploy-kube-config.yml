@@ -13,6 +13,14 @@ spec:
       port: 30333
       targetPort: 30333
 ---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: p2p-loader-private-key
+type: Opaque
+data:
+  private_key: cCzPG7dMwMIOJ25gBUFgC1cooYQmiZ54HKfzH2W8AmQ=   # TODO: that's not exactly "secret"
+---
 apiVersion: apps/v1
 kind: Deployment # TODO: shouldn't that be a StatefulSet?
 metadata:
@@ -37,6 +45,11 @@ spec:
         env:
         - name: RUST_LOG
           value: p2p_loader=TRACE
+        - name: PRIVATE_KEY
+          valueFrom:
+            secretKeyRef:
+              name: p2p-loader-private-key # TODO: we need one key per node :facepalm:
+              key: private_key
         ports:
         - containerPort: 30333
           protocol: TCP
