@@ -24,8 +24,7 @@ fn main() {
             .await
             .unwrap();
 
-        // TODO: log::info! doesn't work; https://github.com/tomaka/redshirt/issues/247
-        redshirt_log_interface::log(redshirt_log_interface::Level::Info, "Now listening on 0.0.0.0:8000");
+        log::info!("Now listening on 0.0.0.0:8000");
 
         let stream = stream::unfold(listener, |mut l| {
             async move {
