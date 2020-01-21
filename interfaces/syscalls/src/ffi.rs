@@ -125,59 +125,59 @@ extern "C" {
 
 /// Prototype for a message.
 #[derive(Debug, Clone)]
-pub enum MessageBuilder {
+pub enum NotificationBuilder {
     /// Prototype for an interface message.
-    Interface(InterfaceMessageBuilder),
+    Interface(InterfaceNotificationBuilder),
     /// Prototype for a response message.
-    Response(ResponseMessageBuilder),
+    Response(ResponseNotificationBuilder),
     /// Prototype for a process destroyed message.
-    ProcessDestroyed(ProcessDestroyedMessageBuilder),
+    ProcessDestroyed(ProcessDestroyedNotificationBuilder),
 }
 
-impl MessageBuilder {
+impl NotificationBuilder {
     /// Returns the length in bytes of the constructed message.
     pub fn len(&self) -> usize {
         match self {
-            MessageBuilder::Interface(msg) => msg.len(),
-            MessageBuilder::Response(msg) => msg.len(),
-            MessageBuilder::ProcessDestroyed(msg) => msg.len(),
+            NotificationBuilder::Interface(msg) => msg.len(),
+            NotificationBuilder::Response(msg) => msg.len(),
+            NotificationBuilder::ProcessDestroyed(msg) => msg.len(),
         }
     }
 
     // TODO: change to a more strongly typed API
     pub fn into_bytes(self) -> Vec<u8> {
         match self {
-            MessageBuilder::Interface(msg) => msg.into_bytes(),
-            MessageBuilder::Response(msg) => msg.into_bytes(),
-            MessageBuilder::ProcessDestroyed(msg) => msg.into_bytes(),
+            NotificationBuilder::Interface(msg) => msg.into_bytes(),
+            NotificationBuilder::Response(msg) => msg.into_bytes(),
+            NotificationBuilder::ProcessDestroyed(msg) => msg.into_bytes(),
         }
     }
 
     /// Modifies the `index_in_list` field of the message in construction.
     pub fn set_index_in_list(&mut self, value: u32) {
         match self {
-            MessageBuilder::Interface(msg) => msg.set_index_in_list(value),
-            MessageBuilder::Response(msg) => msg.set_index_in_list(value),
-            MessageBuilder::ProcessDestroyed(msg) => msg.set_index_in_list(value),
+            NotificationBuilder::Interface(msg) => msg.set_index_in_list(value),
+            NotificationBuilder::Response(msg) => msg.set_index_in_list(value),
+            NotificationBuilder::ProcessDestroyed(msg) => msg.set_index_in_list(value),
         }
     }
 }
 
-impl From<InterfaceMessageBuilder> for MessageBuilder {
-    fn from(msg: InterfaceMessageBuilder) -> MessageBuilder {
-        MessageBuilder::Interface(msg)
+impl From<InterfaceNotificationBuilder> for NotificationBuilder {
+    fn from(msg: InterfaceNotificationBuilder) -> NotificationBuilder {
+        NotificationBuilder::Interface(msg)
     }
 }
 
-impl From<ResponseMessageBuilder> for MessageBuilder {
-    fn from(msg: ResponseMessageBuilder) -> MessageBuilder {
-        MessageBuilder::Response(msg)
+impl From<ResponseNotificationBuilder> for NotificationBuilder {
+    fn from(msg: ResponseNotificationBuilder) -> NotificationBuilder {
+        NotificationBuilder::Response(msg)
     }
 }
 
-impl From<ProcessDestroyedMessageBuilder> for MessageBuilder {
-    fn from(msg: ProcessDestroyedMessageBuilder) -> MessageBuilder {
-        MessageBuilder::ProcessDestroyed(msg)
+impl From<ProcessDestroyedNotificationBuilder> for NotificationBuilder {
+    fn from(msg: ProcessDestroyedNotificationBuilder) -> NotificationBuilder {
+        NotificationBuilder::ProcessDestroyed(msg)
     }
 }
 
@@ -227,7 +227,7 @@ pub fn build_interface_message(
     emitter_pid: Pid,
     index_in_list: u32,
     actual_data: &EncodedMessage,
-) -> InterfaceMessageBuilder {
+) -> InterfaceNotificationBuilder {
     let mut buffer = Vec::with_capacity(1 + 32 + 8 + 8 + 4 + actual_data.0.len());
     buffer.push(0);
     buffer.extend_from_slice(&interface.0);
@@ -237,15 +237,15 @@ pub fn build_interface_message(
     buffer.extend_from_slice(&actual_data.0);
 
     debug_assert_eq!(buffer.capacity(), buffer.len());
-    InterfaceMessageBuilder { data: buffer }
+    InterfaceNotificationBuilder { data: buffer }
 }
 
 #[derive(Debug, Clone)]
-pub struct InterfaceMessageBuilder {
+pub struct InterfaceNotificationBuilder {
     data: Vec<u8>,
 }
 
-impl InterfaceMessageBuilder {
+impl InterfaceNotificationBuilder {
     /// Updates the `index_in_list` field of the message.
     pub fn set_index_in_list(&mut self, value: u32) {
         self.data[49..53].copy_from_slice(&value.to_le_bytes());
@@ -316,7 +316,7 @@ pub fn build_response_message(
     message_id: MessageId,
     index_in_list: u32,
     actual_data: Result<&EncodedMessage, ()>,
-) -> ResponseMessageBuilder {
+) -> ResponseNotificationBuilder {
     let mut buffer =
         Vec::with_capacity(1 + 8 + 4 + 1 + actual_data.map(|m| m.0.len()).unwrap_or(0));
     buffer.push(1);
@@ -330,15 +330,15 @@ pub fn build_response_message(
     }
 
     debug_assert_eq!(buffer.capacity(), buffer.len());
-    ResponseMessageBuilder { data: buffer }
+    ResponseNotificationBuilder { data: buffer }
 }
 
 #[derive(Debug, Clone)]
-pub struct ResponseMessageBuilder {
+pub struct ResponseNotificationBuilder {
     data: Vec<u8>,
 }
 
-impl ResponseMessageBuilder {
+impl ResponseNotificationBuilder {
     /// Updates the `index_in_list` field of the message.
     pub fn set_index_in_list(&mut self, value: u32) {
         self.data[9..13].copy_from_slice(&value.to_le_bytes());
@@ -412,22 +412,22 @@ pub struct DecodedResponseMessage {
 pub fn build_process_destroyed_message(
     pid: Pid,
     index_in_list: u32,
-) -> ProcessDestroyedMessageBuilder {
+) -> ProcessDestroyedNotificationBuilder {
     let mut buffer = Vec::with_capacity(1 + 8 + 4);
     buffer.push(2);
     buffer.extend_from_slice(&u64::from(pid).to_le_bytes());
     buffer.extend_from_slice(&index_in_list.to_le_bytes());
 
     debug_assert_eq!(buffer.capacity(), buffer.len());
-    ProcessDestroyedMessageBuilder { data: buffer }
+    ProcessDestroyedNotificationBuilder { data: buffer }
 }
 
 #[derive(Debug, Clone)]
-pub struct ProcessDestroyedMessageBuilder {
+pub struct ProcessDestroyedNotificationBuilder {
     data: Vec<u8>,
 }
 
-impl ProcessDestroyedMessageBuilder {
+impl ProcessDestroyedNotificationBuilder {
     /// Updates the `index_in_list` field of the message.
     pub fn set_index_in_list(&mut self, value: u32) {
         self.data[9..13].copy_from_slice(&value.to_le_bytes());

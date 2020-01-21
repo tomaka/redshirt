@@ -140,7 +140,7 @@ struct Process {
     /// and [`InterfaceMessage::index_in_list`](redshirt_syscalls::ffi::InterfaceMessage::index_in_list) fields are
     /// set to a dummy value, and must be filled before actually delivering the message.
     // TODO: call shrink_to_fit from time to time
-    messages_queue: VecDeque<redshirt_syscalls::ffi::MessageBuilder>,
+    messages_queue: VecDeque<redshirt_syscalls::ffi::NotificationBuilder>,
 
     /// Interfaces that the process has registered.
     registered_interfaces: SmallVec<[InterfaceHash; 1]>,
@@ -761,9 +761,9 @@ fn try_resume_message_wait_thread(
 
         // For that message in queue, grab the value that must be in `msg_ids` in order to match.
         let msg_id = match &thread.process_user_data().borrow_mut().messages_queue[index_in_queue] {
-            redshirt_syscalls::ffi::MessageBuilder::Interface(_) => MessageId::from(1),
-            redshirt_syscalls::ffi::MessageBuilder::ProcessDestroyed(_) => MessageId::from(1),
-            redshirt_syscalls::ffi::MessageBuilder::Response(response) => {
+            redshirt_syscalls::ffi::NotificationBuilder::Interface(_) => MessageId::from(1),
+            redshirt_syscalls::ffi::NotificationBuilder::ProcessDestroyed(_) => MessageId::from(1),
+            redshirt_syscalls::ffi::NotificationBuilder::Response(response) => {
                 debug_assert!(u64::from(response.message_id()) >= 2);
                 response.message_id()
             }
