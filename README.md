@@ -118,11 +118,3 @@ to get in touch if you want to contribute anything non-trivial.
 
 - The programs loader is itself just an interface handler. In other words, when the kernel wants to
   start a program, it sends an IPC message to a process that then returns the WASM bytecode.
-
-# Current state
-
-- Futures are working.
-- WASM programs can use TCP/IP, but the implementation is very hacky.
-- Building the IPFS-like network is currently blocked due to the lack of Rust ECDH library that compiles for WASM.
-  The plan is to bypass this problem by not using encryption.
-- There is a freestanding version of the kernel for the bare metal for x86_64.
