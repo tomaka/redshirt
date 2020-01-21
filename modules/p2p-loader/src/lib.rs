@@ -56,11 +56,23 @@ pub enum NetworkEvent<T> {
     },
 }
 
+/// Configuration of a [`Network`].
+pub struct NetworkConfig {
+    /// Hardcoded private key, or `None` to generate one automatically.
+    pub private_key: Option<[u8; 32]>,
+}
+
 impl<T> Network<T> {
     /// Initializes the network.
-    pub fn start() -> Network<T> {
-        let local_keypair = identity::Keypair::generate_ed25519();
+    pub fn start(config: NetworkConfig) -> Network<T> {
+        let local_keypair = if let Some(mut private_key) = config.private_key {
+            let key = identity::ed25519::SecretKey::from_bytes(&mut private_key).unwrap();
+            identity::Keypair::Ed25519(From::from(key))
+        } else {
+            identity::Keypair::generate_ed25519()
+        };
         let local_peer_id = local_keypair.public().into_peer_id();
+        log::info!("Local peer id: {}", local_peer_id);
 
         let transport = TcpConfig::default()
             .upgrade(upgrade::Version::V1)
@@ -90,7 +102,7 @@ impl<T> Network<T> {
 
         // Bootnode.
         swarm.add_address(
-            &"QmfR3LRERsUu6LeEX3XqhykWGqY7Mj49u4yQoMiXuH8ijm" // TODO: wrong; changes at each restart
+            &"Qmc25MQxSxbUpU49bZ7RVEqgBJPB3SrjG8WVycU3KC7xYP"
                 .parse()
                 .unwrap(),
             "/ip4/138.68.126.243/tcp/30333".parse().unwrap(),
@@ -126,6 +138,14 @@ impl<T> Network<T> {
                 SwarmEvent::UnreachableAddr { .. } => {}
                 SwarmEvent::StartConnect(_) => {}
             }
+        }
+    }
+}
+
+impl Default for NetworkConfig {
+    fn default() -> Self {
+        NetworkConfig {
+            private_key: None,
         }
     }
 }
