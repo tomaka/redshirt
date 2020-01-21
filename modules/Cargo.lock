@@ -746,6 +746,7 @@ version = "0.1.0"
 dependencies = [
  "futures 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "hyper 0.13.0-alpha.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "redshirt-log-interface 0.1.0",
  "redshirt-syscalls 0.1.0",
  "redshirt-tcp-interface 0.1.0",

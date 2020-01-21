@@ -14,6 +14,7 @@ redshirt-core = { path = "../../core" }
 redshirt-log-hosted = { path = "../hosted-log" }
 redshirt-log-interface = { path = "../../interfaces/log" }
 redshirt-syscalls = { path = "../../interfaces/syscalls" }
+redshirt-tcp-hosted = { path = "../hosted-tcp" }
 redshirt-tcp-interface = { path = "../../interfaces/tcp" }
 redshirt-time-hosted = { path = "../hosted-time" }
 redshirt-time-interface = { path = "../../interfaces/time" }

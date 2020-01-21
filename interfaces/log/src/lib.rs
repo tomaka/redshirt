@@ -61,7 +61,11 @@ pub fn log(level: Level, msg: &str) {
 /// initialized a global logger.
 pub fn try_init() -> Result<(), log::SetLoggerError> {
     static LOGGER: GlobalLogger = GlobalLogger;
-    log::set_logger(&LOGGER)
+    let res = log::set_logger(&LOGGER);
+    if res.is_ok() {
+        log::set_max_level(log::LevelFilter::Trace);
+    }
+    res
 }
 
 /// Initializes the global logger.
@@ -93,13 +97,7 @@ impl log::Log for GlobalLogger {
             log::Level::Trace => Level::Trace,
         };
 
-        let message = format!(
-            "{}:{} -- {}",
-            record.level(),
-            record.target(),
-            record.args()
-        );
-
+        let message = format!("{} -- {}", record.target(), record.args());
         log(level, &message)
     }
 
