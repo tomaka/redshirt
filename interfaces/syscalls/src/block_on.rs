@@ -34,7 +34,7 @@
 //!   Repeat until the `Future` has ended.
 //!
 
-use crate::{ffi, DecodedInterfaceOrDestroyed, DecodedMessage, DecodedResponseMessage, MessageId};
+use crate::{ffi, DecodedInterfaceOrDestroyed, DecodedNotification, DecodedResponseNotification, MessageId};
 use alloc::{collections::VecDeque, sync::Arc, vec::Vec};
 use core::{
     sync::atomic::{AtomicBool, Ordering},
@@ -75,7 +75,7 @@ pub(crate) fn peek_interface_message() -> Option<DecodedInterfaceOrDestroyed> {
 }
 
 /// If a response to this message ID has previously been obtained, extracts it for processing.
-pub(crate) fn peek_response(msg_id: MessageId) -> Option<DecodedResponseMessage> {
+pub(crate) fn peek_response(msg_id: MessageId) -> Option<DecodedResponseNotification> {
     let mut state = (&*STATE).lock();
     state.pending_messages.remove(&msg_id)
 }
@@ -128,7 +128,7 @@ pub fn block_on<T>(future: impl Future<Output = T>) -> T {
             block = false;
 
             match msg {
-                DecodedMessage::Response(msg) => {
+                DecodedNotification::Response(msg) => {
                     let _was_in = state.message_ids.remove(msg.index_in_list as usize);
                     debug_assert_eq!(_was_in, 0); // Value is zero-ed by the kernel.
 
@@ -138,7 +138,7 @@ pub fn block_on<T>(future: impl Future<Output = T>) -> T {
                     let _was_in = state.pending_messages.insert(msg.message_id, msg);
                     debug_assert!(_was_in.is_none());
                 }
-                DecodedMessage::Interface(msg) => {
+                DecodedNotification::Interface(msg) => {
                     let _was_in = state.message_ids.remove(msg.index_in_list as usize);
                     debug_assert_eq!(_was_in, 0); // Value is zero-ed by the kernel.
 
@@ -148,7 +148,7 @@ pub fn block_on<T>(future: impl Future<Output = T>) -> T {
                     let msg = DecodedInterfaceOrDestroyed::Interface(msg);
                     state.interface_messages_queue.push_back(msg);
                 }
-                DecodedMessage::ProcessDestroyed(msg) => {
+                DecodedNotification::ProcessDestroyed(msg) => {
                     let _was_in = state.message_ids.remove(msg.index_in_list as usize);
                     debug_assert_eq!(_was_in, 0); // Value is zero-ed by the kernel.
 
@@ -196,7 +196,7 @@ struct BlockOnState {
     /// > **Note**: We have to maintain this queue as a global variable rather than a per-future
     /// >           channel, otherwise dropping a `Future` would silently drop messages that have
     /// >           already been received.
-    pending_messages: HashMap<MessageId, DecodedResponseMessage>,
+    pending_messages: HashMap<MessageId, DecodedResponseNotification>,
 
     /// Queue of interface messages waiting to be delivered.
     ///
@@ -212,7 +212,7 @@ struct BlockOnState {
 ///
 /// See the [`next_notification`](crate::ffi::next_notification) FFI function for the semantics of
 /// `to_poll`.
-pub(crate) fn next_notification(to_poll: &mut [u64], block: bool) -> Option<DecodedMessage> {
+pub(crate) fn next_notification(to_poll: &mut [u64], block: bool) -> Option<DecodedNotification> {
     unsafe {
         let mut out = Vec::<u8>::with_capacity(32);
         loop {
@@ -231,7 +231,7 @@ pub(crate) fn next_notification(to_poll: &mut [u64], block: bool) -> Option<Deco
                 continue;
             }
             out.set_len(ret);
-            return Some(ffi::decode_message(&out).unwrap());
+            return Some(ffi::decode_notification(&out).unwrap());
         }
     }
 }

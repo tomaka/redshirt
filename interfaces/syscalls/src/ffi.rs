@@ -183,45 +183,45 @@ impl From<ProcessDestroyedNotificationBuilder> for NotificationBuilder {
 
 /// Message received from the kernel.
 #[derive(Debug, Clone)]
-pub enum DecodedMessage {
-    /// Interface mesage.
-    Interface(DecodedInterfaceMessage),
-    /// Response message.
-    Response(DecodedResponseMessage),
-    /// Process destroyed message.
+pub enum DecodedNotification {
+    /// Interface notification.
+    Interface(DecodedInterfaceNotification),
+    /// Response notification.
+    Response(DecodedResponseNotification),
+    /// Process destroyed notification.
     ///
     /// Whenever a process that has emitted events on one of our interfaces stops, a
-    /// `ProcessDestroyed` message is sent.
-    ProcessDestroyed(DecodedProcessDestroyedMessage),
+    /// `ProcessDestroyed` notification is sent.
+    ProcessDestroyed(DecodedProcessDestroyedNotification),
 }
 
 // TODO: all the decoding performs unaligned reads, which isn't great
 
-/// Attempt to decode a message.
-pub fn decode_message(buffer: &[u8]) -> Result<DecodedMessage, ()> {
+/// Attempt to decode a notification.
+pub fn decode_notification(buffer: &[u8]) -> Result<DecodedNotification, ()> {
     if buffer.is_empty() {
         return Err(());
     }
 
     match buffer[0] {
-        0 => decode_interface_message(buffer).map(DecodedMessage::Interface),
-        1 => decode_response_message(buffer).map(DecodedMessage::Response),
-        2 => decode_process_destroyed_message(buffer).map(DecodedMessage::ProcessDestroyed),
+        0 => decode_interface_notification(buffer).map(DecodedNotification::Interface),
+        1 => decode_response_notification(buffer).map(DecodedNotification::Response),
+        2 => decode_process_destroyed_notification(buffer).map(DecodedNotification::ProcessDestroyed),
         _ => Err(()),
     }
 }
 
-/// Either a decoded interface message or a decoded process destroyed message.
+/// Either a decoded interface notification or a decoded process destroyed notification.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DecodedInterfaceOrDestroyed {
-    /// Interface mesage.
-    Interface(DecodedInterfaceMessage),
-    /// Process destroyed message.
-    ProcessDestroyed(DecodedProcessDestroyedMessage),
+    /// Interface notification.
+    Interface(DecodedInterfaceNotification),
+    /// Process destroyed notification.
+    ProcessDestroyed(DecodedProcessDestroyedNotification),
 }
 
-/// Builds a interface message from its raw components.
-pub fn build_interface_message(
+/// Builds a interface notification from its raw components.
+pub fn build_interface_notification(
     interface: &InterfaceHash,
     message_id: Option<MessageId>,
     emitter_pid: Pid,
@@ -260,7 +260,7 @@ impl InterfaceNotificationBuilder {
     }
 }
 
-pub fn decode_interface_message(buffer: &[u8]) -> Result<DecodedInterfaceMessage, ()> {
+pub fn decode_interface_notification(buffer: &[u8]) -> Result<DecodedInterfaceNotification, ()> {
     if buffer.len() < 1 + 32 + 8 + 8 + 4 {
         return Err(());
     }
@@ -269,7 +269,7 @@ pub fn decode_interface_message(buffer: &[u8]) -> Result<DecodedInterfaceMessage
         return Err(());
     }
 
-    Ok(DecodedInterfaceMessage {
+    Ok(DecodedInterfaceNotification {
         interface: InterfaceHash({
             let mut hash = [0; 32];
             hash.copy_from_slice(&buffer[1..33]);
@@ -297,7 +297,7 @@ pub fn decode_interface_message(buffer: &[u8]) -> Result<DecodedInterfaceMessage
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DecodedInterfaceMessage {
+pub struct DecodedInterfaceNotification {
     /// Interface the message concerns.
     pub interface: InterfaceHash,
     /// Id of the message. Can be used for answering. `None` if no answer is expected.
@@ -312,7 +312,7 @@ pub struct DecodedInterfaceMessage {
     pub actual_data: EncodedMessage,
 }
 
-pub fn build_response_message(
+pub fn build_response_notification(
     message_id: MessageId,
     index_in_list: u32,
     actual_data: Result<&EncodedMessage, ()>,
@@ -366,7 +366,7 @@ impl ResponseNotificationBuilder {
     }
 }
 
-pub fn decode_response_message(buffer: &[u8]) -> Result<DecodedResponseMessage, ()> {
+pub fn decode_response_notification(buffer: &[u8]) -> Result<DecodedResponseNotification, ()> {
     if buffer.len() < 1 + 8 + 4 + 1 {
         return Err(());
     }
@@ -380,7 +380,7 @@ pub fn decode_response_message(buffer: &[u8]) -> Result<DecodedResponseMessage, 
         return Err(());
     }
 
-    Ok(DecodedResponseMessage {
+    Ok(DecodedResponseNotification {
         message_id: From::from(u64::from_le_bytes([
             buffer[1], buffer[2], buffer[3], buffer[4], buffer[5], buffer[6], buffer[7], buffer[8],
         ])),
@@ -394,7 +394,7 @@ pub fn decode_response_message(buffer: &[u8]) -> Result<DecodedResponseMessage, 
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DecodedResponseMessage {
+pub struct DecodedResponseNotification {
     /// Identifier of the message whose answer we are receiving.
     pub message_id: MessageId,
 
@@ -409,7 +409,7 @@ pub struct DecodedResponseMessage {
     pub actual_data: Result<EncodedMessage, ()>,
 }
 
-pub fn build_process_destroyed_message(
+pub fn build_process_destroyed_notification(
     pid: Pid,
     index_in_list: u32,
 ) -> ProcessDestroyedNotificationBuilder {
@@ -442,9 +442,9 @@ impl ProcessDestroyedNotificationBuilder {
     }
 }
 
-pub fn decode_process_destroyed_message(
+pub fn decode_process_destroyed_notification(
     buffer: &[u8],
-) -> Result<DecodedProcessDestroyedMessage, ()> {
+) -> Result<DecodedProcessDestroyedNotification, ()> {
     if buffer.len() != 1 + 8 + 4 {
         return Err(());
     }
@@ -453,7 +453,7 @@ pub fn decode_process_destroyed_message(
         return Err(());
     }
 
-    Ok(DecodedProcessDestroyedMessage {
+    Ok(DecodedProcessDestroyedNotification {
         pid: From::from(u64::from_le_bytes([
             buffer[1], buffer[2], buffer[3], buffer[4], buffer[5], buffer[6], buffer[7], buffer[8],
         ])),
@@ -462,7 +462,7 @@ pub fn decode_process_destroyed_message(
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DecodedProcessDestroyedMessage {
+pub struct DecodedProcessDestroyedNotification {
     /// Identifier of the process that got destroyed.
     pub pid: Pid,
     /// Index within the list to poll where this message was.
@@ -482,11 +482,11 @@ mod tests {
         let index_in_list = 0xdeadbeef;
         let message = EncodedMessage(vec![8, 7, 9]);
 
-        let mut int_msg =
-            build_interface_message(&interface_hash, message_id, pid, 0xf00baa, &message);
-        int_msg.set_index_in_list(index_in_list);
+        let mut int_notif =
+            build_interface_notification(&interface_hash, message_id, pid, 0xf00baa, &message);
+        int_notif.set_index_in_list(index_in_list);
 
-        let decoded = decode_interface_message(&int_msg.into_bytes()).unwrap();
+        let decoded = decode_interface_notification(&int_notif.into_bytes()).unwrap();
         assert_eq!(decoded.interface, interface_hash);
         assert_eq!(decoded.message_id, message_id);
         assert_eq!(decoded.emitter_pid, pid);
@@ -500,11 +500,11 @@ mod tests {
         let index_in_list = 0xdeadbeef;
         let message = EncodedMessage(vec![8, 7, 9]);
 
-        let mut resp_msg = build_response_message(message_id, 0xf00baa, Ok(&message));
-        resp_msg.set_index_in_list(index_in_list);
-        assert_eq!(resp_msg.message_id(), message_id);
+        let mut resp_notif = build_response_notification(message_id, 0xf00baa, Ok(&message));
+        resp_notif.set_index_in_list(index_in_list);
+        assert_eq!(resp_notif.message_id(), message_id);
 
-        let decoded = decode_response_message(&resp_msg.into_bytes()).unwrap();
+        let decoded = decode_response_notification(&resp_notif.into_bytes()).unwrap();
         assert_eq!(decoded.message_id, message_id);
         assert_eq!(decoded.index_in_list, index_in_list);
         assert_eq!(decoded.actual_data, Ok(message));
@@ -515,11 +515,11 @@ mod tests {
         let message_id = From::from(0xa123456789abcdef);
         let index_in_list = 0xdeadbeef;
 
-        let mut resp_msg = build_response_message(message_id, 0xf00baa, Err(()));
-        resp_msg.set_index_in_list(index_in_list);
-        assert_eq!(resp_msg.message_id(), message_id);
+        let mut resp_notif = build_response_notification(message_id, 0xf00baa, Err(()));
+        resp_notif.set_index_in_list(index_in_list);
+        assert_eq!(resp_notif.message_id(), message_id);
 
-        let decoded = decode_response_message(&resp_msg.into_bytes()).unwrap();
+        let decoded = decode_response_notification(&resp_notif.into_bytes()).unwrap();
         assert_eq!(decoded.message_id, message_id);
         assert_eq!(decoded.index_in_list, index_in_list);
         assert_eq!(decoded.actual_data, Err(()));
@@ -530,10 +530,10 @@ mod tests {
         let pid = From::from(0xfedcba9876543210);
         let index_in_list = 0xdeadbeef;
 
-        let mut destr_msg = build_process_destroyed_message(pid, 0xf00baa);
-        destr_msg.set_index_in_list(index_in_list);
+        let mut destr_notif = build_process_destroyed_notification(pid, 0xf00baa);
+        destr_notif.set_index_in_list(index_in_list);
 
-        let decoded = decode_process_destroyed_message(&destr_msg.into_bytes()).unwrap();
+        let decoded = decode_process_destroyed_notification(&destr_notif.into_bytes()).unwrap();
         assert_eq!(decoded.pid, pid);
         assert_eq!(decoded.index_in_list, index_in_list);
     }
