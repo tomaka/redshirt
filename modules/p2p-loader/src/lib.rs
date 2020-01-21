@@ -22,11 +22,11 @@ use tcp_transport::TcpConfig;
 
 use libp2p_core::transport::{boxed::Boxed, Transport};
 use libp2p_core::{identity, muxing::StreamMuxerBox, nodes::node::Substream, upgrade, PeerId};
-use libp2p_kad::{record::store::MemoryStore, record::Key, Kademlia, KademliaConfig, Quorum};
+use libp2p_kad::{record::store::MemoryStore, record::Key, Kademlia, KademliaConfig, KademliaEvent, Quorum};
 use libp2p_mplex::MplexConfig;
 use libp2p_plaintext::PlainText2Config;
 use libp2p_swarm::{Swarm, SwarmEvent};
-use std::{io, time::Duration};
+use std::{collections::VecDeque, io, time::Duration};
 
 /// Active set of connections to the network.
 pub struct Network<T> {
@@ -35,7 +35,12 @@ pub struct Network<T> {
         Boxed<(PeerId, StreamMuxerBox), io::Error>,
         Kademlia<Substream<StreamMuxerBox>, MemoryStore>,
     >,
-    active_fetches: Vec<([u8; 32], T)>,
+
+    /// List of keys that are currently being fetched.
+    active_fetches: Vec<(Key, T)>,
+
+    /// Queue of events to return to the user.
+    events_queue: VecDeque<NetworkEvent<T>>,
 }
 
 /// Event that can happen in a [`Network`].
@@ -110,11 +115,15 @@ impl<T> Network<T> {
 
         swarm.bootstrap();
 
-        swarm.put_record(libp2p_kad::Record::new(vec![0; 32], vec![5, 6, 7, 8]), libp2p_kad::Quorum::Majority);
+        // TODO: use All when network is large enough
+        // TODO: temporary for testing
+        swarm.put_record(libp2p_kad::Record::new(vec![0; 32], vec![5, 6, 7, 8]), libp2p_kad::Quorum::One);
+        swarm.get_record(&From::from(vec![0; 32]), libp2p_kad::Quorum::One);
 
         Network {
             swarm,
             active_fetches: Vec::new(),
+            events_queue: VecDeque::new(),
         }
     }
 
@@ -122,15 +131,42 @@ impl<T> Network<T> {
     ///
     /// The `user_data` is an opaque value that is passed back when the fetch succeeds or fails.
     pub fn start_fetch(&mut self, hash: &[u8; 32], user_data: T) {
-        self.swarm.get_record(&Key::new(hash), Quorum::One);
-        self.active_fetches.push((*hash, user_data));
+        let key = Key::new(hash);
+        self.swarm.get_record(&key, Quorum::One); // TODO: use Majority when network is large enough
+        self.active_fetches.push((key, user_data));
     }
 
     /// Returns a future that returns the next event that happens on the network.
     pub async fn next_event(&mut self) -> NetworkEvent<T> {
         loop {
+            if let Some(event) = self.events_queue.pop_front() {
+                return event;
+            }
+
             match self.swarm.next_event().await {
-                SwarmEvent::Behaviour(ev) => log::info!("{:?}", ev),
+                SwarmEvent::Behaviour(KademliaEvent::GetRecordResult(Ok(result))) => {
+                    for record in result.records {
+                        log::debug!("Successfully loaded record from DHT: {:?}", record.key);
+                        if let Some(pos) = self.active_fetches.iter().position(|(key, _)| *key == record.key) {
+                            let user_data = self.active_fetches.remove(pos).1;
+                            self.events_queue.push_back(NetworkEvent::FetchSuccess {
+                                data: record.value,
+                                user_data,
+                            });
+                        }
+                    }
+                },
+                SwarmEvent::Behaviour(KademliaEvent::GetRecordResult(Err(err))) => {
+                    log::info!("Failed to get record: {:?}", err);
+                    let fetch_failed_key = err.into_key();
+                    if let Some(pos) = self.active_fetches.iter().position(|(key, _)| *key == fetch_failed_key) {
+                        let user_data = self.active_fetches.remove(pos).1;
+                        self.events_queue.push_back(NetworkEvent::FetchFail {
+                            user_data,
+                        });
+                    }
+                },
+                SwarmEvent::Behaviour(ev) => log::info!("Other event: {:?}", ev),
                 SwarmEvent::Connected(peer) => log::trace!("Connected to {:?}", peer),
                 SwarmEvent::Disconnected(peer) => log::trace!("Disconnected from {:?}", peer),
                 SwarmEvent::NewListenAddr(_) => {}
