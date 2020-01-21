@@ -61,9 +61,9 @@ where
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         assert!(!self.finished);
-        if let Some(message) = crate::block_on::peek_response(self.msg_id) {
+        if let Some(response) = crate::block_on::peek_response(self.msg_id) {
             self.finished = true;
-            Poll::Ready(Decode::decode(message.actual_data.unwrap()).unwrap())
+            Poll::Ready(Decode::decode(response.actual_data.unwrap()).unwrap())
         } else {
             crate::block_on::register_message_waker(self.msg_id, cx.waker().clone());
             Poll::Pending

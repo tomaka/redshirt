@@ -19,27 +19,28 @@ use alloc::vec::Vec;
 
 #[link(wasm_import_module = "redshirt")]
 extern "C" {
-    /// Asks for the next message.
+    /// Asks for the next notification.
     ///
-    /// The `to_poll` parameter must be a list (whose length is `to_poll_len`) of messages to poll.
-    /// Entries in this list equal to `0` are ignored. Entries equal to `1` are special and mean
-    /// "a message received on an interface or a process destroyed message". If a message is
-    /// successfully pulled, the corresponding entry in `to_poll` is set to `0`.
+    /// The `to_poll` parameter must be a list (whose length is `to_poll_len`) of notifications to
+    /// poll. Entries in this list equal to `0` are ignored. Entries equal to `1` are special and
+    /// mean "a message received on an interface or a process destroyed notification". If a
+    /// notification is successfully pulled, the corresponding entry in `to_poll` is set to `0`.
     ///
-    /// If `block` is true, then this function puts the thread to sleep until a message is
+    /// If `block` is true, then this function puts the thread to sleep until a notification is
     /// available. If `block` is false, then this function returns as soon as possible.
     ///
-    /// If the function returns 0, then there is no message available and nothing has been written.
+    /// If the function returns 0, then there is no notification available and nothing has been
+    /// written.
     /// This function never returns 0 if `block` is `true`.
-    /// If the function returns a value larger than `out_len`, then a message is available whose
-    /// length is the value that has been returned, but nothing has been written in `out`.
+    /// If the function returns a value larger than `out_len`, then a notification is available
+    /// whose  length is the value that has been returned, but nothing has been written in `out`.
     /// If the function returns value inferior or equal to `out_len` (and different from 0), then
-    /// a message has been written in `out`.
+    /// a notification has been written in `out`.
     ///
     /// Messages, amongst the set that matches `to_poll`, are always returned in the order they
-    /// have been received. In particular, this function does **not** search the queue of messages
-    /// for a message that fits in `out_len`. It will however skip the messages in the queue that
-    /// do not match any entry in `to_poll`.
+    /// have been received. In particular, this function does **not** search the queue of
+    /// notifications for a notification that fits in `out_len`. It will however skip the
+    /// notifications in the queue that do not match any entry in `to_poll`.
     ///
     /// Messages written in `out` can be decoded into a [`Message`].
     ///
