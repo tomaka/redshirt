@@ -78,9 +78,11 @@ impl fmt::Debug for IdPool {
 
 #[cfg(test)]
 mod tests {
+    use nohash_hasher::BuildNoHashHasher;
+
     #[test]
     fn ids_different() {
-        let mut ids = hashbrown::HashSet::<u64>::new();
+        let mut ids = hashbrown::HashSet::<u64, BuildNoHashHasher<u64>>::default();
         let pool = super::IdPool::new();
         for _ in 0..5000 {
             assert!(ids.insert(pool.assign()));
