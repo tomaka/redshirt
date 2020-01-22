@@ -4,6 +4,7 @@ members = [
     "core-proc-macros",
     "kernel/cli",
     "kernel/hosted-log",
+    "kernel/hosted-random",
     "kernel/hosted-tcp",
     "kernel/hosted-time",
     "kernel/standalone",
