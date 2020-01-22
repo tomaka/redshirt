@@ -8,7 +8,6 @@ members = [
     "stub",
     "third-party/time",
     "third-party/wasm-timer",
-    "vulkan-triangle",
     "x86-log",
     "x86-pci",
 ]
