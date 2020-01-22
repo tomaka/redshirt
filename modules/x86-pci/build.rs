@@ -22,7 +22,7 @@ fn main() {
     let mut f = File::create(&dest_path).unwrap();
 
     write!(f, r#"
-        fn build_pci_info() -> hashbrown::HashMap<(u16, u16), (&'static str, &'static str)> {{
+        fn build_pci_info() -> hashbrown::HashMap<(u16, u16), (&'static str, &'static str), fnv::FnvBuildHasher> {{
             [
     "#).unwrap();
 
