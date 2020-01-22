@@ -29,6 +29,9 @@ use std::{
 
 pub mod ffi;
 
+/// Active TCP connection to a remote.
+///
+/// This type is similar to [`std::net::TcpStream`].
 pub struct TcpStream {
     handle: u32,
     /// Buffer of data that has been read from the socket but not transmitted to the user yet.
@@ -42,36 +45,56 @@ pub struct TcpStream {
 }
 
 impl TcpStream {
+    /// Start connecting to the given address. Returns a `TcpStream` if the connection is
+    /// successful.
     pub fn connect(socket_addr: &SocketAddr) -> impl Future<Output = Result<TcpStream, ()>> {
+        let fut = TcpStream::new(socket_addr, false);
+        async move { Ok(fut.await?.0) }
+    }
+
+    /// Dialing and listening use the same underlying messages. The only different being a boolean
+    /// whether the address is a binding point or a destination.
+    fn new(
+        socket_addr: &SocketAddr,
+        listen: bool,
+    ) -> impl Future<Output = Result<(TcpStream, SocketAddr), ()>> {
         let tcp_open = ffi::TcpMessage::Open(match socket_addr {
             SocketAddr::V4(addr) => ffi::TcpOpen {
                 ip: addr.ip().to_ipv6_mapped().segments(),
                 port: addr.port(),
+                listen,
             },
             SocketAddr::V6(addr) => ffi::TcpOpen {
                 ip: addr.ip().segments(),
                 port: addr.port(),
+                listen,
             },
         });
 
-        let msg_id = unsafe {
-            let msg = tcp_open.encode();
-            redshirt_syscalls::MessageBuilder::new()
-                .add_data(&msg)
-                .emit_with_response_raw(&ffi::INTERFACE)
-                .unwrap()
-        };
-
         async move {
-            let message: ffi::TcpOpenResponse = redshirt_syscalls::message_response(msg_id).await;
-            let handle = message.result?;
+            let message: ffi::TcpOpenResponse = unsafe {
+                let msg = tcp_open.encode();
+                redshirt_syscalls::MessageBuilder::new()
+                    .add_data(&msg)
+                    .emit_with_response(&ffi::INTERFACE)
+                    .unwrap()
+                    .await
+            };
 
-            Ok(TcpStream {
-                handle,
+            let socket_open_info = message.result?;
+            let remote_addr = {
+                let ip = Ipv6Addr::from(socket_open_info.remote_ip);
+                SocketAddr::new(IpAddr::from(ip), socket_open_info.remote_port)
+            };
+
+            let stream = TcpStream {
+                handle: socket_open_info.socket_id,
                 read_buffer: Vec::new(),
                 pending_read: None,
                 pending_write: None,
-            })
+            };
+
+            Ok((stream, remote_addr))
         }
     }
 }
@@ -194,45 +217,27 @@ impl Drop for TcpStream {
 }
 
 pub struct TcpListener {
-    handle: u32,
     local_addr: SocketAddr,
-    /// If Some, we have sent out an "accept" message and are waiting for a response.
-    // TODO: use strongly typed Future here
-    pending_accept: Option<Pin<Box<dyn Future<Output = ffi::TcpAcceptResponse> + Send>>>,
+    next_incoming: Mutex<
+        stream::FuturesUnordered<
+            Pin<Box<dyn Future<Output = Result<(TcpStream, SocketAddr), ()>>>>,
+        >,
+    >,
 }
 
 impl TcpListener {
     pub fn bind(socket_addr: &SocketAddr) -> impl Future<Output = Result<TcpListener, ()>> {
-        let tcp_listen = ffi::TcpMessage::Listen(match socket_addr {
-            SocketAddr::V4(addr) => ffi::TcpListen {
-                local_ip: addr.ip().to_ipv6_mapped().segments(),
-                port: addr.port(),
-            },
-            SocketAddr::V6(addr) => ffi::TcpListen {
-                local_ip: addr.ip().segments(),
-                port: addr.port(),
-            },
-        });
-
-        let msg_id = unsafe {
-            let msg = tcp_listen.encode();
-            redshirt_syscalls::MessageBuilder::new()
-                .add_data(&msg)
-                .emit_with_response_raw(&ffi::INTERFACE)
-                .unwrap()
-        };
-
-        let mut local_addr = socket_addr.clone();
+        let socket_addr = socket_addr.clone();
+        let next_incoming = Mutex::new(
+            (0..10)
+                .map(|_| Box::pin(TcpStream::new(&socket_addr, true)) as Pin<Box<_>>)
+                .collect(),
+        );
 
         async move {
-            let message: ffi::TcpListenResponse = redshirt_syscalls::message_response(msg_id).await;
-            let (handle, local_port) = message.result?;
-            local_addr.set_port(local_port);
-
             Ok(TcpListener {
-                handle,
-                local_addr,
-                pending_accept: None,
+                local_addr: socket_addr,
+                next_incoming,
             })
         }
     }
@@ -242,46 +247,18 @@ impl TcpListener {
         self.local_addr
     }
 
-    // TODO: make `&self` instead
-    pub async fn accept(&mut self) -> (TcpStream, SocketAddr) {
-        loop {
-            if let Some(pending_accept) = self.pending_accept.as_mut() {
-                let new_stream = pending_accept.await;
-                self.pending_accept = None;
-                let stream = TcpStream {
-                    handle: new_stream.accepted_socket_id,
-                    read_buffer: Vec::new(),
-                    pending_read: None,
-                    pending_write: None,
-                };
-                let remote_ip = Ipv6Addr::from(new_stream.remote_ip);
-                let remote_addr = SocketAddr::from((remote_ip, new_stream.remote_port));
-                return (stream, remote_addr);
+    pub async fn accept(&self) -> (TcpStream, SocketAddr) {
+        let mut next_incoming = self.next_incoming.lock().await;
+
+        let (tcp_stream, remote_addr) = loop {
+            match next_incoming.next().await {
+                Some(Ok(v)) => break v,
+                Some(Err(_)) => continue,
+                None => unreachable!(),
             }
+        };
 
-            let tcp_accept = ffi::TcpMessage::Accept(ffi::TcpAccept {
-                socket_id: self.handle,
-            });
-            let msg_id = unsafe {
-                let msg = tcp_accept.encode();
-                redshirt_syscalls::MessageBuilder::new()
-                    .add_data(&msg)
-                    .emit_with_response_raw(&ffi::INTERFACE)
-                    .unwrap()
-            };
-            self.pending_accept = Some(Box::pin(redshirt_syscalls::message_response(msg_id)));
-        }
-    }
-}
-
-impl Drop for TcpListener {
-    fn drop(&mut self) {
-        unsafe {
-            let tcp_close = ffi::TcpMessage::Close(ffi::TcpClose {
-                socket_id: self.handle,
-            });
-
-            redshirt_syscalls::emit_message_without_response(&ffi::INTERFACE, &tcp_close);
-        }
+        next_incoming.push(Box::pin(TcpStream::new(&self.local_addr, true)));
+        (tcp_stream, remote_addr)
     }
 }
