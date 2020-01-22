@@ -381,6 +381,13 @@ impl Core {
                 self.answer_message_inner(message_id, Err(()))
             }
 
+            extrinsics::RunOneOutcome::ThreadCancelMessage { message_id, .. } => {
+                // TODO: check ownership of the message
+                drop(run_outcome);
+                self.messages_to_answer.borrow_mut().remove(&message_id);
+                None
+            }
+
             extrinsics::RunOneOutcome::Idle => Some(CoreRunOutcome::Idle),
         }
     }
@@ -655,8 +662,9 @@ impl Core {
                 })
             }
         } else {
-            // TODO: what to do here?
-            panic!("no process found with that event")
+            // TODO: this can happen if message was cancelled
+            // TODO: figure this out more properly?
+            None
         }
     }
 

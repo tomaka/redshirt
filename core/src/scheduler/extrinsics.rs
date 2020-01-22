@@ -278,6 +278,18 @@ pub enum RunOneOutcome<'a, TPud, TTud> {
         message_id: MessageId,
     },
 
+    /// A thread in a process wants to notify that a message is to be cancelled.
+    ThreadCancelMessage {
+        /// Thread that wants to emit a cancellation.
+        thread_id: ThreadId,
+
+        /// Process that the thread belongs to.
+        process: ProcessesCollectionExtrinsicsProc<'a, TPud, TTud>,
+
+        /// Message that must be cancelled.
+        message_id: MessageId,
+    },
+
     /// No thread is ready to run. Nothing was done.
     Idle,
 }
@@ -478,10 +490,35 @@ impl<TPud, TTud> ProcessesCollectionExtrinsics<TPud, TTud> {
             }
 
             processes::RunOneOutcome::Interrupted {
-                thread,
+                mut thread,
                 id: Extrinsic::CancelMessage,
                 params,
-            } => unimplemented!(),
+            } => {
+                debug_assert!(thread.user_data().state.is_ready_to_run());
+                debug_assert!(thread.user_data().external_user_data.is_some());
+                let emit_cancel = match parse_extrinsic_cancel_message(&mut thread, params) {
+                    Ok(m) => m,
+                    Err(_) => panic!(), // TODO:
+                };
+                thread.resume(None);
+                let pid = thread.pid();
+                let thread_id = thread.tid();
+                let proc_user_data = inner
+                    .process_by_id(pid)
+                    .unwrap()
+                    .user_data()
+                    .external_user_data
+                    .clone();
+                RunOneOutcome::ThreadCancelMessage {
+                    process: ProcessesCollectionExtrinsicsProc {
+                        parent: self,
+                        pid,
+                        user_data: proc_user_data,
+                    },
+                    thread_id,
+                    message_id: emit_cancel,
+                }
+            }
         }
     }
 
@@ -1227,6 +1264,30 @@ fn parse_extrinsic_emit_answer<TPud, TTud>(
 ///
 /// Returns an error if the call is invalid.
 fn parse_extrinsic_emit_message_error<TPud, TTud>(
+    thread: &mut processes::ProcessesCollectionThread<TPud, LocalThreadUserData<TTud>>,
+    params: Vec<wasmi::RuntimeValue>,
+) -> Result<MessageId, ()> {
+    // We use an assert here rather than a runtime check because the WASM VM (rather than us) is
+    // supposed to check the function signature.
+    assert_eq!(params.len(), 1);
+
+    let msg_id = {
+        let addr = u32::try_from(params[0].try_into::<i32>().ok_or(())?).map_err(|_| ())?;
+        let buf = thread.read_memory(addr, 8)?;
+        MessageId::from(byteorder::LittleEndian::read_u64(&buf))
+    };
+
+    Ok(msg_id)
+}
+
+/// Analyzes a call to `cancel_message` made by the given thread.
+/// Returns the message to cancel.
+///
+/// The `thread` parameter is only used in order to read memory from the process. This function
+/// has no side effect.
+///
+/// Returns an error if the call is invalid.
+fn parse_extrinsic_cancel_message<TPud, TTud>(
     thread: &mut processes::ProcessesCollectionThread<TPud, LocalThreadUserData<TTud>>,
     params: Vec<wasmi::RuntimeValue>,
 ) -> Result<MessageId, ()> {
