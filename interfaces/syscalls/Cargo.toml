@@ -11,8 +11,7 @@ futures = { version = "0.3.1", default-features = false, features = ["alloc"] }
 generic-array = { version = "0.13.2", default-features = false }
 hashbrown = { version = "0.6.0", default-features = false }
 lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
-# TODO: version 0.1.3
-nohash-hasher = { git = "https://github.com/tomaka/nohash-hasher", branch = "support-no-std", default-features = false }
+nohash-hasher = { version = "0.1.3", default-features = false }
 parity-scale-codec = { version = "1.0.5", default-features = false, features = ["derive"] }
 pin-project = "0.4.6"
 spin = "0.5.2"
