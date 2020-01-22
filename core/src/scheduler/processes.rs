@@ -54,7 +54,8 @@ pub struct ProcessesCollection<TExtr, TPud, TTud> {
     /// For each module and function name, stores the signature and an arbitrary usize that
     /// corresponds to the entry in `extrinsics`.
     /// This field is never modified after the [`ProcessesCollection`] is created.
-    extrinsics_id_assign: HashMap<(Cow<'static, str>, Cow<'static, str>), (usize, Signature), FnvBuildHasher>,
+    extrinsics_id_assign:
+        HashMap<(Cow<'static, str>, Cow<'static, str>), (usize, Signature), FnvBuildHasher>,
 }
 
 /// Prototype for a `ProcessesCollection` under construction.
@@ -64,7 +65,8 @@ pub struct ProcessesCollectionBuilder<TExtr> {
     /// See the corresponding field in `ProcessesCollection`.
     extrinsics: HashMap<usize, TExtr, BuildNoHashHasher<usize>>,
     /// See the corresponding field in `ProcessesCollection`.
-    extrinsics_id_assign: HashMap<(Cow<'static, str>, Cow<'static, str>), (usize, Signature), FnvBuildHasher>,
+    extrinsics_id_assign:
+        HashMap<(Cow<'static, str>, Cow<'static, str>), (usize, Signature), FnvBuildHasher>,
 }
 
 /// Single running process in the list.
@@ -466,7 +468,10 @@ impl<TExtr> ProcessesCollectionBuilder<TExtr> {
         ProcessesCollection {
             pid_pool: self.pid_pool,
             tid_pool: IdPool::new(),
-            processes: HashMap::with_capacity_and_hasher(PROCESSES_MIN_CAPACITY, Default::default()),
+            processes: HashMap::with_capacity_and_hasher(
+                PROCESSES_MIN_CAPACITY,
+                Default::default(),
+            ),
             extrinsics: self.extrinsics,
             extrinsics_id_assign: self.extrinsics_id_assign,
         }
