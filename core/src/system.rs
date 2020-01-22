@@ -19,8 +19,10 @@ use crate::scheduler::{Core, CoreBuilder, CoreRunOutcome};
 use alloc::{vec, vec::Vec};
 use core::{cell::RefCell, task::Poll};
 use crossbeam_queue::SegQueue;
+use fnv::FnvBuildHasher;
 use futures::prelude::*;
 use hashbrown::{hash_map::Entry, HashMap, HashSet};
+use nohash_hasher::BuildNoHashHasher;
 use redshirt_syscalls::{Decode, Encode, EncodedMessage, MessageId, Pid};
 use smallvec::SmallVec;
 
@@ -42,7 +44,7 @@ pub struct System {
     /// oldest message.
     ///
     /// See the "threads" interface for documentation about what a futex is.
-    futex_waits: RefCell<HashMap<(Pid, u32), SmallVec<[MessageId; 4]>>>,
+    futex_waits: RefCell<HashMap<(Pid, u32), SmallVec<[MessageId; 4]>, FnvBuildHasher>>,
 
     /// Collection of programs. Each is assigned a `Pid` that is reserved within `core`.
     /// Can communicate with the WASM programs that are within `core`.
@@ -63,7 +65,7 @@ pub struct System {
     /// Set of messages that we emitted of requests to load a program from the loader interface.
     /// All these messages expect a `redshirt_loader_interface::ffi::LoadResponse` as answer.
     // TODO: call shink_to_fit from time to time
-    loading_programs: RefCell<HashSet<MessageId>>,
+    loading_programs: RefCell<HashSet<MessageId, BuildNoHashHasher<u64>>>,
 }
 
 /// Prototype for a [`System`].

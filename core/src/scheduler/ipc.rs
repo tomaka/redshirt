@@ -24,7 +24,9 @@ use crate::InterfaceHash;
 use alloc::{collections::VecDeque, vec::Vec};
 use core::{cell::RefCell, convert::TryFrom, iter, mem};
 use crossbeam_queue::SegQueue;
+use fnv::FnvBuildHasher;
 use hashbrown::{hash_map::Entry, HashMap, HashSet};
+use nohash_hasher::BuildNoHashHasher;
 use redshirt_syscalls::{Encode, EncodedMessage, MessageId, Pid, ThreadId};
 use smallvec::SmallVec;
 
@@ -39,10 +41,10 @@ pub struct Core {
     /// List of `Pid`s that have been reserved during the construction.
     ///
     /// Never modified after initialization.
-    reserved_pids: HashSet<Pid>,
+    reserved_pids: HashSet<Pid, BuildNoHashHasher<u64>>,
 
     /// For each interface, which program is fulfilling it.
-    interfaces: RefCell<HashMap<InterfaceHash, InterfaceState>>,
+    interfaces: RefCell<HashMap<InterfaceHash, InterfaceState, FnvBuildHasher>>,
 
     /// Pool of identifiers for messages.
     message_id_pool: IdPool,
@@ -50,7 +52,7 @@ pub struct Core {
     /// List of messages that have been emitted by a process and that are waiting for a response.
     // TODO: doc about hash safety
     // TODO: call shrink_to from time to time
-    messages_to_answer: RefCell<HashMap<MessageId, Pid>>,
+    messages_to_answer: RefCell<HashMap<MessageId, Pid, BuildNoHashHasher<u64>>>,
 }
 
 /// Which way an interface is handled.
@@ -71,7 +73,7 @@ enum InterfaceState {
 /// Prototype for a `Core` under construction.
 pub struct CoreBuilder {
     /// See the corresponding field in `Core`.
-    reserved_pids: HashSet<Pid>,
+    reserved_pids: HashSet<Pid, BuildNoHashHasher<u64>>,
     /// Builder for the [`processes`][Core::processes] field in `Core`.
     inner_builder: extrinsics::ProcessesCollectionExtrinsicsBuilder,
 }
@@ -147,7 +149,7 @@ struct Process {
 
     /// List of interfaces that this process has used. When the process dies, we notify all the
     /// handlers about it.
-    used_interfaces: HashSet<InterfaceHash>,
+    used_interfaces: HashSet<InterfaceHash, FnvBuildHasher>,
 
     /// List of messages that the process has emitted and that are waiting for an answer.
     emitted_messages: SmallVec<[MessageId; 8]>,
@@ -166,7 +168,7 @@ impl Core {
     /// Initialies a new `Core`.
     pub fn new() -> CoreBuilder {
         CoreBuilder {
-            reserved_pids: HashSet::new(),
+            reserved_pids: HashSet::with_hasher(Default::default()),
             inner_builder: extrinsics::ProcessesCollectionExtrinsicsBuilder::default(),
         }
     }
@@ -665,7 +667,7 @@ impl Core {
         let proc_metadata = Process {
             notifications_queue: VecDeque::new(),
             registered_interfaces: SmallVec::new(),
-            used_interfaces: HashSet::new(),
+            used_interfaces: HashSet::with_hasher(Default::default()),
             emitted_messages: SmallVec::new(),
             messages_to_answer: SmallVec::new(),
         };
