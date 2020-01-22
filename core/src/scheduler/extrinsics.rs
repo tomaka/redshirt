@@ -481,7 +481,7 @@ impl<TPud, TTud> ProcessesCollectionExtrinsics<TPud, TTud> {
                 thread,
                 id: Extrinsic::CancelMessage,
                 params,
-            } => unimplemented!(),
+            } => RunOneOutcome::Idle,
         }
     }
 

@@ -117,7 +117,7 @@ impl<T> Network<T> {
 
         // TODO: use All when network is large enough
         // TODO: temporary for testing
-        swarm.put_record(libp2p_kad::Record::new(vec![0; 32], vec![5, 6, 7, 8]), libp2p_kad::Quorum::One);
+        //swarm.put_record(libp2p_kad::Record::new(vec![0; 32], vec![5, 6, 7, 8]), libp2p_kad::Quorum::One);
         swarm.get_record(&From::from(vec![0; 32]), libp2p_kad::Quorum::One);
 
         Network {
