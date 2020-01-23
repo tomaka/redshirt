@@ -273,8 +273,9 @@ impl System {
 
                             if interface_hash == redshirt_loader_interface::ffi::INTERFACE {
                                 while let Ok(hash) = self.main_programs.pop() {
-                                    let msg =
-                                        redshirt_loader_interface::ffi::LoaderMessage::Load(From::from(hash));
+                                    let msg = redshirt_loader_interface::ffi::LoaderMessage::Load(
+                                        From::from(hash),
+                                    );
                                     let id = self.core.emit_interface_message_answer(
                                         self.loading_virtual_pid,
                                         redshirt_loader_interface::ffi::INTERFACE,
