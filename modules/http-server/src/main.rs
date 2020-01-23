@@ -103,10 +103,10 @@ struct Executor {
     pusher: mpsc::UnboundedSender<Pin<Box<dyn Future<Output = ()>>>>,
 }
 
-impl<T: Future<Output = ()> + 'static> tokio_executor::TypedExecutor<T> for Executor {
-    fn spawn(&mut self, future: T) -> Result<(), tokio_executor::SpawnError> {
+impl<T: Future<Output = ()> + 'static> hyper::rt::Executor<T> for Executor {
+    fn execute(&self, future: T) {
         self.pusher
             .unbounded_send(Box::pin(future))
-            .map_err(|_| tokio_executor::SpawnError::shutdown())
+            .unwrap()
     }
 }
