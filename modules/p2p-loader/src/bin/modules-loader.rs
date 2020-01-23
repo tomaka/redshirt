@@ -1,4 +1,4 @@
-// Copyright (C) 2019  Pierre Krieger
+// Copyright (C) 2019-2020  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -29,7 +29,7 @@ async fn async_main() {
         .await
         .unwrap();
 
-    let mut network = Network::start();
+    let mut network = Network::start(Default::default());
 
     loop {
         let next_interface = redshirt_syscalls::next_interface_message();

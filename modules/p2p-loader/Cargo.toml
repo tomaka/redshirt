@@ -6,6 +6,7 @@ edition = "2018"
 publish = false
 
 [dependencies]
+base64 = { version = "0.11.0", default-features = false, features = ["alloc"] }
 futures = "0.3"
 libp2p-core = "0.14.0-alpha.1"
 libp2p-kad = "0.14.0-alpha.1"
@@ -17,11 +18,13 @@ log = "0.4"
 parity-scale-codec = "1.0.5"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+env_logger = "0.7.1"
 libp2p-tcp = "0.14.0-alpha.1"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 redshirt-interface-interface = { path = "../../interfaces/interface" }
 redshirt-loader-interface = { path = "../../interfaces/loader" }
+redshirt-log-interface = { path = "../../interfaces/log" }
 redshirt-syscalls = { path = "../../interfaces/syscalls" }
 redshirt-tcp-interface = { path = "../../interfaces/tcp" }
 redshirt-time-interface = { path = "../../interfaces/time" }

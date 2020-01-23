@@ -1,4 +1,4 @@
-// Copyright (C) 2019  Pierre Krieger
+// Copyright (C) 2019-2020  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -19,8 +19,10 @@ use crate::scheduler::{Core, CoreBuilder, CoreRunOutcome};
 use alloc::{vec, vec::Vec};
 use core::{cell::RefCell, task::Poll};
 use crossbeam_queue::SegQueue;
+use fnv::FnvBuildHasher;
 use futures::prelude::*;
 use hashbrown::{hash_map::Entry, HashMap, HashSet};
+use nohash_hasher::BuildNoHashHasher;
 use redshirt_syscalls::{Decode, Encode, EncodedMessage, MessageId, Pid};
 use smallvec::SmallVec;
 
@@ -42,7 +44,7 @@ pub struct System {
     /// oldest message.
     ///
     /// See the "threads" interface for documentation about what a futex is.
-    futex_waits: RefCell<HashMap<(Pid, u32), SmallVec<[MessageId; 4]>>>,
+    futex_waits: RefCell<HashMap<(Pid, u32), SmallVec<[MessageId; 4]>, FnvBuildHasher>>,
 
     /// Collection of programs. Each is assigned a `Pid` that is reserved within `core`.
     /// Can communicate with the WASM programs that are within `core`.
@@ -57,10 +59,13 @@ pub struct System {
     // TODO: add timeout for loader interface availability
     main_programs: SegQueue<[u8; 32]>,
 
+    /// "Virtual" pid for the process that sends messages towards the loader.
+    loading_virtual_pid: Pid,
+
     /// Set of messages that we emitted of requests to load a program from the loader interface.
     /// All these messages expect a `redshirt_loader_interface::ffi::LoadResponse` as answer.
     // TODO: call shink_to_fit from time to time
-    loading_programs: RefCell<HashSet<MessageId>>,
+    loading_programs: RefCell<HashSet<MessageId, BuildNoHashHasher<u64>>>,
 }
 
 /// Prototype for a [`System`].
@@ -71,11 +76,14 @@ pub struct SystemBuilder {
     /// Native programs.
     native_programs: native::NativeProgramsCollection<'static>,
 
-    /// "Virtual" Pid for handling messages on the `interface` interface.
+    /// "Virtual" pid for handling messages on the `interface` interface.
     interface_interface_pid: Pid,
 
-    /// "Virtual" Pid for handling messages on the `threads` interface.
+    /// "Virtual" pid for handling messages on the `threads` interface.
     threads_interface_pid: Pid,
+
+    /// "Virtual" pid for the process that sends messages towards the loader.
+    loading_virtual_pid: Pid,
 
     /// List of programs to start executing immediately after construction.
     startup_processes: Vec<Module>,
@@ -246,16 +254,12 @@ impl System {
                     interface,
                     message,
                 } if interface == redshirt_interface_interface::ffi::INTERFACE => {
-                    let msg = match redshirt_interface_interface::ffi::InterfaceMessage::decode(
-                        message,
-                    ) {
-                        Ok(m) => m,
-                        Err(_) => panic!(), // TODO:
-                    };
+                    let msg =
+                        redshirt_interface_interface::ffi::InterfaceMessage::decode(message).ok();
                     match msg {
-                        redshirt_interface_interface::ffi::InterfaceMessage::Register(
+                        Some(redshirt_interface_interface::ffi::InterfaceMessage::Register(
                             interface_hash,
-                        ) => {
+                        )) => {
                             let result = self.core
                                 .set_interface_handler(interface_hash.clone(), pid)
                                 .map_err(|()| redshirt_interface_interface::ffi::InterfaceRegisterError::AlreadyRegistered);
@@ -272,7 +276,7 @@ impl System {
                                     let msg =
                                         redshirt_loader_interface::ffi::LoaderMessage::Load(hash);
                                     let id = self.core.emit_interface_message_answer(
-                                        From::from(0), // FIXME: wrong; hacky
+                                        self.loading_virtual_pid,
                                         redshirt_loader_interface::ffi::INTERFACE,
                                         msg,
                                     );
@@ -280,6 +284,7 @@ impl System {
                                 }
                             }
                         }
+                        None => {}
                     }
                 }
 
@@ -306,11 +311,13 @@ impl SystemBuilder {
         let mut core = Core::new();
         let interface_interface_pid = core.reserve_pid();
         let threads_interface_pid = core.reserve_pid();
+        let loading_virtual_pid = core.reserve_pid();
 
         SystemBuilder {
             core,
             interface_interface_pid,
             threads_interface_pid,
+            loading_virtual_pid,
             startup_processes: Vec::new(),
             main_programs: SegQueue::new(),
             native_programs: native::NativeProgramsCollection::new(),
@@ -381,6 +388,7 @@ impl SystemBuilder {
             core,
             native_programs: self.native_programs,
             futex_waits: RefCell::new(Default::default()),
+            loading_virtual_pid: self.loading_virtual_pid,
             loading_programs: RefCell::new(Default::default()),
             main_programs: self.main_programs,
         }

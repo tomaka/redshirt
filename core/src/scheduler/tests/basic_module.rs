@@ -1,4 +1,4 @@
-// Copyright (C) 2020  Pierre Krieger
+// Copyright (C) 2019-2020  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -13,20 +13,19 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::module::Module;
 use crate::scheduler::{Core, CoreRunOutcome};
 use crate::InterfaceHash;
 
 #[test]
 fn basic_module() {
-    let module = Module::from_wat(
+    let module = from_wat!(
+        local,
         r#"(module
         (func $_start (result i32)
             i32.const 5)
         (export "_start" (func $_start)))
-    "#,
-    )
-    .unwrap();
+    "#
+    );
 
     let core = Core::new().build();
     let expected_pid = core.execute(&module).unwrap().pid();

@@ -1,4 +1,4 @@
-// Copyright (C) 2020  Pierre Krieger
+// Copyright (C) 2019-2020  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -13,7 +13,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::module::Module;
 use crate::scheduler::{Core, CoreRunOutcome};
 use crate::InterfaceHash;
 
@@ -33,7 +32,9 @@ fn emit_reserved_pid() {
     }
 
     */
-    let module = Module::from_wat(r#"
+    let module = from_wat!(
+        local,
+        r#"
 (module
     (type $t0 (func (param i32 i32 i32 i32 i32 i32) (result i32)))
     (type $t1 (func (param i32 i32) (result i32)))
@@ -92,7 +93,8 @@ fn emit_reserved_pid() {
     (global $g0 (mut i32) (i32.const 1048576))
     (export "memory" (memory 0))
     (export "main" (func $main))
-    (data (i32.const 1048576) "\01\02\03\04\05\06\07\08"))"#).unwrap();
+    (data (i32.const 1048576) "\01\02\03\04\05\06\07\08"))"#
+    );
 
     let interface = InterfaceHash::from_raw_hash([
         0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16,

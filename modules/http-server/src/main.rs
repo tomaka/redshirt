@@ -1,4 +1,4 @@
-// Copyright (C) 2019  Pierre Krieger
+// Copyright (C) 2019-2020  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -17,12 +17,14 @@ use futures::{channel::mpsc, prelude::*};
 use std::{pin::Pin, task::Context, task::Poll};
 
 fn main() {
+    redshirt_log_interface::init();
+
     redshirt_syscalls::block_on(async move {
         let listener = redshirt_tcp_interface::TcpListener::bind(&"0.0.0.0:8000".parse().unwrap())
             .await
             .unwrap();
 
-        println!("Now listening on 0.0.0.0:8000");
+        log::info!("Now listening on 0.0.0.0:8000");
 
         let stream = stream::unfold(listener, |mut l| {
             async move {

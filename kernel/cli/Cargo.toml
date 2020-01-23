@@ -13,11 +13,10 @@ futures = "0.3.1"
 parking_lot = "0.10.0"
 redshirt-core = { path = "../../core" }
 redshirt-log-hosted = { path = "../hosted-log" }
-redshirt-log-interface = { path = "../../interfaces/log" }
+redshirt-random-hosted = { path = "../hosted-random" }
 redshirt-syscalls = { path = "../../interfaces/syscalls" }
-redshirt-tcp-interface = { path = "../../interfaces/tcp" }
+redshirt-tcp-hosted = { path = "../hosted-tcp" }
 redshirt-time-hosted = { path = "../hosted-time" }
-redshirt-time-interface = { path = "../../interfaces/time" }
 redshirt-webgpu-hosted = { path = "../hosted-webgpu" }
 parity-scale-codec = "1.0.5"
 structopt = "0.3.5"

@@ -1,4 +1,4 @@
-// Copyright (C) 2019  Pierre Krieger
+// Copyright (C) 2019-2020  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -13,14 +13,41 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#![feature(proc_macro_span)] // TODO: https://github.com/rust-lang/rust/issues/54725
+#![cfg_attr(feature = "nightly", feature(proc_macro_span))] // TODO: https://github.com/rust-lang/rust/issues/54725
 
 extern crate proc_macro;
 
 use std::{fs, path::Path, process::Command};
 
+/// Turns a string of WebAssembly text representation into a binary representation.
+#[proc_macro_hack::proc_macro_hack]
+pub fn wat_to_bin(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let wat = syn::parse_macro_input!(tokens as syn::LitStr);
+    let wat = wat.value();
+    let wasm = wat::parse_bytes(wat.as_ref()).unwrap();
+
+    // Final output.
+    let rust_out = format!(
+        "{{
+            const MODULE_BYTES: [u8; {}] = [{}];
+            &MODULE_BYTES[..]
+        }}",
+        wasm.len(),
+        wasm.iter()
+            .map(|c| format!("0x{:x}", c))
+            .collect::<Vec<String>>()
+            .join(", "),
+    );
+
+    // Uncomment to debug.
+    //panic!("{}", rust_out);
+
+    rust_out.parse().unwrap()
+}
+
 /// Compiles a WASM module and includes it similar to `include_bytes!`.
 /// Must be passed the path to a directory containing a `Cargo.toml`.
+#[cfg(feature = "nightly")]
 #[proc_macro_hack::proc_macro_hack]
 pub fn build_wasm_module(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
     // Find the absolute path requested by the user.
