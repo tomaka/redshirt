@@ -78,7 +78,7 @@ impl Kernel {
         }
 
         let system = system_builder
-            .with_main_program([0; 32]) // TODO: just a test
+            .with_main_program(From::from([0; 32])) // TODO: just a test
             .build();
 
         loop {
