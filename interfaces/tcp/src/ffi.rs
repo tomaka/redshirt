@@ -24,8 +24,6 @@ pub const INTERFACE: InterfaceHash = InterfaceHash::from_raw_hash([
 
 #[derive(Debug, Encode, Decode)]
 pub enum TcpMessage {
-    Listen(TcpListen),
-    Accept(TcpAccept),
     Open(TcpOpen),
     Close(TcpClose),
     /// Ask to read data from a socket. The response contains the data. For each socket, only one
@@ -37,37 +35,30 @@ pub enum TcpMessage {
 }
 
 #[derive(Debug, Encode, Decode)]
-pub struct TcpListen {
-    pub local_ip: [u16; 8],
-    /// Can be 0 for auto-assign.
-    pub port: u16,
-}
-
-#[derive(Debug, Encode, Decode)]
-pub struct TcpListenResponse {
-    /// On success, the socket ID and the port it's listening on.
-    pub result: Result<(u32, u16), ()>,
-}
-
-#[derive(Debug, Encode, Decode)]
 pub struct TcpOpen {
+    /// If true, then `ip` and `port` designate a local IP and port that the socket must listen
+    /// on. A response will arrive when a remote connects to this IP and port.
+    ///
+    /// If false, then `ip` and `port` designate a remote IP and port that the socket will try to
+    /// connect to. A response will arrive when we successfully connect or fail to connect.
+    // TODO: enum instead?
+    pub listen: bool,
+    /// IPv6 address.
     pub ip: [u16; 8],
+    /// TCP port.
     pub port: u16,
 }
 
 #[derive(Debug, Encode, Decode)]
 pub struct TcpOpenResponse {
-    pub result: Result<u32, ()>,
+    pub result: Result<TcpSocketOpen, ()>,
 }
 
 #[derive(Debug, Encode, Decode)]
-pub struct TcpAccept {
+pub struct TcpSocketOpen {
     pub socket_id: u32,
-}
-
-#[derive(Debug, Encode, Decode)]
-pub struct TcpAcceptResponse {
-    pub accepted_socket_id: u32,
+    pub local_ip: [u16; 8],
+    pub local_port: u16,
     pub remote_ip: [u16; 8],
     pub remote_port: u16,
 }

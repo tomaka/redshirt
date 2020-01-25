@@ -26,8 +26,8 @@ use redshirt_core::native::{DummyMessageIdWrite, NativeProgramEvent, NativeProgr
 use redshirt_core::{Decode as _, Encode as _, EncodedMessage, InterfaceHash, MessageId, Pid};
 use redshirt_tcp_interface::ffi;
 use std::{
-    collections::hash_map::Entry,
-    fmt,
+    collections::{hash_map::Entry, VecDeque},
+    fmt, mem,
     net::{Ipv6Addr, SocketAddr},
     pin::Pin,
     sync::atomic,
@@ -43,6 +43,9 @@ pub struct TcpHandler {
 
     /// List of all active sockets. Contains both open and non-open sockets.
     sockets: parking_lot::Mutex<FnvHashMap<u32, FrontSocketState>>,
+
+    /// List of open TCP listeners by port.
+    listeners: parking_lot::Mutex<FnvHashMap<u16, mpsc::UnboundedSender<FrontToBackListener>>>,
 
     /// Sending side of `receiver`. Meant to be cloned and sent to background tasks.
     sender: mpsc::Sender<BackToFront>,
@@ -73,7 +76,10 @@ enum FrontToBackSocket {
 
 /// Message sent from the main task to the background task for listeners.
 enum FrontToBackListener {
-    Accept { message_id: MessageId },
+    NewSocket {
+        socket_id: u32,
+        open_message_id: MessageId,
+    },
 }
 
 /// Message sent from a background socket task to the main task.
@@ -87,16 +93,6 @@ enum BackToFront {
         open_message_id: MessageId,
         socket_id: u32,
     },
-    ListenOk {
-        listen_message_id: MessageId,
-        socket_id: u32,
-        local_addr: SocketAddr,
-        sender: mpsc::UnboundedSender<FrontToBackListener>,
-    },
-    ListenErr {
-        listen_message_id: MessageId,
-        socket_id: u32,
-    },
     Read {
         message_id: MessageId,
         result: Result<Vec<u8>, ()>,
@@ -104,10 +100,6 @@ enum BackToFront {
     Write {
         message_id: MessageId,
         result: Result<(), ()>,
-    },
-    Accept {
-        message_id: MessageId,
-        socket: TcpStream,
     },
 }
 
@@ -119,6 +111,7 @@ impl TcpHandler {
         TcpHandler {
             registered: atomic::AtomicBool::new(false),
             sockets: parking_lot::Mutex::new(FnvHashMap::default()),
+            listeners: parking_lot::Mutex::new(FnvHashMap::default()),
             receiver: Mutex::new(receiver),
             sender,
         }
@@ -162,7 +155,13 @@ impl<'a> NativeProgramRef<'a> for &'a TcpHandler {
                     return NativeProgramEvent::Answer {
                         message_id: open_message_id,
                         answer: Ok(redshirt_tcp_interface::ffi::TcpOpenResponse {
-                            result: Ok(socket_id),
+                            result: Ok(redshirt_tcp_interface::ffi::TcpSocketOpen {
+                                socket_id,
+                                local_ip: [0; 8],  // FIXME:
+                                local_port: 0,     // FIXME:
+                                remote_ip: [0; 8], // FIXME:
+                                remote_port: 0,    // FIXME:
+                            }),
                         }
                         .encode()),
                     };
@@ -183,85 +182,6 @@ impl<'a> NativeProgramRef<'a> for &'a TcpHandler {
                         message_id: open_message_id,
                         answer: Ok(redshirt_tcp_interface::ffi::TcpOpenResponse {
                             result: Err(()),
-                        }
-                        .encode()),
-                    };
-                }
-
-                BackToFront::ListenOk {
-                    listen_message_id,
-                    local_addr,
-                    socket_id,
-                    sender,
-                } => {
-                    let mut sockets = self.sockets.lock();
-                    let front_state = sockets.get_mut(&socket_id).unwrap();
-                    // TODO: debug_assert is orphan
-                    *front_state = FrontSocketState::Listener(sender);
-
-                    return NativeProgramEvent::Answer {
-                        message_id: listen_message_id,
-                        answer: Ok(redshirt_tcp_interface::ffi::TcpListenResponse {
-                            result: Ok((socket_id, local_addr.port())),
-                        }
-                        .encode()),
-                    };
-                }
-
-                BackToFront::ListenErr {
-                    listen_message_id,
-                    socket_id,
-                } => {
-                    let mut sockets = self.sockets.lock();
-                    let _front_state = sockets.remove(&socket_id);
-                    debug_assert!(match _front_state {
-                        Some(FrontSocketState::Orphan) => true,
-                        _ => false,
-                    });
-
-                    return NativeProgramEvent::Answer {
-                        message_id: listen_message_id,
-                        answer: Ok(redshirt_tcp_interface::ffi::TcpListenResponse {
-                            result: Err(()),
-                        }
-                        .encode()),
-                    };
-                }
-
-                BackToFront::Accept { message_id, socket } => {
-                    let mut sockets = self.sockets.lock();
-
-                    let remote_addr = socket.peer_addr().unwrap(); // TODO: don't unwrap
-                    let (remote_ip, remote_port) = match remote_addr {
-                        SocketAddr::V4(addr) => {
-                            (addr.ip().to_ipv6_mapped().segments(), addr.port())
-                        }
-                        SocketAddr::V6(addr) => (addr.ip().segments(), addr.port()),
-                    };
-
-                    // Find a vacant entry in `self.sockets`, spawn the task, and insert.
-                    let mut tentative_socket_id = rand::random();
-                    loop {
-                        match sockets.entry(tentative_socket_id) {
-                            Entry::Occupied(_) => {
-                                tentative_socket_id = tentative_socket_id.wrapping_add(1);
-                                continue;
-                            }
-                            Entry::Vacant(e) => {
-                                let (tx, rx) = mpsc::unbounded();
-                                task::spawn(open_socket_task(socket, rx, self.sender.clone()));
-                                e.insert(FrontSocketState::Connected(tx));
-                                break;
-                            }
-                        }
-                    }
-
-                    return NativeProgramEvent::Answer {
-                        message_id,
-                        answer: Ok(redshirt_tcp_interface::ffi::TcpAcceptResponse {
-                            accepted_socket_id: tentative_socket_id,
-                            remote_ip,
-                            remote_port,
                         }
                         .encode()),
                     };
@@ -318,82 +238,54 @@ impl<'a> NativeProgramRef<'a> for &'a TcpHandler {
                     }
                 };
 
-                // Find a vacant entry in `self.sockets`, spawn the task, and insert.
-                let mut tentative_socket_id = rand::random();
-                loop {
-                    match sockets.entry(tentative_socket_id) {
-                        Entry::Occupied(_) => {
-                            tentative_socket_id = tentative_socket_id.wrapping_add(1);
-                            continue;
+                // Find a vacant entry in `self.sockets` with a socket id.
+                let vacant_entry = {
+                    let mut tentative_socket_id = rand::random();
+                    loop {
+                        match sockets.entry(tentative_socket_id) {
+                            Entry::Vacant(e) => break e,
+                            Entry::Occupied(_) => {
+                                tentative_socket_id = tentative_socket_id.wrapping_add(1);
+                                continue;
+                            }
                         }
-                        Entry::Vacant(e) => {
-                            task::spawn(socket_task(
-                                tentative_socket_id,
-                                message_id,
-                                socket_addr,
-                                self.sender.clone(),
-                            ));
-                            e.insert(FrontSocketState::Orphan);
-                            break;
-                        }
-                    }
-                }
-            }
-
-            ffi::TcpMessage::Listen(listen) => {
-                let message_id = match message_id {
-                    Some(m) => m,
-                    None => return,
-                };
-
-                let socket_addr = {
-                    let ip_addr = Ipv6Addr::from(listen.local_ip);
-                    if let Some(ip_addr) = ip_addr.to_ipv4() {
-                        SocketAddr::new(ip_addr.into(), listen.port)
-                    } else {
-                        SocketAddr::new(ip_addr.into(), listen.port)
                     }
                 };
 
-                // Find a vacant entry in `self.sockets`, spawn the task, and insert.
-                let mut tentative_socket_id = rand::random();
-                loop {
-                    match sockets.entry(tentative_socket_id) {
-                        Entry::Occupied(_) => {
-                            tentative_socket_id = tentative_socket_id.wrapping_add(1);
-                            continue;
-                        }
-                        Entry::Vacant(e) => {
-                            task::spawn(listener_task(
-                                tentative_socket_id,
-                                message_id,
-                                socket_addr,
-                                self.sender.clone(),
-                            ));
-                            e.insert(FrontSocketState::Orphan);
-                            break;
-                        }
-                    }
+                if open.listen {
+                    let mut listeners = self.listeners.lock();
+                    let listener_sender = listeners
+                        .entry(socket_addr.port())
+                        .or_insert_with(|| {
+                            let (tx, rx) = mpsc::unbounded();
+                            // TODO: might not respect the required interface if we have multiple
+                            // sockets; we might have to refactor to use REUSE_ADDR and REUSE_PORT
+                            // instead
+                            task::spawn(listener_task(socket_addr, rx, self.sender.clone()));
+                            tx
+                        })
+                        .clone();
+                    listener_sender
+                        .unbounded_send(FrontToBackListener::NewSocket {
+                            socket_id: *vacant_entry.key(),
+                            open_message_id: message_id,
+                        })
+                        .unwrap();
+                    vacant_entry.insert(FrontSocketState::Listener(listener_sender));
+                } else {
+                    task::spawn(socket_task(
+                        *vacant_entry.key(),
+                        message_id,
+                        socket_addr,
+                        self.sender.clone(),
+                    ));
+
+                    vacant_entry.insert(FrontSocketState::Orphan);
                 }
             }
 
             ffi::TcpMessage::Close(close) => {
                 let _ = sockets.remove(&close.socket_id);
-            }
-
-            ffi::TcpMessage::Accept(accept) => {
-                let message_id = match message_id {
-                    Some(m) => m,
-                    None => return,
-                };
-
-                sockets
-                    .get_mut(&accept.socket_id)
-                    .unwrap() // TODO: don't unwrap; but what to do?
-                    .as_mut_listener()
-                    .unwrap()
-                    .unbounded_send(FrontToBackListener::Accept { message_id })
-                    .unwrap(); // TODO: don't unwrap; but what to do?
             }
 
             ffi::TcpMessage::Read(read) => {
@@ -510,36 +402,138 @@ async fn open_socket_task(
     mut commands_rx: mpsc::UnboundedReceiver<FrontToBackSocket>,
     mut back_to_front: mpsc::Sender<BackToFront>,
 ) {
+    // Buffer of data to write to the TCP socket.
+    let mut write_buffer = Vec::new();
+    // Value between 0 and `write_buffer.len()` indicating how many bytes at the start of
+    // `write_buffer` have already been written to the socket.
+    let mut write_buffer_offset = 0;
+    // Message to answer when we finish writing the write buffer.
+    let mut write_message = None;
+    /// Buffer where to read data into.
+    let mut read_buffer = Vec::new();
+    // Message to answer if we read data.
+    let mut read_message = None;
+
     // Now that we're connected and we have a `socket` and `commands_rx`, we can start reading
     // and writing.
     loop {
-        // TODO: should read and write asynchronously, but that's hard because of borrowing question
-        match commands_rx.next().await {
-            Some(FrontToBackSocket::Read { message_id }) => {
-                let mut read_buf = vec![0; 1024];
-                let result = socket
-                    .read(&mut read_buf)
-                    .await
-                    .map(|n| {
-                        read_buf.truncate(n);
-                        read_buf
-                    })
-                    .map_err(|_| ());
-                let msg_to_front = BackToFront::Read { message_id, result };
+        enum WhatHappened {
+            ReadCmd {
+                message_id: MessageId,
+            },
+            WriteCmd {
+                message_id: MessageId,
+                data: Vec<u8>,
+            },
+            ReadFinished,
+            WriteFinished,
+        }
+
+        let what_happened = {
+            let partial_write = async {
+                if write_message.is_some() {
+                    debug_assert!(!write_buffer.is_empty());
+                    debug_assert!(write_buffer_offset < write_buffer.len());
+                    let num_written = (&socket)
+                        .write(&write_buffer[write_buffer_offset..])
+                        .await
+                        .unwrap(); // TODO: don't unwrap :(
+                    debug_assert!(write_buffer_offset + num_written <= write_buffer.len());
+                    write_buffer_offset += num_written;
+                } else {
+                    loop {
+                        futures::pending!()
+                    }
+                }
+            };
+            futures::pin_mut!(partial_write);
+            let read = async {
+                if read_message.is_some() {
+                    assert!(!read_buffer.is_empty());
+                    let num_read = (&socket).read(&mut read_buffer[..]).await.unwrap(); // TODO: don't unwrap :(
+                    read_buffer.truncate(num_read);
+                } else {
+                    loop {
+                        futures::pending!()
+                    }
+                }
+            };
+            futures::pin_mut!(read);
+            let next_command = commands_rx.next();
+            futures::pin_mut!(next_command);
+
+            match future::select(future::select(partial_write, read), next_command).await {
+                future::Either::Right((Some(FrontToBackSocket::Read { message_id }), _)) => {
+                    WhatHappened::ReadCmd { message_id }
+                }
+                future::Either::Right((Some(FrontToBackSocket::Write { message_id, data }), _)) => {
+                    WhatHappened::WriteCmd { message_id, data }
+                }
+                future::Either::Right((None, _)) => {
+                    // `commands_rx` is closed, so let's stop the task.
+                    return;
+                }
+                future::Either::Left((future::Either::Left((_, _)), _)) => {
+                    WhatHappened::WriteFinished
+                }
+                future::Either::Left((future::Either::Right((_, _)), _)) => {
+                    WhatHappened::ReadFinished
+                }
+            }
+        };
+
+        match what_happened {
+            WhatHappened::ReadCmd { message_id } => {
+                // Read already in progress.
+                if read_message.is_some() {
+                    panic!(); // TODO: don't panic
+                }
+
+                assert!(read_buffer.is_empty());
+                read_message = Some(message_id);
+                read_buffer = vec![0; 512];
+            }
+
+            WhatHappened::WriteCmd { message_id, data } => {
+                // Write already in progress.
+                if write_message.is_some() {
+                    panic!(); // TODO: don't panic
+                }
+
+                debug_assert!(write_buffer.is_empty());
+                debug_assert_eq!(write_buffer_offset, 0);
+                write_message = Some(message_id);
+                write_buffer = data;
+                write_buffer_offset = 0;
+            }
+
+            WhatHappened::WriteFinished => {
+                // Finished a partial write.
+                if write_buffer_offset == write_buffer.len() {
+                    let message_id = write_message.take().unwrap();
+                    write_buffer.clear();
+                    write_buffer_offset = 0;
+                    let msg_to_front = BackToFront::Write {
+                        message_id,
+                        result: Ok(()),
+                    };
+                    if back_to_front.send(msg_to_front).await.is_err() {
+                        return;
+                    }
+                }
+            }
+
+            WhatHappened::ReadFinished => {
+                // Finished a read.
+                let read_message = read_message.take().unwrap();
+                let buf = mem::replace(&mut read_buffer, Vec::new());
+                let msg_to_front = BackToFront::Read {
+                    message_id: read_message,
+                    result: Ok(buf),
+                };
                 if back_to_front.send(msg_to_front).await.is_err() {
                     return;
                 }
-            }
-            Some(FrontToBackSocket::Write { message_id, data }) => {
-                let result = socket.write_all(&data).await.map_err(|_| ());
-                let msg_to_front = BackToFront::Write { message_id, result };
-                if back_to_front.send(msg_to_front).await.is_err() {
-                    return;
-                }
-            }
-            None => {
-                // `commands_rx` is closed, so let's stop the task.
-                return;
             }
         }
     }
@@ -547,52 +541,57 @@ async fn open_socket_task(
 
 /// Function executed in the background for each TCP listener.
 async fn listener_task(
-    socket_id: u32,
-    listen_message_id: MessageId,
-    socket_addr: SocketAddr,
+    local_socket_addr: SocketAddr,
+    mut front_to_back: mpsc::UnboundedReceiver<FrontToBackListener>,
     mut back_to_front: mpsc::Sender<BackToFront>,
 ) {
-    // First step is to try create the listener.
-    let (listener, mut commands_rx) = match TcpListener::bind(socket_addr).await {
-        Ok(s) => {
-            let (tx, rx) = mpsc::unbounded::<FrontToBackListener>();
-            let msg_to_front = BackToFront::ListenOk {
-                socket_id,
-                local_addr: s.local_addr().unwrap(), // TODO:
-                listen_message_id,
-                sender: tx,
-            };
+    let socket = TcpListener::bind(&local_socket_addr).await.unwrap(); // TODO: don't unwrap
+    let mut pending_sockets = VecDeque::new();
 
-            if back_to_front.send(msg_to_front).await.is_err() {
-                return;
-            }
-
-            (s, rx)
-        }
-        Err(_) => {
-            let msg_to_front = BackToFront::ListenErr {
-                socket_id,
-                listen_message_id,
-            };
-            let _ = back_to_front.send(msg_to_front).await;
-            return;
-        }
-    };
-
-    // Now that we're connected and we have a `listener` and `commands_rx`, we can start reading
-    // and writing.
     loop {
-        match commands_rx.next().await {
-            Some(FrontToBackListener::Accept { message_id }) => {
-                let (socket, _) = listener.accept().await.unwrap(); // TODO: don't unwrap
-                let msg_to_front = BackToFront::Accept { message_id, socket };
-                if back_to_front.send(msg_to_front).await.is_err() {
-                    return;
+        enum WhatHappened {
+            Cmd(FrontToBackListener),
+            NewSocket(TcpStream, SocketAddr),
+        }
+
+        let what_happened = {
+            let next_command = front_to_back.next();
+            futures::pin_mut!(next_command);
+            let next_socket = socket.accept();
+            futures::pin_mut!(next_socket);
+
+            match future::select(next_command, next_socket).await {
+                future::Either::Left((Some(cmd), _)) => WhatHappened::Cmd(cmd),
+                future::Either::Left((None, _)) => return,
+                future::Either::Right((Ok((socket, addr)), _)) => {
+                    WhatHappened::NewSocket(socket, addr)
                 }
+                future::Either::Right((Err(_), _)) => panic!(), // TODO:
             }
-            None => {
-                // `commands_rx` is closed, so let's stop the task.
-                return;
+        };
+
+        match what_happened {
+            WhatHappened::Cmd(FrontToBackListener::NewSocket {
+                socket_id,
+                open_message_id,
+            }) => {
+                pending_sockets.push_back((socket_id, open_message_id));
+            }
+            WhatHappened::NewSocket(socket, addr) => {
+                if let Some((socket_id, open_message_id)) = pending_sockets.pop_front() {
+                    let (tx, rx) = mpsc::unbounded();
+                    task::spawn(open_socket_task(socket, rx, back_to_front.clone()));
+
+                    let msg_to_front = BackToFront::OpenOk {
+                        open_message_id,
+                        socket_id,
+                        sender: tx,
+                    };
+
+                    if back_to_front.send(msg_to_front).await.is_err() {
+                        return;
+                    }
+                }
             }
         }
     }
