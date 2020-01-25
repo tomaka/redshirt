@@ -155,6 +155,7 @@ impl AsyncRead for TcpStream {
         }
     }
 
+    // TODO: implement poll_read_vectored
     // TODO: unsafe fn initializer(&self) -> Initializer { ... }
 }
 
@@ -196,6 +197,8 @@ impl AsyncWrite for TcpStream {
         Poll::Ready(Ok(buf.len()))
     }
 
+    // TODO: implement poll_write_vectored
+
     fn poll_flush(self: Pin<&mut Self>, _: &mut Context) -> Poll<Result<(), io::Error>> {
         Poll::Ready(Ok(()))
     }
@@ -213,6 +216,8 @@ impl tokio::io::AsyncRead for TcpStream {
     ) -> Poll<Result<usize, io::Error>> {
         AsyncRead::poll_read(self, cx, buf)
     }
+
+    // TODO: implement poll_read_vectored
 }
 
 impl tokio::io::AsyncWrite for TcpStream {
@@ -223,6 +228,8 @@ impl tokio::io::AsyncWrite for TcpStream {
     ) -> Poll<Result<usize, io::Error>> {
         AsyncWrite::poll_write(self, cx, buf)
     }
+
+    // TODO: implement poll_write_vectored
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), io::Error>> {
         AsyncWrite::poll_flush(self, cx)
