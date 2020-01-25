@@ -1,4 +1,4 @@
-// Copyright (C) 2019  Pierre Krieger
+// Copyright (C) 2019-2020  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -20,9 +20,11 @@ fn main() {
     std::panic::set_hook(Box::new(|info| {
         redshirt_log_interface::log(format!("Panic: {}\n", info));
     }));
+    redshirt_log_interface::init();
 
     redshirt_syscalls::block_on(async move {
-        redshirt_time_interface::Delay::new(std::time::Duration::from_secs(2)).await;
+        // TODO: hack to leave time for interface registration
+        redshirt_time_interface::Delay::new(std::time::Duration::from_secs(5)).await;
 
         // Note: IPv6 = 2a00:1450:4007:80f::200e
         let out = redshirt_network_interface::TcpStream::connect(&From::from((
@@ -38,7 +40,7 @@ fn main() {
             .await
             .unwrap();
 
-        println!("Now listening on 0.0.0.0:8000");
+        log::info!("Now listening on 0.0.0.0:8000");
 
         let stream = stream::unfold(listener, |mut l| {
             async move {
@@ -117,10 +119,10 @@ struct Executor {
     pusher: mpsc::UnboundedSender<Pin<Box<dyn Future<Output = ()>>>>,
 }
 
-impl<T: Future<Output = ()> + 'static> tokio_executor::TypedExecutor<T> for Executor {
-    fn spawn(&mut self, future: T) -> Result<(), tokio_executor::SpawnError> {
+impl<T: Future<Output = ()> + 'static> hyper::rt::Executor<T> for Executor {
+    fn execute(&self, future: T) {
         self.pusher
             .unbounded_send(Box::pin(future))
-            .map_err(|_| tokio_executor::SpawnError::shutdown())
+            .unwrap()
     }
 }

@@ -1,4 +1,4 @@
-// Copyright (C) 2019  Pierre Krieger
+// Copyright (C) 2019-2020  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -57,6 +57,10 @@ impl Kernel {
         let mut system_builder = redshirt_core::system::SystemBuilder::new()
             .with_native_program(crate::hardware::HardwareHandler::new())
             .with_native_program(crate::random::native::RandomNativeProgram::new())
+            .with_startup_process(build_wasm_module!(
+                "../../../modules/p2p-loader",
+                "passive-node"
+            ))
             .with_startup_process(build_wasm_module!("../../../modules/hello-world"))
             .with_startup_process(build_wasm_module!("../../../modules/network-manager"));
 
@@ -75,7 +79,7 @@ impl Kernel {
         }
 
         let system = system_builder
-            .with_main_program([0; 32]) // TODO: just a test
+            .with_main_program(From::from([0; 32])) // TODO: just a test
             .build();
 
         loop {

@@ -1,4 +1,4 @@
-// Copyright (C) 2019  Pierre Krieger
+// Copyright (C) 2019-2020  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -18,22 +18,12 @@ use redshirt_syscalls::InterfaceHash;
 
 // TODO: this has been randomly generated; instead should be a hash or something
 pub const INTERFACE: InterfaceHash = InterfaceHash::from_raw_hash([
-    0x10, 0x19, 0x16, 0x2a, 0x2b, 0x0c, 0x41, 0x36, 0x4a, 0x20, 0x01, 0x51, 0x47, 0x38, 0x27, 0x08,
-    0x4a, 0x3c, 0x1e, 0x07, 0x18, 0x1c, 0x27, 0x11, 0x55, 0x15, 0x1d, 0x5f, 0x22, 0x5b, 0x16, 0x20,
+    0x56, 0xf0, 0xad, 0x54, 0x6c, 0x6d, 0x91, 0xce, 0xc2, 0x10, 0x88, 0xf6, 0x32, 0x2b, 0x66, 0x45,
+    0xd4, 0xcf, 0xbe, 0xa3, 0xf7, 0x03, 0x13, 0xcd, 0x04, 0x65, 0xfd, 0x7f, 0x06, 0xd4, 0x24, 0xa1,
 ]);
 
 #[derive(Debug, Encode, Decode)]
 pub enum TcpMessage {
-    /// Request to open a TCP socket. The socket can either attempt to connect to a third party,
-    /// or listen on a port and wait for a third party to connect.
-    Open(TcpOpen),
-    Close(TcpClose),
-    /// Ask to read data from a socket. The response contains the data. For each socket, only one
-    /// read can exist at any given point in time.
-    Read(TcpRead),
-    /// Ask to write data to a socket. A response is sent back once written. For each socket, only
-    /// one write can exist at any given point in time.
-    Write(TcpWrite),
     RegisterInterface {
         id: u64,
         mac_address: [u8; 6],
@@ -49,61 +39,6 @@ pub enum TcpMessage {
     ///
     /// The packet must be an Ethernet frame without the CRC.
     InterfaceWaitData(u64),
-}
-
-#[derive(Debug, Encode, Decode)]
-pub struct TcpOpen {
-    /// If true, then `ip` and `port` designate a local IP and port that the socket must listen
-    /// on. A response will arrive when a remote connects to this IP and port.
-    ///
-    /// If false, then `ip` and `port` designate a remote IP and port that the socket will try to
-    /// connect to. A response will arrive when we successfully connect or fail to connect.
-    // TODO: enum instead?
-    pub listen: bool,
-    /// IPv6 address.
-    pub ip: [u16; 8],
-    /// TCP port.
-    pub port: u16,
-}
-
-#[derive(Debug, Encode, Decode)]
-pub struct TcpOpenResponse {
-    pub result: Result<TcpSocketOpen, ()>,
-}
-
-#[derive(Debug, Encode, Decode)]
-pub struct TcpSocketOpen {
-    pub socket_id: u32,
-    pub local_ip: [u16; 8],
-    pub local_port: u16,
-    pub remote_ip: [u16; 8],
-    pub remote_port: u16,
-}
-
-#[derive(Debug, Encode, Decode)]
-pub struct TcpClose {
-    pub socket_id: u32,
-}
-
-#[derive(Debug, Encode, Decode)]
-pub struct TcpRead {
-    pub socket_id: u32,
-}
-
-#[derive(Debug, Encode, Decode)]
-pub struct TcpReadResponse {
-    pub result: Result<Vec<u8>, ()>,
-}
-
-#[derive(Debug, Encode, Decode)]
-pub struct TcpWrite {
-    pub socket_id: u32,
-    pub data: Vec<u8>,
-}
-
-#[derive(Debug, Encode, Decode)]
-pub struct TcpWriteResponse {
-    pub result: Result<(), ()>,
 }
 
 #[derive(Debug, Encode, Decode)]

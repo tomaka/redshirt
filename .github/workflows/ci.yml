@@ -146,6 +146,8 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: rust
+      env:
+        CC: clang-9
     strategy:
       matrix:
         target: [x86_64-multiboot2, arm-freestanding]
@@ -160,6 +162,12 @@ jobs:
       run: |
         apt-get update
         apt-get install -y lld
+    - name: Install a recent version of clang
+      run: |
+        wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
+        echo "deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-9 main" >> /etc/apt/sources.list
+        apt-get update
+        apt-get install -y clang-9
     - name: Cache cargo registry
       uses: actions/cache@v1
       with:
@@ -178,15 +186,15 @@ jobs:
     - name: Install nightly Rust
       uses: actions-rs/toolchain@v1
       with:
-        toolchain: nightly-2019-12-05
+        toolchain: nightly
         target: wasm32-unknown-unknown
         override: true
     - name: Install rust-src
       run: rustup component add rust-src
     - name: Build core
-      run: RUST_TARGET_PATH=`pwd` cargo +nightly-2019-12-05 build -Z build-std=core,alloc --target ${{ matrix.target }} --package redshirt-core --release
+      run: RUST_TARGET_PATH=`pwd` cargo +nightly build -Z build-std=core,alloc --target ${{ matrix.target }} --package redshirt-core --release
     - name: Build kernel
-      run: RUST_TARGET_PATH=`pwd` cargo +nightly-2019-12-05 build -Z build-std=core,alloc --target ${{ matrix.target }} --package redshirt-standalone-kernel --release
+      run: RUST_TARGET_PATH=`pwd` cargo +nightly build -Z build-std=core,alloc --target ${{ matrix.target }} --package redshirt-standalone-kernel --release
     - name: Upload generated kernel
       uses: actions/upload-artifact@master
       with:

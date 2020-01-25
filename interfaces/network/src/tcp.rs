@@ -1,4 +1,4 @@
-// Copyright (C) 2019  Pierre Krieger
+// Copyright (C) 2019-2020  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -15,6 +15,13 @@
 
 use crate::ffi;
 
+<<<<<<< HEAD:interfaces/network/src/tcp.rs
+=======
+#![deny(intra_doc_link_resolution_failure)]
+
+// TODO: everything here is a draft
+
+>>>>>>> origin/master:interfaces/tcp/src/lib.rs
 use futures::{lock::Mutex, prelude::*, ready};
 use redshirt_syscalls::Encode as _;
 use std::{
@@ -24,6 +31,11 @@ use std::{
     task::{Context, Poll},
 };
 
+<<<<<<< HEAD:interfaces/network/src/tcp.rs
+=======
+pub mod ffi;
+
+>>>>>>> origin/master:interfaces/tcp/src/lib.rs
 /// Active TCP connection to a remote.
 ///
 /// This type is similar to [`std::net::TcpStream`].
@@ -39,6 +51,18 @@ pub struct TcpStream {
     pending_write: Option<Pin<Box<dyn Future<Output = ffi::TcpWriteResponse> + Send>>>,
 }
 
+/// Active TCP listening socket.
+///
+/// This type is similar to [`std::net::TcpListener`].
+pub struct TcpListener {
+    local_addr: SocketAddr,
+    next_incoming: Mutex<
+        stream::FuturesUnordered<
+            Pin<Box<dyn Future<Output = Result<(TcpStream, SocketAddr), ()>> + Send>>,
+        >,
+    >,
+}
+
 impl TcpStream {
     /// Start connecting to the given address. Returns a `TcpStream` if the connection is
     /// successful.
@@ -48,7 +72,11 @@ impl TcpStream {
     }
 
     /// Dialing and listening use the same underlying messages. The only different being a boolean
+<<<<<<< HEAD:interfaces/network/src/tcp.rs
     /// whether the address is a binding point or a destination.
+=======
+    /// indicating whether the address is a binding point or a destination.
+>>>>>>> origin/master:interfaces/tcp/src/lib.rs
     fn new(
         socket_addr: &SocketAddr,
         listen: bool,
@@ -75,6 +103,7 @@ impl TcpStream {
                     .unwrap()
                     .await
             };
+<<<<<<< HEAD:interfaces/network/src/tcp.rs
 
             let socket_open_info = message.result?;
             let remote_addr = {
@@ -82,6 +111,15 @@ impl TcpStream {
                 SocketAddr::new(IpAddr::from(ip), socket_open_info.remote_port)
             };
 
+=======
+
+            let socket_open_info = message.result?;
+            let remote_addr = {
+                let ip = Ipv6Addr::from(socket_open_info.remote_ip);
+                SocketAddr::new(IpAddr::from(ip), socket_open_info.remote_port)
+            };
+
+>>>>>>> origin/master:interfaces/tcp/src/lib.rs
             let stream = TcpStream {
                 handle: socket_open_info.socket_id,
                 read_buffer: Vec::new(),
@@ -102,12 +140,14 @@ impl AsyncRead for TcpStream {
     ) -> Poll<Result<usize, io::Error>> {
         loop {
             if let Some(pending_read) = self.pending_read.as_mut() {
-                self.read_buffer = match ready!(Future::poll(Pin::new(pending_read), cx)).result {
+                self.read_buffer = match ready!(Future::poll(pending_read.as_mut(), cx)).result {
                     Ok(d) => d,
                     Err(_) => return Poll::Ready(Err(io::ErrorKind::Other.into())), // TODO:
                 };
                 self.pending_read = None;
             }
+
+            debug_assert!(self.pending_read.is_none());
 
             if !self.read_buffer.is_empty() {
                 let to_copy = cmp::min(self.read_buffer.len(), buf.len());
@@ -117,20 +157,25 @@ impl AsyncRead for TcpStream {
                 return Poll::Ready(Ok(to_copy));
             }
 
-            let tcp_read = ffi::TcpMessage::Read(ffi::TcpRead {
-                socket_id: self.handle,
-            });
-            let msg_id = unsafe {
-                let msg = tcp_read.encode();
-                redshirt_syscalls::MessageBuilder::new()
-                    .add_data(&msg)
-                    .emit_with_response_raw(&ffi::INTERFACE)
-                    .unwrap()
+            self.pending_read = {
+                let tcp_read = ffi::TcpMessage::Read(ffi::TcpRead {
+                    socket_id: self.handle,
+                });
+
+                let msg_id = unsafe {
+                    let msg = tcp_read.encode();
+                    redshirt_syscalls::MessageBuilder::new()
+                        .add_data(&msg)
+                        .emit_with_response_raw(&ffi::INTERFACE)
+                        .unwrap()
+                };
+
+                Some(Box::pin(redshirt_syscalls::message_response(msg_id)))
             };
-            self.pending_read = Some(Box::pin(redshirt_syscalls::message_response(msg_id)));
         }
     }
 
+    // TODO: implement poll_read_vectored
     // TODO: unsafe fn initializer(&self) -> Initializer { ... }
 }
 
@@ -140,27 +185,39 @@ impl AsyncWrite for TcpStream {
         cx: &mut Context,
         buf: &[u8],
     ) -> Poll<Result<usize, io::Error>> {
+        // Try to finish the previous write, if any is in progress.
         if let Some(pending_write) = self.pending_write.as_mut() {
-            match ready!(Future::poll(Pin::new(pending_write), cx)).result {
+            match ready!(Future::poll(pending_write.as_mut(), cx)).result {
                 Ok(()) => self.pending_write = None,
                 Err(_) => return Poll::Ready(Err(io::ErrorKind::Other.into())), // TODO:
             }
         }
 
-        let tcp_write = ffi::TcpMessage::Write(ffi::TcpWrite {
-            socket_id: self.handle,
-            data: buf.to_vec(),
-        });
-        let msg_id = unsafe {
-            let msg = tcp_write.encode();
-            redshirt_syscalls::MessageBuilder::new()
-                .add_data(&msg)
-                .emit_with_response_raw(&ffi::INTERFACE)
-                .unwrap()
+        debug_assert!(self.pending_write.is_none());
+
+        // Perform the write, and store into `self.pending_write` a future to when we can start
+        // the next write.
+        self.pending_write = {
+            let tcp_write = ffi::TcpMessage::Write(ffi::TcpWrite {
+                socket_id: self.handle,
+                data: buf.to_vec(), // TODO: meh for cloning
+            });
+
+            let msg_id = unsafe {
+                let msg = tcp_write.encode(); // TODO: meh because we clone data a second time here
+                redshirt_syscalls::MessageBuilder::new()
+                    .add_data(&msg)
+                    .emit_with_response_raw(&ffi::INTERFACE)
+                    .unwrap()
+            };
+
+            Some(Box::pin(redshirt_syscalls::message_response(msg_id)))
         };
-        self.pending_write = Some(Box::pin(redshirt_syscalls::message_response(msg_id)));
+
         Poll::Ready(Ok(buf.len()))
     }
+
+    // TODO: implement poll_write_vectored
 
     fn poll_flush(self: Pin<&mut Self>, _: &mut Context) -> Poll<Result<(), io::Error>> {
         Poll::Ready(Ok(()))
@@ -171,7 +228,7 @@ impl AsyncWrite for TcpStream {
     }
 }
 
-impl tokio_io::AsyncRead for TcpStream {
+impl tokio::io::AsyncRead for TcpStream {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context,
@@ -179,9 +236,11 @@ impl tokio_io::AsyncRead for TcpStream {
     ) -> Poll<Result<usize, io::Error>> {
         AsyncRead::poll_read(self, cx, buf)
     }
+
+    // TODO: implement poll_read_vectored
 }
 
-impl tokio_io::AsyncWrite for TcpStream {
+impl tokio::io::AsyncWrite for TcpStream {
     fn poll_write(
         self: Pin<&mut Self>,
         cx: &mut Context,
@@ -189,6 +248,8 @@ impl tokio_io::AsyncWrite for TcpStream {
     ) -> Poll<Result<usize, io::Error>> {
         AsyncWrite::poll_write(self, cx, buf)
     }
+
+    // TODO: implement poll_write_vectored
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), io::Error>> {
         AsyncWrite::poll_flush(self, cx)
@@ -206,11 +267,12 @@ impl Drop for TcpStream {
                 socket_id: self.handle,
             });
 
-            redshirt_syscalls::emit_message_without_response(&ffi::INTERFACE, &tcp_close);
+            let _ = redshirt_syscalls::emit_message_without_response(&ffi::INTERFACE, &tcp_close);
         }
     }
 }
 
+<<<<<<< HEAD:interfaces/network/src/tcp.rs
 pub struct TcpListener {
     local_addr: SocketAddr,
     next_incoming: Mutex<
@@ -220,7 +282,10 @@ pub struct TcpListener {
     >,
 }
 
+=======
+>>>>>>> origin/master:interfaces/tcp/src/lib.rs
 impl TcpListener {
+    /// Create a new [`TcpListener`] listening on the given address and port.
     pub fn bind(socket_addr: &SocketAddr) -> impl Future<Output = Result<TcpListener, ()>> {
         let socket_addr = socket_addr.clone();
         let next_incoming = Mutex::new(
@@ -242,6 +307,10 @@ impl TcpListener {
         self.local_addr
     }
 
+<<<<<<< HEAD:interfaces/network/src/tcp.rs
+=======
+    /// Waits for a new incoming connection and returns it.
+>>>>>>> origin/master:interfaces/tcp/src/lib.rs
     pub async fn accept(&self) -> (TcpStream, SocketAddr) {
         let mut next_incoming = self.next_incoming.lock().await;
 

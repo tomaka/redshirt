@@ -1,4 +1,4 @@
-// Copyright (C) 2019  Pierre Krieger
+// Copyright (C) 2019-2020  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -89,7 +89,8 @@ pub use emit::{
     cancel_message, emit_message_with_response, emit_message_without_response, MessageBuilder,
 };
 pub use ffi::{
-    DecodedInterfaceMessage, DecodedInterfaceOrDestroyed, DecodedMessage, DecodedResponseMessage,
+    DecodedInterfaceNotification, DecodedInterfaceOrDestroyed, DecodedNotification,
+    DecodedResponseNotification,
 };
 pub use interface_message::{
     emit_answer, emit_message_error, next_interface_message, InterfaceMessageFuture,

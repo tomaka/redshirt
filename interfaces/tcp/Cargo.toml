@@ -1,5 +1,5 @@
 [package]
-name = "redshirt-window-interface"
+name = "redshirt-tcp-interface"
 version = "0.1.0"
 license = "GPL-3.0-or-later"
 authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
@@ -9,3 +9,4 @@ edition = "2018"
 futures = "0.3.1"
 redshirt-syscalls = { path = "../syscalls" }
 parity-scale-codec = { version = "1.0.5", features = ["derive"] }
+tokio = { version = "0.2.0", default-features = false }

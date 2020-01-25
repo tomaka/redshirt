@@ -5,6 +5,8 @@ members = [
     "kernel/cli",
     "kernel/hosted-tap",
     "kernel/hosted-log",
+    "kernel/hosted-random",
+    "kernel/hosted-tcp",
     "kernel/hosted-time",
     "kernel/standalone",
     "interfaces/hardware",
@@ -17,8 +19,6 @@ members = [
     "interfaces/syscalls",
     "interfaces/threads",
     "interfaces/time",
-    "interfaces/vulkan",
-    "interfaces/window",
 ]
 
 [profile.dev]

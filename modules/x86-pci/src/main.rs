@@ -1,4 +1,4 @@
-// Copyright (C) 2019  Pierre Krieger
+// Copyright (C) 2019-2020  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -19,6 +19,7 @@
 
 // TODO: support Enhanced Configuration Access Mechanism (ECAM)
 
+use fnv::FnvBuildHasher;
 use parity_scale_codec::DecodeAll;
 use std::{borrow::Cow, convert::TryFrom as _};
 
@@ -53,7 +54,7 @@ async fn async_main() {
 }
 
 lazy_static::lazy_static! {
-    static ref PCI_DEVICES: hashbrown::HashMap<(u16, u16), (&'static str, &'static str)> = build_pci_info();
+    static ref PCI_DEVICES: hashbrown::HashMap<(u16, u16), (&'static str, &'static str), FnvBuildHasher> = build_pci_info();
 }
 
 async unsafe fn read_pci_devices() -> Vec<redshirt_pci_interface::PciDeviceInfo> {

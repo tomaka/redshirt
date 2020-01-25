@@ -9,7 +9,6 @@ members = [
     "stub",
     "third-party/time",
     "third-party/wasm-timer",
-    "vulkan-triangle",
     "x86-log",
     "x86-pci",
 ]
@@ -24,5 +23,6 @@ codegen-units = 1
 panic = 'abort'
 
 [patch.crates-io]
+getrandom = { path = "./third-party/getrandom" }
 time = { path = "./third-party/time" }
 wasm-timer = { path = "./third-party/wasm-timer" }

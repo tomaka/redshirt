@@ -1,4 +1,4 @@
-// Copyright (C) 2019  Pierre Krieger
+// Copyright (C) 2019-2020  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -21,10 +21,8 @@ fn main() {
     let dest_path = Path::new(&out_dir).join("build-pci.rs");
     let mut f = File::create(&dest_path).unwrap();
 
-    write!(
-        f,
-        r#"
-        fn build_pci_info() -> hashbrown::HashMap<(u16, u16), (&'static str, &'static str)> {{
+    write!(f, r#"
+        fn build_pci_info() -> hashbrown::HashMap<(u16, u16), (&'static str, &'static str), fnv::FnvBuildHasher> {{
             [
     "#
     )

@@ -1,4 +1,4 @@
-// Copyright (C) 2019  Pierre Krieger
+// Copyright (C) 2019-2020  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -25,6 +25,7 @@ use core::{convert::TryFrom as _, pin::Pin, sync::atomic};
 use crossbeam_queue::SegQueue;
 use futures::prelude::*;
 use hashbrown::HashMap;
+use nohash_hasher::BuildNoHashHasher;
 use redshirt_core::native::{DummyMessageIdWrite, NativeProgramEvent, NativeProgramRef};
 use redshirt_core::{Decode as _, Encode as _, EncodedMessage, InterfaceHash, MessageId, Pid};
 use redshirt_hardware_interface::ffi::{
@@ -38,7 +39,7 @@ pub struct HardwareHandler {
     registered: atomic::AtomicBool,
     /// For each PID, a list of memory allocations.
     // TODO: optimize
-    allocations: Mutex<HashMap<Pid, Vec<Vec<u8>>>>,
+    allocations: Mutex<HashMap<Pid, Vec<Vec<u8>>, BuildNoHashHasher<u64>>>,
     /// List of messages waiting to be emitted with `next_event`.
     pending_messages: SegQueue<(MessageId, Result<EncodedMessage, ()>)>,
 }
@@ -48,7 +49,7 @@ impl HardwareHandler {
     pub fn new() -> Self {
         HardwareHandler {
             registered: atomic::AtomicBool::new(false),
-            allocations: Mutex::new(HashMap::new()),
+            allocations: Mutex::new(HashMap::default()),
             pending_messages: SegQueue::new(),
         }
     }
