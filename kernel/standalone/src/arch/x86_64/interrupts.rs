@@ -32,6 +32,7 @@
 // TODO: init() has to be called; this isn't great
 // TODO: while it's not a problem that the API is racy, it is a problem if multiple different
 //       pieces of code inadvertently try to share an interrupt vector
+// TODO: handle end-of-interrupt of the APIC
 
 use core::task::Waker;
 use futures::task::AtomicWaker;
