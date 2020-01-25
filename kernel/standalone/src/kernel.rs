@@ -57,6 +57,10 @@ impl Kernel {
         let mut system_builder = redshirt_core::system::SystemBuilder::new()
             .with_native_program(crate::hardware::HardwareHandler::new())
             .with_native_program(crate::random::native::RandomNativeProgram::new())
+            .with_startup_process(build_wasm_module!(
+                "../../../modules/p2p-loader",
+                "passive-node"
+            ))
             .with_startup_process(build_wasm_module!("../../../modules/hello-world"));
 
         // TODO: use a better system than cfgs
@@ -74,7 +78,7 @@ impl Kernel {
         }
 
         let system = system_builder
-            .with_main_program([0; 32]) // TODO: just a test
+            .with_main_program(From::from([0; 32])) // TODO: just a test
             .build();
 
         loop {

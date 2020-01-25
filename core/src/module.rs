@@ -60,6 +60,12 @@ impl From<[u8; 32]> for ModuleHash {
     }
 }
 
+impl From<ModuleHash> for [u8; 32] {
+    fn from(hash: ModuleHash) -> [u8; 32] {
+        hash.0
+    }
+}
+
 impl fmt::Debug for Module {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Module({})", bs58::encode(&self.hash.0).into_string())

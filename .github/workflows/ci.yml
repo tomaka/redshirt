@@ -146,6 +146,8 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: rust
+      env:
+        CC: clang-9
     strategy:
       matrix:
         target: [x86_64-multiboot2, arm-freestanding]
@@ -160,6 +162,12 @@ jobs:
       run: |
         apt-get update
         apt-get install -y lld
+    - name: Install a recent version of clang
+      run: |
+        wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
+        echo "deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-9 main" >> /etc/apt/sources.list
+        apt-get update
+        apt-get install -y clang-9
     - name: Cache cargo registry
       uses: actions/cache@v1
       with:
