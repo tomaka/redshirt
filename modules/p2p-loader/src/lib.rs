@@ -98,7 +98,7 @@ impl<T> Network<T> {
                 let mut cfg = KademliaConfig::default();
                 cfg.set_replication_interval(Some(Duration::from_secs(60)));
                 cfg
-            },
+            }
         );
 
         let mut swarm = Swarm::new(transport, kademlia, local_peer_id);

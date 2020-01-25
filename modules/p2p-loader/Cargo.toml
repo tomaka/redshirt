@@ -24,7 +24,7 @@ libp2p-tcp = "0.14.0-alpha.1"
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 redshirt-interface-interface = { path = "../../interfaces/interface" }
 redshirt-loader-interface = { path = "../../interfaces/loader" }
-redshirt-network-interface = { path = "../../interfaces/network" }
 redshirt-log-interface = { path = "../../interfaces/log" }
 redshirt-syscalls = { path = "../../interfaces/syscalls" }
+redshirt-tcp-interface = { path = "../../interfaces/tcp" }
 redshirt-time-interface = { path = "../../interfaces/time" }

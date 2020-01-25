@@ -50,8 +50,5 @@
 
 #![deny(intra_doc_link_resolution_failure)]
 
-pub use self::tcp::{TcpListener, TcpStream};
-
 pub mod ffi;
 pub mod interface;
-pub mod tcp;

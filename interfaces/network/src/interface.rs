@@ -50,7 +50,7 @@ pub fn register_interface(config: InterfaceConfig) -> NetInterfaceRegistration {
         let id = 0xdeadbeef; // FIXME: generate randomly
 
         redshirt_syscalls::emit_message_without_response(&ffi::INTERFACE, &{
-            ffi::TcpMessage::RegisterInterface {
+            ffi::NetworkMessage::RegisterInterface {
                 id,
                 mac_address: config.mac_address,
             }
@@ -86,7 +86,7 @@ fn build_packet_to_net(
     interface_id: u64,
 ) -> redshirt_syscalls::MessageResponseFuture<Vec<u8>> {
     unsafe {
-        let message = ffi::TcpMessage::InterfaceWaitData(interface_id).encode();
+        let message = ffi::NetworkMessage::InterfaceWaitData(interface_id).encode();
         let msg_id = redshirt_syscalls::MessageBuilder::new()
             .add_data(&message)
             .emit_with_response_raw(&ffi::INTERFACE)
@@ -136,7 +136,7 @@ impl fmt::Debug for NetInterfaceRegistration {
 impl Drop for NetInterfaceRegistration {
     fn drop(&mut self) {
         unsafe {
-            let message = ffi::TcpMessage::UnregisterInterface(self.id);
+            let message = ffi::NetworkMessage::UnregisterInterface(self.id);
             redshirt_syscalls::emit_message_without_response(&ffi::INTERFACE, &message)
                 .unwrap();
         }
@@ -155,7 +155,7 @@ impl<'a> PacketFromNetwork<'a> {
     pub fn send(mut self, data: impl Into<Vec<u8>>) {
         unsafe {
             debug_assert!(self.send_future.is_none());
-            let message = ffi::TcpMessage::InterfaceOnData(self.parent.id, data.into()).encode();
+            let message = ffi::NetworkMessage::InterfaceOnData(self.parent.id, data.into()).encode();
             let msg_id = redshirt_syscalls::MessageBuilder::new()
                 .add_data(&message)
                 .emit_with_response_raw(&ffi::INTERFACE)

@@ -13,12 +13,14 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use fnv::FnvBuildHasher;
 use futures::prelude::*;
 use hashbrown::HashMap;
 use network_manager::{NetworkManager, NetworkManagerEvent};
-use redshirt_network_interface::ffi;
+use redshirt_network_interface::ffi as net_ffi;
 use redshirt_syscalls::ffi::DecodedInterfaceOrDestroyed;
 use redshirt_syscalls::{Decode as _, MessageId};
+use redshirt_tcp_interface::ffi as tcp_ffi;
 use std::{
     mem,
     net::{Ipv6Addr, SocketAddr},
@@ -37,12 +39,16 @@ fn main() {
 }
 
 async fn async_main() {
-    redshirt_interface_interface::register_interface(ffi::INTERFACE)
+    // Register the network and tcp interfaces.
+    redshirt_interface_interface::register_interface(net_ffi::INTERFACE)
+        .await
+        .unwrap();
+    redshirt_interface_interface::register_interface(tcp_ffi::INTERFACE)
         .await
         .unwrap();
 
     let mut network = NetworkManager::<_, Option<MessageId>>::new();
-    let mut sockets = HashMap::new();
+    let mut sockets = HashMap::<_, _, FnvBuildHasher>::default();
     let mut next_socket_id = 0u32;
 
     loop {
@@ -67,73 +73,87 @@ async fn async_main() {
             _ => unimplemented!(), // TODO:
         };
 
-        assert_eq!(msg.interface, ffi::INTERFACE);
-        let msg_data = ffi::TcpMessage::decode(msg.actual_data).unwrap();
-        redshirt_log_interface::log(
-            redshirt_log_interface::Level::Debug,
-            &format!("message: {:?}", msg_data),
-        );
+        if msg.interface == tcp_ffi::INTERFACE {
+            let msg_data = tcp_ffi::TcpMessage::decode(msg.actual_data).unwrap();
+            redshirt_log_interface::log(
+                redshirt_log_interface::Level::Debug,
+                &format!("message: {:?}", msg_data),
+            );
 
-        match msg_data {
-            ffi::TcpMessage::Open(open_msg) => {
-                let result = network.build_tcp_socket(open_msg.listen, &{
-                    let ip_addr = Ipv6Addr::from(open_msg.ip);
-                    if let Some(ip_addr) = ip_addr.to_ipv4() {
-                        SocketAddr::new(ip_addr.into(), open_msg.port)
-                    } else {
-                        SocketAddr::new(ip_addr.into(), open_msg.port)
+            match msg_data {
+                tcp_ffi::TcpMessage::Open(open_msg) => {
+                    let result = network.build_tcp_socket(open_msg.listen, &{
+                        let ip_addr = Ipv6Addr::from(open_msg.ip);
+                        if let Some(ip_addr) = ip_addr.to_ipv4() {
+                            SocketAddr::new(ip_addr.into(), open_msg.port)
+                        } else {
+                            SocketAddr::new(ip_addr.into(), open_msg.port)
+                        }
+                    });
+
+                    let result = match result {
+                        socket/*Ok(socket)*/ => {
+                            let new_id = next_socket_id;
+                            next_socket_id += 1;
+                            sockets.insert(new_id, socket.id());
+                            //Ok(new_id)
+                        },
+                        //Err(err) => Err(err)
+                    };
+
+                    // TODO: do this when connected, duh
+                    /*let rp = ffi::TcpOpenResponse {
+                        result
+                    };
+                    if let Some(message_id) = msg.message_id {
+                        redshirt_syscalls::emit_answer(message_id, &rp);
+                    }*/
+                }
+                tcp_ffi::TcpMessage::Close(msg) => {
+                    if let Some(inner_id) = sockets.remove(&msg.socket_id) {
+                        network.tcp_socket_by_id(&inner_id).unwrap().close();
                     }
-                });
+                }
+                tcp_ffi::TcpMessage::Read(_) => unimplemented!(),
+                tcp_ffi::TcpMessage::Write(_) => unimplemented!(),
+            }
 
-                let result = match result {
-                    socket/*Ok(socket)*/ => {
-                        let new_id = next_socket_id;
-                        next_socket_id += 1;
-                        sockets.insert(new_id, socket.id());
-                        //Ok(new_id)
-                    },
-                    //Err(err) => Err(err)
-                };
+        } else if msg.interface == net_ffi::INTERFACE {
+            let msg_data = net_ffi::NetworkMessage::decode(msg.actual_data).unwrap();
+            redshirt_log_interface::log(
+                redshirt_log_interface::Level::Debug,
+                &format!("message: {:?}", msg_data),
+            );
 
-                // TODO: do this when connected, duh
-                /*let rp = ffi::TcpOpenResponse {
-                    result
-                };
-                if let Some(message_id) = msg.message_id {
-                    redshirt_syscalls::emit_answer(message_id, &rp);
-                }*/
-            }
-            ffi::TcpMessage::Close(msg) => {
-                if let Some(inner_id) = sockets.remove(&msg.socket_id) {
-                    network.tcp_socket_by_id(&inner_id).unwrap().close();
+            match msg_data {
+                net_ffi::NetworkMessage::RegisterInterface { id, mac_address } => {
+                    network.register_interface((msg.emitter_pid, id), mac_address, None::<MessageId>);
+                }
+                net_ffi::NetworkMessage::UnregisterInterface(id) => {
+                    network.unregister_interface(&(msg.emitter_pid, id));
+                }
+                net_ffi::NetworkMessage::InterfaceOnData(id, buf) => {
+                    network.inject_interface_data(&(msg.emitter_pid, id), buf);
+                    if let Some(message_id) = msg.message_id {
+                        redshirt_syscalls::emit_answer(message_id, &());
+                    }
+                }
+                net_ffi::NetworkMessage::InterfaceWaitData(id) => {
+                    let data = network.read_ethernet_cable_out(&(msg.emitter_pid, id));
+                    if !data.is_empty() {
+                        // TODO: don't unwrap message_id
+                        redshirt_syscalls::emit_answer(msg.message_id.unwrap(), &data);
+                    } else {
+                        // TODO: check if already set
+                        // TODO: don't unwrap message_id
+                        *network.interface_user_data(&(msg.emitter_pid, id)) =
+                            Some(msg.message_id.unwrap());
+                    }
                 }
             }
-            ffi::TcpMessage::Read(_) => unimplemented!(),
-            ffi::TcpMessage::Write(_) => unimplemented!(),
-            ffi::TcpMessage::RegisterInterface { id, mac_address } => {
-                network.register_interface((msg.emitter_pid, id), mac_address, None::<MessageId>);
-            }
-            ffi::TcpMessage::UnregisterInterface(id) => {
-                network.unregister_interface(&(msg.emitter_pid, id));
-            }
-            ffi::TcpMessage::InterfaceOnData(id, buf) => {
-                network.inject_interface_data(&(msg.emitter_pid, id), buf);
-                if let Some(message_id) = msg.message_id {
-                    redshirt_syscalls::emit_answer(message_id, &());
-                }
-            }
-            ffi::TcpMessage::InterfaceWaitData(id) => {
-                let data = network.read_ethernet_cable_out(&(msg.emitter_pid, id));
-                if !data.is_empty() {
-                    // TODO: don't unwrap message_id
-                    redshirt_syscalls::emit_answer(msg.message_id.unwrap(), &data);
-                } else {
-                    // TODO: check if already set
-                    // TODO: don't unwrap message_id
-                    *network.interface_user_data(&(msg.emitter_pid, id)) =
-                        Some(msg.message_id.unwrap());
-                }
-            }
+
+        } else {
+            unreachable!()
         }
     }
 }

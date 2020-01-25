@@ -17,26 +17,10 @@ use futures::{channel::mpsc, prelude::*};
 use std::{pin::Pin, task::Context, task::Poll};
 
 fn main() {
-    std::panic::set_hook(Box::new(|info| {
-        redshirt_log_interface::log(format!("Panic: {}\n", info));
-    }));
     redshirt_log_interface::init();
 
     redshirt_syscalls::block_on(async move {
-        // TODO: hack to leave time for interface registration
-        redshirt_time_interface::Delay::new(std::time::Duration::from_secs(5)).await;
-
-        // Note: IPv6 = 2a00:1450:4007:80f::200e
-        let out = redshirt_network_interface::TcpStream::connect(&From::from((
-            "fe80::844b:2aff:fea4:513"
-                .parse::<std::net::Ipv6Addr>()
-                .unwrap(),
-            8000,
-        )))
-        .await
-        .unwrap();
-
-        let listener = redshirt_network_interface::TcpListener::bind(&"[::]:8000".parse().unwrap())
+        let listener = redshirt_tcp_interface::TcpListener::bind(&"0.0.0.0:8000".parse().unwrap())
             .await
             .unwrap();
 
@@ -95,11 +79,11 @@ fn main() {
 }
 
 struct Accept {
-    next_connec: Pin<Box<dyn Stream<Item = redshirt_network_interface::TcpStream>>>,
+    next_connec: Pin<Box<dyn Stream<Item = redshirt_tcp_interface::TcpStream>>>,
 }
 
 impl hyper::server::accept::Accept for Accept {
-    type Conn = redshirt_network_interface::TcpStream;
+    type Conn = redshirt_tcp_interface::TcpStream;
     type Error = std::io::Error;
 
     fn poll_accept(

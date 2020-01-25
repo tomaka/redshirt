@@ -23,7 +23,7 @@ pub const INTERFACE: InterfaceHash = InterfaceHash::from_raw_hash([
 ]);
 
 #[derive(Debug, Encode, Decode)]
-pub enum TcpMessage {
+pub enum NetworkMessage {
     RegisterInterface {
         id: u64,
         mac_address: [u8; 6],

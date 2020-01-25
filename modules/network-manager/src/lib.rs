@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use fnv::FnvBuildHasher;
 use futures::prelude::*;
 use hashbrown::{hash_map::Entry, HashMap};
 use std::{fmt, hash::Hash, iter, net::SocketAddr, pin::Pin, sync::MutexGuard};
@@ -23,7 +24,7 @@ mod interface;
 ///
 /// The `TIfId` generic parameter is an identifier for network interfaces.
 pub struct NetworkManager<TIfId, TIfUser> {
-    devices: HashMap<TIfId, Device<TIfUser>>,
+    devices: HashMap<TIfId, Device<TIfUser>, FnvBuildHasher>,
 }
 
 /// State of a device.
@@ -71,7 +72,7 @@ where
 {
     pub fn new() -> Self {
         NetworkManager {
-            devices: HashMap::new(),
+            devices: HashMap::default(),
         }
     }
 

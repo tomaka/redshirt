@@ -1027,6 +1027,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "managed"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fdcec5e97041c7f0f1c5b7d93f12e57293c831c646f4cc7a5db59460c7ea8de6"
+
+[[package]]
 name = "matches"
 version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1120,10 +1126,13 @@ name = "ne2000"
 version = "0.1.0"
 dependencies = [
  "etherparse",
+ "futures 0.3.1",
  "redshirt-hardware-interface",
  "redshirt-interface-interface",
  "redshirt-log-interface",
+ "redshirt-network-interface",
  "redshirt-pci-interface",
+ "redshirt-random-interface",
  "redshirt-syscalls",
  "smallvec 1.1.0",
 ]
@@ -1137,6 +1146,24 @@ dependencies = [
  "cfg-if",
  "libc",
  "winapi 0.3.8",
+]
+
+[[package]]
+name = "network-manager"
+version = "0.1.0"
+dependencies = [
+ "fnv 1.0.6 (git+https://github.com/dflemstr/rust-fnv)",
+ "futures 0.3.1",
+ "hashbrown",
+ "parity-scale-codec",
+ "redshirt-interface-interface",
+ "redshirt-log-interface",
+ "redshirt-network-interface",
+ "redshirt-syscalls",
+ "redshirt-tcp-interface",
+ "redshirt-time-interface",
+ "smoltcp",
+ "thiserror",
 ]
 
 [[package]]
@@ -1467,6 +1494,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "redshirt-network-interface"
+version = "0.1.0"
+dependencies = [
+ "futures 0.3.1",
+ "parity-scale-codec",
+ "redshirt-syscalls",
+ "tokio",
+]
+
+[[package]]
 name = "redshirt-pci-interface"
 version = "0.1.0"
 dependencies = [
@@ -1479,6 +1516,7 @@ dependencies = [
 name = "redshirt-random-interface"
 version = "0.1.0"
 dependencies = [
+ "byteorder",
  "parity-scale-codec",
  "redshirt-syscalls",
 ]
@@ -1673,6 +1711,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "44e59e0c9fa00817912ae6e4e6e3c4fe04455e75699d06eedc7d85917ed8e8f4"
 
 [[package]]
+name = "smoltcp"
+version = "0.6.0"
+source = "git+https://github.com/m-labs/smoltcp#bcc7e58caea01685dabc2333eab88022846271aa"
+dependencies = [
+ "bitflags",
+ "byteorder",
+ "managed",
+]
+
+[[package]]
 name = "sourcefile"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1741,6 +1789,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bb6bfa289a4d7c5766392812c0a1f4c1ba45afa1ad47803c11e1f407d846d75f"
 dependencies = [
  "winapi-util",
+]
+
+[[package]]
+name = "thiserror"
+version = "1.0.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6f357d1814b33bc2dc221243f8424104bfe72dbe911d5b71b3816a2dff1c977e"
+dependencies = [
+ "thiserror-impl",
+]
+
+[[package]]
+name = "thiserror-impl"
+version = "1.0.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eb2e25d25307eb8436894f727aba8f65d07adf02e5b35a13cebed48bd282bfef"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

@@ -15,6 +15,7 @@
 
 //! Manages a registered networking interface.
 
+use fnv::FnvBuildHasher;
 use hashbrown::HashMap;
 use smoltcp::{phy, time::Instant};
 use std::{
@@ -48,7 +49,7 @@ pub struct NetInterfaceState {
     sockets: smoltcp::socket::SocketSet<'static, 'static, 'static>,
 
     /// State of the sockets. Maintained in parallel with [`NetInterfaceState`].
-    sockets_state: HashMap<SocketId, SocketState>,
+    sockets_state: HashMap<SocketId, SocketState, FnvBuildHasher>,
 
     /// Future that triggers the next time we should poll [`NetInterfaceState::ethernet`].
     /// Must be set to `None` whenever we modify [`NetInterfaceState::ethernet`] in such a way that
@@ -360,7 +361,7 @@ impl NetInterfaceStateBuilder {
             reported_available_data: false,
             device_in_buffer,
             sockets: smoltcp::socket::SocketSet::new(Vec::new()),
-            sockets_state: HashMap::new(),
+            sockets_state: HashMap::default(),
             next_event_delay: None,
         }
     }
