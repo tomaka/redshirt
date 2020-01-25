@@ -1111,6 +1111,7 @@ dependencies = [
  "redshirt-log-interface",
  "redshirt-random-interface",
  "redshirt-syscalls",
+ "redshirt-time-interface",
  "rlibc",
  "spin",
  "walkdir",

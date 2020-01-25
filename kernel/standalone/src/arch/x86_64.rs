@@ -15,11 +15,12 @@
 
 #![cfg(target_arch = "x86_64")]
 
-use core::{convert::TryFrom as _, ops::Range};
+use core::{convert::TryFrom as _, future::Future, ops::Range};
 use x86_64::registers::model_specific::Msr;
 use x86_64::structures::port::{PortRead as _, PortWrite as _};
 
 mod acpi;
+mod apic;
 mod boot_link;
 mod interrupts;
 
@@ -40,7 +41,9 @@ extern "C" fn after_boot(multiboot_header: usize) -> ! {
         // TODO: panics in BOCHS
         //let acpi = acpi::load_acpi_tables(&multiboot_info);
 
-        init_pic_apic();
+        unsafe {
+            APIC = Some(apic::init());
+        }
         interrupts::init();
 
         let kernel = crate::kernel::Kernel::init(crate::kernel::KernelConfig {
@@ -52,11 +55,27 @@ extern "C" fn after_boot(multiboot_header: usize) -> ! {
     }
 }
 
+// TODO: safisize
+static mut APIC: Option<apic::ApicControl> = None;
+
 // TODO: define the semantics of that
 pub fn halt() -> ! {
     loop {
         x86_64::instructions::hlt()
     }
+}
+
+/// Returns the number of nanoseconds that happened since an undeterminate moment in time.
+pub fn monotonic_clock() -> u128 {
+    // TODO: wrong unit; these are not nanoseconds
+    // TODO: maybe TSC not supported? move method to ApicControl instead?
+    u128::from(unsafe { core::arch::x86_64::_rdtsc() })
+}
+
+/// Returns a `Future` that fires when the monotonic clock reaches the given value.
+pub fn timer(clock_value: u128) -> impl Future<Output = ()> {
+    let clock_value = u64::try_from(clock_value).unwrap_or(u64::max_value());
+    unsafe { APIC.as_ref().unwrap().register_tsc_timer(clock_value) }
 }
 
 /// Reads the boot information and find the memory ranges that can be used as a heap.
@@ -117,50 +136,6 @@ fn find_free_memory_ranges<'a>(
         let area_end = usize::try_from(area_end).unwrap();
         Some(area_start..area_end)
     })
-}
-
-unsafe fn init_pic_apic() {
-    // Remap and disable the PIC.
-    //
-    // The PIC (Programmable Interrupt Controller) is the old chip responsible for triggering
-    // on the CPU interrupts coming from the hardware.
-    //
-    // Because of poor design decisions, it will by default trigger interrupts 0 to 15 on the CPU,
-    // which are normally reserved for software-related concerns. For example, the timer will by
-    // default trigger interrupt 8, which is also the double fault exception handler.
-    //
-    // In order to solve this issue, one has to reconfigure the PIC in order to make it trigger
-    // interrupts between 32 and 47 rather than 0 to 15.
-    //
-    // Note that this code disables the PIC altogether. Despite the PIC being disabled, it is
-    // still possible to receive spurious interrupts. Hence the remapping.
-    u8::write_to_port(0xa1, 0xff);
-    u8::write_to_port(0x21, 0xff);
-    u8::write_to_port(0x20, 0x10 | 0x01);
-    u8::write_to_port(0xa0, 0x10 | 0x01);
-    u8::write_to_port(0x21, 0x20);
-    u8::write_to_port(0xa1, 0x28);
-    u8::write_to_port(0x21, 4);
-    u8::write_to_port(0xa1, 2);
-    u8::write_to_port(0x21, 0x01);
-    u8::write_to_port(0xa1, 0x01);
-    u8::write_to_port(0xa1, 0xff);
-    u8::write_to_port(0x21, 0xff);
-
-    // Set up the APIC.
-    let apic_base_addr = {
-        const APIC_BASE_MSR: Msr = Msr::new(0x1b);
-        let base_addr = APIC_BASE_MSR.read() & !0xfff;
-        APIC_BASE_MSR.write(base_addr | 0x800); // Enable the APIC.
-        base_addr
-    };
-
-    // Enable spurious interrupts.
-    {
-        let svr_addr = usize::try_from(apic_base_addr + 0xf0).unwrap() as *mut u32;
-        let val = svr_addr.read_volatile();
-        svr_addr.write_volatile(val | 0x100); // Enable spurious interrupts.
-    }
 }
 
 pub unsafe fn write_port_u8(port: u32, data: u8) {
