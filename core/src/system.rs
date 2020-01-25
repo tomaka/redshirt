@@ -13,11 +13,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::module::Module;
+use crate::module::{Module, ModuleHash};
 use crate::native::{self, NativeProgramMessageIdWrite as _};
 use crate::scheduler::{Core, CoreBuilder, CoreRunOutcome};
 use alloc::{vec, vec::Vec};
-use core::{cell::RefCell, task::Poll};
+use core::{cell::RefCell, iter, task::Poll};
 use crossbeam_queue::SegQueue;
 use fnv::FnvBuildHasher;
 use futures::prelude::*;
@@ -57,7 +57,7 @@ pub struct System {
     ///
     /// This list is only filled at initialization and then never pushed again.
     // TODO: add timeout for loader interface availability
-    main_programs: SegQueue<[u8; 32]>,
+    main_programs: SegQueue<ModuleHash>,
 
     /// "Virtual" pid for the process that sends messages towards the loader.
     loading_virtual_pid: Pid,
@@ -89,7 +89,7 @@ pub struct SystemBuilder {
     startup_processes: Vec<Module>,
 
     /// Same field as [`System::main_programs`].
-    main_programs: SegQueue<[u8; 32]>,
+    main_programs: SegQueue<ModuleHash>,
 }
 
 /// Outcome of running the [`System`] once.
@@ -273,8 +273,9 @@ impl System {
 
                             if interface_hash == redshirt_loader_interface::ffi::INTERFACE {
                                 while let Ok(hash) = self.main_programs.pop() {
-                                    let msg =
-                                        redshirt_loader_interface::ffi::LoaderMessage::Load(hash);
+                                    let msg = redshirt_loader_interface::ffi::LoaderMessage::Load(
+                                        From::from(hash),
+                                    );
                                     let id = self.core.emit_interface_message_answer(
                                         self.loading_virtual_pid,
                                         redshirt_loader_interface::ffi::INTERFACE,
@@ -347,15 +348,22 @@ impl SystemBuilder {
         self
     }
 
+    /// Shortcut for calling [`with_main_program`] multiple times.
+    pub fn with_main_programs(self, hashes: impl IntoIterator<Item = ModuleHash>) -> Self {
+        for hash in hashes {
+            self.main_programs.push(hash);
+        }
+        self
+    }
+
     /// Adds a program that the [`System`] must execute after startup. Can be called multiple times
     /// to add multiple programs.
     ///
     /// The program will be loaded through the `loader` interface. The loading starts as soon as
     /// the `loader` interface has been registered by one of the processes passed to
     /// [`with_startup_process`](SystemBuilder::with_startup_process).
-    pub fn with_main_program(self, hash: [u8; 32]) -> Self {
-        self.main_programs.push(hash);
-        self
+    pub fn with_main_program(self, hash: ModuleHash) -> Self {
+        self.with_main_programs(iter::once(hash))
     }
 
     /// Builds the [`System`].
