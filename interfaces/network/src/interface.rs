@@ -82,9 +82,7 @@ pub struct NetInterfaceRegistration {
 /// Build a `Future` resolving to the next packet to send to the network.
 ///
 /// Only one such `Future` must be alive at any given point in time.
-fn build_packet_to_net(
-    interface_id: u64,
-) -> redshirt_syscalls::MessageResponseFuture<Vec<u8>> {
+fn build_packet_to_net(interface_id: u64) -> redshirt_syscalls::MessageResponseFuture<Vec<u8>> {
     unsafe {
         let message = ffi::NetworkMessage::InterfaceWaitData(interface_id).encode();
         let msg_id = redshirt_syscalls::MessageBuilder::new()
@@ -137,8 +135,7 @@ impl Drop for NetInterfaceRegistration {
     fn drop(&mut self) {
         unsafe {
             let message = ffi::NetworkMessage::UnregisterInterface(self.id);
-            redshirt_syscalls::emit_message_without_response(&ffi::INTERFACE, &message)
-                .unwrap();
+            redshirt_syscalls::emit_message_without_response(&ffi::INTERFACE, &message).unwrap();
         }
     }
 }
@@ -155,7 +152,8 @@ impl<'a> PacketFromNetwork<'a> {
     pub fn send(mut self, data: impl Into<Vec<u8>>) {
         unsafe {
             debug_assert!(self.send_future.is_none());
-            let message = ffi::NetworkMessage::InterfaceOnData(self.parent.id, data.into()).encode();
+            let message =
+                ffi::NetworkMessage::InterfaceOnData(self.parent.id, data.into()).encode();
             let msg_id = redshirt_syscalls::MessageBuilder::new()
                 .add_data(&message)
                 .emit_with_response_raw(&ffi::INTERFACE)
