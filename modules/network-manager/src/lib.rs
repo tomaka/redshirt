@@ -110,7 +110,6 @@ where
             Entry::Occupied(_) => return Err(()),
             Entry::Vacant(e) => e,
         };
-
         let interface = interface::NetInterfaceStateBuilder::default()
             .with_ip_addr("192.168.1.20".parse().unwrap(), 24) // TODO: hack
             .with_ip_addr("fe80::9d39:1765:52bd:8389".parse().unwrap(), 64) // TODO: hack
