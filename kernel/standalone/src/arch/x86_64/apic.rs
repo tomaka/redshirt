@@ -111,6 +111,10 @@ pub struct ApicControl {
     tsc_deadline: bool,
 }
 
+/// Opaque type representing the APIC ID of a processor.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct ApicId(u8);
+
 impl ApicControl {
     /// Returns a `Future` that fires when the TSC (Timestamp Counter) is superior or equal to
     /// the given value.
@@ -119,6 +123,44 @@ impl ApicControl {
             apic_control: self.clone(),
             tsc_value: value,
             in_timers_list: false,
+        }
+    }
+
+    /// Returns the [`ApicId`] of the calling processor.
+    pub fn current_apic_id(self: &Arc<Self>) -> ApicId {
+        ApicId(0) // FIXME:
+    }
+
+    /// Causes the processor with the target APIC ID to wake up.
+    ///
+    /// # Panic
+    ///
+    /// Panics if the interrupt vector is inferior to 32.
+    /// Panics if the `target_apic_id` is out of range. // TODO: <--
+    /// Panics if the processed with the `target_apic_id` hasn't started yet. // TODO: <--
+    ///
+    pub fn send_interprocessor_interrupt(self: &Arc<Self>, target_apic_id: ApicId, vector: u8) {
+        // TODO: if P6 architecture, then only 4 bits of the target are valid; do we care about that?
+        let value_lo = u32::from(vector);
+        let value_hi = u32::from(target_apic_id.0) << (56 - 32);
+
+        let value_lo_addr = usize::try_from(self.apic_base_addr + 0x300).unwrap() as *mut u32;
+        let value_hi_addr = usize::try_from(self.apic_base_addr + 0x310).unwrap() as *mut u32;
+
+        // TODO: assert!(target_api_id < ...);
+        assert!(vector >= 32);
+
+        // We want the write to be atomic.
+        unsafe {
+            if x86_64::instructions::interrupts::are_enabled() {
+                x86_64::instructions::interrupts::disable();
+                value_hi_addr.write_volatile(value_hi);
+                value_lo_addr.write_volatile(value_lo);
+                x86_64::instructions::interrupts::enable();
+            } else {
+                value_hi_addr.write_volatile(value_hi);
+                value_lo_addr.write_volatile(value_lo);
+            }
         }
     }
 

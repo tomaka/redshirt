@@ -17,7 +17,7 @@
 
 // TODO: only works because we're single-CPU'ed at the moment
 
-use crate::arch::x86_64::apic::ApicControl;
+use crate::arch::x86_64::apic::{ApicControl, ApicId};
 
 use alloc::sync::Arc;
 use core::future::Future;
@@ -25,13 +25,18 @@ use core::sync::atomic;
 use core::task::{Context, Poll};
 use futures::task::{waker, ArcWake};
 
+// TODO: we use SeqCst everywhere, but we can probably use a better ordering
+
 /// Waits for the `Future` to resolve to a value.
 ///
 /// This function is similar to [`futures::executor::block_on`].
 pub fn block_on<R>(apic: &Arc<ApicControl>, future: impl Future<Output = R>) -> R {
     futures::pin_mut!(future);
 
-    let local_wake = Arc::new(LocalWake {
+    let local_wake = Arc::new(Waker {
+        apic: apic.clone(),
+        processor_to_wake: apic.current_apic_id(),
+        need_ipi: atomic::AtomicBool::new(false),
         woken_up: atomic::AtomicBool::new(false),
     });
 
@@ -44,14 +49,18 @@ pub fn block_on<R>(apic: &Arc<ApicControl>, future: impl Future<Output = R>) -> 
         }
 
         loop {
+            debug_assert!(x86_64::instructions::interrupts::are_enabled());
             x86_64::instructions::interrupts::disable();
             if local_wake
                 .woken_up
-                .compare_and_swap(true, false, atomic::Ordering::Acquire)
+                .compare_and_swap(true, false, atomic::Ordering::SeqCst)
             {
+                local_wake.need_ipi.store(false, atomic::Ordering::SeqCst);
                 x86_64::instructions::interrupts::enable();
                 break;
             }
+
+            local_wake.need_ipi.store(true, atomic::Ordering::SeqCst);
 
             // An `sti` opcode only takes effect after the *next* opcode, which is `hlt` here.
             // It is not possible for an interrupt to happen between `sti` and `hlt`.
@@ -61,13 +70,35 @@ pub fn block_on<R>(apic: &Arc<ApicControl>, future: impl Future<Output = R>) -> 
     }
 }
 
-struct LocalWake {
+struct Waker {
+    /// Reference to the APIC, for sending IPIs.
+    apic: Arc<ApicControl>,
+
+    /// Identifier of the processor that this waker must wake up.
+    processor_to_wake: ApicId,
+
+    /// Flag set to true if the processor has entered or is going to enter a halted state, and
+    /// that an interprocess interrupt (IPI) is necessary in order to wake up the processor.
+    ///
+    /// If this is true, then you must set `woken_up` to true and send an IPI.
+    /// If this is false, then setting `woken_up` to true is enough.
+    need_ipi: atomic::AtomicBool,
+
+    /// Flag to set to true in order to wake up the processor.
     woken_up: atomic::AtomicBool,
 }
 
-impl ArcWake for LocalWake {
+impl ArcWake for Waker {
     fn wake_by_ref(arc_self: &Arc<Self>) {
-        arc_self.woken_up.store(true, atomic::Ordering::Release);
-        // TODO: wake up original CPU, once we're multi-CPU'ed
+        arc_self.woken_up.store(true, atomic::Ordering::SeqCst);
+
+        if arc_self
+            .need_ipi
+            .compare_and_swap(true, false, atomic::Ordering::SeqCst)
+        {
+            if arc_self.processor_to_wake != arc_self.apic.current_apic_id() {
+                arc_self.apic.send_interprocessor_interrupt(arc_self.processor_to_wake, 197); // TODO: why 197?
+            }
+        }
     }
 }

@@ -44,7 +44,7 @@ extern "C" fn after_boot(multiboot_header: usize) -> ! {
         crate::mem_alloc::initialize(find_free_memory_ranges(&multiboot_info));
 
         // TODO: panics in BOCHS
-        //let acpi = acpi::load_acpi_tables(&multiboot_info);
+        // let acpi = acpi::load_acpi_tables(&multiboot_info);
 
         interrupts::init();
 
