@@ -18,6 +18,7 @@
 use core::{future::Future, iter};
 
 mod misc;
+mod panic;
 
 // TODO: always fails :-/
 /*#[cfg(not(any(target_feature = "armv7-a", target_feature = "armv7-r")))]
