@@ -17,7 +17,7 @@
 //!
 //! # Usage
 //!
-//! - Create a [`KernelConfig`] struct indicating the configuration.
+//! - Create a type that implements the [`PlatformSpecific`] trait.
 //! - From one CPU, create a [`Kernel`] with [`Kernel::init`].
 //! - Share the newly-created [`Kernel`] between CPUs, and call [`Kernel::run`] once for each CPU.
 //!
