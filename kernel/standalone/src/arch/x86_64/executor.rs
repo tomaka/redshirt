@@ -97,7 +97,10 @@ impl ArcWake for Waker {
             .compare_and_swap(true, false, atomic::Ordering::SeqCst)
         {
             if arc_self.processor_to_wake != arc_self.apic.current_apic_id() {
-                arc_self.apic.send_interprocessor_interrupt(arc_self.processor_to_wake, 197); // TODO: why 197?
+                arc_self
+                    .apic
+                    .send_interprocessor_interrupt(arc_self.processor_to_wake, 197);
+                // TODO: why 197?
             }
         }
     }

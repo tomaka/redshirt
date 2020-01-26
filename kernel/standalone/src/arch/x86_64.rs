@@ -48,9 +48,7 @@ extern "C" fn after_boot(multiboot_header: usize) -> ! {
 
         interrupts::init();
 
-        let platform_specific = PlatformSpecificImpl {
-            apic: apic::init(),
-        };
+        let platform_specific = PlatformSpecificImpl { apic: apic::init() };
 
         let kernel = crate::kernel::Kernel::init(platform_specific);
         kernel.run()
