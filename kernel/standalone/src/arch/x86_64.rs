@@ -23,6 +23,7 @@ use x86_64::registers::model_specific::Msr;
 use x86_64::structures::port::{PortRead as _, PortWrite as _};
 
 mod acpi;
+mod ap_boot;
 mod apic;
 mod boot_link;
 mod executor;
@@ -44,11 +45,26 @@ extern "C" fn after_boot(multiboot_header: usize) -> ! {
         crate::mem_alloc::initialize(find_free_memory_ranges(&multiboot_info));
 
         // TODO: panics in BOCHS
-        // let acpi = acpi::load_acpi_tables(&multiboot_info);
+        let acpi = acpi::load_acpi_tables(&multiboot_info);
 
         interrupts::init();
 
-        let platform_specific = PlatformSpecificImpl { apic: apic::init() };
+        let apic = apic::init();
+
+        for ap in acpi.application_processors.iter().take(1) { // TODO: remove take(1)
+            debug_assert!(ap.is_ap);
+            if ap.state != ::acpi::ProcessorState::WaitingForSipi {
+                continue;
+            }
+
+            ap_boot::boot_associated_processor(
+                &apic,
+                apic::ApicId::from_unchecked(ap.local_apic_id),
+                || {},
+            );
+        }
+
+        let platform_specific = PlatformSpecificImpl { apic };
         let kernel = crate::kernel::Kernel::init(platform_specific);
         kernel.run()
     }

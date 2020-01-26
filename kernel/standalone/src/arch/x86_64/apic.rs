@@ -115,8 +115,9 @@ pub struct ApicControl {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct ApicId(u8);
 
-impl From<u8> for ApicId {
-    fn from(val: u8) -> ApicId {
+impl ApicId {
+    /// Builds an [`ApicId`] from a raw identifier without checking the value.
+    pub unsafe fn from_unchecked(val: u8) -> Self {
         ApicId(val)
     }
 }
@@ -147,19 +148,39 @@ impl ApicControl {
     /// # Panic
     ///
     /// Panics if the interrupt vector is inferior to 32.
-    /// Panics if the `target_apic_id` is out of range. // TODO: <--
     /// Panics if the processed with the `target_apic_id` hasn't started yet. // TODO: <--
     ///
     pub fn send_interprocessor_interrupt(self: &Arc<Self>, target_apic_id: ApicId, vector: u8) {
+        assert!(vector >= 32);
+        self.send_ipi_inner(target_apic_id, 0, vector)
+    }
+
+    pub fn send_interprocessor_init(self: &Arc<Self>, target_apic_id: ApicId) {
+        self.send_ipi_inner(target_apic_id, 0b101, 0);
+    }
+
+    pub fn send_interprocessor_sipi(self: &Arc<Self>, target_apic_id: ApicId, boot_fn: *const u8) {
+        let boot_fn = boot_fn as usize;
+        assert_eq!((boot_fn >> 12) << 12, boot_fn);
+        assert!((boot_fn >> 12) <= usize::from(u8::max_value()));
+        self.send_ipi_inner(target_apic_id, 0b110, u8::try_from(boot_fn >> 12).unwrap());
+    }
+
+    fn send_ipi_inner(self: &Arc<Self>, target_apic_id: ApicId, delivery: u8, vector: u8) {
+        // Check conformance.
+        debug_assert!(delivery <= 0b110);
+        debug_assert_ne!(delivery, 0b011);
+        debug_assert_ne!(delivery, 0b001);
+        debug_assert!(delivery != 0b010 || vector == 0);
+        debug_assert!(delivery != 0b101 || vector == 0);
+
         // TODO: if P6 architecture, then only 4 bits of the target are valid; do we care about that?
-        let value_lo = u32::from(vector);
+        let level_bit = if delivery == 0b101 { 0 } else { 1 << 15 };
+        let value_lo = level_bit | (u32::from(delivery) << 8) | u32::from(vector);
         let value_hi = u32::from(target_apic_id.0) << (56 - 32);
 
         let value_lo_addr = usize::try_from(self.apic_base_addr + 0x300).unwrap() as *mut u32;
         let value_hi_addr = usize::try_from(self.apic_base_addr + 0x310).unwrap() as *mut u32;
-
-        // TODO: assert!(target_api_id < ...);
-        assert!(vector >= 32);
 
         // We want the write to be atomic.
         unsafe {
