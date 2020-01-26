@@ -114,7 +114,7 @@ pub struct ApicControl {
 impl ApicControl {
     /// Returns a `Future` that fires when the TSC (Timestamp Counter) is superior or equal to
     /// the given value.
-    pub fn register_tsc_timer(self: &Arc<Self>, value: u64) -> impl Future<Output = ()> {
+    pub fn register_tsc_timer(self: &Arc<Self>, value: u64) -> TscTimerFuture {
         TscTimerFuture {
             apic_control: self.clone(),
             tsc_value: value,

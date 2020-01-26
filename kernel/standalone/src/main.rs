@@ -28,7 +28,6 @@ extern crate alloc;
 extern crate rlibc;
 
 mod arch;
-mod executor;
 mod hardware;
 mod kernel;
 mod mem_alloc;

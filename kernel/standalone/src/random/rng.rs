@@ -55,9 +55,7 @@ impl KernelRng {
     pub fn new() -> KernelRng {
         // Initialize the `JitterRng`.
         let mut jitter = {
-            let mut rng = JitterRng::new_with_timer(|| {
-                u64::try_from(crate::arch::monotonic_clock()).unwrap()
-            });
+            let mut rng = JitterRng::new_with_timer(timer);
 
             // This makes sure that the `JitterRng` is good enough. A panic here indicates that
             // our entropy would be too low.
@@ -106,6 +104,9 @@ impl RngCore for KernelRng {
     }
 }
 
+// TODO: because `JitterRng::new_with_timer` requires a function pointer and not a closure, we
+// can't pass a `PlatformSpecific` trait impl, and instead have to use platform-specific code here
+
 #[cfg(target_arch = "x86_64")]
 fn add_hardware_entropy(hasher: &mut blake3::Hasher) {
     use byteorder::{ByteOrder as _, NativeEndian};
@@ -127,3 +128,13 @@ fn add_hardware_entropy(hasher: &mut blake3::Hasher) {
 
 #[cfg(not(target_arch = "x86_64"))]
 fn add_hardware_entropy(_: &mut blake3::Hasher) {}
+
+#[cfg(target_arch = "x86_64")]
+fn timer() -> u64 {
+    unsafe { core::arch::x86_64::_rdtsc() }
+}
+
+#[cfg(not(target_arch = "x86_64"))]
+fn timer() -> u64 {
+    0xdeadbeefu64
+}

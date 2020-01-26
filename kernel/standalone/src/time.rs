@@ -15,10 +15,10 @@
 
 //! Implements the `time` interface.
 
-use crate::arch;
+use crate::arch::PlatformSpecific;
 
-use alloc::{boxed::Box, vec::Vec};
-use core::{convert::TryFrom as _, pin::Pin, sync::atomic, task::Poll};
+use alloc::{boxed::Box, sync::Arc};
+use core::{pin::Pin, sync::atomic, task::Poll};
 use crossbeam_queue::SegQueue;
 use futures::{prelude::*, stream::FuturesUnordered};
 use redshirt_core::native::{DummyMessageIdWrite, NativeProgramEvent, NativeProgramRef};
@@ -27,9 +27,11 @@ use redshirt_time_interface::ffi::{TimeMessage, INTERFACE};
 use spin::Mutex;
 
 /// State machine for `time` interface messages handling.
-pub struct TimeHandler {
+pub struct TimeHandler<TPlat> {
     /// If true, we have sent the interface registration message.
     registered: atomic::AtomicBool,
+    /// Platform-specific hooks.
+    platform_specific: Pin<Arc<TPlat>>,
     /// List of messages waiting to be emitted with `next_event`.
     // TODO: use futures channels
     pending_messages: SegQueue<(MessageId, Result<EncodedMessage, ()>)>,
@@ -37,22 +39,26 @@ pub struct TimeHandler {
     timers: Mutex<FuturesUnordered<Pin<Box<dyn Future<Output = MessageId> + Send>>>>,
 }
 
-impl TimeHandler {
+impl<TPlat> TimeHandler<TPlat> {
     /// Initializes the new state machine for time accesses.
-    pub fn new() -> Self {
-        let mut timers = FuturesUnordered::new();
+    pub fn new(platform_specific: Pin<Arc<TPlat>>) -> Self {
+        let timers = FuturesUnordered::new();
         // We don't want `timers` to ever produce `None`, so we push a dummy futures.
         timers.push(future::pending().boxed());
 
         TimeHandler {
             registered: atomic::AtomicBool::new(false),
+            platform_specific,
             pending_messages: SegQueue::new(),
             timers: Mutex::new(timers),
         }
     }
 }
 
-impl<'a> NativeProgramRef<'a> for &'a TimeHandler {
+impl<'a, TPlat> NativeProgramRef<'a> for &'a TimeHandler<TPlat>
+where
+    TPlat: PlatformSpecific,
+{
     type Future =
         Pin<Box<dyn Future<Output = NativeProgramEvent<Self::MessageIdWrite>> + Send + 'a>>;
     type MessageIdWrite = DummyMessageIdWrite;
@@ -99,15 +105,21 @@ impl<'a> NativeProgramRef<'a> for &'a TimeHandler {
 
         match TimeMessage::decode(message) {
             Ok(TimeMessage::GetMonotonic) => {
-                let now = crate::arch::monotonic_clock();
+                let now = self.platform_specific.as_ref().monotonic_clock();
                 self.pending_messages
                     .push((message_id.unwrap(), Ok(now.encode())));
             }
             Ok(TimeMessage::GetSystem) => unimplemented!(),
             Ok(TimeMessage::WaitMonotonic(value)) => {
                 let message_id = message_id.unwrap();
-                let mut timers = self.timers.lock();
-                timers.push(crate::arch::timer(value).map(move |_| message_id).boxed())
+                let timers = self.timers.lock();
+                timers.push(
+                    self.platform_specific
+                        .as_ref()
+                        .timer(value)
+                        .map(move |_| message_id)
+                        .boxed(),
+                )
             }
             Err(_) => {
                 self.pending_messages.push((message_id.unwrap(), Err(())));

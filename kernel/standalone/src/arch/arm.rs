@@ -15,8 +15,12 @@
 
 #![cfg(any(target_arch = "arm", target_arch = "aarch64"))]
 
-use core::{future::Future, iter};
+use crate::arch::PlatformSpecific;
 
+use core::{iter, num::NonZeroU32, pin::Pin};
+use futures::prelude::*;
+
+mod executor;
 mod misc;
 mod panic;
 
@@ -84,52 +88,65 @@ fn cpu_enter(_r0: u32, _r1: u32, _r2: u32) -> ! {
         asm!("mcr p15, 0, $0, c9, c12, 3"::"r"(0x8000000fu32)::"volatile");
     }
 
-    let kernel = crate::kernel::Kernel::init(crate::kernel::KernelConfig {
-        num_cpus: 1,
-        ..Default::default()
-    });
-
+    let kernel = crate::kernel::Kernel::init(PlatformSpecificImpl);
     kernel.run()
+}
+
+/// Implementation of [`PlatformSpecific`].
+struct PlatformSpecificImpl;
+
+impl PlatformSpecific for PlatformSpecificImpl {
+    type TimerFuture = future::Pending<()>;
+
+    fn num_cpus(self: Pin<&Self>) -> NonZeroU32 {
+        NonZeroU32::new(1).unwrap()
+    }
+
+    fn block_on<TRet>(self: Pin<&Self>, future: impl Future<Output = TRet>) -> TRet {
+        executor::block_on(future)
+    }
+
+    fn monotonic_clock(self: Pin<&Self>) -> u128 {
+        // TODO: implement correctly
+        0xdeadbeefu128
+    }
+
+    fn timer(self: Pin<&Self>, clock_value: u128) -> Self::TimerFuture {
+        future::pending()
+    }
+
+    unsafe fn write_port_u8(self: Pin<&Self>, _: u32, _: u8) -> Result<(), ()> {
+        Err(())
+    }
+
+    unsafe fn write_port_u16(self: Pin<&Self>, _: u32, _: u16) -> Result<(), ()> {
+        Err(())
+    }
+
+    unsafe fn write_port_u32(self: Pin<&Self>, _: u32, _: u32) -> Result<(), ()> {
+        Err(())
+    }
+
+    unsafe fn read_port_u8(self: Pin<&Self>, _: u32) -> Result<u8, ()> {
+        Err(())
+    }
+
+    unsafe fn read_port_u16(self: Pin<&Self>, _: u32) -> Result<u16, ()> {
+        Err(())
+    }
+
+    unsafe fn read_port_u32(self: Pin<&Self>, _: u32) -> Result<u32, ()> {
+        Err(())
+    }
 }
 
 // TODO: no_mangle and naked because it's called at initialization; attributes should eventually be removed
 #[no_mangle]
 #[naked]
-// TODO: define the semantics of that
-pub fn halt() -> ! {
+fn halt() -> ! {
     unsafe {
         loop {
             asm!(r#"wfe"#);
         }
     }
-}
-
-/// Returns the number of nanoseconds that happened since an undeterminate moment in time.
-// TODO: implement correctly
-pub fn monotonic_clock() -> u128 {
-    0xdeadbeefu128
-}
-
-/// Returns a `Future` that fires when the monotonic clock reaches the given value.
-// TODO: implement correctly
-pub fn timer(clock_value: u128) -> impl Future<Output = ()> {
-    futures::future::poll_fn(|_| core::task::Poll::Pending)
-}
-
-pub unsafe fn write_port_u8(port: u32, data: u8) {}
-
-pub unsafe fn write_port_u16(port: u32, data: u16) {}
-
-pub unsafe fn write_port_u32(port: u32, data: u32) {}
-
-pub unsafe fn read_port_u8(port: u32) -> u8 {
-    0
-}
-
-pub unsafe fn read_port_u16(port: u32) -> u16 {
-    0
-}
-
-pub unsafe fn read_port_u32(port: u32) -> u32 {
-    0
 }

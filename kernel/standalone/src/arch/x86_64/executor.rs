@@ -41,7 +41,21 @@ pub fn block_on<R>(future: impl Future<Output = R>) -> R {
             return val;
         }
 
-        wait_for_true(&local_wake.woken_up);
+        loop {
+            x86_64::instructions::interrupts::disable();
+            if local_wake
+                .woken_up
+                .compare_and_swap(true, false, atomic::Ordering::Acquire)
+            {
+                x86_64::instructions::interrupts::enable();
+                break;
+            }
+
+            // An `sti` opcode only takes effect after the *next* opcode, which is `hlt` here.
+            // It is not possible for an interrupt to happen between `sti` and `hlt`.
+            x86_64::instructions::interrupts::enable();
+            x86_64::instructions::hlt();
+        }
     }
 }
 
@@ -53,45 +67,5 @@ impl ArcWake for LocalWake {
     fn wake_by_ref(arc_self: &Arc<Self>) {
         arc_self.woken_up.store(true, atomic::Ordering::Release);
         // TODO: wake up original CPU, once we're multi-CPU'ed
-    }
-}
-
-// If a different CPU than the local one sets the atomic to true, it will then trigger an
-// inter-processor interrupt in order to wake up the local CPU.
-//
-// What we don't want to happen is:
-// - We check the atomic. It is false.
-// - A different CPU sets the atomic to true and triggers an interrupt.
-// - Interrupt happens locally.
-// - We halt, waiting for that interrupt that will never come again.
-//
-// Because of that, we have to disable interrupts between the moment when we check the atomic's
-// value and the moment when we sleep.
-
-#[cfg(target_arch = "x86_64")]
-fn wait_for_true(atomic: &atomic::AtomicBool) {
-    loop {
-        x86_64::instructions::interrupts::disable();
-        if atomic.compare_and_swap(true, false, atomic::Ordering::Acquire) {
-            x86_64::instructions::interrupts::enable();
-            return;
-        }
-
-        // An `sti` opcode only takes effect after the *next* opcode, which is `hlt` here.
-        // It is not possible for an interrupt to happen between `sti` and `hlt`.
-        x86_64::instructions::interrupts::enable();
-        x86_64::instructions::hlt();
-    }
-}
-
-#[cfg(any(target_arch = "arm", target_arch = "aarch64"))]
-fn wait_for_true(atomic: &atomic::AtomicBool) {
-    loop {
-        if atomic.compare_and_swap(true, false, atomic::Ordering::Acquire) {
-            return;
-        }
-
-        // TODO: this is a draft; I don't really know well how ARM interrupts work
-        unsafe { asm!("wfe" :::: "volatile") }
     }
 }
