@@ -115,6 +115,12 @@ pub struct ApicControl {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct ApicId(u8);
 
+impl From<u8> for ApicId {
+    fn from(val: u8) -> ApicId {
+        ApicId(val)
+    }
+}
+
 impl ApicControl {
     /// Returns a `Future` that fires when the TSC (Timestamp Counter) is superior or equal to
     /// the given value.
@@ -128,7 +134,12 @@ impl ApicControl {
 
     /// Returns the [`ApicId`] of the calling processor.
     pub fn current_apic_id(self: &Arc<Self>) -> ApicId {
-        ApicId(0) // FIXME:
+        unsafe {
+            // Note: this is correct because we never modify the local APIC ID.
+            let apic_id_addr = usize::try_from(self.apic_base_addr + 0x20).unwrap() as *mut u32;
+            let apic_id = u8::try_from(apic_id_addr.read_volatile() >> 24).unwrap();
+            ApicId(apic_id)
+        }
     }
 
     /// Causes the processor with the target APIC ID to wake up.
@@ -224,7 +235,7 @@ impl Future for TscTimerFuture {
     type Output = ();
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<()> {
-        let mut this = &mut *self;
+        let this = &mut *self;
 
         let rdtsc = unsafe { core::arch::x86_64::_rdtsc() };
         if rdtsc >= this.tsc_value {
