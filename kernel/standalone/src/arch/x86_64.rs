@@ -25,6 +25,7 @@ use x86_64::structures::port::{PortRead as _, PortWrite as _};
 mod acpi;
 mod apic;
 mod boot_link;
+mod executor;
 mod interrupts;
 mod panic;
 
@@ -126,6 +127,10 @@ impl PlatformSpecific for PlatformSpecificImpl {
 
     fn num_cpus(self: Pin<&Self>) -> NonZeroU32 {
         NonZeroU32::new(1).unwrap()
+    }
+
+    fn block_on<TRet>(self: Pin<&Self>, future: impl Future<Output = TRet>) -> TRet {
+        executor::block_on(future)
     }
 
     fn monotonic_clock(self: Pin<&Self>) -> u128 {
