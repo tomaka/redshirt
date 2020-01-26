@@ -80,7 +80,7 @@ pub unsafe fn init() -> ApicControl {
             timer_lvt_addr.write_volatile(50); // One-shot and interrupt vector 50 // TODO: why 50?
 
             let divide_config_addr = usize::try_from(apic_base_addr + 0x3e0).unwrap() as *mut u32;
-            divide_config_addr.write_volatile(0b1011); // Divide by 1
+            divide_config_addr.write_volatile(0b1010); // Divide by 128
         }
     }
 
@@ -192,7 +192,7 @@ impl Future for TscTimerFuture {
                         unsafe {
                             let init_cnt_addr =
                                 usize::try_from(this.apic_base_addr + 0x380).unwrap() as *mut u32;
-                            init_cnt_addr.write_volatile(u32::try_from(*tsc - rdtsc).unwrap());
+                            init_cnt_addr.write_volatile(u32::try_from((*tsc - rdtsc) / 128).unwrap());
                         }
                     }
                 }
@@ -224,7 +224,7 @@ impl Future for TscTimerFuture {
                 unsafe {
                     let init_cnt_addr =
                         usize::try_from(this.apic_base_addr + 0x380).unwrap() as *mut u32;
-                    init_cnt_addr.write_volatile(u32::try_from(this.tsc_value - rdtsc).unwrap());
+                    init_cnt_addr.write_volatile(u32::try_from((this.tsc_value - rdtsc) / 128).unwrap());
                 }
             }
         }
@@ -273,7 +273,7 @@ impl Drop for TscTimerFuture {
                         let rdtsc = core::arch::x86_64::_rdtsc();
                         let init_cnt_addr =
                             usize::try_from(self.apic_base_addr + 0x380).unwrap() as *mut u32;
-                        init_cnt_addr.write_volatile(u32::try_from(*tsc - rdtsc).unwrap());
+                        init_cnt_addr.write_volatile(u32::try_from((*tsc - rdtsc) / 128).unwrap());
                     }
                 }
             }
