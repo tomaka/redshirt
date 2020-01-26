@@ -18,7 +18,7 @@
 use crate::arch::PlatformSpecific;
 
 use alloc::sync::Arc;
-use core::{convert::TryFrom as _, future::Future, ops::Range, pin::Pin};
+use core::{convert::TryFrom as _, future::Future, num::NonZeroU32, ops::Range, pin::Pin};
 use x86_64::registers::model_specific::Msr;
 use x86_64::structures::port::{PortRead as _, PortWrite as _};
 
@@ -123,6 +123,10 @@ struct PlatformSpecificImpl;
 
 impl PlatformSpecific for PlatformSpecificImpl {
     type TimerFuture = apic::TscTimerFuture;
+
+    fn num_cpus(self: Pin<&Self>) -> NonZeroU32 {
+        NonZeroU32::new(1).unwrap()
+    }
 
     fn monotonic_clock(self: Pin<&Self>) -> u128 {
         // TODO: wrong unit; these are not nanoseconds

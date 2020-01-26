@@ -17,7 +17,7 @@
 
 use crate::arch::PlatformSpecific;
 
-use core::{iter, pin::Pin};
+use core::{iter, num::NonZeroU32, pin::Pin};
 use futures::prelude::*;
 
 mod misc;
@@ -96,6 +96,10 @@ struct PlatformSpecificImpl;
 
 impl PlatformSpecific for PlatformSpecificImpl {
     type TimerFuture = future::Pending<()>;
+
+    fn num_cpus(self: Pin<&Self>) -> NonZeroU32 {
+        NonZeroU32::new(1).unwrap()
+    }
 
     fn monotonic_clock(self: Pin<&Self>) -> u128 {
         // TODO: implement correctly

@@ -28,7 +28,7 @@
 //! After everything has been initialized, the entry point creates a struct that implements the
 //! [`PlatformSpecific`] trait, and initializes and runs a [`Kernel`](crate::kernel::Kernel).
 
-use core::{future::Future, pin::Pin};
+use core::{future::Future, num::NonZeroU32, pin::Pin};
 
 mod arm;
 mod x86_64;
@@ -39,6 +39,9 @@ pub trait PlatformSpecific: Send + Sync + 'static {
     /// `Future` that fires when the monotonic clock reaches a certain value.
     // TODO: remove `'static` requirement
     type TimerFuture: Future<Output = ()> + Send + 'static;
+
+    /// Returns the number of CPUs available.
+    fn num_cpus(self: Pin<&Self>) -> NonZeroU32;
 
     /// Returns the number of nanoseconds that happened since an undeterminate moment in time.
     fn monotonic_clock(self: Pin<&Self>) -> u128;
