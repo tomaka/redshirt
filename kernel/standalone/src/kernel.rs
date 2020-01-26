@@ -56,6 +56,7 @@ impl Kernel {
 
         let mut system_builder = redshirt_core::system::SystemBuilder::new()
             .with_native_program(crate::hardware::HardwareHandler::new())
+            .with_native_program(crate::time::TimeHandler::new())
             .with_native_program(crate::random::native::RandomNativeProgram::new())
             .with_startup_process(build_wasm_module!(
                 "../../../modules/p2p-loader",

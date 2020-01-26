@@ -15,7 +15,7 @@
 
 #![cfg(any(target_arch = "arm", target_arch = "aarch64"))]
 
-use core::iter;
+use core::{future::Future, iter};
 
 mod misc;
 
@@ -101,6 +101,18 @@ pub fn halt() -> ! {
             asm!(r#"wfe"#);
         }
     }
+}
+
+/// Returns the number of nanoseconds that happened since an undeterminate moment in time.
+// TODO: implement correctly
+pub fn monotonic_clock() -> u128 {
+    0xdeadbeefu128
+}
+
+/// Returns a `Future` that fires when the monotonic clock reaches the given value.
+// TODO: implement correctly
+pub fn timer(clock_value: u128) -> impl Future<Output = ()> {
+    futures::future::poll_fn(|_| core::task::Poll::Pending)
 }
 
 pub unsafe fn write_port_u8(port: u32, data: u8) {}

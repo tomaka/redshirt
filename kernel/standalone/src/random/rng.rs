@@ -39,6 +39,7 @@
 
 // TODO: I'm not a cryptographer nor a mathematician, but I guess that a ChaCha alone is a bit naive?
 
+use core::convert::TryFrom as _;
 use rand_chacha::{ChaCha20Core, ChaCha20Rng};
 use rand_core::{RngCore, SeedableRng as _};
 use rand_jitter::JitterRng;
@@ -55,10 +56,7 @@ impl KernelRng {
         // Initialize the `JitterRng`.
         let mut jitter = {
             let mut rng = JitterRng::new_with_timer(|| {
-                let dur = crate::time::monotonic_clock();
-                dur.as_secs()
-                    .wrapping_mul(1_000_000_000)
-                    .wrapping_add(u64::from(dur.subsec_nanos()))
+                u64::try_from(crate::arch::monotonic_clock()).unwrap()
             });
 
             // This makes sure that the `JitterRng` is good enough. A panic here indicates that
