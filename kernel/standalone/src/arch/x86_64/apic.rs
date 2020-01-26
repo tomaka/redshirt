@@ -123,7 +123,11 @@ impl ApicControl {
     }
 
     /// Update the state of the APIC with the front of the list.
-    fn update_apic_timer_state(self: &Arc<Self>, now: u64, timers: &mut spin::MutexGuard<VecDeque<(u64, Waker)>>) {
+    fn update_apic_timer_state(
+        self: &Arc<Self>,
+        now: u64,
+        timers: &mut spin::MutexGuard<VecDeque<(u64, Waker)>>,
+    ) {
         if let Some((tsc, waker)) = timers.front() {
             debug_assert!(*tsc > now);
             interrupts::set_interrupt_waker(50, waker); // TODO: 50?
@@ -138,7 +142,7 @@ impl ApicControl {
                         usize::try_from(self.apic_base_addr + 0x380).unwrap() as *mut u32;
                     let ticks = match u32::try_from(1 + ((*tsc - now) / 128)) {
                         Ok(t) => t,
-                        Err(_) => return,   // FIXME: properly handle
+                        Err(_) => return, // FIXME: properly handle
                     };
                     init_cnt_addr.write_volatile(ticks);
                 }
@@ -209,7 +213,8 @@ impl Future for TscTimerFuture {
 
             // If we updated the head of the timers list, we need to update the MSR and waker.
             if removed_any {
-                this.apic_control.update_apic_timer_state(rdtsc, &mut timers);
+                this.apic_control
+                    .update_apic_timer_state(rdtsc, &mut timers);
             }
 
             return Poll::Ready(());
@@ -234,7 +239,8 @@ impl Future for TscTimerFuture {
 
             // If we update the head of the timers list, we need to update the MSR and waker.
             if insert_position == 0 {
-                this.apic_control.update_apic_timer_state(rdtsc, &mut timers);
+                this.apic_control
+                    .update_apic_timer_state(rdtsc, &mut timers);
             }
         }
 
@@ -271,7 +277,8 @@ impl Drop for TscTimerFuture {
         // If we update the head of the timers list, we need to update the MSR and waker.
         if my_position == 0 {
             let rdtsc = unsafe { core::arch::x86_64::_rdtsc() };
-            self.apic_control.update_apic_timer_state(rdtsc, &mut timers);
+            self.apic_control
+                .update_apic_timer_state(rdtsc, &mut timers);
         }
     }
 }
