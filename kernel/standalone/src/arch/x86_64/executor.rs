@@ -17,6 +17,8 @@
 
 // TODO: only works because we're single-CPU'ed at the moment
 
+use crate::arch::x86_64::apic::ApicControl;
+
 use alloc::sync::Arc;
 use core::future::Future;
 use core::sync::atomic;
@@ -26,7 +28,7 @@ use futures::task::{waker, ArcWake};
 /// Waits for the `Future` to resolve to a value.
 ///
 /// This function is similar to [`futures::executor::block_on`].
-pub fn block_on<R>(future: impl Future<Output = R>) -> R {
+pub fn block_on<R>(apic: &Arc<ApicControl>, future: impl Future<Output = R>) -> R {
     futures::pin_mut!(future);
 
     let local_wake = Arc::new(LocalWake {

@@ -46,18 +46,16 @@ extern "C" fn after_boot(multiboot_header: usize) -> ! {
         // TODO: panics in BOCHS
         //let acpi = acpi::load_acpi_tables(&multiboot_info);
 
-        unsafe {
-            APIC = Some(apic::init());
-        }
         interrupts::init();
 
-        let kernel = crate::kernel::Kernel::init(PlatformSpecificImpl);
+        let platform_specific = PlatformSpecificImpl {
+            apic: apic::init(),
+        };
+
+        let kernel = crate::kernel::Kernel::init(platform_specific);
         kernel.run()
     }
 }
-
-// TODO: safisize
-static mut APIC: Option<Arc<apic::ApicControl>> = None;
 
 /// Reads the boot information and find the memory ranges that can be used as a heap.
 ///
@@ -120,7 +118,9 @@ fn find_free_memory_ranges<'a>(
 }
 
 /// Implementation of [`PlatformSpecific`].
-struct PlatformSpecificImpl;
+struct PlatformSpecificImpl {
+    apic: Arc<apic::ApicControl>,
+}
 
 impl PlatformSpecific for PlatformSpecificImpl {
     type TimerFuture = apic::TscTimerFuture;
@@ -130,7 +130,7 @@ impl PlatformSpecific for PlatformSpecificImpl {
     }
 
     fn block_on<TRet>(self: Pin<&Self>, future: impl Future<Output = TRet>) -> TRet {
-        executor::block_on(future)
+        executor::block_on(&self.apic, future)
     }
 
     fn monotonic_clock(self: Pin<&Self>) -> u128 {
@@ -141,7 +141,7 @@ impl PlatformSpecific for PlatformSpecificImpl {
 
     fn timer(self: Pin<&Self>, clock_value: u128) -> Self::TimerFuture {
         let clock_value = u64::try_from(clock_value).unwrap_or(u64::max_value());
-        unsafe { APIC.as_ref().unwrap().register_tsc_timer(clock_value) }
+        self.apic.register_tsc_timer(clock_value)
     }
 
     unsafe fn write_port_u8(self: Pin<&Self>, port: u32, data: u8) -> Result<(), ()> {
