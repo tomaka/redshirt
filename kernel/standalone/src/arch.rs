@@ -13,10 +13,54 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+//! Platform-specific code and kernel entry point.
+//!
+//! This module contains all the platform-specific code of the stand-alone kernel, plus the entry
+//! point and initialization code.
+//!
+//! Initialization includes:
+//!
+//! - Initializing all CPU cores.
+//! - Setting up a stack for each CPU core.
+//! - Setting up the memory allocator in the [`mem_alloc`](crate::mem_alloc) module.
+//! - Setting up a panic handler.
+//!
+//! After everything has been initialized, the entry point creates a struct that implements the
+//! [`PlatformSpecific`] trait, and initializes and runs a [`Kernel`](crate::kernel::Kernel).
+
+use core::{future::Future, pin::Pin};
+
 mod arm;
 mod x86_64;
 
-#[cfg(target_arch = "x86_64")]
-pub use self::x86_64::*; // TODO: remove
-#[cfg(any(target_arch = "arm", target_arch = "aarch64"))]
-pub use arm::*; // TODO: remove
+/// Access to all the platform-specific information.
+// TODO: remove `'static` requirement
+pub trait PlatformSpecific: Send + Sync + 'static {
+    /// `Future` that fires when the monotonic clock reaches a certain value.
+    // TODO: remove `'static` requirement
+    type TimerFuture: Future<Output = ()> + Send + 'static;
+
+    /// Returns the number of nanoseconds that happened since an undeterminate moment in time.
+    fn monotonic_clock(self: Pin<&Self>) -> u128;
+    /// Returns a `Future` that fires when the monotonic clock reaches the given value.
+    fn timer(self: Pin<&Self>, clock_value: u128) -> Self::TimerFuture;
+
+    /// Writes a `u8` on a port. Returns an error if the operation is not supported or if the port
+    /// is out of range.
+    unsafe fn write_port_u8(self: Pin<&Self>, port: u32, data: u8) -> Result<(), ()>;
+    /// Writes a `u16` on a port. Returns an error if the operation is not supported or if the
+    /// port is out of range.
+    unsafe fn write_port_u16(self: Pin<&Self>, port: u32, data: u16) -> Result<(), ()>;
+    /// Writes a `u32` on a port. Returns an error if the operation is not supported or if the
+    /// port is out of range.
+    unsafe fn write_port_u32(self: Pin<&Self>, port: u32, data: u32) -> Result<(), ()>;
+    /// Reads a `u8` from a port. Returns an error if the operation is not supported of if the
+    /// port is out of range.
+    unsafe fn read_port_u8(self: Pin<&Self>, port: u32) -> Result<u8, ()>;
+    /// Reads a `u16` from a port. Returns an error if the operation is not supported of if the
+    /// port is out of range.
+    unsafe fn read_port_u16(self: Pin<&Self>, port: u32) -> Result<u16, ()>;
+    /// Reads a `u32` from a port. Returns an error if the operation is not supported of if the
+    /// port is out of range.
+    unsafe fn read_port_u32(self: Pin<&Self>, port: u32) -> Result<u32, ()>;
+}

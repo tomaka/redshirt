@@ -15,8 +15,10 @@
 
 #![cfg(target_arch = "x86_64")]
 
+use crate::arch::PlatformSpecific;
+
 use alloc::sync::Arc;
-use core::{convert::TryFrom as _, future::Future, ops::Range};
+use core::{convert::TryFrom as _, future::Future, ops::Range, pin::Pin};
 use x86_64::registers::model_specific::Msr;
 use x86_64::structures::port::{PortRead as _, PortWrite as _};
 
@@ -48,37 +50,13 @@ extern "C" fn after_boot(multiboot_header: usize) -> ! {
         }
         interrupts::init();
 
-        let kernel = crate::kernel::Kernel::init(crate::kernel::KernelConfig {
-            num_cpus: 1,
-            ..Default::default()
-        });
-
+        let kernel = crate::kernel::Kernel::init(PlatformSpecificImpl);
         kernel.run()
     }
 }
 
 // TODO: safisize
 static mut APIC: Option<Arc<apic::ApicControl>> = None;
-
-// TODO: define the semantics of that
-pub fn halt() -> ! {
-    loop {
-        x86_64::instructions::hlt()
-    }
-}
-
-/// Returns the number of nanoseconds that happened since an undeterminate moment in time.
-pub fn monotonic_clock() -> u128 {
-    // TODO: wrong unit; these are not nanoseconds
-    // TODO: maybe TSC not supported? move method to ApicControl instead?
-    u128::from(unsafe { core::arch::x86_64::_rdtsc() })
-}
-
-/// Returns a `Future` that fires when the monotonic clock reaches the given value.
-pub fn timer(clock_value: u128) -> impl Future<Output = ()> {
-    let clock_value = u64::try_from(clock_value).unwrap_or(u64::max_value());
-    unsafe { APIC.as_ref().unwrap().register_tsc_timer(clock_value) }
-}
 
 /// Reads the boot information and find the memory ranges that can be used as a heap.
 ///
@@ -140,44 +118,71 @@ fn find_free_memory_ranges<'a>(
     })
 }
 
-pub unsafe fn write_port_u8(port: u32, data: u8) {
-    if let Ok(port) = u16::try_from(port) {
-        u8::write_to_port(port, data);
-    }
-}
+/// Implementation of [`PlatformSpecific`].
+struct PlatformSpecificImpl;
 
-pub unsafe fn write_port_u16(port: u32, data: u16) {
-    if let Ok(port) = u16::try_from(port) {
-        u16::write_to_port(port, data);
-    }
-}
+impl PlatformSpecific for PlatformSpecificImpl {
+    type TimerFuture = apic::TscTimerFuture;
 
-pub unsafe fn write_port_u32(port: u32, data: u32) {
-    if let Ok(port) = u16::try_from(port) {
-        u32::write_to_port(port, data);
+    fn monotonic_clock(self: Pin<&Self>) -> u128 {
+        // TODO: wrong unit; these are not nanoseconds
+        // TODO: maybe TSC not supported? move method to ApicControl instead?
+        u128::from(unsafe { core::arch::x86_64::_rdtsc() })
     }
-}
 
-pub unsafe fn read_port_u8(port: u32) -> u8 {
-    if let Ok(port) = u16::try_from(port) {
-        u8::read_from_port(port)
-    } else {
-        0
+    fn timer(self: Pin<&Self>, clock_value: u128) -> Self::TimerFuture {
+        let clock_value = u64::try_from(clock_value).unwrap_or(u64::max_value());
+        unsafe { APIC.as_ref().unwrap().register_tsc_timer(clock_value) }
     }
-}
 
-pub unsafe fn read_port_u16(port: u32) -> u16 {
-    if let Ok(port) = u16::try_from(port) {
-        u16::read_from_port(port)
-    } else {
-        0
+    unsafe fn write_port_u8(self: Pin<&Self>, port: u32, data: u8) -> Result<(), ()> {
+        if let Ok(port) = u16::try_from(port) {
+            u8::write_to_port(port, data);
+            Ok(())
+        } else {
+            Err(())
+        }
     }
-}
 
-pub unsafe fn read_port_u32(port: u32) -> u32 {
-    if let Ok(port) = u16::try_from(port) {
-        u32::read_from_port(port)
-    } else {
-        0
+    unsafe fn write_port_u16(self: Pin<&Self>, port: u32, data: u16) -> Result<(), ()> {
+        if let Ok(port) = u16::try_from(port) {
+            u16::write_to_port(port, data);
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+
+    unsafe fn write_port_u32(self: Pin<&Self>, port: u32, data: u32) -> Result<(), ()> {
+        if let Ok(port) = u16::try_from(port) {
+            u32::write_to_port(port, data);
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+
+    unsafe fn read_port_u8(self: Pin<&Self>, port: u32) -> Result<u8, ()> {
+        if let Ok(port) = u16::try_from(port) {
+            Ok(u8::read_from_port(port))
+        } else {
+            Err(())
+        }
+    }
+
+    unsafe fn read_port_u16(self: Pin<&Self>, port: u32) -> Result<u16, ()> {
+        if let Ok(port) = u16::try_from(port) {
+            Ok(u16::read_from_port(port))
+        } else {
+            Err(())
+        }
+    }
+
+    unsafe fn read_port_u32(self: Pin<&Self>, port: u32) -> Result<u32, ()> {
+        if let Ok(port) = u16::try_from(port) {
+            Ok(u32::read_from_port(port))
+        } else {
+            Err(())
+        }
     }
 }
