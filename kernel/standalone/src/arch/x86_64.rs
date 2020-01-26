@@ -24,6 +24,7 @@ mod acpi;
 mod apic;
 mod boot_link;
 mod interrupts;
+mod panic;
 
 /// Called by `boot.S` after basic set up has been performed.
 ///
