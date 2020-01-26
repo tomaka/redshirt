@@ -39,7 +39,7 @@ use x86_64::structures::port::{PortRead as _, PortWrite as _};
 /// > **Note**: The term "registers related to the APIC" is very loosely defined, but no ambiguity
 /// >           has been encountered so far.
 ///
-pub unsafe fn init() -> ApicControl {
+pub unsafe fn init() -> Arc<ApicControl> {
     init_pic();
 
     // TODO: check whether CPUID is supported at all?
@@ -84,11 +84,11 @@ pub unsafe fn init() -> ApicControl {
         }
     }
 
-    ApicControl {
+    Arc::new(ApicControl {
         apic_base_addr,
-        timers: Arc::new(Mutex::new(VecDeque::with_capacity(32))), // TODO: capacity?
+        timers: Mutex::new(VecDeque::with_capacity(32)), // TODO: capacity?
         tsc_deadline,
-    }
+    })
 }
 
 /// Stores state used to control the APIC.
@@ -105,7 +105,7 @@ pub struct ApicControl {
     /// interrupt has been triggered and when the awakened timer future is being polled).
     // TODO: timers are processor-local, so this is probably wrong
     // TODO: call shrink_to_fit from time to time?
-    timers: Arc<Mutex<VecDeque<(u64, Waker)>>>,
+    timers: Mutex<VecDeque<(u64, Waker)>>,
 
     /// If true, then we use TSC deadline mode. If false, we use one-shot timers.
     tsc_deadline: bool,
@@ -114,30 +114,59 @@ pub struct ApicControl {
 impl ApicControl {
     /// Returns a `Future` that fires when the TSC (Timestamp Counter) is superior or equal to
     /// the given value.
-    pub fn register_tsc_timer(&self, value: u64) -> impl Future<Output = ()> {
+    pub fn register_tsc_timer(self: &Arc<Self>, value: u64) -> impl Future<Output = ()> {
         TscTimerFuture {
+            apic_control: self.clone(),
             tsc_value: value,
-            timers: self.timers.clone(),
             in_timers_list: false,
-            apic_base_addr: self.apic_base_addr,
-            tsc_deadline: self.tsc_deadline,
+        }
+    }
+
+    /// Update the state of the APIC with the front of the list.
+    fn update_apic_timer_state(self: &Arc<Self>, now: u64, timers: &mut spin::MutexGuard<VecDeque<(u64, Waker)>>) {
+        if let Some((tsc, waker)) = timers.front() {
+            debug_assert!(*tsc > now);
+            interrupts::set_interrupt_waker(50, waker); // TODO: 50?
+            debug_assert_ne!(*tsc, 0); // 0 would disable the timer
+            if self.tsc_deadline {
+                unsafe {
+                    TIMER_MSR.write(*tsc);
+                }
+            } else {
+                unsafe {
+                    let init_cnt_addr =
+                        usize::try_from(self.apic_base_addr + 0x380).unwrap() as *mut u32;
+                    let ticks = match u32::try_from(1 + ((*tsc - now) / 128)) {
+                        Ok(t) => t,
+                        Err(_) => return,   // FIXME: properly handle
+                    };
+                    init_cnt_addr.write_volatile(ticks);
+                }
+            }
         }
     }
 }
 
-/// Future that triggers when the MSR reaches a certain value.
+/// Future that triggers when the TSC reaches a certain value.
+//
+// # Implementation information
+//
+// The way this `Future` works is that it inserts itself in the list of timers when first polled.
+// The head of the list of timers must always be in sync with the state of the APIC, and as such
+// we update the state of the APIC if we modify what the first element is.
+//
+// When a timer interrupt fires, we need to update the state of the APIC for the next timer. To
+// do so, the implementation assumes that the `TscTimerFuture` corresponding to timer that has
+// fired will either be polled or destroyed.
+//
 #[must_use]
 pub struct TscTimerFuture {
+    /// Reference to the APIC controller.
+    apic_control: Arc<ApicControl>,
     /// The TSC value after which the future will be ready.
     tsc_value: u64,
-    /// List of timers. Clone of what is in `ApicControl`. Shared between all timers
-    timers: Arc<Mutex<VecDeque<(u64, Waker)>>>,
     /// If true, then we are in the list of timers of the `ApicControl`.
     in_timers_list: bool,
-    /// Base address of the APIC in memory.
-    apic_base_addr: u64,
-    /// If true, then we use TSC deadline mode. If false, we use one-shot timers.
-    tsc_deadline: bool,
 }
 
 const TIMER_MSR: Msr = Msr::new(0x6e0);
@@ -152,13 +181,13 @@ impl Future for TscTimerFuture {
         let mut this = &mut *self;
 
         let rdtsc = unsafe { core::arch::x86_64::_rdtsc() };
-        if rdtsc >= this.tsc_value && !this.in_timers_list {
-            return Poll::Ready(());
-        }
-
-        let mut timers = this.timers.lock();
-
         if rdtsc >= this.tsc_value {
+            if !this.in_timers_list {
+                return Poll::Ready(());
+            }
+
+            let mut timers = this.apic_control.timers.lock();
+
             // If we were in the list, then we need to remove ourselves from it. We also remove
             // all the earlier timers. It is consequently also possible that a different timer has
             // already removed ourselves.
@@ -180,52 +209,32 @@ impl Future for TscTimerFuture {
 
             // If we updated the head of the timers list, we need to update the MSR and waker.
             if removed_any {
-                if let Some((tsc, waker)) = timers.front() {
-                    debug_assert!(*tsc > rdtsc);
-                    interrupts::set_interrupt_waker(50, waker); // TODO: 50?
-                    debug_assert_ne!(*tsc, 0); // 0 would disable the timer
-                    if this.tsc_deadline {
-                        unsafe {
-                            TIMER_MSR.write(*tsc);
-                        }
-                    } else {
-                        unsafe {
-                            let init_cnt_addr =
-                                usize::try_from(this.apic_base_addr + 0x380).unwrap() as *mut u32;
-                            init_cnt_addr.write_volatile(u32::try_from((*tsc - rdtsc) / 128).unwrap());
-                        }
-                    }
-                }
+                this.apic_control.update_apic_timer_state(rdtsc, &mut timers);
             }
 
             return Poll::Ready(());
         }
 
-        // Position where to insert the new timer in the list.
-        // We use `>` rather than `>=` so that `insert_position` is not 0 if the first element
-        // has the same value.
-        let insert_position = timers
-            .iter()
-            .position(|(v, _)| *v > this.tsc_value)
-            .unwrap_or(0);
+        // We haven't reached the target timestamp yet.
+        debug_assert!(rdtsc < this.tsc_value);
 
-        timers.insert(insert_position, (this.tsc_value, cx.waker().clone()));
-        this.in_timers_list = true;
+        if !this.in_timers_list {
+            let mut timers = this.apic_control.timers.lock();
 
-        // If we update the head of the timers list, we need to update the MSR and waker.
-        if insert_position == 0 {
-            interrupts::set_interrupt_waker(50, cx.waker()); // TODO: 50?
-            debug_assert_ne!(this.tsc_value, 0); // 0 would disable the timer
-            if this.tsc_deadline {
-                unsafe {
-                    TIMER_MSR.write(this.tsc_value);
-                }
-            } else {
-                unsafe {
-                    let init_cnt_addr =
-                        usize::try_from(this.apic_base_addr + 0x380).unwrap() as *mut u32;
-                    init_cnt_addr.write_volatile(u32::try_from((this.tsc_value - rdtsc) / 128).unwrap());
-                }
+            // Position where to insert the new timer in the list.
+            // We use `>` rather than `>=` so that `insert_position` is not 0 if the first element
+            // has the same value.
+            let insert_position = timers
+                .iter()
+                .position(|(v, _)| *v > this.tsc_value)
+                .unwrap_or(0);
+
+            timers.insert(insert_position, (this.tsc_value, cx.waker().clone()));
+            this.in_timers_list = true;
+
+            // If we update the head of the timers list, we need to update the MSR and waker.
+            if insert_position == 0 {
+                this.apic_control.update_apic_timer_state(rdtsc, &mut timers);
             }
         }
 
@@ -241,7 +250,7 @@ impl Drop for TscTimerFuture {
 
         // We need to unregister ourselves. It is possible that a different timer has already
         // removed us from the list.
-        let mut timers = self.timers.lock();
+        let mut timers = self.apic_control.timers.lock();
         let my_position = match timers.iter().position(|(v, _)| *v == self.tsc_value) {
             Some(p) => p,
             None => return,
@@ -261,22 +270,8 @@ impl Drop for TscTimerFuture {
 
         // If we update the head of the timers list, we need to update the MSR and waker.
         if my_position == 0 {
-            if let Some((tsc, waker)) = timers.front() {
-                interrupts::set_interrupt_waker(50, waker); // TODO: 50?
-                debug_assert_ne!(*tsc, 0); // 0 would disable the timer
-                if self.tsc_deadline {
-                    unsafe {
-                        TIMER_MSR.write(*tsc);
-                    }
-                } else {
-                    unsafe {
-                        let rdtsc = core::arch::x86_64::_rdtsc();
-                        let init_cnt_addr =
-                            usize::try_from(self.apic_base_addr + 0x380).unwrap() as *mut u32;
-                        init_cnt_addr.write_volatile(u32::try_from((*tsc - rdtsc) / 128).unwrap());
-                    }
-                }
-            }
+            let rdtsc = unsafe { core::arch::x86_64::_rdtsc() };
+            self.apic_control.update_apic_timer_state(rdtsc, &mut timers);
         }
     }
 }

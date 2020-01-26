@@ -15,6 +15,7 @@
 
 #![cfg(target_arch = "x86_64")]
 
+use alloc::sync::Arc;
 use core::{convert::TryFrom as _, future::Future, ops::Range};
 use x86_64::registers::model_specific::Msr;
 use x86_64::structures::port::{PortRead as _, PortWrite as _};
@@ -56,7 +57,7 @@ extern "C" fn after_boot(multiboot_header: usize) -> ! {
 }
 
 // TODO: safisize
-static mut APIC: Option<apic::ApicControl> = None;
+static mut APIC: Option<Arc<apic::ApicControl>> = None;
 
 // TODO: define the semantics of that
 pub fn halt() -> ! {
