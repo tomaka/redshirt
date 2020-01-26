@@ -51,16 +51,20 @@ pub fn block_on<R>(apic: &Arc<ApicControl>, future: impl Future<Output = R>) -> 
         loop {
             debug_assert!(x86_64::instructions::interrupts::are_enabled());
             x86_64::instructions::interrupts::disable();
+
+            // We store `true` in `need_ipi` before checking `woken_up`, otherwise there could be
+            // a state where `need_ipi` is `false` but we've already checked `woken_up`.
+            local_wake.need_ipi.store(true, atomic::Ordering::SeqCst);
+
             if local_wake
                 .woken_up
                 .compare_and_swap(true, false, atomic::Ordering::SeqCst)
             {
+                // We're going to poll the `Future` again, so `need_ipi` can be set to `false`.
                 local_wake.need_ipi.store(false, atomic::Ordering::SeqCst);
                 x86_64::instructions::interrupts::enable();
                 break;
             }
-
-            local_wake.need_ipi.store(true, atomic::Ordering::SeqCst);
 
             // An `sti` opcode only takes effect after the *next* opcode, which is `hlt` here.
             // It is not possible for an interrupt to happen between `sti` and `hlt`.
@@ -77,8 +81,8 @@ struct Waker {
     /// Identifier of the processor that this waker must wake up.
     processor_to_wake: ApicId,
 
-    /// Flag set to true if the processor has entered or is going to enter a halted state, and
-    /// that an interprocess interrupt (IPI) is necessary in order to wake up the processor.
+    /// Flag set to true if the processor has entered or has a chance to enter a halted state,
+    /// and that an interprocess interrupt (IPI) is necessary in order to wake up the processor.
     ///
     /// If this is true, then you must set `woken_up` to true and send an IPI.
     /// If this is false, then setting `woken_up` to true is enough.
