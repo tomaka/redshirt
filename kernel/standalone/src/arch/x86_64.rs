@@ -53,7 +53,8 @@ extern "C" fn after_boot(multiboot_header: usize) -> ! {
 
         let mut kernel_channels = Vec::with_capacity(acpi.application_processors.len());
 
-        for ap in acpi.application_processors.iter().take(1) { // TODO: remove take(1)
+        for ap in acpi.application_processors.iter().take(1) {
+            // TODO: remove take(1)
             debug_assert!(ap.is_ap);
             if ap.state != ::acpi::ProcessorState::WaitingForSipi {
                 continue;

@@ -60,11 +60,11 @@ pub unsafe fn boot_associated_processor(
     debug_assert!(layout.size() < 1024);
 
     // FIXME: meh, do a proper allocation
-    let bootstrap_code = 0x90000usize as *mut u8;/*{
-        let buf = alloc::alloc(layout);
-        assert!(!buf.is_null());
-        buf
-    };*/
+    let bootstrap_code = 0x90000usize as *mut u8; /*{
+                                                      let buf = alloc::alloc(layout);
+                                                      assert!(!buf.is_null());
+                                                      buf
+                                                  };*/
 
     apic.send_interprocessor_init(target);
     let rdtsc = core::arch::x86_64::_rdtsc();
@@ -75,7 +75,10 @@ pub unsafe fn boot_associated_processor(
     // a channel and modify `boot_code` to signal that channel before doing anything more.
     let (boot_code, init_finished_future) = {
         let (tx, rx) = oneshot::channel();
-        let boot_code = move || { let _ = tx.send(()); boot_code() };
+        let boot_code = move || {
+            let _ = tx.send(());
+            boot_code()
+        };
         (boot_code, rx)
     };
 
@@ -124,15 +127,21 @@ pub unsafe fn boot_associated_processor(
     // dummy values that we overwrite in the block below.
     {
         let ap_boot_marker1_loc: *mut u8 = {
-            let offset = (_ap_boot_marker1 as usize).checked_sub(_ap_boot_start as usize).unwrap();
+            let offset = (_ap_boot_marker1 as usize)
+                .checked_sub(_ap_boot_start as usize)
+                .unwrap();
             bootstrap_code.add(offset)
         };
         let ap_boot_marker2_loc: *mut u8 = {
-            let offset = (_ap_boot_marker2 as usize).checked_sub(_ap_boot_start as usize).unwrap();
+            let offset = (_ap_boot_marker2 as usize)
+                .checked_sub(_ap_boot_start as usize)
+                .unwrap();
             bootstrap_code.add(offset)
         };
         let ap_boot_marker3_loc: *mut u8 = {
-            let offset = (_ap_boot_marker3 as usize).checked_sub(_ap_boot_start as usize).unwrap();
+            let offset = (_ap_boot_marker3 as usize)
+                .checked_sub(_ap_boot_start as usize)
+                .unwrap();
             bootstrap_code.add(offset)
         };
 
@@ -144,8 +153,10 @@ pub unsafe fn boot_associated_processor(
         );
         assert_eq!(
             slice::from_raw_parts(ap_boot_marker2_loc as *const u8, 20),
-            &[0x48, 0xbc, 0xef, 0xcd, 0xab, 0x90, 0x78, 0x56, 0x34, 0x12,
-            0x48, 0xb8, 0xff, 0xff, 0x22, 0x22, 0xcc, 0xcc, 0x99, 0x99]
+            &[
+                0x48, 0xbc, 0xef, 0xcd, 0xab, 0x90, 0x78, 0x56, 0x34, 0x12, 0x48, 0xb8, 0xff, 0xff,
+                0x22, 0x22, 0xcc, 0xcc, 0x99, 0x99
+            ]
         );
         assert_eq!(
             slice::from_raw_parts(ap_boot_marker3_loc as *const u8, 6),
@@ -166,7 +177,10 @@ pub unsafe fn boot_associated_processor(
         ljmp_target_ptr.write_unaligned(ljmp_target);
 
         // Read the value from the CR3 register.
-        let pml_addr = x86_64::registers::control::Cr3::read().0.start_address().as_u64();
+        let pml_addr = x86_64::registers::control::Cr3::read()
+            .0
+            .start_address()
+            .as_u64();
         let pml_addr = u32::try_from(pml_addr).unwrap();
         let pml_addr_ptr = (ap_boot_marker3_loc.add(2)) as *mut u32;
         assert_eq!(pml_addr_ptr.read_unaligned(), 0xff00badd);
