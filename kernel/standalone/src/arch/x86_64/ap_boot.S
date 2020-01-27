@@ -64,10 +64,7 @@ _ap_boot_marker3:
     or $(1 << 8), %eax
     wrmsr
 
-    mov %cr0, %eax
-    and $(~(1 << 2)), %eax
-    or $(1 << 1), %eax
-    and $(~(1 << 31)), %eax
+    movl $((1 << 31) | (1 << 4) | (1 << 0)), %eax
     movl %eax, %cr0
 
     // Set the GDT and do a long jump.

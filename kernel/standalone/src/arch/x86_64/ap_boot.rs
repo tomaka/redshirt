@@ -57,7 +57,7 @@ pub unsafe fn boot_associated_processor(
     };
 
     // Basic sanity check that the linker didn't somehow move our symbols around.
-    debug_assert!(layout.size() < 1024);
+    debug_assert!(layout.size() <= 0x2000);
 
     // FIXME: meh, do a proper allocation
     let bootstrap_code = 0x90000usize as *mut u8; /*{
@@ -145,8 +145,9 @@ pub unsafe fn boot_associated_processor(
             bootstrap_code.add(offset)
         };
 
-        // Perform some sanity check. Since we're performing dark magic, we really don't want to
-        // do something wrong, or we will run into issues that are very hard to debug.
+        // Perform some sanity check. Since we're performing dark magic, we really want to be sure
+        // that we're overwriting the correct code, or we will run into issues that are very hard
+        // to debug.
         assert_eq!(
             slice::from_raw_parts(ap_boot_marker1_loc as *const u8, 7),
             &[0x66, 0xea, 0xad, 0xde, 0xad, 0xde, 0x08]
