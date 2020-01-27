@@ -39,6 +39,10 @@ _ap_boot_start:
     xor %eax, %eax
     movw %cs, %ax
     movw %ax, %ds
+    movw %ax, %es
+    movw %ax, %fs
+    movw %ax, %gs
+    movw %ax, %ss
     shll $4, %eax
 
     // `%eax` now contains the address of `_ap_boot_start`.

@@ -32,6 +32,7 @@ use ::alloc::{
     sync::Arc,
 };
 use core::{convert::TryFrom as _, mem, ptr, slice};
+use futures::channel::oneshot;
 
 /// Bootstraps the given processor, making it execute `boot_code`.
 ///
@@ -70,6 +71,14 @@ pub unsafe fn boot_associated_processor(
 
     ptr::copy_nonoverlapping(_ap_boot_start as *const u8, bootstrap_code, layout.size());
 
+    // Later, we will want to wait until the AP has finished initializing. To do so, we create
+    // a channel and modify `boot_code` to signal that channel before doing anything more.
+    let (boot_code, init_finished_future) = {
+        let (tx, rx) = oneshot::channel();
+        let boot_code = move || { let _ = tx.send(()); boot_code() };
+        (boot_code, rx)
+    };
+
     // We want the processor we bootstrap to call the `ap_after_boot` function defined below. This
     // function will cast its first parameter into a `Box<Box<dyn FnOnce()>>` and call it.
     // We therefore cast `boot_code` into the proper format, then leak it with the intent to pass
@@ -82,11 +91,12 @@ pub unsafe fn boot_associated_processor(
 
     // Allocate a stack for the processor. This is the one and unique stack that will be used for
     // everything.
-    let stack_ptr = {
-        let layout = Layout::from_size_align(10 * 1024 * 1024, 0x1000).unwrap();
+    let stack_size = 10 * 1024 * 1024usize;
+    let stack_top = {
+        let layout = Layout::from_size_align(stack_size, 0x1000).unwrap();
         let ptr = alloc::alloc(layout);
         assert!(!ptr.is_null());
-        u64::try_from(ptr as usize).unwrap()
+        u64::try_from(ptr as usize + stack_size).unwrap()
     };
 
     // There exists several markers in the template that we must adjust before starting it.
@@ -110,8 +120,8 @@ pub unsafe fn boot_associated_processor(
     // 48 b8 ff ff 22 22 cc cc 99 99    movabs $0x9999cccc2222ffff, %rax
     // ```
     //
-    // The values `0xdead`, `0xff00badd`, `0x1234567890abcdef`, and `0x9999cccc2222ffff` are dummy
-    // values that we overwrite in the block below.
+    // The values `0xdeaddead`, `0xff00badd`, `0x1234567890abcdef`, and `0x9999cccc2222ffff` are
+    // dummy values that we overwrite in the block below.
     {
         let ap_boot_marker1_loc: *mut u8 = {
             let offset = (_ap_boot_marker1 as usize).checked_sub(_ap_boot_start as usize).unwrap();
@@ -144,7 +154,7 @@ pub unsafe fn boot_associated_processor(
 
         let stack_ptr_ptr = (ap_boot_marker2_loc.add(2)) as *mut u64;
         assert_eq!(stack_ptr_ptr.read_unaligned(), 0x1234567890abcdef);
-        stack_ptr_ptr.write_unaligned(stack_ptr);
+        stack_ptr_ptr.write_unaligned(stack_top);
 
         let param_ptr = (ap_boot_marker2_loc.add(12)) as *mut u64;
         assert_eq!(param_ptr.read_unaligned(), 0x9999cccc2222ffff);
@@ -174,6 +184,9 @@ pub unsafe fn boot_associated_processor(
     apic.send_interprocessor_sipi(target, bootstrap_code as *const _);*/
 
     //alloc::dealloc(bootstrap_code, layout);
+
+    // Wait for CPU initialization to finish.
+    // TODO: super::executor::block_on(&apic, init_finished_future).unwrap();
 }
 
 /// Actual type of the parameter passed to `ap_after_boot`.
