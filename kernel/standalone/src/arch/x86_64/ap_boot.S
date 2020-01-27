@@ -42,47 +42,43 @@ _ap_boot_start:
     shll $4, %eax
 
     // `%eax` now contains the address of `_ap_boot_start`.
-    // We use this information to store the location of `gdt_table` at the appropriate location in
-    // `gdt_ptr`.
-    addl $0 + gdt_table - _ap_boot_start, %eax
-    movl %eax, (gdt_ptr - _ap_boot_start + 2)
+    // We use this information to store the location of `_ap_gdt_table` at the appropriate location in
+    // `_ap_gdt_ptr`.
+    addl $0 + _ap_gdt_table - _ap_boot_start, %eax
+    movl %eax, (_ap_gdt_ptr - _ap_boot_start + 2)
 
-    // Set the PAE and PGE bits.
-    mov $0xa0, %eax
-    mov %eax, %cr4
+    movl $((1 << 10) | (1 << 9) | (1 << 5)), %eax
+    movl %eax, %cr4
 
-    // Load the page directory TODO: wrong
 .global _ap_boot_marker3
 _ap_boot_marker3:
     mov $0xff00badd, %edx
     mov %edx, %cr3
 
-    // TODO: ??? setting the LME bit? figure out what that is
     mov $0xc0000080, %ecx
     rdmsr
-    or $0x00000100, %eax
+    or $(1 << 8), %eax
     wrmsr
- 
-    // Activating long mode by enabling paging and protected mode.
-    mov %cr0, %ebx
-    or $0x80000001, %ebx
-    mov %ebx, %cr0
 
-    cli
-    hlt
+    mov %cr0, %eax
+    and $(~(1 << 2)), %eax
+    or $(1 << 1), %eax
+    and $(~(1 << 31)), %eax
+    movl %eax, %cr0
 
     // Set the GDT and do a long jump.
-    lgdtl (gdt_ptr - _ap_boot_start)
+    lgdtl (_ap_gdt_ptr - _ap_boot_start)
 .global _ap_boot_marker1
 _ap_boot_marker1:
-    ljmp $8, $0xdead
+    ljmpl $8, $0xdeaddead
 
 .code64
 .global _ap_boot_marker2
 .type _ap_boot_marker2, @function
 _ap_boot_marker2:
+    // The constants here will be replaced with an actual stack location when the template
+    // gets adjusted.
     // Set up the stack.
-    // The constant here will be replaced with an actual stack location when copying the code.
     movq $0x1234567890abcdef, %rsp
     movq $0x9999cccc2222ffff, %rax
 
@@ -106,14 +102,14 @@ _ap_boot_marker2:
 // This is our GDT. It is necessary to have one in order to jump to long mode.
 // It contains two entries: one null entry (mandatory), and one for our kernel.
 .align 0x1000
-gdt_table:
+_ap_gdt_table:
     .8byte 0
     .8byte (1 << 53) | (1 << 47) | (1 << 44) | (1 << 43)
     .skip (0x800 - (2 * 8))
 
 // Small structure whose location is passed to the CPU.
 .align 8
-gdt_ptr:
+_ap_gdt_ptr:
     .short 0x800 - 1
     .long 0
 

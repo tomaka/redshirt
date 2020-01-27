@@ -94,7 +94,7 @@ pub unsafe fn boot_associated_processor(
     // The code at symbol `_ap_boot_marker1` starts with the following instructions:
     //
     // ```
-    // ea ad de 08    ljmp $8, $0xdead
+    // 66 ea ad de ad de 08    ljmpl  $0x8, $0xdeaddead
     // ```
     //
     // The code at symbol `_ap_boot_marker3` starts with the following instructions:
@@ -129,8 +129,8 @@ pub unsafe fn boot_associated_processor(
         // Perform some sanity check. Since we're performing dark magic, we really don't want to
         // do something wrong, or we will run into issues that are very hard to debug.
         assert_eq!(
-            slice::from_raw_parts(ap_boot_marker1_loc as *const u8, 4),
-            &[0xea, 0xad, 0xde, 0x08]
+            slice::from_raw_parts(ap_boot_marker1_loc as *const u8, 7),
+            &[0x66, 0xea, 0xad, 0xde, 0xad, 0xde, 0x08]
         );
         assert_eq!(
             slice::from_raw_parts(ap_boot_marker2_loc as *const u8, 20),
@@ -150,11 +150,9 @@ pub unsafe fn boot_associated_processor(
         assert_eq!(param_ptr.read_unaligned(), 0x9999cccc2222ffff);
         param_ptr.write_unaligned(ap_after_boot_param);
 
-        let ljmp_target = u16::try_from((_ap_boot_marker2 as usize)
-            .checked_sub(_ap_boot_start as usize).unwrap())
-            .unwrap();
-        let ljmp_target_ptr = (ap_boot_marker1_loc.add(1)) as *mut u16;
-        assert_eq!(ljmp_target_ptr.read_unaligned(), 0xdead);
+        let ljmp_target = u32::try_from(ap_boot_marker2_loc as usize).unwrap();
+        let ljmp_target_ptr = (ap_boot_marker1_loc.add(2)) as *mut u32;
+        assert_eq!(ljmp_target_ptr.read_unaligned(), 0xdeaddead);
         ljmp_target_ptr.write_unaligned(ljmp_target);
 
         // Read the value from the CR3 register.
