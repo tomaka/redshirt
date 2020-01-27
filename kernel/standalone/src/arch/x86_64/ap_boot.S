@@ -30,6 +30,7 @@
 // executed.
 
 .code16
+.align 0x1000
 .global _ap_boot_start
 .type _ap_boot_start, @function
 _ap_boot_start:
