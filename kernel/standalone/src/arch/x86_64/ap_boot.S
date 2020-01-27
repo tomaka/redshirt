@@ -13,10 +13,15 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+// The code here is a helper for `ap_boot.rs`. This file is intended to be removed when Rust gets
+// proper support for inline assembly.
+
 .code16
 .global _ap_start
 .type _ap_start, @function
 _ap_start:
+    cli
+
     // TODO: remove
     mov $0xb8f0, %ax
     mov %ax, %ds
@@ -37,8 +42,27 @@ _ap_start:
     cli
     hlt
 
+.code64
+.global _ap_start64
+.type _ap_start64, @function
+_ap_start64:
+    // Set up the stack.
+    // The constant here will be replaced with an actual stack location when copying the code.
+    movq $0x1234567890abcdef, %rsp
+    movq $0x9999cccc2222ffff, %rax
+
+    movw $0, %ax
+    movw %ax, %ds
+    movw %ax, %es
+    movw %ax, %fs
+    movw %ax, %gs
+    movw %ax, %ss
+
+    call after_boot
+    cli
+    hlt
+
 .global _after_ap_start
 .type _after_ap_start, @function
 _after_ap_start:
-    cli
-    hlt
+    nop

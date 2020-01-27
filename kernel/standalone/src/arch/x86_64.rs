@@ -17,8 +17,9 @@
 
 use crate::arch::PlatformSpecific;
 
-use alloc::sync::Arc;
+use alloc::{sync::Arc, vec::Vec};
 use core::{convert::TryFrom as _, future::Future, num::NonZeroU32, ops::Range, pin::Pin};
+use futures::channel::oneshot;
 use x86_64::registers::model_specific::Msr;
 use x86_64::structures::port::{PortRead as _, PortWrite as _};
 
@@ -41,7 +42,6 @@ mod panic;
 extern "C" fn after_boot(multiboot_header: usize) -> ! {
     unsafe {
         let multiboot_info = multiboot2::load(multiboot_header);
-
         crate::mem_alloc::initialize(find_free_memory_ranges(&multiboot_info));
 
         // TODO: panics in BOCHS
@@ -51,21 +51,39 @@ extern "C" fn after_boot(multiboot_header: usize) -> ! {
 
         let apic = apic::init();
 
+        let mut kernel_channels = Vec::with_capacity(acpi.application_processors.len());
+
         for ap in acpi.application_processors.iter().take(1) { // TODO: remove take(1)
             debug_assert!(ap.is_ap);
             if ap.state != ::acpi::ProcessorState::WaitingForSipi {
                 continue;
             }
 
+            let (kernel_tx, kernel_rx) = oneshot::channel::<Arc<crate::kernel::Kernel<_>>>();
+            kernel_channels.push(kernel_tx);
+            let apic_clone = apic.clone();
+
             ap_boot::boot_associated_processor(
                 &apic,
                 apic::ApicId::from_unchecked(ap.local_apic_id),
-                || {},
+                move || {
+                    let kernel = executor::block_on(&apic_clone, kernel_rx).unwrap();
+                    kernel.run();
+                },
             );
         }
 
-        let platform_specific = PlatformSpecificImpl { apic };
-        let kernel = crate::kernel::Kernel::init(platform_specific);
+        let kernel = {
+            let platform_specific = PlatformSpecificImpl { apic };
+            Arc::new(crate::kernel::Kernel::init(platform_specific))
+        };
+
+        for tx in kernel_channels {
+            if tx.send(kernel.clone()).is_err() {
+                panic!();
+            }
+        }
+
         kernel.run()
     }
 }

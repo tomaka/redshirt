@@ -112,11 +112,19 @@ pub struct ApicControl {
 }
 
 /// Opaque type representing the APIC ID of a processor.
+///
+/// Since we never modify the APIC ID of processors, the existence of this struct is a guarantee
+/// that a processor with the given ID exists.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct ApicId(u8);
 
 impl ApicId {
     /// Builds an [`ApicId`] from a raw identifier without checking the value.
+    ///
+    /// # Safety
+    ///
+    /// There must be a processor with the given APIC ID.
+    ///
     pub unsafe fn from_unchecked(val: u8) -> Self {
         ApicId(val)
     }
@@ -155,10 +163,12 @@ impl ApicControl {
         self.send_ipi_inner(target_apic_id, 0, vector)
     }
 
+    #[cold]
     pub fn send_interprocessor_init(self: &Arc<Self>, target_apic_id: ApicId) {
         self.send_ipi_inner(target_apic_id, 0b101, 0);
     }
 
+    #[cold]
     pub fn send_interprocessor_sipi(self: &Arc<Self>, target_apic_id: ApicId, boot_fn: *const u8) {
         let boot_fn = boot_fn as usize;
         assert_eq!((boot_fn >> 12) << 12, boot_fn);
