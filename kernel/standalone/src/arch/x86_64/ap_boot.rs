@@ -30,9 +30,44 @@ use ::alloc::{
     alloc::{self, Layout},
     boxed::Box,
     sync::Arc,
+    vec::Vec,
 };
-use core::{convert::TryFrom as _, mem, ptr, slice};
+use core::{convert::TryFrom as _, mem, ops::Range, ptr, slice};
 use futures::channel::oneshot;
+
+pub struct ApBootAlloc {
+    inner: linked_list_allocator::Heap,
+}
+
+pub fn filter_build_ap_boot_alloc<'a>(
+    ranges: impl Iterator<Item = Range<usize>> + 'a,
+    alloc: &'a mut Option<ApBootAlloc>,
+) -> impl Iterator<Item = Range<usize>> + 'a {
+    const WANTED: usize = 0x4000;
+
+    ranges.filter_map(move |mut range| {
+        if alloc.is_none() {
+            // FIXME: this is a hack because in practice our RAM starts at 0.
+            // FIXME: this should probably instead be fixed in the linked_list_allocator
+            if range.start == 0 {
+                range.start = 1;
+            }
+
+            let range_size = range.end - range.start;
+            if range.start + WANTED <= 0x100000 && range_size >= WANTED {
+                *alloc = Some(ApBootAlloc {
+                    inner: unsafe { linked_list_allocator::Heap::new(range.start, WANTED) },
+                });
+                if range_size > WANTED {
+                    return Some((range.start + WANTED..range.end));
+                }
+                return None;
+            }
+        }
+
+        Some(range)
+    })
+}
 
 /// Bootstraps the given processor, making it execute `boot_code`.
 ///
@@ -44,32 +79,47 @@ use futures::channel::oneshot;
 // TODO: replace `Infallible` with `!` when stable
 #[cold]
 pub unsafe fn boot_associated_processor(
+    alloc: &mut ApBootAlloc,
     apic: &Arc<ApicControl>,
     target: ApicId,
     boot_code: impl FnOnce() -> core::convert::Infallible + Send + 'static,
 ) {
-    // TODO: clean up
-    let layout = {
+    // In order to boot an associated processor, we must send to it an inter-processor interrupt
+    // (IPI) containing the offset of a 4kiB memory page containing the code that it must start
+    // executing. The CS register of the target processor will take the value that we send, the
+    // IP register will be set to 0, and the processor will start running in 16 bits mode.
+    //
+    // Since this is 16 bits mode, the processor cannot execute any code (or access any data)
+    // above one megabyte of physical memory. Most, if not all, of the kernel is loaded above
+    // that limit, and therefore we cannot simply ask the processor to start executing a certain
+    // function.
+    //
+    // Instead, what we must do is allocate a buffer below that one megabyte limit, write some
+    // x86 machine code in that buffer, and then we can ask the processor to run it. This is
+    // implemented by copying a template code into that buffer and tweaking the constants.
+    //
+    // The template in question is located in the `ap_boot.S` file. See also the documentation
+    // there.
+
+    // We start by allocating the buffer where to write the bootstrap code.
+    let mut bootstrap_code_buf = {
         let size = (_ap_boot_end as *const u8 as usize)
             .checked_sub(_ap_boot_start as *const u8 as usize)
             .unwrap();
-        Layout::from_size_align(size, 0x1000).unwrap()
+        // Basic sanity check to make sure that nothing's fundamentally wrong.
+        assert!(size <= 0x1000);
+        let layout = Layout::from_size_align(size, 0x1000).unwrap();
+        Allocation::new(&mut alloc.inner, layout)
     };
-
-    // Basic sanity check that the linker didn't somehow move our symbols around.
-    debug_assert!(layout.size() <= 0x2000);
-
-    // FIXME: meh, do a proper allocation
-    let bootstrap_code = 0x90000usize as *mut u8; /*{
-                                                      let buf = alloc::alloc(layout);
-                                                      assert!(!buf.is_null());
-                                                      buf
-                                                  };*/
 
     apic.send_interprocessor_init(target);
     let rdtsc = core::arch::x86_64::_rdtsc();
 
-    ptr::copy_nonoverlapping(_ap_boot_start as *const u8, bootstrap_code, layout.size());
+    ptr::copy_nonoverlapping(
+        _ap_boot_start as *const u8,
+        bootstrap_code_buf.as_mut_ptr(),
+        bootstrap_code_buf.size(),
+    );
 
     // Later, we will want to wait until the AP has finished initializing. To do so, we create
     // a channel and modify `boot_code` to signal that channel before doing anything more.
@@ -130,19 +180,19 @@ pub unsafe fn boot_associated_processor(
             let offset = (_ap_boot_marker1 as usize)
                 .checked_sub(_ap_boot_start as usize)
                 .unwrap();
-            bootstrap_code.add(offset)
+            bootstrap_code_buf.as_mut_ptr().add(offset)
         };
         let ap_boot_marker2_loc: *mut u8 = {
             let offset = (_ap_boot_marker2 as usize)
                 .checked_sub(_ap_boot_start as usize)
                 .unwrap();
-            bootstrap_code.add(offset)
+            bootstrap_code_buf.as_mut_ptr().add(offset)
         };
         let ap_boot_marker3_loc: *mut u8 = {
             let offset = (_ap_boot_marker3 as usize)
                 .checked_sub(_ap_boot_start as usize)
                 .unwrap();
-            bootstrap_code.add(offset)
+            bootstrap_code_buf.as_mut_ptr().add(offset)
         };
 
         // Perform some sanity check. Since we're performing dark magic, we really want to be sure
@@ -192,26 +242,63 @@ pub unsafe fn boot_associated_processor(
     super::executor::block_on(apic, apic.register_tsc_timer(rdtsc + 10_000_000));
 
     // Send the SINIT IPI, pointing to the bootstrap code that we have carefully crafted.
-    apic.send_interprocessor_sipi(target, bootstrap_code as *const _);
+    apic.send_interprocessor_sipi(target, bootstrap_code_buf.as_mut_ptr() as *const _);
 
     /*let rdtsc = unsafe { core::arch::x86_64::_rdtsc() };
     super::executor::block_on(apic, apic.register_tsc_timer(rdtsc + 1_000_000_000));
-    apic.send_interprocessor_sipi(target, bootstrap_code as *const _);*/
-
-    //alloc::dealloc(bootstrap_code, layout);
+    apic.send_interprocessor_sipi(target, bootstrap_code_buf.as_mut_ptr() as *const _);*/
 
     // Wait for CPU initialization to finish.
     // TODO: doesn't work; requires the child CPU to set up their APIC
     //super::executor::block_on(&apic, init_finished_future).unwrap();
+
+    // Make sure the buffer is dropped at the end.
+    // TODO: drop(bootstrap_code_buf);
+    mem::forget(bootstrap_code_buf);
+}
+
+/// There is surprisingly no type in the Rust standard library that keeps track of an allocation.
+struct Allocation<'a, T: alloc::Alloc> {
+    alloc: &'a mut T,
+    inner: ptr::NonNull<u8>,
+    layout: Layout,
+}
+
+impl<'a, T: alloc::Alloc> Allocation<'a, T> {
+    fn new(alloc: &'a mut T, layout: Layout) -> Self {
+        unsafe {
+            let buf = alloc.alloc(layout).unwrap();
+            Allocation {
+                alloc,
+                inner: buf,
+                layout,
+            }
+        }
+    }
+
+    fn as_mut_ptr(&mut self) -> *mut u8 {
+        self.inner.as_ptr()
+    }
+
+    fn size(&self) -> usize {
+        self.layout.size()
+    }
+}
+
+impl<'a, T: alloc::Alloc> Drop for Allocation<'a, T> {
+    fn drop(&mut self) {
+        unsafe { self.alloc.dealloc(self.inner, self.layout) }
+    }
 }
 
 /// Actual type of the parameter passed to `ap_after_boot`.
 type ApAfterBootParam = *mut Box<dyn FnOnce() -> core::convert::Infallible + Send + 'static>;
 
-/// Called by `ap_boot.S` after set up.
+/// Called by `ap_boot.S` after setup.
 ///
 /// When this function is called, the stack and paging have already been properly set up. The
-/// first parameter is gathered from `rdi` register according to the x86_64 calling convention.
+/// first parameter is gathered from the `rdi` register according to the x86_64 calling
+/// convention.
 #[no_mangle]
 extern "C" fn ap_after_boot(to_exec: usize) -> ! {
     unsafe {
@@ -231,6 +318,3 @@ extern "C" {
     fn _ap_boot_marker3();
     fn _ap_boot_end();
 }
-
-#[no_mangle]
-static _ap_gdt_table: [u64; 2] = [0, (1 << 53) | (1 << 47) | (1 << 44) | (1 << 43)];

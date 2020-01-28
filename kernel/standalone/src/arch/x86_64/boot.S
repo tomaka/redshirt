@@ -134,13 +134,6 @@ _start64:
 
 .section .rodata
 
-// This is our GDT. It is necessary to have one in order to jump to long mode.
-// It contains two entries: one null entry (mandatory), and one for our kernel.
-.align 0x1000
-gdt_table:
-    .8byte 0
-    .8byte (1 << 53) | (1 << 47) | (1 << 44) | (1 << 43)
-
 // Small structure whose location is passed to the CPU.
 .align 8
 gdt_ptr:

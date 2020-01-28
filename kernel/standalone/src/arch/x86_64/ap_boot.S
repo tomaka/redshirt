@@ -116,7 +116,7 @@ _ap_boot_marker2:
 .align 8
 _ap_gdt_ptr:
     .short 15
-    .long _ap_gdt_table
+    .long gdt_table
 
 .global _ap_boot_end
 .type _ap_boot_end, @function

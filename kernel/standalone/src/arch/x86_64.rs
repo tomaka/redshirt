@@ -42,7 +42,19 @@ mod panic;
 extern "C" fn after_boot(multiboot_header: usize) -> ! {
     unsafe {
         let multiboot_info = multiboot2::load(multiboot_header);
-        crate::mem_alloc::initialize(find_free_memory_ranges(&multiboot_info));
+
+        let mut ap_boot_alloc = {
+            let mut ap_boot_alloc = None;
+            let remaining_ranges = ap_boot::filter_build_ap_boot_alloc(
+                find_free_memory_ranges(&multiboot_info),
+                &mut ap_boot_alloc,
+            );
+            crate::mem_alloc::initialize(remaining_ranges);
+            match ap_boot_alloc {
+                Some(b) => b,
+                None => panic!("Can't find sub-1M available memory range"),
+            }
+        };
 
         // TODO: panics in BOCHS
         let acpi = acpi::load_acpi_tables(&multiboot_info);
@@ -65,6 +77,7 @@ extern "C" fn after_boot(multiboot_header: usize) -> ! {
             let apic_clone = apic.clone();
 
             ap_boot::boot_associated_processor(
+                &mut ap_boot_alloc,
                 &apic,
                 apic::ApicId::from_unchecked(ap.local_apic_id),
                 move || {
