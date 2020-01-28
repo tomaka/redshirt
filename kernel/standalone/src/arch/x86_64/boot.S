@@ -140,12 +140,11 @@ _start64:
 gdt_table:
     .8byte 0
     .8byte (1 << 53) | (1 << 47) | (1 << 44) | (1 << 43)
-    .skip (0x800 - (2 * 8))
 
 // Small structure whose location is passed to the CPU.
 .align 8
 gdt_ptr:
-    .short 0x800 - 1
+    .short 15
     .long gdt_table
 
 

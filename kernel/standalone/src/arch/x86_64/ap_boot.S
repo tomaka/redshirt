@@ -37,20 +37,12 @@ _ap_boot_start:
     // When we enter here, the `%cs` register is set to the value that we passed through the
     // SIPI, and the `%ip` register is set to `0`.
 
-    xor %eax, %eax
     movw %cs, %ax
     movw %ax, %ds
     movw %ax, %es
     movw %ax, %fs
     movw %ax, %gs
     movw %ax, %ss
-    shll $4, %eax
-
-    // `%eax` now contains the address of `_ap_boot_start`.
-    // We use this information to store the location of `_ap_gdt_table` at the appropriate location in
-    // `_ap_gdt_ptr`.
-    addl $0 + _ap_gdt_table - _ap_boot_start, %eax
-    movl %eax, (_ap_gdt_ptr - _ap_boot_start + 2)
 
     movl $((1 << 10) | (1 << 9) | (1 << 5)), %eax
     movl %eax, %cr4
@@ -99,24 +91,11 @@ _ap_boot_marker2:
     cli
     hlt
 
-
-// TODO: build the GDT from Rust code
-
 // Small structure whose location is passed to the CPU.
 .align 8
 _ap_gdt_ptr:
-    .short 0x800 - 1
-    .long 0
-
-
-// This is our GDT. It is necessary to have one in order to jump to long mode.
-// It contains two entries: one null entry (mandatory), and one for our kernel.
-.align 0x1000
-_ap_gdt_table:
-    .8byte 0
-    .8byte (1 << 53) | (1 << 47) | (1 << 44) | (1 << 43)
-    .skip (0x800 - (2 * 8))
-
+    .short 15
+    .long _ap_gdt_table
 
 .global _ap_boot_end
 .type _ap_boot_end, @function

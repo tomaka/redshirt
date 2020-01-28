@@ -201,7 +201,8 @@ pub unsafe fn boot_associated_processor(
     //alloc::dealloc(bootstrap_code, layout);
 
     // Wait for CPU initialization to finish.
-    // TODO: super::executor::block_on(&apic, init_finished_future).unwrap();
+    // TODO: doesn't work; requires the child CPU to set up their APIC
+    //super::executor::block_on(&apic, init_finished_future).unwrap();
 }
 
 /// Actual type of the parameter passed to `ap_after_boot`.
@@ -230,3 +231,6 @@ extern "C" {
     fn _ap_boot_marker3();
     fn _ap_boot_end();
 }
+
+#[no_mangle]
+static _ap_gdt_table: [u64; 2] = [0, (1 << 53) | (1 << 47) | (1 << 44) | (1 << 43)];
