@@ -43,16 +43,23 @@ extern "C" fn after_boot(multiboot_header: usize) -> ! {
     unsafe {
         let multiboot_info = multiboot2::load(multiboot_header);
 
+        // Initialization of the memory allocator.
         let mut ap_boot_alloc = {
             let mut ap_boot_alloc = None;
+            // The associated processors (AP) boot code requires its own allocator. We take all
+            // the free ranges reported by the multiboot header and pass them to the `ap_boot`
+            // allocator initialization code so that it can filter out one that it needs.
             let remaining_ranges = ap_boot::filter_build_ap_boot_alloc(
                 find_free_memory_ranges(&multiboot_info),
                 &mut ap_boot_alloc,
             );
+
+            // Pass the free remaining ranges to the main allocator of the kernel.
             crate::mem_alloc::initialize(remaining_ranges);
+
             match ap_boot_alloc {
                 Some(b) => b,
-                None => panic!("Can't find sub-1M available memory range"),
+                None => panic!("Couldn't find free memory range for the AP allocator"),
             }
         };
 
@@ -66,7 +73,7 @@ extern "C" fn after_boot(multiboot_header: usize) -> ! {
         let mut kernel_channels = Vec::with_capacity(acpi.application_processors.len());
 
         for ap in acpi.application_processors.iter().take(1) {
-            // TODO: remove take(1)
+            // TODO: remove take(1), but doesn't work if I do so
             debug_assert!(ap.is_ap);
             if ap.state != ::acpi::ProcessorState::WaitingForSipi {
                 continue;

@@ -22,7 +22,9 @@
 //!
 //! # Usage
 //!
-//! // TODO: write up
+//! - Create an [`ApBootAlloc`] using the [`filter_build_ap_boot_alloc`] function.
+//! - Determine the [`ApicId`] of the processors we want to wake up.
+//! - Call [`boot_associated_processor`] for each processor one by one.
 //!
 
 use crate::arch::x86_64::apic::{ApicControl, ApicId};
@@ -35,14 +37,38 @@ use ::alloc::{
 use core::{convert::TryFrom as _, mem, ops::Range, ptr, slice};
 use futures::channel::oneshot;
 
+/// Allocator required by the [`boot_associated_processor`] function.
 pub struct ApBootAlloc {
     inner: linked_list_allocator::Heap,
 }
 
-pub fn filter_build_ap_boot_alloc<'a>(
+/// Accepts as input an iterator to a list of free memory ranges. If the `Option` is `None`,
+/// filters out a range of memory, builds an [`ApBootAlloc`] out of it and puts it in the
+/// `Option`.
+///
+/// # Usage
+///
+/// ```norun
+/// use core::iter;
+/// let mut alloc = None;
+/// let remaining_ranges = filter_build_ap_boot_alloc(iter::once(0 .. 0x1000000), &mut alloc);
+/// let alloc = alloc.expect("Couldn't find free memory range");
+/// ```
+///
+/// # Safety
+///
+/// The memory ranges have to be RAM or behave like RAM (i.e. both readable and writable,
+/// consistent, and so on). The memory ranges must not be touched by anything (other than the
+/// allocator) afterwards.
+///
+pub unsafe fn filter_build_ap_boot_alloc<'a>(
     ranges: impl Iterator<Item = Range<usize>> + 'a,
     alloc: &'a mut Option<ApBootAlloc>,
 ) -> impl Iterator<Item = Range<usize>> + 'a {
+    // Size that we grab from the ranges.
+    // TODO: This value is kind of arbitrary for now. Once
+    // https://github.com/rust-lang/rust/issues/51910 is stabilized, we can instead compute this
+    // value from `_ap_boot_end - _ap_boot_start`.
     const WANTED: usize = 0x4000;
 
     ranges.filter_map(move |mut range| {
@@ -53,10 +79,10 @@ pub fn filter_build_ap_boot_alloc<'a>(
                 range.start = 1;
             }
 
-            let range_size = range.end - range.start;
-            if range.start + WANTED <= 0x100000 && range_size >= WANTED {
+            let range_size = range.end.checked_sub(range.start).unwrap();
+            if range.start.saturating_add(WANTED) <= 0x100000 && range_size >= WANTED {
                 *alloc = Some(ApBootAlloc {
-                    inner: unsafe { linked_list_allocator::Heap::new(range.start, WANTED) },
+                    inner: linked_list_allocator::Heap::new(range.start, WANTED),
                 });
                 if range_size > WANTED {
                     return Some((range.start + WANTED..range.end));
@@ -71,10 +97,19 @@ pub fn filter_build_ap_boot_alloc<'a>(
 
 /// Bootstraps the given processor, making it execute `boot_code`.
 ///
+/// This function returns once the target processor has been successfully initialized and has
+/// started (or will soon start) to execute `boot_code`.
+///
+/// > **Note**: It is safe to call this function multiple times simultaneously with multiple
+/// >           different targets. For example, processor 0 can boot up processor 2 while
+/// >           processor 1 simultaneously boots up processor 3.
+///
 /// # Safety
 ///
-/// This function must only be called once per `target`.
-/// The `target` must not be the local processor.
+/// `target` must not be the local processor.
+///
+/// This function must only be called once per `target`, and no other code has sent or attempted
+/// to send an INIT or SIPI to the target processor.
 ///
 // TODO: replace `Infallible` with `!` when stable
 #[cold]
@@ -92,7 +127,7 @@ pub unsafe fn boot_associated_processor(
     // Since this is 16 bits mode, the processor cannot execute any code (or access any data)
     // above one megabyte of physical memory. Most, if not all, of the kernel is loaded above
     // that limit, and therefore we cannot simply ask the processor to start executing a certain
-    // function.
+    // function as we would like to.
     //
     // Instead, what we must do is allocate a buffer below that one megabyte limit, write some
     // x86 machine code in that buffer, and then we can ask the processor to run it. This is
@@ -115,6 +150,7 @@ pub unsafe fn boot_associated_processor(
     apic.send_interprocessor_init(target);
     let rdtsc = core::arch::x86_64::_rdtsc();
 
+    // Write the template code to the buffer.
     ptr::copy_nonoverlapping(
         _ap_boot_start as *const u8,
         bootstrap_code_buf.as_mut_ptr(),
@@ -132,10 +168,10 @@ pub unsafe fn boot_associated_processor(
         (boot_code, rx)
     };
 
-    // We want the processor we bootstrap to call the `ap_after_boot` function defined below. This
-    // function will cast its first parameter into a `Box<Box<dyn FnOnce()>>` and call it.
+    // We want the processor we bootstrap to call the `ap_after_boot` function defined below.
+    // `ap_after_boot` will cast its first parameter into a `Box<Box<dyn FnOnce()>>` and call it.
     // We therefore cast `boot_code` into the proper format, then leak it with the intent to pass
-    // this value to `ap_after_boot` (which will then "unleak" it).
+    // this value to `ap_after_boot`, which will then "unleak" it and call it.
     let ap_after_boot_param = {
         let boxed = Box::new(Box::new(boot_code) as Box<_>);
         let param_value: ApAfterBootParam = Box::into_raw(boxed);
@@ -143,7 +179,7 @@ pub unsafe fn boot_associated_processor(
     };
 
     // Allocate a stack for the processor. This is the one and unique stack that will be used for
-    // everything.
+    // everything by this processor.
     let stack_size = 10 * 1024 * 1024usize;
     let stack_top = {
         let layout = Layout::from_size_align(stack_size, 0x1000).unwrap();
@@ -152,15 +188,15 @@ pub unsafe fn boot_associated_processor(
         u64::try_from(ptr as usize + stack_size).unwrap()
     };
 
-    // There exists several markers in the template that we must adjust before starting it.
+    // There exists several markers in the template that we must adjust before it can be executed.
     //
-    // The code at symbol `_ap_boot_marker1` starts with the following instructions:
+    // The code at symbol `_ap_boot_marker1` starts with the following instruction:
     //
     // ```
     // 66 ea ad de ad de 08    ljmpl  $0x8, $0xdeaddead
     // ```
     //
-    // The code at symbol `_ap_boot_marker3` starts with the following instructions:
+    // The code at symbol `_ap_boot_marker3` starts with the following instruction:
     //
     // ```
     // 66 ba dd ba 00 ff    mov $0xff00badd, %edx
@@ -174,7 +210,7 @@ pub unsafe fn boot_associated_processor(
     // ```
     //
     // The values `0xdeaddead`, `0xff00badd`, `0x1234567890abcdef`, and `0x9999cccc2222ffff` are
-    // dummy values that we overwrite in the block below.
+    // dummies that we overwrite in the block below.
     {
         let ap_boot_marker1_loc: *mut u8 = {
             let offset = (_ap_boot_marker1 as usize)
@@ -195,7 +231,7 @@ pub unsafe fn boot_associated_processor(
             bootstrap_code_buf.as_mut_ptr().add(offset)
         };
 
-        // Perform some sanity check. Since we're performing dark magic, we really want to be sure
+        // Perform some sanity check. Since we're doing dark magic, we really want to be sure
         // that we're overwriting the correct code, or we will run into issues that are very hard
         // to debug.
         assert_eq!(
@@ -214,28 +250,33 @@ pub unsafe fn boot_associated_processor(
             &[0x66, 0xba, 0xdd, 0xba, 0x00, 0xff]
         );
 
+        // Write first constant at marker 2.
         let stack_ptr_ptr = (ap_boot_marker2_loc.add(2)) as *mut u64;
         assert_eq!(stack_ptr_ptr.read_unaligned(), 0x1234567890abcdef);
         stack_ptr_ptr.write_unaligned(stack_top);
 
+        // Write second constant at marker 2.
         let param_ptr = (ap_boot_marker2_loc.add(12)) as *mut u64;
         assert_eq!(param_ptr.read_unaligned(), 0x9999cccc2222ffff);
         param_ptr.write_unaligned(ap_after_boot_param);
 
-        let ljmp_target = u32::try_from(ap_boot_marker2_loc as usize).unwrap();
+        // Write the location of marker 2 into the constant at marker 1.
         let ljmp_target_ptr = (ap_boot_marker1_loc.add(2)) as *mut u32;
         assert_eq!(ljmp_target_ptr.read_unaligned(), 0xdeaddead);
-        ljmp_target_ptr.write_unaligned(ljmp_target);
+        ljmp_target_ptr.write_unaligned({
+            u32::try_from(ap_boot_marker2_loc as usize).unwrap()
+        });
 
-        // Read the value from the CR3 register.
-        let pml_addr = x86_64::registers::control::Cr3::read()
-            .0
-            .start_address()
-            .as_u64();
-        let pml_addr = u32::try_from(pml_addr).unwrap();
+        // Write the value of our `cr3` register to the constant at marker 3.
         let pml_addr_ptr = (ap_boot_marker3_loc.add(2)) as *mut u32;
         assert_eq!(pml_addr_ptr.read_unaligned(), 0xff00badd);
-        pml_addr_ptr.write_unaligned(pml_addr);
+        pml_addr_ptr.write_unaligned({
+            let pml_addr = x86_64::registers::control::Cr3::read()
+                .0
+                .start_address()
+                .as_u64();
+            u32::try_from(pml_addr).unwrap()
+        });
     }
 
     // Wait for 10ms to have elapsed since we sent the INIT IPI.
@@ -243,6 +284,12 @@ pub unsafe fn boot_associated_processor(
 
     // Send the SINIT IPI, pointing to the bootstrap code that we have carefully crafted.
     apic.send_interprocessor_sipi(target, bootstrap_code_buf.as_mut_ptr() as *const _);
+
+    // TODO: the APIC doesn't automatically try resubmitting the SIPI in case the target CPU was
+    //       busy, so we should send a second SIPI if the first one timed out
+    //       (the Intel manual also recommends doing so)
+    //       this is however tricky, as we have to make sure we're not sending the second SIPI
+    //       if the first one succeeded
 
     /*let rdtsc = unsafe { core::arch::x86_64::_rdtsc() };
     super::executor::block_on(apic, apic.register_tsc_timer(rdtsc + 1_000_000_000));
