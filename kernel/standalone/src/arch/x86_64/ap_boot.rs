@@ -211,7 +211,7 @@ type ApAfterBootParam = *mut Box<dyn FnOnce() -> core::convert::Infallible + Sen
 /// Called by `ap_boot.S` after set up.
 ///
 /// When this function is called, the stack and paging have already been properly set up. The
-/// first parameter is gathered from `rax` register according to the x86_64 calling convention.
+/// first parameter is gathered from `rdi` register according to the x86_64 calling convention.
 #[no_mangle]
 extern "C" fn ap_after_boot(to_exec: usize) -> ! {
     unsafe {
