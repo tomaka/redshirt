@@ -83,22 +83,30 @@ _ap_boot_marker2:
     // Set up the stack.
     movq $0x1234567890abcdef, %rsp
     movq $0x9999cccc2222ffff, %rax
+    movq %rax, %rdi
 
-    movw $0, %ax
-    movw %ax, %ds
-    movw %ax, %es
-    movw %ax, %fs
-    movw %ax, %gs
-    movw %ax, %ss
+    movw $0, %bx
+    movw %bx, %ds
+    movw %bx, %es
+    movw %bx, %fs
+    movw %bx, %gs
+    movw %bx, %ss
 
-    call ap_after_boot
+    // We do an indirect call in order to force the assembler to use the absolute address rather
+    // than a relative call.
+    mov $ap_after_boot, %rdx
+    call *%rdx
     cli
     hlt
 
 
+// TODO: build the GDT from Rust code
 
-// TODO: reuse the code from boot.S?
-// TODO: build the GDT from ap_boot.rs?
+// Small structure whose location is passed to the CPU.
+.align 8
+_ap_gdt_ptr:
+    .short 0x800 - 1
+    .long 0
 
 
 // This is our GDT. It is necessary to have one in order to jump to long mode.
@@ -108,12 +116,6 @@ _ap_gdt_table:
     .8byte 0
     .8byte (1 << 53) | (1 << 47) | (1 << 44) | (1 << 43)
     .skip (0x800 - (2 * 8))
-
-// Small structure whose location is passed to the CPU.
-.align 8
-_ap_gdt_ptr:
-    .short 0x800 - 1
-    .long 0
 
 
 .global _ap_boot_end
