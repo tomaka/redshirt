@@ -263,9 +263,7 @@ pub unsafe fn boot_associated_processor(
         // Write the location of marker 2 into the constant at marker 1.
         let ljmp_target_ptr = (ap_boot_marker1_loc.add(2)) as *mut u32;
         assert_eq!(ljmp_target_ptr.read_unaligned(), 0xdeaddead);
-        ljmp_target_ptr.write_unaligned({
-            u32::try_from(ap_boot_marker2_loc as usize).unwrap()
-        });
+        ljmp_target_ptr.write_unaligned({ u32::try_from(ap_boot_marker2_loc as usize).unwrap() });
 
         // Write the value of our `cr3` register to the constant at marker 3.
         let pml_addr_ptr = (ap_boot_marker3_loc.add(2)) as *mut u32;
