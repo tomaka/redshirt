@@ -17,8 +17,8 @@
 //!
 //! On x86 and x86_64 platforms, processors are divided in two categories: one BSP (bootstrap
 //! processor) and zero or more APs (associated processors). Only the BSP initially starts,
-//! and the APs have to be manually started from the BSP. This what this module is responsible
-//! for doing.
+//! and the APs have to be manually started either from the BSP or an AP that has previously
+//! been started. This what this module is responsible for doing.
 //!
 //! # Usage
 //!
@@ -147,8 +147,10 @@ pub unsafe fn boot_associated_processor(
         Allocation::new(&mut alloc.inner, layout)
     };
 
+    // Start by sending an INIT IPI to the target so that it reboots.
     apic.send_interprocessor_init(target);
-    let rdtsc = core::arch::x86_64::_rdtsc();
+
+    let rdtsc = core::arch::x86_64::_rdtsc(); // TODO: crappy code
 
     // Write the template code to the buffer.
     ptr::copy_nonoverlapping(
@@ -288,7 +290,6 @@ pub unsafe fn boot_associated_processor(
     //       (the Intel manual also recommends doing so)
     //       this is however tricky, as we have to make sure we're not sending the second SIPI
     //       if the first one succeeded
-
     /*let rdtsc = unsafe { core::arch::x86_64::_rdtsc() };
     super::executor::block_on(apic, apic.register_tsc_timer(rdtsc + 1_000_000_000));
     apic.send_interprocessor_sipi(target, bootstrap_code_buf.as_mut_ptr() as *const _);*/
@@ -302,7 +303,10 @@ pub unsafe fn boot_associated_processor(
     mem::forget(bootstrap_code_buf);
 }
 
+/// Holds an allocation with the given layout.
+///
 /// There is surprisingly no type in the Rust standard library that keeps track of an allocation.
+// TODO: use a `Box` or something once it's possible to pass a custom allocator
 struct Allocation<'a, T: alloc::Alloc> {
     alloc: &'a mut T,
     inner: ptr::NonNull<u8>,

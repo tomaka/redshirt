@@ -27,8 +27,7 @@
 //
 // Within this module, we must be careful to not use any absolute address referring to anything
 // between `_ap_boot_start` and `_ap_boot_end`, and to not use any relative address referring to
-// anything outside of this range, as the addresses will then be wrong when the code gets actually
-// executed.
+// anything outside of this range, as the addresses will then be wrong when the code gets copied.
 
 .code16
 .align 0x1000
@@ -69,7 +68,7 @@ _ap_boot_marker3:
     movl %eax, %cr0
 
     // Set up the GDT. Since the absolute address of `_ap_boot_start` is effectively 0 according
-    // to the GPU in this 16 bits context, we pass an "absolute" address to `_ap_gdt_ptr` by
+    // to the CPU in this 16 bits context, we pass an "absolute" address to `_ap_gdt_ptr` by
     // substracting `_ap_boot_start` from its 32 bits address.
     lgdtl (_ap_gdt_ptr - _ap_boot_start)
 
