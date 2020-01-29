@@ -39,6 +39,7 @@ mod panic;
 /// Since the kernel was loaded by a multiboot2 bootloader, the first parameter is the memory
 /// address of the multiboot header.
 #[no_mangle]
+#[cold]
 extern "C" fn after_boot(multiboot_header: usize) -> ! {
     unsafe {
         let multiboot_info = multiboot2::load(multiboot_header);
@@ -95,7 +96,11 @@ extern "C" fn after_boot(multiboot_header: usize) -> ! {
         }
 
         let kernel = {
-            let platform_specific = PlatformSpecificImpl { apic };
+            let platform_specific = PlatformSpecificImpl {
+                apic,
+                num_cpus: NonZeroU32::new(u32::try_from(kernel_channels.len()).unwrap().checked_add(1).unwrap()).unwrap(),
+            };
+
             Arc::new(crate::kernel::Kernel::init(platform_specific))
         };
 
@@ -172,13 +177,14 @@ fn find_free_memory_ranges<'a>(
 /// Implementation of [`PlatformSpecific`].
 struct PlatformSpecificImpl {
     apic: Arc<apic::ApicControl>,
+    num_cpus: NonZeroU32,
 }
 
 impl PlatformSpecific for PlatformSpecificImpl {
     type TimerFuture = apic::TscTimerFuture;
 
     fn num_cpus(self: Pin<&Self>) -> NonZeroU32 {
-        NonZeroU32::new(1).unwrap()
+        self.num_cpus
     }
 
     fn block_on<TRet>(self: Pin<&Self>, future: impl Future<Output = TRet>) -> TRet {

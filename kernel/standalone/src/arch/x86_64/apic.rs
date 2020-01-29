@@ -27,6 +27,10 @@ use spin::Mutex;
 use x86_64::registers::model_specific::Msr;
 use x86_64::structures::port::{PortRead as _, PortWrite as _};
 
+pub mod local;
+
+mod pic;
+
 // TODO: init() has to be called; this isn't great
 // TODO: "For correct APIC operation, this address space must be mapped to an area of memory that has been designated as strong uncacheable (UC)"
 
@@ -41,7 +45,7 @@ use x86_64::structures::port::{PortRead as _, PortWrite as _};
 /// >           has been encountered so far.
 ///
 pub unsafe fn init() -> Arc<ApicControl> {
-    init_pic();
+    pic::init_pic();
 
     // TODO: check whether CPUID is supported at all?
 
@@ -57,6 +61,7 @@ pub unsafe fn init() -> Arc<ApicControl> {
     let apic_base_addr = {
         const APIC_BASE_MSR: Msr = Msr::new(0x1b);
         let base_addr = APIC_BASE_MSR.read() & !0xfff;
+        // We never re-map the APIC. For safety, we ensure that nothing weird has happened here.
         assert_eq!(base_addr, 0xfee00000);
         APIC_BASE_MSR.write(base_addr | (1 << 11)); // Enable the APIC.
         base_addr
@@ -383,33 +388,4 @@ fn is_tsc_deadline_supported() -> bool {
         let cpuid = core::arch::x86_64::__cpuid(0x1);
         cpuid.ecx & (1 << 24) != 0
     }
-}
-
-/// Remap and disable the PIC.
-///
-/// The PIC (Programmable Interrupt Controller) is the old chip responsible for triggering
-/// on the CPU interrupts coming from the hardware.
-///
-/// Because of poor design decisions, it will by default trigger interrupts 0 to 15 on the CPU,
-/// which are normally reserved for software-related concerns. For example, the timer will by
-/// default trigger interrupt 8, which is also the double fault exception handler.
-///
-/// In order to solve this issue, one has to reconfigure the PIC in order to make it trigger
-/// interrupts between 32 and 47 rather than 0 to 15.
-///
-/// Note that this code disables the PIC altogether. Despite the PIC being disabled, it is
-/// still possible to receive spurious interrupts. Hence the remapping.
-unsafe fn init_pic() {
-    u8::write_to_port(0xa1, 0xff);
-    u8::write_to_port(0x21, 0xff);
-    u8::write_to_port(0x20, 0x10 | 0x01);
-    u8::write_to_port(0xa0, 0x10 | 0x01);
-    u8::write_to_port(0x21, 0x20);
-    u8::write_to_port(0xa1, 0x28);
-    u8::write_to_port(0x21, 4);
-    u8::write_to_port(0xa1, 2);
-    u8::write_to_port(0x21, 0x01);
-    u8::write_to_port(0xa1, 0x01);
-    u8::write_to_port(0xa1, 0xff);
-    u8::write_to_port(0x21, 0xff);
 }
