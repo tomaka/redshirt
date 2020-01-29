@@ -28,6 +28,7 @@ use x86_64::registers::model_specific::Msr;
 use x86_64::structures::port::{PortRead as _, PortWrite as _};
 
 // TODO: init() has to be called; this isn't great
+// TODO: "For correct APIC operation, this address space must be mapped to an area of memory that has been designated as strong uncacheable (UC)"
 
 ///
 ///
@@ -56,7 +57,8 @@ pub unsafe fn init() -> Arc<ApicControl> {
     let apic_base_addr = {
         const APIC_BASE_MSR: Msr = Msr::new(0x1b);
         let base_addr = APIC_BASE_MSR.read() & !0xfff;
-        APIC_BASE_MSR.write(base_addr | 0x800); // Enable the APIC.
+        assert_eq!(base_addr, 0xfee00000);
+        APIC_BASE_MSR.write(base_addr | (1 << 11)); // Enable the APIC.
         base_addr
     };
 
