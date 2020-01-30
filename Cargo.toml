@@ -4,6 +4,8 @@ members = [
     "core-proc-macros",
     "kernel/cli",
     "kernel/hosted-log",
+    "kernel/hosted-random",
+    "kernel/hosted-tcp",
     "kernel/hosted-time",
     "kernel/standalone",
     "interfaces/hardware",
@@ -16,8 +18,6 @@ members = [
     "interfaces/threads",
     "interfaces/tcp",
     "interfaces/time",
-    "interfaces/vulkan",
-    "interfaces/window",
 ]
 
 [profile.dev]

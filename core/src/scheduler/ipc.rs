@@ -1,4 +1,4 @@
-// Copyright (C) 2019  Pierre Krieger
+// Copyright (C) 2019-2020  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -24,7 +24,9 @@ use crate::InterfaceHash;
 use alloc::{collections::VecDeque, vec::Vec};
 use core::{cell::RefCell, convert::TryFrom, iter, mem};
 use crossbeam_queue::SegQueue;
+use fnv::FnvBuildHasher;
 use hashbrown::{hash_map::Entry, HashMap, HashSet};
+use nohash_hasher::BuildNoHashHasher;
 use redshirt_syscalls::{Encode, EncodedMessage, MessageId, Pid, ThreadId};
 use smallvec::SmallVec;
 
@@ -39,10 +41,10 @@ pub struct Core {
     /// List of `Pid`s that have been reserved during the construction.
     ///
     /// Never modified after initialization.
-    reserved_pids: HashSet<Pid>,
+    reserved_pids: HashSet<Pid, BuildNoHashHasher<u64>>,
 
     /// For each interface, which program is fulfilling it.
-    interfaces: RefCell<HashMap<InterfaceHash, InterfaceState>>,
+    interfaces: RefCell<HashMap<InterfaceHash, InterfaceState, FnvBuildHasher>>,
 
     /// Pool of identifiers for messages.
     message_id_pool: IdPool,
@@ -50,7 +52,7 @@ pub struct Core {
     /// List of messages that have been emitted by a process and that are waiting for a response.
     // TODO: doc about hash safety
     // TODO: call shrink_to from time to time
-    messages_to_answer: RefCell<HashMap<MessageId, Pid>>,
+    messages_to_answer: RefCell<HashMap<MessageId, Pid, BuildNoHashHasher<u64>>>,
 }
 
 /// Which way an interface is handled.
@@ -71,7 +73,7 @@ enum InterfaceState {
 /// Prototype for a `Core` under construction.
 pub struct CoreBuilder {
     /// See the corresponding field in `Core`.
-    reserved_pids: HashSet<Pid>,
+    reserved_pids: HashSet<Pid, BuildNoHashHasher<u64>>,
     /// Builder for the [`processes`][Core::processes] field in `Core`.
     inner_builder: extrinsics::ProcessesCollectionExtrinsicsBuilder,
 }
@@ -134,20 +136,20 @@ pub enum CoreRunOutcome {
 /// Additional information about a process.
 #[derive(Debug)]
 struct Process {
-    /// Messages available for retrieval by the process by calling `next_message`.
+    /// Notifications available for retrieval by the process by calling `next_notification`.
     ///
-    /// Note that the [`ResponseMessage::index_in_list`](redshirt_syscalls::ffi::ResponseMessage::index_in_list)
+    /// Note that the [`ResponseNotification::index_in_list`](redshirt_syscalls::ffi::ResponseNotification::index_in_list)
     /// and [`InterfaceMessage::index_in_list`](redshirt_syscalls::ffi::InterfaceMessage::index_in_list) fields are
-    /// set to a dummy value, and must be filled before actually delivering the message.
+    /// set to a dummy value, and must be filled before actually delivering the notification.
     // TODO: call shrink_to_fit from time to time
-    messages_queue: VecDeque<redshirt_syscalls::ffi::MessageBuilder>,
+    notifications_queue: VecDeque<redshirt_syscalls::ffi::NotificationBuilder>,
 
     /// Interfaces that the process has registered.
     registered_interfaces: SmallVec<[InterfaceHash; 1]>,
 
     /// List of interfaces that this process has used. When the process dies, we notify all the
     /// handlers about it.
-    used_interfaces: HashSet<InterfaceHash>,
+    used_interfaces: HashSet<InterfaceHash, FnvBuildHasher>,
 
     /// List of messages that the process has emitted and that are waiting for an answer.
     emitted_messages: SmallVec<[MessageId; 8]>,
@@ -166,7 +168,7 @@ impl Core {
     /// Initialies a new `Core`.
     pub fn new() -> CoreBuilder {
         CoreBuilder {
-            reserved_pids: HashSet::new(),
+            reserved_pids: HashSet::with_hasher(Default::default()),
             inner_builder: extrinsics::ProcessesCollectionExtrinsicsBuilder::default(),
         }
     }
@@ -230,8 +232,8 @@ impl Core {
                     match self.interfaces.borrow().get(&interface) {
                         Some(InterfaceState::Process(p)) => {
                             if let Some(process) = self.processes.process_by_id(*p) {
-                                let message = From::from(
-                                    redshirt_syscalls::ffi::build_process_destroyed_message(
+                                let notif = From::from(
+                                    redshirt_syscalls::ffi::build_process_destroyed_notification(
                                         pid.into(),
                                         0,
                                     ),
@@ -240,9 +242,9 @@ impl Core {
                                 process
                                     .user_data()
                                     .borrow_mut()
-                                    .messages_queue
-                                    .push_back(message);
-                                try_resume_message_wait(process);
+                                    .notifications_queue
+                                    .push_back(notif);
+                                try_resume_notification_wait(process);
                             } // TODO: notify externals as well?
                         }
                         None => unreachable!(),
@@ -267,8 +269,8 @@ impl Core {
                 None
             }
 
-            extrinsics::RunOneOutcome::ThreadWaitMessage(thread) => {
-                try_resume_message_wait_thread(thread);
+            extrinsics::RunOneOutcome::ThreadWaitNotification(thread) => {
+                try_resume_notification_wait_thread(thread);
                 None
             }
 
@@ -305,7 +307,7 @@ impl Core {
 
                         let message = thread.accept_emit(message_id);
                         if let Some(process) = self.processes.process_by_id(*pid) {
-                            let message = redshirt_syscalls::ffi::build_interface_message(
+                            let notif = redshirt_syscalls::ffi::build_interface_notification(
                                 &interface,
                                 message_id,
                                 emitter_pid,
@@ -317,9 +319,9 @@ impl Core {
                             process
                                 .user_data()
                                 .borrow_mut()
-                                .messages_queue
-                                .push_back(message);
-                            try_resume_message_wait(process);
+                                .notifications_queue
+                                .push_back(notif);
+                            try_resume_notification_wait(process);
                             None
                         } else if self.reserved_pids.contains(pid) {
                             Some(CoreRunOutcome::ReservedPidInterfaceMessage {
@@ -379,6 +381,13 @@ impl Core {
                 self.answer_message_inner(message_id, Err(()))
             }
 
+            extrinsics::RunOneOutcome::ThreadCancelMessage { message_id, .. } => {
+                // TODO: check ownership of the message
+                drop(run_outcome);
+                self.messages_to_answer.borrow_mut().remove(&message_id);
+                None
+            }
+
             extrinsics::RunOneOutcome::Idle => Some(CoreRunOutcome::Idle),
         }
     }
@@ -421,7 +430,7 @@ impl Core {
         // Send the `other_messages`.
         // TODO: should we preserve the order w.r.t. `threads`?
         for (emitter_pid, message_id, message_data) in other_messages {
-            let message = From::from(redshirt_syscalls::ffi::build_interface_message(
+            let notif = From::from(redshirt_syscalls::ffi::build_interface_notification(
                 &interface,
                 message_id,
                 emitter_pid,
@@ -430,7 +439,11 @@ impl Core {
             ));
 
             match self.processes.process_by_id(process) {
-                Some(p) => p.user_data().borrow_mut().messages_queue.push_back(message),
+                Some(p) => p
+                    .user_data()
+                    .borrow_mut()
+                    .notifications_queue
+                    .push_back(notif),
                 None => unreachable!(),
             }
         }
@@ -464,7 +477,7 @@ impl Core {
             let message = thread.accept_emit(message_id);
 
             if let Some(interface_handler_proc) = self.processes.process_by_id(process) {
-                let message = From::from(redshirt_syscalls::ffi::build_interface_message(
+                let notif = From::from(redshirt_syscalls::ffi::build_interface_notification(
                     &interface,
                     message_id,
                     emitter_pid,
@@ -475,8 +488,8 @@ impl Core {
                 interface_handler_proc
                     .user_data()
                     .borrow_mut()
-                    .messages_queue
-                    .push_back(message);
+                    .notifications_queue
+                    .push_back(notif);
             } else {
                 debug_assert!(self.reserved_pids.contains(&process));
                 self.pending_events
@@ -490,7 +503,7 @@ impl Core {
         }
 
         if let Some(interface_handler_proc) = self.processes.process_by_id(process) {
-            try_resume_message_wait(interface_handler_proc);
+            try_resume_notification_wait(interface_handler_proc);
         }
 
         Ok(())
@@ -569,7 +582,7 @@ impl Core {
         };
 
         if let Some(process) = self.processes.process_by_id(pid) {
-            let message = redshirt_syscalls::ffi::build_interface_message(
+            let notif = redshirt_syscalls::ffi::build_interface_notification(
                 &interface,
                 message_id,
                 emitter_pid,
@@ -580,9 +593,9 @@ impl Core {
             process
                 .user_data()
                 .borrow_mut()
-                .messages_queue
-                .push_back(From::from(message));
-            try_resume_message_wait(process);
+                .notifications_queue
+                .push_back(From::from(notif));
+            try_resume_notification_wait(process);
         } else if self.reserved_pids.contains(&emitter_pid) {
             self.pending_events
                 .push(CoreRunOutcome::ReservedPidInterfaceMessage {
@@ -620,9 +633,9 @@ impl Core {
     ) -> Option<CoreRunOutcome> {
         if let Some(emitter_pid) = self.messages_to_answer.borrow_mut().remove(&message_id) {
             if let Some(process) = self.processes.process_by_id(emitter_pid) {
-                let actual_message = From::from(redshirt_syscalls::ffi::build_response_message(
+                let notif = From::from(redshirt_syscalls::ffi::build_response_notification(
                     message_id,
-                    // We a dummy value here and fill it up later when actually delivering the message.
+                    // We a dummy value here and fill it up later when actually delivering the notif.
                     0,
                     match &response {
                         Ok(r) => Ok(r),
@@ -633,14 +646,14 @@ impl Core {
                 process
                     .user_data()
                     .borrow_mut()
-                    .messages_queue
-                    .push_back(actual_message);
+                    .notifications_queue
+                    .push_back(notif);
                 process
                     .user_data()
                     .borrow_mut()
                     .emitted_messages
                     .retain(|m| *m != message_id);
-                try_resume_message_wait(process);
+                try_resume_notification_wait(process);
                 None
             } else {
                 Some(CoreRunOutcome::MessageResponse {
@@ -649,8 +662,9 @@ impl Core {
                 })
             }
         } else {
-            // TODO: what to do here?
-            panic!("no process found with that event")
+            // TODO: this can happen if message was cancelled
+            // TODO: figure this out more properly?
+            None
         }
     }
 
@@ -659,9 +673,9 @@ impl Core {
     /// Each import of the [`Module`](crate::module::Module) is resolved.
     pub fn execute(&self, module: &Module) -> Result<CoreProcess, vm::NewErr> {
         let proc_metadata = Process {
-            messages_queue: VecDeque::new(),
+            notifications_queue: VecDeque::new(),
             registered_interfaces: SmallVec::new(),
-            used_interfaces: HashSet::new(),
+            used_interfaces: HashSet::with_hasher(Default::default()),
             emitted_messages: SmallVec::new(),
             messages_to_answer: SmallVec::new(),
         };
@@ -729,41 +743,52 @@ impl CoreBuilder {
 
 /// If any of the threads of the given process is waiting for a message to arrive, checks the
 /// queue and tries to resume said thread.
-fn try_resume_message_wait(
+fn try_resume_notification_wait(
     process: extrinsics::ProcessesCollectionExtrinsicsProc<RefCell<Process>, ()>,
 ) {
     // TODO: is it a good strategy to just go through threads in linear order? what about
     //       round-robin-ness instead?
     for thread in process.interrupted_threads() {
-        if let extrinsics::ProcessesCollectionExtrinsicsThread::WaitMessage(t) = thread {
-            try_resume_message_wait_thread(t)
+        if let extrinsics::ProcessesCollectionExtrinsicsThread::WaitNotification(t) = thread {
+            try_resume_notification_wait_thread(t)
         }
     }
 }
 
-/// If the given thread is waiting for a message to arrive, checks the queue and tries to resume
-/// said thread.
+/// If the given thread is waiting for a notification to arrive, checks the queue and tries to
+/// resume said thread.
 // TODO: in order to call this function, we essentially have to put the state machine in a "bad"
-// state (message in queue and thread would accept said message); not great
-fn try_resume_message_wait_thread(
-    mut thread: extrinsics::ProcessesCollectionExtrinsicsThreadWaitMessage<RefCell<Process>, ()>,
+// state (notifications in queue and thread would accept said notification); not great
+fn try_resume_notification_wait_thread(
+    mut thread: extrinsics::ProcessesCollectionExtrinsicsThreadWaitNotification<
+        RefCell<Process>,
+        (),
+    >,
 ) {
-    // Try to find a message in the queue that matches something the user is waiting for.
+    // Try to find a notification in the queue that matches something the user is waiting for.
     let mut index_in_queue = 0;
     let index_in_msg_ids = loop {
-        if index_in_queue >= thread.process_user_data().borrow_mut().messages_queue.len() {
-            // No message found.
+        if index_in_queue
+            >= thread
+                .process_user_data()
+                .borrow_mut()
+                .notifications_queue
+                .len()
+        {
+            // No notification found.
             if !thread.block() {
-                thread.resume_no_message();
+                thread.resume_no_notification();
             }
             return;
         }
 
-        // For that message in queue, grab the value that must be in `msg_ids` in order to match.
-        let msg_id = match &thread.process_user_data().borrow_mut().messages_queue[index_in_queue] {
-            redshirt_syscalls::ffi::MessageBuilder::Interface(_) => MessageId::from(1),
-            redshirt_syscalls::ffi::MessageBuilder::ProcessDestroyed(_) => MessageId::from(1),
-            redshirt_syscalls::ffi::MessageBuilder::Response(response) => {
+        // For that notification in queue, grab the value that must be in `msg_ids` in order to match.
+        let msg_id = match &thread.process_user_data().borrow_mut().notifications_queue
+            [index_in_queue]
+        {
+            redshirt_syscalls::ffi::NotificationBuilder::Interface(_) => MessageId::from(1),
+            redshirt_syscalls::ffi::NotificationBuilder::ProcessDestroyed(_) => MessageId::from(1),
+            redshirt_syscalls::ffi::NotificationBuilder::Response(response) => {
                 debug_assert!(u64::from(response.message_id()) >= 2);
                 response.message_id()
             }
@@ -776,26 +801,26 @@ fn try_resume_message_wait_thread(
         index_in_queue += 1;
     };
 
-    // If we reach here, we have found a message that matches what the user wants.
+    // If we reach here, we have found a notification that matches what the user wants.
 
-    let message_length =
-        thread.process_user_data().borrow_mut().messages_queue[index_in_queue].len();
+    let notif_length =
+        thread.process_user_data().borrow_mut().notifications_queue[index_in_queue].len();
 
     // TODO: maybe extrinsics could have some API shortcut here
-    if message_length <= thread.allowed_message_size() {
-        // Pop the message from the queue, so that we don't deliver it twice.
-        let mut message = thread
+    if notif_length <= thread.allowed_notification_size() {
+        // Pop the notification from the queue, so that we don't deliver it twice.
+        let mut notification = thread
             .process_user_data()
             .borrow_mut()
-            .messages_queue
+            .notifications_queue
             .remove(index_in_queue)
             .unwrap();
 
-        // Adjust the `index_in_list` field of the message to match what we have.
-        message.set_index_in_list(u32::try_from(index_in_msg_ids).unwrap());
+        // Adjust the `index_in_list` field of the notification to match what we have.
+        notification.set_index_in_list(u32::try_from(index_in_msg_ids).unwrap());
         // TODO: crappy to pass an EncodedMessage
-        thread.resume_message(index_in_msg_ids, EncodedMessage(message.into_bytes()))
+        thread.resume_notification(index_in_msg_ids, EncodedMessage(notification.into_bytes()))
     } else {
-        thread.resume_message_too_big(message_length)
+        thread.resume_notification_too_big(notif_length)
     }
 }

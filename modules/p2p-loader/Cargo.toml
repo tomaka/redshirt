@@ -6,6 +6,7 @@ edition = "2018"
 publish = false
 
 [dependencies]
+base64 = { version = "0.11.0", default-features = false, features = ["alloc"] }
 futures = "0.3"
 libp2p-core = "0.14.0-alpha.1"
 libp2p-kad = "0.14.0-alpha.1"

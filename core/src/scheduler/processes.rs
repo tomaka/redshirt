@@ -1,4 +1,4 @@
-// Copyright (C) 2019  Pierre Krieger
+// Copyright (C) 2019-2020  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -19,10 +19,12 @@ use crate::scheduler::vm;
 use crate::signature::Signature;
 use alloc::{borrow::Cow, vec::Vec};
 use core::fmt;
+use fnv::FnvBuildHasher;
 use hashbrown::{
     hash_map::{DefaultHashBuilder, Entry, OccupiedEntry},
     HashMap,
 };
+use nohash_hasher::BuildNoHashHasher;
 use redshirt_syscalls::{Pid, ThreadId};
 
 /// Collection of multiple [`ProcessStateMachine`](vm::ProcessStateMachine)s grouped together in a
@@ -41,18 +43,19 @@ pub struct ProcessesCollection<TExtr, TPud, TTud> {
     tid_pool: IdPool,
 
     /// List of running processes.
-    processes: HashMap<Pid, Process<TPud, TTud>>,
+    processes: HashMap<Pid, Process<TPud, TTud>, BuildNoHashHasher<u64>>,
 
     /// List of functions that processes can call.
     /// The key of this map is an arbitrary `usize` that we pass to the WASM interpreter.
     /// This field is never modified after the [`ProcessesCollection`] is created.
-    extrinsics: HashMap<usize, TExtr>,
+    extrinsics: HashMap<usize, TExtr, BuildNoHashHasher<usize>>,
 
     /// Map used to resolve imports when starting a process.
     /// For each module and function name, stores the signature and an arbitrary usize that
     /// corresponds to the entry in `extrinsics`.
     /// This field is never modified after the [`ProcessesCollection`] is created.
-    extrinsics_id_assign: HashMap<(Cow<'static, str>, Cow<'static, str>), (usize, Signature)>,
+    extrinsics_id_assign:
+        HashMap<(Cow<'static, str>, Cow<'static, str>), (usize, Signature), FnvBuildHasher>,
 }
 
 /// Prototype for a `ProcessesCollection` under construction.
@@ -60,9 +63,10 @@ pub struct ProcessesCollectionBuilder<TExtr> {
     /// See the corresponding field in `ProcessesCollection`.
     pid_pool: IdPool,
     /// See the corresponding field in `ProcessesCollection`.
-    extrinsics: HashMap<usize, TExtr>,
+    extrinsics: HashMap<usize, TExtr, BuildNoHashHasher<usize>>,
     /// See the corresponding field in `ProcessesCollection`.
-    extrinsics_id_assign: HashMap<(Cow<'static, str>, Cow<'static, str>), (usize, Signature)>,
+    extrinsics_id_assign:
+        HashMap<(Cow<'static, str>, Cow<'static, str>), (usize, Signature), FnvBuildHasher>,
 }
 
 /// Single running process in the list.
@@ -90,7 +94,7 @@ struct Thread<TTud> {
 /// Access to a process within the collection.
 pub struct ProcessesCollectionProc<'a, TPud, TTud> {
     /// Pointer within the hashmap.
-    process: OccupiedEntry<'a, Pid, Process<TPud, TTud>, DefaultHashBuilder>,
+    process: OccupiedEntry<'a, Pid, Process<TPud, TTud>, BuildNoHashHasher<u64>>,
 
     /// Reference to the same field in [`ProcessesCollection`].
     tid_pool: &'a mut IdPool,
@@ -99,7 +103,7 @@ pub struct ProcessesCollectionProc<'a, TPud, TTud> {
 /// Access to a thread within the collection.
 pub struct ProcessesCollectionThread<'a, TPud, TTud> {
     /// Pointer within the hashmap.
-    process: OccupiedEntry<'a, Pid, Process<TPud, TTud>, DefaultHashBuilder>,
+    process: OccupiedEntry<'a, Pid, Process<TPud, TTud>, BuildNoHashHasher<u64>>,
 
     /// Index of the thread within the [`vm::ProcessStateMachine`].
     thread_index: usize,
@@ -464,7 +468,10 @@ impl<TExtr> ProcessesCollectionBuilder<TExtr> {
         ProcessesCollection {
             pid_pool: self.pid_pool,
             tid_pool: IdPool::new(),
-            processes: HashMap::with_capacity(PROCESSES_MIN_CAPACITY),
+            processes: HashMap::with_capacity_and_hasher(
+                PROCESSES_MIN_CAPACITY,
+                Default::default(),
+            ),
             extrinsics: self.extrinsics,
             extrinsics_id_assign: self.extrinsics_id_assign,
         }

@@ -1,4 +1,4 @@
-// Copyright (C) 2019  Pierre Krieger
+// Copyright (C) 2019-2020  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -40,7 +40,9 @@ async fn async_main() {
 
     let system = redshirt_core::system::SystemBuilder::new()
         .with_native_program(redshirt_time_hosted::TimerHandler::new())
+        .with_native_program(redshirt_tcp_hosted::TcpHandler::new())
         .with_native_program(redshirt_log_hosted::LogHandler::new())
+        .with_native_program(redshirt_random_hosted::RandomNativeProgram::new())
         .build();
 
     let cli_pid = system.execute(&cli_requested_process);

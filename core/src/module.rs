@@ -1,4 +1,4 @@
-// Copyright (C) 2019  Pierre Krieger
+// Copyright (C) 2019-2020  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -57,6 +57,12 @@ impl Module {
 impl From<[u8; 32]> for ModuleHash {
     fn from(hash: [u8; 32]) -> ModuleHash {
         ModuleHash(hash)
+    }
+}
+
+impl From<ModuleHash> for [u8; 32] {
+    fn from(hash: ModuleHash) -> [u8; 32] {
+        hash.0
     }
 }
 

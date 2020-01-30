@@ -1,4 +1,4 @@
-// Copyright (C) 2019  Pierre Krieger
+// Copyright (C) 2019-2020  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -25,14 +25,12 @@
 #![cfg_attr(target_arch = "x86_64", feature(abi_x86_interrupt))] // TODO: https://github.com/rust-lang/rust/issues/40180
 
 extern crate alloc;
-extern crate compiler_builtins;
+extern crate rlibc;
 
 mod arch;
-mod executor;
 mod hardware;
 mod kernel;
 mod mem_alloc;
-mod panic;
 mod random;
 mod time;
 
