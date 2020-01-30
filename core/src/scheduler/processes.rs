@@ -21,7 +21,7 @@ use alloc::{borrow::Cow, vec::Vec};
 use core::fmt;
 use fnv::FnvBuildHasher;
 use hashbrown::{
-    hash_map::{DefaultHashBuilder, Entry, OccupiedEntry},
+    hash_map::{Entry, OccupiedEntry},
     HashMap,
 };
 use nohash_hasher::BuildNoHashHasher;

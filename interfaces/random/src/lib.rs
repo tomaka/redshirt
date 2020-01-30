@@ -20,7 +20,7 @@
 
 extern crate alloc;
 
-use core::convert::TryFrom;
+use core::convert::TryFrom as _;
 
 pub mod ffi;
 
