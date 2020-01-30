@@ -69,7 +69,7 @@ impl Transport for TcpConfig {
                     async move { Ok(ListenerEvent::NewAddress(local_addr)) }
                 });
 
-                let then = stream::unfold(listener, move |mut s| {
+                let then = stream::unfold(listener, move |s| {
                     let local_addr = local_addr.clone();
                     async move {
                         let (socket, remote_addr) = s.accept().await;
