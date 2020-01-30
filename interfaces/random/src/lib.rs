@@ -21,7 +21,7 @@
 extern crate alloc;
 
 use byteorder::{ByteOrder as _, NativeEndian};
-use core::convert::TryFrom;
+use core::convert::TryFrom as _;
 
 pub mod ffi;
 

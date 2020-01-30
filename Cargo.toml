@@ -24,6 +24,19 @@ members = [
 [profile.dev]
 opt-level = 1
 
+[profile.dev.overrides.hashbrown]
+opt-level = 3
+[profile.dev.overrides.rand_jitter]
+opt-level = 3
+[profile.dev.overrides.sha2]
+opt-level = 3
+[profile.dev.overrides.wasmi]
+opt-level = 3
+[profile.dev.overrides.wasmi-validation]
+opt-level = 3
+[profile.dev.overrides.wat]
+opt-level = 3
+
 [profile.release]
 opt-level = 3
 lto = true

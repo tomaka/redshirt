@@ -17,7 +17,7 @@
 
 extern crate proc_macro;
 
-use std::{fs, path::Path, process::Command};
+use std::{env, fs, path::Path, process::Command};
 
 /// Turns a string of WebAssembly text representation into a binary representation.
 #[proc_macro_hack::proc_macro_hack]
@@ -100,7 +100,7 @@ pub fn build_wasm_module(tokens: proc_macro::TokenStream) -> proc_macro::TokenSt
 
     // Get the package ID of the package requested by the user.
     let pkg_id = {
-        let output = Command::new("cargo")
+        let output = Command::new(env::var("CARGO").unwrap())
             .arg("read-manifest")
             .current_dir(&wasm_crate_path)
             .output()
@@ -162,7 +162,7 @@ pub fn build_wasm_module(tokens: proc_macro::TokenStream) -> proc_macro::TokenSt
     };
 
     // Actually build the module.
-    assert!(Command::new("cargo")
+    let build_status = Command::new(env::var("CARGO").unwrap())
         .arg("rustc")
         .args(&["--bin", &bin_target])
         .arg("--release")
@@ -171,8 +171,8 @@ pub fn build_wasm_module(tokens: proc_macro::TokenStream) -> proc_macro::TokenSt
         .args(&["-C", "link-arg=--export-table"])
         .current_dir(&wasm_crate_path)
         .status()
-        .unwrap()
-        .success());
+        .unwrap();
+    assert!(build_status.success());
 
     // Read the list of source files that we must depend upon.
     let dependended_files: Vec<String> = {

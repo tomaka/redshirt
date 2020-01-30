@@ -26,6 +26,7 @@ redshirt-hardware-interface = { path = "../../interfaces/hardware", default-feat
 redshirt-random-interface = { path = "../../interfaces/random", default-features = false }
 redshirt-log-interface = { path = "../../interfaces/log", default-features = false }
 redshirt-syscalls = { path = "../../interfaces/syscalls", default-features = false }
+redshirt-time-interface = { path = "../../interfaces/time", default-features = false }
 rlibc = "1.0.0"
 spin = "0.5.2"
 
