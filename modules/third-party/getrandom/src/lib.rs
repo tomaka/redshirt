@@ -24,7 +24,7 @@ pub fn getrandom(dest: &mut [u8]) -> Result<(), error::Error> {
     }
 
     redshirt_syscalls::block_on(async move {
-        redshirt_random_interface::generate_in(dest);
+        redshirt_random_interface::generate_in(dest).await;
     });
 
     Ok(())
