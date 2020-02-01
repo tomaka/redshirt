@@ -56,7 +56,7 @@ use spin::Mutex;
 pub(crate) fn register_message_waker(message_id: MessageId, waker: Waker) {
     let mut state = (&*STATE).lock();
 
-    if message_id != From::from(1) {
+    //if message_id != From::from(1) {
         if let Some(pos) = state
             .message_ids
             .iter()
@@ -65,7 +65,7 @@ pub(crate) fn register_message_waker(message_id: MessageId, waker: Waker) {
             state.wakers[pos] = waker;
             return;
         }
-    }
+    //}
 
     state.message_ids.push(From::from(message_id));
     state.wakers.push(waker);

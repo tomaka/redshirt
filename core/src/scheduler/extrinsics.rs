@@ -1136,15 +1136,16 @@ fn parse_extrinsic_next_notification<TPud, TTud>(
     // TODO: consider not copying the notification ids and read memory on demand instead
     let notifs_ids = {
         let len = u32::try_from(params[1].try_into::<i32>().ok_or(())?).map_err(|_| ())?;
-        if len >= 512 {
-            // TODO: arbitrary limit in order to not allocate too much memory below; a bit crappy
-            return Err(());
-        }
         let mem = thread.read_memory(notifs_ids_ptr, len * 8)?;
         let mut out = vec![MessageId::from(0u64); usize::try_from(len).map_err(|_| ())?];
         for (o, i) in out.iter_mut().zip(mem.chunks(8)) {
             let val = byteorder::LittleEndian::read_u64(i);
             *o = MessageId::from(val);
+        }
+        if len >= 512 {
+            // TODO: arbitrary limit in order to not allocate too much memory below; a bit crappy
+            panic!("reached limit! {:?} {:?}", len, out);
+            return Err(());
         }
         out
     };

@@ -48,7 +48,7 @@ async fn async_main() {
         .unwrap();
 
     let mut network = NetworkManager::<_, Option<MessageId>>::new();
-    let mut sockets = HashMap::<_, _, FnvBuildHasher>::default();
+    //let mut sockets = HashMap::<_, _, FnvBuildHasher>::default();
     let mut next_socket_id = 0u32;
 
     loop {
@@ -82,7 +82,7 @@ async fn async_main() {
 
             match msg_data {
                 tcp_ffi::TcpMessage::Open(open_msg) => {
-                    let result = network.build_tcp_socket(open_msg.listen, &{
+                    /*let result = network.build_tcp_socket(open_msg.listen, &{
                         let ip_addr = Ipv6Addr::from(open_msg.ip);
                         if let Some(ip_addr) = ip_addr.to_ipv4() {
                             SocketAddr::new(ip_addr.into(), open_msg.port)
@@ -99,7 +99,7 @@ async fn async_main() {
                             //Ok(new_id)
                         },
                         //Err(err) => Err(err)
-                    };
+                    };*/
 
                     // TODO: do this when connected, duh
                     /*let rp = ffi::TcpOpenResponse {
@@ -110,9 +110,9 @@ async fn async_main() {
                     }*/
                 }
                 tcp_ffi::TcpMessage::Close(msg) => {
-                    if let Some(inner_id) = sockets.remove(&msg.socket_id) {
+                    /*if let Some(inner_id) = sockets.remove(&msg.socket_id) {
                         network.tcp_socket_by_id(&inner_id).unwrap().close();
-                    }
+                    }*/
                 }
                 tcp_ffi::TcpMessage::Read(_) => unimplemented!(),
                 tcp_ffi::TcpMessage::Write(_) => unimplemented!(),
