@@ -183,19 +183,39 @@ where
         mac_address: [u8; 6],
         user_data: TIfUser,
     ) -> Result<(), ()> {
-        let entry = match self.devices.entry(id) {
+        let entry = match self.devices.entry(id.clone()) {
             Entry::Occupied(_) => return Err(()),
             Entry::Vacant(e) => e,
         };
-        let interface = interface::NetInterfaceStateBuilder::default()
+
+        let mut interface = interface::NetInterfaceStateBuilder::default()
             .with_ip_addr("192.168.1.20".parse().unwrap(), 24) // TODO: hack
             .with_ip_addr("fe80::9d39:1765:52bd:8389".parse().unwrap(), 64) // TODO: hack
             .with_mac_address(mac_address)
             .build();
+
+        // Take all the pending sockets and try to assign them to that new interface.
+        // TODO: that's O(n)
+        for (socket_id, socket) in self.sockets.iter_mut() {
+            let (listen, addr) = match &socket {
+                SocketState::Pending { listen, addr } => (*listen, addr),
+                SocketState::Assigned { .. } => continue,
+            };
+
+            if let Ok(inner_socket) = interface.build_tcp_socket(listen, addr, *socket_id) {
+                panic!("assigned");
+                *socket = SocketState::Assigned {
+                    interface: id.clone(),
+                    inner_id: inner_socket.id(),
+                };
+            }
+        }
+
         entry.insert(Device {
             inner: interface,
             user_data,
         });
+
         Ok(())
     }
 
