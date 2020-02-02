@@ -97,9 +97,11 @@ async fn async_main() {
 
         tasks.push(
             async move {
-                // TODO: wake up on interrupt
-                if let Some(packet) = unsafe { device.read_one_incoming().await } {
-                    registration.packet_from_network().await.send(packet)
+                // TODO: wake up only on interrupt
+                loop {
+                    if let Some(packet) = unsafe { device.read_one_incoming().await } {
+                        registration.packet_from_network().await.send(packet)
+                    }
                 }
             }
             .boxed_local(),
