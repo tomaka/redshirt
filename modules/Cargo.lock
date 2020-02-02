@@ -1134,6 +1134,7 @@ dependencies = [
  "redshirt-pci-interface",
  "redshirt-random-interface",
  "redshirt-syscalls",
+ "redshirt-time-interface",
  "smallvec 1.1.0",
 ]
 

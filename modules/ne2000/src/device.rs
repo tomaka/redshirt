@@ -13,7 +13,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use core::{convert::TryFrom as _, fmt, ops::Range};
+use core::{cell::RefCell, convert::TryFrom as _, fmt, ops::Range, time::Duration};
+use futures::{prelude::*, lock::Mutex};
+use redshirt_time_interface::Delay;
 use smallvec::SmallVec;
 
 /// State of a device.
@@ -46,8 +48,24 @@ use smallvec::SmallVec;
 // ask the device to transfer out the packet.
 //
 pub struct Device {
+    /// Base information about the device.
+    base: DeviceBase,
+    /// Information necessary for reading a packet.
+    reading: Mutex<DeviceReading>,
+    /// Information necessary for writing a packet.
+    writing: RefCell<DeviceWriting>,
+}
+
+/// Base information about the device. Immutable. Shared between the reading and writing side.
+struct DeviceBase {
     /// Base I/O port where to write commands to. All ports are derived from this one.
     base_port: u32,
+    /// MAC address of the device.
+    mac_address: [u8; 6],
+}
+
+/// Writing state of the device.
+struct DeviceWriting {
     /// Range of pages that the device is currently transmitting out to the network.
     transmitting: Option<Range<u8>>,
     /// Page in device memory where to write our next packet.
@@ -59,10 +77,12 @@ pub struct Device {
     /// available.
     // TODO: could probably be optimized here?
     pending_packet: Option<Vec<u8>>,
+}
+
+/// Reading state of the device.
+struct DeviceReading {
     /// Page that contains or will contain the next incoming Ethernet packet.
     next_to_read: u8,
-    /// MAC address of the device.
-    mac_address: [u8; 6],
 }
 
 /// Range of pages that we use for the read ring buffer.
@@ -81,11 +101,23 @@ impl Device {
         );
 
         // Wait for reset to be complete.
-        loop {
-            let val = redshirt_hardware_interface::port_read_u8(base_port + 7).await;
-            if (val & 0x80) != 0 {
-                break;
-            } // TODO: fail after trying too many times
+        {
+            let timeout = Delay::new(Duration::from_secs(5));
+            let try_reset = async move {
+                loop {
+                    let val = redshirt_hardware_interface::port_read_u8(base_port + 7).await;
+                    if (val & 0x80) != 0 {
+                        break;
+                    }
+                }
+            };
+            futures::pin_mut!(timeout);
+            futures::pin_mut!(try_reset);
+            match future::select(timeout, try_reset).await {
+                // TODO: don't panic
+                future::Either::Left(_) => panic!("timeout during reset"),
+                future::Either::Right(_) => {},
+            }
         }
 
         // Clear interrupts.
@@ -169,27 +201,35 @@ impl Device {
         redshirt_hardware_interface::port_write_u8(base_port + 12, (1 << 3) | (1 << 2));
 
         Device {
-            base_port,
-            next_write_page: WRITE_BUFFER_PAGES.start,
-            pending_packet: None,
-            pending_transmit: SmallVec::new(),
-            transmitting: None,
-            next_to_read: READ_BUFFER_PAGES.start,
-            mac_address,
+            base: DeviceBase {
+                base_port,
+                mac_address,
+            },
+            writing: RefCell::new(DeviceWriting {
+                next_write_page: WRITE_BUFFER_PAGES.start,
+                pending_packet: None,
+                pending_transmit: SmallVec::new(),
+                transmitting: None,
+            }),
+            reading: Mutex::new(DeviceReading {
+                next_to_read: READ_BUFFER_PAGES.start,
+            }),
         }
     }
 
     /// Returns the MAC address of the device.
     pub fn mac_address(&self) -> [u8; 6] {
-        self.mac_address
+        self.base.mac_address
     }
 
     /// Reads one packet of incoming data from the device's buffer.
     ///
     /// Returns `None` if there's no packet available.
-    pub async unsafe fn read_one_incoming(&mut self) -> Option<Vec<u8>> {
-        debug_assert!(self.next_to_read >= READ_BUFFER_PAGES.start);
-        debug_assert!(self.next_to_read < READ_BUFFER_PAGES.end);
+    pub async unsafe fn read_one_incoming(&self) -> Option<Vec<u8>> {
+        let mut reading = self.reading.lock().await;
+
+        debug_assert!(reading.next_to_read >= READ_BUFFER_PAGES.start);
+        debug_assert!(reading.next_to_read < READ_BUFFER_PAGES.end);
 
         // Read the value of the `CURR` register. It is automatically updated by the device
         // when a packet arrives from the network.
@@ -197,14 +237,14 @@ impl Device {
             let mut ops = redshirt_hardware_interface::HardwareOperationsBuilder::new();
 
             // Registers to page 1. Abort/complete DMA and start.
-            ops.port_write_u8(self.base_port + 0, (1 << 6) | (1 << 5) | (1 << 1));
+            ops.port_write_u8(self.base.base_port + 0, (1 << 6) | (1 << 5) | (1 << 1));
 
             // Read the register.
             let mut out = 0;
-            ops.port_read_u8(self.base_port + 16, &mut out);
+            ops.port_read_u8(self.base.base_port + 16, &mut out);
 
             // Registers to page 0. Abort/complete DMA and start.
-            ops.port_write_u8(self.base_port + 0, (1 << 5) | (1 << 1));
+            ops.port_write_u8(self.base.base_port + 0, (1 << 5) | (1 << 1));
 
             // Note: since the write, read, and write is sent in one chunk, it would be safe to
             // interrupt the `Future` here.
@@ -212,16 +252,16 @@ impl Device {
             out
         };
 
-        // We compare `CURR` with `self.next_to_read` to know whether there is available data.
-        //println!("curr = {:?} ; next = {:?}", curr_register, self.next_to_read);
-        if curr_register == self.next_to_read {
+        // We compare `CURR` with `reading.next_to_read` to know whether there is available data.
+        //println!("curr = {:?} ; next = {:?}", curr_register, reading.next_to_read);
+        if curr_register == reading.next_to_read {
             return None;
         }
 
         // The device prepends each packet with a header which we need to analyze.
         let (status, next_packet_page, current_packet_len) = {
             let mut out = [0; 4];
-            dma_read(self.base_port, &mut out, self.next_to_read, 0).await;
+            dma_read(self.base.base_port, &mut out, reading.next_to_read, 0).await;
             let next = out[1];
             let len = u16::from_le_bytes([out[2], out[3]]);
             (out[0], out[1], len)
@@ -243,10 +283,16 @@ impl Device {
 
         debug_assert!(current_packet_len < 15522); // TODO: is that correct?
         let mut out_packet = vec![0; usize::from(current_packet_len)];
-        dma_read(self.base_port, &mut out_packet, self.next_to_read, 4).await;
+        dma_read(
+            self.base.base_port,
+            &mut out_packet,
+            reading.next_to_read,
+            4,
+        )
+        .await;
 
-        // Update `self.next_to_read` with the page of the next packet.
-        self.next_to_read = if next_packet_page == READ_BUFFER_PAGES.end {
+        // Update `reading.next_to_read` with the page of the next packet.
+        reading.next_to_read = if next_packet_page == READ_BUFFER_PAGES.end {
             READ_BUFFER_PAGES.start
         } else {
             next_packet_page
@@ -254,13 +300,16 @@ impl Device {
 
         // Write in the BNRY (Boundary) register the address of the last page that we read.
         // This prevents the device from potentially overwriting packets we haven't read yet.
-        if self.next_to_read == READ_BUFFER_PAGES.start {
+        if reading.next_to_read == READ_BUFFER_PAGES.start {
             redshirt_hardware_interface::port_write_u8(
-                self.base_port + 3,
+                self.base.base_port + 3,
                 READ_BUFFER_PAGES.end - 1,
             );
         } else {
-            redshirt_hardware_interface::port_write_u8(self.base_port + 3, self.next_to_read - 1);
+            redshirt_hardware_interface::port_write_u8(
+                self.base.base_port + 3,
+                reading.next_to_read - 1,
+            );
         }
 
         Some(out_packet)
@@ -273,88 +322,20 @@ impl Device {
     ///
     /// Panics if the packet is too large.
     ///
-    pub unsafe fn send_packet(&mut self, packet: impl Into<Vec<u8>>) -> Result<(), ()> {
-        if self.pending_packet.is_some() {
+    pub unsafe fn send_packet(&self, packet: impl Into<Vec<u8>>) -> Result<(), ()> {
+        let mut writing = self.writing.borrow_mut();
+
+        if writing.pending_packet.is_some() {
             return Err(());
         }
 
         let packet = packet.into();
         assert!(packet.len() <= 1522);
-        self.pending_packet = Some(packet);
-        self.flush_out();
+        writing.pending_packet = Some(packet);
+
+        flush_out(&self.base, &mut writing);
 
         Ok(())
-    }
-
-    /// Updates the state of the writing.
-    unsafe fn flush_out(&mut self) {
-        // Ask the device to transmit out more data, if some is ready.
-        if self.transmitting.is_none() && !self.pending_transmit.is_empty() {
-            let (start_page, len) = self.pending_transmit.remove(0);
-            self.send_transmit_command(start_page, len);
-            debug_assert!(self.transmitting.is_some());
-        }
-
-        // Copy, if possible, `pending_packet` to the device's memory and transfer it out.
-        if self.pending_packet.is_some() {
-            let pending_packet_len =
-                u16::try_from(self.pending_packet.as_ref().unwrap().len()).unwrap();
-            let pending_packet_pages = u8::try_from(1 + (pending_packet_len - 1) / 256).unwrap();
-
-            // Reset `next_write_page` to the start of the circular buffer if necessary.
-            if WRITE_BUFFER_PAGES.end - self.next_write_page < pending_packet_pages {
-                self.next_write_page = WRITE_BUFFER_PAGES.start;
-            }
-            debug_assert!(WRITE_BUFFER_PAGES.end - self.next_write_page >= pending_packet_pages);
-
-            let space_available = if let Some(transmitting) = &self.transmitting {
-                if let Some(dist_bef) = transmitting.start.checked_sub(self.next_write_page) {
-                    dist_bef >= pending_packet_pages
-                } else {
-                    debug_assert!(self.next_write_page >= transmitting.end);
-                    true
-                }
-            } else {
-                true
-            };
-
-            // Write the packet and transfer it out.
-            if space_available {
-                let data = self.pending_packet.take().unwrap();
-                dma_write(self.base_port, &data, self.next_write_page);
-                if self.transmitting.is_some() {
-                    self.pending_transmit
-                        .push((self.next_write_page, pending_packet_len));
-                } else {
-                    self.send_transmit_command(self.next_write_page, pending_packet_len);
-                }
-                self.next_write_page += pending_packet_pages;
-                debug_assert!(self.transmitting.is_some());
-            }
-        }
-    }
-
-    /// Sends a command to the device to transmit out data from its circular buffer.
-    unsafe fn send_transmit_command(&mut self, page_start: u8, len: u16) {
-        debug_assert!(self.transmitting.is_none());
-        debug_assert_ne!(len, 0);
-
-        let mut ops = redshirt_hardware_interface::HardwareWriteOperationsBuilder::new();
-
-        // Set transmit page start to address where we wrote.
-        ops.port_write_u8(self.base_port + 4, page_start);
-        // Length to transmit.
-        let len_bytes = len.to_le_bytes();
-        ops.port_write_u8(self.base_port + 5, len_bytes[0]);
-        ops.port_write_u8(self.base_port + 6, len_bytes[1]);
-
-        // Abort/complete DMA + Transmit packet + Start.
-        ops.port_write_u8(self.base_port + 0, (1 << 5) | (1 << 2) | (1 << 1));
-
-        ops.send();
-
-        let page_end = page_start + u8::try_from(((len - 1) / 256) + 1).unwrap();
-        self.transmitting = Some(page_start..page_end);
     }
 
     // TODO:
@@ -385,6 +366,83 @@ impl fmt::Debug for Device {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_tuple("Device").finish()
     }
+}
+
+/// Updates the state of the writing.
+unsafe fn flush_out(base: &DeviceBase, writing: &mut DeviceWriting) {
+    // Ask the device to transmit out more data, if some is ready.
+    if writing.transmitting.is_none() && !writing.pending_transmit.is_empty() {
+        let (start_page, len) = writing.pending_transmit.remove(0);
+        send_transmit_command(base, writing, start_page, len);
+        debug_assert!(writing.transmitting.is_some());
+    }
+
+    // Copy, if possible, `pending_packet` to the device's memory and transfer it out.
+    if writing.pending_packet.is_some() {
+        let pending_packet_len =
+            u16::try_from(writing.pending_packet.as_ref().unwrap().len()).unwrap();
+        let pending_packet_pages = u8::try_from(1 + (pending_packet_len - 1) / 256).unwrap();
+
+        // Reset `next_write_page` to the start of the circular buffer if necessary.
+        if WRITE_BUFFER_PAGES.end - writing.next_write_page < pending_packet_pages {
+            writing.next_write_page = WRITE_BUFFER_PAGES.start;
+        }
+        debug_assert!(WRITE_BUFFER_PAGES.end - writing.next_write_page >= pending_packet_pages);
+
+        let space_available = if let Some(transmitting) = &writing.transmitting {
+            if let Some(dist_bef) = transmitting.start.checked_sub(writing.next_write_page) {
+                dist_bef >= pending_packet_pages
+            } else {
+                debug_assert!(writing.next_write_page >= transmitting.end);
+                true
+            }
+        } else {
+            true
+        };
+
+        // Write the packet and transfer it out.
+        if space_available {
+            let data = writing.pending_packet.take().unwrap();
+            dma_write(base.base_port, &data, writing.next_write_page);
+            if writing.transmitting.is_some() {
+                writing
+                    .pending_transmit
+                    .push((writing.next_write_page, pending_packet_len));
+            } else {
+                send_transmit_command(base, writing, writing.next_write_page, pending_packet_len);
+            }
+            writing.next_write_page += pending_packet_pages;
+            debug_assert!(writing.transmitting.is_some());
+        }
+    }
+}
+
+/// Sends a command to the device to transmit out data from its circular buffer.
+unsafe fn send_transmit_command(
+    base: &DeviceBase,
+    writing: &mut DeviceWriting,
+    page_start: u8,
+    len: u16,
+) {
+    debug_assert!(writing.transmitting.is_none());
+    debug_assert_ne!(len, 0);
+
+    let mut ops = redshirt_hardware_interface::HardwareWriteOperationsBuilder::new();
+
+    // Set transmit page start to address where we wrote.
+    ops.port_write_u8(base.base_port + 4, page_start);
+    // Length to transmit.
+    let len_bytes = len.to_le_bytes();
+    ops.port_write_u8(base.base_port + 5, len_bytes[0]);
+    ops.port_write_u8(base.base_port + 6, len_bytes[1]);
+
+    // Abort/complete DMA + Transmit packet + Start.
+    ops.port_write_u8(base.base_port + 0, (1 << 5) | (1 << 2) | (1 << 1));
+
+    ops.send();
+
+    let page_end = page_start + u8::try_from(((len - 1) / 256) + 1).unwrap();
+    writing.transmitting = Some(page_start..page_end);
 }
 
 /// Reads data from the memory of the card.
