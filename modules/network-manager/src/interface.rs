@@ -142,7 +142,7 @@ impl<TSockUd> NetInterfaceState<TSockUd> {
         if listen {
             socket.listen(addr.clone()).unwrap();
         } else {
-            socket.connect(addr.clone(), addr.clone()).unwrap(); // TODO: bad source
+            socket.connect(addr.clone(), 5678).unwrap();    // TODO: assign port better
         }
 
         let id = SocketId(self.sockets.add(socket));

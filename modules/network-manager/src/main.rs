@@ -35,6 +35,7 @@ fn main() {
         );
     }));
 
+    redshirt_log_interface::init();
     redshirt_syscalls::block_on(async_main())
 }
 
@@ -64,9 +65,12 @@ async fn async_main() {
                 _,
             )) => {
                 if let Some(msg_id) = msg_id.take() {
+                    panic!("message out");  // TODO:
                     let data = mem::replace(&mut *buffer, Vec::new());
                     debug_assert!(!data.is_empty());
                     redshirt_syscalls::emit_answer(msg_id, &data);
+                } else {
+                    panic!("message_out"); // TODO:
                 }
                 continue;
             }

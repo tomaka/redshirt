@@ -203,7 +203,6 @@ where
             };
 
             if let Ok(inner_socket) = interface.build_tcp_socket(listen, addr, *socket_id) {
-                panic!("assigned");
                 *socket = SocketState::Assigned {
                     interface: id.clone(),
                     inner_id: inner_socket.id(),
