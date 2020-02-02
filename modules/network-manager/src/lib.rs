@@ -16,7 +16,9 @@
 use fnv::FnvBuildHasher;
 use futures::prelude::*;
 use hashbrown::{hash_map::Entry, HashMap};
-use std::{fmt, hash::Hash, iter, net::SocketAddr, pin::Pin, sync::MutexGuard};
+use std::{
+    fmt, hash::Hash, iter, marker::PhantomData, net::SocketAddr, pin::Pin, sync::MutexGuard,
+};
 
 mod interface;
 
@@ -24,13 +26,37 @@ mod interface;
 ///
 /// The `TIfId` generic parameter is an identifier for network interfaces.
 pub struct NetworkManager<TIfId, TIfUser> {
+    /// List of devices that have been registered.
     devices: HashMap<TIfId, Device<TIfUser>, FnvBuildHasher>,
+    /// Id to assign to the next socket.
+    next_socket_id: u64,
+    /// List of sockets open in the manager.
+    sockets: HashMap<u64, SocketState<TIfId>, FnvBuildHasher>,
+}
+
+/// State of a socket.
+#[derive(Debug)]
+enum SocketState<TIfId> {
+    /// Socket is waiting to be assigned to an interface.
+    Pending {
+        /// `listen` parameter passed to the socket constructor.
+        listen: bool,
+        /// Socket address parameter passed to the socket constructor.
+        addr: SocketAddr,
+    },
+    /// Socket has been assigned to a specific interface.
+    Assigned {
+        /// Interface it's been assigned to.
+        interface: TIfId,
+        /// Id of the socket within the interface.
+        inner_id: interface::SocketId,
+    },
 }
 
 /// State of a device.
 struct Device<TIfUser> {
     /// Inner state.
-    inner: interface::NetInterfaceState,
+    inner: interface::NetInterfaceState<u64>,
     /// Additional user data.
     user_data: TIfUser,
 }
@@ -54,16 +80,25 @@ pub enum NetworkManagerEvent<'a, TIfId, TIfUser> {
     TcpWriteFinished(TcpSocket<'a, TIfId>),
 }
 
+/// Reference to a socket within the manager.
 pub struct TcpSocket<'a, TIfId> {
-    inner: interface::TcpSocket<'a>,
-    device_id: TIfId,
+    id: u64,
+    inner: TcpSocketInner<'a, TIfId>,
+}
+
+enum TcpSocketInner<'a, TIfId> {
+    Pending,
+    Assigned {
+        inner: interface::TcpSocket<'a, u64>,
+        device_id: TIfId,
+    },
 }
 
 /// Identifier of a socket within the [`NetworkManager`]. Common between all types of sockets.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)] // TODO: Hash
 pub struct SocketId<TIfId> {
-    interface: TIfId,
-    socket: interface::SocketId,
+    id: u64,
+    marker: PhantomData<TIfId>,
 }
 
 impl<TIfId, TIfUser> NetworkManager<TIfId, TIfUser>
@@ -74,6 +109,8 @@ where
     pub fn new() -> Self {
         NetworkManager {
             devices: HashMap::default(),
+            next_socket_id: 1,
+            sockets: HashMap::default(),
         }
     }
 
@@ -81,26 +118,61 @@ where
     ///
     /// If `listen` is `true`, then `addr` is a local address that the socket will listen on.
     pub fn build_tcp_socket(&mut self, listen: bool, addr: &SocketAddr) -> TcpSocket<TIfId> {
+        let socket_id = self.next_socket_id;
+        self.next_socket_id += 1;
+
         for (device_id, device) in self.devices.iter_mut() {
-            if let Ok(socket) = device.inner.build_tcp_socket(listen, addr) {
+            if let Ok(socket) = device.inner.build_tcp_socket(listen, addr, socket_id) {
+                self.sockets.insert(
+                    socket_id,
+                    SocketState::Assigned {
+                        interface: device_id.clone(),
+                        inner_id: socket.id(),
+                    },
+                );
+
                 return TcpSocket {
-                    inner: socket,
-                    device_id: device_id.clone(),
+                    id: socket_id,
+                    inner: TcpSocketInner::Assigned {
+                        inner: socket,
+                        device_id: device_id.clone(),
+                    },
                 };
             }
         }
 
-        panic!() // TODO:
+        self.sockets.insert(
+            socket_id,
+            SocketState::Pending { listen, addr: addr.clone() },
+        );
+
+        TcpSocket {
+            id: socket_id,
+            inner: TcpSocketInner::Pending,
+        }
     }
 
-    /// 
+    ///
     pub fn tcp_socket_by_id(&mut self, id: &SocketId<TIfId>) -> Option<TcpSocket<TIfId>> {
-        let interface = &mut self.devices.get_mut(&id.interface)?.inner;
-        let inner = interface.tcp_socket_by_id(id.socket)?;
-        Some(TcpSocket {
-            inner,
-            device_id: id.interface.clone(),
-        })
+        match self.sockets.get_mut(&id.id)? {
+            SocketState::Pending { listen, addr } => {
+                Some(TcpSocket {
+                    id: id.id,
+                    inner: TcpSocketInner::Pending,
+                })
+            },
+            SocketState::Assigned { interface, inner_id } => {
+                let int_ref = &mut self.devices.get_mut(&interface)?.inner;
+                let inner = int_ref.tcp_socket_by_id(*inner_id)?;
+                Some(TcpSocket {
+                    id: id.id,
+                    inner: TcpSocketInner::Assigned {
+                        device_id: interface.clone(),
+                        inner,
+                    },
+                })
+            },
+        }
     }
 
     /// Registers an interface with the given ID. Returns an error if an interface with that ID
@@ -188,16 +260,28 @@ where
                 NetworkManagerEvent::EthernetCableOut(device_id, user_data, buffer)
             }
             (device_id, _, interface::NetInterfaceEvent::TcpConnected(inner)) => {
-                NetworkManagerEvent::TcpConnected(TcpSocket { inner, device_id })
+                NetworkManagerEvent::TcpConnected(TcpSocket {
+                    id: *inner.user_data(),
+                    inner: TcpSocketInner::Assigned { inner, device_id },
+                })
             }
             (device_id, _, interface::NetInterfaceEvent::TcpClosed(inner)) => {
-                NetworkManagerEvent::TcpClosed(TcpSocket { inner, device_id })
+                NetworkManagerEvent::TcpClosed(TcpSocket {
+                    id: *inner.user_data(),
+                    inner: TcpSocketInner::Assigned { inner, device_id },
+                })
             }
             (device_id, _, interface::NetInterfaceEvent::TcpReadReady(inner)) => {
-                NetworkManagerEvent::TcpReadReady(TcpSocket { inner, device_id })
+                NetworkManagerEvent::TcpReadReady(TcpSocket {
+                    id: *inner.user_data(),
+                    inner: TcpSocketInner::Assigned { inner, device_id },
+                })
             }
             (device_id, _, interface::NetInterfaceEvent::TcpWriteFinished(inner)) => {
-                NetworkManagerEvent::TcpWriteFinished(TcpSocket { inner, device_id })
+                NetworkManagerEvent::TcpWriteFinished(TcpSocket {
+                    id: *inner.user_data(),
+                    inner: TcpSocketInner::Assigned { inner, device_id },
+                })
             }
         }
     }
@@ -208,7 +292,8 @@ where
     TIfId: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_tuple("TcpSocket").field(&self.device_id).finish()
+        // TODO: better impl
+        f.debug_tuple("TcpSocket").finish()
     }
 }
 
@@ -216,8 +301,8 @@ impl<'a, TIfId: Clone> TcpSocket<'a, TIfId> {
     /// Returns the identifier of the socket, for later retrieval.
     pub fn id(&self) -> SocketId<TIfId> {
         SocketId {
-            interface: self.device_id.clone(),
-            socket: self.inner.id(),
+            id: self.id,
+            marker: PhantomData,
         }
     }
 

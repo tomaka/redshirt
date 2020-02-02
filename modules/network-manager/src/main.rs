@@ -117,7 +117,6 @@ async fn async_main() {
                 tcp_ffi::TcpMessage::Read(_) => unimplemented!(),
                 tcp_ffi::TcpMessage::Write(_) => unimplemented!(),
             }
-
         } else if msg.interface == net_ffi::INTERFACE {
             let msg_data = net_ffi::NetworkMessage::decode(msg.actual_data).unwrap();
             redshirt_log_interface::log(
@@ -127,7 +126,11 @@ async fn async_main() {
 
             match msg_data {
                 net_ffi::NetworkMessage::RegisterInterface { id, mac_address } => {
-                    network.register_interface((msg.emitter_pid, id), mac_address, None::<MessageId>);
+                    network.register_interface(
+                        (msg.emitter_pid, id),
+                        mac_address,
+                        None::<MessageId>,
+                    );
                 }
                 net_ffi::NetworkMessage::UnregisterInterface(id) => {
                     network.unregister_interface(&(msg.emitter_pid, id));
@@ -151,7 +154,6 @@ async fn async_main() {
                     }
                 }
             }
-
         } else {
             unreachable!()
         }
