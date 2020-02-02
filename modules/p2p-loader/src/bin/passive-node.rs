@@ -19,7 +19,12 @@ use std::env;
 #[cfg(target_arch = "wasm32")]
 fn main() {
     redshirt_log_interface::init();
-    redshirt_syscalls::block_on(async_main())
+    redshirt_syscalls::block_on(async move {
+        // TODO: delay necessary for the interface to register itself; remove
+        redshirt_time_interface::Delay::new(std::time::Duration::from_secs(1)).await;
+
+        async_main().await
+    })
 }
 
 #[cfg(not(target_arch = "wasm32"))]

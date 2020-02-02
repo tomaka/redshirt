@@ -70,12 +70,16 @@ impl<TIfId, TIfUser> NetworkManager<TIfId, TIfUser>
 where
     TIfId: Clone + Hash + PartialEq + Eq,
 {
+    /// Initializes a new `NetworkManager`.
     pub fn new() -> Self {
         NetworkManager {
             devices: HashMap::default(),
         }
     }
 
+    /// Adds a new TCP socket to the state of the network manager.
+    ///
+    /// If `listen` is `true`, then `addr` is a local address that the socket will listen on.
     pub fn build_tcp_socket(&mut self, listen: bool, addr: &SocketAddr) -> TcpSocket<TIfId> {
         for (device_id, device) in self.devices.iter_mut() {
             if let Ok(socket) = device.inner.build_tcp_socket(listen, addr) {
@@ -89,6 +93,7 @@ where
         panic!() // TODO:
     }
 
+    /// 
     pub fn tcp_socket_by_id(&mut self, id: &SocketId<TIfId>) -> Option<TcpSocket<TIfId>> {
         let interface = &mut self.devices.get_mut(&id.interface)?.inner;
         let inner = interface.tcp_socket_by_id(id.socket)?;
