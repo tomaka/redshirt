@@ -13,8 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::{EncodedMessage, InterfaceHash, MessageId, ThreadId};
 use crate::signature::Signature;
+use crate::{EncodedMessage, InterfaceHash, MessageId, ThreadId};
 
 use alloc::borrow::Cow;
 use core::iter;
@@ -35,11 +35,21 @@ pub trait Extrinsics: Default {
     /// Returns an iterator to the list of extrinsics that this struct supports.
     fn supported_extrinsics() -> Self::Iterator;
 
-    fn new_context(&self, tid: ThreadId, id: &Self::ExtrinsicId, params: &[RuntimeValue]) -> Self::Context;
+    fn new_context(
+        &self,
+        tid: ThreadId,
+        id: &Self::ExtrinsicId,
+        params: &[RuntimeValue],
+    ) -> Self::Context;
 
     fn poll(&self, ctxt: &mut Self::Context) -> ExtrinsicsAction;
 
-    fn inject_message_response(&self, ctxt: &mut Self::Context, msg_id: MessageId, response: EncodedMessage);
+    fn inject_message_response(
+        &self,
+        ctxt: &mut Self::Context,
+        msg_id: MessageId,
+        response: EncodedMessage,
+    );
 }
 
 pub struct SupportedExtrinsic<TExtId> {
@@ -72,7 +82,12 @@ impl Extrinsics for NoExtrinsics {
         iter::empty()
     }
 
-    fn new_context(&self, _: ThreadId, id: &Self::ExtrinsicId, _: &[RuntimeValue]) -> Self::Context {
+    fn new_context(
+        &self,
+        _: ThreadId,
+        id: &Self::ExtrinsicId,
+        _: &[RuntimeValue],
+    ) -> Self::Context {
         match *id {} // unreachable
     }
 
