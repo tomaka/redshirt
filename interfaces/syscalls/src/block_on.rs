@@ -34,7 +34,9 @@
 //!   Repeat until the `Future` has ended.
 //!
 
-use crate::{ffi, DecodedInterfaceOrDestroyed, DecodedMessage, DecodedResponseMessage, MessageId};
+use crate::{
+    ffi, DecodedInterfaceOrDestroyed, DecodedNotification, DecodedResponseNotification, MessageId,
+};
 use alloc::{collections::VecDeque, sync::Arc, vec::Vec};
 use core::{
     sync::atomic::{AtomicBool, Ordering},
@@ -42,6 +44,7 @@ use core::{
 };
 use futures::{prelude::*, task};
 use hashbrown::HashMap;
+use nohash_hasher::BuildNoHashHasher;
 use spin::Mutex;
 
 /// Registers a message ID (or 1 for interface messages) and a waker. The `block_on` function will
@@ -75,7 +78,7 @@ pub(crate) fn peek_interface_message() -> Option<DecodedInterfaceOrDestroyed> {
 }
 
 /// If a response to this message ID has previously been obtained, extracts it for processing.
-pub(crate) fn peek_response(msg_id: MessageId) -> Option<DecodedResponseMessage> {
+pub(crate) fn peek_response(msg_id: MessageId) -> Option<DecodedResponseNotification> {
     let mut state = (&*STATE).lock();
     state.pending_messages.remove(&msg_id)
 }
@@ -124,11 +127,11 @@ pub fn block_on<T>(future: impl Future<Output = T>) -> T {
         let mut block = true;
 
         // We process in a loop all pending messages.
-        while let Some(msg) = next_message(&mut state.message_ids, block) {
+        while let Some(msg) = next_notification(&mut state.message_ids, block) {
             block = false;
 
             match msg {
-                DecodedMessage::Response(msg) => {
+                DecodedNotification::Response(msg) => {
                     let _was_in = state.message_ids.remove(msg.index_in_list as usize);
                     debug_assert_eq!(_was_in, 0); // Value is zero-ed by the kernel.
 
@@ -138,7 +141,7 @@ pub fn block_on<T>(future: impl Future<Output = T>) -> T {
                     let _was_in = state.pending_messages.insert(msg.message_id, msg);
                     debug_assert!(_was_in.is_none());
                 }
-                DecodedMessage::Interface(msg) => {
+                DecodedNotification::Interface(msg) => {
                     let _was_in = state.message_ids.remove(msg.index_in_list as usize);
                     debug_assert_eq!(_was_in, 0); // Value is zero-ed by the kernel.
 
@@ -148,7 +151,7 @@ pub fn block_on<T>(future: impl Future<Output = T>) -> T {
                     let msg = DecodedInterfaceOrDestroyed::Interface(msg);
                     state.interface_messages_queue.push_back(msg);
                 }
-                DecodedMessage::ProcessDestroyed(msg) => {
+                DecodedNotification::ProcessDestroyed(msg) => {
                     let _was_in = state.message_ids.remove(msg.index_in_list as usize);
                     debug_assert_eq!(_was_in, 0); // Value is zero-ed by the kernel.
 
@@ -172,7 +175,7 @@ lazy_static::lazy_static! {
         Mutex::new(BlockOnState {
             message_ids: Vec::new(),
             wakers: Vec::new(),
-            pending_messages: HashMap::with_capacity(6),
+            pending_messages: HashMap::with_capacity_and_hasher(6, Default::default()),
             interface_messages_queue: VecDeque::with_capacity(2),
         })
     };
@@ -196,7 +199,7 @@ struct BlockOnState {
     /// > **Note**: We have to maintain this queue as a global variable rather than a per-future
     /// >           channel, otherwise dropping a `Future` would silently drop messages that have
     /// >           already been received.
-    pending_messages: HashMap<MessageId, DecodedResponseMessage>,
+    pending_messages: HashMap<MessageId, DecodedResponseNotification, BuildNoHashHasher<u64>>,
 
     /// Queue of interface messages waiting to be delivered.
     ///
@@ -210,13 +213,13 @@ struct BlockOnState {
 ///
 /// If `block` is true, then the return value is always `Some`.
 ///
-/// See the [`next_message`](crate::ffi::next_message) FFI function for the semantics of
+/// See the [`next_notification`](crate::ffi::next_notification) FFI function for the semantics of
 /// `to_poll`.
-pub(crate) fn next_message(to_poll: &mut [u64], block: bool) -> Option<DecodedMessage> {
+pub(crate) fn next_notification(to_poll: &mut [u64], block: bool) -> Option<DecodedNotification> {
     unsafe {
         let mut out = Vec::<u8>::with_capacity(32);
         loop {
-            let ret = crate::ffi::next_message(
+            let ret = crate::ffi::next_notification(
                 to_poll.as_mut_ptr(),
                 to_poll.len() as u32,
                 out.as_mut_ptr(),
@@ -231,7 +234,7 @@ pub(crate) fn next_message(to_poll: &mut [u64], block: bool) -> Option<DecodedMe
                 continue;
             }
             out.set_len(ret);
-            return Some(ffi::decode_message(&out).unwrap());
+            return Some(ffi::decode_notification(&out).unwrap());
         }
     }
 }

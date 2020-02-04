@@ -15,13 +15,19 @@
 
 #![cfg(target_arch = "x86_64")]
 
-use core::{convert::TryFrom as _, ops::Range};
+use crate::arch::PlatformSpecific;
+
+use alloc::sync::Arc;
+use core::{convert::TryFrom as _, future::Future, num::NonZeroU32, ops::Range, pin::Pin};
 use x86_64::registers::model_specific::Msr;
 use x86_64::structures::port::{PortRead as _, PortWrite as _};
 
 mod acpi;
+mod apic;
 mod boot_link;
+mod executor;
 mod interrupts;
+mod panic;
 
 /// Called by `boot.S` after basic set up has been performed.
 ///
@@ -40,24 +46,18 @@ extern "C" fn after_boot(multiboot_header: usize) -> ! {
         // TODO: panics in BOCHS
         //let acpi = acpi::load_acpi_tables(&multiboot_info);
 
-        init_pic_apic();
+        unsafe {
+            APIC = Some(apic::init());
+        }
         interrupts::init();
 
-        let kernel = crate::kernel::Kernel::init(crate::kernel::KernelConfig {
-            num_cpus: 1,
-            ..Default::default()
-        });
-
+        let kernel = crate::kernel::Kernel::init(PlatformSpecificImpl);
         kernel.run()
     }
 }
 
-// TODO: define the semantics of that
-pub fn halt() -> ! {
-    loop {
-        x86_64::instructions::hlt()
-    }
-}
+// TODO: safisize
+static mut APIC: Option<Arc<apic::ApicControl>> = None;
 
 /// Reads the boot information and find the memory ranges that can be used as a heap.
 ///
@@ -119,88 +119,79 @@ fn find_free_memory_ranges<'a>(
     })
 }
 
-unsafe fn init_pic_apic() {
-    // Remap and disable the PIC.
-    //
-    // The PIC (Programmable Interrupt Controller) is the old chip responsible for triggering
-    // on the CPU interrupts coming from the hardware.
-    //
-    // Because of poor design decisions, it will by default trigger interrupts 0 to 15 on the CPU,
-    // which are normally reserved for software-related concerns. For example, the timer will by
-    // default trigger interrupt 8, which is also the double fault exception handler.
-    //
-    // In order to solve this issue, one has to reconfigure the PIC in order to make it trigger
-    // interrupts between 32 and 47 rather than 0 to 15.
-    //
-    // Note that this code disables the PIC altogether. Despite the PIC being disabled, it is
-    // still possible to receive spurious interrupts. Hence the remapping.
-    u8::write_to_port(0xa1, 0xff);
-    u8::write_to_port(0x21, 0xff);
-    u8::write_to_port(0x20, 0x10 | 0x01);
-    u8::write_to_port(0xa0, 0x10 | 0x01);
-    u8::write_to_port(0x21, 0x20);
-    u8::write_to_port(0xa1, 0x28);
-    u8::write_to_port(0x21, 4);
-    u8::write_to_port(0xa1, 2);
-    u8::write_to_port(0x21, 0x01);
-    u8::write_to_port(0xa1, 0x01);
-    u8::write_to_port(0xa1, 0xff);
-    u8::write_to_port(0x21, 0xff);
+/// Implementation of [`PlatformSpecific`].
+struct PlatformSpecificImpl;
 
-    // Set up the APIC.
-    let apic_base_addr = {
-        const APIC_BASE_MSR: Msr = Msr::new(0x1b);
-        let base_addr = APIC_BASE_MSR.read() & !0xfff;
-        APIC_BASE_MSR.write(base_addr | 0x800); // Enable the APIC.
-        base_addr
-    };
+impl PlatformSpecific for PlatformSpecificImpl {
+    type TimerFuture = apic::TscTimerFuture;
 
-    // Enable spurious interrupts.
-    {
-        let svr_addr = usize::try_from(apic_base_addr + 0xf0).unwrap() as *mut u32;
-        let val = svr_addr.read_volatile();
-        svr_addr.write_volatile(val | 0x100); // Enable spurious interrupts.
+    fn num_cpus(self: Pin<&Self>) -> NonZeroU32 {
+        NonZeroU32::new(1).unwrap()
     }
-}
 
-pub unsafe fn write_port_u8(port: u32, data: u8) {
-    if let Ok(port) = u16::try_from(port) {
-        u8::write_to_port(port, data);
+    fn block_on<TRet>(self: Pin<&Self>, future: impl Future<Output = TRet>) -> TRet {
+        executor::block_on(future)
     }
-}
 
-pub unsafe fn write_port_u16(port: u32, data: u16) {
-    if let Ok(port) = u16::try_from(port) {
-        u16::write_to_port(port, data);
+    fn monotonic_clock(self: Pin<&Self>) -> u128 {
+        // TODO: wrong unit; these are not nanoseconds
+        // TODO: maybe TSC not supported? move method to ApicControl instead?
+        u128::from(unsafe { core::arch::x86_64::_rdtsc() })
     }
-}
 
-pub unsafe fn write_port_u32(port: u32, data: u32) {
-    if let Ok(port) = u16::try_from(port) {
-        u32::write_to_port(port, data);
+    fn timer(self: Pin<&Self>, clock_value: u128) -> Self::TimerFuture {
+        let clock_value = u64::try_from(clock_value).unwrap_or(u64::max_value());
+        unsafe { APIC.as_ref().unwrap().register_tsc_timer(clock_value) }
     }
-}
 
-pub unsafe fn read_port_u8(port: u32) -> u8 {
-    if let Ok(port) = u16::try_from(port) {
-        u8::read_from_port(port)
-    } else {
-        0
+    unsafe fn write_port_u8(self: Pin<&Self>, port: u32, data: u8) -> Result<(), ()> {
+        if let Ok(port) = u16::try_from(port) {
+            u8::write_to_port(port, data);
+            Ok(())
+        } else {
+            Err(())
+        }
     }
-}
 
-pub unsafe fn read_port_u16(port: u32) -> u16 {
-    if let Ok(port) = u16::try_from(port) {
-        u16::read_from_port(port)
-    } else {
-        0
+    unsafe fn write_port_u16(self: Pin<&Self>, port: u32, data: u16) -> Result<(), ()> {
+        if let Ok(port) = u16::try_from(port) {
+            u16::write_to_port(port, data);
+            Ok(())
+        } else {
+            Err(())
+        }
     }
-}
 
-pub unsafe fn read_port_u32(port: u32) -> u32 {
-    if let Ok(port) = u16::try_from(port) {
-        u32::read_from_port(port)
-    } else {
-        0
+    unsafe fn write_port_u32(self: Pin<&Self>, port: u32, data: u32) -> Result<(), ()> {
+        if let Ok(port) = u16::try_from(port) {
+            u32::write_to_port(port, data);
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+
+    unsafe fn read_port_u8(self: Pin<&Self>, port: u32) -> Result<u8, ()> {
+        if let Ok(port) = u16::try_from(port) {
+            Ok(u8::read_from_port(port))
+        } else {
+            Err(())
+        }
+    }
+
+    unsafe fn read_port_u16(self: Pin<&Self>, port: u32) -> Result<u16, ()> {
+        if let Ok(port) = u16::try_from(port) {
+            Ok(u16::read_from_port(port))
+        } else {
+            Err(())
+        }
+    }
+
+    unsafe fn read_port_u32(self: Pin<&Self>, port: u32) -> Result<u32, ()> {
+        if let Ok(port) = u16::try_from(port) {
+            Ok(u32::read_from_port(port))
+        } else {
+            Err(())
+        }
     }
 }

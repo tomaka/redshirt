@@ -29,7 +29,7 @@ async fn async_main() {
         .await
         .unwrap();
 
-    let mut network = Network::start();
+    let mut network = Network::start(Default::default());
 
     loop {
         let next_interface = redshirt_syscalls::next_interface_message();

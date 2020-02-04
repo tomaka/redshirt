@@ -89,7 +89,8 @@ pub use emit::{
     cancel_message, emit_message_with_response, emit_message_without_response, MessageBuilder,
 };
 pub use ffi::{
-    DecodedInterfaceMessage, DecodedInterfaceOrDestroyed, DecodedMessage, DecodedResponseMessage,
+    DecodedInterfaceNotification, DecodedInterfaceOrDestroyed, DecodedNotification,
+    DecodedResponseNotification,
 };
 pub use interface_message::{
     emit_answer, emit_message_error, next_interface_message, InterfaceMessageFuture,

@@ -17,12 +17,14 @@ use futures::{channel::mpsc, prelude::*};
 use std::{pin::Pin, task::Context, task::Poll};
 
 fn main() {
+    redshirt_log_interface::init();
+
     redshirt_syscalls::block_on(async move {
         let listener = redshirt_tcp_interface::TcpListener::bind(&"0.0.0.0:8000".parse().unwrap())
             .await
             .unwrap();
 
-        println!("Now listening on 0.0.0.0:8000");
+        log::info!("Now listening on 0.0.0.0:8000");
 
         let stream = stream::unfold(listener, |mut l| {
             async move {
@@ -101,10 +103,10 @@ struct Executor {
     pusher: mpsc::UnboundedSender<Pin<Box<dyn Future<Output = ()>>>>,
 }
 
-impl<T: Future<Output = ()> + 'static> tokio_executor::TypedExecutor<T> for Executor {
-    fn spawn(&mut self, future: T) -> Result<(), tokio_executor::SpawnError> {
+impl<T: Future<Output = ()> + 'static> hyper::rt::Executor<T> for Executor {
+    fn execute(&self, future: T) {
         self.pusher
             .unbounded_send(Box::pin(future))
-            .map_err(|_| tokio_executor::SpawnError::shutdown())
+            .unwrap()
     }
 }

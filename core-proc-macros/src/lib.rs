@@ -17,7 +17,7 @@
 
 extern crate proc_macro;
 
-use std::{fs, path::Path, process::Command};
+use std::{env, fs, path::Path, process::Command};
 
 /// Turns a string of WebAssembly text representation into a binary representation.
 #[proc_macro_hack::proc_macro_hack]
@@ -46,13 +46,40 @@ pub fn wat_to_bin(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
 }
 
 /// Compiles a WASM module and includes it similar to `include_bytes!`.
+///
 /// Must be passed the path to a directory containing a `Cargo.toml`.
+/// Can be passed an optional second argument containing the binary name to compile. Mandatory if
+/// the package contains multiple binaries.
+// TODO: show better errors
 #[cfg(feature = "nightly")]
 #[proc_macro_hack::proc_macro_hack]
 pub fn build_wasm_module(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    // Find the absolute path requested by the user.
-    let wasm_crate_path = {
-        let macro_param = syn::parse_macro_input!(tokens as syn::LitStr);
+    // Find the absolute path requested by the user, and optionally the binary target.
+    let (wasm_crate_path, requested_bin_target) = {
+        struct Params {
+            path: String,
+            bin_target: Option<String>,
+        }
+
+        impl syn::parse::Parse for Params {
+            fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+                let path: syn::LitStr = input.parse()?;
+                let bin_target = if input.is_empty() {
+                    None
+                } else {
+                    let _: syn::Token![,] = input.parse()?;
+                    let bin_target: syn::LitStr = input.parse()?;
+                    Some(bin_target)
+                };
+
+                Ok(Params {
+                    path: path.value(),
+                    bin_target: bin_target.map(|s| s.value()),
+                })
+            }
+        }
+
+        let macro_params = syn::parse_macro_input!(tokens as Params);
         let macro_call_file = {
             // We go through the stack of Spans until we find one with a file path.
             let mut span = proc_macro::Span::call_site();
@@ -65,12 +92,15 @@ pub fn build_wasm_module(tokens: proc_macro::TokenStream) -> proc_macro::TokenSt
             }
         };
 
-        macro_call_file.join(macro_param.value())
+        (
+            macro_call_file.join(macro_params.path),
+            macro_params.bin_target,
+        )
     };
 
     // Get the package ID of the package requested by the user.
     let pkg_id = {
-        let output = Command::new("cargo")
+        let output = Command::new(env::var("CARGO").unwrap())
             .arg("read-manifest")
             .current_dir(&wasm_crate_path)
             .output()
@@ -87,7 +117,7 @@ pub fn build_wasm_module(tokens: proc_macro::TokenStream) -> proc_macro::TokenSt
     };
 
     // Determine the path to the `.wasm` and `.d` files that Cargo will generate.
-    let (wasm_output, dependencies_output) = {
+    let (wasm_output, dependencies_output, bin_target) = {
         let metadata = cargo_metadata::MetadataCommand::new()
             .current_dir(&wasm_crate_path)
             .no_deps()
@@ -102,28 +132,47 @@ pub fn build_wasm_module(tokens: proc_macro::TokenStream) -> proc_macro::TokenSt
             .targets
             .iter()
             .filter(|t| t.kind.iter().any(|k| k == "bin"));
-        let bin_target = bin_targets_iter.next().unwrap();
-        assert!(bin_targets_iter.next().is_none());
+        let bin_target = if let Some(requested_bin_target) = requested_bin_target {
+            match bin_targets_iter.find(|t| t.name == requested_bin_target) {
+                Some(t) => t.name.clone(),
+                None => panic!("Can't find binary target {:?}", requested_bin_target),
+            }
+        } else {
+            let target = bin_targets_iter.next().unwrap();
+            if bin_targets_iter.next().is_some() {
+                panic!(
+                    "Multiple binary targets available, please mention the one you want: {:?}",
+                    package
+                        .targets
+                        .iter()
+                        .filter(|t| t.kind.iter().any(|k| k == "bin"))
+                        .map(|t| &t.name)
+                        .collect::<Vec<_>>()
+                );
+            }
+            target.name.clone()
+        };
         let base = metadata
             .target_directory
             .join("wasm32-unknown-unknown")
             .join("release");
-        let wasm = base.join(format!("{}.wasm", bin_target.name));
-        let deps = base.join(format!("{}.d", bin_target.name));
-        (wasm, deps)
+        let wasm = base.join(format!("{}.wasm", bin_target));
+        let deps = base.join(format!("{}.d", bin_target));
+        (wasm, deps, bin_target)
     };
 
     // Actually build the module.
-    assert!(Command::new("cargo")
+    let build_status = Command::new(env::var("CARGO").unwrap())
         .arg("rustc")
+        .args(&["--bin", &bin_target])
         .arg("--release")
         .args(&["--target", "wasm32-unknown-unknown"])
         .arg("--")
         .args(&["-C", "link-arg=--export-table"])
         .current_dir(&wasm_crate_path)
         .status()
-        .unwrap()
-        .success());
+        .unwrap();
+    assert!(build_status.success());
 
     // Read the list of source files that we must depend upon.
     let dependended_files: Vec<String> = {
