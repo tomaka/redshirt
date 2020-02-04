@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::extrinsics::Extrinsics;
+use crate::extrinsics::{Extrinsics, ExtrinsicsAction};
 use crate::module::Module;
 use crate::scheduler::{processes, vm};
 use crate::sig;
@@ -21,7 +21,7 @@ use crate::{InterfaceHash, MessageId};
 
 use alloc::{rc::Rc, vec, vec::Vec};
 use byteorder::{ByteOrder as _, LittleEndian};
-use core::{cell::RefCell, convert::TryFrom as _, fmt, marker::PhantomData, mem};
+use core::{cell::RefCell, convert::TryFrom as _, fmt, mem};
 use redshirt_syscalls::{EncodedMessage, Pid, ThreadId};
 
 /// Wrapper around [`ProcessesCollection`](processes::ProcessesCollection), but that interprets
@@ -30,12 +30,12 @@ use redshirt_syscalls::{EncodedMessage, Pid, ThreadId};
 /// The generic parameters `TPud` and `TTud` are "user data"s that are stored respectively per
 /// process and per thread, and allows the user to put extra information associated to a process
 /// or a thread.
-pub struct ProcessesCollectionExtrinsics<TPud, TTud, TExt, TExtId, TExtCtxt> {
+pub struct ProcessesCollectionExtrinsics<TPud, TTud, TExt: Extrinsics> {
     inner: RefCell<
         processes::ProcessesCollection<
-            Extrinsic<TExtId>,
+            Extrinsic<TExt::ExtrinsicId>,
             LocalProcessUserData<TPud, TExt>,
-            LocalThreadUserData<TTud, TExtCtxt>,
+            LocalThreadUserData<TTud, TExt::Context>,
         >,
     >,
     // TODO: implement
@@ -45,14 +45,13 @@ pub struct ProcessesCollectionExtrinsics<TPud, TTud, TExt, TExtId, TExtCtxt> {
 }
 
 /// Prototype for a `ProcessesCollectionExtrinsics` under construction.
-pub struct ProcessesCollectionExtrinsicsBuilder<TExt, TExtId> {
-    inner: processes::ProcessesCollectionBuilder<Extrinsic<TExtId>>,
-    marker: PhantomData<TExt>,
+pub struct ProcessesCollectionExtrinsicsBuilder<TExt: Extrinsics> {
+    inner: processes::ProcessesCollectionBuilder<Extrinsic<TExt::ExtrinsicId>>,
 }
 
 /// Access to a process within the collection.
-pub struct ProcessesCollectionExtrinsicsProc<'a, TPud, TTud, TExt, TExtId, TExtCtxt> {
-    parent: &'a ProcessesCollectionExtrinsics<TPud, TTud, TExt, TExtId, TExtCtxt>,
+pub struct ProcessesCollectionExtrinsicsProc<'a, TPud, TTud, TExt: Extrinsics> {
+    parent: &'a ProcessesCollectionExtrinsics<TPud, TTud, TExt>,
     pid: Pid,
     user_data: Rc<TPud>,
 }
@@ -60,20 +59,16 @@ pub struct ProcessesCollectionExtrinsicsProc<'a, TPud, TTud, TExt, TExtId, TExtC
 /// Access to a thread within the collection that is in an interrupted state.
 ///
 /// Implements the [`ProcessesCollectionExtrinsicsThreadAccess`] trait.
-pub enum ProcessesCollectionExtrinsicsThread<'a, TPud, TTud, TExt, TExtId, TExtCtxt> {
-    EmitMessage(
-        ProcessesCollectionExtrinsicsThreadEmitMessage<'a, TPud, TTud, TExt, TExtId, TExtCtxt>,
-    ),
-    WaitNotification(
-        ProcessesCollectionExtrinsicsThreadWaitNotification<'a, TPud, TTud, TExt, TExtId, TExtCtxt>,
-    ),
+pub enum ProcessesCollectionExtrinsicsThread<'a, TPud, TTud, TExt: Extrinsics> {
+    EmitMessage(ProcessesCollectionExtrinsicsThreadEmitMessage<'a, TPud, TTud, TExt>),
+    WaitNotification(ProcessesCollectionExtrinsicsThreadWaitNotification<'a, TPud, TTud, TExt>),
 }
 
 /// Access to a thread within the collection.
 ///
 /// Implements the [`ProcessesCollectionExtrinsicsThreadAccess`] trait.
-pub struct ProcessesCollectionExtrinsicsThreadEmitMessage<'a, TPud, TTud, TExt, TExtId, TExtCtxt> {
-    parent: &'a ProcessesCollectionExtrinsics<TPud, TTud, TExt, TExtId, TExtCtxt>,
+pub struct ProcessesCollectionExtrinsicsThreadEmitMessage<'a, TPud, TTud, TExt: Extrinsics> {
+    parent: &'a ProcessesCollectionExtrinsics<TPud, TTud, TExt>,
     tid: ThreadId,
     process_user_data: Rc<TPud>,
 
@@ -90,11 +85,9 @@ pub struct ProcessesCollectionExtrinsicsThreadWaitNotification<
     'a,
     TPud,
     TTud,
-    TExt,
-    TExtId,
-    TExtCtxt,
+    TExt: Extrinsics,
 > {
-    parent: &'a ProcessesCollectionExtrinsics<TPud, TTud, TExt, TExtId, TExtCtxt>,
+    parent: &'a ProcessesCollectionExtrinsics<TPud, TTud, TExt>,
     tid: ThreadId,
     process_user_data: Rc<TPud>,
 
@@ -178,7 +171,7 @@ enum LocalThreadState<TExtCtxt> {
     ReadyToRun,
 
     /// Thread is running a non-hardcoded extrinsic.
-    OtherExtrinsic(TExtCtxt),
+    OtherExtrinsic(TExtCtxt, EmitMessage),
 
     /// The thread is sleeping and waiting for a notification to come.
     NotificationWait(NotificationWait),
@@ -229,7 +222,7 @@ struct EmitAnswer {
 
 /// Outcome of the [`run`](ProcessesCollectionExtrinsics::run) function.
 #[derive(Debug)]
-pub enum RunOneOutcome<'a, TPud, TTud, TExt, TExtId, TExtCtxt> {
+pub enum RunOneOutcome<'a, TPud, TTud, TExt: Extrinsics> {
     /// Either the main thread of a process has finished, or a fatal error was encountered.
     ///
     /// The process no longer exists.
@@ -255,7 +248,7 @@ pub enum RunOneOutcome<'a, TPud, TTud, TExt, TExtId, TExtCtxt> {
         thread_id: ThreadId,
 
         /// Process whose thread has finished.
-        process: ProcessesCollectionExtrinsicsProc<'a, TPud, TTud, TExt, TExtId, TExtCtxt>,
+        process: ProcessesCollectionExtrinsicsProc<'a, TPud, TTud, TExt>,
 
         /// User data of the thread.
         user_data: TTud,
@@ -265,13 +258,11 @@ pub enum RunOneOutcome<'a, TPud, TTud, TExt, TExtId, TExtCtxt> {
     },
 
     /// A thread in a process wants to emit a message.
-    ThreadEmitMessage(
-        ProcessesCollectionExtrinsicsThreadEmitMessage<'a, TPud, TTud, TExt, TExtId, TExtCtxt>,
-    ),
+    ThreadEmitMessage(ProcessesCollectionExtrinsicsThreadEmitMessage<'a, TPud, TTud, TExt>),
 
     /// A thread in a process is waiting for an incoming message.
     ThreadWaitNotification(
-        ProcessesCollectionExtrinsicsThreadWaitNotification<'a, TPud, TTud, TExt, TExtId, TExtCtxt>,
+        ProcessesCollectionExtrinsicsThreadWaitNotification<'a, TPud, TTud, TExt>,
     ),
 
     /// A thread in a process wants to answer a message.
@@ -280,7 +271,7 @@ pub enum RunOneOutcome<'a, TPud, TTud, TExt, TExtId, TExtCtxt> {
         thread_id: ThreadId,
 
         /// Process that the thread belongs to.
-        process: ProcessesCollectionExtrinsicsProc<'a, TPud, TTud, TExt, TExtId, TExtCtxt>,
+        process: ProcessesCollectionExtrinsicsProc<'a, TPud, TTud, TExt>,
 
         /// Message to answer.
         message_id: MessageId,
@@ -295,7 +286,7 @@ pub enum RunOneOutcome<'a, TPud, TTud, TExt, TExtId, TExtCtxt> {
         thread_id: ThreadId,
 
         /// Process that the thread belongs to.
-        process: ProcessesCollectionExtrinsicsProc<'a, TPud, TTud, TExt, TExtId, TExtCtxt>,
+        process: ProcessesCollectionExtrinsicsProc<'a, TPud, TTud, TExt>,
 
         /// Message that is erroneous.
         message_id: MessageId,
@@ -307,7 +298,7 @@ pub enum RunOneOutcome<'a, TPud, TTud, TExt, TExtId, TExtCtxt> {
         thread_id: ThreadId,
 
         /// Process that the thread belongs to.
-        process: ProcessesCollectionExtrinsicsProc<'a, TPud, TTud>,
+        process: ProcessesCollectionExtrinsicsProc<'a, TPud, TTud, TExt>,
 
         /// Message that must be cancelled.
         message_id: MessageId,
@@ -317,12 +308,9 @@ pub enum RunOneOutcome<'a, TPud, TTud, TExt, TExtId, TExtCtxt> {
     Idle,
 }
 
-impl<TPud, TTud, TExt, TExtId, TExtCtxt>
-    ProcessesCollectionExtrinsics<TPud, TTud, TExt, TExtId, TExtCtxt>
+impl<TPud, TTud, TExt> ProcessesCollectionExtrinsics<TPud, TTud, TExt>
 where
-    TExt: Extrinsics<ExtrinsicId = TExtId, Context = TExtCtxt>,
-    TExtId: Send,
-    TExtCtxt: Send,
+    TExt: Extrinsics,
 {
     /// Creates a new process state machine from the given module.
     ///
@@ -338,8 +326,7 @@ where
         module: &Module,
         proc_user_data: TPud,
         main_thread_user_data: TTud,
-    ) -> Result<ProcessesCollectionExtrinsicsProc<TPud, TTud, TExt, TExtId, TExtCtxt>, vm::NewErr>
-    {
+    ) -> Result<ProcessesCollectionExtrinsicsProc<TPud, TTud, TExt>, vm::NewErr> {
         let external_user_data = Rc::new(proc_user_data);
         let proc_user_data = LocalProcessUserData {
             external_user_data: external_user_data.clone(),
@@ -364,7 +351,7 @@ where
     /// Runs one thread amongst the collection.
     ///
     /// Which thread is run is implementation-defined and no guarantee is made.
-    pub fn run(&self) -> RunOneOutcome<TPud, TTud, TExt, TExtId, TExtCtxt> {
+    pub fn run(&self) -> RunOneOutcome<TPud, TTud, TExt> {
         let mut inner = self.inner.borrow_mut();
         match inner.run() {
             processes::RunOneOutcome::ProcessFinished {
@@ -556,12 +543,20 @@ where
                 id: Extrinsic::Other(ext_id),
                 ref params,
             } => {
+                debug_assert!(thread.user_data().state.is_ready_to_run());
                 let thread_id = thread.tid();
-                let context = thread
+                let (context, action) = thread
                     .process_user_data()
                     .extrinsics
                     .new_context(thread_id, ext_id, params);
-                unimplemented!()
+                match action {
+                    ExtrinsicsAction::ProgramCrash => unimplemented!(),
+                    ExtrinsicsAction::Resume(value) => thread.resume(value),
+                    ExtrinsicsAction::EmitMessage { interface, message, response_expected } => {
+                        thread.user_data().state = LocalThreadState::OtherExtrinsic(context);
+                        unimplemented!()
+                    },
+                }
             }
         }
     }
@@ -577,7 +572,7 @@ where
     pub fn process_by_id(
         &self,
         pid: Pid,
-    ) -> Option<ProcessesCollectionExtrinsicsProc<TPud, TTud, TExt, TExtId, TExtCtxt>> {
+    ) -> Option<ProcessesCollectionExtrinsicsProc<TPud, TTud, TExt>> {
         let mut inner = self.inner.borrow_mut();
         let inner = inner.process_by_id(pid)?;
         Some(ProcessesCollectionExtrinsicsProc {
@@ -600,10 +595,7 @@ where
     pub fn interrupted_thread_by_id(
         &self,
         id: ThreadId,
-    ) -> Result<
-        ProcessesCollectionExtrinsicsThread<TPud, TTud, TExt, TExtId, TExtCtxt>,
-        ThreadByIdErr,
-    > {
+    ) -> Result<ProcessesCollectionExtrinsicsThread<TPud, TTud, TExt>, ThreadByIdErr> {
         let mut inner = self.inner.borrow_mut();
         let mut inner = inner.thread_by_id(id).ok_or(ThreadByIdErr::RunningOrDead)?;
 
@@ -613,11 +605,11 @@ where
         }
 
         match inner.user_data().state {
-            LocalThreadState::ReadyToRun | LocalThreadState::OtherExtrinsic(_) => {
+            LocalThreadState::ReadyToRun => {
                 debug_assert!(inner.user_data().external_user_data.is_some());
                 Err(ThreadByIdErr::RunningOrDead)
             }
-            LocalThreadState::EmitMessage(_) => {
+            LocalThreadState::EmitMessage(_) | LocalThreadState::OtherExtrinsic(_) => {
                 let process_user_data = inner.process_user_data().external_user_data.clone();
                 let thread_user_data = inner.user_data().external_user_data.take().unwrap();
 
@@ -645,10 +637,9 @@ where
     }
 }
 
-impl<TExt, TExtId> Default for ProcessesCollectionExtrinsicsBuilder<TExt, TExtId>
+impl<TExt> Default for ProcessesCollectionExtrinsicsBuilder<TExt>
 where
-    TExt: Extrinsics<ExtrinsicId = TExtId>,
-    TExtId: Send,
+    TExt: Extrinsics
 {
     fn default() -> Self {
         let mut inner = processes::ProcessesCollectionBuilder::default()
@@ -694,12 +685,11 @@ where
 
         ProcessesCollectionExtrinsicsBuilder {
             inner,
-            marker: PhantomData,
         }
     }
 }
 
-impl<TExt, TExtId> ProcessesCollectionExtrinsicsBuilder<TExt, TExtId> {
+impl<TExt: Extrinsics> ProcessesCollectionExtrinsicsBuilder<TExt> {
     /// Allocates a `Pid` that will not be used by any process.
     ///
     /// > **Note**: As of the writing of this comment, this feature is only ever used to allocate
@@ -711,21 +701,16 @@ impl<TExt, TExtId> ProcessesCollectionExtrinsicsBuilder<TExt, TExtId> {
     }
 
     /// Turns the builder into a [`ProcessesCollectionExtrinsics`].
-    pub fn build<TPud, TTud, TExtCtxt>(
-        self,
-    ) -> ProcessesCollectionExtrinsics<TPud, TTud, TExt, TExtId, TExtCtxt> {
+    pub fn build<TPud, TTud>(self) -> ProcessesCollectionExtrinsics<TPud, TTud, TExt> {
         ProcessesCollectionExtrinsics {
             inner: RefCell::new(self.inner.build()),
         }
     }
 }
 
-impl<'a, TPud, TTud, TExt, TExtId, TExtCtxt>
-    ProcessesCollectionExtrinsicsProc<'a, TPud, TTud, TExt, TExtId, TExtCtxt>
+impl<'a, TPud, TTud, TExt> ProcessesCollectionExtrinsicsProc<'a, TPud, TTud, TExt>
 where
-    TExt: Extrinsics<ExtrinsicId = TExtId, Context = TExtCtxt>,
-    TExtId: Send,
-    TExtCtxt: Send,
+    TExt: Extrinsics,
 {
     /// Returns the [`Pid`] of the process. Allows later retrieval by calling
     /// [`process_by_id`](ProcessesCollection::process_by_id).
@@ -771,8 +756,7 @@ where
     // TODO: implement better
     pub fn interrupted_threads(
         &self,
-    ) -> impl Iterator<Item = ProcessesCollectionExtrinsicsThread<'a, TPud, TTud, TExt, TExtId, TExtCtxt>>
-    {
+    ) -> impl Iterator<Item = ProcessesCollectionExtrinsicsThread<'a, TPud, TTud, TExt>> {
         let mut inner = self.parent.inner.borrow_mut();
         let inner = inner.process_by_id(self.pid).unwrap();
 
@@ -804,11 +788,11 @@ where
     }
 }
 
-impl<'a, TPud, TTud, TExt, TExtId, TExtCtxt> fmt::Debug
-    for ProcessesCollectionExtrinsicsProc<'a, TPud, TTud, TExt, TExtId, TExtCtxt>
+impl<'a, TPud, TTud, TExt> fmt::Debug for ProcessesCollectionExtrinsicsProc<'a, TPud, TTud, TExt>
 where
     TPud: fmt::Debug,
     TTud: fmt::Debug,
+    TExt: Extrinsics,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // TODO: improve
@@ -816,9 +800,9 @@ where
     }
 }
 
-impl<'a, TPud, TTud, TExt, TExtId, TExtCtxt>
-    From<ProcessesCollectionExtrinsicsThreadEmitMessage<'a, TPud, TTud, TExt, TExtId, TExtCtxt>>
-    for ProcessesCollectionExtrinsicsThread<'a, TPud, TTud, TExt, TExtId, TExtCtxt>
+impl<'a, TPud, TTud, TExt: Extrinsics>
+    From<ProcessesCollectionExtrinsicsThreadEmitMessage<'a, TPud, TTud, TExt>>
+    for ProcessesCollectionExtrinsicsThread<'a, TPud, TTud, TExt>
 {
     fn from(
         thread: ProcessesCollectionExtrinsicsThreadEmitMessage<
@@ -826,18 +810,15 @@ impl<'a, TPud, TTud, TExt, TExtId, TExtCtxt>
             TPud,
             TTud,
             TExt,
-            TExtId,
-            TExtCtxt,
         >,
     ) -> Self {
         ProcessesCollectionExtrinsicsThread::EmitMessage(thread)
     }
 }
 
-impl<'a, TPud, TTud, TExt, TExtId, TExtCtxt>
-    From<
-        ProcessesCollectionExtrinsicsThreadWaitNotification<'a, TPud, TTud, TExt, TExtId, TExtCtxt>,
-    > for ProcessesCollectionExtrinsicsThread<'a, TPud, TTud, TExt, TExtId, TExtCtxt>
+impl<'a, TPud, TTud, TExt: Extrinsics>
+    From<ProcessesCollectionExtrinsicsThreadWaitNotification<'a, TPud, TTud, TExt>>
+    for ProcessesCollectionExtrinsicsThread<'a, TPud, TTud, TExt>
 {
     fn from(
         thread: ProcessesCollectionExtrinsicsThreadWaitNotification<
@@ -845,16 +826,14 @@ impl<'a, TPud, TTud, TExt, TExtId, TExtCtxt>
             TPud,
             TTud,
             TExt,
-            TExtId,
-            TExtCtxt,
         >,
     ) -> Self {
         ProcessesCollectionExtrinsicsThread::WaitNotification(thread)
     }
 }
 
-impl<'a, TPud, TTud, TExt, TExtId, TExtCtxt> ProcessesCollectionExtrinsicsThreadAccess<'a>
-    for ProcessesCollectionExtrinsicsThread<'a, TPud, TTud, TExt, TExtId, TExtCtxt>
+impl<'a, TPud, TTud, TExt: Extrinsics> ProcessesCollectionExtrinsicsThreadAccess<'a>
+    for ProcessesCollectionExtrinsicsThread<'a, TPud, TTud, TExt>
 {
     type ProcessUserData = TPud;
     type ThreadUserData = TTud;
@@ -888,11 +867,11 @@ impl<'a, TPud, TTud, TExt, TExtId, TExtCtxt> ProcessesCollectionExtrinsicsThread
     }
 }
 
-impl<'a, TPud, TTud, TExt, TExtId, TExtCtxt> fmt::Debug
-    for ProcessesCollectionExtrinsicsThread<'a, TPud, TTud, TExt, TExtId, TExtCtxt>
+impl<'a, TPud, TTud, TExt> fmt::Debug for ProcessesCollectionExtrinsicsThread<'a, TPud, TTud, TExt>
 where
     TPud: fmt::Debug,
     TTud: fmt::Debug,
+    TExt: Extrinsics,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -902,8 +881,8 @@ where
     }
 }
 
-impl<'a, TPud, TTud, TExt, TExtId, TExtCtxt>
-    ProcessesCollectionExtrinsicsThreadEmitMessage<'a, TPud, TTud, TExt, TExtId, TExtCtxt>
+impl<'a, TPud, TTud, TExt: Extrinsics>
+    ProcessesCollectionExtrinsicsThreadEmitMessage<'a, TPud, TTud, TExt>
 {
     /// Returns true if the caller wants an answer to the message.
     pub fn needs_answer(&mut self) -> bool {
@@ -985,8 +964,8 @@ impl<'a, TPud, TTud, TExt, TExtId, TExtCtxt>
     }
 }
 
-impl<'a, TPud, TTud, TExt, TExtId, TExtCtxt> ProcessesCollectionExtrinsicsThreadAccess<'a>
-    for ProcessesCollectionExtrinsicsThreadEmitMessage<'a, TPud, TTud, TExt, TExtId, TExtCtxt>
+impl<'a, TPud, TTud, TExt: Extrinsics> ProcessesCollectionExtrinsicsThreadAccess<'a>
+    for ProcessesCollectionExtrinsicsThreadEmitMessage<'a, TPud, TTud, TExt>
 {
     type ProcessUserData = TPud;
     type ThreadUserData = TTud;
@@ -1009,8 +988,8 @@ impl<'a, TPud, TTud, TExt, TExtId, TExtCtxt> ProcessesCollectionExtrinsicsThread
     }
 }
 
-impl<'a, TPud, TTud, TExt, TExtId, TExtCtxt> Drop
-    for ProcessesCollectionExtrinsicsThreadEmitMessage<'a, TPud, TTud, TExt, TExtId, TExtCtxt>
+impl<'a, TPud, TTud, TExt: Extrinsics> Drop
+    for ProcessesCollectionExtrinsicsThreadEmitMessage<'a, TPud, TTud, TExt>
 {
     fn drop(&mut self) {
         let mut inner = self.parent.inner.borrow_mut();
@@ -1021,8 +1000,8 @@ impl<'a, TPud, TTud, TExt, TExtId, TExtCtxt> Drop
     }
 }
 
-impl<'a, TPud, TTud, TExt, TExtId, TExtCtxt> fmt::Debug
-    for ProcessesCollectionExtrinsicsThreadEmitMessage<'a, TPud, TTud, TExt, TExtId, TExtCtxt>
+impl<'a, TPud, TTud, TExt: Extrinsics> fmt::Debug
+    for ProcessesCollectionExtrinsicsThreadEmitMessage<'a, TPud, TTud, TExt>
 where
     TPud: fmt::Debug,
     TTud: fmt::Debug,
@@ -1034,8 +1013,8 @@ where
     }
 }
 
-impl<'a, TPud, TTud, TExt, TExtId, TExtCtxt>
-    ProcessesCollectionExtrinsicsThreadWaitNotification<'a, TPud, TTud, TExt, TExtId, TExtCtxt>
+impl<'a, TPud, TTud, TExt: Extrinsics>
+    ProcessesCollectionExtrinsicsThreadWaitNotification<'a, TPud, TTud, TExt>
 {
     /// Returns the list of message IDs that the thread is waiting on. In order.
     // TODO: not great naming. we're waiting either for messages or an interface notif or a process cancelled notif
@@ -1166,8 +1145,8 @@ impl<'a, TPud, TTud, TExt, TExtId, TExtCtxt>
     }
 }
 
-impl<'a, TPud, TTud, TExt, TExtId, TExtCtxt> ProcessesCollectionExtrinsicsThreadAccess<'a>
-    for ProcessesCollectionExtrinsicsThreadWaitNotification<'a, TPud, TTud, TExt, TExtId, TExtCtxt>
+impl<'a, TPud, TTud, TExt: Extrinsics> ProcessesCollectionExtrinsicsThreadAccess<'a>
+    for ProcessesCollectionExtrinsicsThreadWaitNotification<'a, TPud, TTud, TExt>
 {
     type ProcessUserData = TPud;
     type ThreadUserData = TTud;
@@ -1190,8 +1169,8 @@ impl<'a, TPud, TTud, TExt, TExtId, TExtCtxt> ProcessesCollectionExtrinsicsThread
     }
 }
 
-impl<'a, TPud, TTud, TExt, TExtId, TExtCtxt> Drop
-    for ProcessesCollectionExtrinsicsThreadWaitNotification<'a, TPud, TTud, TExt, TExtId, TExtCtxt>
+impl<'a, TPud, TTud, TExt: Extrinsics> Drop
+    for ProcessesCollectionExtrinsicsThreadWaitNotification<'a, TPud, TTud, TExt>
 {
     fn drop(&mut self) {
         let mut inner = self.parent.inner.borrow_mut();
@@ -1202,8 +1181,8 @@ impl<'a, TPud, TTud, TExt, TExtId, TExtCtxt> Drop
     }
 }
 
-impl<'a, TPud, TTud, TExt, TExtId, TExtCtxt> fmt::Debug
-    for ProcessesCollectionExtrinsicsThreadWaitNotification<'a, TPud, TTud, TExt, TExtId, TExtCtxt>
+impl<'a, TPud, TTud, TExt: Extrinsics> fmt::Debug
+    for ProcessesCollectionExtrinsicsThreadWaitNotification<'a, TPud, TTud, TExt>
 where
     TPud: fmt::Debug,
     TTud: fmt::Debug,
@@ -1520,8 +1499,8 @@ enum ExtrinsicEmitMessageErrorErr {
 /// has no side effect.
 ///
 /// Returns an error if the call is invalid.
-fn parse_extrinsic_cancel_message<TPud, TTud>(
-    thread: &mut processes::ProcessesCollectionThread<TPud, LocalThreadUserData<TTud>>,
+fn parse_extrinsic_cancel_message<TPud, TTud, TExtCtxt>(
+    thread: &mut processes::ProcessesCollectionThread<TPud, LocalThreadUserData<TTud, TExtCtxt>>,
     params: Vec<wasmi::RuntimeValue>,
 ) -> Result<MessageId, ExtrinsicCancelMessageErr> {
     // We use an assert here rather than a runtime check because the WASM VM (rather than us) is

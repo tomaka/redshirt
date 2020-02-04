@@ -13,6 +13,15 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+//! Provides a way to implement custom extrinsics.
+//!
+//! The [`Extrinsics`] trait can be implemented on types that represent a collection of functions
+//! that can be called by a WASM module.
+//!
+//! A function that is available to a WASM module is called an **extrinsic**.
+//!
+//! TODO: write doc on how to implement this trait
+
 use crate::signature::Signature;
 use crate::{EncodedMessage, InterfaceHash, MessageId, ThreadId};
 
@@ -29,43 +38,81 @@ pub trait Extrinsics: Default {
     ///
     /// Instead of passing around function names, we pass around identifiers.
     type ExtrinsicId: Send;
+
+    /// Created when an extrinsic is called by a WASM module.
     type Context: Send;
+
+    /// Iterator returned by [`supported_extrinsics`].
     type Iterator: Iterator<Item = SupportedExtrinsic<Self::ExtrinsicId>>;
 
     /// Returns an iterator to the list of extrinsics that this struct supports.
     fn supported_extrinsics() -> Self::Iterator;
 
+    /// Called when a WASM module calls an extrinsic.
+    ///
+    /// Returns what to do next on this context.
+    ///
+    /// Returning [`ExtrinsicAction::Resume`] or [`ExtrinsicAction::ProgramCrash`] finishes the
+    /// extrinsic call and destroys the context.
     fn new_context(
         &self,
         tid: ThreadId,
         id: &Self::ExtrinsicId,
         params: &[RuntimeValue],
-    ) -> Self::Context;
+    ) -> (Self::Context, ExtrinsicsAction);
 
-    fn poll(&self, ctxt: &mut Self::Context) -> ExtrinsicsAction;
-
+    /// If [`ExtrinsicAction::EmitMessage`] has been emitted, this function is later called in
+    /// order to notify of the response.
+    ///
+    /// Returns what to do next on this context.
+    ///
+    /// Returning [`ExtrinsicAction::Resume`] or [`ExtrinsicAction::ProgramCrash`] finishes the
+    /// extrinsic call and destroys the context.
     fn inject_message_response(
         &self,
         ctxt: &mut Self::Context,
-        msg_id: MessageId,
-        response: EncodedMessage,
-    );
+        response: Option<EncodedMessage>,
+    ) -> ExtrinsicsAction;
 }
 
+/// Description of an extrinsic supported by the implementation of [`Extrinsics`].
+#[derive(Debug)]
 pub struct SupportedExtrinsic<TExtId> {
+    /// Identifier of the extrinsic. Passed to [`new_context`] when the extrinsic is called.
     pub id: TExtId,
+
+    /// Name of the interface the function belongs to.
+    ///
+    /// In WASM, each function belongs to what is called an interface. An interface can be summed
+    /// up as the namespace of the function. This is unrelated to the concept of "interface"
+    /// proper to redshirt.
     pub wasm_interface: Cow<'static, str>,
+
+    /// Name of the function.
     pub function_name: Cow<'static, str>,
+
+    /// Signature of the function. The parameters passed to [`new_context`] are guaranteed to
+    /// match this signature.
     pub signature: Signature,
 }
 
+/// Action to perform in the context of an extrinsic being called.
 #[derive(Debug, Clone)]
 pub enum ExtrinsicsAction {
+    /// Crash the program that called the extrinsic.
     ProgramCrash,
+
+    /// Successfully finish the call and return with the given value.
     Resume(Option<RuntimeValue>),
+
+    /// Emit a message.
+    ///
+    /// This makes it as if the process had emitted a message on the given interface, except that
+    /// the response is later injected back using [`Extrinsics::inject_message_response`].
     EmitMessage {
         interface: InterfaceHash,
         message: EncodedMessage,
+        response_expected: bool,
     },
 }
 
@@ -87,15 +134,11 @@ impl Extrinsics for NoExtrinsics {
         _: ThreadId,
         id: &Self::ExtrinsicId,
         _: &[RuntimeValue],
-    ) -> Self::Context {
+    ) -> (Self::Context, ExtrinsicsAction) {
         match *id {} // unreachable
     }
 
-    fn poll(&self, ctxt: &mut Self::Context) -> ExtrinsicsAction {
-        match *ctxt {} // unreachable
-    }
-
-    fn inject_message_response(&self, ctxt: &mut Self::Context, _: MessageId, _: EncodedMessage) {
+    fn inject_message_response(&self, ctxt: &mut Self::Context, _: MessageId, _: EncodedMessage) -> ExtrinsicsAction {
         match *ctxt {} // unreachable
     }
 }
