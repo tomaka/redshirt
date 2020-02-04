@@ -759,7 +759,7 @@ impl CoreBuilder {
 
 /// If any of the threads of the given process is waiting for a message to arrive, checks the
 /// queue and tries to resume said thread.
-fn try_resume_message_wait(
+fn try_resume_notification_wait(
     process: extrinsics::ProcessesCollectionExtrinsicsProc<
         RefCell<Process>,
         (),
@@ -780,9 +780,9 @@ fn try_resume_message_wait(
 /// If the given thread is waiting for a notification to arrive, checks the queue and tries to
 /// resume said thread.
 // TODO: in order to call this function, we essentially have to put the state machine in a "bad"
-// state (message in queue and thread would accept said message); not great
-fn try_resume_message_wait_thread(
-    mut thread: extrinsics::ProcessesCollectionExtrinsicsThreadWaitMessage<
+// state (notifications in queue and thread would accept said notification); not great
+fn try_resume_notification_wait_thread(
+    mut thread: extrinsics::ProcessesCollectionExtrinsicsThreadWaitNotification<
         RefCell<Process>,
         (),
         crate::extrinsics::NoExtrinsics,
