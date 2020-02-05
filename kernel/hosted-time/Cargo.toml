@@ -11,5 +11,6 @@ futures = "0.3.0"
 futures-timer = "2.0"
 redshirt-core = { path = "../../core" }
 redshirt-interface-interface = { path = "../../interfaces/interface" }
+redshirt-system-time-interface = { path = "../../interfaces/system-time" }
 redshirt-time-interface = { path = "../../interfaces/time" }
 lazy_static = "1.4"

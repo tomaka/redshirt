@@ -1134,6 +1134,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "redshirt-system-time-interface"
+version = "0.1.0"
+dependencies = [
+ "futures 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "parity-scale-codec",
+ "pin-project",
+ "redshirt-syscalls",
+]
+
+[[package]]
 name = "redshirt-tcp-hosted"
 version = "0.1.0"
 dependencies = [
@@ -1175,6 +1185,7 @@ dependencies = [
  "lazy_static",
  "redshirt-core",
  "redshirt-interface-interface",
+ "redshirt-system-time-interface",
  "redshirt-time-interface",
 ]
 
