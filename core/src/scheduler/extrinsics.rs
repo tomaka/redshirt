@@ -1127,17 +1127,35 @@ impl LocalThreadState {
 fn parse_extrinsic_next_notification<TPud, TTud>(
     thread: &mut processes::ProcessesCollectionThread<TPud, LocalThreadUserData<TTud>>,
     params: Vec<wasmi::RuntimeValue>,
-) -> Result<NotificationWait, ()> {
+) -> Result<NotificationWait, ExtrinsicNextNotificationErr> {
     // We use an assert here rather than a runtime check because the WASM VM (rather than us) is
     // supposed to check the function signature.
     assert_eq!(params.len(), 5);
 
-    let notifs_ids_ptr = u32::try_from(params[0].try_into::<i32>().ok_or(())?).map_err(|_| ())?;
+    let notifs_ids_ptr = u32::try_from(
+        params[0]
+            .try_into::<i32>()
+            .ok_or(ExtrinsicNextNotificationErr::BadParameter)?,
+    )
+    .map_err(|_| ExtrinsicNextNotificationErr::BadParameter)?;
     // TODO: consider not copying the notification ids and read memory on demand instead
     let notifs_ids = {
-        let len = u32::try_from(params[1].try_into::<i32>().ok_or(())?).map_err(|_| ())?;
-        let mem = thread.read_memory(notifs_ids_ptr, len * 8)?;
-        let mut out = vec![MessageId::from(0u64); usize::try_from(len).map_err(|_| ())?];
+        let len = u32::try_from(
+            params[1]
+                .try_into::<i32>()
+                .ok_or(ExtrinsicNextNotificationErr::BadParameter)?,
+        )
+        .map_err(|_| ExtrinsicNextNotificationErr::BadParameter)?;
+        if len >= 512 {
+            // TODO: arbitrary limit in order to not allocate too much memory below; a bit crappy
+            return Err(ExtrinsicNextNotificationErr::TooManyNotificationIds { requested: len });
+        }
+        let mem = thread
+            .read_memory(notifs_ids_ptr, len * 8)
+            .map_err(|_| ExtrinsicNextNotificationErr::BadParameter)?;
+        let len_usize = usize::try_from(len)
+            .map_err(|_| ExtrinsicNextNotificationErr::TooManyNotificationIds { requested: len })?;
+        let mut out = vec![MessageId::from(0u64); len_usize];
         for (o, i) in out.iter_mut().zip(mem.chunks(8)) {
             let val = byteorder::LittleEndian::read_u64(i);
             *o = MessageId::from(val);
@@ -1150,9 +1168,22 @@ fn parse_extrinsic_next_notification<TPud, TTud>(
         out
     };
 
-    let out_pointer = u32::try_from(params[2].try_into::<i32>().ok_or(())?).map_err(|_| ())?;
-    let out_size = u32::try_from(params[3].try_into::<i32>().ok_or(())?).map_err(|_| ())?;
-    let block = params[4].try_into::<i32>().ok_or(())? != 0;
+    let out_pointer = u32::try_from(
+        params[2]
+            .try_into::<i32>()
+            .ok_or(ExtrinsicNextNotificationErr::BadParameter)?,
+    )
+    .map_err(|_| ExtrinsicNextNotificationErr::BadParameter)?;
+    let out_size = u32::try_from(
+        params[3]
+            .try_into::<i32>()
+            .ok_or(ExtrinsicNextNotificationErr::BadParameter)?,
+    )
+    .map_err(|_| ExtrinsicNextNotificationErr::BadParameter)?;
+    let block = params[4]
+        .try_into::<i32>()
+        .ok_or(ExtrinsicNextNotificationErr::BadParameter)?
+        != 0;
 
     Ok(NotificationWait {
         notifs_ids,
@@ -1161,6 +1192,18 @@ fn parse_extrinsic_next_notification<TPud, TTud>(
         out_size,
         block,
     })
+}
+
+/// Error that [`parse_extrinsic_next_notification`] can return.
+#[derive(Debug)]
+enum ExtrinsicNextNotificationErr {
+    /// Too many notification ids requested.
+    TooManyNotificationIds {
+        /// Number of notification IDs that have been requested.
+        requested: u32,
+    },
+    /// Bad type or invalid value for a parameter.
+    BadParameter,
 }
 
 /// Analyzes a call to `emit_message` made by the given thread.
@@ -1172,30 +1215,55 @@ fn parse_extrinsic_next_notification<TPud, TTud>(
 fn parse_extrinsic_emit_message<TPud, TTud>(
     thread: &mut processes::ProcessesCollectionThread<TPud, LocalThreadUserData<TTud>>,
     params: Vec<wasmi::RuntimeValue>,
-) -> Result<EmitMessage, ()> {
+) -> Result<EmitMessage, ExtrinsicEmitMessageErr> {
     // We use an assert here rather than a runtime check because the WASM VM (rather than us) is
     // supposed to check the function signature.
     assert_eq!(params.len(), 6);
 
     let interface: InterfaceHash = {
-        let addr = u32::try_from(params[0].try_into::<i32>().ok_or(())?).map_err(|_| ())?;
+        let addr = u32::try_from(
+            params[0]
+                .try_into::<i32>()
+                .ok_or(ExtrinsicEmitMessageErr::BadParameter)?,
+        )
+        .map_err(|_| ExtrinsicEmitMessageErr::BadParameter)?;
         InterfaceHash::from(
-            <[u8; 32]>::try_from(&thread.read_memory(addr, 32)?[..]).map_err(|_| ())?,
+            <[u8; 32]>::try_from(
+                &thread
+                    .read_memory(addr, 32)
+                    .map_err(|_| ExtrinsicEmitMessageErr::BadParameter)?[..],
+            )
+            .map_err(|_| ExtrinsicEmitMessageErr::BadParameter)?,
         )
     };
 
     let message = {
-        let addr = u32::try_from(params[1].try_into::<i32>().ok_or(())?).map_err(|_| ())?;
-        let num_bufs = u32::try_from(params[2].try_into::<i32>().ok_or(())?).map_err(|_| ())?;
+        let addr = u32::try_from(
+            params[1]
+                .try_into::<i32>()
+                .ok_or(ExtrinsicEmitMessageErr::BadParameter)?,
+        )
+        .map_err(|_| ExtrinsicEmitMessageErr::BadParameter)?;
+        let num_bufs = u32::try_from(
+            params[2]
+                .try_into::<i32>()
+                .ok_or(ExtrinsicEmitMessageErr::BadParameter)?,
+        )
+        .map_err(|_| ExtrinsicEmitMessageErr::BadParameter)?;
         let mut out_msg = Vec::new();
         for buf_n in 0..num_bufs {
-            let sub_buf_ptr = thread.read_memory(addr + 8 * buf_n, 4).map_err(|_| ())?;
+            let sub_buf_ptr = thread
+                .read_memory(addr + 8 * buf_n, 4)
+                .map_err(|_| ExtrinsicEmitMessageErr::BadParameter)?;
             let sub_buf_ptr = LittleEndian::read_u32(&sub_buf_ptr);
             let sub_buf_sz = thread
                 .read_memory(addr + 8 * buf_n + 4, 4)
-                .map_err(|_| ())?;
+                .map_err(|_| ExtrinsicEmitMessageErr::BadParameter)?;
             let sub_buf_sz = LittleEndian::read_u32(&sub_buf_sz);
-            if out_msg.len() + usize::try_from(sub_buf_sz).map_err(|_| ())? >= 16 * 1024 * 1024 {
+            if out_msg.len()
+                + usize::try_from(sub_buf_sz).map_err(|_| ExtrinsicEmitMessageErr::BadParameter)?
+                >= 16 * 1024 * 1024
+            {
                 // TODO: arbitrary maximum message length
                 panic!("Max message length reached");
                 //return Err(());
@@ -1203,16 +1271,29 @@ fn parse_extrinsic_emit_message<TPud, TTud>(
             out_msg.extend_from_slice(
                 &thread
                     .read_memory(sub_buf_ptr, sub_buf_sz)
-                    .map_err(|_| ())?,
+                    .map_err(|_| ExtrinsicEmitMessageErr::BadParameter)?,
             );
         }
         EncodedMessage(out_msg)
     };
 
-    let needs_answer = params[3].try_into::<i32>().ok_or(())? != 0;
-    let allow_delay = params[4].try_into::<i32>().ok_or(())? != 0;
+    let needs_answer = params[3]
+        .try_into::<i32>()
+        .ok_or(ExtrinsicEmitMessageErr::BadParameter)?
+        != 0;
+    let allow_delay = params[4]
+        .try_into::<i32>()
+        .ok_or(ExtrinsicEmitMessageErr::BadParameter)?
+        != 0;
     let message_id_write = if needs_answer {
-        Some(u32::try_from(params[5].try_into::<i32>().ok_or(())?).map_err(|_| ())?)
+        Some(
+            u32::try_from(
+                params[5]
+                    .try_into::<i32>()
+                    .ok_or(ExtrinsicEmitMessageErr::BadParameter)?,
+            )
+            .map_err(|_| ExtrinsicEmitMessageErr::BadParameter)?,
+        )
     } else {
         None
     };
@@ -1225,6 +1306,13 @@ fn parse_extrinsic_emit_message<TPud, TTud>(
     })
 }
 
+/// Error that [`parse_extrinsic_emit_message`] can return.
+#[derive(Debug)]
+enum ExtrinsicEmitMessageErr {
+    /// Bad type or invalid value for a parameter.
+    BadParameter,
+}
+
 /// Analyzes a call to `emit_answer` made by the given thread.
 ///
 /// The `thread` parameter is only used in order to read memory from the process. This function
@@ -1234,27 +1322,55 @@ fn parse_extrinsic_emit_message<TPud, TTud>(
 fn parse_extrinsic_emit_answer<TPud, TTud>(
     thread: &mut processes::ProcessesCollectionThread<TPud, LocalThreadUserData<TTud>>,
     params: Vec<wasmi::RuntimeValue>,
-) -> Result<EmitAnswer, ()> {
+) -> Result<EmitAnswer, ExtrinsicEmitAnswerErr> {
     // We use an assert here rather than a runtime check because the WASM VM (rather than us) is
     // supposed to check the function signature.
     assert_eq!(params.len(), 3);
 
     let message_id = {
-        let addr = u32::try_from(params[0].try_into::<i32>().ok_or(())?).map_err(|_| ())?;
-        let buf = thread.read_memory(addr, 8)?;
+        let addr = u32::try_from(
+            params[0]
+                .try_into::<i32>()
+                .ok_or(ExtrinsicEmitAnswerErr::BadParameter)?,
+        )
+        .map_err(|_| ExtrinsicEmitAnswerErr::BadParameter)?;
+        let buf = thread
+            .read_memory(addr, 8)
+            .map_err(|_| ExtrinsicEmitAnswerErr::BadParameter)?;
         MessageId::from(byteorder::LittleEndian::read_u64(&buf))
     };
 
     let response = {
-        let addr = u32::try_from(params[1].try_into::<i32>().ok_or(())?).map_err(|_| ())?;
-        let sz = u32::try_from(params[2].try_into::<i32>().ok_or(())?).map_err(|_| ())?;
-        EncodedMessage(thread.read_memory(addr, sz)?)
+        let addr = u32::try_from(
+            params[1]
+                .try_into::<i32>()
+                .ok_or(ExtrinsicEmitAnswerErr::BadParameter)?,
+        )
+        .map_err(|_| ExtrinsicEmitAnswerErr::BadParameter)?;
+        let sz = u32::try_from(
+            params[2]
+                .try_into::<i32>()
+                .ok_or(ExtrinsicEmitAnswerErr::BadParameter)?,
+        )
+        .map_err(|_| ExtrinsicEmitAnswerErr::BadParameter)?;
+        EncodedMessage(
+            thread
+                .read_memory(addr, sz)
+                .map_err(|_| ExtrinsicEmitAnswerErr::BadParameter)?,
+        )
     };
 
     Ok(EmitAnswer {
         message_id,
         response,
     })
+}
+
+/// Error that [`parse_extrinsic_emit_answer`] can return.
+#[derive(Debug)]
+enum ExtrinsicEmitAnswerErr {
+    /// Bad type or invalid value for a parameter.
+    BadParameter,
 }
 
 /// Analyzes a call to `emit_message_error` made by the given thread.
@@ -1267,18 +1383,32 @@ fn parse_extrinsic_emit_answer<TPud, TTud>(
 fn parse_extrinsic_emit_message_error<TPud, TTud>(
     thread: &mut processes::ProcessesCollectionThread<TPud, LocalThreadUserData<TTud>>,
     params: Vec<wasmi::RuntimeValue>,
-) -> Result<MessageId, ()> {
+) -> Result<MessageId, ExtrinsicEmitMessageErrorErr> {
     // We use an assert here rather than a runtime check because the WASM VM (rather than us) is
     // supposed to check the function signature.
     assert_eq!(params.len(), 1);
 
     let msg_id = {
-        let addr = u32::try_from(params[0].try_into::<i32>().ok_or(())?).map_err(|_| ())?;
-        let buf = thread.read_memory(addr, 8)?;
+        let addr = u32::try_from(
+            params[0]
+                .try_into::<i32>()
+                .ok_or(ExtrinsicEmitMessageErrorErr::BadParameter)?,
+        )
+        .map_err(|_| ExtrinsicEmitMessageErrorErr::BadParameter)?;
+        let buf = thread
+            .read_memory(addr, 8)
+            .map_err(|_| ExtrinsicEmitMessageErrorErr::BadParameter)?;
         MessageId::from(byteorder::LittleEndian::read_u64(&buf))
     };
 
     Ok(msg_id)
+}
+
+/// Error that [`parse_extrinsic_emit_message_error`] can return.
+#[derive(Debug)]
+enum ExtrinsicEmitMessageErrorErr {
+    /// Bad type or invalid value for a parameter.
+    BadParameter,
 }
 
 /// Analyzes a call to `cancel_message` made by the given thread.
@@ -1291,16 +1421,30 @@ fn parse_extrinsic_emit_message_error<TPud, TTud>(
 fn parse_extrinsic_cancel_message<TPud, TTud>(
     thread: &mut processes::ProcessesCollectionThread<TPud, LocalThreadUserData<TTud>>,
     params: Vec<wasmi::RuntimeValue>,
-) -> Result<MessageId, ()> {
+) -> Result<MessageId, ExtrinsicCancelMessageErr> {
     // We use an assert here rather than a runtime check because the WASM VM (rather than us) is
     // supposed to check the function signature.
     assert_eq!(params.len(), 1);
 
     let msg_id = {
-        let addr = u32::try_from(params[0].try_into::<i32>().ok_or(())?).map_err(|_| ())?;
-        let buf = thread.read_memory(addr, 8)?;
+        let addr = u32::try_from(
+            params[0]
+                .try_into::<i32>()
+                .ok_or(ExtrinsicCancelMessageErr::BadParameter)?,
+        )
+        .map_err(|_| ExtrinsicCancelMessageErr::BadParameter)?;
+        let buf = thread
+            .read_memory(addr, 8)
+            .map_err(|_| ExtrinsicCancelMessageErr::BadParameter)?;
         MessageId::from(byteorder::LittleEndian::read_u64(&buf))
     };
 
     Ok(msg_id)
+}
+
+/// Error that [`parse_extrinsic_cancel_message`] can return.
+#[derive(Debug)]
+enum ExtrinsicCancelMessageErr {
+    /// Bad type or invalid value for a parameter.
+    BadParameter,
 }
