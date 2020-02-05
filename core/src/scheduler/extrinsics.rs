@@ -1160,11 +1160,6 @@ fn parse_extrinsic_next_notification<TPud, TTud>(
             let val = byteorder::LittleEndian::read_u64(i);
             *o = MessageId::from(val);
         }
-        if len >= 512 {
-            // TODO: arbitrary limit in order to not allocate too much memory below; a bit crappy
-            panic!("reached limit! {:?} {:?}", len, out);
-            return Err(());
-        }
         out
     };
 
