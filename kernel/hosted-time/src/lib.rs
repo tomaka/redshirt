@@ -39,7 +39,7 @@ pub struct TimerHandler {
     /// Accessed only by `next_event`.
     inner: Mutex<TimerHandlerInner>,
     /// Send on this channel the received interface messages.
-    messages_tx: mpsc::UnboundedSender<(TimeMessage, MessageId)>,
+    messages_tx: mpsc::UnboundedSender<(Message, MessageId)>,
 }
 
 /// Separate struct behind a mutex.
@@ -47,7 +47,7 @@ struct TimerHandlerInner {
     /// Stream of message IDs to answer.
     timers: FuturesUnordered<Pin<Box<dyn Future<Output = MessageId> + Send>>>, // TODO: meh for boxing
     /// Receiving side of [`TimerHandler::messages_tx`].
-    messages_rx: mpsc::UnboundedReceiver<(TimeMessage, MessageId)>,
+    messages_rx: mpsc::UnboundedReceiver<(Message, MessageId)>,
 }
 
 enum Message {
