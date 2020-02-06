@@ -15,8 +15,6 @@
 
 //! TCP/IP.
 
-#![deny(intra_doc_link_resolution_failure)]
-
 // TODO: everything here is a draft
 
 use futures::{lock::Mutex, prelude::*, ready};

@@ -17,7 +17,6 @@
 //!
 //! This interface is a bit special, as it is used by the kernel in order to load WASM modules.
 
-#![deny(intra_doc_link_resolution_failure)]
 #![no_std]
 
 extern crate alloc;

@@ -279,3 +279,19 @@ jobs:
         with:
           command: fmt
           args: --all -- --check
+
+  intra-doc-links:
+    name: Check intra-doc links
+    runs-on: ubuntu-latest
+    container:
+      image: rust
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v1
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+      - name: Check intra-doc links
+        run: RUSTDOCFLAGS="--deny intra_doc_link_resolution_failure" cargo +nightly doc --verbose --workspace --no-deps --document-private-items

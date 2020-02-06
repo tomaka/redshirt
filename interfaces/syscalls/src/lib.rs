@@ -79,7 +79,6 @@
 //! `Future`s to the implementation of [`block_on`] is therefore the logical thing to do.
 //!
 
-#![deny(intra_doc_link_resolution_failure)]
 #![no_std]
 
 extern crate alloc;

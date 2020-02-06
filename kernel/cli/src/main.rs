@@ -13,8 +13,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#![deny(intra_doc_link_resolution_failure)]
-
 use std::{fs, path::PathBuf, process};
 use structopt::StructOpt;
 
