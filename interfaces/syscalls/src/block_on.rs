@@ -189,8 +189,8 @@ struct BlockOnState {
     /// to the kernel.
     message_ids: Vec<u64>,
 
-    /// List whose length is identical to [`BlockOnState::messages_ids`]. For each element in
-    /// [`BlockOnState::messages_ids`], contains a corresponding `Waker` that must be waken up
+    /// List whose length is identical to [`BlockOnState::message_ids`]. For each element in
+    /// [`BlockOnState::message_ids`], contains a corresponding `Waker` that must be waken up
     /// when a response comes.
     wakers: Vec<Waker>,
 

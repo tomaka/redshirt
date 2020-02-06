@@ -42,7 +42,7 @@ extern "C" {
     /// notifications for a notification that fits in `out_len`. It will however skip the
     /// notifications in the queue that do not match any entry in `to_poll`.
     ///
-    /// Messages written in `out` can be decoded into a [`Message`].
+    /// Messages written in `out` can be decoded into a [`DecodedNotification`].
     ///
     /// When this function is being called, a "lock" is being held on the memory pointed by
     /// `to_poll` and `out`. In particular, it is invalid to modify these buffers while the
@@ -67,8 +67,9 @@ extern "C" {
     /// >           `msg_bufs_ptrs` parameter is similar to the `iov` parameter of `writev`, and
     /// >           the `msg_bufs_num` parameter is similar to the `iovcnt` parameter of `writev`.
     ///
-    /// The message body is what will go into the [`actual_data`](Message::actual_data) field of
-    /// the [`Message`] that the target will receive.
+    /// The message body is what will go into the
+    /// [`actual_data`](DecodedInterfaceNotification::actual_data) field of the
+    /// [`DecodedInterfaceNotification`] that the target will receive.
     ///
     /// Returns `0` on success, and `1` in case of error.
     ///
