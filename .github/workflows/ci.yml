@@ -293,5 +293,8 @@ jobs:
         with:
           toolchain: nightly
           override: true
-      - name: Check intra-doc links
+      - name: Check core intra-doc links
         run: RUSTDOCFLAGS="--deny intra_doc_link_resolution_failure" cargo +nightly doc --verbose --workspace --no-deps --document-private-items
+      - name: Check modules intra-doc links
+        run: RUSTDOCFLAGS="--deny intra_doc_link_resolution_failure" cargo +nightly doc --verbose --manifest-path modules/Cargo.toml --workspace --no-deps --document-private-items
+  
