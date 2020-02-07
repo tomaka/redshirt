@@ -17,6 +17,7 @@ members = [
     "interfaces/pci",
     "interfaces/random",
     "interfaces/syscalls",
+    "interfaces/system-time",
     "interfaces/threads",
     "interfaces/time",
 ]

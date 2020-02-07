@@ -21,7 +21,8 @@ use redshirt_core::native::{
     DummyMessageIdWrite, NativeProgramEvent, NativeProgramMessageIdWrite, NativeProgramRef,
 };
 use redshirt_core::{Decode as _, Encode as _, EncodedMessage, InterfaceHash, MessageId, Pid};
-use redshirt_time_interface::ffi::{TimeMessage, INTERFACE};
+use redshirt_system_time_interface::ffi as system_time_ffi;
+use redshirt_time_interface::ffi as time_ffi;
 use std::{
     convert::TryFrom,
     pin::Pin,
@@ -31,12 +32,14 @@ use std::{
 
 /// State machine for `time` interface messages handling.
 pub struct TimerHandler {
-    /// If true, we have sent the interface registration message.
-    registered: atomic::AtomicBool,
+    /// If true, we have sent the time interface registration message.
+    time_registered: atomic::AtomicBool,
+    /// If true, we have sent the system-time interface registration message.
+    system_time_registered: atomic::AtomicBool,
     /// Accessed only by `next_event`.
     inner: Mutex<TimerHandlerInner>,
     /// Send on this channel the received interface messages.
-    messages_tx: mpsc::UnboundedSender<(TimeMessage, MessageId)>,
+    messages_tx: mpsc::UnboundedSender<(Message, MessageId)>,
 }
 
 /// Separate struct behind a mutex.
@@ -44,7 +47,12 @@ struct TimerHandlerInner {
     /// Stream of message IDs to answer.
     timers: FuturesUnordered<Pin<Box<dyn Future<Output = MessageId> + Send>>>, // TODO: meh for boxing
     /// Receiving side of [`TimerHandler::messages_tx`].
-    messages_rx: mpsc::UnboundedReceiver<(TimeMessage, MessageId)>,
+    messages_rx: mpsc::UnboundedReceiver<(Message, MessageId)>,
+}
+
+enum Message {
+    Time(time_ffi::TimeMessage),
+    SystemTime(system_time_ffi::TimeMessage),
 }
 
 impl TimerHandler {
@@ -53,7 +61,8 @@ impl TimerHandler {
         let (messages_tx, messages_rx) = mpsc::unbounded();
 
         TimerHandler {
-            registered: atomic::AtomicBool::new(false),
+            time_registered: atomic::AtomicBool::new(false),
+            system_time_registered: atomic::AtomicBool::new(false),
             inner: Mutex::new(TimerHandlerInner {
                 timers: {
                     let timers =
@@ -80,12 +89,26 @@ impl<'a> NativeProgramRef<'a> for &'a TimerHandler {
 
     fn next_event(self) -> Self::Future {
         Box::pin(async move {
-            if !self.registered.swap(true, atomic::Ordering::Relaxed) {
+            if !self.time_registered.swap(true, atomic::Ordering::Relaxed) {
                 return NativeProgramEvent::Emit {
                     interface: redshirt_interface_interface::ffi::INTERFACE,
                     message_id_write: None,
                     message: redshirt_interface_interface::ffi::InterfaceMessage::Register(
-                        INTERFACE,
+                        time_ffi::INTERFACE,
+                    )
+                    .encode(),
+                };
+            }
+
+            if !self
+                .system_time_registered
+                .swap(true, atomic::Ordering::Relaxed)
+            {
+                return NativeProgramEvent::Emit {
+                    interface: redshirt_interface_interface::ffi::INTERFACE,
+                    message_id_write: None,
+                    message: redshirt_interface_interface::ffi::InterfaceMessage::Register(
+                        system_time_ffi::INTERFACE,
                     )
                     .encode(),
                 };
@@ -102,24 +125,15 @@ impl<'a> NativeProgramRef<'a> for &'a TimerHandler {
                             answer: Ok(().encode()),
                         };
                     }
-                    future::Either::Right((Some((time_message, message_id)), _)) => {
+                    future::Either::Right((Some((Message::Time(time_message), message_id)), _)) => {
                         match time_message {
-                            TimeMessage::GetMonotonic => {
-                                /*if message_id == From::from(8738800203853899706u64) {
-                                    panic!();
-                                }*/
+                            time_ffi::TimeMessage::GetMonotonic => {
                                 return NativeProgramEvent::Answer {
                                     message_id,
                                     answer: Ok(monotonic_clock().encode()),
                                 };
                             }
-                            TimeMessage::GetSystem => {
-                                return NativeProgramEvent::Answer {
-                                    message_id,
-                                    answer: Ok(system_clock().encode()),
-                                };
-                            }
-                            TimeMessage::WaitMonotonic(until) => {
+                            time_ffi::TimeMessage::WaitMonotonic(until) => {
                                 match until.checked_sub(monotonic_clock()) {
                                     None => {
                                         return NativeProgramEvent::Answer {
@@ -142,6 +156,17 @@ impl<'a> NativeProgramRef<'a> for &'a TimerHandler {
                             }
                         }
                     }
+                    future::Either::Right((
+                        Some((Message::SystemTime(time_message), message_id)),
+                        _,
+                    )) => match time_message {
+                        system_time_ffi::TimeMessage::GetSystem => {
+                            return NativeProgramEvent::Answer {
+                                message_id,
+                                answer: Ok(system_clock().encode()),
+                            };
+                        }
+                    },
                     future::Either::Left((None, _)) => unreachable!(),
                     future::Either::Right((None, _)) => unreachable!(),
                 }
@@ -156,15 +181,26 @@ impl<'a> NativeProgramRef<'a> for &'a TimerHandler {
         emitter_pid: Pid,
         message: EncodedMessage,
     ) {
-        debug_assert_eq!(interface, INTERFACE);
-
-        match TimeMessage::decode(message) {
-            Ok(msg) => {
-                self.messages_tx
-                    .unbounded_send((msg, message_id.unwrap()))
-                    .unwrap();
+        if interface == time_ffi::INTERFACE {
+            match time_ffi::TimeMessage::decode(message) {
+                Ok(msg) => {
+                    self.messages_tx
+                        .unbounded_send((Message::Time(msg), message_id.unwrap()))
+                        .unwrap();
+                }
+                Err(_) => {}
             }
-            Err(_) => {}
+        } else if interface == system_time_ffi::INTERFACE {
+            match system_time_ffi::TimeMessage::decode(message) {
+                Ok(msg) => {
+                    self.messages_tx
+                        .unbounded_send((Message::SystemTime(msg), message_id.unwrap()))
+                        .unwrap();
+                }
+                Err(_) => {}
+            }
+        } else {
+            unreachable!()
         }
     }
 
