@@ -131,6 +131,8 @@ where
                     },
                 );
 
+                log::debug!("Created TCP socket ({}) assigned to interface", addr);
+
                 return TcpSocket {
                     id: socket_id,
                     inner: TcpSocketInner::Assigned {
@@ -141,9 +143,17 @@ where
             }
         }
 
+        log::debug!(
+            "Created TCP socket ({}) pending waiting for interface",
+            addr
+        );
+
         self.sockets.insert(
             socket_id,
-            SocketState::Pending { listen, addr: addr.clone() },
+            SocketState::Pending {
+                listen,
+                addr: addr.clone(),
+            },
         );
 
         TcpSocket {
@@ -155,13 +165,14 @@ where
     ///
     pub fn tcp_socket_by_id(&mut self, id: &SocketId<TIfId>) -> Option<TcpSocket<TIfId>> {
         match self.sockets.get_mut(&id.id)? {
-            SocketState::Pending { listen, addr } => {
-                Some(TcpSocket {
-                    id: id.id,
-                    inner: TcpSocketInner::Pending,
-                })
-            },
-            SocketState::Assigned { interface, inner_id } => {
+            SocketState::Pending { listen, addr } => Some(TcpSocket {
+                id: id.id,
+                inner: TcpSocketInner::Pending,
+            }),
+            SocketState::Assigned {
+                interface,
+                inner_id,
+            } => {
                 let int_ref = &mut self.devices.get_mut(&interface)?.inner;
                 let inner = int_ref.tcp_socket_by_id(*inner_id)?;
                 Some(TcpSocket {
@@ -171,13 +182,13 @@ where
                         inner,
                     },
                 })
-            },
+            }
         }
     }
 
     /// Registers an interface with the given ID. Returns an error if an interface with that ID
     /// already exists.
-    pub fn register_interface(
+    pub async fn register_interface(
         &mut self,
         id: TIfId,
         mac_address: [u8; 6],
@@ -188,11 +199,16 @@ where
             Entry::Vacant(e) => e,
         };
 
+        log::debug!("Registering interface with MAC {:?}", mac_address);
+
         let mut interface = interface::NetInterfaceStateBuilder::default()
-            .with_ip_addr("192.168.1.20".parse().unwrap(), 24) // TODO: hack
+            /*.with_ip_addr("192.168.1.20".parse().unwrap(), 24) // TODO: hack
             .with_ip_addr("fe80::9d39:1765:52bd:8389".parse().unwrap(), 64) // TODO: hack
+            .with_default_ipv4_gateway("192.168.1.1".parse().unwrap()) // TODO: hack
+            .with_default_ipv6_gateway("fe80::1".parse().unwrap()) // TODO: hack*/
             .with_mac_address(mac_address)
-            .build();
+            .build()
+            .await;
 
         // Take all the pending sockets and try to assign them to that new interface.
         // TODO: that's O(n)
@@ -202,7 +218,15 @@ where
                 SocketState::Assigned { .. } => continue,
             };
 
+            if listen {
+                continue;
+            } // TODO: hack so that we can debug the one outgoing socket
+
             if let Ok(inner_socket) = interface.build_tcp_socket(listen, addr, *socket_id) {
+                log::debug!(
+                    "Assigned TCP socket ({}) to newly-registered interface",
+                    addr
+                );
                 *socket = SocketState::Assigned {
                     interface: id.clone(),
                     inner_id: inner_socket.id(),

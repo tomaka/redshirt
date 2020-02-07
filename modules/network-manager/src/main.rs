@@ -58,19 +58,19 @@ async fn async_main() {
         let msg = match future::select(next_interface, next_net_event).await {
             future::Either::Left((DecodedInterfaceOrDestroyed::Interface(msg), _)) => msg,
             future::Either::Left((DecodedInterfaceOrDestroyed::ProcessDestroyed(_), _)) => {
-                unimplemented!()
+                continue;
+                // TODO: unimplemented!()
             }
             future::Either::Right((
                 NetworkManagerEvent::EthernetCableOut(id, msg_id, mut buffer),
                 _,
             )) => {
                 if let Some(msg_id) = msg_id.take() {
-                    panic!("message out");  // TODO:
                     let data = mem::replace(&mut *buffer, Vec::new());
                     debug_assert!(!data.is_empty());
                     redshirt_syscalls::emit_answer(msg_id, &data);
                 } else {
-                    panic!("message_out"); // TODO:
+                    panic!("message_out but no message"); // TODO:
                 }
                 continue;
             }
@@ -79,10 +79,10 @@ async fn async_main() {
 
         if msg.interface == tcp_ffi::INTERFACE {
             let msg_data = tcp_ffi::TcpMessage::decode(msg.actual_data).unwrap();
-            redshirt_log_interface::log(
+            /*redshirt_log_interface::log(
                 redshirt_log_interface::Level::Debug,
                 &format!("message: {:?}", msg_data),
-            );
+            );*/
 
             match msg_data {
                 tcp_ffi::TcpMessage::Open(open_msg) => {
@@ -123,18 +123,16 @@ async fn async_main() {
             }
         } else if msg.interface == net_ffi::INTERFACE {
             let msg_data = net_ffi::NetworkMessage::decode(msg.actual_data).unwrap();
-            redshirt_log_interface::log(
+            /*redshirt_log_interface::log(
                 redshirt_log_interface::Level::Debug,
                 &format!("message: {:?}", msg_data),
-            );
+            );*/
 
             match msg_data {
                 net_ffi::NetworkMessage::RegisterInterface { id, mac_address } => {
-                    network.register_interface(
-                        (msg.emitter_pid, id),
-                        mac_address,
-                        None::<MessageId>,
-                    );
+                    network
+                        .register_interface((msg.emitter_pid, id), mac_address, None::<MessageId>)
+                        .await;
                 }
                 net_ffi::NetworkMessage::UnregisterInterface(id) => {
                     network.unregister_interface(&(msg.emitter_pid, id));
