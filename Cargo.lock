@@ -1081,6 +1081,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "redshirt-system-time-interface"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "parity-scale-codec",
+ "pin-project",
+ "redshirt-syscalls",
+]
+
+[[package]]
 name = "redshirt-tcp-hosted"
 version = "0.1.0"
 dependencies = [
@@ -1122,6 +1132,7 @@ dependencies = [
  "lazy_static",
  "redshirt-core",
  "redshirt-interface-interface",
+ "redshirt-system-time-interface",
  "redshirt-time-interface",
 ]
 
