@@ -180,6 +180,7 @@ gdt_ptr:
 // One PDPT. Maps 512GB of memory. Only the first four entries are used.
 .comm pdpt, 0x1000, 0x1000
 // Four PDs for the first four entries in the PDPT. Each PD maps 1GB of memory.
+// TODO: how can we be sure that mapping 4GiB is enough, and that the kernel doesn't go above?
 .comm pds, 4 * 0x1000, 0x1000
 
 // Stack used by the kernel.
