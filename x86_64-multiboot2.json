@@ -21,7 +21,7 @@
     },
     "relocation-model": "static",
     "singlethread": false,
-    "stack-probes": false,
+    "stack-probes": true,
     "target-c-int-width": "32",
     "target-endian": "little",
     "target-pointer-width": "64",

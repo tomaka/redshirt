@@ -13,19 +13,22 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use parity_scale_codec::{Decode, Encode};
-use redshirt_syscalls::InterfaceHash;
+//! Time.
 
-// TODO: this has been randomly generated; instead should be a hash or something
-pub const INTERFACE: InterfaceHash = InterfaceHash::from_raw_hash([
-    0x19, 0x97, 0x70, 0x2f, 0x6f, 0xd9, 0x52, 0xcd, 0xb2, 0xc3, 0x75, 0x1c, 0x11, 0xb4, 0x95, 0x41,
-    0x81, 0xa6, 0x4f, 0x91, 0x67, 0x63, 0xb5, 0xb1, 0x8d, 0x31, 0xdf, 0xb1, 0x47, 0x03, 0xa6, 0xbf,
-]);
+#![deny(intra_doc_link_resolution_failure)]
+#![no_std]
 
-#[derive(Debug, Encode, Decode)]
-pub enum TimeMessage {
-    /// Must respond with a `u128`.
-    GetMonotonic,
-    /// Send response when the monotonic clock reaches this value. Responds with nothing (`()`).
-    WaitMonotonic(u128),
+extern crate alloc;
+
+use core::time::Duration;
+use futures::prelude::*;
+
+pub mod ffi;
+
+/// Returns the number of nanoseconds since the Epoch (January 1st, 1970 at midnight UTC).
+pub fn system_clock() -> impl Future<Output = u128> {
+    unsafe {
+        let msg = ffi::TimeMessage::GetSystem;
+        redshirt_syscalls::emit_message_with_response(&ffi::INTERFACE, msg).unwrap()
+    }
 }
