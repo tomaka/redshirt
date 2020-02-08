@@ -282,7 +282,6 @@ impl Device {
         assert!(next_packet_page <= READ_BUFFER_PAGES.end);
 
         debug_assert!(current_packet_len < 15522); // TODO: is that correct?
-        debug_assert!(reading.next_to_read < READ_BUFFER_PAGES.end);
         let mut out_packet = vec![0; usize::from(current_packet_len)];
         // TODO: is it correct to read the ring buffer like that, in two times?
         let read1_len = cmp::min(out_packet.len(), 256 * usize::from(READ_BUFFER_PAGES.end - reading.next_to_read));
@@ -473,7 +472,7 @@ async unsafe fn dma_read(base_port: u32, data: &mut [u8], page_start: u8, page_o
         return;
     }
 
-    assert!(usize::from(page_start) + ((data.len() - 1) / 256 + 1) < 0x60);
+    assert!(usize::from(page_start) + ((data.len() - 1) / 256 + 1) <= 0x60);
 
     let (data_len_lo, data_len_hi) = if let Ok(len) = u16::try_from(data.len()) {
         let len_bytes = len.to_le_bytes();
@@ -513,7 +512,8 @@ unsafe fn dma_write(base_port: u32, data: &[u8], page_start: u8) {
         return;
     }
 
-    assert!(page_start >= 0x40 && usize::from(page_start) + ((data.len() - 1) / 256 + 1) < 0x60);
+    assert!(page_start >= 0x40);
+    assert!(usize::from(page_start) + ((data.len() - 1) / 256 + 1) <= 0x60);
 
     let (data_len_lo, data_len_hi) = if let Ok(len) = u16::try_from(data.len()) {
         let len_bytes = len.to_le_bytes();
