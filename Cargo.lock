@@ -2073,6 +2073,7 @@ version = "0.1.0"
 dependencies = [
  "case",
  "futures",
+ "libc",
  "parity-scale-codec",
  "redshirt-syscalls",
  "regex",
