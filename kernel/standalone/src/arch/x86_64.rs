@@ -30,6 +30,7 @@ mod boot_link;
 mod executor;
 mod interrupts;
 mod panic;
+mod pit;
 
 /// Called by `boot.S` after basic set up has been performed.
 ///

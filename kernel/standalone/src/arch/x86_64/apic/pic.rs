@@ -29,7 +29,7 @@ use x86_64::structures::port::PortWrite as _;
 ///
 /// Note that this code disables the PIC altogether. Despite the PIC being disabled, it is
 /// still possible to receive spurious interrupts. Hence the remapping.
-pub unsafe fn init_pic() {
+pub unsafe fn init_and_disable_pic() {
     u8::write_to_port(0xa1, 0xff);
     u8::write_to_port(0x21, 0xff);
     u8::write_to_port(0x20, 0x10 | 0x01);

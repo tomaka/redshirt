@@ -63,6 +63,8 @@ pub struct ApicId(u8);
 ///
 pub unsafe fn init() -> LocalApicControl {
     // TODO: check whether CPUID is supported at all?
+
+    // We don't support platforms without an APIC.
     assert!(is_apic_supported());
 
     // Set up the APIC.
@@ -148,8 +150,8 @@ impl LocalApicControl {
 
 /// Address where the APIC registers are mapped.
 ///
-/// While it is possible to remap these registers, this remapping has been made possible because
-/// of legacy systems. We never do it.
+/// While it is possible to remap these registers, this remapping has been made possible by Intel
+/// only because of legacy systems and we never use this feature.
 const APIC_BASE_ADDR: usize = 0xfee00000;
 
 fn send_ipi_inner(target_apic_id: ApicId, delivery: u8, vector: u8) {

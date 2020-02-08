@@ -29,6 +29,7 @@ use x86_64::structures::port::{PortRead as _, PortWrite as _};
 
 pub mod local;
 
+mod ioapic;
 mod pic;
 
 // TODO: init() has to be called; this isn't great
@@ -45,7 +46,7 @@ mod pic;
 /// >           has been encountered so far.
 ///
 pub unsafe fn init() -> Arc<ApicControl> {
-    pic::init_pic();
+    pic::init_and_disable_pic();
 
     // TODO: check whether CPUID is supported at all?
 
