@@ -17,33 +17,34 @@
 //!
 //! # Usage
 //!
-//! - Create a [`KernelConfig`] struct indicating the configuration.
+//! - Create a type that implements the [`PlatformSpecific`] trait.
 //! - From one CPU, create a [`Kernel`] with [`Kernel::init`].
 //! - Share the newly-created [`Kernel`] between CPUs, and call [`Kernel::run`] once for each CPU.
 //!
 
+use crate::arch::PlatformSpecific;
+use alloc::sync::Arc;
+use core::pin::Pin;
 use core::sync::atomic::{AtomicBool, Ordering};
 use redshirt_core::build_wasm_module;
 
 /// Main struct of this crate. Runs everything.
-pub struct Kernel {
+pub struct Kernel<TPlat> {
     /// If true, the kernel has started running from a different thread already.
     running: AtomicBool,
+    /// Platform-specific hooks.
+    platform_specific: Pin<Arc<TPlat>>,
 }
 
-/// Configuration for creating a [`Kernel`].
-#[derive(Debug, Default)]
-#[non_exhaustive]
-pub struct KernelConfig {
-    /// Number of times the [`Kernel::run`] function might be called.
-    pub num_cpus: u32,
-}
-
-impl Kernel {
+impl<TPlat> Kernel<TPlat>
+where
+    TPlat: PlatformSpecific,
+{
     /// Initializes a new `Kernel`.
-    pub fn init(_cfg: KernelConfig) -> Self {
+    pub fn init(platform_specific: TPlat) -> Self {
         Kernel {
             running: AtomicBool::new(false),
+            platform_specific: Arc::pin(platform_specific),
         }
     }
 
@@ -51,11 +52,16 @@ impl Kernel {
     pub fn run(&self) -> ! {
         // We only want a single CPU to run for now.
         if self.running.swap(true, Ordering::SeqCst) {
-            crate::arch::halt();
+            panic!(); // TODO:
         }
 
         let mut system_builder = redshirt_core::system::SystemBuilder::new()
-            .with_native_program(crate::hardware::HardwareHandler::new())
+            .with_native_program(crate::hardware::HardwareHandler::new(
+                self.platform_specific.clone(),
+            ))
+            .with_native_program(crate::time::TimeHandler::new(
+                self.platform_specific.clone(),
+            ))
             .with_native_program(crate::random::native::RandomNativeProgram::new())
             .with_startup_process(build_wasm_module!(
                 "../../../modules/p2p-loader",
@@ -84,7 +90,7 @@ impl Kernel {
         loop {
             // TODO: ideally the entire function would be async, and this would be an `await`,
             // but async functions don't work on no_std yet
-            match crate::executor::block_on(system.run()) {
+            match self.platform_specific.as_ref().block_on(system.run()) {
                 redshirt_core::system::SystemRunOutcome::ProgramFinished { pid, outcome } => {
                     //console.write(&format!("Program finished {:?} => {:?}\n", pid, outcome));
                 }

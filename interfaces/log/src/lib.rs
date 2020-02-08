@@ -25,8 +25,7 @@
 
 extern crate alloc;
 
-use alloc::{format, string::String};
-use core::fmt::{self, Write as _};
+use alloc::format;
 
 pub mod ffi;
 

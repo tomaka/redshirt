@@ -13,19 +13,17 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-//! Override of the `getrandom` crate.
+use parity_scale_codec::{Decode, Encode};
+use redshirt_syscalls::InterfaceHash;
 
-mod error;
-pub use crate::error::Error;
+// TODO: this has been randomly generated; instead should be a hash or something
+pub const INTERFACE: InterfaceHash = InterfaceHash::from_raw_hash([
+    0xc2, 0xf9, 0xf8, 0xc5, 0xd5, 0xcb, 0x84, 0xb5, 0xc5, 0xfe, 0x34, 0x1d, 0x21, 0xb2, 0xc3, 0x6f,
+    0xed, 0xfb, 0x86, 0xd1, 0xdb, 0xd6, 0x76, 0x41, 0x07, 0x02, 0x49, 0xeb, 0xfe, 0x1b, 0xa7, 0xc4,
+]);
 
-pub fn getrandom(dest: &mut [u8]) -> Result<(), error::Error> {
-    if dest.is_empty() {
-        return Ok(());
-    }
-
-    redshirt_syscalls::block_on(async move {
-        redshirt_random_interface::generate_in(dest).await;
-    });
-
-    Ok(())
+#[derive(Debug, Encode, Decode)]
+pub enum TimeMessage {
+    /// Must respond with a `u128`.
+    GetSystem,
 }

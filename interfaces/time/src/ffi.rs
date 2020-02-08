@@ -26,8 +26,6 @@ pub const INTERFACE: InterfaceHash = InterfaceHash::from_raw_hash([
 pub enum TimeMessage {
     /// Must respond with a `u128`.
     GetMonotonic,
-    /// Must respond with a `u128`.
-    GetSystem,
     /// Send response when the monotonic clock reaches this value. Responds with nothing (`()`).
     WaitMonotonic(u128),
 }
