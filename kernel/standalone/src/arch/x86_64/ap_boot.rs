@@ -307,13 +307,13 @@ pub unsafe fn boot_associated_processor(
 ///
 /// There is surprisingly no type in the Rust standard library that keeps track of an allocation.
 // TODO: use a `Box` or something once it's possible to pass a custom allocator
-struct Allocation<'a, T: alloc::Alloc> {
+struct Allocation<'a, T: alloc::AllocRef> {
     alloc: &'a mut T,
     inner: ptr::NonNull<u8>,
     layout: Layout,
 }
 
-impl<'a, T: alloc::Alloc> Allocation<'a, T> {
+impl<'a, T: alloc::AllocRef> Allocation<'a, T> {
     fn new(alloc: &'a mut T, layout: Layout) -> Self {
         unsafe {
             let buf = alloc.alloc(layout).unwrap();
@@ -334,7 +334,7 @@ impl<'a, T: alloc::Alloc> Allocation<'a, T> {
     }
 }
 
-impl<'a, T: alloc::Alloc> Drop for Allocation<'a, T> {
+impl<'a, T: alloc::AllocRef> Drop for Allocation<'a, T> {
     fn drop(&mut self) {
         unsafe { self.alloc.dealloc(self.inner, self.layout) }
     }
