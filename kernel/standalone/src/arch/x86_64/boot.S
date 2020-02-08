@@ -49,45 +49,70 @@ _start:
     // Check that our CPU supports the features that we need.
     mov $0x80000001, %eax
     cpuid
-    test $(1 << 29), %edx     // test for long mode
+    test $(1 << 29), %edx     // Test for long mode.
     jz .print_err_and_stop
-    test $(1 << 26), %edx     // test for 1G pages
-    //jz .print_err_and_stop        // TODO: QEMU reports that it doesn't support this, but works anyway
 
     // Everything is good. CPU is compatible.
 
-    // Fill the PML4 and PDPT to identity-map the first 512GiB.
+    // Fill the first PML4 entry to point to the PDPT.
     movl $pdpt, %eax
-    or $((1 << 1) | (1 << 0)), %eax
+    or $(1 << 0), %eax      // Present bit. Indicates that the entry is valid.
+    or $(1 << 1), %eax      // Read/write bit. Indicates that the entry is writable.
     movl %eax, pml4
+
+    // Fill the PDPT entries to point to the PDs.
     mov $0, %ecx
 L0: mov %ecx, %eax
-    shl $30, %eax       // FIXME: oooooops, this doesn't fit eax, doh
-    or $((1 << 7) | (1 << 1) | (1 << 0)), %eax
-    movl %eax, pdpt(, %ecx, 8)
+    shl $12, %eax                   // EAX <- ECX * 4096
+    addl $pds, %eax                 // EAX <- address of `pds` + ECX * 4096
+    or $(1 << 0), %eax              // Present bit. Indicates that the entry is valid.
+    or $(1 << 1), %eax              // Read/write bit. Indicates that the entry is writable.
+    movl %eax, pdpt(, %ecx, 8)      // PDPT[ECX * 8] <- EAX
     inc %ecx
-    cmp $512, %ecx
+    cmp $4, %ecx
     jne L0
+
+    // Fill the PD entries to point to 2MiB pages.
+    mov $0, %ecx
+L1: mov %ecx, %eax
+    shr $12, %eax                   // EAX <- ECX >> 12
+    movl %eax, pds+4(, %ecx, 8)     // PDs[4 + ECX * 8] <- EAX
+    mov %ecx, %eax                  // EAX <- ECX
+    shl $21, %eax                   // EAX <- ECX << 21
+    or $(1 << 0), %eax              // Present bit. Indicates that the entry is valid.
+    or $(1 << 1), %eax              // Read/write bit. Indicates that the entry is writable.
+    or $(1 << 7), %eax              // Indicates a 2MiB page.
+    movl %eax, pds(, %ecx, 8)       // PDs[ECX * 8] <- EAX
+    inc %ecx
+    cmp $(4 * 512), %ecx
+    jne L1
 
     // Set up the control registers.
     mov %cr0, %eax
-    and $(~(1 << 2)), %eax
-    or $(1 << 1), %eax
-    and $(~(1 << 31)), %eax
+    and $(~(1 << 2)), %eax          // Clear emulation bit.
+    and $(~(1 << 31)), %eax         // Clear paging bit.
     movl %eax, %cr0
 
     movl $pml4, %eax
     movl %eax, %cr3
 
-    movl $((1 << 10) | (1 << 9) | (1 << 5)), %eax
+    movl $0, %eax
+    or $(1 << 10), %eax             // Set SIMD floating point exceptions bit.
+    or $(1 << 9), %eax              // Set OSFXSR bit, which enables SIMD.
+    or $(1 << 5), %eax              // Set physical address extension (PAE) bit.
     movl %eax, %cr4
 
+    // Set long mode with the EFER bit.
     movl $0xc0000080, %ecx
     rdmsr
     or $(1 << 8), %eax
     wrmsr
 
-    movl $((1 << 31) | (1 << 4) | (1 << 0)), %eax
+    mov %cr0, %eax
+    or $(1 << 0), %eax              // Set protected mode bit.
+    or $(1 << 1), %eax              // Set co-processor bit.
+    or $(1 << 4), %eax              // Set co-processor extension bit.
+    or $(1 << 31), %eax             // Set paging bit.
     movl %eax, %cr0
     // TODO: official manual says that instruction right after long mode switch must be a branch?!?!?!
 
@@ -149,12 +174,13 @@ gdt_ptr:
     .long gdt_table
 
 
-
 .section .bss
 // PML4. The entry point for our paging system.
 .comm pml4, 0x1000, 0x1000
-// A single PDPT. Only the first entry of the PML4 will be set and points to this PDPT.
+// One PDPT. Maps 512GB of memory. Only the first four entries are used.
 .comm pdpt, 0x1000, 0x1000
+// Four PDs for the first four entries in the PDPT. Each PD maps 1GB of memory.
+.comm pds, 4 * 0x1000, 0x1000
 
 // Stack used by the kernel.
 .comm stack, KERNEL_STACK_SIZE, 0x8
