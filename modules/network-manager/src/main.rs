@@ -66,7 +66,7 @@ async fn async_main() {
                 _,
             )) => {
                 if let Some(msg_id) = msg_id.take() {
-                    let data = mem::replace(&mut *buffer, Vec::new());
+                    let data = mem::replace(buffer, Vec::new());
                     debug_assert!(!data.is_empty());
                     redshirt_syscalls::emit_answer(msg_id, &data);
                 } else {

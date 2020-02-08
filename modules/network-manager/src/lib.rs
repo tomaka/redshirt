@@ -68,7 +68,7 @@ pub enum NetworkManagerEvent<'a, TIfId, TIfUser> {
     ///
     /// Contains a mutable reference of the data buffer. Data can be left in the buffer if
     /// desired.
-    EthernetCableOut(TIfId, &'a mut TIfUser, MutexGuard<'a, Vec<u8>>),
+    EthernetCableOut(TIfId, &'a mut TIfUser, &'a mut Vec<u8>),
     /// A TCP/IP socket has connected to its target.
     TcpConnected(TcpSocket<'a, TIfId>),
     /// A TCP/IP socket has been closed by the remote.

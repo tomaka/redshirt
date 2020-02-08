@@ -22,7 +22,7 @@ use std::{
     collections::BTreeMap,
     fmt, mem,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
-    sync::{Arc, Mutex, MutexGuard},
+    sync::MutexGuard,
 };
 
 /// State machine encompassing an Ethernet interface and the sockets operating on it.
@@ -33,20 +33,8 @@ pub struct NetInterfaceState<TSockUd> {
     /// State of the DHCPv4 client, if enabled.
     dhcp_v4_client: Option<Dhcpv4Client>,
 
-    /// Buffer of data to send out to the virtual Ethernet cable.
-    /// Shared with the device within [`NetInterfaceState::ethernet`].
-    /// Note: this is a hack around the fact that the API of `smoltcp` wasn't really designed
-    /// around being able to retreive the data of the interface.
-    device_out_buffer: Arc<Mutex<Vec<u8>>>,
-
     /// If false, we have to report to the user that data is available (if that is the case).
     reported_available_data: bool,
-
-    /// Buffer of data received from the virtual Ethernet cable.
-    /// Shared with the device within [`NetInterfaceState::ethernet`].
-    /// Note: this is a hack around the fact that the API of `smoltcp` wasn't really designed
-    /// around being able to retreive the data of the interface.
-    device_in_buffer: Arc<Mutex<Vec<u8>>>,
 
     /// Collection of all the active sockets that currently operate on this interface.
     sockets: smoltcp::socket::SocketSet<'static, 'static, 'static>,
@@ -79,7 +67,7 @@ pub enum NetInterfaceEvent<'a, TSockUd> {
     ///
     /// Contains a mutable reference of the data buffer. Data can be left in the buffer if
     /// desired.
-    EthernetCableOut(MutexGuard<'a, Vec<u8>>),
+    EthernetCableOut(&'a mut Vec<u8>),
     /// A TCP/IP socket has connected to its target.
     TcpConnected(TcpSocket<'a, TSockUd>),
     /// A TCP/IP socket has been closed by the remote.
@@ -188,7 +176,7 @@ impl<TSockUd> NetInterfaceState<TSockUd> {
     ///
     /// Returns an empty buffer if nothing is ready.
     pub fn read_ethernet_cable_out(&mut self) -> Vec<u8> {
-        let mut device_out_buffer = self.device_out_buffer.try_lock().unwrap();
+        let mut device_out_buffer = &mut self.ethernet.device_mut().device_out_buffer;
         self.reported_available_data = false;
         mem::replace(&mut *device_out_buffer, Vec::new())
     }
@@ -197,8 +185,10 @@ impl<TSockUd> NetInterfaceState<TSockUd> {
     ///
     /// Call [`NetInterfaceState::next_event`] in order to obtain the result.
     pub fn inject_interface_data(&mut self, data: impl AsRef<[u8]>) {
-        let mut device_in_buffer = self.device_in_buffer.try_lock().unwrap();
-        device_in_buffer.extend_from_slice(data.as_ref());
+        self.ethernet
+            .device_mut()
+            .device_in_buffer
+            .extend_from_slice(data.as_ref());
         self.next_event_delay = None;
     }
 
@@ -209,7 +199,7 @@ impl<TSockUd> NetInterfaceState<TSockUd> {
         match self.next_event_static().await {
             NetInterfaceEventStatic::EthernetCableOut => {
                 log::trace!("Cable out");
-                let mut device_out_buffer = self.device_out_buffer.try_lock().unwrap();
+                let mut device_out_buffer = &mut self.ethernet.device_mut().device_out_buffer;
                 // TODO: wrong with reports
                 NetInterfaceEvent::EthernetCableOut(device_out_buffer)
             }
@@ -232,7 +222,7 @@ impl<TSockUd> NetInterfaceState<TSockUd> {
         loop {
             // First, check the out buffer.
             if !self.reported_available_data {
-                let mut device_out_buffer = self.device_out_buffer.try_lock().unwrap();
+                let mut device_out_buffer = &mut self.ethernet.device_mut().device_out_buffer;
                 if !device_out_buffer.is_empty() {
                     self.reported_available_data = true;
                     return NetInterfaceEventStatic::EthernetCableOut;
@@ -392,12 +382,9 @@ impl NetInterfaceStateBuilder {
     /// Builds the [`NetInterfaceState`].
     pub async fn build<TSockUd>(mut self) -> NetInterfaceState<TSockUd> {
         // TODO: with_capacity?
-        let device_out_buffer = Arc::new(Mutex::new(Vec::new()));
-        let device_in_buffer = Arc::new(Mutex::new(Vec::new()));
-
         let device = RawDevice {
-            device_out_buffer: device_out_buffer.clone(),
-            device_in_buffer: device_in_buffer.clone(),
+            device_out_buffer: Vec::new(),
+            device_in_buffer: Vec::new(),
         };
 
         self.ip_addresses.shrink_to_fit();
@@ -446,9 +433,7 @@ impl NetInterfaceStateBuilder {
 
         NetInterfaceState {
             ethernet: interface,
-            device_out_buffer,
             reported_available_data: false,
-            device_in_buffer,
             sockets,
             sockets_state: HashMap::default(),
             next_event_delay: None,
@@ -573,16 +558,10 @@ async fn now() -> smoltcp::time::Instant {
 /// Implementation of `smoltcp::phy::Device`.
 struct RawDevice {
     /// Buffer of data to send out to the virtual Ethernet cable.
-    /// Shared with the [`NetInterfaceState`].
-    /// Note: this is a hack around the fact that the API of `smoltcp` wasn't really designed
-    /// around being able to retreive the data of the interface.
-    device_out_buffer: Arc<Mutex<Vec<u8>>>,
+    device_out_buffer: Vec<u8>,
 
     /// Buffer of data received from the virtual Ethernet cable.
-    /// Shared with the [`NetInterfaceState`].
-    /// Note: this is a hack around the fact that the API of `smoltcp` wasn't really designed
-    /// around being able to retreive the data of the interface.
-    device_in_buffer: Arc<Mutex<Vec<u8>>>,
+    device_in_buffer: Vec<u8>,
 }
 
 impl<'a> smoltcp::phy::Device<'a> for RawDevice {
@@ -590,28 +569,31 @@ impl<'a> smoltcp::phy::Device<'a> for RawDevice {
     type TxToken = RawDeviceTxToken<'a>;
 
     fn receive(&'a mut self) -> Option<(Self::RxToken, Self::TxToken)> {
-        let in_buffer = self.device_in_buffer.try_lock().unwrap();
-        if in_buffer.is_empty() {
+        if self.device_in_buffer.is_empty() {
             return None;
         }
 
-        let out_buffer = self.device_out_buffer.try_lock().unwrap();
-        if !out_buffer.is_empty() {
+        if !self.device_out_buffer.is_empty() {
             return None;
         }
 
-        let rx = RawDeviceRxToken { buffer: in_buffer };
-        let tx = RawDeviceTxToken { buffer: out_buffer };
+        let rx = RawDeviceRxToken {
+            buffer: &mut self.device_in_buffer,
+        };
+        let tx = RawDeviceTxToken {
+            buffer: &mut self.device_out_buffer,
+        };
         Some((rx, tx))
     }
 
     fn transmit(&'a mut self) -> Option<Self::TxToken> {
-        let out_buffer = self.device_out_buffer.try_lock().unwrap();
-        if !out_buffer.is_empty() {
+        if !self.device_out_buffer.is_empty() {
             return None;
         }
 
-        Some(RawDeviceTxToken { buffer: out_buffer })
+        Some(RawDeviceTxToken {
+            buffer: &mut self.device_out_buffer,
+        })
     }
 
     fn capabilities(&self) -> phy::DeviceCapabilities {
@@ -629,7 +611,7 @@ impl<'a> smoltcp::phy::Device<'a> for RawDevice {
 }
 
 struct RawDeviceRxToken<'a> {
-    buffer: MutexGuard<'a, Vec<u8>>,
+    buffer: &'a mut Vec<u8>,
 }
 
 impl<'a> phy::RxToken for RawDeviceRxToken<'a> {
@@ -644,7 +626,7 @@ impl<'a> phy::RxToken for RawDeviceRxToken<'a> {
 }
 
 struct RawDeviceTxToken<'a> {
-    buffer: MutexGuard<'a, Vec<u8>>,
+    buffer: &'a mut Vec<u8>,
 }
 
 impl<'a> phy::TxToken for RawDeviceTxToken<'a> {
