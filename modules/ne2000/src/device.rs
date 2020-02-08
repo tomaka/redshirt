@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use core::{cell::RefCell, convert::TryFrom as _, fmt, ops::Range, time::Duration};
+use core::{cell::RefCell, cmp, convert::TryFrom as _, fmt, ops::Range, time::Duration};
 use futures::{prelude::*, lock::Mutex};
 use redshirt_time_interface::Delay;
 use smallvec::SmallVec;
@@ -282,14 +282,26 @@ impl Device {
         assert!(next_packet_page <= READ_BUFFER_PAGES.end);
 
         debug_assert!(current_packet_len < 15522); // TODO: is that correct?
+        debug_assert!(reading.next_to_read < READ_BUFFER_PAGES.end);
         let mut out_packet = vec![0; usize::from(current_packet_len)];
+        // TODO: is it correct to read the ring buffer like that, in two times?
+        let read1_len = cmp::min(out_packet.len(), 256 * usize::from(READ_BUFFER_PAGES.end - reading.next_to_read));
         dma_read(
             self.base.base_port,
-            &mut out_packet,
+            &mut out_packet[..read1_len],
             reading.next_to_read,
             4,
         )
         .await;
+        if read1_len != out_packet.len() {
+            dma_read(
+                self.base.base_port,
+                &mut out_packet[read1_len..],
+                READ_BUFFER_PAGES.start,
+                0,
+            )
+            .await;
+        }
 
         // Update `reading.next_to_read` with the page of the next packet.
         reading.next_to_read = if next_packet_page == READ_BUFFER_PAGES.end {
