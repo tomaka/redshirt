@@ -26,7 +26,7 @@ fn main() {
 
         log::info!("Now listening on 0.0.0.0:8000");
 
-        let stream = stream::unfold(listener, |mut l| {
+        let stream = stream::unfold(listener, |l| {
             async move {
                 let connec = l.accept().await.0;
                 Some((connec, l))

@@ -14,6 +14,9 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 //! TCP/IP.
+//!
+//! Allows opening asynchronous TCP sockets and listeners, similar to what the `tokio` or
+//! `async-std` libraries do.
 
 #![deny(intra_doc_link_resolution_failure)]
 

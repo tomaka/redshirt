@@ -398,7 +398,7 @@ async fn socket_task(
 
 /// Function executed in the background for each TCP socket.
 async fn open_socket_task(
-    mut socket: TcpStream,
+    socket: TcpStream,
     mut commands_rx: mpsc::UnboundedReceiver<FrontToBackSocket>,
     mut back_to_front: mpsc::Sender<BackToFront>,
 ) {
@@ -409,7 +409,7 @@ async fn open_socket_task(
     let mut write_buffer_offset = 0;
     // Message to answer when we finish writing the write buffer.
     let mut write_message = None;
-    /// Buffer where to read data into.
+    // Buffer where to read data into.
     let mut read_buffer = Vec::new();
     // Message to answer if we read data.
     let mut read_message = None;
