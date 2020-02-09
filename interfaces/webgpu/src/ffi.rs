@@ -13,8 +13,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::restricted::{RestrictedF32, RestrictedF64};
-
 use alloc::{string::String, vec::Vec};
 use parity_scale_codec::{Decode, Encode};
 use redshirt_syscalls::InterfaceHash;
@@ -25,8 +23,11 @@ pub const INTERFACE: InterfaceHash = InterfaceHash::from_raw_hash([
     0xae, 0x28, 0x5a, 0xbb, 0x35, 0x34, 0x95, 0x93, 0x00, 0x0c, 0x19, 0x18, 0xd3, 0x8b, 0x9b, 0x1f,
 ]);
 
-pub use crate::EventInit;
-
-include!(concat!(env!("OUT_DIR"), "/ffi.rs"));
-
-pub type ImageBitmap = u64;
+#[derive(Debug, Encode, Decode)]
+pub enum WebGpuMessage {
+    /// Returns a `u64` identifying the adapter.
+    ///
+    /// Design notes: the identifier is chosen by the interface handler rather than the caller
+    /// side in order to avoid potential collisions when choosing the identifier.
+    RequestAdapter,
+}

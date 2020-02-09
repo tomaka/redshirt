@@ -46,49 +46,16 @@
 //! >           most operating systems.
 //!
 
-#![deny(intra_doc_link_resolution_failure)]
 #![no_std]
 
 extern crate alloc;
 
 use alloc::{string::String, vec::Vec};
-use core::{convert::TryFrom, fmt, sync::atomic};
+use core::{convert::TryFrom, fmt, mem, ptr, slice, sync::atomic};
 use futures::prelude::*;
 
-pub use restricted::{RestrictedF32, RestrictedF64};
+#[allow(bad_style)]
+mod bindings;
+mod local_impl;
 
 pub mod ffi;
-mod bindings;
-mod restricted;
-
-/// Whenever we create a new object (e.g. a `GPUBuffer`), we decide locally of the ID of the
-/// object and pass it to the interface implementer.
-static NEXT_OBJECT_ID: atomic::AtomicU64 = atomic::AtomicU64::new(1);
-
-/// Defined in the "ImageBitmap and animations" standard.
-///
-/// https://html.spec.whatwg.org/multipage/imagebitmap-and-animations.html#imagebitmap
-///
-/// There is no way to construct a [`ImageBitmap`] in this crate.
-#[derive(Debug, parity_scale_codec::Encode, parity_scale_codec::Decode)]
-pub struct ImageBitmap {}
-
-#[derive(Debug, parity_scale_codec::Encode, parity_scale_codec::Decode)]
-pub struct ArrayBuffer {}
-
-pub struct Navigator {}
-
-pub struct WorkerNavigator {}
-
-// https://dom.spec.whatwg.org/#dictdef-eventinit
-#[derive(Debug, parity_scale_codec::Encode, parity_scale_codec::Decode)]
-pub struct EventInit {
-    pub bubbles: bool,
-    pub cancelable: bool,
-    pub composed: bool,
-}
-
-pub const GPU: GPU = GPU { inner: 0 }; // TODO: hack
-pub const GPUCanvasContext: GPUCanvasContext = GPUCanvasContext { inner: 0 }; // TODO: hack
-
-include!(concat!(env!("OUT_DIR"), "/webgpu.rs"));
