@@ -17,10 +17,8 @@
 
 #![deny(intra_doc_link_resolution_failure)]
 
-// TODO: everything here is a draft
-
 use futures::{lock::Mutex, prelude::*, ready};
-use redshirt_syscalls::Encode as _;
+use redshirt_syscalls::{Encode as _, MessageResponseFuture};
 use std::{
     cmp, io, mem,
     net::{IpAddr, Ipv6Addr, SocketAddr},
@@ -38,11 +36,9 @@ pub struct TcpStream {
     /// Buffer of data that has been read from the socket but not transmitted to the user yet.
     read_buffer: Vec<u8>,
     /// If Some, we have sent out a "read" message and are waiting for a response.
-    // TODO: use strongly typed Future here
-    pending_read: Option<Pin<Box<dyn Future<Output = ffi::TcpReadResponse> + Send>>>,
+    pending_read: Option<MessageResponseFuture<ffi::TcpReadResponse>>,
     /// If Some, we have sent out a "write" message and are waiting for a response.
-    // TODO: use strongly typed Future here
-    pending_write: Option<Pin<Box<dyn Future<Output = ffi::TcpWriteResponse> + Send>>>,
+    pending_write: Option<MessageResponseFuture<ffi::TcpWriteResponse>>,
 }
 
 /// Active TCP listening socket.
@@ -120,7 +116,7 @@ impl AsyncRead for TcpStream {
     ) -> Poll<Result<usize, io::Error>> {
         loop {
             if let Some(pending_read) = self.pending_read.as_mut() {
-                self.read_buffer = match ready!(Future::poll(pending_read.as_mut(), cx)).result {
+                self.read_buffer = match ready!(Future::poll(Pin::new(pending_read), cx)).result {
                     Ok(d) => d,
                     Err(_) => return Poll::Ready(Err(io::ErrorKind::Other.into())), // TODO:
                 };
@@ -150,7 +146,7 @@ impl AsyncRead for TcpStream {
                         .unwrap()
                 };
 
-                Some(Box::pin(redshirt_syscalls::message_response(msg_id)))
+                Some(redshirt_syscalls::message_response(msg_id))
             };
         }
     }
@@ -167,7 +163,7 @@ impl AsyncWrite for TcpStream {
     ) -> Poll<Result<usize, io::Error>> {
         // Try to finish the previous write, if any is in progress.
         if let Some(pending_write) = self.pending_write.as_mut() {
-            match ready!(Future::poll(pending_write.as_mut(), cx)).result {
+            match ready!(Future::poll(Pin::new(pending_write), cx)).result {
                 Ok(()) => self.pending_write = None,
                 Err(_) => return Poll::Ready(Err(io::ErrorKind::Other.into())), // TODO:
             }
@@ -191,7 +187,7 @@ impl AsyncWrite for TcpStream {
                     .unwrap()
             };
 
-            Some(Box::pin(redshirt_syscalls::message_response(msg_id)))
+            Some(redshirt_syscalls::message_response(msg_id))
         };
 
         Poll::Ready(Ok(buf.len()))
@@ -217,7 +213,9 @@ impl tokio::io::AsyncRead for TcpStream {
         AsyncRead::poll_read(self, cx, buf)
     }
 
-    // TODO: implement poll_read_vectored
+    unsafe fn prepare_uninitialized_buffer(&self, _: &mut [mem::MaybeUninit<u8>]) -> bool {
+        false
+    }
 }
 
 impl tokio::io::AsyncWrite for TcpStream {
@@ -228,8 +226,6 @@ impl tokio::io::AsyncWrite for TcpStream {
     ) -> Poll<Result<usize, io::Error>> {
         AsyncWrite::poll_write(self, cx, buf)
     }
-
-    // TODO: implement poll_write_vectored
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), io::Error>> {
         AsyncWrite::poll_flush(self, cx)
@@ -255,13 +251,13 @@ impl Drop for TcpStream {
 impl TcpListener {
     /// Create a new [`TcpListener`] listening on the given address and port.
     pub fn bind(socket_addr: &SocketAddr) -> impl Future<Output = Result<TcpListener, ()>> {
-        let socket_addr = socket_addr.clone();
         let next_incoming = Mutex::new(
             (0..10)
-                .map(|_| Box::pin(TcpStream::new(&socket_addr, true)) as Pin<Box<_>>)
+                .map(|_| Box::pin(TcpStream::new(socket_addr, true)) as Pin<Box<_>>)
                 .collect(),
         );
 
+        let socket_addr = socket_addr.clone();
         async move {
             Ok(TcpListener {
                 local_addr: socket_addr,
