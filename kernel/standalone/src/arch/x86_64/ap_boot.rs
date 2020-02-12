@@ -190,7 +190,8 @@ pub unsafe fn boot_associated_processor(
         u64::try_from(ptr as usize + stack_size).unwrap()
     };
 
-    // There exists several markers in the template that we must adjust before it can be executed.
+    // There exists several placeholders within the template code that we must adjust before it
+    // can be executed.
     //
     // The code at symbol `_ap_boot_marker1` starts with the following instruction:
     //
@@ -212,7 +213,7 @@ pub unsafe fn boot_associated_processor(
     // ```
     //
     // The values `0xdeaddead`, `0xff00badd`, `0x1234567890abcdef`, and `0x9999cccc2222ffff` are
-    // dummies that we overwrite in the block below.
+    // placeholders that we overwrite in the block below.
     {
         let ap_boot_marker1_loc: *mut u8 = {
             let offset = (_ap_boot_marker1 as usize)
