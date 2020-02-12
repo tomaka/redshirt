@@ -1,0 +1,18 @@
+[package]
+name = "redshirt-webgpu-hosted"
+version = "0.1.0"
+license = "GPL-3.0-or-later"
+authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
+edition = "2018"
+publish = false
+
+[dependencies]
+futures = "0.3.0"
+parking_lot = "0.10.0"
+raw-window-handle = "0.3.3"
+redshirt-core = { path = "../../core" }
+redshirt-interface-interface = { path = "../../interfaces/interface" }
+redshirt-webgpu-interface = { path = "../../interfaces/webgpu" }
+wgpu-core = { git = "https://github.com/gfx-rs/wgpu", rev = "c293d6dcea0170bfa3835cfbd919f300560e0da6" }
+wgpu-native = { git = "https://github.com/gfx-rs/wgpu", rev = "c293d6dcea0170bfa3835cfbd919f300560e0da6" }
+winit = "0.20.0"

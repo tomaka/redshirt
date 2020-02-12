@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "arm-log",
+    "hello-triangle",
     "hello-world",
     "http-server",
     "ne2000",

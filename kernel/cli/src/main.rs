@@ -15,8 +15,10 @@
 
 #![deny(intra_doc_link_resolution_failure)]
 
-use std::{fs, path::PathBuf, process};
+use parking_lot::Mutex;
+use std::{fs, future::Future, path::PathBuf, process, sync::Arc, task::Poll};
 use structopt::StructOpt;
+use winit::event_loop::EventLoop;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "redshirt-cli", about = "Redshirt modules executor.")]
@@ -31,6 +33,8 @@ fn main() {
 }
 
 async fn async_main() {
+    let event_loop = EventLoop::with_user_event();
+
     let cli_requested_process = {
         let cli_opts = CliOptions::from_args();
         let wasm_file_content = fs::read(cli_opts.wasm_file).expect("failed to read input file");
@@ -38,18 +42,20 @@ async fn async_main() {
             .expect("failed to parse input file")
     };
 
-    let system = redshirt_core::system::SystemBuilder::new()
+    let window = winit::window::Window::new(&event_loop).unwrap();
+
+    let mut system = redshirt_core::system::SystemBuilder::new()
         .with_native_program(redshirt_time_hosted::TimerHandler::new())
         .with_native_program(redshirt_tcp_hosted::TcpHandler::new())
         .with_native_program(redshirt_log_hosted::LogHandler::new())
+        .with_native_program(redshirt_webgpu_hosted::WebGPUHandler::new(window))
         .with_native_program(redshirt_random_hosted::RandomNativeProgram::new())
         .build();
 
     let cli_pid = system.execute(&cli_requested_process);
 
-    loop {
-        let outcome = system.run().await;
-        match outcome {
+    block_on(event_loop, async move {
+        match system.run().await {
             redshirt_core::system::SystemRunOutcome::ProgramFinished { pid, outcome }
                 if pid == cli_pid =>
             {
@@ -63,5 +69,58 @@ async fn async_main() {
             }
             _ => panic!(),
         }
+    })
+}
+
+fn block_on(
+    event_loop: EventLoop<()>,
+    future: impl Future<Output = std::convert::Infallible> + 'static,
+) -> ! {
+    struct Waker {
+        proxy: Mutex<winit::event_loop::EventLoopProxy<()>>,
     }
+
+    impl futures::task::ArcWake for Waker {
+        fn wake_by_ref(arc_self: &Arc<Self>) {
+            let _ = arc_self.proxy.lock().send_event(());
+        }
+    }
+
+    let waker = futures::task::waker(Arc::new(Waker {
+        proxy: Mutex::new(event_loop.create_proxy()),
+    }));
+
+    // We're pinning the future here. Ideally we'd pin the future on the stack, but
+    // `event_loop::run` requires a `'static` lifetime, and we can't prove to the compiler that
+    // the stack content is `'static` without unsafe code.
+    let mut future = Box::pin(future);
+
+    event_loop.run(move |event, _, control_flow| {
+        println!("test in");
+        *control_flow = winit::event_loop::ControlFlow::Wait;
+
+        match event {
+            winit::event::Event::WindowEvent {
+                event: winit::event::WindowEvent::CloseRequested,
+                ..
+            } => {
+                println!("The close button was pressed; stopping");
+                *control_flow = winit::event_loop::ControlFlow::Exit;
+            }
+            winit::event::Event::MainEventsCleared => {
+                match Future::poll(
+                    future.as_mut(),
+                    &mut futures::task::Context::from_waker(&waker),
+                ) {
+                    Poll::Ready(v) => match v {}, // unreachable
+                    Poll::Pending => {}
+                }
+            }
+            // TODO: handle RedrawRequested as well?
+            msg => println!("{:?}", msg), // TODO: remove println
+        }
+
+        // FIXME: we get stuck during the polling
+        println!("test out");
+    })
 }

@@ -7,6 +7,7 @@ members = [
     "kernel/hosted-random",
     "kernel/hosted-tcp",
     "kernel/hosted-time",
+    "kernel/hosted-webgpu",
     "kernel/standalone",
     "interfaces/hardware",
     "interfaces/interface",
@@ -19,6 +20,7 @@ members = [
     "interfaces/threads",
     "interfaces/tcp",
     "interfaces/time",
+    "interfaces/webgpu",
 ]
 
 [profile.dev]
