@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2020-2020  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -60,7 +60,7 @@ pub struct ProcessesCollectionExtrinsicsProc<'a, TPud, TTud> {
 /// Implements the [`ProcessesCollectionExtrinsicsThreadAccess`] trait.
 pub enum ProcessesCollectionExtrinsicsThread<'a, TPud, TTud> {
     EmitMessage(ProcessesCollectionExtrinsicsThreadEmitMessage<'a, TPud, TTud>),
-    WaitMessage(ProcessesCollectionExtrinsicsThreadWaitMessage<'a, TPud, TTud>),
+    WaitNotification(ProcessesCollectionExtrinsicsThreadWaitNotification<'a, TPud, TTud>),
 }
 
 /// Access to a thread within the collection.
@@ -80,7 +80,7 @@ pub struct ProcessesCollectionExtrinsicsThreadEmitMessage<'a, TPud, TTud> {
 /// Access to a thread within the collection.
 ///
 /// Implements the [`ProcessesCollectionExtrinsicsThreadAccess`] trait.
-pub struct ProcessesCollectionExtrinsicsThreadWaitMessage<'a, TPud, TTud> {
+pub struct ProcessesCollectionExtrinsicsThreadWaitNotification<'a, TPud, TTud> {
     parent: &'a ProcessesCollectionExtrinsics<TPud, TTud>,
     tid: ThreadId,
     process_user_data: Rc<TPud>,
@@ -161,8 +161,8 @@ enum LocalThreadState {
     /// processed.
     ReadyToRun,
 
-    /// The thread is sleeping and waiting for a message to come.
-    MessageWait(MessageWait),
+    /// The thread is sleeping and waiting for a notification to come.
+    NotificationWait(NotificationWait),
 
     /// The thread called `emit_message` and wants to emit a message on an interface.
     EmitMessage(EmitMessage),
@@ -170,17 +170,18 @@ enum LocalThreadState {
 
 /// How a process is waiting for messages.
 #[derive(Debug, PartialEq, Eq)]
-struct MessageWait {
-    /// Identifiers of the messages we are waiting upon. Copy of what is in the process's memory.
-    msg_ids: Vec<MessageId>,
-    /// Offset within the memory of the process where the list of messages to wait upon is
+struct NotificationWait {
+    /// Identifiers of the notifications we are waiting upon. Copy of what is in the process's
+    /// memory.
+    notifs_ids: Vec<MessageId>,
+    /// Offset within the memory of the process where the list of notifications to wait upon is
     /// located. This is necessary as we have to zero.
-    msg_ids_ptr: u32,
-    /// Offset within the memory of the process where to write the received message.
+    notifs_ids_ptr: u32,
+    /// Offset within the memory of the process where to write the received notifications.
     out_pointer: u32,
-    /// Size of the memory of the process dedicated to receiving the message.
+    /// Size of the memory of the process dedicated to receiving the notifications.
     out_size: u32,
-    /// Whether to block the thread if no message is available.
+    /// Whether to block the thread if no notification is available.
     block: bool,
 }
 
@@ -247,8 +248,8 @@ pub enum RunOneOutcome<'a, TPud, TTud> {
     /// A thread in a process wants to emit a message.
     ThreadEmitMessage(ProcessesCollectionExtrinsicsThreadEmitMessage<'a, TPud, TTud>),
 
-    /// A thread in a process is waiting for an incoming message.
-    ThreadWaitMessage(ProcessesCollectionExtrinsicsThreadWaitMessage<'a, TPud, TTud>),
+    /// A thread in a process is waiting for an incoming notification.
+    ThreadWaitNotification(ProcessesCollectionExtrinsicsThreadWaitNotification<'a, TPud, TTud>),
 
     /// A thread in a process wants to answer a message.
     ThreadEmitAnswer {
@@ -274,6 +275,18 @@ pub enum RunOneOutcome<'a, TPud, TTud> {
         process: ProcessesCollectionExtrinsicsProc<'a, TPud, TTud>,
 
         /// Message that is erroneous.
+        message_id: MessageId,
+    },
+
+    /// A thread in a process wants to notify that a message is to be cancelled.
+    ThreadCancelMessage {
+        /// Thread that wants to emit a cancellation.
+        thread_id: ThreadId,
+
+        /// Process that the thread belongs to.
+        process: ProcessesCollectionExtrinsicsProc<'a, TPud, TTud>,
+
+        /// Message that must be cancelled.
         message_id: MessageId,
     },
 
@@ -375,19 +388,21 @@ impl<TPud, TTud> ProcessesCollectionExtrinsics<TPud, TTud> {
                 params,
             } => {
                 debug_assert!(thread.user_data().state.is_ready_to_run());
-                let next_msg = match parse_extrinsic_next_message(&mut thread, params) {
+                let next_msg = match parse_extrinsic_next_notification(&mut thread, params) {
                     Ok(m) => m,
                     Err(_) => panic!(), // TODO:
                 };
-                thread.user_data().state = LocalThreadState::MessageWait(next_msg);
+                thread.user_data().state = LocalThreadState::NotificationWait(next_msg);
                 let process_user_data = thread.process_user_data().external_user_data.clone();
                 let thread_user_data = thread.user_data().external_user_data.take().unwrap();
-                RunOneOutcome::ThreadWaitMessage(ProcessesCollectionExtrinsicsThreadWaitMessage {
-                    parent: self,
-                    tid: thread.tid(),
-                    process_user_data,
-                    thread_user_data: Some(thread_user_data),
-                })
+                RunOneOutcome::ThreadWaitNotification(
+                    ProcessesCollectionExtrinsicsThreadWaitNotification {
+                        parent: self,
+                        tid: thread.tid(),
+                        process_user_data,
+                        thread_user_data: Some(thread_user_data),
+                    },
+                )
             }
 
             processes::RunOneOutcome::Interrupted {
@@ -475,10 +490,35 @@ impl<TPud, TTud> ProcessesCollectionExtrinsics<TPud, TTud> {
             }
 
             processes::RunOneOutcome::Interrupted {
-                thread,
+                mut thread,
                 id: Extrinsic::CancelMessage,
                 params,
-            } => unimplemented!(),
+            } => {
+                debug_assert!(thread.user_data().state.is_ready_to_run());
+                debug_assert!(thread.user_data().external_user_data.is_some());
+                let emit_cancel = match parse_extrinsic_cancel_message(&mut thread, params) {
+                    Ok(m) => m,
+                    Err(_) => panic!(), // TODO:
+                };
+                thread.resume(None);
+                let pid = thread.pid();
+                let thread_id = thread.tid();
+                let proc_user_data = inner
+                    .process_by_id(pid)
+                    .unwrap()
+                    .user_data()
+                    .external_user_data
+                    .clone();
+                RunOneOutcome::ThreadCancelMessage {
+                    process: ProcessesCollectionExtrinsicsProc {
+                        parent: self,
+                        pid,
+                        user_data: proc_user_data,
+                    },
+                    thread_id,
+                    message_id: emit_cancel,
+                }
+            }
         }
     }
 
@@ -538,16 +578,18 @@ impl<TPud, TTud> ProcessesCollectionExtrinsics<TPud, TTud> {
                     thread_user_data: Some(thread_user_data),
                 }))
             }
-            LocalThreadState::MessageWait(_) => {
+            LocalThreadState::NotificationWait(_) => {
                 let process_user_data = inner.process_user_data().external_user_data.clone();
                 let thread_user_data = inner.user_data().external_user_data.take().unwrap();
 
-                Ok(From::from(ProcessesCollectionExtrinsicsThreadWaitMessage {
-                    parent: self,
-                    tid: id,
-                    process_user_data,
-                    thread_user_data: Some(thread_user_data),
-                }))
+                Ok(From::from(
+                    ProcessesCollectionExtrinsicsThreadWaitNotification {
+                        parent: self,
+                        tid: id,
+                        process_user_data,
+                        thread_user_data: Some(thread_user_data),
+                    },
+                ))
             }
         }
     }
@@ -558,7 +600,7 @@ impl Default for ProcessesCollectionExtrinsicsBuilder {
         let inner = processes::ProcessesCollectionBuilder::default()
             .with_extrinsic(
                 "redshirt",
-                "next_message",
+                "next_notification",
                 sig!((I32, I32, I32, I32, I32) -> I32),
                 Extrinsic::NextMessage,
             )
@@ -706,11 +748,11 @@ impl<'a, TPud, TTud> From<ProcessesCollectionExtrinsicsThreadEmitMessage<'a, TPu
     }
 }
 
-impl<'a, TPud, TTud> From<ProcessesCollectionExtrinsicsThreadWaitMessage<'a, TPud, TTud>>
+impl<'a, TPud, TTud> From<ProcessesCollectionExtrinsicsThreadWaitNotification<'a, TPud, TTud>>
     for ProcessesCollectionExtrinsicsThread<'a, TPud, TTud>
 {
-    fn from(thread: ProcessesCollectionExtrinsicsThreadWaitMessage<'a, TPud, TTud>) -> Self {
-        ProcessesCollectionExtrinsicsThread::WaitMessage(thread)
+    fn from(thread: ProcessesCollectionExtrinsicsThreadWaitNotification<'a, TPud, TTud>) -> Self {
+        ProcessesCollectionExtrinsicsThread::WaitNotification(thread)
     }
 }
 
@@ -723,28 +765,28 @@ impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsThreadAccess<'a>
     fn tid(&mut self) -> ThreadId {
         match self {
             ProcessesCollectionExtrinsicsThread::EmitMessage(t) => t.tid(),
-            ProcessesCollectionExtrinsicsThread::WaitMessage(t) => t.tid(),
+            ProcessesCollectionExtrinsicsThread::WaitNotification(t) => t.tid(),
         }
     }
 
     fn pid(&self) -> Pid {
         match self {
             ProcessesCollectionExtrinsicsThread::EmitMessage(t) => t.pid(),
-            ProcessesCollectionExtrinsicsThread::WaitMessage(t) => t.pid(),
+            ProcessesCollectionExtrinsicsThread::WaitNotification(t) => t.pid(),
         }
     }
 
     fn process_user_data(&self) -> &TPud {
         match self {
             ProcessesCollectionExtrinsicsThread::EmitMessage(t) => t.process_user_data(),
-            ProcessesCollectionExtrinsicsThread::WaitMessage(t) => t.process_user_data(),
+            ProcessesCollectionExtrinsicsThread::WaitNotification(t) => t.process_user_data(),
         }
     }
 
     fn user_data(&mut self) -> &mut TTud {
         match self {
             ProcessesCollectionExtrinsicsThread::EmitMessage(t) => t.user_data(),
-            ProcessesCollectionExtrinsicsThread::WaitMessage(t) => t.user_data(),
+            ProcessesCollectionExtrinsicsThread::WaitNotification(t) => t.user_data(),
         }
     }
 }
@@ -757,7 +799,7 @@ where
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             ProcessesCollectionExtrinsicsThread::EmitMessage(t) => fmt::Debug::fmt(t, f),
-            ProcessesCollectionExtrinsicsThread::WaitMessage(t) => fmt::Debug::fmt(t, f),
+            ProcessesCollectionExtrinsicsThread::WaitNotification(t) => fmt::Debug::fmt(t, f),
         }
     }
 }
@@ -889,78 +931,83 @@ where
     }
 }
 
-impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsThreadWaitMessage<'a, TPud, TTud> {
+impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsThreadWaitNotification<'a, TPud, TTud> {
     /// Returns the list of message IDs that the thread is waiting on. In order.
+    // TODO: not great naming. we're waiting either for messages or an interface notif or a process cancelled notif
     pub fn message_ids_iter<'b>(&'b mut self) -> impl Iterator<Item = MessageId> + 'b {
         let mut inner = self.parent.inner.borrow_mut();
         let mut inner = inner.thread_by_id(self.tid).unwrap();
 
-        if let LocalThreadState::MessageWait(ref wait) = inner.user_data().state {
+        if let LocalThreadState::NotificationWait(ref wait) = inner.user_data().state {
             // TODO: annoying allocation
-            wait.msg_ids.iter().cloned().collect::<Vec<_>>().into_iter()
+            wait.notifs_ids
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>()
+                .into_iter()
         } else {
             unreachable!()
         }
     }
 
-    /// Returns the maximum size allowed for a message.
-    pub fn allowed_message_size(&mut self) -> usize {
+    /// Returns the maximum size allowed for a notification.
+    pub fn allowed_notification_size(&mut self) -> usize {
         let mut inner = self.parent.inner.borrow_mut();
         let mut inner = inner.thread_by_id(self.tid).unwrap();
 
-        if let LocalThreadState::MessageWait(ref wait) = inner.user_data().state {
+        if let LocalThreadState::NotificationWait(ref wait) = inner.user_data().state {
             usize::try_from(wait.out_size).unwrap()
         } else {
             unreachable!()
         }
     }
 
-    /// Returns true if we should block the thread waiting for a message to come.
+    /// Returns true if we should block the thread waiting for a notification to come.
     pub fn block(&mut self) -> bool {
         let mut inner = self.parent.inner.borrow_mut();
         let mut inner = inner.thread_by_id(self.tid).unwrap();
 
-        if let LocalThreadState::MessageWait(ref wait) = inner.user_data().state {
+        if let LocalThreadState::NotificationWait(ref wait) = inner.user_data().state {
             wait.block
         } else {
             unreachable!()
         }
     }
 
-    /// Resume the thread, sending back a message.
+    /// Resume the thread, sending back a notification.
     ///
     /// `index` must be the index within the list returned by [`message_ids_iter`].
     ///
     /// # Panic
     ///
-    /// - Panics if the message is too large. You should make sure this is not the case before
+    /// - Panics if the notification is too large. You should make sure this is not the case before
     /// calling this function.
     /// - Panics if `index` is too large.
     ///
-    pub fn resume_message(self, index: usize, message: EncodedMessage) {
+    pub fn resume_notification(self, index: usize, notif: EncodedMessage) {
         let mut inner = self.parent.inner.borrow_mut();
         let mut inner = inner.thread_by_id(self.tid).unwrap();
 
         let wait = {
             match mem::replace(&mut inner.user_data().state, LocalThreadState::ReadyToRun) {
-                LocalThreadState::MessageWait(wait) => wait,
+                LocalThreadState::NotificationWait(wait) => wait,
                 _ => unreachable!(),
             }
         };
 
-        assert!(index < wait.msg_ids.len());
-        let message_size_u32 = u32::try_from(message.0.len()).unwrap();
-        assert!(wait.out_size >= message_size_u32);
+        assert!(index < wait.notifs_ids.len());
+        let notif_size_u32 = u32::try_from(notif.0.len()).unwrap();
+        assert!(wait.out_size >= notif_size_u32);
 
-        // Write the message in the process's memory.
-        match inner.write_memory(wait.out_pointer, &message.0) {
+        // Write the notification in the process's memory.
+        match inner.write_memory(wait.out_pointer, &notif.0) {
             Ok(()) => {}
             Err(_) => panic!(), // TODO: can legit happen
         };
 
-        // Zero the corresponding entry in the messages to wait upon.
+        // Zero the corresponding entry in the notifications to wait upon.
         match inner.write_memory(
-            wait.msg_ids_ptr + u32::try_from(index).unwrap() * 8,
+            wait.notifs_ids_ptr + u32::try_from(index).unwrap() * 8,
             &[0; 8],
         ) {
             Ok(()) => {}
@@ -969,41 +1016,41 @@ impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsThreadWaitMessage<'a, TPud, TT
 
         inner.user_data().state = LocalThreadState::ReadyToRun;
         inner.resume(Some(wasmi::RuntimeValue::I32(
-            i32::try_from(message_size_u32).unwrap(),
+            i32::try_from(notif_size_u32).unwrap(),
         )));
     }
 
-    /// Resume the thread, indicating that the message is too large for the provided buffer.
-    pub fn resume_message_too_big(self, message_size: usize) {
+    /// Resume the thread, indicating that the notification is too large for the provided buffer.
+    pub fn resume_notification_too_big(self, notif_size: usize) {
         let mut inner = self.parent.inner.borrow_mut();
         let mut inner = inner.thread_by_id(self.tid).unwrap();
 
         debug_assert!({
             let expected = match &mut inner.user_data().state {
-                LocalThreadState::MessageWait(wait) => wait.out_size,
+                LocalThreadState::NotificationWait(wait) => wait.out_size,
                 _ => unreachable!(),
             };
-            expected < u32::try_from(message_size).unwrap()
+            expected < u32::try_from(notif_size).unwrap()
         });
 
         inner.user_data().state = LocalThreadState::ReadyToRun;
         inner.resume(Some(wasmi::RuntimeValue::I32(
-            i32::try_from(message_size).unwrap(),
+            i32::try_from(notif_size).unwrap(),
         )));
     }
 
-    /// Resume the thread, indicating that no message is available.
+    /// Resume the thread, indicating that no notification is available.
     ///
     /// # Panic
     ///
-    /// - Panics if [`block`](ProcessesCollectionExtrinsicsThreadWaitMessage::block) would
+    /// - Panics if [`block`](ProcessesCollectionExtrinsicsThreadWaitNotification::block) would
     /// return `true`.
     ///
-    pub fn resume_no_message(self) {
+    pub fn resume_no_notification(self) {
         let mut inner = self.parent.inner.borrow_mut();
         let mut inner = inner.thread_by_id(self.tid).unwrap();
 
-        if let LocalThreadState::MessageWait(ref wait) = inner.user_data().state {
+        if let LocalThreadState::NotificationWait(ref wait) = inner.user_data().state {
             assert!(!wait.block);
         } else {
             unreachable!()
@@ -1015,7 +1062,7 @@ impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsThreadWaitMessage<'a, TPud, TT
 }
 
 impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsThreadAccess<'a>
-    for ProcessesCollectionExtrinsicsThreadWaitMessage<'a, TPud, TTud>
+    for ProcessesCollectionExtrinsicsThreadWaitNotification<'a, TPud, TTud>
 {
     type ProcessUserData = TPud;
     type ThreadUserData = TTud;
@@ -1038,7 +1085,7 @@ impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsThreadAccess<'a>
     }
 }
 
-impl<'a, TPud, TTud> Drop for ProcessesCollectionExtrinsicsThreadWaitMessage<'a, TPud, TTud> {
+impl<'a, TPud, TTud> Drop for ProcessesCollectionExtrinsicsThreadWaitNotification<'a, TPud, TTud> {
     fn drop(&mut self) {
         let mut inner = self.parent.inner.borrow_mut();
         let mut inner = inner.thread_by_id(self.tid).unwrap();
@@ -1048,14 +1095,15 @@ impl<'a, TPud, TTud> Drop for ProcessesCollectionExtrinsicsThreadWaitMessage<'a,
     }
 }
 
-impl<'a, TPud, TTud> fmt::Debug for ProcessesCollectionExtrinsicsThreadWaitMessage<'a, TPud, TTud>
+impl<'a, TPud, TTud> fmt::Debug
+    for ProcessesCollectionExtrinsicsThreadWaitNotification<'a, TPud, TTud>
 where
     TPud: fmt::Debug,
     TTud: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // TODO: improve
-        f.debug_tuple("ProcessesCollectionExtrinsicsThreadWaitMessage")
+        f.debug_tuple("ProcessesCollectionExtrinsicsThreadWaitNotification")
             .finish()
     }
 }
@@ -1070,30 +1118,44 @@ impl LocalThreadState {
     }
 }
 
-/// Analyzes a call to `next_message` made by the given thread.
+/// Analyzes a call to `next_notification` made by the given thread.
 ///
 /// The `thread` parameter is only used in order to read memory from the process. This function
 /// has no side effect.
 ///
 /// Returns an error if the call is invalid.
-fn parse_extrinsic_next_message<TPud, TTud>(
+fn parse_extrinsic_next_notification<TPud, TTud>(
     thread: &mut processes::ProcessesCollectionThread<TPud, LocalThreadUserData<TTud>>,
     params: Vec<wasmi::RuntimeValue>,
-) -> Result<MessageWait, ()> {
+) -> Result<NotificationWait, ExtrinsicNextNotificationErr> {
     // We use an assert here rather than a runtime check because the WASM VM (rather than us) is
     // supposed to check the function signature.
     assert_eq!(params.len(), 5);
 
-    let msg_ids_ptr = u32::try_from(params[0].try_into::<i32>().ok_or(())?).map_err(|_| ())?;
-    // TODO: consider not copying the message ids and read memory on demand instead
-    let msg_ids = {
-        let len = u32::try_from(params[1].try_into::<i32>().ok_or(())?).map_err(|_| ())?;
+    let notifs_ids_ptr = u32::try_from(
+        params[0]
+            .try_into::<i32>()
+            .ok_or(ExtrinsicNextNotificationErr::BadParameter)?,
+    )
+    .map_err(|_| ExtrinsicNextNotificationErr::BadParameter)?;
+    // TODO: consider not copying the notification ids and read memory on demand instead
+    let notifs_ids = {
+        let len = u32::try_from(
+            params[1]
+                .try_into::<i32>()
+                .ok_or(ExtrinsicNextNotificationErr::BadParameter)?,
+        )
+        .map_err(|_| ExtrinsicNextNotificationErr::BadParameter)?;
         if len >= 512 {
             // TODO: arbitrary limit in order to not allocate too much memory below; a bit crappy
-            return Err(());
+            return Err(ExtrinsicNextNotificationErr::TooManyNotificationIds { requested: len });
         }
-        let mem = thread.read_memory(msg_ids_ptr, len * 8)?;
-        let mut out = vec![MessageId::from(0u64); usize::try_from(len).map_err(|_| ())?];
+        let mem = thread
+            .read_memory(notifs_ids_ptr, len * 8)
+            .map_err(|_| ExtrinsicNextNotificationErr::BadParameter)?;
+        let len_usize = usize::try_from(len)
+            .map_err(|_| ExtrinsicNextNotificationErr::TooManyNotificationIds { requested: len })?;
+        let mut out = vec![MessageId::from(0u64); len_usize];
         for (o, i) in out.iter_mut().zip(mem.chunks(8)) {
             let val = byteorder::LittleEndian::read_u64(i);
             *o = MessageId::from(val);
@@ -1101,17 +1163,42 @@ fn parse_extrinsic_next_message<TPud, TTud>(
         out
     };
 
-    let out_pointer = u32::try_from(params[2].try_into::<i32>().ok_or(())?).map_err(|_| ())?;
-    let out_size = u32::try_from(params[3].try_into::<i32>().ok_or(())?).map_err(|_| ())?;
-    let block = params[4].try_into::<i32>().ok_or(())? != 0;
+    let out_pointer = u32::try_from(
+        params[2]
+            .try_into::<i32>()
+            .ok_or(ExtrinsicNextNotificationErr::BadParameter)?,
+    )
+    .map_err(|_| ExtrinsicNextNotificationErr::BadParameter)?;
+    let out_size = u32::try_from(
+        params[3]
+            .try_into::<i32>()
+            .ok_or(ExtrinsicNextNotificationErr::BadParameter)?,
+    )
+    .map_err(|_| ExtrinsicNextNotificationErr::BadParameter)?;
+    let block = params[4]
+        .try_into::<i32>()
+        .ok_or(ExtrinsicNextNotificationErr::BadParameter)?
+        != 0;
 
-    Ok(MessageWait {
-        msg_ids,
-        msg_ids_ptr,
+    Ok(NotificationWait {
+        notifs_ids,
+        notifs_ids_ptr,
         out_pointer,
         out_size,
         block,
     })
+}
+
+/// Error that [`parse_extrinsic_next_notification`] can return.
+#[derive(Debug)]
+enum ExtrinsicNextNotificationErr {
+    /// Too many notification ids requested.
+    TooManyNotificationIds {
+        /// Number of notification IDs that have been requested.
+        requested: u32,
+    },
+    /// Bad type or invalid value for a parameter.
+    BadParameter,
 }
 
 /// Analyzes a call to `emit_message` made by the given thread.
@@ -1123,30 +1210,55 @@ fn parse_extrinsic_next_message<TPud, TTud>(
 fn parse_extrinsic_emit_message<TPud, TTud>(
     thread: &mut processes::ProcessesCollectionThread<TPud, LocalThreadUserData<TTud>>,
     params: Vec<wasmi::RuntimeValue>,
-) -> Result<EmitMessage, ()> {
+) -> Result<EmitMessage, ExtrinsicEmitMessageErr> {
     // We use an assert here rather than a runtime check because the WASM VM (rather than us) is
     // supposed to check the function signature.
     assert_eq!(params.len(), 6);
 
     let interface: InterfaceHash = {
-        let addr = u32::try_from(params[0].try_into::<i32>().ok_or(())?).map_err(|_| ())?;
+        let addr = u32::try_from(
+            params[0]
+                .try_into::<i32>()
+                .ok_or(ExtrinsicEmitMessageErr::BadParameter)?,
+        )
+        .map_err(|_| ExtrinsicEmitMessageErr::BadParameter)?;
         InterfaceHash::from(
-            <[u8; 32]>::try_from(&thread.read_memory(addr, 32)?[..]).map_err(|_| ())?,
+            <[u8; 32]>::try_from(
+                &thread
+                    .read_memory(addr, 32)
+                    .map_err(|_| ExtrinsicEmitMessageErr::BadParameter)?[..],
+            )
+            .map_err(|_| ExtrinsicEmitMessageErr::BadParameter)?,
         )
     };
 
     let message = {
-        let addr = u32::try_from(params[1].try_into::<i32>().ok_or(())?).map_err(|_| ())?;
-        let num_bufs = u32::try_from(params[2].try_into::<i32>().ok_or(())?).map_err(|_| ())?;
+        let addr = u32::try_from(
+            params[1]
+                .try_into::<i32>()
+                .ok_or(ExtrinsicEmitMessageErr::BadParameter)?,
+        )
+        .map_err(|_| ExtrinsicEmitMessageErr::BadParameter)?;
+        let num_bufs = u32::try_from(
+            params[2]
+                .try_into::<i32>()
+                .ok_or(ExtrinsicEmitMessageErr::BadParameter)?,
+        )
+        .map_err(|_| ExtrinsicEmitMessageErr::BadParameter)?;
         let mut out_msg = Vec::new();
         for buf_n in 0..num_bufs {
-            let sub_buf_ptr = thread.read_memory(addr + 8 * buf_n, 4).map_err(|_| ())?;
+            let sub_buf_ptr = thread
+                .read_memory(addr + 8 * buf_n, 4)
+                .map_err(|_| ExtrinsicEmitMessageErr::BadParameter)?;
             let sub_buf_ptr = LittleEndian::read_u32(&sub_buf_ptr);
             let sub_buf_sz = thread
                 .read_memory(addr + 8 * buf_n + 4, 4)
-                .map_err(|_| ())?;
+                .map_err(|_| ExtrinsicEmitMessageErr::BadParameter)?;
             let sub_buf_sz = LittleEndian::read_u32(&sub_buf_sz);
-            if out_msg.len() + usize::try_from(sub_buf_sz).map_err(|_| ())? >= 16 * 1024 * 1024 {
+            if out_msg.len()
+                + usize::try_from(sub_buf_sz).map_err(|_| ExtrinsicEmitMessageErr::BadParameter)?
+                >= 16 * 1024 * 1024
+            {
                 // TODO: arbitrary maximum message length
                 panic!("Max message length reached");
                 //return Err(());
@@ -1154,16 +1266,29 @@ fn parse_extrinsic_emit_message<TPud, TTud>(
             out_msg.extend_from_slice(
                 &thread
                     .read_memory(sub_buf_ptr, sub_buf_sz)
-                    .map_err(|_| ())?,
+                    .map_err(|_| ExtrinsicEmitMessageErr::BadParameter)?,
             );
         }
         EncodedMessage(out_msg)
     };
 
-    let needs_answer = params[3].try_into::<i32>().ok_or(())? != 0;
-    let allow_delay = params[4].try_into::<i32>().ok_or(())? != 0;
+    let needs_answer = params[3]
+        .try_into::<i32>()
+        .ok_or(ExtrinsicEmitMessageErr::BadParameter)?
+        != 0;
+    let allow_delay = params[4]
+        .try_into::<i32>()
+        .ok_or(ExtrinsicEmitMessageErr::BadParameter)?
+        != 0;
     let message_id_write = if needs_answer {
-        Some(u32::try_from(params[5].try_into::<i32>().ok_or(())?).map_err(|_| ())?)
+        Some(
+            u32::try_from(
+                params[5]
+                    .try_into::<i32>()
+                    .ok_or(ExtrinsicEmitMessageErr::BadParameter)?,
+            )
+            .map_err(|_| ExtrinsicEmitMessageErr::BadParameter)?,
+        )
     } else {
         None
     };
@@ -1176,6 +1301,13 @@ fn parse_extrinsic_emit_message<TPud, TTud>(
     })
 }
 
+/// Error that [`parse_extrinsic_emit_message`] can return.
+#[derive(Debug)]
+enum ExtrinsicEmitMessageErr {
+    /// Bad type or invalid value for a parameter.
+    BadParameter,
+}
+
 /// Analyzes a call to `emit_answer` made by the given thread.
 ///
 /// The `thread` parameter is only used in order to read memory from the process. This function
@@ -1185,27 +1317,55 @@ fn parse_extrinsic_emit_message<TPud, TTud>(
 fn parse_extrinsic_emit_answer<TPud, TTud>(
     thread: &mut processes::ProcessesCollectionThread<TPud, LocalThreadUserData<TTud>>,
     params: Vec<wasmi::RuntimeValue>,
-) -> Result<EmitAnswer, ()> {
+) -> Result<EmitAnswer, ExtrinsicEmitAnswerErr> {
     // We use an assert here rather than a runtime check because the WASM VM (rather than us) is
     // supposed to check the function signature.
     assert_eq!(params.len(), 3);
 
     let message_id = {
-        let addr = u32::try_from(params[0].try_into::<i32>().ok_or(())?).map_err(|_| ())?;
-        let buf = thread.read_memory(addr, 8)?;
+        let addr = u32::try_from(
+            params[0]
+                .try_into::<i32>()
+                .ok_or(ExtrinsicEmitAnswerErr::BadParameter)?,
+        )
+        .map_err(|_| ExtrinsicEmitAnswerErr::BadParameter)?;
+        let buf = thread
+            .read_memory(addr, 8)
+            .map_err(|_| ExtrinsicEmitAnswerErr::BadParameter)?;
         MessageId::from(byteorder::LittleEndian::read_u64(&buf))
     };
 
     let response = {
-        let addr = u32::try_from(params[1].try_into::<i32>().ok_or(())?).map_err(|_| ())?;
-        let sz = u32::try_from(params[2].try_into::<i32>().ok_or(())?).map_err(|_| ())?;
-        EncodedMessage(thread.read_memory(addr, sz)?)
+        let addr = u32::try_from(
+            params[1]
+                .try_into::<i32>()
+                .ok_or(ExtrinsicEmitAnswerErr::BadParameter)?,
+        )
+        .map_err(|_| ExtrinsicEmitAnswerErr::BadParameter)?;
+        let sz = u32::try_from(
+            params[2]
+                .try_into::<i32>()
+                .ok_or(ExtrinsicEmitAnswerErr::BadParameter)?,
+        )
+        .map_err(|_| ExtrinsicEmitAnswerErr::BadParameter)?;
+        EncodedMessage(
+            thread
+                .read_memory(addr, sz)
+                .map_err(|_| ExtrinsicEmitAnswerErr::BadParameter)?,
+        )
     };
 
     Ok(EmitAnswer {
         message_id,
         response,
     })
+}
+
+/// Error that [`parse_extrinsic_emit_answer`] can return.
+#[derive(Debug)]
+enum ExtrinsicEmitAnswerErr {
+    /// Bad type or invalid value for a parameter.
+    BadParameter,
 }
 
 /// Analyzes a call to `emit_message_error` made by the given thread.
@@ -1218,16 +1378,68 @@ fn parse_extrinsic_emit_answer<TPud, TTud>(
 fn parse_extrinsic_emit_message_error<TPud, TTud>(
     thread: &mut processes::ProcessesCollectionThread<TPud, LocalThreadUserData<TTud>>,
     params: Vec<wasmi::RuntimeValue>,
-) -> Result<MessageId, ()> {
+) -> Result<MessageId, ExtrinsicEmitMessageErrorErr> {
     // We use an assert here rather than a runtime check because the WASM VM (rather than us) is
     // supposed to check the function signature.
     assert_eq!(params.len(), 1);
 
     let msg_id = {
-        let addr = u32::try_from(params[0].try_into::<i32>().ok_or(())?).map_err(|_| ())?;
-        let buf = thread.read_memory(addr, 8)?;
+        let addr = u32::try_from(
+            params[0]
+                .try_into::<i32>()
+                .ok_or(ExtrinsicEmitMessageErrorErr::BadParameter)?,
+        )
+        .map_err(|_| ExtrinsicEmitMessageErrorErr::BadParameter)?;
+        let buf = thread
+            .read_memory(addr, 8)
+            .map_err(|_| ExtrinsicEmitMessageErrorErr::BadParameter)?;
         MessageId::from(byteorder::LittleEndian::read_u64(&buf))
     };
 
     Ok(msg_id)
+}
+
+/// Error that [`parse_extrinsic_emit_message_error`] can return.
+#[derive(Debug)]
+enum ExtrinsicEmitMessageErrorErr {
+    /// Bad type or invalid value for a parameter.
+    BadParameter,
+}
+
+/// Analyzes a call to `cancel_message` made by the given thread.
+/// Returns the message to cancel.
+///
+/// The `thread` parameter is only used in order to read memory from the process. This function
+/// has no side effect.
+///
+/// Returns an error if the call is invalid.
+fn parse_extrinsic_cancel_message<TPud, TTud>(
+    thread: &mut processes::ProcessesCollectionThread<TPud, LocalThreadUserData<TTud>>,
+    params: Vec<wasmi::RuntimeValue>,
+) -> Result<MessageId, ExtrinsicCancelMessageErr> {
+    // We use an assert here rather than a runtime check because the WASM VM (rather than us) is
+    // supposed to check the function signature.
+    assert_eq!(params.len(), 1);
+
+    let msg_id = {
+        let addr = u32::try_from(
+            params[0]
+                .try_into::<i32>()
+                .ok_or(ExtrinsicCancelMessageErr::BadParameter)?,
+        )
+        .map_err(|_| ExtrinsicCancelMessageErr::BadParameter)?;
+        let buf = thread
+            .read_memory(addr, 8)
+            .map_err(|_| ExtrinsicCancelMessageErr::BadParameter)?;
+        MessageId::from(byteorder::LittleEndian::read_u64(&buf))
+    };
+
+    Ok(msg_id)
+}
+
+/// Error that [`parse_extrinsic_cancel_message`] can return.
+#[derive(Debug)]
+enum ExtrinsicCancelMessageErr {
+    /// Bad type or invalid value for a parameter.
+    BadParameter,
 }

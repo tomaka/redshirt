@@ -1,4 +1,4 @@
-// Copyright (C) 2019  Pierre Krieger
+// Copyright (C) 2019-2020  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -69,7 +69,7 @@ impl Transport for TcpConfig {
                     async move { Ok(ListenerEvent::NewAddress(local_addr)) }
                 });
 
-                let then = stream::unfold(listener, move |mut s| {
+                let then = stream::unfold(listener, move |s| {
                     let local_addr = local_addr.clone();
                     async move {
                         let (socket, remote_addr) = s.accept().await;

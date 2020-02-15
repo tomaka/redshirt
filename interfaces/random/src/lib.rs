@@ -1,4 +1,4 @@
-// Copyright (C) 2019  Pierre Krieger
+// Copyright (C) 2019-2020  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -20,7 +20,7 @@
 
 extern crate alloc;
 
-use core::convert::TryFrom;
+use core::convert::TryFrom as _;
 
 pub mod ffi;
 

@@ -1,4 +1,4 @@
-// Copyright (C) 2019  Pierre Krieger
+// Copyright (C) 2019-2020  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -41,13 +41,6 @@ impl Module {
         Ok(Module { inner, hash })
     }
 
-    /// Turns some WASM text source into a `Module`.
-    #[cfg(test)] // TODO: is `#[cfg(test)]` a good idea?
-    pub fn from_wat(source: impl AsRef<[u8]>) -> Result<Self, wat::Error> {
-        let wasm = wat::parse_bytes(source.as_ref())?;
-        Ok(Self::from_bytes(wasm).unwrap())
-    }
-
     /// Returns a reference to the internal module.
     pub(crate) fn as_ref(&self) -> &wasmi::Module {
         &self.inner
@@ -64,6 +57,12 @@ impl Module {
 impl From<[u8; 32]> for ModuleHash {
     fn from(hash: [u8; 32]) -> ModuleHash {
         ModuleHash(hash)
+    }
+}
+
+impl From<ModuleHash> for [u8; 32] {
+    fn from(hash: ModuleHash) -> [u8; 32] {
+        hash.0
     }
 }
 
@@ -98,12 +97,13 @@ mod tests {
 
     #[test]
     fn empty_wat_works() {
-        let _ = Module::from_wat("(module)").unwrap();
+        let _ = from_wat!(local, "(module)");
     }
 
     #[test]
     fn simple_wat_works() {
-        let _ = Module::from_wat(
+        let _ = from_wat!(
+            local,
             r#"
             (module
                 (func $add (param i32 i32) (result i32)
@@ -111,8 +111,7 @@ mod tests {
                     get_local 1
                     i32.add)
                 (export "add" (func $add)))
-            "#,
-        )
-        .unwrap();
+            "#
+        );
     }
 }

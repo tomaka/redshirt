@@ -1,4 +1,4 @@
-// Copyright (C) 2019  Pierre Krieger
+// Copyright (C) 2019-2020  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -25,8 +25,7 @@
 
 extern crate alloc;
 
-use alloc::{format, string::String};
-use core::fmt::{self, Write as _};
+use alloc::format;
 
 pub mod ffi;
 
@@ -61,7 +60,11 @@ pub fn log(level: Level, msg: &str) {
 /// initialized a global logger.
 pub fn try_init() -> Result<(), log::SetLoggerError> {
     static LOGGER: GlobalLogger = GlobalLogger;
-    log::set_logger(&LOGGER)
+    let res = log::set_logger(&LOGGER);
+    if res.is_ok() {
+        log::set_max_level(log::LevelFilter::Trace);
+    }
+    res
 }
 
 /// Initializes the global logger.
@@ -93,13 +96,7 @@ impl log::Log for GlobalLogger {
             log::Level::Trace => Level::Trace,
         };
 
-        let message = format!(
-            "{}:{} -- {}",
-            record.level(),
-            record.target(),
-            record.args()
-        );
-
+        let message = format!("{} -- {}", record.target(), record.args());
         log(level, &message)
     }
 

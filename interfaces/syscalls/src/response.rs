@@ -1,4 +1,4 @@
-// Copyright (C) 2019  Pierre Krieger
+// Copyright (C) 2019-2020  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::{ffi::DecodedMessage, Decode, EncodedMessage, MessageId};
+use crate::{ffi::DecodedNotification, Decode, EncodedMessage, MessageId};
 
 use core::{
     marker::PhantomData,
@@ -26,8 +26,8 @@ use futures::prelude::*;
 ///
 /// Returns the undecoded response.
 pub fn message_response_sync_raw(msg_id: MessageId) -> EncodedMessage {
-    match crate::block_on::next_message(&mut [msg_id.into()], true).unwrap() {
-        DecodedMessage::Response(m) => m.actual_data.unwrap(),
+    match crate::block_on::next_notification(&mut [msg_id.into()], true).unwrap() {
+        DecodedNotification::Response(m) => m.actual_data.unwrap(),
         _ => panic!(),
     }
 }
@@ -61,9 +61,9 @@ where
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         assert!(!self.finished);
-        if let Some(message) = crate::block_on::peek_response(self.msg_id) {
+        if let Some(response) = crate::block_on::peek_response(self.msg_id) {
             self.finished = true;
-            Poll::Ready(Decode::decode(message.actual_data.unwrap()).unwrap())
+            Poll::Ready(Decode::decode(response.actual_data.unwrap()).unwrap())
         } else {
             crate::block_on::register_message_waker(self.msg_id, cx.waker().clone());
             Poll::Pending

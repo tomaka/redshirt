@@ -1,4 +1,4 @@
-// Copyright (C) 2019  Pierre Krieger
+// Copyright (C) 2019-2020  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -35,14 +35,6 @@ pub mod ffi;
 pub fn monotonic_clock() -> impl Future<Output = u128> {
     unsafe {
         let msg = ffi::TimeMessage::GetMonotonic;
-        redshirt_syscalls::emit_message_with_response(&ffi::INTERFACE, msg).unwrap()
-    }
-}
-
-/// Returns the number of nanoseconds since the Epoch (January 1st, 1970 at midnight UTC).
-pub fn system_clock() -> impl Future<Output = u128> {
-    unsafe {
-        let msg = ffi::TimeMessage::GetSystem;
         redshirt_syscalls::emit_message_with_response(&ffi::INTERFACE, msg).unwrap()
     }
 }

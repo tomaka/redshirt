@@ -1,4 +1,4 @@
-// Copyright (C) 2019  Pierre Krieger
+// Copyright (C) 2019-2020  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -18,36 +18,12 @@ use redshirt_syscalls::InterfaceHash;
 
 // TODO: this has been randomly generated; instead should be a hash or something
 pub const INTERFACE: InterfaceHash = InterfaceHash::from_raw_hash([
-    0xf6, 0x64, 0xe3, 0xe1, 0x50, 0x82, 0xa2, 0xc5, 0x13, 0x47, 0xc2, 0x29, 0xe9, 0x88, 0x4e, 0x50,
-    0x97, 0xdf, 0xfd, 0xec, 0x4e, 0x41, 0x46, 0x2d, 0x12, 0xb2, 0xcc, 0xe3, 0x6b, 0x4c, 0xdd, 0xdd,
+    0xc2, 0xf9, 0xf8, 0xc5, 0xd5, 0xcb, 0x84, 0xb5, 0xc5, 0xfe, 0x34, 0x1d, 0x21, 0xb2, 0xc3, 0x6f,
+    0xed, 0xfb, 0x86, 0xd1, 0xdb, 0xd6, 0x76, 0x41, 0x07, 0x02, 0x49, 0xeb, 0xfe, 0x1b, 0xa7, 0xc4,
 ]);
 
-// TODO: fullscreen-ness
-
 #[derive(Debug, Encode, Decode)]
-pub enum WindowMessage {
-    Open(WindowOpen),
-    Close(WindowClose),
-    GetEvents(Vec<WindowEvent>),
-}
-
-#[derive(Debug, Encode, Decode)]
-pub struct WindowOpen {}
-
-#[derive(Debug, Encode, Decode)]
-pub struct WindowOpenResponse {
-    pub result: Result<u32, ()>,
-}
-
-#[derive(Debug, Encode, Decode)]
-pub struct WindowClose {
-    pub window_id: u32,
-}
-
-#[derive(Debug, Encode, Decode)]
-pub enum WindowEvent {
-    // TODO: it's very hipster to not provide the size of the window, but I don't know how viable that is
-    Resized,
-    // TODO: mouse events
-    // TODO:
+pub enum TimeMessage {
+    /// Must respond with a `u128`.
+    GetSystem,
 }

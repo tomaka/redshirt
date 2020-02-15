@@ -7,7 +7,8 @@ edition = "2018"
 publish = false
 
 [dependencies]
-hashbrown = "0.6.3"
+fnv = { git = "https://github.com/dflemstr/rust-fnv", default-features = false }    # TODO: https://github.com/servo/rust-fnv/pull/22
+hashbrown = { version = "0.6.3", default-features = false }
 lazy_static = "1"
 redshirt-hardware-interface = { path = "../../interfaces/hardware" }
 redshirt-interface-interface = { path = "../../interfaces/interface" }

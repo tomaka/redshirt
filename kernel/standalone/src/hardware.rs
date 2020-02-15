@@ -1,4 +1,4 @@
-// Copyright (C) 2019  Pierre Krieger
+// Copyright (C) 2019-2020  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -18,13 +18,14 @@
 //! The `hardware` interface is particular in that it can only be implemented using a "hosted"
 //! implementation.
 
-use crate::arch;
+use crate::arch::PlatformSpecific;
 
-use alloc::{boxed::Box, vec::Vec};
+use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use core::{convert::TryFrom as _, pin::Pin, sync::atomic};
 use crossbeam_queue::SegQueue;
 use futures::prelude::*;
 use hashbrown::HashMap;
+use nohash_hasher::BuildNoHashHasher;
 use redshirt_core::native::{DummyMessageIdWrite, NativeProgramEvent, NativeProgramRef};
 use redshirt_core::{Decode as _, Encode as _, EncodedMessage, InterfaceHash, MessageId, Pid};
 use redshirt_hardware_interface::ffi::{
@@ -33,28 +34,34 @@ use redshirt_hardware_interface::ffi::{
 use spin::Mutex;
 
 /// State machine for `hardware` interface messages handling.
-pub struct HardwareHandler {
+pub struct HardwareHandler<TPlat> {
     /// If true, we have sent the interface registration message.
     registered: atomic::AtomicBool,
+    /// Platform-specific hooks.
+    platform_specific: Pin<Arc<TPlat>>,
     /// For each PID, a list of memory allocations.
     // TODO: optimize
-    allocations: Mutex<HashMap<Pid, Vec<Vec<u8>>>>,
+    allocations: Mutex<HashMap<Pid, Vec<Vec<u8>>, BuildNoHashHasher<u64>>>,
     /// List of messages waiting to be emitted with `next_event`.
     pending_messages: SegQueue<(MessageId, Result<EncodedMessage, ()>)>,
 }
 
-impl HardwareHandler {
+impl<TPlat> HardwareHandler<TPlat> {
     /// Initializes the new state machine for hardware accesses.
-    pub fn new() -> Self {
+    pub fn new(platform_specific: Pin<Arc<TPlat>>) -> Self {
         HardwareHandler {
             registered: atomic::AtomicBool::new(false),
-            allocations: Mutex::new(HashMap::new()),
+            platform_specific,
+            allocations: Mutex::new(HashMap::default()),
             pending_messages: SegQueue::new(),
         }
     }
 }
 
-impl<'a> NativeProgramRef<'a> for &'a HardwareHandler {
+impl<'a, TPlat> NativeProgramRef<'a> for &'a HardwareHandler<TPlat>
+where
+    TPlat: PlatformSpecific,
+{
     type Future =
         Pin<Box<dyn Future<Output = NativeProgramEvent<Self::MessageIdWrite>> + Send + 'a>>;
     type MessageIdWrite = DummyMessageIdWrite;
@@ -94,7 +101,9 @@ impl<'a> NativeProgramRef<'a> for &'a HardwareHandler {
                 let mut response = Vec::with_capacity(operations.len());
                 for operation in operations {
                     unsafe {
-                        if let Some(outcome) = perform_operation(operation) {
+                        if let Some(outcome) =
+                            perform_operation(self.platform_specific.as_ref(), operation)
+                        {
                             response.push(outcome);
                         }
                     }
@@ -158,7 +167,13 @@ impl<'a> NativeProgramRef<'a> for &'a HardwareHandler {
     }
 }
 
-unsafe fn perform_operation(operation: Operation) -> Option<HardwareAccessResponse> {
+unsafe fn perform_operation<TPlat>(
+    platform_specific: Pin<&TPlat>,
+    operation: Operation,
+) -> Option<HardwareAccessResponse>
+where
+    TPlat: PlatformSpecific,
+{
     match operation {
         Operation::PhysicalMemoryMemset { address, len, value } => {
             if let Ok(mut address) = usize::try_from(address) {
@@ -255,25 +270,25 @@ unsafe fn perform_operation(operation: Operation) -> Option<HardwareAccessRespon
             Some(HardwareAccessResponse::PhysicalMemoryReadU32(out))
         }
         Operation::PortWriteU8 { port, data } => {
-            arch::write_port_u8(port, data);
+            let _ = platform_specific.write_port_u8(port, data);
             None
         }
         Operation::PortWriteU16 { port, data } => {
-            arch::write_port_u16(port, data);
+            let _ = platform_specific.write_port_u16(port, data);
             None
         }
         Operation::PortWriteU32 { port, data } => {
-            arch::write_port_u32(port, data);
+            let _ = platform_specific.write_port_u32(port, data);
             None
         }
-        Operation::PortReadU8 { port } => {
-            Some(HardwareAccessResponse::PortReadU8(arch::read_port_u8(port)))
-        }
+        Operation::PortReadU8 { port } => Some(HardwareAccessResponse::PortReadU8(
+            platform_specific.read_port_u8(port).unwrap_or(0),
+        )),
         Operation::PortReadU16 { port } => Some(HardwareAccessResponse::PortReadU16(
-            arch::read_port_u16(port),
+            platform_specific.read_port_u16(port).unwrap_or(0),
         )),
         Operation::PortReadU32 { port } => Some(HardwareAccessResponse::PortReadU32(
-            arch::read_port_u32(port),
+            platform_specific.read_port_u32(port).unwrap_or(0),
         )),
     }
 }

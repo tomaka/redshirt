@@ -1,4 +1,4 @@
-// Copyright (C) 2019  Pierre Krieger
+// Copyright (C) 2019-2020  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -15,7 +15,7 @@
 
 //! x86_64 interrupts handling.
 //!
-//! This module provides handling.of interrupts on x86_64. It sets up the (idt) interrupts table
+//! This module provides handling of interrupts on x86_64. It sets up the interrupts table (IDT)
 //! and allows registers a [`Waker`](core::task::Waker) that is waken up when an interrupt happens.
 //! This is done by calling [`set_interrupt_waker`].
 //!
@@ -24,11 +24,15 @@
 //! the re-registration.
 //!
 //! This is not considered to be a problem, as hardware normally lets you know why an interrupt
-//! has happened. By re-registering a `Waker` before looking for the interrupt reason, there is no
-//! risk of losing information.
+//! has happened and/or requires you to notify the hardware when you processed an interrupt before
+//! the next one can be issued. By re-registering a `Waker` before looking for the interrupt
+//! reason, there is no risk of losing information.
 //!
 
 // TODO: init() has to be called; this isn't great
+// TODO: while it's not a problem that the API is racy, it is a problem if multiple different
+//       pieces of code inadvertently try to share an interrupt vector
+// TODO: handle end-of-interrupt of the APIC
 
 use core::task::Waker;
 use futures::task::AtomicWaker;
