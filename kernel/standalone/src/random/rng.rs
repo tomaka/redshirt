@@ -129,12 +129,19 @@ fn add_hardware_entropy(hasher: &mut blake3::Hasher) {
 #[cfg(not(target_arch = "x86_64"))]
 fn add_hardware_entropy(_: &mut blake3::Hasher) {}
 
+// Note: timer must have nanosecond precision, according to the documentation of `JitterRng`.
 #[cfg(target_arch = "x86_64")]
 fn timer() -> u64 {
     unsafe { core::arch::x86_64::_rdtsc() }
 }
-
 #[cfg(not(target_arch = "x86_64"))]
 fn timer() -> u64 {
-    0xdeadbeefu64
+    unsafe {
+        let lo: u32;
+        let hi: u32;
+        // TODO: what about CNTFRQ? which code configures it? initial value is unknown at reset
+        // Reading the CNTPCT register.
+        asm!("mrrc p15, 0, $0, $1, c14": "=r"(lo), "=r"(hi) ::: "volatile");
+        u64::from(hi) << 32 | u64::from(lo)
+    }
 }
