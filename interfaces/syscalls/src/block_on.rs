@@ -216,6 +216,11 @@ struct BlockOnState {
 /// See the [`next_notification`](crate::ffi::next_notification) FFI function for the semantics of
 /// `to_poll`.
 pub(crate) fn next_notification(to_poll: &mut [u64], block: bool) -> Option<DecodedNotification> {
+    next_notification_impl(to_poll, block)
+}
+
+#[cfg(target_arch = "wasm32")] // TODO: we should have a proper operating system name instead
+fn next_notification_impl(to_poll: &mut [u64], block: bool) -> Option<DecodedNotification> {
     unsafe {
         let mut out = Vec::<u8>::with_capacity(32);
         loop {
@@ -237,4 +242,9 @@ pub(crate) fn next_notification(to_poll: &mut [u64], block: bool) -> Option<Deco
             return Some(ffi::decode_notification(&out).unwrap());
         }
     }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn next_notification_impl(_: &mut [u64], _: bool) -> Option<DecodedNotification> {
+    unimplemented!()
 }
