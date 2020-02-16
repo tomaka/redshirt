@@ -134,7 +134,7 @@ fn add_hardware_entropy(_: &mut blake3::Hasher) {}
 fn timer() -> u64 {
     unsafe { core::arch::x86_64::_rdtsc() }
 }
-#[cfg(not(target_arch = "x86_64"))]
+#[cfg(target_arch = "arm")]
 fn timer() -> u64 {
     unsafe {
         let lo: u32;
@@ -144,4 +144,8 @@ fn timer() -> u64 {
         asm!("mrrc p15, 0, $0, $1, c14": "=r"(lo), "=r"(hi) ::: "volatile");
         u64::from(hi) << 32 | u64::from(lo)
     }
+}
+#[cfg(not(any(target_arch = "x86_64", target_arch = "arm")))]
+fn timer() -> u64 {
+    unimplemented!()
 }
