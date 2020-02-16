@@ -59,15 +59,26 @@ fn main() {
 }
 
 fn run_arm(kernel_path: &Path) {
+    let build_dir = TempDir::new("redshirt-kernel-arm").unwrap();
+    fs::write(
+        build_dir.path().join("device.dtb"),
+        &include_bytes!("bcm2710-rpi-2-b.dtb")[..],
+    )
+    .unwrap();
+
     let status = Command::new("qemu-system-arm")
         .args(&["-M", "raspi2"])
         .args(&["-m", "1024"])
         .args(&["-serial", "stdio"])
         .arg("-kernel")
         .arg(kernel_path)
+        .arg("-dtb")
+        .arg(build_dir.path().join("device.dtb"))
         .status()
         .unwrap();
     assert!(status.success());
+
+    build_dir.close().unwrap();
 }
 
 fn run_x86_64(kernel_path: &Path) {

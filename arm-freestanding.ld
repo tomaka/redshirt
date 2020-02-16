@@ -1,22 +1,6 @@
 ENTRY(_entry_point)
 
 SECTIONS {
-    . = 0x0;
-    .startup : AT(ADDR(.startup)) {
-        /* Jump to the entry point of the kernel */
-        /* Note that the value is an offset, therefore this only works because our address here is 0x0 */
-        LONG(0xea000000 | (((0x8000 >> 2) - 2) & 0x1FFFFFF))
-
-        /* Interrupt descriptor table */
-        LONG(0xeafffffe)
-        LONG(0xeafffffe)
-        LONG(0xeafffffe)
-        LONG(0xeafffffe)
-        LONG(0xeafffffe)
-        LONG(0xeafffffe)
-        LONG(0xeafffffe)
-    }
-
     . = 0x8000;
     .text : AT(ADDR(.text)) {
         _entry_point = .;

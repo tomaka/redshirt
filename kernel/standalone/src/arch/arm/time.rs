@@ -28,7 +28,6 @@
 ///
 // TODO: it is unclear whether the counter is global, or per CPU. The manual mentions,
 //       however, it is impossible to observe time rolling back even across CPUs
-
 use alloc::{sync::Arc, vec::Vec};
 use core::{
     convert::TryFrom as _,
