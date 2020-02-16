@@ -19,6 +19,8 @@ use core::fmt::{self, Write};
 #[panic_handler]
 fn panic(panic_info: &core::panic::PanicInfo) -> ! {
     unsafe {
+        // TODO: somehow freeze all CPUs?
+
         init_uart();
 
         let _ = writeln!(DummyWrite, "Kernel panic!");
