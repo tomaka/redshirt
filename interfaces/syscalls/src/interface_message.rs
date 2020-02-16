@@ -31,16 +31,28 @@ pub fn next_interface_message() -> InterfaceMessageFuture {
 /// Answers the given message.
 // TODO: move to interface interface?
 pub fn emit_answer(message_id: MessageId, msg: impl Encode) {
-    unsafe {
-        let buf = msg.encode();
-        crate::ffi::emit_answer(&u64::from(message_id), buf.0.as_ptr(), buf.0.len() as u32);
+    #[cfg(target_arch = "wasm32")]   // TODO: we should have a proper operating system name instead
+    fn imp(message_id: MessageId, msg: impl Encode) {
+        unsafe {
+            let buf = msg.encode();
+            crate::ffi::emit_answer(&u64::from(message_id), buf.0.as_ptr(), buf.0.len() as u32);
+        }
     }
+    #[cfg(not(target_arch = "wasm32"))]
+    fn imp(message_id: MessageId, msg: impl Encode) { unreachable!() }
+    imp(message_id, msg)
 }
 
 /// Answers the given message by notifying of an error in the message.
 // TODO: move to interface interface?
 pub fn emit_message_error(message_id: MessageId) {
-    unsafe { crate::ffi::emit_message_error(&u64::from(message_id)) }
+    #[cfg(target_arch = "wasm32")]   // TODO: we should have a proper operating system name instead
+    fn imp(message_id: MessageId) {
+        unsafe { crate::ffi::emit_message_error(&u64::from(message_id)) }
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    fn imp(message_id: MessageId) { unreachable!() }
+    imp(message_id)
 }
 
 /// Future that drives [`next_interface_message`] to completion.

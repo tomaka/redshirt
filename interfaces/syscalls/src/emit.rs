@@ -145,6 +145,15 @@ where
         interface: &InterfaceHash,
         needs_answer: bool,
     ) -> Result<Option<MessageId>, EmitErr> {
+        self.emit_raw_impl(interface, needs_answer)
+    }
+
+    #[cfg(target_arch = "wasm32")]   // TODO: we should have a proper operating system name instead
+    unsafe fn emit_raw_impl(
+        self,
+        interface: &InterfaceHash,
+        needs_answer: bool,
+    ) -> Result<Option<MessageId>, EmitErr> {
         let mut message_id_out = MaybeUninit::uninit();
 
         let ret = crate::ffi::emit_message(
@@ -165,6 +174,15 @@ where
         } else {
             Ok(None)
         }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    unsafe fn emit_raw_impl(
+        self,
+        _: &InterfaceHash,
+        _: bool,
+    ) -> Result<Option<MessageId>, EmitErr> {
+        unimplemented!()
     }
 }
 
@@ -233,7 +251,13 @@ pub unsafe fn emit_message_with_response<'a, T: Decode>(
 ///
 /// Has no effect if the message is invalid.
 pub fn cancel_message(message_id: MessageId) {
-    unsafe { crate::ffi::cancel_message(&u64::from(message_id)) }
+    #[cfg(target_arch = "wasm32")]   // TODO: we should have a proper operating system name instead
+    fn imp(message_id: MessageId) {
+        unsafe { crate::ffi::cancel_message(&u64::from(message_id)) }
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    fn imp(message_id: MessageId) { unreachable!() }
+    imp(message_id)
 }
 
 /// Error that can be retuend by functions that emit a message.
