@@ -28,6 +28,12 @@ mod panic;
 /*#[cfg(not(any(target_feature = "armv7-a", target_feature = "armv7-r")))]
 compile_error!("The ARMv7-A or ARMv7-R instruction sets must be enabled");*/
 
+/// Value that we put in the CNTFRQ register on start-up.
+///
+/// Frequency in Hz. The value of the ARM hardware counter is increased by this value every
+/// second.
+const CNTFRQ: u32 = 0x80000000;
+
 /// This is the main entry point of the kernel for ARM architectures.
 #[no_mangle]
 #[naked]
@@ -79,13 +85,10 @@ fn cpu_enter(_r0: u32, _r1: u32, _r2: u32) -> ! {
     // points either to ATAGS or a DTB (device tree) indicating what the hardware supports. This
     // is unfortunately not supported by QEMU as of the writing of this comment.
 
-    // Initialize performance counters.
-    // TODO: do that properly and well isolated
-    // TODO: also, we just assume that counters are supported
+    // Initialize the physical counter.
+    // TODO: is this per-CPU or global? if it's global, only do it once
     unsafe {
-        asm!("mcr p15, 0, $0, c9, c12, 0"::"r"(0b111u32)::"volatile");
-        asm!("mcr p15, 0, $0, c9, c12, 1"::"r"(0x8000000fu32)::"volatile");
-        asm!("mcr p15, 0, $0, c9, c12, 3"::"r"(0x8000000fu32)::"volatile");
+        asm!("mcr p15, 0, $0, c14, c0, 0"::"r"(CNTFRQ)::"volatile");
     }
 
     let kernel = crate::kernel::Kernel::init(PlatformSpecificImpl);
@@ -107,8 +110,31 @@ impl PlatformSpecific for PlatformSpecificImpl {
     }
 
     fn monotonic_clock(self: Pin<&Self>) -> u128 {
-        // TODO: implement correctly
-        0xdeadbeefu128
+        // Implemented by reading the CNTPCT register.
+        //
+        // See chapter "B8.1.1 System counter" of the ARM® Architecture Reference Manual
+        // (ARMv7-A and ARMv7-R edition).
+        //
+        // Note that this works because we initialize the CNTFRQ register at start-up.
+        //
+        // Some characteristics:
+        //
+        // - At least 56 bits wide. The value is zero-extended to 64bits.
+        // - Roll-over must be no less than 40 years, which is acceptable here.
+        // - There is no strict requirement on the accuracy, but it is recommended that the timer
+        //   does not gain or lose more than 10 seconds in a 24 hours period.
+        // - Start-up value is 0.
+        //
+        // TODO: it is unclear whether the counter is global, or per CPU. The manual mentions,
+        //       however, it is impossible to observe time rolling back even across CPUs
+        let counter_value = unsafe {
+            let lo: u32;
+            let hi: u32;
+            asm!("mrrc p15, 0, $0, $1, c14": "=r"(lo), "=r"(hi) ::: "volatile");
+            u64::from(hi) << 32 | u64::from(lo)
+        };
+
+        1_000_000_000 * u128::from(counter_value) / u128::from(CNTFRQ)
     }
 
     fn timer(self: Pin<&Self>, clock_value: u128) -> Self::TimerFuture {
