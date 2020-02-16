@@ -148,7 +148,7 @@ where
         self.emit_raw_impl(interface, needs_answer)
     }
 
-    #[cfg(target_arch = "wasm32")]   // TODO: we should have a proper operating system name instead
+    #[cfg(target_arch = "wasm32")] // TODO: we should have a proper operating system name instead
     unsafe fn emit_raw_impl(
         self,
         interface: &InterfaceHash,
@@ -251,12 +251,14 @@ pub unsafe fn emit_message_with_response<'a, T: Decode>(
 ///
 /// Has no effect if the message is invalid.
 pub fn cancel_message(message_id: MessageId) {
-    #[cfg(target_arch = "wasm32")]   // TODO: we should have a proper operating system name instead
+    #[cfg(target_arch = "wasm32")] // TODO: we should have a proper operating system name instead
     fn imp(message_id: MessageId) {
         unsafe { crate::ffi::cancel_message(&u64::from(message_id)) }
     }
     #[cfg(not(target_arch = "wasm32"))]
-    fn imp(message_id: MessageId) { unreachable!() }
+    fn imp(message_id: MessageId) {
+        unreachable!()
+    }
     imp(message_id)
 }
 

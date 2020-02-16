@@ -17,7 +17,7 @@ use crate::{EncodedMessage, InterfaceHash, MessageId, Pid};
 
 use alloc::vec::Vec;
 
-#[cfg(target_arch = "wasm32")]   // TODO: we should have a proper operating system name instead
+#[cfg(target_arch = "wasm32")] // TODO: we should have a proper operating system name instead
 #[link(wasm_import_module = "redshirt")]
 extern "C" {
     /// Asks for the next notification.

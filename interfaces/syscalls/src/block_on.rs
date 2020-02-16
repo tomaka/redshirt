@@ -219,7 +219,7 @@ pub(crate) fn next_notification(to_poll: &mut [u64], block: bool) -> Option<Deco
     next_notification_impl(to_poll, block)
 }
 
-#[cfg(target_arch = "wasm32")]   // TODO: we should have a proper operating system name instead
+#[cfg(target_arch = "wasm32")] // TODO: we should have a proper operating system name instead
 fn next_notification_impl(to_poll: &mut [u64], block: bool) -> Option<DecodedNotification> {
     unsafe {
         let mut out = Vec::<u8>::with_capacity(32);
