@@ -27,9 +27,9 @@ jobs:
         wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
         echo "deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-9 main" >> /etc/apt/sources.list
         apt-get update
-        apt-get install -yq clang-9
+        apt-get install -y clang-9
     - name: Install CMake
-      run: apt-get install -yq cmake
+      run: apt-get install -y cmake
     - name: Cache cargo registry
       uses: actions/cache@v1
       with:
@@ -74,7 +74,7 @@ jobs:
         wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
         echo "deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-9 main" >> /etc/apt/sources.list
         apt-get update
-        apt-get install -yq clang-9
+        apt-get install -y clang-9
     - name: Download WASM modules
       uses: actions/download-artifact@v1
       with:
@@ -161,13 +161,13 @@ jobs:
     - name: Install lld
       run: |
         apt-get update
-        apt-get install -yq lld
+        apt-get install -y lld
     - name: Install a recent version of clang
       run: |
         wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
         echo "deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-9 main" >> /etc/apt/sources.list
         apt-get update
-        apt-get install -yq clang-9
+        apt-get install -y clang-9
     - name: Cache cargo registry
       uses: actions/cache@v1
       with:
@@ -217,7 +217,7 @@ jobs:
     - name: Install required packages
       run: |
         apt-get update
-        apt-get install -yq libisoburn1 xorriso grub-pc-bin
+        apt-get install -y libisoburn1 xorriso grub-pc-bin
     - name: Prepare file structure
       run: |
         mkdir -p iso/boot/grub
@@ -247,7 +247,8 @@ jobs:
     - name: Install required packages
       run: |
         apt-get update
-        apt-get install -yq libguestfs-tools
+        # Note: we use this environment variable because of the `keyboard-configuration` package to install
+        DEBIAN_FRONTEND=noninteractive apt-get install -y libguestfs-tools
     - name: Rename kernel
       run: mv redshirt-standalone-kernel kernel.img
     - name: Build image
