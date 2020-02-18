@@ -252,7 +252,7 @@ jobs:
     - name: Rename kernel
       run: mv redshirt-standalone-kernel kernel.img
     - name: Build image
-      run: "guestfish -N redshirt-rpi.img=disk:32M -- part-disk /dev/sda mbr : part-set-bootable /dev/sda 1 true : mkfs vfat /dev/sda1 : mount /dev/sda1 / : copy-in kernel.img /"
+      run: "LIBGUESTFS_DEBUG=1 LIBGUESTFS_TRACE=1 guestfish -N redshirt-rpi.img=disk:32M -- part-disk /dev/sda mbr : part-set-bootable /dev/sda 1 true : mkfs vfat /dev/sda1 : mount /dev/sda1 / : copy-in kernel.img /"
     - name: Upload generated kernel
       uses: actions/upload-artifact@master
       with:
