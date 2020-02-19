@@ -1,5 +1,8 @@
 [target.'arm-freestanding']
 runner = "cargo run --manifest-path=kernel/standalone-tester/Cargo.toml -- --target=arm-freestanding "
 
+[target.'riscv-hifive']
+runner = "cargo run --manifest-path=kernel/standalone-tester/Cargo.toml -- --target=hifive-revb "
+
 [target.'x86_64-multiboot2']
 runner = "cargo run --manifest-path=kernel/standalone-tester/Cargo.toml -- --target=x86_64-multiboot2 "

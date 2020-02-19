@@ -51,6 +51,18 @@ fn main() {
         "x86_64-multiboot2" => {
             run_x86_64(&cli_opts.kernel_file);
         }
+        "hifive-revb" => {
+            let status = Command::new("qemu-system-riscv32")
+                .args(&["-machine", "sifive_e"])
+                .args(&["-cpu", "sifive-e31"])
+                .args(&["-m", "2G"])
+                .args(&["-serial", "stdio"])
+                .arg("-kernel")
+                .arg(&cli_opts.kernel_file)
+                .status()
+                .unwrap();
+            assert!(status.success());
+        }
         _ => {
             eprintln!("Unrecognized target: {}", cli_opts.target);
             return;

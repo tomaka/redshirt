@@ -13,21 +13,16 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use std::env;
+use alloc::string::String;
+use core::fmt::{self, Write};
 
-fn main() {
-    // Builds additional platform-specific code to link to the kernel.
-    let target = env::var("TARGET").unwrap();
-    if target.starts_with("x86_64-") {
-        cc::Build::new()
-            .file("src/arch/x86_64/boot.S")
-            .include("src")
-            .compile("libboot.a");
-    } else if target.starts_with("arm") || target.starts_with("aarch64") {
-        // Nothing more to do.
-    } else if target.starts_with("riscv") {
-        // Nothing more to do.
-    } else {
-        panic!("Unsupported target: {:?}", target)
+#[panic_handler]
+fn panic(panic_info: &core::panic::PanicInfo) -> ! {
+    unsafe {
+        // TODO: somehow freeze all CPUs?
+        // Freeze forever.
+        loop {
+            asm!("wfi");
+        }
     }
 }

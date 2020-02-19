@@ -31,6 +31,7 @@
 use core::{future::Future, num::NonZeroU32, pin::Pin};
 
 mod arm;
+mod riscv;
 mod x86_64;
 
 /// Access to all the platform-specific information.
