@@ -231,34 +231,6 @@ jobs:
         name: bootable-cdrom-x86_64
         path: redshirt.iso
 
-  build-raspi-sd-img:
-    name: Build Raspberry PI SD card image
-    needs: build-standalone
-    runs-on: ubuntu-latest
-    container:
-      image: ubuntu:xenial
-    steps:
-    - uses: actions/checkout@v1
-    - name: Download kernel
-      uses: actions/download-artifact@v1
-      with:
-        name: kernel-arm-freestanding
-        path: .
-    - name: Install required packages
-      run: |
-        apt-get update
-        # Note: we use this environment variable because of the `keyboard-configuration` package to install
-        DEBIAN_FRONTEND=noninteractive apt-get install -y libguestfs-tools
-    - name: Rename kernel
-      run: mv redshirt-standalone-kernel kernel.img
-    - name: Build image
-      run: "LIBGUESTFS_DEBUG=1 LIBGUESTFS_TRACE=1 guestfish -N redshirt-rpi.img=disk:32M -- part-disk /dev/sda mbr : part-set-bootable /dev/sda 1 true : mkfs vfat /dev/sda1 : mount /dev/sda1 / : copy-in kernel.img /"
-    - name: Upload generated kernel
-      uses: actions/upload-artifact@master
-      with:
-        name: bootable-rpi-img
-        path: redshirt-rpi.img
-
   check-passive-node:
     name: Check p2p passive node
     runs-on: ubuntu-latest
