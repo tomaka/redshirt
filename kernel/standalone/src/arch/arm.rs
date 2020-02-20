@@ -22,6 +22,7 @@ use core::{iter, num::NonZeroU32, pin::Pin};
 use futures::prelude::*;
 
 mod executor;
+mod interrupts;
 mod misc;
 mod panic;
 mod time;
