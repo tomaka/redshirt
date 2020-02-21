@@ -37,8 +37,8 @@ fn main() {
         .create(true)
         .open(cli_opts.out)
         .expect("Failed to open output file");
-    img_file.set_len(4 * 1024 * 1024 * 1024).unwrap();
+    img_file.set_len(1 * 1024 * 1024 * 1024).unwrap();
     let img_file = fscommon::BufStream::new(img_file);
-    raspi_img_builder::generate(img_file)
+    raspi_img_builder::generate(img_file, std::io::empty(), std::io::empty())
         .expect("Failed to generate file");
 }

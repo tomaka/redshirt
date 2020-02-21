@@ -21,7 +21,17 @@ use std::fs;
 use std::io::{self, Read, Write, Seek, SeekFrom};
 use std::path::Path;
 
-pub fn generate(mut out: impl Read + Write + Seek) -> Result<(), io::Error> {
+/// Writes the content of a bootable SD card to `out`.
+///
+/// `out` must have pre-allocated space. This function does not grow `out`.
+///
+/// `kernel_32bits` and `kernel_64bits` are the binary content of respectively the 32bits and
+/// 64bits kernels.
+pub fn generate(
+    mut out: impl Read + Write + Seek,
+    mut kernel_32bits: impl Read,
+    mut kernel_64bits: impl Read,
+) -> Result<(), io::Error> {
     out.seek(SeekFrom::Start(0))?;
 
     // We start by writing a MBR to the disk.
@@ -53,7 +63,7 @@ pub fn generate(mut out: impl Read + Write + Seek) -> Result<(), io::Error> {
     // Open the file system in order to write out files.
     let fs = fatfs::FileSystem::new(out, fatfs::FsOptions::new())?;
 
-    // Copy the content of `firmware/boot` to the FAT32 file system.
+    // Copy the content of `firmware/boot`, plus the kernels, to the FAT32 file system.
     {
         let root_dir = fs.root_dir();
 
@@ -74,6 +84,29 @@ pub fn generate(mut out: impl Read + Write + Seek) -> Result<(), io::Error> {
 
             let mut file = root_dir.create_file(&path_string)?;
             io::copy(&mut fs::File::open(local_path.join(path))?, &mut file)?;
+        }
+
+        let kernel_32bits = {
+            let mut buf = Vec::new();
+            kernel_32bits.read_to_end(&mut buf)?;
+            buf
+        };
+
+        {
+            let mut file = root_dir.create_file("kernel.img")?;
+            io::copy(&mut io::Cursor::new(&kernel_32bits), &mut file)?;
+        }
+        {
+            let mut file = root_dir.create_file("kernel7.img")?;
+            io::copy(&mut io::Cursor::new(&kernel_32bits), &mut file)?;
+        }
+        {
+            let mut file = root_dir.create_file("kernel7l.img")?;
+            io::copy(&mut io::Cursor::new(&kernel_32bits), &mut file)?;
+        }
+        {
+            let mut file = root_dir.create_file("kernel8.img")?;
+            io::copy(&mut kernel_64bits, &mut file)?;
         }
     }
 
