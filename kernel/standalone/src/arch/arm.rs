@@ -71,6 +71,8 @@ unsafe extern "C" fn _start() -> ! {
 /// registers as they were when we entered the kernel.
 #[no_mangle]
 fn cpu_enter(_r0: u32, _r1: u32, _r2: u32) -> ! {
+    panic!("test");
+
     unsafe {
         // TODO: RAM starts at 0, but we start later to avoid the kernel
         // TODO: make this is a cleaner way
