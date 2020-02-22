@@ -8,7 +8,9 @@ MEMORY {
 
 SECTIONS {
   .text : {
+    . = 0x20400000;
     _entry_point = .;
+
     /* Jump to the address of `_start` */
     ASSERT((_start - 0x20400000) < (1 << 21), "_start too far away")
     LONG(
