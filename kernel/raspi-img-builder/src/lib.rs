@@ -57,7 +57,7 @@ pub fn generate(
     let format_opts = fatfs::FormatVolumeOptions::new()
         .fat_type(fatfs::FatType::Fat32)
         .volume_id(0x48481111)
-        .volume_label(*b"redshirt\0\0\0");
+        .volume_label(*b"boot       ");
     fatfs::format_volume(&mut out, format_opts)?;
 
     // Open the file system in order to write out files.
