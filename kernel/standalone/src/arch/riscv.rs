@@ -56,65 +56,7 @@ unsafe extern "C" fn _start() -> ! {
 /// Main Rust entry point.
 #[no_mangle]
 fn cpu_enter() -> ! {
-    unsafe {
-        let prci_hfrosccfg = (0x10008000 as *mut u32).read_volatile();
-        (0x10008000 as *mut u32).write_volatile(prci_hfrosccfg | (1 << 30));
-
-        let prci_pllcfg = (0x10008008 as *mut u32).read_volatile();
-        (0x10008008 as *mut u32).write_volatile(prci_pllcfg | (1 << 18) | (1 << 17));
-        let prci_pllcfg = (0x10008008 as *mut u32).read_volatile();
-        (0x10008008 as *mut u32).write_volatile(prci_pllcfg | (1 << 16));
-
-        let prci_hfrosccfg = (0x10008000 as *mut u32).read_volatile();
-        (0x10008000 as *mut u32).write_volatile(prci_hfrosccfg & !(1 << 30));
-    }
-
-    unsafe {
-        let gpio_iof_sel = (0x1001203c as *mut u32).read_volatile();
-        (0x1001203c as *mut u32).write_volatile(gpio_iof_sel & !0x00030000);
-
-        let gpio_iof_en = (0x10012038 as *mut u32).read_volatile();
-        (0x10012038 as *mut u32).write_volatile(gpio_iof_en | 0x00030000);
-
-        (0x10013018 as *mut u32).write_volatile(138);
-
-        let uart_reg_tx_ctrl = (0x10013008 as *mut u32).read_volatile();
-        (0x10013008 as *mut u32).write_volatile(uart_reg_tx_ctrl | 1);
-    }
-
-    writeln!(DummyWrite, "hello world");
-
-    /*unsafe {
-        // TODO: wrong
-        crate::mem_alloc::initialize(iter::once(0x3000_0000..0x4000_0000));
-    }*/
-
-    /*let kernel = crate::kernel::Kernel::init(PlatformSpecificImpl {});
-    kernel.run()*/
-
-    loop {
-        unsafe {
-            asm!("wfi");
-        }
-    }
-}
-
-struct DummyWrite;
-impl fmt::Write for DummyWrite {
-    fn write_str(&mut self, message: &str) -> fmt::Result {
-        for byte in message.as_bytes() {
-            write_uart(*byte);
-        }
-        Ok(())
-    }
-}
-
-fn write_uart(byte: u8) {
-    unsafe {
-        // Wait for UART to become ready to transmit.
-        while ((0x10013000 as *mut u32).read_volatile() & 0x80000000) != 0 {}
-        (0x10013000 as *mut u32).write_volatile(u32::from(byte));
-    }
+    panic!("Hello world!");
 }
 
 // TODO: why is this symbol required?
