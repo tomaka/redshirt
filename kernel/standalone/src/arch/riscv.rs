@@ -18,7 +18,12 @@
 use crate::arch::PlatformSpecific;
 
 use alloc::sync::Arc;
-use core::{fmt::{self, Write as _}, iter, num::NonZeroU32, pin::Pin};
+use core::{
+    fmt::{self, Write as _},
+    iter,
+    num::NonZeroU32,
+    pin::Pin,
+};
 use futures::prelude::*;
 
 mod panic;
@@ -70,8 +75,7 @@ fn abort() -> ! {
 }
 
 /// Implementation of [`PlatformSpecific`].
-struct PlatformSpecificImpl {
-}
+struct PlatformSpecificImpl {}
 
 impl PlatformSpecific for PlatformSpecificImpl {
     type TimerFuture = future::Pending<()>;

@@ -45,7 +45,6 @@ fn init() {
         let prci_hfrosccfg = (0x10008000 as *mut u32).read_volatile();
         (0x10008000 as *mut u32).write_volatile(prci_hfrosccfg & !(1 << 30));
 
-
         let gpio_iof_sel = (0x1001203c as *mut u32).read_volatile();
         (0x1001203c as *mut u32).write_volatile(gpio_iof_sel & !0x00030000);
 
