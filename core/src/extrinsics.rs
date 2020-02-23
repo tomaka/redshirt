@@ -25,24 +25,28 @@
 use crate::signature::Signature;
 use crate::{EncodedMessage, InterfaceHash, MessageId, ThreadId};
 
-use alloc::borrow::Cow;
-use core::iter;
+use alloc::{borrow::Cow, vec::Vec};
+use core::{iter, ops::Range};
 use wasmi::RuntimeValue;
 
 /// Trait implemented on types that can handle extrinsics.
 ///
 /// The `Default` trait is used to instantiate structs that implement this trait. One instance is
 /// created for each WASM process.
+// TODO: in this API one can only emit one message at the time; this is fine in terms of logic, but
+// is sub-optimal
 pub trait Extrinsics: Default {
     /// Identifier for an extrinsic function.
     ///
     /// Instead of passing around function names, we pass around identifiers.
+    ///
+    /// This is typically an `enum` or an integer.
     type ExtrinsicId: Send;
 
     /// Created when an extrinsic is called by a WASM module.
     type Context: Send;
 
-    /// Iterator returned by [`supported_extrinsics`].
+    /// Iterator returned by [`Extrinsics::supported_extrinsics`].
     type Iterator: Iterator<Item = SupportedExtrinsic<Self::ExtrinsicId>>;
 
     /// Returns an iterator to the list of extrinsics that this struct supports.
@@ -58,11 +62,14 @@ pub trait Extrinsics: Default {
         &self,
         tid: ThreadId,
         id: &Self::ExtrinsicId,
-        params: &[RuntimeValue],
+        params: impl ExactSizeIterator<Item = RuntimeValue>,
+        proc_access: &mut impl ExtrinsicsMemoryAccess,
     ) -> (Self::Context, ExtrinsicsAction);
 
     /// If [`ExtrinsicAction::EmitMessage`] has been emitted, this function is later called in
     /// order to notify of the response.
+    ///
+    /// The response is `None` if no response is expected.
     ///
     /// Returns what to do next on this context.
     ///
@@ -72,7 +79,30 @@ pub trait Extrinsics: Default {
         &self,
         ctxt: &mut Self::Context,
         response: Option<EncodedMessage>,
+        proc_access: &mut impl ExtrinsicsMemoryAccess,
     ) -> ExtrinsicsAction;
+}
+
+/// Access to a process's memory.
+pub trait ExtrinsicsMemoryAccess {
+    /// Reads the process' memory in the given range and returns a copy of it.
+    ///
+    /// # Panic
+    ///
+    /// A panic can occur if the start of the range is superior to its end. Note, however, that
+    /// zero-sized ranges are allowed.
+    // TODO: zero-cost API
+    fn read_memory(&self, range: Range<u32>) -> Result<Vec<u8>, ExtrinsicsMemoryAccessErr>;
+
+    /// Writes the given data in the process's memory at the given offset.
+    fn write_memory(&mut self, offset: u32, data: &[u8]) -> Result<(), ExtrinsicsMemoryAccessErr>;
+}
+
+/// Error that can happen when reading or writing the memory of a process.
+#[derive(Debug)] // TODO: Display
+pub enum ExtrinsicsMemoryAccessErr {
+    /// The range is outside of the memory allocated to this process.
+    OutOfRange,
 }
 
 /// Description of an extrinsic supported by the implementation of [`Extrinsics`].
@@ -133,12 +163,18 @@ impl Extrinsics for NoExtrinsics {
         &self,
         _: ThreadId,
         id: &Self::ExtrinsicId,
-        _: &[RuntimeValue],
+        _: impl Iterator<Item = RuntimeValue>,
+        _: &mut impl ExtrinsicsMemoryAccess,
     ) -> (Self::Context, ExtrinsicsAction) {
         match *id {} // unreachable
     }
 
-    fn inject_message_response(&self, ctxt: &mut Self::Context, _: MessageId, _: EncodedMessage) -> ExtrinsicsAction {
+    fn inject_message_response(
+        &self,
+        ctxt: &mut Self::Context,
+        _: Option<EncodedMessage>,
+        _: &mut impl ExtrinsicsMemoryAccess,
+    ) -> ExtrinsicsAction {
         match *ctxt {} // unreachable
     }
 }

@@ -13,7 +13,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::extrinsics::{Extrinsics, ExtrinsicsAction};
+use crate::extrinsics::{
+    Extrinsics, ExtrinsicsAction, ExtrinsicsMemoryAccess, ExtrinsicsMemoryAccessErr,
+};
 use crate::module::Module;
 use crate::scheduler::{processes, vm};
 use crate::sig;
@@ -21,7 +23,7 @@ use crate::{InterfaceHash, MessageId};
 
 use alloc::{rc::Rc, vec, vec::Vec};
 use byteorder::{ByteOrder as _, LittleEndian};
-use core::{cell::RefCell, convert::TryFrom as _, fmt, mem};
+use core::{cell::RefCell, convert::TryFrom as _, fmt, mem, ops::Range};
 use redshirt_syscalls::{EncodedMessage, Pid, ThreadId};
 
 /// Wrapper around [`ProcessesCollection`](processes::ProcessesCollection), but that interprets
@@ -81,12 +83,7 @@ pub struct ProcessesCollectionExtrinsicsThreadEmitMessage<'a, TPud, TTud, TExt: 
 /// Access to a thread within the collection.
 ///
 /// Implements the [`ProcessesCollectionExtrinsicsThreadAccess`] trait.
-pub struct ProcessesCollectionExtrinsicsThreadWaitNotification<
-    'a,
-    TPud,
-    TTud,
-    TExt: Extrinsics,
-> {
+pub struct ProcessesCollectionExtrinsicsThreadWaitNotification<'a, TPud, TTud, TExt: Extrinsics> {
     parent: &'a ProcessesCollectionExtrinsics<TPud, TTud, TExt>,
     tid: ThreadId,
     process_user_data: Rc<TPud>,
@@ -545,17 +542,23 @@ where
             } => {
                 debug_assert!(thread.user_data().state.is_ready_to_run());
                 let thread_id = thread.tid();
-                let (context, action) = thread
-                    .process_user_data()
-                    .extrinsics
-                    .new_context(thread_id, ext_id, params);
+                let (context, action) = thread.process_user_data().extrinsics.new_context(
+                    thread_id,
+                    ext_id,
+                    params.iter().cloned(),
+                    &mut MemoryAccessImpl(thread),
+                );
                 match action {
                     ExtrinsicsAction::ProgramCrash => unimplemented!(),
                     ExtrinsicsAction::Resume(value) => thread.resume(value),
-                    ExtrinsicsAction::EmitMessage { interface, message, response_expected } => {
+                    ExtrinsicsAction::EmitMessage {
+                        interface,
+                        message,
+                        response_expected,
+                    } => {
                         thread.user_data().state = LocalThreadState::OtherExtrinsic(context);
                         unimplemented!()
-                    },
+                    }
                 }
             }
         }
@@ -609,7 +612,7 @@ where
                 debug_assert!(inner.user_data().external_user_data.is_some());
                 Err(ThreadByIdErr::RunningOrDead)
             }
-            LocalThreadState::EmitMessage(_) | LocalThreadState::OtherExtrinsic(_) => {
+            LocalThreadState::EmitMessage(_) | LocalThreadState::OtherExtrinsic(_, _) => {
                 let process_user_data = inner.process_user_data().external_user_data.clone();
                 let thread_user_data = inner.user_data().external_user_data.take().unwrap();
 
@@ -639,7 +642,7 @@ where
 
 impl<TExt> Default for ProcessesCollectionExtrinsicsBuilder<TExt>
 where
-    TExt: Extrinsics
+    TExt: Extrinsics,
 {
     fn default() -> Self {
         let mut inner = processes::ProcessesCollectionBuilder::default()
@@ -683,9 +686,7 @@ where
             );
         }
 
-        ProcessesCollectionExtrinsicsBuilder {
-            inner,
-        }
+        ProcessesCollectionExtrinsicsBuilder { inner }
     }
 }
 
@@ -804,14 +805,7 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
     From<ProcessesCollectionExtrinsicsThreadEmitMessage<'a, TPud, TTud, TExt>>
     for ProcessesCollectionExtrinsicsThread<'a, TPud, TTud, TExt>
 {
-    fn from(
-        thread: ProcessesCollectionExtrinsicsThreadEmitMessage<
-            'a,
-            TPud,
-            TTud,
-            TExt,
-        >,
-    ) -> Self {
+    fn from(thread: ProcessesCollectionExtrinsicsThreadEmitMessage<'a, TPud, TTud, TExt>) -> Self {
         ProcessesCollectionExtrinsicsThread::EmitMessage(thread)
     }
 }
@@ -821,12 +815,7 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
     for ProcessesCollectionExtrinsicsThread<'a, TPud, TTud, TExt>
 {
     fn from(
-        thread: ProcessesCollectionExtrinsicsThreadWaitNotification<
-            'a,
-            TPud,
-            TTud,
-            TExt,
-        >,
+        thread: ProcessesCollectionExtrinsicsThreadWaitNotification<'a, TPud, TTud, TExt>,
     ) -> Self {
         ProcessesCollectionExtrinsicsThread::WaitNotification(thread)
     }
@@ -1201,6 +1190,25 @@ impl<TExtCtxt> LocalThreadState<TExtCtxt> {
             LocalThreadState::ReadyToRun => true,
             _ => false,
         }
+    }
+}
+
+/// Implementation of the [`ExtrinsicsMemoryAccess`] trait for a process.
+struct MemoryAccessImpl<'a, 'b, TPud, TTud>(
+    &'a mut processes::ProcessesCollectionThread<'b, TPud, TTud>,
+);
+
+impl<'a, 'b, TPud, TTud> ExtrinsicsMemoryAccess for MemoryAccessImpl<'a, 'b, TPud, TTud> {
+    fn read_memory(&self, range: Range<u32>) -> Result<Vec<u8>, ExtrinsicsMemoryAccessErr> {
+        self.0
+            .read_memory(range.start, range.end.checked_sub(range.start).unwrap())
+            .map_err(|()| ExtrinsicsMemoryAccessErr::OutOfRange)
+    }
+
+    fn write_memory(&mut self, offset: u32, data: &[u8]) -> Result<(), ExtrinsicsMemoryAccessErr> {
+        self.0
+            .write_memory(offset, data)
+            .map_err(|()| ExtrinsicsMemoryAccessErr::OutOfRange)
     }
 }
 
