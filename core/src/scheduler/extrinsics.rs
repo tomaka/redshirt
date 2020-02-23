@@ -23,7 +23,7 @@ use crate::{InterfaceHash, MessageId};
 
 use alloc::{rc::Rc, vec, vec::Vec};
 use byteorder::{ByteOrder as _, LittleEndian};
-use core::{cell::RefCell, convert::TryFrom as _, fmt, mem, ops::Range};
+use core::{cell::RefCell, convert::TryFrom as _, fmt, iter, mem, ops::Range};
 use redshirt_syscalls::{EncodedMessage, Pid, ThreadId};
 
 /// Wrapper around [`ProcessesCollection`](processes::ProcessesCollection), but that interprets
@@ -167,8 +167,21 @@ enum LocalThreadState<TExtCtxt> {
     /// processed.
     ReadyToRun,
 
-    /// Thread is running a non-hardcoded extrinsic.
-    OtherExtrinsic(TExtCtxt, EmitMessage),
+    /// Thread is running a non-hardcoded extrinsic that wants to emit a message.
+    OtherExtrinsicEmit {
+        /// Abstract context used to drive the extrinsic call.
+        context: TExtCtxt,
+        /// Pending message to emit.
+        message: EmitMessage,
+    },
+
+    /// Thread is running a non-hardcoded extrinsic waiting for a response.
+    OtherExtrinsicWait {
+        /// Abstract context used to drive the extrinsic call.
+        context: TExtCtxt,
+        /// Message for which we are awaiting a response.
+        message: MessageId,
+    },
 
     /// The thread is sleeping and waiting for a notification to come.
     NotificationWait(NotificationWait),
@@ -612,7 +625,7 @@ where
                 debug_assert!(inner.user_data().external_user_data.is_some());
                 Err(ThreadByIdErr::RunningOrDead)
             }
-            LocalThreadState::EmitMessage(_) | LocalThreadState::OtherExtrinsic(_, _) => {
+            LocalThreadState::EmitMessage(_) | LocalThreadState::OtherExtrinsicEmit { .. } => {
                 let process_user_data = inner.process_user_data().external_user_data.clone();
                 let thread_user_data = inner.user_data().external_user_data.take().unwrap();
 
@@ -623,7 +636,7 @@ where
                     thread_user_data: Some(thread_user_data),
                 }))
             }
-            LocalThreadState::NotificationWait(_) => {
+            LocalThreadState::NotificationWait(_) | LocalThreadState::OtherExtrinsicWait { .. } => {
                 let process_user_data = inner.process_user_data().external_user_data.clone();
                 let thread_user_data = inner.user_data().external_user_data.take().unwrap();
 
@@ -878,10 +891,12 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
         let mut inner = self.parent.inner.borrow_mut();
         let mut inner = inner.thread_by_id(self.tid).unwrap();
 
-        if let LocalThreadState::EmitMessage(ref emit) = inner.user_data().state {
-            emit.message_id_write.is_some()
-        } else {
-            unreachable!()
+        match inner.user_data().state {
+            LocalThreadState::EmitMessage(ref emit) => emit.message_id_write.is_some(),
+            LocalThreadState::OtherExtrinsicEmit { ref message, .. } => {
+                message.message_id_write.is_some()
+            }
+            _ => unreachable!(),
         }
     }
 
@@ -890,11 +905,11 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
         let mut inner = self.parent.inner.borrow_mut();
         let mut inner = inner.thread_by_id(self.tid).unwrap();
 
-        if let LocalThreadState::EmitMessage(ref emit) = inner.user_data().state {
-            // TODO: cloning :-/
-            emit.interface.clone()
-        } else {
-            unreachable!()
+        // TODO: cloning :-/
+        match inner.user_data().state {
+            LocalThreadState::EmitMessage(ref emit) => emit.interface.clone(),
+            LocalThreadState::OtherExtrinsicEmit { ref message, .. } => message.interface.clone(),
+            _ => unreachable!(),
         }
     }
 
@@ -903,10 +918,10 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
         let mut inner = self.parent.inner.borrow_mut();
         let mut inner = inner.thread_by_id(self.tid).unwrap();
 
-        if let LocalThreadState::EmitMessage(ref emit) = inner.user_data().state {
-            emit.allow_delay
-        } else {
-            unreachable!()
+        match inner.user_data().state {
+            LocalThreadState::EmitMessage(ref emit) => emit.allow_delay,
+            LocalThreadState::OtherExtrinsicEmit { ref message, .. } => message.allow_delay,
+            _ => unreachable!(),
         }
     }
 
@@ -924,7 +939,7 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
         let emit = {
             match mem::replace(&mut inner.user_data().state, LocalThreadState::ReadyToRun) {
                 LocalThreadState::EmitMessage(emit) => emit,
-                _ => unreachable!(),
+                _ => unreachable!(), // FIXME: OtherExtrinsicsEmit
             }
         };
 
@@ -949,6 +964,7 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
     pub fn refuse_emit(self) {
         let mut inner = self.parent.inner.borrow_mut();
         let mut inner = inner.thread_by_id(self.tid).unwrap();
+        // FIXME: OtherExtrinsicsEmit
         inner.resume(Some(wasmi::RuntimeValue::I32(1)));
     }
 }
@@ -1011,15 +1027,21 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
         let mut inner = self.parent.inner.borrow_mut();
         let mut inner = inner.thread_by_id(self.tid).unwrap();
 
-        if let LocalThreadState::NotificationWait(ref wait) = inner.user_data().state {
-            // TODO: annoying allocation
-            wait.notifs_ids
-                .iter()
-                .cloned()
-                .collect::<Vec<_>>()
-                .into_iter()
-        } else {
-            unreachable!()
+        match inner.user_data().state {
+            LocalThreadState::NotificationWait(ref wait) => {
+                // TODO: annoying allocation
+                let iter = wait
+                    .notifs_ids
+                    .iter()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .into_iter();
+                either::Either::Left(iter)
+            }
+            LocalThreadState::OtherExtrinsicWait { message, .. } => {
+                either::Either::Right(iter::once(message))
+            }
+            _ => unreachable!(),
         }
     }
 
@@ -1028,10 +1050,10 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
         let mut inner = self.parent.inner.borrow_mut();
         let mut inner = inner.thread_by_id(self.tid).unwrap();
 
-        if let LocalThreadState::NotificationWait(ref wait) = inner.user_data().state {
-            usize::try_from(wait.out_size).unwrap()
-        } else {
-            unreachable!()
+        match inner.user_data().state {
+            LocalThreadState::NotificationWait(ref wait) => usize::try_from(wait.out_size).unwrap(),
+            LocalThreadState::OtherExtrinsicWait { .. } => usize::max_value(),
+            _ => unreachable!(),
         }
     }
 
@@ -1040,10 +1062,10 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
         let mut inner = self.parent.inner.borrow_mut();
         let mut inner = inner.thread_by_id(self.tid).unwrap();
 
-        if let LocalThreadState::NotificationWait(ref wait) = inner.user_data().state {
-            wait.block
-        } else {
-            unreachable!()
+        match inner.user_data().state {
+            LocalThreadState::NotificationWait(ref wait) => wait.block,
+            LocalThreadState::OtherExtrinsicWait { .. } => true,
+            _ => unreachable!(),
         }
     }
 
@@ -1064,7 +1086,7 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
         let wait = {
             match mem::replace(&mut inner.user_data().state, LocalThreadState::ReadyToRun) {
                 LocalThreadState::NotificationWait(wait) => wait,
-                _ => unreachable!(),
+                _ => unreachable!(), // FIXME: OtherExtrinsicsWait
             }
         };
 
@@ -1101,6 +1123,7 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
         debug_assert!({
             let expected = match &mut inner.user_data().state {
                 LocalThreadState::NotificationWait(wait) => wait.out_size,
+                LocalThreadState::OtherExtrinsicWait { .. } => panic!(),
                 _ => unreachable!(),
             };
             expected < u32::try_from(notif_size).unwrap()
@@ -1123,10 +1146,10 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
         let mut inner = self.parent.inner.borrow_mut();
         let mut inner = inner.thread_by_id(self.tid).unwrap();
 
-        if let LocalThreadState::NotificationWait(ref wait) = inner.user_data().state {
-            assert!(!wait.block);
-        } else {
-            unreachable!()
+        match inner.user_data().state {
+            LocalThreadState::NotificationWait(ref wait) => assert!(!wait.block),
+            LocalThreadState::OtherExtrinsicWait { .. } => panic!(),
+            _ => unreachable!(),
         }
 
         inner.user_data().state = LocalThreadState::ReadyToRun;
