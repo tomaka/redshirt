@@ -13,25 +13,22 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-//! Override of the `getrandom` crate.
+//! Time.
 
-#[cfg(target_arch = "wasm32")]
-mod error;
-#[cfg(target_arch = "wasm32")]
-pub use crate::error::Error;
+#![deny(intra_doc_link_resolution_failure)]
+#![no_std]
 
-#[cfg(target_arch = "wasm32")]
-pub fn getrandom(dest: &mut [u8]) -> Result<(), error::Error> {
-    if dest.is_empty() {
-        return Ok(());
+extern crate alloc;
+
+use core::time::Duration;
+use futures::prelude::*;
+
+pub mod ffi;
+
+/// Returns the number of nanoseconds since the Epoch (January 1st, 1970 at midnight UTC).
+pub fn system_clock() -> impl Future<Output = u128> {
+    unsafe {
+        let msg = ffi::TimeMessage::GetSystem;
+        redshirt_syscalls::emit_message_with_response(&ffi::INTERFACE, msg).unwrap()
     }
-
-    redshirt_syscalls::block_on(async move {
-        redshirt_random_interface::generate_in(dest).await;
-    });
-
-    Ok(())
 }
-
-#[cfg(not(target_arch = "wasm32"))]
-pub use actual_getrandom::*;

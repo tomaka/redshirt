@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -13,25 +13,24 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-//! Override of the `getrandom` crate.
+// TODO: doc https://jsandler18.github.io/
 
-#[cfg(target_arch = "wasm32")]
-mod error;
-#[cfg(target_arch = "wasm32")]
-pub use crate::error::Error;
+use byteorder::{ByteOrder as _, LittleEndian};
+use parity_scale_codec::DecodeAll;
+use std::{convert::TryFrom as _, fmt};
 
-#[cfg(target_arch = "wasm32")]
-pub fn getrandom(dest: &mut [u8]) -> Result<(), error::Error> {
-    if dest.is_empty() {
-        return Ok(());
-    }
+mod mailbox;
+mod property;
 
-    redshirt_syscalls::block_on(async move {
-        redshirt_random_interface::generate_in(dest).await;
-    });
+fn main() {
+    std::panic::set_hook(Box::new(|info| {
+        redshirt_log_interface::log(redshirt_log_interface::Level::Error, &format!("Panic: {}\n", info));
+    }));
 
-    Ok(())
+    redshirt_syscalls::block_on(async_main());
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-pub use actual_getrandom::*;
+async fn async_main()  {
+    property::init().await;
+}
+
