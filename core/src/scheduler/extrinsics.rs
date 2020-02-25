@@ -390,7 +390,7 @@ impl<TPud, TTud> ProcessesCollectionExtrinsics<TPud, TTud> {
                 debug_assert!(thread.user_data().state.is_ready_to_run());
                 let next_msg = match parse_extrinsic_next_notification(&mut thread, params) {
                     Ok(m) => m,
-                    Err(_) => panic!(), // TODO:
+                    Err(err) => panic!("{:?} by {:?}", err, thread.pid()), // TODO:
                 };
                 thread.user_data().state = LocalThreadState::NotificationWait(next_msg);
                 let process_user_data = thread.process_user_data().external_user_data.clone();

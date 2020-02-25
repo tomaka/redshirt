@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::{ffi::DecodedNotification, Decode, EncodedMessage, MessageId};
+use crate::{emit, ffi::DecodedNotification, Decode, EncodedMessage, MessageId};
 
 use core::{
     marker::PhantomData,
@@ -72,3 +72,12 @@ where
 }
 
 impl<T> Unpin for MessageResponseFuture<T> {}
+
+impl<T> Drop for MessageResponseFuture<T> {
+    fn drop(&mut self) {
+        if !self.finished {
+            emit::cancel_message(self.msg_id);
+            crate::block_on::remove_message_waker(self.msg_id);
+        }
+    }
+}

@@ -622,7 +622,7 @@ impl Core {
     // TODO: better API
     pub fn answer_message(&self, message_id: MessageId, response: Result<EncodedMessage, ()>) {
         let ret = self.answer_message_inner(message_id, response);
-        assert!(ret.is_none());
+        //assert!(ret.is_none());
     }
 
     // TODO: better API

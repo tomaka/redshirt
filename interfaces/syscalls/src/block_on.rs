@@ -71,6 +71,20 @@ pub(crate) fn register_message_waker(message_id: MessageId, waker: Waker) {
     state.wakers.push(waker);
 }
 
+pub(crate) fn remove_message_waker(message_id: MessageId) {
+    assert_ne!(message_id, MessageId::from(0));
+    assert_ne!(message_id, MessageId::from(1));
+    let mut state = (&*STATE).lock();
+
+    if let Some(pos) = state
+        .message_ids
+        .iter()
+        .position(|msg| MessageId::from(*msg) == message_id)
+    {
+        state.wakers.remove(pos);
+    }
+}
+
 /// Removes one element from the global buffer of interface messages waiting to be processed.
 pub(crate) fn peek_interface_message() -> Option<DecodedInterfaceOrDestroyed> {
     let mut state = (&*STATE).lock();
