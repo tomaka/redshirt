@@ -24,17 +24,15 @@ members = [
 [profile.dev]
 opt-level = 1
 
-[profile.dev.overrides.hashbrown]
+[profile.dev.package.hashbrown]
 opt-level = 3
-[profile.dev.overrides.rand_jitter]
+[profile.dev.package.rand_jitter]
 opt-level = 3
-[profile.dev.overrides.sha2]
+[profile.dev.package.wasmi]
 opt-level = 3
-[profile.dev.overrides.wasmi]
+[profile.dev.package.wasmi-validation]
 opt-level = 3
-[profile.dev.overrides.wasmi-validation]
-opt-level = 3
-[profile.dev.overrides.wat]
+[profile.dev.package.wat]
 opt-level = 3
 
 [profile.release]
