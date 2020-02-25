@@ -6,6 +6,7 @@ members = [
     "network-manager",
     "ne2000",
     "p2p-loader",
+    "rpi-framebuffer",
     "stub",
     "third-party/time",
     "third-party/wasm-timer",
