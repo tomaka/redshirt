@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::{emit, ffi::DecodedNotification, Decode, EncodedMessage, MessageId};
+use crate::{ffi::DecodedNotification, Decode, EncodedMessage, MessageId};
 
 use core::{
     marker::PhantomData,
@@ -25,6 +25,7 @@ use futures::prelude::*;
 /// Waits until a response to the given message comes back.
 ///
 /// Returns the undecoded response.
+// TODO: two futures for the same message will compete with each other; document that?
 pub fn message_response_sync_raw(msg_id: MessageId) -> EncodedMessage {
     match crate::block_on::next_notification(&mut [msg_id.into()], true).unwrap() {
         DecodedNotification::Response(m) => m.actual_data.unwrap(),
@@ -76,7 +77,6 @@ impl<T> Unpin for MessageResponseFuture<T> {}
 impl<T> Drop for MessageResponseFuture<T> {
     fn drop(&mut self) {
         if !self.finished {
-            emit::cancel_message(self.msg_id);
             crate::block_on::remove_message_waker(self.msg_id);
         }
     }
