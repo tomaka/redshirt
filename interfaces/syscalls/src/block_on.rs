@@ -100,7 +100,7 @@ impl WakerRegistration {
 impl Drop for WakerRegistration {
     fn drop(&mut self) {
         let mut state = (&*STATE).lock();
-        state.message_ids.remove(self.index);
+        state.message_ids[self.index] = 0;
         state.wakers.remove(self.index);
     }
 }
