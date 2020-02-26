@@ -25,7 +25,10 @@ use futures::prelude::*;
 /// registered.
 // TODO: move to interface interface?
 pub fn next_interface_message() -> InterfaceMessageFuture {
-    InterfaceMessageFuture { finished: false }
+    InterfaceMessageFuture {
+        finished: false,
+        registration: None,
+    }
 }
 
 /// Answers the given message.
@@ -63,6 +66,7 @@ pub fn emit_message_error(message_id: MessageId) {
 #[must_use]
 pub struct InterfaceMessageFuture {
     finished: bool,
+    registration: Option<crate::block_on::WakerRegistration>,
 }
 
 impl Future for InterfaceMessageFuture {
@@ -74,7 +78,16 @@ impl Future for InterfaceMessageFuture {
             self.finished = true;
             Poll::Ready(message)
         } else {
-            crate::block_on::register_message_waker(From::from(1), cx.waker().clone());
+            match &mut self.registration {
+                Some(r) => r.update(cx.waker()),
+                r @ None => {
+                    *r = Some(crate::block_on::register_message_waker(
+                        From::from(1),
+                        cx.waker().clone(),
+                    ))
+                }
+            };
+
             Poll::Pending
         }
     }
