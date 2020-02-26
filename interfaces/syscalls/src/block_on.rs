@@ -45,6 +45,7 @@ use core::{
 use futures::{prelude::*, task};
 use hashbrown::HashMap;
 use nohash_hasher::BuildNoHashHasher;
+use slab::Slab;
 use spin::Mutex;
 
 /// Registers a message ID (or 1 for interface messages) and a waker. The `block_on` function will
@@ -53,22 +54,19 @@ use spin::Mutex;
 ///
 /// For non-interface messages, there can only ever be one registered `Waker`. Registering a
 /// `Waker` a second time overrides the one previously registered.
-pub(crate) fn register_message_waker(message_id: MessageId, waker: Waker) {
+pub(crate) fn register_message_waker(message_id: MessageId, waker: Waker) -> WakerRegistration {
     let mut state = (&*STATE).lock();
 
-    if message_id != From::from(1) {
-        if let Some(pos) = state
-            .message_ids
-            .iter()
-            .position(|msg| *msg == From::from(message_id))
-        {
-            state.wakers[pos] = waker;
-            return;
-        }
+    let index = state.wakers.insert(Some(waker));
+
+    if index <= state.message_ids.len() {
+        state.message_ids.resize(index + 1, 0);
     }
 
-    state.message_ids.push(From::from(message_id));
-    state.wakers.push(waker);
+    debug_assert_eq!(state.message_ids[index], 0);
+    state.message_ids[index] = From::from(message_id);
+
+    WakerRegistration { index }
 }
 
 /// Removes one element from the global buffer of interface messages waiting to be processed.
@@ -81,6 +79,30 @@ pub(crate) fn peek_interface_message() -> Option<DecodedInterfaceOrDestroyed> {
 pub(crate) fn peek_response(msg_id: MessageId) -> Option<DecodedResponseNotification> {
     let mut state = (&*STATE).lock();
     state.pending_messages.remove(&msg_id)
+}
+
+pub(crate) struct WakerRegistration {
+    /// Index within `STATE::message_ids` and `STATE::wakers`.
+    index: usize,
+}
+
+impl WakerRegistration {
+    /// Modifies the registered waker.
+    pub fn update(&self, waker: &Waker) {
+        let mut state = (&*STATE).lock();
+        match &mut state.wakers[self.index] {
+            Some(w) if w.will_wake(waker) => {}
+            w @ _ => *w = Some(waker.clone()),
+        }
+    }
+}
+
+impl Drop for WakerRegistration {
+    fn drop(&mut self) {
+        let mut state = (&*STATE).lock();
+        state.message_ids.remove(self.index);
+        state.wakers.remove(self.index);
+    }
 }
 
 /// Blocks the current thread until the [`Future`](core::future::Future) passed as parameter
@@ -132,31 +154,31 @@ pub fn block_on<T>(future: impl Future<Output = T>) -> T {
 
             match msg {
                 DecodedNotification::Response(msg) => {
-                    let _was_in = state.message_ids.remove(msg.index_in_list as usize);
-                    debug_assert_eq!(_was_in, 0); // Value is zero-ed by the kernel.
-
-                    let waker = state.wakers.remove(msg.index_in_list as usize);
-                    waker.wake();
+                    // Value is zero-ed by the kernel.
+                    debug_assert_eq!(state.message_ids[msg.index_in_list as usize], 0);
+                    if let Some(waker) = state.wakers[msg.index_in_list as usize].take() {
+                        waker.wake();
+                    }
 
                     let _was_in = state.pending_messages.insert(msg.message_id, msg);
                     debug_assert!(_was_in.is_none());
                 }
                 DecodedNotification::Interface(msg) => {
-                    let _was_in = state.message_ids.remove(msg.index_in_list as usize);
-                    debug_assert_eq!(_was_in, 0); // Value is zero-ed by the kernel.
-
-                    let waker = state.wakers.remove(msg.index_in_list as usize);
-                    waker.wake();
+                    // Value is zero-ed by the kernel.
+                    debug_assert_eq!(state.message_ids[msg.index_in_list as usize], 0);
+                    if let Some(waker) = state.wakers[msg.index_in_list as usize].take() {
+                        waker.wake();
+                    }
 
                     let msg = DecodedInterfaceOrDestroyed::Interface(msg);
                     state.interface_messages_queue.push_back(msg);
                 }
                 DecodedNotification::ProcessDestroyed(msg) => {
-                    let _was_in = state.message_ids.remove(msg.index_in_list as usize);
-                    debug_assert_eq!(_was_in, 0); // Value is zero-ed by the kernel.
-
-                    let waker = state.wakers.remove(msg.index_in_list as usize);
-                    waker.wake();
+                    // Value is zero-ed by the kernel.
+                    debug_assert_eq!(state.message_ids[msg.index_in_list as usize], 0);
+                    if let Some(waker) = state.wakers[msg.index_in_list as usize].take() {
+                        waker.wake();
+                    }
 
                     let msg = DecodedInterfaceOrDestroyed::ProcessDestroyed(msg);
                     state.interface_messages_queue.push_back(msg);
@@ -174,7 +196,7 @@ lazy_static::lazy_static! {
     static ref STATE: Mutex<BlockOnState> = {
         Mutex::new(BlockOnState {
             message_ids: Vec::new(),
-            wakers: Vec::new(),
+            wakers: Slab::new(),
             pending_messages: HashMap::with_capacity_and_hasher(6, Default::default()),
             interface_messages_queue: VecDeque::with_capacity(2),
         })
@@ -192,7 +214,7 @@ struct BlockOnState {
     /// List whose length is identical to [`BlockOnState::messages_ids`]. For each element in
     /// [`BlockOnState::messages_ids`], contains a corresponding `Waker` that must be waken up
     /// when a response comes.
-    wakers: Vec<Waker>,
+    wakers: Slab<Option<Waker>>,
 
     /// Queue of response messages waiting to be delivered.
     ///

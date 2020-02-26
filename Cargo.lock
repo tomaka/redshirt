@@ -63,7 +63,7 @@ dependencies = [
  "once_cell",
  "pin-project-lite",
  "pin-utils",
- "slab",
+ "slab 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -401,7 +401,7 @@ dependencies = [
  "pin-utils",
  "proc-macro-hack",
  "proc-macro-nested",
- "slab",
+ "slab 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -581,7 +581,7 @@ dependencies = [
  "log",
  "miow",
  "net2",
- "slab",
+ "slab 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "winapi 0.2.8",
 ]
 
@@ -1077,6 +1077,7 @@ dependencies = [
  "nohash-hasher",
  "parity-scale-codec",
  "pin-project",
+ "slab 0.4.2 (git+https://github.com/baloo/slab?rev=88b456131de20750e785655d1e62cd0b6e10d44b)",
  "spin",
 ]
 
@@ -1236,6 +1237,11 @@ dependencies = [
  "ryu",
  "serde",
 ]
+
+[[package]]
+name = "slab"
+version = "0.4.2"
+source = "git+https://github.com/baloo/slab?rev=88b456131de20750e785655d1e62cd0b6e10d44b#88b456131de20750e785655d1e62cd0b6e10d44b"
 
 [[package]]
 name = "slab"
