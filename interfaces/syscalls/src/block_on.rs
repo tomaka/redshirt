@@ -102,6 +102,12 @@ impl Drop for WakerRegistration {
         let mut state = (&*STATE).lock();
         state.message_ids[self.index] = 0;
         state.wakers.remove(self.index);
+
+        // Reclaim memory if possible.
+        if state.wakers.is_empty() {
+            state.wakers.shrink_to_fit();
+            state.message_ids = Vec::new();
+        }
     }
 }
 
