@@ -274,8 +274,18 @@ jobs:
           override: true
       - name: Install rustfmt
         run: rustup component add rustfmt
-      - name: Run cargo fmt
+      - name: Run cargo fmt on root workspace
         uses: actions-rs/cargo@v1
         with:
           command: fmt
           args: --all -- --check
+      - name: Run cargo fmt on modules workspace
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all --manifest-path=modules/Cargo.toml -- --check
+      - name: Run cargo fmt on standalone tester workspace
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all --manifest-path=kernel/standalone-tester/Cargo.toml -- --check
