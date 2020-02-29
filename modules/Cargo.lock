@@ -1498,7 +1498,6 @@ dependencies = [
 name = "redshirt-syscalls"
 version = "0.1.0"
 dependencies = [
- "byteorder",
  "futures 0.3.1",
  "generic-array 0.13.2",
  "hashbrown",
@@ -1566,7 +1565,6 @@ dependencies = [
 name = "rpi-framebuffer"
 version = "0.1.0"
 dependencies = [
- "byteorder",
  "parity-scale-codec",
  "redshirt-hardware-interface",
  "redshirt-interface-interface",

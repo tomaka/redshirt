@@ -19,7 +19,6 @@ use crate::sig;
 use crate::{InterfaceHash, MessageId};
 
 use alloc::{rc::Rc, vec, vec::Vec};
-use byteorder::{ByteOrder as _, LittleEndian};
 use core::{cell::RefCell, convert::TryFrom as _, fmt, mem};
 use redshirt_syscalls::{EncodedMessage, Pid, ThreadId};
 
@@ -866,9 +865,9 @@ impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsThreadEmitMessage<'a, TPud, TT
                 None => panic!(),
             };
 
-            let mut buf = [0; 8];
-            LittleEndian::write_u64(&mut buf, From::from(message_id));
-            inner.write_memory(message_id_write, &buf).unwrap();
+            inner
+                .write_memory(message_id_write, &u64::from(message_id).to_le_bytes())
+                .unwrap();
         } else {
             assert!(message_id.is_none());
         }
@@ -1157,8 +1156,7 @@ fn parse_extrinsic_next_notification<TPud, TTud>(
             .map_err(|_| ExtrinsicNextNotificationErr::TooManyNotificationIds { requested: len })?;
         let mut out = vec![MessageId::from(0u64); len_usize];
         for (o, i) in out.iter_mut().zip(mem.chunks(8)) {
-            let val = byteorder::LittleEndian::read_u64(i);
-            *o = MessageId::from(val);
+            *o = MessageId::from(u64::from_le_bytes(<[u8; 8]>::try_from(i).unwrap()));
         }
         out
     };
@@ -1250,11 +1248,11 @@ fn parse_extrinsic_emit_message<TPud, TTud>(
             let sub_buf_ptr = thread
                 .read_memory(addr + 8 * buf_n, 4)
                 .map_err(|_| ExtrinsicEmitMessageErr::BadParameter)?;
-            let sub_buf_ptr = LittleEndian::read_u32(&sub_buf_ptr);
+            let sub_buf_ptr = u32::from_le_bytes(<[u8; 4]>::try_from(&sub_buf_ptr[..]).unwrap());
             let sub_buf_sz = thread
                 .read_memory(addr + 8 * buf_n + 4, 4)
                 .map_err(|_| ExtrinsicEmitMessageErr::BadParameter)?;
-            let sub_buf_sz = LittleEndian::read_u32(&sub_buf_sz);
+            let sub_buf_sz = u32::from_le_bytes(<[u8; 4]>::try_from(&sub_buf_sz[..]).unwrap());
             if out_msg.len()
                 + usize::try_from(sub_buf_sz).map_err(|_| ExtrinsicEmitMessageErr::BadParameter)?
                 >= 16 * 1024 * 1024
@@ -1332,7 +1330,7 @@ fn parse_extrinsic_emit_answer<TPud, TTud>(
         let buf = thread
             .read_memory(addr, 8)
             .map_err(|_| ExtrinsicEmitAnswerErr::BadParameter)?;
-        MessageId::from(byteorder::LittleEndian::read_u64(&buf))
+        MessageId::from(u64::from_le_bytes(<[u8; 8]>::try_from(&buf[..]).unwrap()))
     };
 
     let response = {
@@ -1393,7 +1391,7 @@ fn parse_extrinsic_emit_message_error<TPud, TTud>(
         let buf = thread
             .read_memory(addr, 8)
             .map_err(|_| ExtrinsicEmitMessageErrorErr::BadParameter)?;
-        MessageId::from(byteorder::LittleEndian::read_u64(&buf))
+        MessageId::from(u64::from_le_bytes(<[u8; 8]>::try_from(&buf[..]).unwrap()))
     };
 
     Ok(msg_id)
@@ -1431,7 +1429,7 @@ fn parse_extrinsic_cancel_message<TPud, TTud>(
         let buf = thread
             .read_memory(addr, 8)
             .map_err(|_| ExtrinsicCancelMessageErr::BadParameter)?;
-        MessageId::from(byteorder::LittleEndian::read_u64(&buf))
+        MessageId::from(u64::from_le_bytes(<[u8; 8]>::try_from(&buf[..]).unwrap()))
     };
 
     Ok(msg_id)
