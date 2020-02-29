@@ -20,7 +20,6 @@
 //! the WASM output.
 
 #![feature(alloc_error_handler, start)]
-
 #![no_std]
 
 #[global_allocator]
@@ -48,18 +47,21 @@ fn main(_: isize, _: *const *const u8) -> isize {
 
 fn async_main() -> impl Future<Output = ()> {
     let interface = redshirt_syscalls::InterfaceHash::from_raw_hash([
-        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
-        0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37,
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16,
+        0x17, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35,
+        0x36, 0x37,
     ]);
 
-    redshirt_syscalls::next_interface_message()
-        .then(move |msg| {
-            let msg = match msg {
-                redshirt_syscalls::DecodedInterfaceOrDestroyed::Interface(m) => m,
-                redshirt_syscalls::DecodedInterfaceOrDestroyed::ProcessDestroyed(_) => panic!(),
-            };
-            assert_eq!(msg.interface, interface);
-            assert_eq!(msg.actual_data, redshirt_syscalls::EncodedMessage(vec![1, 2, 3, 4, 5, 6, 7, 8]));
-            future::ready(())
-        })
+    redshirt_syscalls::next_interface_message().then(move |msg| {
+        let msg = match msg {
+            redshirt_syscalls::DecodedInterfaceOrDestroyed::Interface(m) => m,
+            redshirt_syscalls::DecodedInterfaceOrDestroyed::ProcessDestroyed(_) => panic!(),
+        };
+        assert_eq!(msg.interface, interface);
+        assert_eq!(
+            msg.actual_data,
+            redshirt_syscalls::EncodedMessage(vec![1, 2, 3, 4, 5, 6, 7, 8])
+        );
+        future::ready(())
+    })
 }

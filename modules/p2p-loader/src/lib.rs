@@ -22,7 +22,9 @@ use tcp_transport::TcpConfig;
 
 use libp2p_core::transport::{boxed::Boxed, Transport};
 use libp2p_core::{identity, muxing::StreamMuxerBox, nodes::node::Substream, upgrade, PeerId};
-use libp2p_kad::{record::store::MemoryStore, record::Key, Kademlia, KademliaConfig, KademliaEvent, Quorum};
+use libp2p_kad::{
+    record::store::MemoryStore, record::Key, Kademlia, KademliaConfig, KademliaEvent, Quorum,
+};
 use libp2p_mplex::MplexConfig;
 use libp2p_plaintext::PlainText2Config;
 use libp2p_swarm::{Swarm, SwarmEvent};
@@ -98,7 +100,7 @@ impl<T> Network<T> {
                 let mut cfg = KademliaConfig::default();
                 cfg.set_replication_interval(Some(Duration::from_secs(60)));
                 cfg
-            }
+            },
         );
 
         let mut swarm = Swarm::new(transport, kademlia, local_peer_id);
@@ -117,7 +119,10 @@ impl<T> Network<T> {
 
         // TODO: use All when network is large enough
         // TODO: temporary for testing
-        swarm.put_record(libp2p_kad::Record::new(vec![0; 32], vec![5, 6, 7, 8]), libp2p_kad::Quorum::One);
+        swarm.put_record(
+            libp2p_kad::Record::new(vec![0; 32], vec![5, 6, 7, 8]),
+            libp2p_kad::Quorum::One,
+        );
         swarm.get_record(&From::from(vec![0; 32]), libp2p_kad::Quorum::One);
 
         Network {
@@ -147,7 +152,11 @@ impl<T> Network<T> {
                 SwarmEvent::Behaviour(KademliaEvent::GetRecordResult(Ok(result))) => {
                     for record in result.records {
                         log::debug!("Successfully loaded record from DHT: {:?}", record.key);
-                        if let Some(pos) = self.active_fetches.iter().position(|(key, _)| *key == record.key) {
+                        if let Some(pos) = self
+                            .active_fetches
+                            .iter()
+                            .position(|(key, _)| *key == record.key)
+                        {
                             let user_data = self.active_fetches.remove(pos).1;
                             self.events_queue.push_back(NetworkEvent::FetchSuccess {
                                 data: record.value,
@@ -155,17 +164,20 @@ impl<T> Network<T> {
                             });
                         }
                     }
-                },
+                }
                 SwarmEvent::Behaviour(KademliaEvent::GetRecordResult(Err(err))) => {
                     log::info!("Failed to get record: {:?}", err);
                     let fetch_failed_key = err.into_key();
-                    if let Some(pos) = self.active_fetches.iter().position(|(key, _)| *key == fetch_failed_key) {
+                    if let Some(pos) = self
+                        .active_fetches
+                        .iter()
+                        .position(|(key, _)| *key == fetch_failed_key)
+                    {
                         let user_data = self.active_fetches.remove(pos).1;
-                        self.events_queue.push_back(NetworkEvent::FetchFail {
-                            user_data,
-                        });
+                        self.events_queue
+                            .push_back(NetworkEvent::FetchFail { user_data });
                     }
-                },
+                }
                 SwarmEvent::Behaviour(ev) => log::info!("Other event: {:?}", ev),
                 SwarmEvent::Connected(peer) => log::trace!("Connected to {:?}", peer),
                 SwarmEvent::Disconnected(peer) => log::trace!("Disconnected from {:?}", peer),
@@ -180,8 +192,6 @@ impl<T> Network<T> {
 
 impl Default for NetworkConfig {
     fn default() -> Self {
-        NetworkConfig {
-            private_key: None,
-        }
+        NetworkConfig { private_key: None }
     }
 }

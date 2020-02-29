@@ -25,6 +25,7 @@ use futures::prelude::*;
 /// Waits until a response to the given message comes back.
 ///
 /// Returns the undecoded response.
+// TODO: two futures for the same message will compete with each other; document that?
 pub fn message_response_sync_raw(msg_id: MessageId) -> EncodedMessage {
     match crate::block_on::next_notification(&mut [msg_id.into()], true).unwrap() {
         DecodedNotification::Response(m) => m.actual_data.unwrap(),
@@ -39,6 +40,7 @@ pub fn message_response<T: Decode>(msg_id: MessageId) -> MessageResponseFuture<T
     MessageResponseFuture {
         finished: false,
         msg_id,
+        registration: None,
         marker: PhantomData,
     }
 }
@@ -50,6 +52,7 @@ pub fn message_response<T: Decode>(msg_id: MessageId) -> MessageResponseFuture<T
 pub struct MessageResponseFuture<T> {
     msg_id: MessageId,
     finished: bool,
+    registration: Option<crate::block_on::WakerRegistration>,
     marker: PhantomData<T>,
 }
 
@@ -65,7 +68,16 @@ where
             self.finished = true;
             Poll::Ready(Decode::decode(response.actual_data.unwrap()).unwrap())
         } else {
-            crate::block_on::register_message_waker(self.msg_id, cx.waker().clone());
+            let msg_id = self.msg_id;
+            match &mut self.registration {
+                Some(r) => r.update(cx.waker()),
+                r @ None => {
+                    *r = Some(crate::block_on::register_message_waker(
+                        msg_id,
+                        cx.waker().clone(),
+                    ))
+                }
+            };
             Poll::Pending
         }
     }
