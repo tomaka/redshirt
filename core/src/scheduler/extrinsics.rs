@@ -865,7 +865,9 @@ impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsThreadEmitMessage<'a, TPud, TT
                 None => panic!(),
             };
 
-            inner.write_memory(message_id_write, &u64::from(message_id).to_le_bytes()).unwrap();
+            inner
+                .write_memory(message_id_write, &u64::from(message_id).to_le_bytes())
+                .unwrap();
         } else {
             assert!(message_id.is_none());
         }

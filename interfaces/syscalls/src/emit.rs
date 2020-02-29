@@ -86,7 +86,11 @@ where
         TOutLen: ArrayLength<u8>,
     {
         let mut new_pair = GenericArray::<u8, U8>::default();
-        new_pair[0..4].copy_from_slice(&u32::try_from(buffer.as_ptr() as usize).unwrap().to_le_bytes());
+        new_pair[0..4].copy_from_slice(
+            &u32::try_from(buffer.as_ptr() as usize)
+                .unwrap()
+                .to_le_bytes(),
+        );
         new_pair[4..8].copy_from_slice(&u32::try_from(buffer.len()).unwrap().to_le_bytes());
 
         MessageBuilder {
