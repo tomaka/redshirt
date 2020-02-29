@@ -426,10 +426,11 @@ impl<TPud, TTud> ProcessesCollectionExtrinsics<TPud, TTud> {
             } => {
                 debug_assert!(thread.user_data().state.is_ready_to_run());
                 debug_assert!(thread.user_data().external_user_data.is_some());
-                let emit_msg_error = match calls::parse_extrinsic_emit_message_error(&mut thread, params) {
-                    Ok(m) => m,
-                    Err(_) => panic!(), // TODO:
-                };
+                let emit_msg_error =
+                    match calls::parse_extrinsic_emit_message_error(&mut thread, params) {
+                        Ok(m) => m,
+                        Err(_) => panic!(), // TODO:
+                    };
                 thread.resume(None);
                 let pid = thread.pid();
                 let thread_id = thread.tid();
