@@ -14,7 +14,6 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use crate::{Decode, Encode, EncodedMessage, InterfaceHash, MessageId};
-use byteorder::{ByteOrder as _, LittleEndian};
 use core::{
     convert::TryFrom as _,
     fmt,
@@ -87,11 +86,8 @@ where
         TOutLen: ArrayLength<u8>,
     {
         let mut new_pair = GenericArray::<u8, U8>::default();
-        LittleEndian::write_u32(
-            &mut new_pair[0..4],
-            u32::try_from(buffer.as_ptr() as usize).unwrap(),
-        );
-        LittleEndian::write_u32(&mut new_pair[4..8], u32::try_from(buffer.len()).unwrap());
+        new_pair[0..4].copy_from_slice(&u32::try_from(buffer.as_ptr() as usize).unwrap().to_le_bytes());
+        new_pair[4..8].copy_from_slice(&u32::try_from(buffer.len()).unwrap().to_le_bytes());
 
         MessageBuilder {
             allow_delay: self.allow_delay,
