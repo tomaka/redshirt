@@ -42,15 +42,20 @@ pub struct ProcessesCollection<TExtr, TPud, TTud> {
     pid_pool: IdPool,
 
     /// Allocation of thread IDs.
+    // TODO: merge with pid_pool?
     tid_pool: IdPool,
 
     /// List of running processes.
+    ///
+    /// We hold `Arc`s to processes in order to count the number of "locks" that have been
+    /// acquired. Entries are removed from this list only if the number of strong counts is
+    /// equal to 1.
     processes: RefCell<HashMap<Pid, Arc<Process<TPud, TTud>>, BuildNoHashHasher<u64>>>,
 
     /// List of functions that processes can call.
     /// The key of this map is an arbitrary `usize` that we pass to the WASM interpreter.
     /// This field is never modified after the [`ProcessesCollection`] is created.
-    extrinsics: HashMap<usize, TExtr, BuildNoHashHasher<usize>>,
+    extrinsics: Vec<TExtr>,
 
     /// Map used to resolve imports when starting a process.
     /// For each module and function name, stores the signature and an arbitrary usize that
@@ -65,7 +70,7 @@ pub struct ProcessesCollectionBuilder<TExtr> {
     /// See the corresponding field in `ProcessesCollection`.
     pid_pool: IdPool,
     /// See the corresponding field in `ProcessesCollection`.
-    extrinsics: HashMap<usize, TExtr, BuildNoHashHasher<usize>>,
+    extrinsics: Vec<TExtr>,
     /// See the corresponding field in `ProcessesCollection`.
     extrinsics_id_assign:
         HashMap<(Cow<'static, str>, Cow<'static, str>), (usize, Signature), FnvBuildHasher>,
@@ -76,16 +81,19 @@ struct Process<TPud, TTud> {
     pid: Pid,
 
     /// The virtual machine.
+    // TODO: can we talk about this mutex? it's really not great to have a mutex
     state_machine: Mutex<vm::ProcessStateMachine<Thread<TTud>>>,
 
     /// User-chosen data (opaque to us) that describes the process.
     user_data: TPud,
 }
 
-/// Additional data associated to a thread.
+/// Additional data associated to a thread. Stored within the [`vm::ProcessStateMachine`].
 struct Thread<TTud> {
     /// User-chosen data (opaque to us) that describes the thread.
-    user_data: TTud,
+    /// Contains `None` if and only if the thread is "locked" by the user.
+    /// By logic, can never contain `None` if `value_back` is `Some`.
+    user_data: Option<TTud>,
 
     /// Identifier of the thread.
     thread_id: ThreadId,
@@ -107,11 +115,15 @@ pub struct ProcessesCollectionProc<'a, TPud, TTud> {
 pub struct ProcessesCollectionThread<'a, TPud, TTud> {
     process: Arc<Process<TPud, TTud>>,
 
-    /// Index of the thread within the [`vm::ProcessStateMachine`].
-    thread_index: usize,
+    /// Identifier of the thread. Must always match one of the user data in the virtual machine.
+    tid: ThreadId,
 
     /// Reference to the same field in [`ProcessesCollection`].
     tid_pool: &'a IdPool,
+
+    /// User data extracted from [`Thread`]. Must be put back when this struct is destroyed.
+    /// Always `Some`, except right before destruction.
+    user_data: Option<TTud>,
 }
 
 /// Outcome of the [`run`](ProcessesCollection::run) function.
@@ -196,7 +208,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
     ) -> Result<ProcessesCollectionProc<TPud, TTud>, vm::NewErr> {
         let main_thread_id = self.tid_pool.assign(); // TODO: check for duplicates
         let main_thread_data = Thread {
-            user_data: main_thread_user_data,
+            user_data: Some(main_thread_user_data),
             thread_id: main_thread_id,
             value_back: Some(None),
         };
@@ -221,7 +233,6 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
                 },
             )?
         };
-
 
         // We only modify `self` at the very end.
         let new_pid = self.pid_pool.assign();
@@ -278,7 +289,8 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
 
         // Now run the thread until something happens.
         let run_outcome = {
-            let mut thread = match process.get_mut().state_machine.thread(inner_thread_index) {
+            // TODO: keeps the mutex locked while running, obviously not great
+            let mut thread = match process.get_mut().state_machine.lock().thread(inner_thread_index) {
                 Some(t) => t,
                 None => unreachable!(),
             };
@@ -300,7 +312,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
                 user_data: main_thread_user_data,
             }) => {
                 let (pid, proc) = process.remove_entry();
-                let other_threads_ud = proc.state_machine.into_user_datas();
+                let other_threads_ud = proc.state_machine.lock().into_user_datas();
                 let mut dead_threads = Vec::with_capacity(1 + other_threads_ud.len());
                 dead_threads.push((
                     main_thread_user_data.thread_id,
@@ -329,15 +341,22 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
                     process,
                     tid_pool: &mut self.tid_pool,
                 },
-                user_data: user_data.user_data,
+                user_data: match user_data.user_data.take() {
+                    Some(ud) => ud,
+                    None => unreachable!(),
+                },
                 value: return_value,
             },
 
             // Thread wants to call an extrinsic function.
-            Ok(vm::ExecOutcome::Interrupted { id, params, .. }) => {
+            Ok(vm::ExecOutcome::Interrupted { thread, id, params }) => {
                 // TODO: check params against signature with a debug_assert
-                let extrinsic = match self.extrinsics.get_mut(&id) {
+                let extrinsic = match self.extrinsics.get_mut(id) {
                     Some(e) => e,
+                    None => unreachable!(),
+                };
+                let user_data = match thread.user_data().user_data.take() {
+                    Some(ud) => ud,
                     None => unreachable!(),
                 };
                 RunOneOutcome::Interrupted {
@@ -345,6 +364,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
                         process,
                         thread_index: inner_thread_index,
                         tid_pool: &self.tid_pool,
+                        user_data,
                     },
                     id: extrinsic,
                     params,
@@ -377,13 +397,8 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
         let processes = self.processes.borrow();
 
         processes
-            .iter()
-            .filter_map(|p| {
-                match p {
-                    Process::Alive(p) => Some(p.clone()),
-                    Process::PendingDestruction(p) => p.upgrade(),
-                }
-            })
+            .values()
+            .cloned()
             .map(|process| ProcessesCollectionProc {
                 process,
                 tid_pool: &self.tid_pool,
@@ -438,19 +453,24 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
                         return None;
                     }
 
-                    loop_out = Some((process.clone(), pid.clone(), thread_index));
+                    // If the user data is already extracted, then this thread is locked.
+                    let user_data = match thread.user_data().user_data.take() {
+                        Some(ud) => ud,
+                        None => return None,
+                    };
+
+                    loop_out = Some((process.clone(), pid.clone(), user_data));
                     break;
                 }
             }
         }
 
-        // TODO: enforce the unique locking
-
-        let (process, pid, thread_index) = loop_out?;
+        let (process, pid, user_data) = loop_out?;
         Some(ProcessesCollectionThread {
             process,
-            thread_index,
+            tid: id,
             tid_pool: &self.tid_pool,
+            user_data: Some(user_data),
         })
     }
 }
@@ -502,12 +522,11 @@ impl<TExtr> ProcessesCollectionBuilder<TExtr> {
         let f_name = f_name.into();
 
         let index = self.extrinsics.len();
-        debug_assert!(!self.extrinsics.contains_key(&index));
         match self.extrinsics_id_assign.entry((interface, f_name)) {
             Entry::Occupied(_) => panic!(),
             Entry::Vacant(e) => e.insert((index, signature)),
         };
-        self.extrinsics.insert(index, token.into());
+        self.extrinsics.push(token.into());
         self
     }
 
@@ -541,6 +560,7 @@ impl<TPud, TTud> Process<TPud, TTud> {
                 None => unreachable!(),
             };
             if thread.user_data().value_back.is_some() {
+                debug_assert!(thread.user_data().user_data.is_some());
                 return Some(thread_n);
             }
         }
@@ -558,7 +578,7 @@ impl<'a, TPud, TTud> ProcessesCollectionProc<'a, TPud, TTud> {
 
     /// Returns the user data that is associated to the process.
     pub fn user_data(&self) -> &TPud {
-        &self.process.get().user_data
+        &self.process.user_data
     }
 
     /// Adds a new thread to the process, starting the function with the given index and passing
@@ -576,14 +596,14 @@ impl<'a, TPud, TTud> ProcessesCollectionProc<'a, TPud, TTud> {
     ) -> Result<ThreadId, vm::StartErr> {
         let thread_id = self.tid_pool.assign(); // TODO: check for duplicates
         let thread_data = Thread {
-            user_data,
+            user_data: Some(user_data),
             thread_id,
             value_back: Some(None),
         };
 
         self.process
-            .get_mut()
             .state_machine
+            .lock()
             .start_thread_by_id(fn_index, params, thread_data)?;
 
         Ok(thread_id)
@@ -628,7 +648,7 @@ impl<'a, TPud, TTud> ProcessesCollectionThread<'a, TPud, TTud> {
     ///
     /// [`ThreadId`]s are unique within a [`ProcessesCollection`], independently from the process.
     pub fn tid(&self) -> ThreadId {
-        self.inner().into_user_data().thread_id
+        self.tid
     }
 
     /// Returns the [`Pid`] of the process. Allows later retrieval by calling
@@ -647,7 +667,7 @@ impl<'a, TPud, TTud> ProcessesCollectionThread<'a, TPud, TTud> {
 
     /// Returns the user data that is associated to the thread.
     pub fn user_data(&mut self) -> &mut TTud {
-        &mut self.inner().into_user_data().user_data
+        self.user_data.as_mut().unwrap()
     }
 
     /// After [`RunOneOutcome::Interrupted`] is returned, use this function to feed back the value
@@ -656,16 +676,38 @@ impl<'a, TPud, TTud> ProcessesCollectionThread<'a, TPud, TTud> {
     /// This releases the [`ProcessesCollectionThread`]. The thread can now potentially be run by
     /// calling [`ProcessesCollection::run`].
     pub fn resume(mut self, value: Option<wasmi::RuntimeValue>) {
-        let lock = self.process.lock();
+        let lock = self.process.state_machine.lock();
 
-        let user_data = self.inner().into_user_data();
+        for thread_index in 0..lock.num_threads() {
+            let user_data = lock.thread(thread_index).unwrap().user_data()
+            if user_data.thread_id != self.tid {
+                continue;
+            }
 
-        // TODO: check type of the value?
-        if user_data.value_back.is_some() {
-            panic!()
+            // TODO: check type of the value?
+            debug_assert!(user_data.value_back.is_none());
+            user_data.value_back = Some(value);
+            return;
         }
 
-        user_data.value_back = Some(value);
+        panic!();
+    }
+}
+
+impl<'a, TPud, TTud> Drop for ProcessesCollectionThread<'a, TPud, TTud> {
+    fn drop(&mut self) {
+        let mut lock = self.process.state_machine.lock();
+
+        for thread_index in 0..lock.num_threads() {
+            let user_data = lock.thread(thread_index).unwrap().user_data();
+            if user_data.thread_id == self.tid {
+                debug_assert!(user_data.user_data.is_none());
+                user_data.user_data = Some(self.user_data.take().unwrap());
+                return;
+            }
+        }
+
+        unreachable!()
     }
 }
 
