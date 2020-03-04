@@ -517,12 +517,12 @@ impl<TPud, TTud> ProcessesCollectionExtrinsics<TPud, TTud> {
         id: ThreadId,
     ) -> Result<ProcessesCollectionExtrinsicsThread<TPud, TTud>, ThreadByIdErr> {
         let mut inner = self.inner.borrow_mut();
-        let mut inner = inner.interrupted_thread_by_id(id).ok_or(ThreadByIdErr::RunningOrDead)?;
+        let mut inner = inner
+            .interrupted_thread_by_id(id)
+            .ok_or(ThreadByIdErr::RunningOrDead)?;  // TODO: might now also be already locked
 
         // Checking thread locked state.
-        if inner.user_data().external_user_data.is_none() {
-            return Err(ThreadByIdErr::AlreadyLocked);
-        }
+        debug_assert!(inner.user_data().external_user_data.is_some());
 
         match inner.user_data().state {
             LocalThreadState::ReadyToRun => unreachable!(),
@@ -659,6 +659,7 @@ impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsProc<'a, TPud, TTud> {
     ) -> impl Iterator<Item = ProcessesCollectionExtrinsicsThread<'a, TPud, TTud>> {
         let mut inner = self.parent.inner.borrow_mut();
         let inner = inner.process_by_id(self.pid).unwrap();
+        // TODO: let thread = inner.interrupted_threads();
 
         let mut out = Vec::new();
 
@@ -813,7 +814,7 @@ impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsThreadEmitMessage<'a, TPud, TT
         let mut inner = inner.interrupted_thread_by_id(self.tid).unwrap();
 
         let process = inner.process();
-    
+
         let emit = {
             match mem::replace(&mut inner.user_data().state, LocalThreadState::ReadyToRun) {
                 LocalThreadState::EmitMessage(emit) => emit,

@@ -13,11 +13,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::{Pid, ThreadId};
 use crate::id_pool::IdPool;
 use crate::module::Module;
 use crate::scheduler::vm;
 use crate::signature::Signature;
+use crate::{Pid, ThreadId};
 
 use alloc::{borrow::Cow, sync::Arc, vec::Vec};
 use core::{cell::RefCell, fmt};
@@ -242,10 +242,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
             user_data: proc_user_data,
         });
         let processes = self.processes.borrow_mut();
-        processes.insert(
-            new_pid,
-            process.clone(),
-        );
+        processes.insert(new_pid, process.clone());
 
         // Shrink the list from time to time so that it doesn't grow too much.
         if u64::from(new_pid) % 256 == 0 {
@@ -290,7 +287,12 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
         // Now run the thread until something happens.
         let run_outcome = {
             // TODO: keeps the mutex locked while running, obviously not great
-            let mut thread = match process.get_mut().state_machine.lock().thread(inner_thread_index) {
+            let mut thread = match process
+                .get_mut()
+                .state_machine
+                .lock()
+                .thread(inner_thread_index)
+            {
                 Some(t) => t,
                 None => unreachable!(),
             };
@@ -393,7 +395,9 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
     ///
     /// This is equivalent to calling [`ProcessesCollection::process_by_id`] for each possible
     /// ID.
-    pub fn pids<'a>(&'a self) -> impl ExactSizeIterator<Item = ProcessesCollectionProc<'a, TPud, TTud>> + 'a {
+    pub fn pids<'a>(
+        &'a self,
+    ) -> impl ExactSizeIterator<Item = ProcessesCollectionProc<'a, TPud, TTud>> + 'a {
         let processes = self.processes.borrow();
 
         processes
@@ -435,7 +439,10 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
     ///
     /// Additionally, the returned object holds an exclusive lock to this thread. Calling this
     /// method twice for the same thread will fail the second time.
-    pub fn interrupted_thread_by_id(&self, id: ThreadId) -> Option<ProcessesCollectionThread<TPud, TTud>> {
+    pub fn interrupted_thread_by_id(
+        &self,
+        id: ThreadId,
+    ) -> Option<ProcessesCollectionThread<TPud, TTud>> {
         // TODO: ouch that's O(n)
         let processes = self.processes.borrow_mut();
 
@@ -610,7 +617,7 @@ impl<'a, TPud, TTud> ProcessesCollectionProc<'a, TPud, TTud> {
     }
 
     // TODO: bad API because of unique lock system for threads
-    pub fn interrupted_threads(&self) -> ProcessesCollectionThread<'a, TPud, TTud> {
+    pub fn interrupted_threads(&self) -> impl Iterator<Item = ProcessesCollectionThread<'a, TPud, TTud>> {
         unimplemented!()
     }
 
@@ -679,7 +686,7 @@ impl<'a, TPud, TTud> ProcessesCollectionThread<'a, TPud, TTud> {
         let lock = self.process.state_machine.lock();
 
         for thread_index in 0..lock.num_threads() {
-            let user_data = lock.thread(thread_index).unwrap().user_data()
+            let user_data = lock.thread(thread_index).unwrap().user_data();
             if user_data.thread_id != self.tid {
                 continue;
             }
