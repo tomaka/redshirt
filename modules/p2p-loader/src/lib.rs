@@ -26,7 +26,8 @@ use libp2p_kad::{
     record::store::MemoryStore, record::Key, Kademlia, KademliaConfig, KademliaEvent, Quorum,
 };
 use libp2p_mplex::MplexConfig;
-use libp2p_noise::NoiseConfig;
+//use libp2p_noise::NoiseConfig;
+use libp2p_plaintext::PlainText2Config;
 use libp2p_swarm::{Swarm, SwarmEvent};
 use std::{collections::VecDeque, io, time::Duration};
 
@@ -78,13 +79,17 @@ impl<T> Network<T> {
         let local_peer_id = local_keypair.public().into_peer_id();
         log::info!("Local peer id: {}", local_peer_id);
 
-        let noise_keypair = libp2p_noise::Keypair::new()
-            .into_authentic(&local_keypair)
-            .unwrap();
+        // TODO: libp2p-noise doesn't compile for WASM
+        /*let noise_keypair = libp2p_noise::Keypair::new()
+        .into_authentic(&local_keypair)
+        .unwrap();*/
 
         let transport = TcpConfig::default()
             .upgrade(upgrade::Version::V1)
-            .authenticate(NoiseConfig::xx(noise_keypair).into_authenticated())
+            //.authenticate(NoiseConfig::xx(noise_keypair).into_authenticated())
+            .authenticate(PlainText2Config {
+                local_public_key: local_keypair.public(),
+            })
             .multiplex(MplexConfig::default())
             // TODO: timeout
             .map(|(id, muxer), _| (id, StreamMuxerBox::new(muxer)))
