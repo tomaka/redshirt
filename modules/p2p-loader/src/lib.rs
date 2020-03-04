@@ -20,23 +20,20 @@ use libp2p_tcp::TcpConfig;
 #[cfg(target_arch = "wasm32")]
 use tcp_transport::TcpConfig;
 
-use libp2p_core::transport::{boxed::Boxed, Transport};
-use libp2p_core::{identity, muxing::StreamMuxerBox, nodes::node::Substream, upgrade, PeerId};
+use libp2p_core::transport::Transport;
+use libp2p_core::{identity, muxing::StreamMuxerBox, upgrade};
 use libp2p_kad::{
     record::store::MemoryStore, record::Key, Kademlia, KademliaConfig, KademliaEvent, Quorum,
 };
 use libp2p_mplex::MplexConfig;
-use libp2p_plaintext::PlainText2Config;
+use libp2p_noise::NoiseConfig;
 use libp2p_swarm::{Swarm, SwarmEvent};
 use std::{collections::VecDeque, io, time::Duration};
 
 /// Active set of connections to the network.
 pub struct Network<T> {
     // TODO: should have identify and ping as well
-    swarm: Swarm<
-        Boxed<(PeerId, StreamMuxerBox), io::Error>,
-        Kademlia<Substream<StreamMuxerBox>, MemoryStore>,
-    >,
+    swarm: Swarm<Kademlia<MemoryStore>>,
 
     /// List of keys that are currently being fetched.
     active_fetches: Vec<(Key, T)>,
@@ -81,12 +78,11 @@ impl<T> Network<T> {
         let local_peer_id = local_keypair.public().into_peer_id();
         log::info!("Local peer id: {}", local_peer_id);
 
+        let noise_keypair = libp2p_noise::Keypair::new().into_authentic(&local_keypair).unwrap();
+
         let transport = TcpConfig::default()
             .upgrade(upgrade::Version::V1)
-            // TODO: proper encryption
-            .authenticate(PlainText2Config {
-                local_public_key: local_keypair.public(),
-            })
+            .authenticate(NoiseConfig::xx(noise_keypair).into_authenticated())
             .multiplex(MplexConfig::default())
             // TODO: timeout
             .map(|(id, muxer), _| (id, StreamMuxerBox::new(muxer)))
