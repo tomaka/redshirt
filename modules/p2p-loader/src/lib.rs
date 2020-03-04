@@ -78,7 +78,9 @@ impl<T> Network<T> {
         let local_peer_id = local_keypair.public().into_peer_id();
         log::info!("Local peer id: {}", local_peer_id);
 
-        let noise_keypair = libp2p_noise::Keypair::new().into_authentic(&local_keypair).unwrap();
+        let noise_keypair = libp2p_noise::Keypair::new()
+            .into_authentic(&local_keypair)
+            .unwrap();
 
         let transport = TcpConfig::default()
             .upgrade(upgrade::Version::V1)
