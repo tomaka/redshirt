@@ -514,11 +514,11 @@ checksum = "c7d73b3f436185384286bd8098d17ec07c9a7d2388a6599f824d8502b529702a"
 
 [[package]]
 name = "linked_list_allocator"
-version = "0.6.6"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "47de1a43fad0250ee197e9e124e5b5deab3d7b39d4428ae8a6d741ceb340c362"
+checksum = "411991593f041990abf72f6715903fe67770e710e3c95a6d2e98a7550270136a"
 dependencies = [
- "spin",
+ "spinning_top",
 ]
 
 [[package]]
@@ -1251,6 +1251,15 @@ name = "spin"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6e63cff320ae2c57904679ba7cb63280a3dc4613885beafb148ee7bf9aa9042d"
+
+[[package]]
+name = "spinning_top"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32d801a3a53bcf5071f85fef8d5cab9e5f638fc5580a37e6eb7aba4b37438d24"
+dependencies = [
+ "lock_api",
+]
 
 [[package]]
 name = "strsim"
