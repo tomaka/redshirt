@@ -5,6 +5,7 @@ LABEL maintainer "Pierre Krieger <pierre.krieger1708@gmail.com>"
 
 COPY . /build
 WORKDIR /build/modules/p2p-loader
+RUN apt-get update && apt-get install -y musl-tools
 RUN rustup target add x86_64-unknown-linux-musl
 RUN cargo build --target x86_64-unknown-linux-musl --bin passive-node --release --verbose
 
