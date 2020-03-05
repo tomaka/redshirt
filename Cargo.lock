@@ -227,11 +227,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "245097e9a4535ee1e3e3931fcfcd55a796a44c643e8596ff6566d68f09b87bbc"
 
 [[package]]
-name = "crc"
-version = "2.0.0"
-source = "git+https://github.com/mrhooray/crc-rs#86696be09b7605d27327bbe659ac6c0e990c267f"
-
-[[package]]
 name = "crossbeam-channel"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1105,25 +1100,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "redshirt-tap-hosted"
-version = "0.1.0"
-dependencies = [
- "byteorder",
- "crc",
- "futures",
- "libc",
- "mio",
- "parity-scale-codec",
- "rand",
- "redshirt-core",
- "redshirt-interface-interface",
- "redshirt-network-interface",
- "spin",
- "tokio",
- "tun-tap",
-]
-
-[[package]]
 name = "redshirt-tcp-hosted"
 version = "0.1.0"
 dependencies = [
@@ -1370,11 +1346,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c1fc73332507b971a5010664991a441b5ee0de92017f5a0e8b00fd684573045b"
 dependencies = [
  "bytes",
- "lazy_static",
- "memchr",
- "mio",
  "pin-project-lite",
- "slab 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -1384,15 +1356,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ffc92d160b1eef40665be3a05630d003936a3bc7da7421277846c2613e92c71a"
 dependencies = [
  "serde",
-]
-
-[[package]]
-name = "tun-tap"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "53ccbe9cfffdaa7eefd36538bb26f228d4bd319a8aeca044d54377612a646bcd"
-dependencies = [
- "cc",
 ]
 
 [[package]]

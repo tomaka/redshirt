@@ -3,7 +3,6 @@ members = [
     "core",
     "core-proc-macros",
     "kernel/cli",
-    "kernel/hosted-tap",
     "kernel/hosted-log",
     "kernel/hosted-random",
     "kernel/hosted-tcp",

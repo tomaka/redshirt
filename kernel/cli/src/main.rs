@@ -39,8 +39,6 @@ async fn async_main() {
     };
 
     let system = redshirt_core::system::SystemBuilder::new()
-        .with_native_program(redshirt_tap_hosted::TapNetworkInterface::new().unwrap())
-        .with_native_program(build!("../../../modules/network-manager"))
         .with_native_program(redshirt_time_hosted::TimerHandler::new())
         .with_native_program(redshirt_tcp_hosted::TcpHandler::new())
         .with_native_program(redshirt_log_hosted::LogHandler::new())
