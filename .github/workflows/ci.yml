@@ -295,6 +295,8 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: rust
+      env:
+        CC: clang-9
     steps:
       - name: Checkout sources
         uses: actions/checkout@v1
@@ -304,6 +306,12 @@ jobs:
           toolchain: nightly-2020-02-28
           target: wasm32-unknown-unknown
           override: true
+      - name: Install a recent version of clang
+        run: |
+          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
+          echo "deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-9 main" >> /etc/apt/sources.list
+          apt-get update
+          apt-get install -y clang-9
       - name: Check core intra-doc links
         run: RUSTDOCFLAGS="--deny intra_doc_link_resolution_failure" cargo +nightly-2020-02-28 doc --verbose --workspace --no-deps --document-private-items
       - name: Check modules intra-doc links
