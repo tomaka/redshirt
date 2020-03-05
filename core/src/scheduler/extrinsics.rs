@@ -100,7 +100,7 @@ pub trait ProcessesCollectionExtrinsicsThreadAccess<'a> {
     // TODO: make it return handle to process instead?
 
     /// Returns the id of the thread. Allows later retrieval by calling
-    /// [`thread_by_id`](ProcessesCollectionExtrinsics::thread_by_id).
+    /// [`interrupted_thread_by_id`](ProcessesCollectionExtrinsics::interrupted_thread_by_id).
     ///
     /// [`ThreadId`]s are unique within a [`ProcessesCollectionExtrinsics`], independently from the
     /// process.
@@ -616,7 +616,7 @@ impl ProcessesCollectionExtrinsicsBuilder {
 
 impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsProc<'a, TPud, TTud> {
     /// Returns the [`Pid`] of the process. Allows later retrieval by calling
-    /// [`process_by_id`](ProcessesCollection::process_by_id).
+    /// [`process_by_id`](ProcessesCollectionExtrinsics::process_by_id).
     pub fn pid(&self) -> Pid {
         self.pid
     }
@@ -685,7 +685,8 @@ impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsProc<'a, TPud, TTud> {
     ///
     /// The termination will happen after all locks to this process have been released.
     ///
-    /// Calling [`abort`] a second time or more has no effect.
+    /// Calling [`abort`](ProcessesCollectionExtrinsicsProc::abort) a second time or more has no
+    /// effect.
     pub fn abort(&self) {
         unimplemented!() // TODO:
     }
@@ -938,7 +939,8 @@ impl<'a, TPud, TTud> ProcessesCollectionExtrinsicsThreadWaitNotification<'a, TPu
 
     /// Resume the thread, sending back a notification.
     ///
-    /// `index` must be the index within the list returned by [`message_ids_iter`].
+    /// `index` must be the index within the list returned by
+    /// [`message_ids_iter`](ProcessesCollectionExtrinsicsThreadWaitNotification::message_ids_iter).
     ///
     /// # Panic
     ///
