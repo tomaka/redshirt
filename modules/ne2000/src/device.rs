@@ -14,7 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use core::{cell::RefCell, cmp, convert::TryFrom as _, fmt, ops::Range, time::Duration};
-use futures::{prelude::*, lock::Mutex};
+use futures::{lock::Mutex, prelude::*};
 use redshirt_time_interface::Delay;
 use smallvec::SmallVec;
 
@@ -108,7 +108,7 @@ impl Device {
                     let val = redshirt_hardware_interface::port_read_u8(base_port + 7).await;
                     if (val & 0x80) != 0 {
                         break;
-                    }
+                    } // TODO: fail after trying too many times
                 }
             };
             futures::pin_mut!(timeout);
@@ -116,7 +116,7 @@ impl Device {
             match future::select(timeout, try_reset).await {
                 // TODO: don't panic
                 future::Either::Left(_) => panic!("timeout during reset"),
-                future::Either::Right(_) => {},
+                future::Either::Right(_) => {}
             }
         }
 
@@ -284,7 +284,10 @@ impl Device {
         debug_assert!(current_packet_len < 15522); // TODO: is that correct?
         let mut out_packet = vec![0; usize::from(current_packet_len)];
         // TODO: is it correct to read the ring buffer like that, in two times?
-        let read1_len = cmp::min(out_packet.len(), 256 * usize::from(READ_BUFFER_PAGES.end - reading.next_to_read));
+        let read1_len = cmp::min(
+            out_packet.len(),
+            256 * usize::from(READ_BUFFER_PAGES.end - reading.next_to_read),
+        );
         dma_read(
             self.base.base_port,
             &mut out_packet[..read1_len],

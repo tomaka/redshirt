@@ -63,7 +63,7 @@ dependencies = [
  "once_cell",
  "pin-project-lite",
  "pin-utils",
- "slab",
+ "slab 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -144,9 +144,9 @@ checksum = "b0a5e3906bcbf133e33c1d4d95afc664ad37fbdb9f6568d8043e7ea8c27d93d3"
 
 [[package]]
 name = "byteorder"
-version = "1.3.2"
+version = "1.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7c3dd8985a7111efc5c80b44e23ecdd8c007de8ade3b96595387e812b957cf5"
+checksum = "08c48aae112d48ed9f069b33538ea9e3e90aa263cfa3d1c24309612b1f7472de"
 
 [[package]]
 name = "bytes"
@@ -406,7 +406,7 @@ dependencies = [
  "pin-utils",
  "proc-macro-hack",
  "proc-macro-nested",
- "slab",
+ "slab 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -525,11 +525,11 @@ checksum = "c7d73b3f436185384286bd8098d17ec07c9a7d2388a6599f824d8502b529702a"
 
 [[package]]
 name = "linked_list_allocator"
-version = "0.6.6"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "47de1a43fad0250ee197e9e124e5b5deab3d7b39d4428ae8a6d741ceb340c362"
+checksum = "411991593f041990abf72f6715903fe67770e710e3c95a6d2e98a7550270136a"
 dependencies = [
- "spin",
+ "spinning_top",
 ]
 
 [[package]]
@@ -586,7 +586,7 @@ dependencies = [
  "log",
  "miow",
  "net2",
- "slab",
+ "slab 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "winapi 0.2.8",
 ]
 
@@ -930,7 +930,6 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "bs58",
- "byteorder",
  "crossbeam-queue",
  "fnv 1.0.6 (git+https://github.com/dflemstr/rust-fnv)",
  "futures",
@@ -1055,7 +1054,6 @@ version = "0.1.0"
 dependencies = [
  "acpi",
  "blake3",
- "byteorder",
  "cc",
  "crossbeam-queue",
  "futures",
@@ -1085,7 +1083,6 @@ dependencies = [
 name = "redshirt-syscalls"
 version = "0.1.0"
 dependencies = [
- "byteorder",
  "futures",
  "generic-array",
  "hashbrown",
@@ -1093,6 +1090,7 @@ dependencies = [
  "nohash-hasher",
  "parity-scale-codec",
  "pin-project",
+ "slab 0.4.2 (git+https://github.com/baloo/slab?rev=88b456131de20750e785655d1e62cd0b6e10d44b)",
  "spin",
 ]
 
@@ -1275,6 +1273,11 @@ dependencies = [
 [[package]]
 name = "slab"
 version = "0.4.2"
+source = "git+https://github.com/baloo/slab?rev=88b456131de20750e785655d1e62cd0b6e10d44b#88b456131de20750e785655d1e62cd0b6e10d44b"
+
+[[package]]
+name = "slab"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c111b5bd5695e56cffe5129854aa230b39c93a305372fdbb2668ca2394eea9f8"
 
@@ -1289,6 +1292,15 @@ name = "spin"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6e63cff320ae2c57904679ba7cb63280a3dc4613885beafb148ee7bf9aa9042d"
+
+[[package]]
+name = "spinning_top"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32d801a3a53bcf5071f85fef8d5cab9e5f638fc5580a37e6eb7aba4b37438d24"
+dependencies = [
+ "lock_api",
+]
 
 [[package]]
 name = "strsim"
@@ -1362,7 +1374,7 @@ dependencies = [
  "memchr",
  "mio",
  "pin-project-lite",
- "slab",
+ "slab 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]

@@ -8,18 +8,18 @@ publish = false
 [dependencies]
 base64 = { version = "0.11.0", default-features = false, features = ["alloc"] }
 futures = "0.3"
-libp2p-core = "0.14.0-alpha.1"
-libp2p-kad = "0.14.0-alpha.1"
-libp2p-mplex = "0.14.0-alpha.1"
-#libp2p-secio = "0.14.0-alpha.1"
-libp2p-plaintext = "0.14.0-alpha.1"
-libp2p-swarm = "0.4.0-alpha.1"
+libp2p-core = "0.16.0"
+libp2p-kad = "0.16.2"
+libp2p-mplex = "0.16.0"
+#libp2p-noise = "0.16.2"
+libp2p-plaintext = "0.16.0"
+libp2p-swarm = "0.16.0"
 log = "0.4"
 parity-scale-codec = "1.0.5"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 env_logger = "0.7.1"
-libp2p-tcp = "0.14.0-alpha.1"
+libp2p-tcp = "0.16.0"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 redshirt-interface-interface = { path = "../../interfaces/interface" }

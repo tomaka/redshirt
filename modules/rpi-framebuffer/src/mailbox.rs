@@ -38,7 +38,7 @@ impl Message {
         assert!(channel < (1 << 4));
         assert!(data < (1 << 28));
         Message {
-            value: (data << 4) | u32::from(channel)
+            value: (data << 4) | u32::from(channel),
         }
     }
 
@@ -62,7 +62,9 @@ pub async fn read_mailbox() -> Message {
         // Wait for status register to indicate a message.
         loop {
             let val = redshirt_hardware_interface::read_one_u32(MAILBOX_BASE + 0x18).await;
-            if val & (1 << 30) == 0 { break; }
+            if val & (1 << 30) == 0 {
+                break;
+            }
         }
 
         let mut read = redshirt_hardware_interface::HardwareOperationsBuilder::new();
@@ -79,7 +81,9 @@ pub async fn write_mailbox(message: Message) {
         // Wait for status register to indicate a message.
         loop {
             let val = redshirt_hardware_interface::read_one_u32(MAILBOX_BASE + 0x18).await;
-            if val & (1 << 31) == 0 { break; }
+            if val & (1 << 31) == 0 {
+                break;
+            }
         }
 
         redshirt_hardware_interface::write_one_u32(MAILBOX_BASE + 0x20, message.value);

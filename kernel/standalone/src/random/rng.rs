@@ -109,14 +109,12 @@ impl RngCore for KernelRng {
 
 #[cfg(target_arch = "x86_64")]
 fn add_hardware_entropy(hasher: &mut blake3::Hasher) {
-    use byteorder::{ByteOrder as _, NativeEndian};
-
     if let Some(rdrand) = x86_64::instructions::random::RdRand::new() {
         let mut buf = [0; 64];
         let mut entropy_bytes = 0;
         for chunk in buf.chunks_mut(8) {
             if let Some(val) = rdrand.get_u64() {
-                NativeEndian::write_u64(chunk, val);
+                chunk.copy_from_slice(&val.to_ne_bytes());
                 entropy_bytes += 8;
             } else {
                 break;

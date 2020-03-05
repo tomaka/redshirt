@@ -186,15 +186,15 @@ jobs:
     - name: Install nightly Rust
       uses: actions-rs/toolchain@v1
       with:
-        toolchain: nightly
+        toolchain: nightly-2020-02-28
         target: wasm32-unknown-unknown
         override: true
     - name: Install rust-src
       run: rustup component add rust-src
     - name: Build core
-      run: RUST_TARGET_PATH=`pwd` cargo +nightly build -Z build-std=core,alloc --target ${{ matrix.target }} --package redshirt-core --release
+      run: RUST_TARGET_PATH=`pwd` cargo +nightly-2020-02-28 build -Z build-std=core,alloc --target ${{ matrix.target }} --package redshirt-core --release
     - name: Build kernel
-      run: RUST_TARGET_PATH=`pwd` cargo +nightly build -Z build-std=core,alloc --target ${{ matrix.target }} --package redshirt-standalone-kernel --release
+      run: RUST_TARGET_PATH=`pwd` cargo +nightly-2020-02-28 build -Z build-std=core,alloc --target ${{ matrix.target }} --package redshirt-standalone-kernel --release
     - name: Upload generated kernel
       uses: actions/upload-artifact@master
       with:
@@ -274,8 +274,18 @@ jobs:
           override: true
       - name: Install rustfmt
         run: rustup component add rustfmt
-      - name: Run cargo fmt
+      - name: Run cargo fmt on root workspace
         uses: actions-rs/cargo@v1
         with:
           command: fmt
           args: --all -- --check
+      - name: Run cargo fmt on modules workspace
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all --manifest-path=modules/Cargo.toml -- --check
+      - name: Run cargo fmt on standalone tester workspace
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all --manifest-path=kernel/standalone-tester/Cargo.toml -- --check
