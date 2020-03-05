@@ -301,10 +301,10 @@ jobs:
       - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly
+          toolchain: nightly-2020-02-28
           target: wasm32-unknown-unknown
           override: true
       - name: Check core intra-doc links
-        run: RUSTDOCFLAGS="--deny intra_doc_link_resolution_failure" cargo +nightly doc --verbose --workspace --no-deps --document-private-items
+        run: RUSTDOCFLAGS="--deny intra_doc_link_resolution_failure" cargo +nightly-2020-02-28 doc --verbose --workspace --no-deps --document-private-items
       - name: Check modules intra-doc links
-        run: RUSTDOCFLAGS="--deny intra_doc_link_resolution_failure" cargo +nightly doc --verbose --manifest-path modules/Cargo.toml --workspace --no-deps --document-private-items
+        run: RUSTDOCFLAGS="--deny intra_doc_link_resolution_failure" cargo +nightly-2020-02-28 doc --verbose --manifest-path modules/Cargo.toml --workspace --no-deps --document-private-items
