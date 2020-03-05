@@ -1,15 +1,15 @@
 # Note: because of path dependencies in the Cargo.toml, this Docker image needs to be built from the root of the repository
 
-# TODO: could be alpine, but musl doesn't support proc macros https://github.com/rust-lang/rust/issues/40174
-FROM rust:1-buster AS builder
+FROM rust:1 AS builder
 LABEL maintainer "Pierre Krieger <pierre.krieger1708@gmail.com>"
 
 COPY . /build
 WORKDIR /build/modules/p2p-loader
-RUN cargo build --bin passive-node --release --verbose
+RUN rustup target add x86_64-unknown-linux-musl
+RUN cargo build --target x86_64-unknown-linux-musl --bin passive-node --release --verbose
 
 
-FROM debian:buster
+FROM alpine:latest
 LABEL maintainer "Pierre Krieger <pierre.krieger1708@gmail.com>"
 COPY --from=builder /build/modules/target/release/passive-node /usr/local/bin
 
