@@ -38,14 +38,6 @@ pub fn monotonic_clock() -> impl Future<Output = u128> {
     }
 }
 
-/// Returns the number of nanoseconds since the Epoch (January 1st, 1970 at midnight UTC).
-pub fn system_clock() -> impl Future<Output = u128> {
-    unsafe {
-        let msg = ffi::TimeMessage::GetSystem;
-        redshirt_syscalls::emit_message_with_response(&ffi::INTERFACE, msg).unwrap()
-    }
-}
-
 /// Returns a `Future` that yields when the monotonic clock reaches this value.
 pub fn monotonic_wait_until(until: u128) -> impl Future<Output = ()> {
     unsafe {

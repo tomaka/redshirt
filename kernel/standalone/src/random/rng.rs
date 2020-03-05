@@ -109,14 +109,12 @@ impl RngCore for KernelRng {
 
 #[cfg(target_arch = "x86_64")]
 fn add_hardware_entropy(hasher: &mut blake3::Hasher) {
-    use byteorder::{ByteOrder as _, NativeEndian};
-
     if let Some(rdrand) = x86_64::instructions::random::RdRand::new() {
         let mut buf = [0; 64];
         let mut entropy_bytes = 0;
         for chunk in buf.chunks_mut(8) {
             if let Some(val) = rdrand.get_u64() {
-                NativeEndian::write_u64(chunk, val);
+                chunk.copy_from_slice(&val.to_ne_bytes());
                 entropy_bytes += 8;
             } else {
                 break;
@@ -129,12 +127,23 @@ fn add_hardware_entropy(hasher: &mut blake3::Hasher) {
 #[cfg(not(target_arch = "x86_64"))]
 fn add_hardware_entropy(_: &mut blake3::Hasher) {}
 
+// Note: timer must have nanosecond precision, according to the documentation of `JitterRng`.
 #[cfg(target_arch = "x86_64")]
 fn timer() -> u64 {
     unsafe { core::arch::x86_64::_rdtsc() }
 }
-
-#[cfg(not(target_arch = "x86_64"))]
+#[cfg(target_arch = "arm")]
 fn timer() -> u64 {
-    0xdeadbeefu64
+    unsafe {
+        let lo: u32;
+        let hi: u32;
+        // TODO: what about CNTFRQ? which code configures it? initial value is unknown at reset
+        // Reading the CNTPCT register.
+        asm!("mrrc p15, 0, $0, $1, c14": "=r"(lo), "=r"(hi) ::: "volatile");
+        u64::from(hi) << 32 | u64::from(lo)
+    }
+}
+#[cfg(not(any(target_arch = "x86_64", target_arch = "arm")))]
+fn timer() -> u64 {
+    unimplemented!()
 }

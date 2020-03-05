@@ -47,6 +47,9 @@ pub trait PlatformSpecific: Send + Sync + 'static {
     fn block_on<TRet>(self: Pin<&Self>, future: impl Future<Output = TRet>) -> TRet;
 
     /// Returns the number of nanoseconds that happened since an undeterminate moment in time.
+    ///
+    /// > **Note**: The returned value is provided on a "best effort" basis and is not
+    /// >           necessarily exact (it is, in fact, rarely exact).
     fn monotonic_clock(self: Pin<&Self>) -> u128;
     /// Returns a `Future` that fires when the monotonic clock reaches the given value.
     fn timer(self: Pin<&Self>, clock_value: u128) -> Self::TimerFuture;

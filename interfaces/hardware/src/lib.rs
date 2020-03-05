@@ -45,6 +45,14 @@ impl HardwareWriteOperationsBuilder {
         }
     }
 
+    pub unsafe fn memset(&mut self, address: u64, len: u64, value: u8) {
+        self.operations.push(ffi::Operation::PhysicalMemoryMemset {
+            address,
+            len,
+            value,
+        });
+    }
+
     pub unsafe fn write(&mut self, address: u64, data: impl Into<Vec<u8>>) {
         self.operations.push(ffi::Operation::PhysicalMemoryWriteU8 {
             address,
@@ -173,6 +181,14 @@ impl<'a> HardwareOperationsBuilder<'a> {
             len: out.len() as u32, // TODO: don't use `as`
         });
         self.out.push(Out::MemReadU32(out));
+    }
+
+    pub unsafe fn memset(&mut self, address: u64, len: u64, value: u8) {
+        self.operations.push(ffi::Operation::PhysicalMemoryMemset {
+            address,
+            len,
+            value,
+        });
     }
 
     pub unsafe fn write(&mut self, address: u64, data: impl Into<Vec<u8>>) {

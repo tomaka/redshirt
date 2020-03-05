@@ -25,28 +25,48 @@ use futures::prelude::*;
 /// registered.
 // TODO: move to interface interface?
 pub fn next_interface_message() -> InterfaceMessageFuture {
-    InterfaceMessageFuture { finished: false }
+    InterfaceMessageFuture {
+        finished: false,
+        registration: None,
+    }
 }
 
 /// Answers the given message.
 // TODO: move to interface interface?
 pub fn emit_answer(message_id: MessageId, msg: impl Encode) {
-    unsafe {
-        let buf = msg.encode();
-        crate::ffi::emit_answer(&u64::from(message_id), buf.0.as_ptr(), buf.0.len() as u32);
+    #[cfg(target_arch = "wasm32")] // TODO: we should have a proper operating system name instead
+    fn imp(message_id: MessageId, msg: impl Encode) {
+        unsafe {
+            let buf = msg.encode();
+            crate::ffi::emit_answer(&u64::from(message_id), buf.0.as_ptr(), buf.0.len() as u32);
+        }
     }
+    #[cfg(not(target_arch = "wasm32"))]
+    fn imp(message_id: MessageId, msg: impl Encode) {
+        unreachable!()
+    }
+    imp(message_id, msg)
 }
 
 /// Answers the given message by notifying of an error in the message.
 // TODO: move to interface interface?
 pub fn emit_message_error(message_id: MessageId) {
-    unsafe { crate::ffi::emit_message_error(&u64::from(message_id)) }
+    #[cfg(target_arch = "wasm32")] // TODO: we should have a proper operating system name instead
+    fn imp(message_id: MessageId) {
+        unsafe { crate::ffi::emit_message_error(&u64::from(message_id)) }
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    fn imp(message_id: MessageId) {
+        unreachable!()
+    }
+    imp(message_id)
 }
 
 /// Future that drives [`next_interface_message`] to completion.
 #[must_use]
 pub struct InterfaceMessageFuture {
     finished: bool,
+    registration: Option<crate::block_on::WakerRegistration>,
 }
 
 impl Future for InterfaceMessageFuture {
@@ -58,7 +78,16 @@ impl Future for InterfaceMessageFuture {
             self.finished = true;
             Poll::Ready(message)
         } else {
-            crate::block_on::register_message_waker(From::from(1), cx.waker().clone());
+            match &mut self.registration {
+                Some(r) => r.update(cx.waker()),
+                r @ None => {
+                    *r = Some(crate::block_on::register_message_waker(
+                        From::from(1),
+                        cx.waker().clone(),
+                    ))
+                }
+            };
+
             Poll::Pending
         }
     }

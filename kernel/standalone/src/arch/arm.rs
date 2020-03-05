@@ -17,12 +17,14 @@
 
 use crate::arch::PlatformSpecific;
 
+use alloc::sync::Arc;
 use core::{iter, num::NonZeroU32, pin::Pin};
 use futures::prelude::*;
 
 mod executor;
 mod misc;
 mod panic;
+mod time;
 
 // TODO: always fails :-/
 /*#[cfg(not(any(target_feature = "armv7-a", target_feature = "armv7-r")))]
@@ -79,24 +81,19 @@ fn cpu_enter(_r0: u32, _r1: u32, _r2: u32) -> ! {
     // points either to ATAGS or a DTB (device tree) indicating what the hardware supports. This
     // is unfortunately not supported by QEMU as of the writing of this comment.
 
-    // Initialize performance counters.
-    // TODO: do that properly and well isolated
-    // TODO: also, we just assume that counters are supported
-    unsafe {
-        asm!("mcr p15, 0, $0, c9, c12, 0"::"r"(0b111u32)::"volatile");
-        asm!("mcr p15, 0, $0, c9, c12, 1"::"r"(0x8000000fu32)::"volatile");
-        asm!("mcr p15, 0, $0, c9, c12, 3"::"r"(0x8000000fu32)::"volatile");
-    }
+    let time = unsafe { time::TimeControl::init() };
 
-    let kernel = crate::kernel::Kernel::init(PlatformSpecificImpl);
+    let kernel = crate::kernel::Kernel::init(PlatformSpecificImpl { time });
     kernel.run()
 }
 
 /// Implementation of [`PlatformSpecific`].
-struct PlatformSpecificImpl;
+struct PlatformSpecificImpl {
+    time: Arc<time::TimeControl>,
+}
 
 impl PlatformSpecific for PlatformSpecificImpl {
-    type TimerFuture = future::Pending<()>;
+    type TimerFuture = time::TimerFuture;
 
     fn num_cpus(self: Pin<&Self>) -> NonZeroU32 {
         NonZeroU32::new(1).unwrap()
@@ -107,12 +104,11 @@ impl PlatformSpecific for PlatformSpecificImpl {
     }
 
     fn monotonic_clock(self: Pin<&Self>) -> u128 {
-        // TODO: implement correctly
-        0xdeadbeefu128
+        self.time.monotonic_clock()
     }
 
-    fn timer(self: Pin<&Self>, clock_value: u128) -> Self::TimerFuture {
-        future::pending()
+    fn timer(self: Pin<&Self>, deadline: u128) -> Self::TimerFuture {
+        self.time.timer(deadline)
     }
 
     unsafe fn write_port_u8(self: Pin<&Self>, _: u32, _: u8) -> Result<(), ()> {

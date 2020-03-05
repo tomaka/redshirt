@@ -109,7 +109,6 @@ where
                 self.pending_messages
                     .push((message_id.unwrap(), Ok(now.encode())));
             }
-            Ok(TimeMessage::GetSystem) => unimplemented!(),
             Ok(TimeMessage::WaitMonotonic(value)) => {
                 let message_id = message_id.unwrap();
                 let timers = self.timers.lock();

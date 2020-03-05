@@ -10,7 +10,11 @@ repository = "https://github.com/rust-random/getrandom"
 categories = ["os", "no-std"]
 exclude = ["utils/*", ".*", "appveyor.yml"]
 
-[dependencies]
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# Note: we use the git version because the crates.io version lead to a recursive dependency
+actual-getrandom = { package = "getrandom", git = "https://github.com/rust-random/getrandom" }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
 redshirt-random-interface = { path = "../../../interfaces/random" }
 redshirt-syscalls = { path = "../../../interfaces/syscalls" }
 
