@@ -28,7 +28,7 @@ use tempdir::TempDir;
 
 #[derive(Debug, StructOpt)]
 #[structopt(
-    name = "redshirt-standalone-tester",
+    name = "redshirt-standalone-builder",
     about = "Redshirt standalone kernel tester."
 )]
 struct CliOptions {

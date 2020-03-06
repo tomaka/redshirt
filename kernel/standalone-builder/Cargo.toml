@@ -1,5 +1,5 @@
 [package]
-name = "redshirt-standalone-tester"
+name = "redshirt-standalone-builder"
 version = "0.1.0"
 license = "GPL-3.0-or-later"
 authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]

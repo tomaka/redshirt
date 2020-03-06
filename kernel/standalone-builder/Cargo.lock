@@ -159,7 +159,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "redshirt-standalone-tester"
+name = "redshirt-standalone-builder"
 version = "0.1.0"
 dependencies = [
  "structopt",
