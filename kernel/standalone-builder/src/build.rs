@@ -125,9 +125,7 @@ pub fn build(cfg: Config) -> Result<BuildOutput, Error> {
             .join(if cfg.release { "release" } else { "debug" })
             .join(bin_target.name.clone());
 
-        let target_dir_with_target = metadata
-            .target_directory
-            .join(cfg.target_name);
+        let target_dir_with_target = metadata.target_directory.join(cfg.target_name);
 
         (output_file, target_dir_with_target, bin_target.name.clone())
     };
