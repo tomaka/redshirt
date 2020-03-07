@@ -18,7 +18,6 @@ use std::{
     path::{Path, PathBuf},
     process::Command,
 };
-use tempdir::TempDir;
 
 /// Configuration for building the kernel.
 #[derive(Debug)]
@@ -95,7 +94,7 @@ pub fn build(cfg: Config) -> Result<BuildOutput, Error> {
     };
 
     // Determine the path to the file that Cargo will generate.
-    let (output_file, bin_target) = {
+    let (output_file, target_dir_with_target, bin_target) = {
         let metadata = cargo_metadata::MetadataCommand::new()
             .manifest_path(&cfg.kernel_cargo_toml)
             .no_deps()
@@ -126,17 +125,21 @@ pub fn build(cfg: Config) -> Result<BuildOutput, Error> {
             .join(if cfg.release { "release" } else { "debug" })
             .join(bin_target.name.clone());
 
-        (output_file, bin_target.name.clone())
+        let target_dir_with_target = metadata
+            .target_directory
+            .join(cfg.target_name);
+
+        (output_file, target_dir_with_target, bin_target.name.clone())
     };
 
     // Create and fill the directory for the target specifications.
-    let specs_path = TempDir::new("redshirt-build-target-specs")?;
+    fs::create_dir_all(&target_dir_with_target)?;
     fs::write(
-        specs_path.path().join(format!("{}.json", cfg.target_name)),
+        (&target_dir_with_target).join(format!("{}.json", cfg.target_name)),
         cfg.target_specs.as_bytes(),
     )?;
     fs::write(
-        specs_path.path().join("link.ld"),
+        (&target_dir_with_target).join("link.ld"),
         cfg.link_script.as_bytes(),
     )?;
 
@@ -144,7 +147,7 @@ pub fn build(cfg: Config) -> Result<BuildOutput, Error> {
     let build_status = Command::new("cargo")
         .arg("build")
         .args(&["-Z", "build-std=core,alloc"]) // TODO: nightly only; cc https://github.com/tomaka/redshirt/issues/300
-        .env("RUST_TARGET_PATH", specs_path.path())
+        .env("RUST_TARGET_PATH", &target_dir_with_target)
         // TODO: because the path to the link script changes all the time, we always rebuild from scratch
         .env(
             &format!(
@@ -153,7 +156,7 @@ pub fn build(cfg: Config) -> Result<BuildOutput, Error> {
             ),
             format!(
                 "-Clink-arg=--script -Clink-arg={}",
-                specs_path.path().join("link.ld").display()
+                target_dir_with_target.join("link.ld").display()
             ),
         )
         .arg("--bin")
@@ -174,7 +177,6 @@ pub fn build(cfg: Config) -> Result<BuildOutput, Error> {
         return Err(Error::BuildError);
     }
 
-    specs_path.close()?;
     assert!(output_file.exists());
 
     Ok(BuildOutput {
