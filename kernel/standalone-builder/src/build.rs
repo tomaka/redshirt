@@ -178,6 +178,7 @@ pub fn build(cfg: Config) -> Result<BuildOutput, Error> {
     }
 
     assert!(output_file.exists());
+    println!("build ok");
 
     Ok(BuildOutput {
         out_kernel_path: output_file,
