@@ -93,7 +93,8 @@ pub fn run_kernel(cfg: Config) -> Result<(), Error> {
                 target_name: "arm-freestanding",
                 target_specs: include_str!("../res/specs/arm-freestanding.json"),
                 link_script: include_str!("../res/specs/arm-freestanding.ld"),
-            }).map_err(crate::image::Error::Build)?;
+            })
+            .map_err(crate::image::Error::Build)?;
 
             let status = Command::new("qemu-system-arm")
                 .args(&["-M", "raspi2"])
@@ -113,4 +114,3 @@ pub fn run_kernel(cfg: Config) -> Result<(), Error> {
 
     Ok(())
 }
-

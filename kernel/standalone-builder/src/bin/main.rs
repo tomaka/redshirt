@@ -151,21 +151,40 @@ impl FromStr for Emulator {
 fn main() -> Result<(), Box<dyn error::Error + Send + Sync + 'static>> {
     let cli_opts = CliOptions::from_args();
 
+    // Default value for `kernel-cargo-toml` if no value is provided.
+    let default_kernel_cargo_toml = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("standalone")
+        .join("Cargo.toml");
+
     match cli_opts {
-        CliOptions::BuildImage { kernel_cargo_toml, out, device_type, target } => {
-            redshirt_standalone_builder::image::build_image(redshirt_standalone_builder::image::Config {
-                kernel_cargo_toml: &kernel_cargo_toml.unwrap(),     // TODO: autodetect
-                output_file: &out,
-                target: target.into(),
-            })?;
-        },
-        CliOptions::EmulatorRun { kernel_cargo_toml, emulator, target } => {
-            redshirt_standalone_builder::emulator::run_kernel(redshirt_standalone_builder::emulator::Config {
-                kernel_cargo_toml: &kernel_cargo_toml.unwrap(),     // TODO: autodetect
-                emulator: emulator.into(),
-                target: target.into(),
-            })?;
-        },
+        CliOptions::BuildImage {
+            kernel_cargo_toml,
+            out,
+            device_type,
+            target,
+        } => {
+            redshirt_standalone_builder::image::build_image(
+                redshirt_standalone_builder::image::Config {
+                    kernel_cargo_toml: &kernel_cargo_toml.unwrap_or(default_kernel_cargo_toml),
+                    output_file: &out,
+                    target: target.into(),
+                },
+            )?;
+        }
+        CliOptions::EmulatorRun {
+            kernel_cargo_toml,
+            emulator,
+            target,
+        } => {
+            redshirt_standalone_builder::emulator::run_kernel(
+                redshirt_standalone_builder::emulator::Config {
+                    kernel_cargo_toml: &kernel_cargo_toml.unwrap_or(default_kernel_cargo_toml),
+                    emulator: emulator.into(),
+                    target: target.into(),
+                },
+            )?;
+        }
     }
 
     Ok(())

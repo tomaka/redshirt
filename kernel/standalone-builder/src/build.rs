@@ -131,19 +131,31 @@ pub fn build(cfg: Config) -> Result<BuildOutput, Error> {
 
     // Create and fill the directory for the target specifications.
     let specs_path = TempDir::new("redshirt-build-target-specs")?;
-    fs::write(specs_path.path().join(format!("{}.json", cfg.target_name)), cfg.target_specs.as_bytes())?;
-    fs::write(specs_path.path().join("link.ld"), cfg.link_script.as_bytes())?;
+    fs::write(
+        specs_path.path().join(format!("{}.json", cfg.target_name)),
+        cfg.target_specs.as_bytes(),
+    )?;
+    fs::write(
+        specs_path.path().join("link.ld"),
+        cfg.link_script.as_bytes(),
+    )?;
 
     // Actually build the kernel.
     let build_status = Command::new("cargo")
-        .arg("+nightly")        // TODO: no
+        .arg("+nightly") // TODO: no
         .arg("build")
         .args(&["-Z", "build-std=core,alloc"]) // TODO: nightly only; cc https://github.com/tomaka/redshirt/issues/300
         .env("RUST_TARGET_PATH", specs_path.path())
         // TODO: because the path to the link script changes all the time, we always rebuild from scratch
         .env(
-            &format!("CARGO_TARGET_{}_RUSTFLAGS", cfg.target_name.replace("-", "_").to_uppercase()),
-            format!("-Clink-arg=--script -Clink-arg={}", specs_path.path().join("link.ld").display())
+            &format!(
+                "CARGO_TARGET_{}_RUSTFLAGS",
+                cfg.target_name.replace("-", "_").to_uppercase()
+            ),
+            format!(
+                "-Clink-arg=--script -Clink-arg={}",
+                specs_path.path().join("link.ld").display()
+            ),
         )
         .arg("--bin")
         .arg(bin_target)
@@ -151,7 +163,11 @@ pub fn build(cfg: Config) -> Result<BuildOutput, Error> {
         .arg(cfg.target_name)
         .arg("--manifest-path")
         .arg(cfg.kernel_cargo_toml)
-        .args(if cfg.release { &["--release"][..] } else { &[][..] })
+        .args(if cfg.release {
+            &["--release"][..]
+        } else {
+            &[][..]
+        })
         .status()
         .map_err(Error::CargoNotFound)?;
     // TODO: should we make it configurable where the stdout/stderr outputs go?

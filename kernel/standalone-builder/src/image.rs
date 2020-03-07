@@ -34,7 +34,6 @@ pub struct Config<'a> {
 
     /// Platform to compile for.
     pub target: Target,
-
     // TODO: device type
 }
 
@@ -114,7 +113,7 @@ set default=0
 menuentry "redshirt" {
     multiboot2 /boot/kernel
 }
-            "#[..]
+            "#[..],
     )?;
 
     let output = Command::new("grub2-mkrescue")
