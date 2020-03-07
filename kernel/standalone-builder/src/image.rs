@@ -91,6 +91,7 @@ pub fn build_image(config: Config) -> Result<(), Error> {
 /// Builds an x86 bootable CDROM ISO with a multiboot2 bootloader on it.
 ///
 /// Assumes that the kernel file is an ELF file that can accept multiboot2 information.
+// TODO: some pure Rust implementation of this one day?
 fn build_x86_multiboot2_cdrom_iso(
     kernel_path: impl AsRef<Path>,
     output_file: impl AsRef<Path>,
@@ -119,11 +120,21 @@ menuentry "redshirt" {
             "#[..],
     )?;
 
-    let output = Command::new("grub2-mkrescue")
+    let output = Command::new("grub-mkrescue")
         .arg("-o")
         .arg(output_file.as_ref())
         .arg(build_dir.path().join("iso"))
-        .output()?;
+        .output();
+
+    let output = if let Ok(output) = output {
+        Ok(output)
+    } else {
+        Command::new("grub2-mkrescue")
+            .arg("-o")
+            .arg(output_file.as_ref())
+            .arg(build_dir.path().join("iso"))
+            .output()
+    }?;
 
     if !output.status.success() {
         // Note: if `grub2-mkrescue` successfully starts (which is checked above), we assume that

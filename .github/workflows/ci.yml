@@ -159,10 +159,10 @@ jobs:
       with:
         name: wasm-modules
         path: modules/target/wasm32-unknown-unknown/release
-    - name: Install lld
+    - name: Install required packages
       run: |
         apt-get update
-        apt-get install -y lld
+        apt-get install -y lld libisoburn1 xorriso grub-pc-bin
     - name: Install a recent version of clang
       run: |
         wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
