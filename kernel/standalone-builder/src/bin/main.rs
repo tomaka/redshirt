@@ -38,6 +38,10 @@ enum CliOptions {
         #[structopt(long, parse(from_os_str))]
         kernel_cargo_toml: Option<PathBuf>,
 
+        /// If passed, compiles with `--release`.
+        #[structopt(long)]
+        release: bool,
+
         /// Which target to build for.
         ///
         /// Can be one of: `arm-rpi2`, `x86_64-multiboot2`.
@@ -57,6 +61,10 @@ enum CliOptions {
         /// and try to find the path in a sibling directory.
         #[structopt(long, parse(from_os_str))]
         kernel_cargo_toml: Option<PathBuf>,
+
+        /// If passed, compiles with `--release`.
+        #[structopt(long)]
+        release: bool,
 
         /// Path to the output file. Any existing file will be overwritten.
         #[structopt(short, long, parse(from_os_str))]
@@ -160,6 +168,7 @@ fn main() -> Result<(), Box<dyn error::Error + Send + Sync + 'static>> {
     match cli_opts {
         CliOptions::BuildImage {
             kernel_cargo_toml,
+            release,
             out,
             device_type,
             target,
@@ -167,6 +176,7 @@ fn main() -> Result<(), Box<dyn error::Error + Send + Sync + 'static>> {
             redshirt_standalone_builder::image::build_image(
                 redshirt_standalone_builder::image::Config {
                     kernel_cargo_toml: &kernel_cargo_toml.unwrap_or(default_kernel_cargo_toml),
+                    release,
                     output_file: &out,
                     target: target.into(),
                 },
@@ -174,12 +184,14 @@ fn main() -> Result<(), Box<dyn error::Error + Send + Sync + 'static>> {
         }
         CliOptions::EmulatorRun {
             kernel_cargo_toml,
+            release,
             emulator,
             target,
         } => {
             redshirt_standalone_builder::emulator::run_kernel(
                 redshirt_standalone_builder::emulator::Config {
                     kernel_cargo_toml: &kernel_cargo_toml.unwrap_or(default_kernel_cargo_toml),
+                    release,
                     emulator: emulator.into(),
                     target: target.into(),
                 },

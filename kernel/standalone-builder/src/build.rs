@@ -123,7 +123,7 @@ pub fn build(cfg: Config) -> Result<BuildOutput, Error> {
         let output_file = metadata
             .target_directory
             .join(cfg.target_name)
-            .join("release")
+            .join(if cfg.release { "release" } else { "debug" })
             .join(bin_target.name.clone());
 
         (output_file, bin_target.name.clone())

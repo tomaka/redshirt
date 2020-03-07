@@ -32,6 +32,9 @@ pub struct Config<'a> {
     /// The path must exist, and any existing file will be overwritten.
     pub output_file: &'a Path,
 
+    /// If true, compiles with `--release`.
+    pub release: bool,
+
     /// Platform to compile for.
     pub target: Target,
     // TODO: device type
@@ -61,7 +64,7 @@ pub fn build_image(config: Config) -> Result<(), Error> {
         Target::X8664Multiboot2 => {
             let build_out = crate::build::build(crate::build::Config {
                 kernel_cargo_toml: config.kernel_cargo_toml,
-                release: true,
+                release: config.release,
                 target_name: "x86_64-multiboot2",
                 target_specs: include_str!("../res/specs/x86_64-multiboot2.json"),
                 link_script: include_str!("../res/specs/x86_64-multiboot2.ld"),
@@ -74,7 +77,7 @@ pub fn build_image(config: Config) -> Result<(), Error> {
         Target::RaspberryPi2 => {
             let build_out = crate::build::build(crate::build::Config {
                 kernel_cargo_toml: config.kernel_cargo_toml,
-                release: true,
+                release: config.release,
                 target_name: "arm-freestanding",
                 target_specs: include_str!("../res/specs/arm-freestanding.json"),
                 link_script: include_str!("../res/specs/arm-freestanding.ld"),

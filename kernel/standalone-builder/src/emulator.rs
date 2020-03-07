@@ -27,6 +27,9 @@ pub struct Config<'a> {
     /// Path to the `Cargo.toml` of the standalone kernel.
     pub kernel_cargo_toml: &'a Path,
 
+    /// If true, compiles with `--release`.
+    pub release: bool,
+
     /// Which emulator to use.
     pub emulator: Emulator,
 
@@ -67,6 +70,7 @@ pub fn run_kernel(cfg: Config) -> Result<(), Error> {
             crate::image::build_image(crate::image::Config {
                 kernel_cargo_toml: cfg.kernel_cargo_toml,
                 output_file: &build_dir.path().join("image"),
+                release: cfg.release,
                 target: cfg.target,
             })?;
 
@@ -89,7 +93,7 @@ pub fn run_kernel(cfg: Config) -> Result<(), Error> {
         crate::image::Target::RaspberryPi2 => {
             let build_out = crate::build::build(crate::build::Config {
                 kernel_cargo_toml: cfg.kernel_cargo_toml,
-                release: true,
+                release: cfg.release,
                 target_name: "arm-freestanding",
                 target_specs: include_str!("../res/specs/arm-freestanding.json"),
                 link_script: include_str!("../res/specs/arm-freestanding.ld"),
