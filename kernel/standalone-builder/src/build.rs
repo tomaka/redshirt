@@ -72,6 +72,9 @@ pub enum Error {
 
 /// Builds the kernel.
 pub fn build(cfg: Config) -> Result<BuildOutput, Error> {
+    assert_ne!(cfg.target_name, "debug");
+    assert_ne!(cfg.target_name, "release");
+
     // Get the package ID of the package requested by the user.
     let pkg_id = {
         let output = Command::new("cargo")
