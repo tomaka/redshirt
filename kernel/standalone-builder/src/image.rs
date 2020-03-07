@@ -15,7 +15,7 @@
 
 use std::{
     fs,
-    io::{self, Read, Write, Seek, SeekFrom},
+    io::{self, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     process::Command,
 };
@@ -75,13 +75,20 @@ pub fn build_image(config: Config) -> Result<(), Error> {
         }
 
         Target::RaspberryPi2 => {
-            let build_out = crate::build::build(crate::build::Config {
+            let v7_build_out = crate::build::build(crate::build::Config {
                 kernel_cargo_toml: config.kernel_cargo_toml,
                 release: config.release,
                 target_name: "arm-freestanding",
                 target_specs: include_str!("../res/specs/arm-freestanding.json"),
                 link_script: include_str!("../res/specs/arm-freestanding.ld"),
             })?;
+
+            let build_dir = TempDir::new("redshirt-sd-card-build")?;
+            crate::binary::elf_to_binary(
+                crate::binary::Architecture::Arm,
+                v7_build_out.out_kernel_path,
+                build_dir.path().join("kernel7.img"),
+            )?;
 
             let img_file = fs::OpenOptions::new()
                 .read(true)
@@ -92,7 +99,11 @@ pub fn build_image(config: Config) -> Result<(), Error> {
                 .unwrap();
             img_file.set_len(1 * 1024 * 1024 * 1024)?;
             let img_file = fscommon::BufStream::new(img_file);
-            build_raspberry_pi_sd_card(img_file, io::empty(), io::empty())?;
+            build_raspberry_pi_sd_card(
+                img_file,
+                fs::File::open(build_dir.path().join("kernel7.img")).unwrap(),
+                io::empty(),
+            )?;
             Ok(())
         }
     }
@@ -174,7 +185,7 @@ fn build_raspberry_pi_sd_card(
     out.seek(SeekFrom::Start(0))?;
 
     // We start by writing a MBR to the disk.
-    // The MBR (Master Boot Record) is the first section of the SD card, and contains information 
+    // The MBR (Master Boot Record) is the first section of the SD card, and contains information
     // about the disk, including the paritions table.
     // We create one partition covering the entire disk.
     let mut mbr = mbrman::MBR::new_from(&mut out, 512, [0xff, 0x00, 0x34, 0x56]).unwrap();
