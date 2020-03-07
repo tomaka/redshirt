@@ -150,7 +150,8 @@ jobs:
         CC: clang-9
     strategy:
       matrix:
-        target: [x86_64-multiboot2, arm-rpi2]
+        #target: [x86_64-multiboot2, arm-rpi2]  # TODO: not implemented
+        target: [x86_64-multiboot2]
     steps:
     - uses: actions/checkout@v1
     - name: Download WASM modules
