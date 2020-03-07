@@ -43,6 +43,14 @@ unsafe extern "C" fn _start() -> ! {
     .option pop
     ":::"memory":"volatile");*/
 
+    // Zero the BSS segment.
+    // TODO: we pray here that the compiler doesn't use the stack
+    let mut ptr = __bss_start;
+    while ptr < __bss_end {
+        ptr.write_volatile(0);
+        ptr = ptr.add(1);
+    }
+
     // Set up the stack.
     // TODO: better way
     asm!(r#"
@@ -56,6 +64,11 @@ unsafe extern "C" fn _start() -> ! {
     add s0, sp, zero"#:::"memory":"volatile");
 
     cpu_enter();
+}
+
+extern "C" {
+    static mut __bss_start: *mut u8;
+    static mut __bss_end: *mut u8;
 }
 
 /// Main Rust entry point.
