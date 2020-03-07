@@ -41,8 +41,10 @@ SECTIONS {
   }
 
   .bss ALIGN(4096) : AT(ADDR(.bss)) {
+    __bss_start = .;
     *(.bss)
     *(.bss.*)
     *(COMMON)
+    __bss_end = .;
   }
 }

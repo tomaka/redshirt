@@ -22,8 +22,10 @@ SECTIONS {
         *(.data*)
     }
 
-    .bss : AT(ADDR(.bss)) {
+    .bss : AT(ADDR(.bss)) ALIGN(8) {
+        __bss_start = .;
         *(.bss*)
         *(COMMON*)
+        __bss_end = .;
     }
 }

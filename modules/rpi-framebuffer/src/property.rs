@@ -26,9 +26,7 @@ pub struct PropertyMessageBuilder {
 
 impl PropertyMessageBuilder {
     pub fn new() -> PropertyMessageBuilder {
-        PropertyMessageBuilder {
-            buffer: vec![0; 2],
-        }
+        PropertyMessageBuilder { buffer: vec![0; 2] }
     }
 
     pub fn add_tag(&mut self, tag: u32, value_buffer: &[u8]) {
@@ -39,7 +37,8 @@ impl PropertyMessageBuilder {
             .unwrap_or(0);
 
         let buffer_tag_start = self.buffer.len();
-        let new_buffer_len = self.buffer.len() + 3 + usize::try_from(value_buffer_num_u32s).unwrap();
+        let new_buffer_len =
+            self.buffer.len() + 3 + usize::try_from(value_buffer_num_u32s).unwrap();
         self.buffer.resize(new_buffer_len, 0);
 
         self.buffer[buffer_tag_start] = tag;
@@ -47,7 +46,8 @@ impl PropertyMessageBuilder {
 
         // Copy `value_buffer` into `self.buffer`.
         for (byte_index, byte) in value_buffer.iter().enumerate() {
-            self.buffer[buffer_tag_start + 3 + (byte_index / 4)] |= u32::from(*byte) << (8 * (byte_index % 4));
+            self.buffer[buffer_tag_start + 3 + (byte_index / 4)] |=
+                u32::from(*byte) << (8 * (byte_index % 4));
         }
     }
 
@@ -67,12 +67,11 @@ impl PropertyMessageBuilder {
                 0x00048005, 4, 0, 24,           // This tag sets the depth to 24 bits
                 0,                              // This is the end tag
                 0, 0, 0                         // This pads the message to by 16 byte aligned
-            ]            
+            ]
         }).await;
 
         assert_eq!(buffer1.pointer() % 16, 0);
         mailbox::write_mailbox(mailbox::Message::new(8, u32::try_from(buffer1.pointer() >> 4).unwrap())).await;      // TODO: ` | 0x40000000` ?*/
-
     }
 }
 
@@ -87,11 +86,9 @@ impl<'a> PropertyMessageParser<'a> {
         assert_eq!(buffer.len() % 16, 0);
         assert_eq!(u32::try_from(buffer.len()).unwrap(), buffer[0]);
         if buffer[1] != 0x80000000 {
-            return Err(())
+            return Err(());
         }
-        Ok(PropertyMessageParser {
-            data: buffer,
-        })
+        Ok(PropertyMessageParser { data: buffer })
     }
 
     /// Returns an iterator to the list of tags of the message.
@@ -141,18 +138,23 @@ struct Packet2 {
 pub async fn init() {
     let buffer1 = redshirt_hardware_interface::malloc::PhysicalBuffer::new(Packet1 {
         data: [
-            80,                             // The whole buffer is 80 bytes
-            0,                              // This is a request, so the request/response code is 0
-            0x00048003, 8, 0, 640, 480,     // This tag sets the screen size to 640x480
-            0x00048004, 8, 0, 640, 480,     // This tag sets the virtual screen size to 640x480
-            0x00048005, 4, 0, 24,           // This tag sets the depth to 24 bits
-            0,                              // This is the end tag
-            0, 0, 0                         // This pads the message to by 16 byte aligned
-        ]            
-    }).await;
+            80, // The whole buffer is 80 bytes
+            0,  // This is a request, so the request/response code is 0
+            0x00048003, 8, 0, 640, 480, // This tag sets the screen size to 640x480
+            0x00048004, 8, 0, 640, 480, // This tag sets the virtual screen size to 640x480
+            0x00048005, 4, 0, 24, // This tag sets the depth to 24 bits
+            0,  // This is the end tag
+            0, 0, 0, // This pads the message to by 16 byte aligned
+        ],
+    })
+    .await;
 
     assert_eq!(buffer1.pointer() % 16, 0);
-    mailbox::write_mailbox(mailbox::Message::new(8, u32::try_from(buffer1.pointer() >> 4).unwrap())).await;      // TODO: ` | 0x40000000` ?
+    mailbox::write_mailbox(mailbox::Message::new(
+        8,
+        u32::try_from(buffer1.pointer() >> 4).unwrap(),
+    ))
+    .await; // TODO: ` | 0x40000000` ?
 
     mailbox::read_mailbox().await;
 
@@ -164,15 +166,20 @@ pub async fn init() {
 
     let buffer2 = redshirt_hardware_interface::malloc::PhysicalBuffer::new(Packet2 {
         data: [
-            32,                         // The whole buffer is 32 bytes
-            0,                          // This is a request, so the request/response code is 0
-            0x00040001, 8, 0, 16, 0,    // This tag requests a 16 byte aligned framebuffer
-            0                           // This is the end tag
-        ]            
-    }).await;
+            32, // The whole buffer is 32 bytes
+            0,  // This is a request, so the request/response code is 0
+            0x00040001, 8, 0, 16, 0, // This tag requests a 16 byte aligned framebuffer
+            0, // This is the end tag
+        ],
+    })
+    .await;
 
     assert_eq!(buffer2.pointer() % 16, 0);
-    mailbox::write_mailbox(mailbox::Message::new(8, u32::try_from(buffer2.pointer() >> 4).unwrap())).await;
+    mailbox::write_mailbox(mailbox::Message::new(
+        8,
+        u32::try_from(buffer2.pointer() >> 4).unwrap(),
+    ))
+    .await;
 
     mailbox::read_mailbox().await;
 
@@ -185,7 +192,11 @@ pub async fn init() {
 
     let mut op_builder = redshirt_hardware_interface::HardwareWriteOperationsBuilder::new();
     unsafe {
-        op_builder.memset(u64::from(fb_addr), 3 * u64::from(actual_height) * u64::from(actual_width), 0xff);
+        op_builder.memset(
+            u64::from(fb_addr),
+            3 * u64::from(actual_height) * u64::from(actual_width),
+            0xff,
+        );
     }
     op_builder.send();
 }
