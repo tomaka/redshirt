@@ -146,7 +146,6 @@ pub fn build(cfg: Config) -> Result<BuildOutput, Error> {
         .arg("build")
         .args(&["-Z", "build-std=core,alloc"]) // TODO: nightly only; cc https://github.com/tomaka/redshirt/issues/300
         .env("RUST_TARGET_PATH", &target_dir_with_target)
-        // TODO: because the path to the link script changes all the time, we always rebuild from scratch
         .env(
             &format!(
                 "CARGO_TARGET_{}_RUSTFLAGS",
