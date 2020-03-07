@@ -28,9 +28,6 @@
     "max-atomic-width": 32,
     "os": "none",
     "panic-strategy": "abort",
-    "pre-link-args": {
-        "ld.lld": ["--script", "riscv-hifive.ld"]
-    },
     "relocation-model": "static",
     "target-c-int-width": "32",
     "target-endian": "little",

@@ -43,6 +43,7 @@ pub struct Config<'a> {
 /// Target platform.
 #[derive(Debug)]
 pub enum Target {
+    HiFiveRiscV,
     RaspberryPi2,
     RaspberryPi3,
     X8664Multiboot2,
@@ -120,6 +121,8 @@ pub fn build_image(config: Config) -> Result<(), Error> {
             )?;
             Ok(())
         }
+
+        Target::HiFiveRiscV => unimplemented!(),
     }
 }
 
