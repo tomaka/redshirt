@@ -27,7 +27,16 @@ pub struct Config<'a> {
     /// Path to the `Cargo.toml` of the standalone kernel.
     pub kernel_cargo_toml: &'a Path,
 
+    /// Which emulator to use.
+    pub emulator: Emulator,
+
     // TODO: target
+}
+
+/// Which emulator to use.
+#[derive(Debug)]
+pub enum Emulator {
+    Qemu,
 }
 
 /// Error that can happen during the build.
@@ -55,6 +64,7 @@ pub fn run_kernel(cfg: Config) -> Result<(), Error> {
         output_file: &build_dir.path().join("image"),
     })?;
 
+    let Emulator::Qemu = cfg.emulator;
     let status = Command::new("qemu-system-x86_64")
         .args(&["-m", "1024"])
         .arg("-cdrom")

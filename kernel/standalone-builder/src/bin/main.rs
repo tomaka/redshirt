@@ -43,6 +43,10 @@ enum CliOptions {
         /// Can be one of: `arm-rpi2`, `x86_64-multiboot2`.
         #[structopt(long)]
         target: Target,
+
+        /// Which emulator to use.
+        #[structopt(long, default_value = "qemu")]
+        emulator: Emulator,
     },
 
     /// Builds a bootable image.
@@ -113,6 +117,30 @@ impl FromStr for Target {
     }
 }
 
+#[derive(Debug)]
+enum Emulator {
+    Qemu,
+}
+
+impl From<Emulator> for redshirt_standalone_builder::emulator::Emulator {
+    fn from(emulator: Emulator) -> redshirt_standalone_builder::emulator::Emulator {
+        match emulator {
+            Emulator::Qemu => redshirt_standalone_builder::emulator::Emulator::Qemu,
+        }
+    }
+}
+
+impl FromStr for Emulator {
+    type Err = String; // TODO:
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "qemu" => Ok(Emulator::Qemu),
+            _ => Err("unrecognized emulator".to_string()),
+        }
+    }
+}
+
 fn main() -> Result<(), Box<dyn error::Error + Send + Sync + 'static>> {
     let cli_opts = CliOptions::from_args();
 
@@ -123,9 +151,10 @@ fn main() -> Result<(), Box<dyn error::Error + Send + Sync + 'static>> {
                 output_file: &out,
             })?;
         },
-        CliOptions::EmulatorRun { kernel_cargo_toml, target } => {
+        CliOptions::EmulatorRun { kernel_cargo_toml, emulator, target } => {
             redshirt_standalone_builder::emulator::run_kernel(redshirt_standalone_builder::emulator::Config {
                 kernel_cargo_toml: &kernel_cargo_toml.unwrap(),     // TODO: autodetect
+                emulator: emulator.into(),
             })?;
         },
     }
