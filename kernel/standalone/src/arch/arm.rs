@@ -67,7 +67,7 @@ unsafe extern "C" fn _start() -> ! {
     core::hint::unreachable_unchecked()
 }
 
-extern {
+extern "C" {
     static mut __bss_start: *mut u8;
     static mut __bss_end: *mut u8;
 }
@@ -75,8 +75,6 @@ extern {
 /// Main Rust entry point.
 #[no_mangle]
 fn cpu_enter() -> ! {
-    panic!();
-
     unsafe {
         // TODO: RAM starts at 0, but we start later to avoid the kernel
         // TODO: make this is a cleaner way
