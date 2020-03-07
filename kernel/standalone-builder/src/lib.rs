@@ -13,56 +13,62 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-//! Runs a kernel.
+//! Collection of commands that can build a kernel.
 //!
-//! Runs a kernel using an emulator, if possible.
+//! # Kernel environment
+//!
+//! This crate doesn't contain the source code of the kernel. Instead, many of the commands require
+//! you to pass the location of a `Cargo.toml` that will build this kernel.
+//!
+//! This crate, however, is responsible for building bootable images and setting up the boot
+//! process on various targets. It therefore sets up an environment that the kernel can expect
+//! to be there.
+//!
+//! This environment is the following:
+//!
+//! - The kernel must provide a symbol named `_start`. Execution will jump to this symbol, after
+//! which the kernel is in total control of the hardware.
+//! - The kernel cannot make any assumption about the state of the registers, memory, or hardware
+//! when `_start` is executed, with some exceptions depending on the target.
+//! - The symbols `__bss_start` and `__bss_end` exist and correspond to the beginning and end
+//! of the BSS section (see below).
+//!
+//! ## BSS section
+//!
+//! The BSS section is the section, in an ELF binary, where all the static variables whose initial
+//! value is all zeroes are located.
+//!
+//! Normally, it is the role of the ELF loader (e.g. the Linux kernel) to ensure that this section
+//! is initialized with zeroes. Operating systems, however, are generally not loaded by an ELF
+//! loader.
+//!
+//! Consequently, when the kernel starts, it **must** write the memory between the `__bss_start`
+//! and `__bss_end` symbols with all zeroes.
+//!
+//! This can be done like this:
+//!
+//! ```norun
+//! let mut ptr = __bss_start;
+//! while ptr < __bss_end {
+//!     ptr.write_volatile(0);
+//!     ptr = ptr.add(1);
+//! }
+//!
+//! extern "C" {
+//!     static mut __bss_start: *mut u8;
+//!     static mut __bss_end: *mut u8;
+//! }
+//! ```
 
-use std::{
-    fs,
-    io::{self, Write as _},
-    path::{Path, PathBuf},
-    process::Command,
-};
-use structopt::StructOpt;
-use tempdir::TempDir;
+pub mod binary;
+pub mod build;
+pub mod image;
 
-#[derive(Debug, StructOpt)]
-#[structopt(
-    name = "redshirt-standalone-builder",
-    about = "Redshirt standalone kernel tester."
-)]
-struct CliOptions {
-    /// Target triplet the kernel was compiled with.
-    #[structopt(long)]
-    target: String,
-
-    /// Kernel file to run.
-    #[structopt(parse(from_os_str))]
-    kernel_file: PathBuf,
-}
-
-fn main() {
-    let cli_opts = CliOptions::from_args();
-
-    match cli_opts.target.as_str() {
-        "arm-freestanding" => {
-            run_arm(&cli_opts.kernel_file);
-        }
-        "x86_64-multiboot2" => {
-            run_x86_64(&cli_opts.kernel_file);
-        }
-        _ => {
-            eprintln!("Unrecognized target: {}", cli_opts.target);
-            return;
-        }
-    }
-}
-
-fn run_arm(kernel_path: &Path) {
+/*fn run_arm(kernel_path: &Path) {
     let build_dir = TempDir::new("redshirt-kernel-arm").unwrap();
     fs::write(
         build_dir.path().join("device.dtb"),
-        &include_bytes!("bcm2710-rpi-2-b.dtb")[..],
+        &include_bytes!("res/bcm2710-rpi-2-b.dtb")[..],
     )
     .unwrap();
 
@@ -97,7 +103,7 @@ fn run_x86_64(kernel_path: &Path) {
             .join("boot")
             .join("grub")
             .join("grub.cfg"),
-        &include_bytes!("grub.cfg")[..],
+        &include_bytes!("res/grub.cfg")[..],
     )
     .unwrap();
 
@@ -125,4 +131,4 @@ fn run_x86_64(kernel_path: &Path) {
     assert!(status.success());
 
     build_dir.close().unwrap();
-}
+}*/
