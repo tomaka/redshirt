@@ -19,13 +19,15 @@
 // TODO: implement properly
 
 use alloc::sync::Arc;
-use core::{future::Future, pin::Pin, task::{Context, Poll}};
+use core::{
+    future::Future,
+    pin::Pin,
+    task::{Context, Poll},
+};
 
-pub struct TimeControl {
-}
+pub struct TimeControl {}
 
-pub struct TimerFuture {
-}
+pub struct TimerFuture {}
 
 impl TimeControl {
     pub unsafe fn init() -> Arc<TimeControl> {
@@ -37,8 +39,7 @@ impl TimeControl {
     }
 
     pub fn timer(self: &Arc<Self>, deadline: u128) -> TimerFuture {
-        TimerFuture {
-        }
+        TimerFuture {}
     }
 }
 
