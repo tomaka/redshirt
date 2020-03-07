@@ -21,19 +21,26 @@ use alloc::sync::Arc;
 use core::{iter, num::NonZeroU32, pin::Pin};
 use futures::prelude::*;
 
+#[cfg(target_arch = "aarch64")]
+use time_aarch64 as time;
+#[cfg(target_arch = "arm")]
+use time_arm as time;
+
 mod executor;
 mod misc;
 mod panic;
-mod time;
+mod time_aarch64;
+mod time_arm;
 
-// TODO: always fails :-/
-/*#[cfg(not(any(target_feature = "armv7-a", target_feature = "armv7-r")))]
-compile_error!("The ARMv7-A or ARMv7-R instruction sets must be enabled");*/
-
-/// This is the main entry point of the kernel for ARM architectures.
+/// This is the main entry point of the kernel for ARM 32bits architectures.
+#[cfg(target_arch = "arm")]
 #[no_mangle]
 #[naked]
 unsafe extern "C" fn _start() -> ! {
+    // TODO: always fails :-/
+    /*#[cfg(not(any(target_feature = "armv7-a", target_feature = "armv7-r")))]
+    compile_error!("The ARMv7-A or ARMv7-R instruction sets must be enabled");*/
+
     // Detect which CPU we are.
     //
     // See sections B4.1.106 and B6.1.67 of the ARM® Architecture Reference Manual
@@ -48,6 +55,8 @@ unsafe extern "C" fn _start() -> ! {
     bne halt
     "#::::"volatile");
 
+    // Only one CPU reaches here.
+
     // Zero the BSS segment.
     // TODO: we pray here that the compiler doesn't use the stack
     let mut ptr = __bss_start;
@@ -56,12 +65,43 @@ unsafe extern "C" fn _start() -> ! {
         ptr = ptr.add(1);
     }
 
-    // Only one CPU reaches here.
-
     // Set up the stack.
     asm!(r#"
     .comm stack, 0x400000, 8
     ldr sp, =stack+0x400000"#:::"memory":"volatile");
+
+    asm!(r#"b cpu_enter"#:::"volatile");
+    core::hint::unreachable_unchecked()
+}
+
+/// This is the main entry point of the kernel for ARM 64bits architectures.
+#[cfg(target_arch = "aarch64")]
+#[no_mangle]
+#[naked]
+unsafe extern "C" fn _start() -> ! {
+    // TODO: review this
+    asm!(r#"
+    mrs x6, MPIDR_EL1
+    and x6, x6, #0x3
+    cbz x6, L0
+    b halt
+L0: nop
+    "#::::"volatile");
+
+    // Only one CPU reaches here.
+
+    // Zero the BSS segment.
+    // TODO: we pray here that the compiler doesn't use the stack
+    let mut ptr = __bss_start;
+    while ptr < __bss_end {
+        ptr.write_volatile(0);
+        ptr = ptr.add(1);
+    }
+
+    // Set up the stack.
+    asm!(r#"
+    .comm stack, 0x400000, 8
+    ldr x5, =stack+0x400000; mov sp, x5"#:::"memory":"volatile");
 
     asm!(r#"b cpu_enter"#:::"volatile");
     core::hint::unreachable_unchecked()

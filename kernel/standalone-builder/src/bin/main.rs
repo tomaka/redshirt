@@ -43,8 +43,6 @@ enum CliOptions {
         release: bool,
 
         /// Which target to build for.
-        ///
-        /// Can be one of: `arm-rpi2`, `x86_64-multiboot2`.
         #[structopt(long)]
         target: Target,
 
@@ -80,8 +78,6 @@ enum CliOptions {
         device_type: DeviceTy,
 
         /// Which target to build for.
-        ///
-        /// Can be one of: `arm-rpi2`, `x86_64-multiboot2`.
         #[structopt(long)]
         target: Target,
     },
@@ -108,6 +104,7 @@ impl FromStr for DeviceTy {
 #[derive(Debug)]
 enum Target {
     RaspberryPi2,
+    RaspberryPi3,
     X8664Multiboot2,
 }
 
@@ -115,6 +112,7 @@ impl From<Target> for redshirt_standalone_builder::image::Target {
     fn from(target: Target) -> redshirt_standalone_builder::image::Target {
         match target {
             Target::RaspberryPi2 => redshirt_standalone_builder::image::Target::RaspberryPi2,
+            Target::RaspberryPi3 => redshirt_standalone_builder::image::Target::RaspberryPi3,
             Target::X8664Multiboot2 => redshirt_standalone_builder::image::Target::X8664Multiboot2,
         }
     }
@@ -126,6 +124,7 @@ impl FromStr for Target {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "arm-rpi2" => Ok(Target::RaspberryPi2),
+            "arm-rpi3" => Ok(Target::RaspberryPi3),
             "x86_64-multiboot2" => Ok(Target::X8664Multiboot2),
             _ => Err("unrecognized target".to_string()),
         }

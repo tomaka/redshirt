@@ -143,7 +143,16 @@ fn timer() -> u64 {
         u64::from(hi) << 32 | u64::from(lo)
     }
 }
-#[cfg(not(any(target_arch = "x86_64", target_arch = "arm")))]
+#[cfg(target_arch = "aarch64")]
+fn timer() -> u64 {
+    unsafe {
+        // TODO: stub
+        let val: u64;
+        asm!("mrs $0, CNTPCT_EL0": "=r"(val) ::: "volatile");
+        val
+    }
+}
+#[cfg(not(any(target_arch = "x86_64", target_arch = "arm", target_arch = "aarch64")))]
 fn timer() -> u64 {
     unimplemented!()
 }
