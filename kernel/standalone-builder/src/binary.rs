@@ -15,11 +15,28 @@
 
 use std::{io, path::Path, process::Command};
 
+#[derive(Debug)]
+pub enum Architecture {
+    /// 32bits ARM.
+    Arm,
+    /// 64bits ARM.
+    Aarch64,
+}
+
 /// Turn an ELF file into a binary.
+// TODO: implement this in pure Rust?
 // TODO: define exact semantics of what this function does on the file
-pub fn elf_to_binary(src: impl AsRef<Path>, dest: impl AsRef<Path>) -> Result<(), io::Error> {
-    // TODO: implement this in pure Rust?
-    let status = Command::new("objcopy") // TODO: can be a different objcopy
+pub fn elf_to_binary(
+    architecture: Architecture,
+    src: impl AsRef<Path>,
+    dest: impl AsRef<Path>,
+) -> Result<(), io::Error> {
+    let binary = match architecture {
+        Architecture::Arm => "arm-linux-gnu-objcopy",
+        Architecture::Aarch64 => "aarch64-linux-gnu-objcopy",
+    };
+
+    let status = Command::new(binary)
         .args(&["-O", "binary"])
         .arg(src.as_ref())
         .arg(dest.as_ref())
