@@ -30,7 +30,8 @@ pub struct Config<'a> {
     /// Which emulator to use.
     pub emulator: Emulator,
 
-    // TODO: target
+    /// Target platform.
+    pub target: crate::image::Target,
 }
 
 /// Which emulator to use.
@@ -58,26 +59,56 @@ pub enum Error {
 
 /// Runs the kernel in an emulator.
 pub fn run_kernel(cfg: Config) -> Result<(), Error> {
-    let build_dir = TempDir::new("redshirt-kernel-temp-loc")?;
-    crate::image::build_image(crate::image::Config {
-        kernel_cargo_toml: cfg.kernel_cargo_toml,
-        output_file: &build_dir.path().join("image"),
-    })?;
-
     let Emulator::Qemu = cfg.emulator;
-    let status = Command::new("qemu-system-x86_64")
-        .args(&["-m", "1024"])
-        .arg("-cdrom")
-        .arg(build_dir.path().join("image"))
-        .args(&["-netdev", "bridge,id=nd0,br=virbr0"])
-        .args(&["-device", "ne2k_pci,netdev=nd0"])
-        .args(&["-smp", "cpus=4"])
-        .status()
-        .map_err(Error::EmulatorNotFound)?;
-    // TODO: stdout/stderr
 
-    if !status.success() {
-        return Err(Error::EmulatorRunFailure);
+    match cfg.target {
+        crate::image::Target::X8664Multiboot2 => {
+            let build_dir = TempDir::new("redshirt-kernel-temp-loc")?;
+            crate::image::build_image(crate::image::Config {
+                kernel_cargo_toml: cfg.kernel_cargo_toml,
+                output_file: &build_dir.path().join("image"),
+                target: cfg.target,
+            })?;
+
+            let status = Command::new("qemu-system-x86_64")
+                .args(&["-m", "1024"])
+                .arg("-cdrom")
+                .arg(build_dir.path().join("image"))
+                .args(&["-netdev", "bridge,id=nd0,br=virbr0"])
+                .args(&["-device", "ne2k_pci,netdev=nd0"])
+                .args(&["-smp", "cpus=4"])
+                .status()
+                .map_err(Error::EmulatorNotFound)?;
+            // TODO: stdout/stderr
+
+            if !status.success() {
+                return Err(Error::EmulatorRunFailure);
+            }
+        }
+
+        crate::image::Target::RaspberryPi2 => {
+            let build_out = crate::build::build(crate::build::Config {
+                kernel_cargo_toml: cfg.kernel_cargo_toml,
+                release: true,
+                target_name: "arm-freestanding",
+                target_specs: include_str!("../res/specs/arm-freestanding.json"),
+                link_script: include_str!("../res/specs/arm-freestanding.ld"),
+            }).map_err(crate::image::Error::Build)?;
+
+            let status = Command::new("qemu-system-arm")
+                .args(&["-M", "raspi2"])
+                .args(&["-m", "1024"])
+                .args(&["-serial", "stdio"])
+                .arg("-kernel")
+                .arg(build_out.out_kernel_path)
+                .status()
+                .map_err(Error::EmulatorNotFound)?;
+            // TODO: stdout/stderr
+
+            if !status.success() {
+                return Err(Error::EmulatorRunFailure);
+            }
+        }
     }
 
     Ok(())

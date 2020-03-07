@@ -64,27 +64,3 @@ pub mod binary;
 pub mod build;
 pub mod emulator;
 pub mod image;
-
-/*fn run_arm(kernel_path: &Path) {
-    let build_dir = TempDir::new("redshirt-kernel-arm").unwrap();
-    fs::write(
-        build_dir.path().join("device.dtb"),
-        &include_bytes!("res/bcm2710-rpi-2-b.dtb")[..],
-    )
-    .unwrap();
-
-    let status = Command::new("qemu-system-arm")
-        .args(&["-M", "raspi2"])
-        .args(&["-m", "1024"])
-        .args(&["-serial", "stdio"])
-        .arg("-kernel")
-        .arg(kernel_path)
-        .arg("-dtb")
-        .arg(build_dir.path().join("device.dtb"))
-        .status()
-        .unwrap();
-    assert!(status.success());
-
-    build_dir.close().unwrap();
-}
-*/

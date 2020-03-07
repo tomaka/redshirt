@@ -50,8 +50,6 @@ enum CliOptions {
     },
 
     /// Builds a bootable image.
-    ///
-    /// Test doc more
     BuildImage {
         /// Location of the Cargo.toml of the standalone kernel.
         ///
@@ -105,6 +103,15 @@ enum Target {
     X8664Multiboot2,
 }
 
+impl From<Target> for redshirt_standalone_builder::image::Target {
+    fn from(target: Target) -> redshirt_standalone_builder::image::Target {
+        match target {
+            Target::RaspberryPi2 => redshirt_standalone_builder::image::Target::RaspberryPi2,
+            Target::X8664Multiboot2 => redshirt_standalone_builder::image::Target::X8664Multiboot2,
+        }
+    }
+}
+
 impl FromStr for Target {
     type Err = String; // TODO:
 
@@ -149,12 +156,14 @@ fn main() -> Result<(), Box<dyn error::Error + Send + Sync + 'static>> {
             redshirt_standalone_builder::image::build_image(redshirt_standalone_builder::image::Config {
                 kernel_cargo_toml: &kernel_cargo_toml.unwrap(),     // TODO: autodetect
                 output_file: &out,
+                target: target.into(),
             })?;
         },
         CliOptions::EmulatorRun { kernel_cargo_toml, emulator, target } => {
             redshirt_standalone_builder::emulator::run_kernel(redshirt_standalone_builder::emulator::Config {
                 kernel_cargo_toml: &kernel_cargo_toml.unwrap(),     // TODO: autodetect
                 emulator: emulator.into(),
+                target: target.into(),
             })?;
         },
     }

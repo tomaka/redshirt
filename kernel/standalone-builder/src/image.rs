@@ -32,7 +32,17 @@ pub struct Config<'a> {
     /// The path must exist, and any existing file will be overwritten.
     pub output_file: &'a Path,
 
-    // TODO: target
+    /// Platform to compile for.
+    pub target: Target,
+
+    // TODO: device type
+}
+
+/// Target platform.
+#[derive(Debug)]
+pub enum Target {
+    RaspberryPi2,
+    X8664Multiboot2,
 }
 
 /// Error that can happen during the build.
@@ -48,16 +58,32 @@ pub enum Error {
 
 /// Builds a bootable image from a compiled kernel.
 pub fn build_image(config: Config) -> Result<(), Error> {
-    let build_out = crate::build::build(crate::build::Config {
-        kernel_cargo_toml: config.kernel_cargo_toml,
-        release: true,
-        target_name: "x86_64-multiboot2",
-        target_specs: include_str!("../res/specs/x86_64-multiboot2.json"),
-        link_script: include_str!("../res/specs/x86_64-multiboot2.ld"),
-    })?;
+    match config.target {
+        Target::X8664Multiboot2 => {
+            let build_out = crate::build::build(crate::build::Config {
+                kernel_cargo_toml: config.kernel_cargo_toml,
+                release: true,
+                target_name: "x86_64-multiboot2",
+                target_specs: include_str!("../res/specs/x86_64-multiboot2.json"),
+                link_script: include_str!("../res/specs/x86_64-multiboot2.ld"),
+            })?;
 
-    build_x86_multiboot2_cdrom_iso(build_out.out_kernel_path, config.output_file)?;
-    Ok(())
+            build_x86_multiboot2_cdrom_iso(build_out.out_kernel_path, config.output_file)?;
+            Ok(())
+        }
+
+        Target::RaspberryPi2 => {
+            let build_out = crate::build::build(crate::build::Config {
+                kernel_cargo_toml: config.kernel_cargo_toml,
+                release: true,
+                target_name: "arm-freestanding",
+                target_specs: include_str!("../res/specs/arm-freestanding.json"),
+                link_script: include_str!("../res/specs/arm-freestanding.ld"),
+            })?;
+
+            unimplemented!()
+        }
+    }
 }
 
 /// Builds an x86 bootable CDROM ISO with a multiboot2 bootloader on it.
@@ -109,14 +135,3 @@ menuentry "redshirt" {
     build_dir.close()?;
     Ok(())
 }
-
-/*let status = Command::new("qemu-system-x86_64")
-    .args(&["-m", "1024"])
-    .arg("-cdrom")
-    .arg(build_dir.path().join("cdrom.iso"))
-    .args(&["-netdev", "bridge,id=nd0,br=virbr0"])
-    .args(&["-device", "ne2k_pci,netdev=nd0"])
-    .args(&["-smp", "cpus=4"])
-    .status()
-    .unwrap();
-assert!(status.success());*/
