@@ -15,6 +15,14 @@
 
 // TODO: figure out how to remove these
 #[no_mangle]
+pub extern "C" fn fmod(x: f64, y: f64) -> f64 {
+    libm::fmod(x, y)
+}
+#[no_mangle]
+pub extern "C" fn fmodf(x: f32, y: f32) -> f32 {
+    libm::fmodf(x, y)
+}
+#[no_mangle]
 pub extern "C" fn fmin(a: f64, b: f64) -> f64 {
     libm::fmin(a, b)
 }
@@ -32,5 +40,9 @@ pub extern "C" fn fmaxf(a: f32, b: f32) -> f32 {
 }
 #[no_mangle]
 pub extern "C" fn __aeabi_d2f(a: f64) -> f32 {
+    libm::trunc(a) as f32 // TODO: correct?
+}
+#[no_mangle]
+pub extern "C" fn __truncdfsf2(a: f64) -> f32 {
     libm::trunc(a) as f32 // TODO: correct?
 }

@@ -44,6 +44,7 @@ pub struct Config<'a> {
 #[derive(Debug)]
 pub enum Target {
     RaspberryPi2,
+    RaspberryPi3,
     X8664Multiboot2,
 }
 
@@ -74,7 +75,7 @@ pub fn build_image(config: Config) -> Result<(), Error> {
             Ok(())
         }
 
-        Target::RaspberryPi2 => {
+        Target::RaspberryPi2 | Target::RaspberryPi3 => {
             let build_out = crate::build::build(crate::build::Config {
                 kernel_cargo_toml: config.kernel_cargo_toml,
                 release: config.release,
