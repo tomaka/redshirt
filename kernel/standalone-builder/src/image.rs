@@ -95,13 +95,13 @@ fn build_x86_multiboot2_cdrom_iso(
     kernel_path: impl AsRef<Path>,
     output_file: impl AsRef<Path>,
 ) -> Result<(), io::Error> {
-    let build_dir = TempDir::new("redshirt-kernel-iso-build").expect("test0");
+    let build_dir = TempDir::new("redshirt-kernel-iso-build")?;
 
-    fs::create_dir_all(build_dir.path().join("iso").join("boot").join("grub")).expect("test1");
+    fs::create_dir_all(build_dir.path().join("iso").join("boot").join("grub"))?;
     fs::copy(
         kernel_path,
         build_dir.path().join("iso").join("boot").join("kernel"),
-    ).expect("test2");
+    )?;
     fs::write(
         build_dir
             .path()
@@ -117,13 +117,13 @@ menuentry "redshirt" {
     multiboot2 /boot/kernel
 }
             "#[..],
-    ).expect("test3");
+    )?;
 
     let output = Command::new("grub2-mkrescue")
         .arg("-o")
         .arg(output_file.as_ref())
         .arg(build_dir.path().join("iso"))
-        .output().expect("test4");
+        .output()?;
 
     if !output.status.success() {
         // Note: if `grub2-mkrescue` successfully starts (which is checked above), we assume that
@@ -134,6 +134,6 @@ menuentry "redshirt" {
         panic!("Error while executing `grub2-mkrescue`");
     }
 
-    build_dir.close().expect("test5");
+    build_dir.close()?;
     Ok(())
 }
