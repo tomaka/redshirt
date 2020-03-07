@@ -72,7 +72,7 @@ impl ArcWake for LocalWake {
             // Wakes up all the CPUs that called `wfe`.
             // Note that this wakes up *all* CPUs, but the ARM architecture doesn't provide any
             // way to target a single CPU for wake-up.
-            asm!("dsb ; sev" :::: "volatile")
+            asm!("dsb sy ; sev" :::: "volatile")
         }
     }
 }

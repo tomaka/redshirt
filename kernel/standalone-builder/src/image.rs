@@ -44,6 +44,7 @@ pub struct Config<'a> {
 #[derive(Debug)]
 pub enum Target {
     RaspberryPi2,
+    RaspberryPi3,
     X8664Multiboot2,
 }
 
@@ -74,7 +75,7 @@ pub fn build_image(config: Config) -> Result<(), Error> {
             Ok(())
         }
 
-        Target::RaspberryPi2 => {
+        Target::RaspberryPi2 | Target::RaspberryPi3 => {
             let v7_build_out = crate::build::build(crate::build::Config {
                 kernel_cargo_toml: config.kernel_cargo_toml,
                 release: config.release,
@@ -83,11 +84,24 @@ pub fn build_image(config: Config) -> Result<(), Error> {
                 link_script: include_str!("../res/specs/arm-freestanding.ld"),
             })?;
 
+            let v8_build_out = crate::build::build(crate::build::Config {
+                kernel_cargo_toml: config.kernel_cargo_toml,
+                release: config.release,
+                target_name: "aarch64-freestanding",
+                target_specs: include_str!("../res/specs/aarch64-freestanding.json"),
+                link_script: include_str!("../res/specs/aarch64-freestanding.ld"),
+            })?;
+
             let build_dir = TempDir::new("redshirt-sd-card-build")?;
             crate::binary::elf_to_binary(
                 crate::binary::Architecture::Arm,
                 v7_build_out.out_kernel_path,
                 build_dir.path().join("kernel7.img"),
+            )?;
+            crate::binary::elf_to_binary(
+                crate::binary::Architecture::Aarch64,
+                v8_build_out.out_kernel_path,
+                build_dir.path().join("kernel8.img"),
             )?;
 
             let img_file = fs::OpenOptions::new()
@@ -102,7 +116,7 @@ pub fn build_image(config: Config) -> Result<(), Error> {
             build_raspberry_pi_sd_card(
                 img_file,
                 fs::File::open(build_dir.path().join("kernel7.img")).unwrap(),
-                io::empty(),
+                fs::File::open(build_dir.path().join("kernel8.img")).unwrap(),
             )?;
             Ok(())
         }

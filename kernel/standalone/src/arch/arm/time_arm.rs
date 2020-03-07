@@ -13,6 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+#![cfg(target_arch = "arm")]
+
 /// Time management on ARM platforms.
 ///
 /// See chapter "B8.1.1 System counter" of the ARM® Architecture Reference Manual

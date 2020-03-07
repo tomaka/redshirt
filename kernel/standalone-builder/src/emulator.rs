@@ -114,6 +114,31 @@ pub fn run_kernel(cfg: Config) -> Result<(), Error> {
                 return Err(Error::EmulatorRunFailure);
             }
         }
+
+        crate::image::Target::RaspberryPi3 => {
+            let build_out = crate::build::build(crate::build::Config {
+                kernel_cargo_toml: cfg.kernel_cargo_toml,
+                release: cfg.release,
+                target_name: "aarch64-freestanding",
+                target_specs: include_str!("../res/specs/aarch64-freestanding.json"),
+                link_script: include_str!("../res/specs/aarch64-freestanding.ld"),
+            })
+            .map_err(crate::image::Error::Build)?;
+
+            let status = Command::new("qemu-system-aarch64")
+                .args(&["-M", "raspi3"])
+                .args(&["-m", "1024"])
+                .args(&["-serial", "stdio"])
+                .arg("-kernel")
+                .arg(build_out.out_kernel_path)
+                .status()
+                .map_err(Error::EmulatorNotFound)?;
+            // TODO: stdout/stderr
+
+            if !status.success() {
+                return Err(Error::EmulatorRunFailure);
+            }
+        }
     }
 
     Ok(())
