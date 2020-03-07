@@ -14,7 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
-    fs,
+    error, fs,
     io::{self, Write as _},
     path::{Path, PathBuf},
     process::Command,
@@ -29,15 +29,20 @@ use tempdir::TempDir;
     about = "Redshirt standalone kernel builder and tester."
 )]
 enum CliOptions {
-    /// Runs a pre-compiled kernel with QEMU.
-    Qemu {
-        /// Kernel file to run.
-        #[structopt(parse(from_os_str))]
-        kernel_file: PathBuf,
+    /// Builds and runs the kernel in an emulator.
+    EmulatorRun {
+        /// Location of the Cargo.toml of the standalone kernel.
+        ///
+        /// If no value is passed, this the file structure is the one of the upstream repository
+        /// and try to find the path in a sibling directory.
+        #[structopt(long, parse(from_os_str))]
+        kernel_cargo_toml: Option<PathBuf>,
 
-        /// Target triplet the kernel was compiled with.
+        /// Which target to build for.
+        ///
+        /// Can be one of: `arm-rpi2`, `x86_64-multiboot2`.
         #[structopt(long)]
-        target: String,
+        target: Target,
     },
 
     /// Builds a bootable image.
@@ -108,7 +113,7 @@ impl FromStr for Target {
     }
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn error::Error + Send + Sync + 'static>> {
     let cli_opts = CliOptions::from_args();
 
     match cli_opts {
@@ -116,8 +121,14 @@ fn main() {
             redshirt_standalone_builder::image::build_image(redshirt_standalone_builder::image::Config {
                 kernel_cargo_toml: &kernel_cargo_toml.unwrap(),     // TODO: autodetect
                 output_file: &out,
-            }).unwrap();
+            })?;
         },
-        CliOptions::Qemu { .. } => unimplemented!(),
+        CliOptions::EmulatorRun { kernel_cargo_toml, target } => {
+            redshirt_standalone_builder::emulator::run_kernel(redshirt_standalone_builder::emulator::Config {
+                kernel_cargo_toml: &kernel_cargo_toml.unwrap(),     // TODO: autodetect
+            })?;
+        },
     }
+
+    Ok(())
 }

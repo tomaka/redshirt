@@ -62,6 +62,7 @@
 
 pub mod binary;
 pub mod build;
+pub mod emulator;
 pub mod image;
 
 /*fn run_arm(kernel_path: &Path) {
@@ -86,49 +87,4 @@ pub mod image;
 
     build_dir.close().unwrap();
 }
-
-fn run_x86_64(kernel_path: &Path) {
-    let build_dir = TempDir::new("redshirt-kernel-iso-build").unwrap();
-
-    fs::create_dir_all(build_dir.path().join("iso").join("boot").join("grub")).unwrap();
-    fs::copy(
-        kernel_path,
-        build_dir.path().join("iso").join("boot").join("kernel"),
-    )
-    .unwrap();
-    fs::write(
-        build_dir
-            .path()
-            .join("iso")
-            .join("boot")
-            .join("grub")
-            .join("grub.cfg"),
-        &include_bytes!("res/grub.cfg")[..],
-    )
-    .unwrap();
-
-    let output = Command::new("grub2-mkrescue")
-        .arg("-o")
-        .arg(build_dir.path().join("cdrom.iso"))
-        .arg(build_dir.path().join("iso"))
-        .output()
-        .unwrap();
-    if !output.status.success() {
-        io::stdout().write_all(&output.stdout).unwrap();
-        io::stderr().write_all(&output.stderr).unwrap();
-        panic!("Error while executing `grub2-mkrescue`");
-    }
-
-    let status = Command::new("qemu-system-x86_64")
-        .args(&["-m", "1024"])
-        .arg("-cdrom")
-        .arg(build_dir.path().join("cdrom.iso"))
-        .args(&["-netdev", "bridge,id=nd0,br=virbr0"])
-        .args(&["-device", "ne2k_pci,netdev=nd0"])
-        .args(&["-smp", "cpus=4"])
-        .status()
-        .unwrap();
-    assert!(status.success());
-
-    build_dir.close().unwrap();
-}*/
+*/

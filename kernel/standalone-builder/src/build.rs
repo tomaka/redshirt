@@ -140,8 +140,9 @@ pub fn build(cfg: Config) -> Result<BuildOutput, Error> {
         .arg("build")
         .args(&["-Z", "build-std=core,alloc"]) // TODO: nightly only; cc https://github.com/tomaka/redshirt/issues/300
         .env("RUST_TARGET_PATH", specs_path.path())
+        // TODO: because the path to the link script changes all the time, we always rebuild from scratch
         .env(
-            &format!("CARGO_TARGET_{}_RUSTFLAGS", cfg.target_name),
+            &format!("CARGO_TARGET_{}_RUSTFLAGS", cfg.target_name.replace("-", "_").to_uppercase()),
             format!("-Clink-arg=--script -Clink-arg={}", specs_path.path().join("link.ld").display())
         )
         .arg("--bin")

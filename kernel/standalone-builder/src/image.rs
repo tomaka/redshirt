@@ -81,7 +81,14 @@ fn build_x86_multiboot2_cdrom_iso(
             .join("boot")
             .join("grub")
             .join("grub.cfg"),
-        &include_bytes!("../res/grub.cfg")[..],
+        &br#"
+set timeout=5
+set default=0
+
+menuentry "redshirt" {
+    multiboot2 /boot/kernel
+}
+            "#[..]
     )?;
 
     let output = Command::new("grub2-mkrescue")
