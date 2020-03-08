@@ -16,8 +16,9 @@
 //! x86_64 interrupts handling.
 //!
 //! This module provides handling of interrupts on x86_64. It sets up the interrupts table (IDT)
-//! and allows registers a [`Waker`](core::task::Waker) that is waken up when an interrupt happens.
-//! This is done by calling [`set_interrupt_waker`].
+//! and allows reserving an interrupt vectors. Once done, you can register a
+//! [`Waker`](core::task::Waker) that is waken up when an interrupt happens.
+//! This is done by calling [`ReservedInterruptVector::register_waker`].
 //!
 //! Note that this API is racy. Once a `Waker` has been woken up, it gets discarded and needs to
 //! be registered again. It is possible that an interrupt gets triggered between the discard and
@@ -29,8 +30,6 @@
 //! reason, there is no risk of losing information.
 //!
 
-// TODO: while it's not a problem that the API is racy, it is a problem if multiple different
-//       pieces of code inadvertently try to share an interrupt vector
 // TODO: handle end-of-interrupt of the APIC
 
 use core::{convert::TryFrom as _, sync::atomic::{AtomicBool, Ordering}, task::Waker};
@@ -39,6 +38,8 @@ use x86_64::structures::idt;
 
 /// Reserves an interrupt in the table.
 pub fn reserve_vector() -> Result<ReservedInterruptVector, ReserveErr> {
+    // TODO: maybe we should rotate the reservations, so that de-allocated vectors
+    // don't get immediately reused
     for (n, reservation) in RESERVATIONS.iter().enumerate() {
         let was_reserved = reservation.swap(true, Ordering::Relaxed);
         if !was_reserved {
@@ -71,6 +72,8 @@ impl ReservedInterruptVector {
     /// Only the latest registered `Waker` will be waken up.
     ///
     /// > **Note**: It is possible for the waker to be waken up spuriously.
+    // TODO: talk about masking interrupts; is it possible for interrupts to be "absorbed"
+    // and never get delivered?
     pub fn register_waker(&self, waker: &Waker) {
         debug_assert!(self.interrupt >= 32);
         WAKERS[usize::from(self.interrupt - 32)].register(waker);

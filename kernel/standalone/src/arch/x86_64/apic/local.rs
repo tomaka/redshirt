@@ -13,31 +13,19 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::arch::x86_64::interrupts;
-
 use alloc::sync::Arc;
 use core::{
     convert::TryFrom as _,
-    marker::PhantomData,
     num::NonZeroU64,
-    task::{Poll, Waker},
 };
-use futures::prelude::*;
 use x86_64::registers::model_specific::Msr;
-use x86_64::structures::port::{PortRead as _, PortWrite as _};
 
 // TODO: "For correct APIC operation, this address space must be mapped to an area of memory that has been designated as strong uncacheable (UC)"
 
-/// Initialized local APIC.
-///
-/// This represents the APIC of the local CPU, and therefore doesn't implement `Send`.
-#[derive(Clone)]
-pub struct LocalApicControl {
-    /// True if the CPU supports TSC-Deadline mode.
+/// Represents the local APICs of all CPUs.
+pub struct LocalApicsControl {
+    /// True if the CPUs support TSC-Deadline mode.
     tsc_deadline_supported: bool,
-
-    /// Marker to make the struct `!Send`.
-    no_send_marker: PhantomData<*mut u8>,
 }
 
 /// Opaque type representing the APIC ID of a processor.
@@ -47,7 +35,9 @@ pub struct LocalApicControl {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct ApicId(u8);
 
-/// Makes sure that the current CPU supports an APIC, and initializes it.
+/// Makes sure that the current CPU supports an APIC.
+///
+/// After this, you have to call [`LocalApicsControl::init_local`].
 ///
 /// # Panic
 ///
@@ -55,35 +45,18 @@ pub struct ApicId(u8);
 ///
 /// # Safety
 ///
-/// Must only be called once, and assumes that no other piece of code reads or writes to the MSR
-/// registers related to the local APIC or x2APIC, or the the registers mapped to physical memory.
+/// Must only be initialized once, and assumes that no other piece of code reads or writes
+/// to the MSR registers related to the local APIC or x2APIC, or the the registers mapped to
+/// physical memory.
 ///
-pub unsafe fn init() -> LocalApicControl {
+pub unsafe fn init() -> LocalApicsControl {
     // TODO: check whether CPUID is supported at all?
 
     // We don't support platforms without an APIC.
     assert!(is_apic_supported());
 
-    // Set up the APIC.
-    {
-        const APIC_BASE_MSR: Msr = Msr::new(0x1b);
-        let base_addr = APIC_BASE_MSR.read() & !0xfff;
-        // We never re-map the APIC. For safety, we ensure that nothing weird has happened here.
-        assert_eq!(usize::try_from(base_addr), Ok(APIC_BASE_ADDR));
-        APIC_BASE_MSR.write(base_addr | (1 << 11)); // Enable the APIC.
-        base_addr
-    };
-
-    // Enable spurious interrupts.
-    {
-        let svr_addr = usize::try_from(APIC_BASE_ADDR + 0xf0).unwrap() as *mut u32;
-        let val = svr_addr.read_volatile();
-        svr_addr.write_volatile(val | 0x100); // Enable spurious interrupts.
-    }
-
-    LocalApicControl {
+    LocalApicsControl {
         tsc_deadline_supported: is_tsc_deadline_supported(),
-        no_send_marker: PhantomData,
     }
 }
 
@@ -97,20 +70,51 @@ impl ApicId {
     pub unsafe fn from_unchecked(val: u8) -> Self {
         ApicId(val)
     }
+
+    /// Returns the integer value of this ID.
+    pub fn get(&self) -> u8 {
+        self.0
+    }
 }
 
-impl LocalApicControl {
-    /// Returns the [`ApicId`] of the calling processor.
-    pub fn current_apic_id(&self) -> ApicId {
-        unsafe {
-            // Note: this is correct because we never modify the local APIC ID.
-            let apic_id_addr = usize::try_from(APIC_BASE_ADDR + 0x20).unwrap() as *mut u32;
-            let apic_id = u8::try_from(apic_id_addr.read_volatile() >> 24).unwrap();
-            ApicId(apic_id)
+impl LocalApicsControl {
+    /// Initializes the APIC of the local CPU.
+    ///
+    /// # Safety
+    ///
+    /// Must only be called once per CPU.
+    ///
+    // TODO: add debug_assert!s in all the other methods that check if the local APIC is initialized
+    unsafe fn init_local(&self) {
+        assert!(is_apic_supported());
+        if self.tsc_deadline_supported {
+            assert!(is_tsc_deadline_supported());
+        }
+
+        // Set up the APIC.
+        {
+            const APIC_BASE_MSR: Msr = Msr::new(0x1b);
+            let base_addr = APIC_BASE_MSR.read() & !0xfff;
+            // We never re-map the APIC. For safety, we ensure that nothing weird has happened here.
+            assert_eq!(usize::try_from(base_addr), Ok(APIC_BASE_ADDR));
+            APIC_BASE_MSR.write(base_addr | (1 << 11)); // Enable the APIC.
+            base_addr
+        };
+
+        // Enable spurious interrupts.
+        {
+            let svr_addr = usize::try_from(APIC_BASE_ADDR + 0xf0).unwrap() as *mut u32;
+            let val = svr_addr.read_volatile();
+            svr_addr.write_volatile(val | 0x100); // Enable spurious interrupts.
         }
     }
 
-    pub fn set_tsc_deadline(&self, value: Option<NonZeroU64>) {
+    /// Returns the [`ApicId`] of the calling processor.
+    pub fn current_apic_id(&self) -> ApicId {
+        current_apic_id()
+    }
+
+    pub fn set_local_tsc_deadline(&self, value: Option<NonZeroU64>) {
         unsafe {
             assert!(self.tsc_deadline_supported);
 
@@ -124,18 +128,34 @@ impl LocalApicControl {
     /// # Panic
     ///
     /// Panics if the interrupt vector is inferior to 32.
-    /// Panics if the processor with the `target_apic_id` hasn't started yet. // TODO: <--
     ///
     pub fn send_interprocessor_interrupt(&self, target_apic_id: ApicId, vector: u8) {
         assert!(vector >= 32);
         send_ipi_inner(target_apic_id, 0, vector)
     }
 
+    // TODO: documentation
+    ///
+    ///
+    /// # Panic
+    ///
+    /// Panics if `target_apic_id` is the local APIC.
+    ///
     pub fn send_interprocessor_init(&self, target_apic_id: ApicId) {
+        assert_ne!(current_apic_id(), target_apic_id);
         send_ipi_inner(target_apic_id, 0b101, 0);
     }
 
+    // TODO: documentation
+    ///
+    ///
+    /// # Panic
+    ///
+    /// Panics if `target_apic_id` is the local APIC.
+    ///
     pub fn send_interprocessor_sipi(&self, target_apic_id: ApicId, boot_fn: *const u8) {
+        assert_ne!(current_apic_id(), target_apic_id);
+
         let boot_fn = boot_fn as usize;
         assert_eq!((boot_fn >> 12) << 12, boot_fn);
         assert!((boot_fn >> 12) <= usize::from(u8::max_value()));
@@ -149,6 +169,7 @@ impl LocalApicControl {
 /// only because of legacy systems and we never use this feature.
 const APIC_BASE_ADDR: usize = 0xfee00000;
 
+// Internal implementation of sending an inter-process interrupt.
 fn send_ipi_inner(target_apic_id: ApicId, delivery: u8, vector: u8) {
     // Check conformance.
     debug_assert!(delivery <= 0b110);
@@ -176,6 +197,16 @@ fn send_ipi_inner(target_apic_id: ApicId, delivery: u8, vector: u8) {
             value_hi_addr.write_volatile(value_hi);
             value_lo_addr.write_volatile(value_lo);
         }
+    }
+}
+
+/// Returns the [`ApicId`] of the calling processor.
+fn current_apic_id() -> ApicId {
+    unsafe {
+        // Note: this is correct because we never modify the local APIC ID.
+        let apic_id_addr = usize::try_from(APIC_BASE_ADDR + 0x20).unwrap() as *mut u32;
+        let apic_id = u8::try_from(apic_id_addr.read_volatile() >> 24).unwrap();
+        ApicId(apic_id)
     }
 }
 

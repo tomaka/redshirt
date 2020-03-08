@@ -17,7 +17,7 @@
 
 // TODO: only works because we're single-CPU'ed at the moment
 
-use crate::arch::x86_64::apic::{ApicControl, ApicId};
+use crate::arch::x86_64::apic::{local::LocalApicsControl, ApicId};
 
 use alloc::sync::Arc;
 use core::future::Future;
@@ -30,11 +30,11 @@ use futures::task::{waker, ArcWake};
 /// Waits for the `Future` to resolve to a value.
 ///
 /// This function is similar to [`futures::executor::block_on`].
-pub fn block_on<R>(apic: &Arc<ApicControl>, future: impl Future<Output = R>) -> R {
+pub fn block_on<R>(apic: &'static LocalApicsControl, future: impl Future<Output = R>) -> R {
     futures::pin_mut!(future);
 
     let local_wake = Arc::new(Waker {
-        apic: apic.clone(),
+        apic,
         processor_to_wake: apic.current_apic_id(),
         need_ipi: atomic::AtomicBool::new(false),
         woken_up: atomic::AtomicBool::new(false),
@@ -76,7 +76,7 @@ pub fn block_on<R>(apic: &Arc<ApicControl>, future: impl Future<Output = R>) -> 
 
 struct Waker {
     /// Reference to the APIC, for sending IPIs.
-    apic: Arc<ApicControl>,
+    apic: &'static LocalApicsControl,
 
     /// Identifier of the processor that this waker must wake up.
     processor_to_wake: ApicId,

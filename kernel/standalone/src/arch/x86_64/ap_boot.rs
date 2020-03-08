@@ -27,9 +27,10 @@
 //! - Call [`boot_associated_processor`] for each processor one by one.
 //!
 
-use crate::arch::x86_64::apic::{ApicControl, ApicId};
-use ::alloc::{
-    alloc::{self, Layout},
+use crate::arch::x86_64::apic::{local::LocalApicsControl, ApicId, timers::Timers};
+
+use alloc::{
+    alloc::Layout,
     boxed::Box,
     sync::Arc,
     vec::Vec,
@@ -114,7 +115,8 @@ pub unsafe fn filter_build_ap_boot_alloc<'a>(
 // TODO: replace `Infallible` with `!` when stable
 pub unsafe fn boot_associated_processor(
     alloc: &mut ApBootAlloc,
-    apic: &Arc<ApicControl>,
+    local_apics: &'static LocalApicsControl,
+    timers: &Timers,
     target: ApicId,
     boot_code: impl FnOnce() -> core::convert::Infallible + Send + 'static,
 ) {
@@ -147,7 +149,7 @@ pub unsafe fn boot_associated_processor(
     };
 
     // Start by sending an INIT IPI to the target so that it reboots.
-    apic.send_interprocessor_init(target);
+    local_apics.send_interprocessor_init(target);
 
     let rdtsc = core::arch::x86_64::_rdtsc(); // TODO: crappy code
 
@@ -184,7 +186,7 @@ pub unsafe fn boot_associated_processor(
     let stack_size = 10 * 1024 * 1024usize;
     let stack_top = {
         let layout = Layout::from_size_align(stack_size, 0x1000).unwrap();
-        let ptr = alloc::alloc(layout);
+        let ptr = alloc::alloc::alloc(layout);
         assert!(!ptr.is_null());
         u64::try_from(ptr as usize + stack_size).unwrap()
     };
@@ -280,10 +282,10 @@ pub unsafe fn boot_associated_processor(
     }
 
     // Wait for 10ms to have elapsed since we sent the INIT IPI.
-    super::executor::block_on(apic, apic.register_tsc_timer(rdtsc + 10_000_000));
+    super::executor::block_on(local_apics, timers.register_tsc_timer(rdtsc + 10_000_000));
 
     // Send the SINIT IPI, pointing to the bootstrap code that we have carefully crafted.
-    apic.send_interprocessor_sipi(target, bootstrap_code_buf.as_mut_ptr() as *const _);
+    local_apics.send_interprocessor_sipi(target, bootstrap_code_buf.as_mut_ptr() as *const _);
 
     // TODO: the APIC doesn't automatically try resubmitting the SIPI in case the target CPU was
     //       busy, so we should send a second SIPI if the first one timed out
@@ -291,12 +293,12 @@ pub unsafe fn boot_associated_processor(
     //       this is however tricky, as we have to make sure we're not sending the second SIPI
     //       if the first one succeeded
     /*let rdtsc = unsafe { core::arch::x86_64::_rdtsc() };
-    super::executor::block_on(apic, apic.register_tsc_timer(rdtsc + 1_000_000_000));
-    apic.send_interprocessor_sipi(target, bootstrap_code_buf.as_mut_ptr() as *const _);*/
+    super::executor::block_on(local_apics, timers.register_tsc_timer(rdtsc + 1_000_000_000));
+    local_apics.send_interprocessor_sipi(target, bootstrap_code_buf.as_mut_ptr() as *const _);*/
 
     // Wait for CPU initialization to finish.
     // TODO: doesn't work; requires the child CPU to set up their APIC
-    //super::executor::block_on(&apic, init_finished_future).unwrap();
+    //super::executor::block_on(&local_apics, init_finished_future).unwrap();
 
     // Make sure the buffer is dropped at the end.
     // TODO: drop(bootstrap_code_buf);
@@ -307,13 +309,13 @@ pub unsafe fn boot_associated_processor(
 ///
 /// There is surprisingly no type in the Rust standard library that keeps track of an allocation.
 // TODO: use a `Box` or something once it's possible to pass a custom allocator
-struct Allocation<'a, T: alloc::AllocRef> {
+struct Allocation<'a, T: alloc::alloc::AllocRef> {
     alloc: &'a mut T,
     inner: ptr::NonNull<u8>,
     layout: Layout,
 }
 
-impl<'a, T: alloc::AllocRef> Allocation<'a, T> {
+impl<'a, T: alloc::alloc::AllocRef> Allocation<'a, T> {
     fn new(alloc: &'a mut T, layout: Layout) -> Self {
         unsafe {
             let buf = alloc.alloc(layout).unwrap();
@@ -334,7 +336,7 @@ impl<'a, T: alloc::AllocRef> Allocation<'a, T> {
     }
 }
 
-impl<'a, T: alloc::AllocRef> Drop for Allocation<'a, T> {
+impl<'a, T: alloc::alloc::AllocRef> Drop for Allocation<'a, T> {
     fn drop(&mut self) {
         unsafe { self.alloc.dealloc(self.inner, self.layout) }
     }

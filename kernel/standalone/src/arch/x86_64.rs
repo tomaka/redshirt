@@ -17,10 +17,9 @@
 
 use crate::arch::PlatformSpecific;
 
-use alloc::{sync::Arc, vec::Vec};
+use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use core::{convert::TryFrom as _, future::Future, iter, num::NonZeroU32, ops::Range, pin::Pin};
 use futures::channel::oneshot;
-use x86_64::registers::model_specific::Msr;
 use x86_64::structures::port::{PortRead as _, PortWrite as _};
 
 mod acpi;
@@ -64,12 +63,26 @@ extern "C" fn after_boot(multiboot_header: usize) -> ! {
             }
         };
 
+        unsafe {
+            apic::pic::init_and_disable_pic();
+        }
+
         // TODO: panics in BOCHS
         let acpi = acpi::load_acpi_tables(&multiboot_info);
+        let apic_info_from_acpi = if let ::acpi::interrupt::InterruptModel::Apic(apic) = acpi.interrupt_model
+            .expect("No interrupt model found in ACPI table")
+        {
+            apic
+        } else {
+            panic!()
+        };
 
-        // TODO: we have to do that before loading the IDT, otherwise the PIC will send a timer
-        // interrupt that will be interpreted as a double fault; make this more fool-proof
-        let apic = apic::init();
+        let io_apics = unsafe {
+            apic::ioapics::init_from_acpi(&apic_info_from_acpi)
+        };
+
+        let local_apics = Box::leak(Box::new(apic::local::init()));
+        let timers = Box::leak(Box::new(apic::timers::init(local_apics)));
 
         interrupts::load_idt();
 
@@ -85,15 +98,15 @@ extern "C" fn after_boot(multiboot_header: usize) -> ! {
 
             let (kernel_tx, kernel_rx) = oneshot::channel::<Arc<crate::kernel::Kernel<_>>>();
             kernel_channels.push(kernel_tx);
-            let apic_clone = apic.clone();
 
             ap_boot::boot_associated_processor(
                 &mut ap_boot_alloc,
-                &apic,
+                local_apics,
+                timers,
                 apic::ApicId::from_unchecked(ap.local_apic_id),
                 move || {
                     interrupts::load_idt();
-                    let kernel = executor::block_on(&apic_clone, kernel_rx).unwrap();
+                    let kernel = executor::block_on(local_apics, kernel_rx).unwrap();
                     kernel.run();
                 },
             );
@@ -101,7 +114,8 @@ extern "C" fn after_boot(multiboot_header: usize) -> ! {
 
         let kernel = {
             let platform_specific = PlatformSpecificImpl {
-                apic,
+                timers,
+                local_apics,
                 num_cpus: NonZeroU32::new(u32::try_from(kernel_channels.len()).unwrap().checked_add(1).unwrap()).unwrap(),
             };
 
@@ -190,19 +204,20 @@ fn find_free_memory_ranges<'a>(
 
 /// Implementation of [`PlatformSpecific`].
 struct PlatformSpecificImpl {
-    apic: Arc<apic::ApicControl>,
+    timers: &'static apic::timers::Timers<'static>,
+    local_apics: &'static apic::local::LocalApicsControl,
     num_cpus: NonZeroU32,
 }
 
 impl PlatformSpecific for PlatformSpecificImpl {
-    type TimerFuture = apic::TscTimerFuture;
+    type TimerFuture = apic::timers::TimerFuture<'static>;
 
     fn num_cpus(self: Pin<&Self>) -> NonZeroU32 {
         self.num_cpus
     }
 
     fn block_on<TRet>(self: Pin<&Self>, future: impl Future<Output = TRet>) -> TRet {
-        executor::block_on(&self.apic, future)
+        executor::block_on(&self.local_apics, future)
     }
 
     fn monotonic_clock(self: Pin<&Self>) -> u128 {
@@ -213,7 +228,7 @@ impl PlatformSpecific for PlatformSpecificImpl {
 
     fn timer(self: Pin<&Self>, clock_value: u128) -> Self::TimerFuture {
         let clock_value = u64::try_from(clock_value).unwrap_or(u64::max_value());
-        self.apic.register_tsc_timer(clock_value)
+        self.timers.register_tsc_timer(clock_value)
     }
 
     unsafe fn write_port_u8(self: Pin<&Self>, port: u32, data: u8) -> Result<(), ()> {

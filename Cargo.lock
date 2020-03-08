@@ -2,13 +2,12 @@
 # It is not intended for manual editing.
 [[package]]
 name = "acpi"
-version = "0.4.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c18d706bdc322dd4f8f7930a5879ad8df3d78d4452a678d5419c72f9f69acea"
+checksum = "caea302502224d49217ea29fd72cbb52e9bcffe02b9722d6a4637fd70d944239"
 dependencies = [
- "bit_field",
+ "bit_field 0.10.0",
  "log",
- "typenum",
 ]
 
 [[package]]
@@ -104,6 +103,12 @@ name = "bit_field"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed8765909f9009617974ab6b7d332625b320b33c326b1e9321382ef1999b5d56"
+
+[[package]]
+name = "bit_field"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a165d606cf084741d4ac3a28fb6e9b1eb0bd31f6cd999098cfddb0b2ab381dc0"
 
 [[package]]
 name = "bitflags"
@@ -1052,6 +1057,7 @@ dependencies = [
  "redshirt-syscalls",
  "redshirt-time-interface",
  "rlibc",
+ "smallvec",
  "spin",
  "walkdir",
  "x86_64",
@@ -1231,9 +1237,9 @@ checksum = "c111b5bd5695e56cffe5129854aa230b39c93a305372fdbb2668ca2394eea9f8"
 
 [[package]]
 name = "smallvec"
-version = "1.1.0"
+version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "44e59e0c9fa00817912ae6e4e6e3c4fe04455e75699d06eedc7d85917ed8e8f4"
+checksum = "5c2fb2ec9bcd216a5b0d0ccf31ab17b5ed1d627960edff65bbe95d3ce221cefc"
 
 [[package]]
 name = "spin"
@@ -1481,7 +1487,7 @@ version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d9e3e26fcb51976eafa310e8f2b7a5a83ae8c185443efe50cbc6534a4fffa0d"
 dependencies = [
- "bit_field",
+ "bit_field 0.9.0",
  "bitflags",
  "cast",
 ]

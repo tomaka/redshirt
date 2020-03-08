@@ -29,6 +29,12 @@ use x86_64::structures::port::PortWrite as _;
 ///
 /// Note that this code disables the PIC altogether. Despite the PIC being disabled, it is
 /// still possible to receive spurious interrupts. Hence the remapping.
+///
+/// # Safety
+///
+/// This function is not thread-safe. It must only be called once simultaneously and while nothing
+/// else is accessing the PIC.
+///
 pub unsafe fn init_and_disable_pic() {
     u8::write_to_port(0xa1, 0xff);
     u8::write_to_port(0x21, 0xff);
