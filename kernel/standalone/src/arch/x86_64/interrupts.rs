@@ -338,6 +338,8 @@ lazy_static::lazy_static! {
     };
 }
 
+// TODO: properly document all interrupts
+
 macro_rules! interrupt_panic {
     ($msg:expr, $frame:expr) => {
         panic!(
@@ -353,7 +355,28 @@ extern "x86-interrupt" fn int0(frame: &mut idt::InterruptStackFrame) {
 }
 
 extern "x86-interrupt" fn int1(frame: &mut idt::InterruptStackFrame) {
-    interrupt_panic!("Single-step interrupt", frame);
+    let dr0: u64;
+    let dr1: u64;
+    let dr2: u64;
+    let dr3: u64;
+    let dr6: u64;
+    let dr7: u64;
+
+    unsafe {
+        asm!("mov %dr0, $0" : "=r"(dr0));
+        asm!("mov %dr1, $0" : "=r"(dr1));
+        asm!("mov %dr2, $0" : "=r"(dr2));
+        asm!("mov %dr3, $0" : "=r"(dr3));
+        asm!("mov %dr6, $0" : "=r"(dr6));
+        asm!("mov %dr7, $0" : "=r"(dr7));
+    }
+
+    panic!(r#"Debug interrupt
+DR0 = 0x{:016x} ; DR1 = 0x{:016x}
+DR2 = 0x{:016x} ; DR3 = 0x{:016x}
+DR6 = 0x{:016x}
+DR7 = 0x{:016x}
+"#, dr0, dr1, dr2, dr3, dr6, dr7)
 }
 
 extern "x86-interrupt" fn int2(frame: &mut idt::InterruptStackFrame) {
@@ -381,12 +404,20 @@ extern "x86-interrupt" fn int7(frame: &mut idt::InterruptStackFrame) {
 }
 
 extern "x86-interrupt" fn int8(frame: &mut idt::InterruptStackFrame, _: u64) -> ! {
-    // TODO: don't panic, as it's likely that this interrupt is caused by the panic handler
-    interrupt_panic!("Double fault", frame);
+    // A double fault happens when an exception happens while an exception was already
+    // being handled.
+    //
+    // We don't panic, as it's likely that it's the panic handler that trigger this.
+    x86_64::instructions::interrupts::disable();
+    x86_64::instructions::bochs_breakpoint();
+    loop {
+        x86_64::instructions::hlt();
+    }
 }
 
 extern "x86-interrupt" fn int9(frame: &mut idt::InterruptStackFrame) {
-    interrupt_panic!("Interrupt 9", frame);
+    // Since the 486, this exception is instead a GPF.
+    interrupt_panic!("Coprocessor segment overrun", frame);
 }
 
 extern "x86-interrupt" fn int10(frame: &mut idt::InterruptStackFrame, _: u64) {
@@ -402,7 +433,7 @@ extern "x86-interrupt" fn int12(frame: &mut idt::InterruptStackFrame, _: u64) {
 }
 
 extern "x86-interrupt" fn int13(frame: &mut idt::InterruptStackFrame, _: u64) {
-    interrupt_panic!("GPF", frame);
+    interrupt_panic!("General protection fault", frame);
 }
 
 extern "x86-interrupt" fn int14(frame: &mut idt::InterruptStackFrame, _: idt::PageFaultErrorCode) {
