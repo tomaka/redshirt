@@ -220,7 +220,8 @@ impl ApicControl {
     ) {
         if let Some((tsc, waker)) = timers.front() {
             debug_assert!(*tsc > now);
-            interrupts::set_interrupt_waker(50, waker); // TODO: 50?
+            // TODO: restore
+            //interrupts::set_interrupt_waker(50, waker); // TODO: 50?
             debug_assert_ne!(*tsc, 0); // 0 would disable the timer
             if self.tsc_deadline {
                 unsafe {

@@ -67,7 +67,7 @@ extern "C" fn after_boot(multiboot_header: usize) -> ! {
         // TODO: panics in BOCHS
         let acpi = acpi::load_acpi_tables(&multiboot_info);
 
-        interrupts::init();
+        interrupts::load_idt();
 
         let apic = apic::init();
 
@@ -89,6 +89,8 @@ extern "C" fn after_boot(multiboot_header: usize) -> ! {
                 &apic,
                 apic::ApicId::from_unchecked(ap.local_apic_id),
                 move || {
+                    // TODO: sometimes everything freezes if IDT is enabled
+                    //interrupts::load_idt();
                     let kernel = executor::block_on(&apic_clone, kernel_rx).unwrap();
                     kernel.run();
                 },

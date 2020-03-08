@@ -134,9 +134,26 @@ _start64:
     movw %ax, %gs
     movw %ax, %ss
 
+    // Since `multiboot_info_ptr` is in the BSS segment, we move out its value before clearing
+    // the BSS.
+    //xor %rdx, %rdx
+    //mov multiboot_info_ptr, %edx
+
+    // Clear the BSS segment.
+    // While this is normally not required, we do it anyway "just in case".
+    // This implementation is very slow, but we don't care as it's just a one time operation.
+    //mov __bss_start, %rdi
+L3: //cmp __bss_end, %rdi
+    //jmp L2//jae L2
+    //movb $0, (%rdi)
+    //inc %rdi
+    //jmp L3
+L2: //nop
+
     // Jump to our Rust code
     // Pass as parameter the content of `multiboot_info_ptr`
     mov multiboot_info_ptr, %rdi
+    //mov %rdx, %rdi
     call after_boot
     cli
     hlt

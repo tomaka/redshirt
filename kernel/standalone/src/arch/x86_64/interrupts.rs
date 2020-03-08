@@ -29,33 +29,68 @@
 //! reason, there is no risk of losing information.
 //!
 
-// TODO: init() has to be called; this isn't great
 // TODO: while it's not a problem that the API is racy, it is a problem if multiple different
 //       pieces of code inadvertently try to share an interrupt vector
 // TODO: handle end-of-interrupt of the APIC
 
-use core::task::Waker;
+use core::{convert::TryFrom as _, sync::atomic::{AtomicBool, Ordering}, task::Waker};
 use futures::task::AtomicWaker;
 use x86_64::structures::idt;
 
-/// Registers a `Waker` to wake up when an interrupt happens.
-///
-/// For each value of `interrupt`, only the latest registered `Waker` will be waken up.
-///
-/// # Panic
-///
-/// You can only set a waker for interrupts 32 to 255. Any value inferior to 32 will
-/// trigger a panic.
-///
-pub fn set_interrupt_waker(interrupt: u8, waker: &Waker) {
-    assert!(interrupt >= 32);
-    WAKERS[usize::from(interrupt - 32)].register(waker);
+/// Reserves an interrupt in the table.
+pub fn reserve_vector() -> Result<ReservedInterruptVector, ReserveErr> {
+    for (n, reservation) in RESERVATIONS.iter().enumerate() {
+        let was_reserved = reservation.swap(true, Ordering::Relaxed);
+        if !was_reserved {
+            return Ok(ReservedInterruptVector {
+                interrupt: u8::try_from(n + 32).unwrap(),
+            });
+        }
+    }
+
+    Err(ReserveErr::Full)
 }
 
-/// Initializes the interrupts system.
+pub struct ReservedInterruptVector {
+    interrupt: u8,
+}
+
+#[derive(Debug)]
+pub enum ReserveErr {
+    Full,
+}
+
+impl ReservedInterruptVector {
+    /// Returns the interrupt vector number that is reserved.
+    pub fn interrupt_num(&self) -> u8 {
+        self.interrupt
+    }
+
+    /// Registers a `Waker` to wake up when the interrupt happens.
+    ///
+    /// Only the latest registered `Waker` will be waken up.
+    ///
+    /// > **Note**: It is possible for the waker to be waken up spuriously.
+    pub fn register_waker(&self, waker: &Waker) {
+        debug_assert!(self.interrupt >= 32);
+        WAKERS[usize::from(self.interrupt - 32)].register(waker);
+    }
+}
+
+impl Drop for ReservedInterruptVector {
+    fn drop(&mut self) {
+        let _was_reserved = RESERVATIONS[usize::from(self.interrupt - 32)]
+            .swap(false, Ordering::Relaxed);
+        debug_assert!(_was_reserved);
+    }
+}
+
+/// Loads the global IDT on the local processor and enables interrupts.
+///
+/// Has to be called once per CPU.
 ///
 /// Before this is called, the waker passed to [`set_interrupt_waker`] will never work.
-pub unsafe fn init() {
+pub fn load_idt() {
     IDT.load();
     x86_64::instructions::interrupts::enable();
 }
@@ -64,19 +99,8 @@ lazy_static::lazy_static! {
     /// Table read by the hardware in order to determine what to do when an interrupt happens.
     static ref IDT: idt::InterruptDescriptorTable = {
         let mut idt = idt::InterruptDescriptorTable::new();
-        macro_rules! set_entry {
-            ($idt:ident[$n:expr]) => {{
-                set_entry!($idt[$n], $n);
-            }};
-            ($entry:expr, $n:expr) => {{
-                extern "x86-interrupt" fn handler(_: &mut idt::InterruptStackFrame) {
-                    WAKERS[$n - 32].wake();
-                }
-                $entry.set_handler_fn(handler)
-                    .disable_interrupts(false);
-            }};
-        }
 
+        // We first set the first 32 interrupts.
         idt[0].set_handler_fn(int0).disable_interrupts(false);
         idt[1].set_handler_fn(int1).disable_interrupts(false);
         idt[2].set_handler_fn(int2).disable_interrupts(false);
@@ -109,6 +133,19 @@ lazy_static::lazy_static! {
         // 29 is reserved
         idt.security_exception.set_handler_fn(int30).disable_interrupts(false);
         // 31 is reserved
+
+        macro_rules! set_entry {
+            ($idt:ident[$n:expr]) => {{
+                set_entry!($idt[$n], $n);
+            }};
+            ($entry:expr, $n:expr) => {{
+                extern "x86-interrupt" fn handler(_: &mut idt::InterruptStackFrame) {
+                    WAKERS[$n - 32].wake();
+                }
+                $entry.set_handler_fn(handler);
+            }};
+        }
+
         set_entry!(idt[32]);
         set_entry!(idt[33]);
         set_entry!(idt[34]);
@@ -691,4 +728,232 @@ static WAKERS: [AtomicWaker; 256 - 32] = [
     AtomicWaker::new(),
     AtomicWaker::new(),
     AtomicWaker::new(),
+];
+
+/// For each interrupt vector, a boolean indicating whether or not this vector is reserved.
+static RESERVATIONS: [AtomicBool; 256 - 32] = [
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
 ];
