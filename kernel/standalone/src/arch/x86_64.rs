@@ -18,7 +18,7 @@
 use crate::arch::PlatformSpecific;
 
 use alloc::{sync::Arc, vec::Vec};
-use core::{convert::TryFrom as _, future::Future, num::NonZeroU32, ops::Range, pin::Pin};
+use core::{convert::TryFrom as _, future::Future, iter, num::NonZeroU32, ops::Range, pin::Pin};
 use futures::channel::oneshot;
 use x86_64::registers::model_specific::Msr;
 use x86_64::structures::port::{PortRead as _, PortWrite as _};
@@ -67,7 +67,7 @@ extern "C" fn after_boot(multiboot_header: usize) -> ! {
         // TODO: panics in BOCHS
         let acpi = acpi::load_acpi_tables(&multiboot_info);
 
-        interrupts::load_idt();
+        //interrupts::load_idt();
 
         let apic = apic::init();
 
@@ -89,7 +89,6 @@ extern "C" fn after_boot(multiboot_header: usize) -> ! {
                 &apic,
                 apic::ApicId::from_unchecked(ap.local_apic_id),
                 move || {
-                    // TODO: sometimes everything freezes if IDT is enabled
                     //interrupts::load_idt();
                     let kernel = executor::block_on(&apic_clone, kernel_rx).unwrap();
                     kernel.run();
@@ -133,40 +132,50 @@ fn find_free_memory_ranges<'a>(
         let mut area_end = area.end_address();
         debug_assert!(area_start <= area_end);
 
-        // The kernel has probably been loaded into RAM, so we have to remove ELF sections
-        // from the portion of memory that we use.
-        for section in elf_sections.sections() {
-            if section.start_address() >= area_start && section.end_address() <= area_end {
+        // The kernel and various information about the system have been loaded into RAM, so we
+        // have to remove all the sections we want to keep from the portions of memory that we
+        // use.
+        let to_avoid = {
+            let elf = elf_sections.sections().map(|s| s.start_address()..s.end_address());
+            let multiboot = iter::once(u64::try_from(multiboot_info.start_address()).unwrap()..u64::try_from(multiboot_info.end_address()).unwrap());
+            // TODO: ACPI tables
+            // TODO: PCI stuff?
+            // TODO: memory map stuff?
+            elf.chain(multiboot)
+        };
+
+        for section in to_avoid {
+            if section.start >= area_start && section.end <= area_end {
                 /*         ↓ section_start    section_end ↓
                 ==================================================
                     ↑ area_start                      area_end ↑
                 */
-                let off_bef = section.start_address() - area_start;
-                let off_aft = area_end - section.end_address();
+                let off_bef = section.start - area_start;
+                let off_aft = area_end - section.end;
                 if off_bef > off_aft {
-                    area_end = section.start_address();
+                    area_end = section.start;
                 } else {
-                    area_start = section.end_address();
+                    area_start = section.end;
                 }
-            } else if section.start_address() < area_start && section.end_address() > area_end {
+            } else if section.start < area_start && section.end > area_end {
                 /*    ↓ section_start             section_end ↓
                 ==================================================
                         ↑ area_start         area_end ↑
                 */
                 // We have no memory available!
                 return None;
-            } else if section.start_address() <= area_start && section.end_address() > area_start {
+            } else if section.start <= area_start && section.end > area_start {
                 /*    ↓ section_start     section_end ↓
                 ==================================================
                         ↑ area_start                 area_end ↑
                 */
-                area_start = section.end_address();
-            } else if section.start_address() < area_end && section.end_address() >= area_end {
+                area_start = section.end;
+            } else if section.start < area_end && section.end >= area_end {
                 /*         ↓ section_start      section_end ↓
                 ==================================================
                     ↑ area_start         area_end ↑
                 */
-                area_end = section.start_address();
+                area_end = section.start;
             }
         }
 

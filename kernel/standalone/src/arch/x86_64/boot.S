@@ -45,7 +45,7 @@ _start:
     mov $__bss_end, %ecx
     sub $__bss_start, %ecx
     jb .print_err_and_stop
-    mov $0, %eax
+    mov $0, %al
     cld
     rep stosb %al, (%edi)
 
