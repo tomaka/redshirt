@@ -77,7 +77,7 @@ pub fn init_pit(
 ) -> PitControl {
     let interrupt_vector = interrupts::reserve_any_vector(true).unwrap();
     io_apics.isa_irq(0).unwrap().set_destination(
-        local_apics.current_apic_id(),
+        local_apics.current_apic_id(),  // TODO: instead dispatch to any CPU?
         interrupt_vector.interrupt_num(),
     );
 

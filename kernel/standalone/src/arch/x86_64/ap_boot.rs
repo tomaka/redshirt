@@ -97,6 +97,9 @@ pub unsafe fn filter_build_ap_boot_alloc<'a>(
 /// This function returns once the target processor has been successfully initialized and has
 /// started (or will soon start) to execute `boot_code`.
 ///
+/// This function also takes care to enable the local APIC and interrupts on the newly-started
+/// processor.
+///
 /// > **Note**: It is safe to call this function multiple times simultaneously with multiple
 /// >           different targets. For example, processor 0 can boot up processor 2 while
 /// >           processor 1 simultaneously boots up processor 3.
@@ -108,6 +111,8 @@ pub unsafe fn filter_build_ap_boot_alloc<'a>(
 /// This function must only be called once per `target`, and no other code has sent or attempted
 /// to send an INIT or SIPI to the target processor.
 ///
+// TODO: it kind of sucks that an important detail such as "we also initialize the local APIC and
+// interrupts" is just part of the documentation, but we need them for the implementation to work
 // TODO: replace `Infallible` with `!` when stable
 pub unsafe fn boot_associated_processor(
     alloc: &mut ApBootAlloc,
@@ -161,9 +166,7 @@ pub unsafe fn boot_associated_processor(
     let (boot_code, init_finished_future) = {
         let (tx, rx) = oneshot::channel();
         let boot_code = move || {
-            unsafe {
-                local_apics.init_local();
-            }
+            local_apics.init_local();
             interrupts::load_idt();
             let _ = tx.send(());
             boot_code()

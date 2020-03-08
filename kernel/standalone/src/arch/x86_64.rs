@@ -63,9 +63,7 @@ extern "C" fn after_boot(multiboot_header: usize) -> ! {
             }
         };
 
-        unsafe {
-            apic::pic::init_and_disable_pic();
-        }
+        apic::pic::init_and_disable_pic();
 
         // TODO: panics in BOCHS
         let acpi = acpi::load_acpi_tables(&multiboot_info);
@@ -73,7 +71,7 @@ extern "C" fn after_boot(multiboot_header: usize) -> ! {
             .interrupt_model
             .expect("No interrupt model found in ACPI table")
         {
-            unsafe { apic::ioapics::init_from_acpi(apic) }
+            apic::ioapics::init_from_acpi(apic)
         } else {
             panic!("Legacy PIC mode not supported")
         };
@@ -82,15 +80,13 @@ extern "C" fn after_boot(multiboot_header: usize) -> ! {
         let timers = Box::leak(Box::new(apic::timers::init(local_apics)));
 
         let mut pit = pit::init_pit(&*local_apics, &mut io_apics);
-        let future = pit.timer(core::time::Duration::from_secs(1));
 
         interrupts::load_idt();
 
         let mut kernel_channels = Vec::with_capacity(acpi.application_processors.len());
 
-        // TODO: disabled while the APIC is getting reworked
+        // TODO: it doesn't work if we remove this `take(1)` ; primary suspect is timers implementation
         for ap in acpi.application_processors.iter().take(1) {
-            // TODO: remove take(..), but doesn't work if I do so
             debug_assert!(ap.is_ap);
             if ap.state != ::acpi::ProcessorState::WaitingForSipi {
                 continue;
@@ -114,6 +110,8 @@ extern "C" fn after_boot(multiboot_header: usize) -> ! {
             );
         }
 
+        // Now that everything has been initialized and all the processors started,
+        // we can initialize the kernel.
         let kernel = {
             let platform_specific = PlatformSpecificImpl {
                 timers,
@@ -130,6 +128,7 @@ extern "C" fn after_boot(multiboot_header: usize) -> ! {
             Arc::new(crate::kernel::Kernel::init(platform_specific))
         };
 
+        // Send an `Arc<Kernel>` to the other processors so that they can run it too.
         for tx in kernel_channels {
             if tx.send(kernel.clone()).is_err() {
                 panic!();

@@ -112,6 +112,8 @@ impl fmt::Debug for ReservedInterruptVector {
 
 impl Drop for ReservedInterruptVector {
     fn drop(&mut self) {
+        // TODO: should we actually unreserve interrupts? it means that it could later be
+        //       re-registered, and spurious interrupts triggered
         let _was_reserved =
             RESERVATIONS[usize::from(self.interrupt - 32)].swap(false, Ordering::Relaxed);
         debug_assert!(_was_reserved);
