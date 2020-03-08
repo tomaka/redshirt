@@ -67,14 +67,17 @@ extern "C" fn after_boot(multiboot_header: usize) -> ! {
         // TODO: panics in BOCHS
         let acpi = acpi::load_acpi_tables(&multiboot_info);
 
-        //interrupts::load_idt();
-
+        // TODO: we have to do that before loading the IDT, otherwise the PIC will send a timer
+        // interrupt that will be interpreted as a double fault; make this more fool-proof
         let apic = apic::init();
+
+        interrupts::load_idt();
 
         let mut kernel_channels = Vec::with_capacity(acpi.application_processors.len());
 
-        for ap in acpi.application_processors.iter().take(1) {
-            // TODO: remove take(1), but doesn't work if I do so
+        // TODO: disabled while the APIC is getting reworked
+        for ap in acpi.application_processors.iter().take(0) {
+            // TODO: remove take(..), but doesn't work if I do so
             debug_assert!(ap.is_ap);
             if ap.state != ::acpi::ProcessorState::WaitingForSipi {
                 continue;
@@ -89,7 +92,7 @@ extern "C" fn after_boot(multiboot_header: usize) -> ! {
                 &apic,
                 apic::ApicId::from_unchecked(ap.local_apic_id),
                 move || {
-                    //interrupts::load_idt();
+                    interrupts::load_idt();
                     let kernel = executor::block_on(&apic_clone, kernel_rx).unwrap();
                     kernel.run();
                 },

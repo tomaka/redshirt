@@ -731,6 +731,9 @@ static WAKERS: [AtomicWaker; 256 - 32] = [
 ];
 
 /// For each interrupt vector, a boolean indicating whether or not this vector is reserved.
+///
+/// Note that this could be a smaller array by grouping all the booleans into bytes, for this
+/// is a risky optimization with a very low reward potential.
 static RESERVATIONS: [AtomicBool; 256 - 32] = [
     AtomicBool::new(false),
     AtomicBool::new(false),
