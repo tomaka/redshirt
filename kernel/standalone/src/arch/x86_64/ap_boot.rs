@@ -112,7 +112,6 @@ pub unsafe fn filter_build_ap_boot_alloc<'a>(
 /// to send an INIT or SIPI to the target processor.
 ///
 // TODO: replace `Infallible` with `!` when stable
-#[cold]
 pub unsafe fn boot_associated_processor(
     alloc: &mut ApBootAlloc,
     apic: &Arc<ApicControl>,

@@ -40,7 +40,6 @@ mod pit;
 /// Since the kernel was loaded by a multiboot2 bootloader, the first parameter is the memory
 /// address of the multiboot header.
 #[no_mangle]
-#[cold]
 extern "C" fn after_boot(multiboot_header: usize) -> ! {
     unsafe {
         let multiboot_info = multiboot2::load(multiboot_header);

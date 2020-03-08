@@ -15,17 +15,14 @@
 
 use crate::arch::x86_64::interrupts;
 
-use alloc::{collections::VecDeque, sync::Arc};
+use alloc::sync::Arc;
 use core::{
     convert::TryFrom as _,
     marker::PhantomData,
     num::NonZeroU64,
-    ops::Range,
-    pin::Pin,
-    task::{Context, Poll, Waker},
+    task::{Poll, Waker},
 };
 use futures::prelude::*;
-use spin::Mutex;
 use x86_64::registers::model_specific::Msr;
 use x86_64::structures::port::{PortRead as _, PortWrite as _};
 
@@ -45,7 +42,7 @@ pub struct LocalApicControl {
 
 /// Opaque type representing the APIC ID of a processor.
 ///
-/// Since we never modify the APIC ID of processors, the existence of this struct is a guarantee
+/// Since we never modify the APIC ID of processors, an instance of this struct is a guarantee
 /// that a processor with the given ID exists.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct ApicId(u8);
@@ -134,12 +131,10 @@ impl LocalApicControl {
         send_ipi_inner(target_apic_id, 0, vector)
     }
 
-    #[cold]
     pub fn send_interprocessor_init(&self, target_apic_id: ApicId) {
         send_ipi_inner(target_apic_id, 0b101, 0);
     }
 
-    #[cold]
     pub fn send_interprocessor_sipi(&self, target_apic_id: ApicId, boot_fn: *const u8) {
         let boot_fn = boot_fn as usize;
         assert_eq!((boot_fn >> 12) << 12, boot_fn);

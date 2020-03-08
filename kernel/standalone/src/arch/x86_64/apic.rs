@@ -171,12 +171,10 @@ impl ApicControl {
         self.send_ipi_inner(target_apic_id, 0, vector)
     }
 
-    #[cold]
     pub fn send_interprocessor_init(self: &Arc<Self>, target_apic_id: ApicId) {
         self.send_ipi_inner(target_apic_id, 0b101, 0);
     }
 
-    #[cold]
     pub fn send_interprocessor_sipi(self: &Arc<Self>, target_apic_id: ApicId, boot_fn: *const u8) {
         let boot_fn = boot_fn as usize;
         assert_eq!((boot_fn >> 12) << 12, boot_fn);

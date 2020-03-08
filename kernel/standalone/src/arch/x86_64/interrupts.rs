@@ -42,13 +42,14 @@ use x86_64::structures::idt;
 ///
 /// For each value of `interrupt`, only the latest registered `Waker` will be waken up.
 ///
-/// > **Note**: Interrupts 8 and 18 are considered unrecoverable, and it therefore doesn't make
-/// >           sense to call this method with `interrupt` equal to 8 or 18.
+/// # Panic
+///
+/// You can only set a waker for interrupts 32 to 255. Any value inferior to 32 will
+/// trigger a panic.
 ///
 pub fn set_interrupt_waker(interrupt: u8, waker: &Waker) {
-    debug_assert_ne!(interrupt, 8);
-    debug_assert_ne!(interrupt, 18);
-    WAKERS[usize::from(interrupt)].register(waker);
+    assert!(interrupt >= 32);
+    WAKERS[usize::from(interrupt - 32)].register(waker);
 }
 
 /// Initializes the interrupts system.
@@ -69,68 +70,34 @@ lazy_static::lazy_static! {
             }};
             ($entry:expr, $n:expr) => {{
                 extern "x86-interrupt" fn handler(_: &mut idt::InterruptStackFrame) {
-                    WAKERS[$n].wake();
+                    WAKERS[$n - 32].wake();
                 }
                 $entry.set_handler_fn(handler)
                     .disable_interrupts(false);
-            }};
-            ($entry:expr, $n:expr, with-err) => {{
-                extern "x86-interrupt" fn handler(_: &mut idt::InterruptStackFrame, _: u64) {
-                    WAKERS[$n].wake();
-                }
-                $entry.set_handler_fn(handler)
-                    .disable_interrupts(false);
-            }};
-            ($entry:expr, $n:expr, halt-with-err) => {{
-                extern "x86-interrupt" fn handler(_: &mut idt::InterruptStackFrame, _: u64) {
-                    x86_64::instructions::interrupts::disable();
-                    x86_64::instructions::bochs_breakpoint();
-                    x86_64::instructions::hlt();
-                }
-                $entry.set_handler_fn(handler);
-            }};
-            ($entry:expr, $n:expr, with-pf-err) => {{
-                extern "x86-interrupt" fn handler(_: &mut idt::InterruptStackFrame, _: idt::PageFaultErrorCode) {
-                    WAKERS[$n].wake();
-                }
-                $entry.set_handler_fn(handler)
-                    .disable_interrupts(false);
-            }};
-            ($entry:expr, $n:expr, diverging) => {{
-                extern "x86-interrupt" fn handler(_: &mut idt::InterruptStackFrame) -> ! {
-                    panic!()
-                }
-                $entry.set_handler_fn(handler);
-            }};
-            ($entry:expr, $n:expr, diverging-with-err) => {{
-                extern "x86-interrupt" fn handler(_: &mut idt::InterruptStackFrame, _: u64) -> ! {
-                    panic!("double fault!") // TODO: well, this is supposedly a generic diverging interrupt handler
-                }
-                $entry.set_handler_fn(handler);
             }};
         }
 
-        set_entry!(idt[0]);
-        set_entry!(idt[1]);
-        set_entry!(idt[2]);
-        set_entry!(idt[3]);
-        set_entry!(idt[4]);
-        set_entry!(idt[5]);
-        set_entry!(idt[6]);
-        set_entry!(idt[7]);
-        set_entry!(idt.double_fault, 8, diverging - with - err);
-        set_entry!(idt[9]);
-        set_entry!(idt.invalid_tss, 10, with - err);
-        set_entry!(idt.segment_not_present, 11, with - err);
-        set_entry!(idt.stack_segment_fault, 12, with - err);
-        set_entry!(idt.general_protection_fault, 13, halt - with - err);
-        set_entry!(idt.page_fault, 14, with - pf - err);
+        idt[0].set_handler_fn(int0).disable_interrupts(false);
+        idt[1].set_handler_fn(int1).disable_interrupts(false);
+        idt[2].set_handler_fn(int2).disable_interrupts(false);
+        idt[3].set_handler_fn(int3).disable_interrupts(false);
+        idt[4].set_handler_fn(int4).disable_interrupts(false);
+        idt[5].set_handler_fn(int5).disable_interrupts(false);
+        idt[6].set_handler_fn(int6).disable_interrupts(false);
+        idt[7].set_handler_fn(int7).disable_interrupts(false);
+        idt.double_fault.set_handler_fn(int8).disable_interrupts(false);
+        idt[9].set_handler_fn(int9).disable_interrupts(false);
+        idt.invalid_tss.set_handler_fn(int10).disable_interrupts(false);
+        idt.segment_not_present.set_handler_fn(int11).disable_interrupts(false);
+        idt.stack_segment_fault.set_handler_fn(int12).disable_interrupts(false);
+        idt.general_protection_fault.set_handler_fn(int13).disable_interrupts(false);
+        idt.page_fault.set_handler_fn(int14).disable_interrupts(false);
         // 15 is reserved
-        set_entry!(idt[16]);
-        set_entry!(idt.alignment_check, 17, with - err);
-        set_entry!(idt.machine_check, 18, diverging);
-        set_entry!(idt[19]);
-        set_entry!(idt[20]);
+        idt[16].set_handler_fn(int16).disable_interrupts(false);
+        idt.alignment_check.set_handler_fn(int17).disable_interrupts(false);
+        idt.machine_check.set_handler_fn(int18).disable_interrupts(false);
+        idt[19].set_handler_fn(int19).disable_interrupts(false);
+        idt[20].set_handler_fn(int20).disable_interrupts(false);
         // 21 is reserved
         // 22 is reserved
         // 23 is reserved
@@ -140,7 +107,7 @@ lazy_static::lazy_static! {
         // 27 is reserved
         // 28 is reserved
         // 29 is reserved
-        set_entry!(idt.security_exception, 30, with - err);
+        idt.security_exception.set_handler_fn(int30).disable_interrupts(false);
         // 31 is reserved
         set_entry!(idt[32]);
         set_entry!(idt[33]);
@@ -371,41 +338,104 @@ lazy_static::lazy_static! {
     };
 }
 
+macro_rules! interrupt_panic {
+    ($msg:expr, $frame:expr) => {
+        panic!(
+            "Exception: {} at 0x{:x}",
+            $msg,
+            $frame.instruction_pointer.as_u64()
+        )
+    }
+}
+
+extern "x86-interrupt" fn int0(frame: &mut idt::InterruptStackFrame) {
+    interrupt_panic!("Division by zero", frame);
+}
+
+extern "x86-interrupt" fn int1(frame: &mut idt::InterruptStackFrame) {
+    interrupt_panic!("Single-step interrupt", frame);
+}
+
+extern "x86-interrupt" fn int2(frame: &mut idt::InterruptStackFrame) {
+    interrupt_panic!("NMI", frame); // TODO: there might be additional trickery here
+}
+
+extern "x86-interrupt" fn int3(frame: &mut idt::InterruptStackFrame) {
+    interrupt_panic!("Breakpoint", frame);
+}
+
+extern "x86-interrupt" fn int4(frame: &mut idt::InterruptStackFrame) {
+    interrupt_panic!("Overflow", frame);
+}
+
+extern "x86-interrupt" fn int5(frame: &mut idt::InterruptStackFrame) {
+    interrupt_panic!("Bounds", frame);
+}
+
+extern "x86-interrupt" fn int6(frame: &mut idt::InterruptStackFrame) {
+    interrupt_panic!("Invalid opcode", frame);
+}
+
+extern "x86-interrupt" fn int7(frame: &mut idt::InterruptStackFrame) {
+    interrupt_panic!("Coprocessor not available", frame);
+}
+
+extern "x86-interrupt" fn int8(frame: &mut idt::InterruptStackFrame, _: u64) -> ! {
+    // TODO: don't panic, as it's likely that this interrupt is caused by the panic handler
+    interrupt_panic!("Double fault", frame);
+}
+
+extern "x86-interrupt" fn int9(frame: &mut idt::InterruptStackFrame) {
+    interrupt_panic!("Interrupt 9", frame);
+}
+
+extern "x86-interrupt" fn int10(frame: &mut idt::InterruptStackFrame, _: u64) {
+    interrupt_panic!("Invalid TSS", frame);
+}
+
+extern "x86-interrupt" fn int11(frame: &mut idt::InterruptStackFrame, _: u64) {
+    interrupt_panic!("Segment not present", frame);
+}
+
+extern "x86-interrupt" fn int12(frame: &mut idt::InterruptStackFrame, _: u64) {
+    interrupt_panic!("Stack segment fault", frame);
+}
+
+extern "x86-interrupt" fn int13(frame: &mut idt::InterruptStackFrame, _: u64) {
+    interrupt_panic!("GPF", frame);
+}
+
+extern "x86-interrupt" fn int14(frame: &mut idt::InterruptStackFrame, _: idt::PageFaultErrorCode) {
+    interrupt_panic!("Page fault", frame);
+}
+
+extern "x86-interrupt" fn int16(frame: &mut idt::InterruptStackFrame) {
+    interrupt_panic!("x87 exception", frame);
+}
+
+extern "x86-interrupt" fn int17(frame: &mut idt::InterruptStackFrame, _: u64) {
+    interrupt_panic!("Alignment error", frame);
+}
+
+extern "x86-interrupt" fn int18(frame: &mut idt::InterruptStackFrame) -> ! {
+    interrupt_panic!("Machine check", frame);
+}
+
+extern "x86-interrupt" fn int19(frame: &mut idt::InterruptStackFrame) {
+    interrupt_panic!("SIMD error", frame);
+}
+
+extern "x86-interrupt" fn int20(frame: &mut idt::InterruptStackFrame) {
+    interrupt_panic!("Virtualization exception", frame);
+}
+
+extern "x86-interrupt" fn int30(frame: &mut idt::InterruptStackFrame, _: u64) {
+    interrupt_panic!("Security exception", frame);
+}
+
 /// For each interrupt vector, a [`Waker`](core::task::Waker) that must be waken up when that
 /// interrupt happens.
-static WAKERS: [AtomicWaker; 256] = [
-    AtomicWaker::new(),
-    AtomicWaker::new(),
-    AtomicWaker::new(),
-    AtomicWaker::new(),
-    AtomicWaker::new(),
-    AtomicWaker::new(),
-    AtomicWaker::new(),
-    AtomicWaker::new(),
-    AtomicWaker::new(),
-    AtomicWaker::new(),
-    AtomicWaker::new(),
-    AtomicWaker::new(),
-    AtomicWaker::new(),
-    AtomicWaker::new(),
-    AtomicWaker::new(),
-    AtomicWaker::new(),
-    AtomicWaker::new(),
-    AtomicWaker::new(),
-    AtomicWaker::new(),
-    AtomicWaker::new(),
-    AtomicWaker::new(),
-    AtomicWaker::new(),
-    AtomicWaker::new(),
-    AtomicWaker::new(),
-    AtomicWaker::new(),
-    AtomicWaker::new(),
-    AtomicWaker::new(),
-    AtomicWaker::new(),
-    AtomicWaker::new(),
-    AtomicWaker::new(),
-    AtomicWaker::new(),
-    AtomicWaker::new(),
+static WAKERS: [AtomicWaker; 256 - 32] = [
     AtomicWaker::new(),
     AtomicWaker::new(),
     AtomicWaker::new(),
