@@ -69,16 +69,14 @@ extern "C" fn after_boot(multiboot_header: usize) -> ! {
 
         // TODO: panics in BOCHS
         let acpi = acpi::load_acpi_tables(&multiboot_info);
-        let apic_info_from_acpi = if let ::acpi::interrupt::InterruptModel::Apic(apic) = acpi.interrupt_model
+        let io_apics = if let ::acpi::interrupt::InterruptModel::Apic(apic) = &acpi.interrupt_model
             .expect("No interrupt model found in ACPI table")
         {
-            apic
+            unsafe {
+                apic::ioapics::init_from_acpi(apic)
+            }
         } else {
-            panic!()
-        };
-
-        let io_apics = unsafe {
-            apic::ioapics::init_from_acpi(&apic_info_from_acpi)
+            panic!("Legacy PIC mode not supported")
         };
 
         let local_apics = Box::leak(Box::new(apic::local::init()));
@@ -101,13 +99,16 @@ extern "C" fn after_boot(multiboot_header: usize) -> ! {
 
             ap_boot::boot_associated_processor(
                 &mut ap_boot_alloc,
-                local_apics,
+                &*local_apics,
                 timers,
                 apic::ApicId::from_unchecked(ap.local_apic_id),
-                move || {
-                    interrupts::load_idt();
-                    let kernel = executor::block_on(local_apics, kernel_rx).unwrap();
-                    kernel.run();
+                {
+                    let local_apics = &*local_apics;
+                    move || {
+                        interrupts::load_idt();
+                        let kernel = executor::block_on(local_apics, kernel_rx).unwrap();
+                        kernel.run();
+                    }
                 },
             );
         }

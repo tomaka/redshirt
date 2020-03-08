@@ -16,7 +16,7 @@
 use alloc::sync::Arc;
 use core::{
     convert::TryFrom as _,
-    num::NonZeroU64,
+    num::{NonZeroU32, NonZeroU64},
 };
 use x86_64::registers::model_specific::Msr;
 
@@ -87,9 +87,7 @@ impl LocalApicsControl {
     // TODO: add debug_assert!s in all the other methods that check if the local APIC is initialized
     unsafe fn init_local(&self) {
         assert!(is_apic_supported());
-        if self.tsc_deadline_supported {
-            assert!(is_tsc_deadline_supported());
-        }
+        assert_eq!(self.tsc_deadline_supported, is_tsc_deadline_supported());
 
         // Set up the APIC.
         {
@@ -114,6 +112,63 @@ impl LocalApicsControl {
         current_apic_id()
     }
 
+    pub fn is_tsc_deadline_supported(&self) -> bool {
+        self.tsc_deadline_supported
+    }
+
+    // TODO: bad API
+    pub fn enable_local_timer_interrupt_tsc_deadline(&self, vector: u8) {
+        unsafe {
+            assert!(self.tsc_deadline_supported);
+            assert!(vector >= 32);
+            let addr =
+                usize::try_from(APIC_BASE_ADDR + 0x320).unwrap() as *mut u32;
+            let flag = 0b10 << 17;
+            addr.write_volatile(flag | u32::from(vector));
+
+            // TODO: hack
+            let divide_config_addr = usize::try_from(APIC_BASE_ADDR + 0x3e0).unwrap() as *mut u32;
+            divide_config_addr.write_volatile(0b1010); // Divide by 128
+        }
+    }
+
+    // TODO: bad API
+    pub fn enable_local_timer_interrupt(&self, periodic: bool, vector: u8) {
+        unsafe {
+            assert!(!self.tsc_deadline_supported);
+            assert!(vector >= 32);
+            let addr =
+                usize::try_from(APIC_BASE_ADDR + 0x320).unwrap() as *mut u32;
+            let periodic = if periodic { 1 << 17  } else { 0 };
+            addr.write_volatile(periodic | u32::from(vector));
+
+            // TODO: hack
+            let divide_config_addr = usize::try_from(APIC_BASE_ADDR + 0x3e0).unwrap() as *mut u32;
+            divide_config_addr.write_volatile(0b1010); // Divide by 128
+        }
+    }
+
+    // TODO: bad API
+    pub fn set_local_timer_value(&self, value: Option<NonZeroU32>) {
+        unsafe {
+            assert!(!self.tsc_deadline_supported);
+            let addr =
+                usize::try_from(APIC_BASE_ADDR + 0x380).unwrap() as *mut u32;
+            let value = value.map(|v| v.get()).unwrap_or(0);
+            addr.write_volatile(value);
+        }
+    }
+
+    // TODO: bad API
+    pub fn disable_local_timer_interrup(&self) {
+        unsafe {
+            let addr =
+                usize::try_from(APIC_BASE_ADDR + 0x320).unwrap() as *mut u32;
+            addr.write_volatile(0x00010000);
+        }
+    }
+
+    // TODO: bad API
     pub fn set_local_tsc_deadline(&self, value: Option<NonZeroU64>) {
         unsafe {
             assert!(self.tsc_deadline_supported);

@@ -112,6 +112,7 @@ impl<'a> Irq<'a> {
     ///
     /// Panics if `destination_interrupt` is inferior to 32.
     ///
+    // TODO: add some kind of assignment system, so that we don't accidentally erase a previous assignment
     pub fn set_destination(&mut self, destination: ApicId, destination_interrupt: u8) {
         self.inner.set_destination(destination, destination_interrupt);
     }

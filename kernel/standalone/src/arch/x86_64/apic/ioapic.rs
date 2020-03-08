@@ -80,7 +80,7 @@ pub unsafe fn init_io_apic(config: IoApicDescription) -> IoApicControl {
         u8::try_from((io_apic_ver >> 16) & 0xff).unwrap()
     };
 
-    let io_apic_control = IoApicControl {
+    let mut io_apic_control = IoApicControl {
         io_reg_sel_register,
         io_win_register,
         global_system_interrupt_base: config.global_system_interrupt_base,
@@ -128,8 +128,10 @@ impl IoApicControl {
         let interrupts_enabled = x86_64::instructions::interrupts::are_enabled();
         x86_64::instructions::interrupts::disable();
 
-        self.write_register(register_base, u32::try_from(value & 0xffffffff).unwrap());
-        self.write_register(register_base + 1, u32::try_from(value >> 32).unwrap());
+        unsafe {
+            self.write_register(register_base, u32::try_from(value & 0xffffffff).unwrap());
+            self.write_register(register_base + 1, u32::try_from(value >> 32).unwrap());
+        }
 
         if interrupts_enabled {
             x86_64::instructions::interrupts::enable();

@@ -28,7 +28,7 @@
 //! should only be used in limited circumstances and not under regular load.
 //!
 
-use crate::arch::x86_64::interrupts;
+use crate::arch::x86_64::{apic::{ioapics, local}, interrupts};
 
 use alloc::sync::Arc;
 use core::{convert::TryFrom as _, future::Future, mem, pin::Pin, sync::atomic::{AtomicBool, Ordering}, task::{Context, Poll, Waker}, time::Duration};
@@ -60,9 +60,11 @@ pub struct PitFuture<'a> {
 ///
 /// There should only ever be one [`PitControl`] alive at any given point in time. Creating
 /// multiple [`PitControl`] is safe, but will lead to logic errors.
-pub fn init_pit() -> PitControl {
-    // TODO: must reserve the correct one
-    let interrupt_vector = interrupts::reserve_vector().unwrap();
+pub fn init_pit(local_apics: &local::LocalApicsControl, io_apics: &mut ioapics::IoApicsControl) -> PitControl {
+    let interrupt_vector = interrupts::reserve_any_vector().unwrap();
+    io_apics
+        .isa_irq(0).unwrap()
+        .set_destination(local_apics.current_apic_id(), interrupt_vector.interrupt_num());
 
     PitControl {
         interrupt_vector,
@@ -81,7 +83,7 @@ impl PitControl {
         // has elapsed.
         // TODO: probably rounding errors below
         const TICKS_PER_SEC: u64 = 1_193_182;
-        const NANOS_PER_TICK: u128 = 1 + 1_000_000_000 / u128::from(TICKS_PER_SEC);
+        const NANOS_PER_TICK: u128 = 1 + 1_000_000_000 / TICKS_PER_SEC as u128;
         let num_ticks = 1 + after.as_nanos() / NANOS_PER_TICK;
 
         // The PIT only accepts a 16bits number of ticks, and `num_ticks` probably won't fit
@@ -102,7 +104,7 @@ impl PitControl {
 impl<'a> Future for PitFuture<'a> {
     type Output = ();
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<()> {
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<()> {
         if !self.raised.swap(false, Ordering::Relaxed) {
             return Poll::Pending;
         }

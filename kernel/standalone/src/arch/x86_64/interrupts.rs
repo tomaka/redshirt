@@ -37,7 +37,7 @@ use futures::task::AtomicWaker;
 use x86_64::structures::idt;
 
 /// Reserves an interrupt in the table.
-pub fn reserve_vector() -> Result<ReservedInterruptVector, ReserveErr> {
+pub fn reserve_any_vector() -> Result<ReservedInterruptVector, ReserveErr> {
     // TODO: maybe we should rotate the reservations, so that de-allocated vectors
     // don't get immediately reused
     for (n, reservation) in RESERVATIONS.iter().enumerate() {
