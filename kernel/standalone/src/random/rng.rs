@@ -39,10 +39,14 @@
 
 // TODO: I'm not a cryptographer nor a mathematician, but I guess that a ChaCha alone is a bit naive?
 
-use core::convert::TryFrom as _;
+use crate::arch::PlatformSpecific;
+
+use alloc::boxed::Box;
+use core::{convert::TryFrom as _, mem, pin::Pin};
 use rand_chacha::{ChaCha20Core, ChaCha20Rng};
 use rand_core::{RngCore, SeedableRng as _};
 use rand_jitter::JitterRng;
+use spin::Mutex;
 
 /// Kernel random number generator.
 pub struct KernelRng {
@@ -50,12 +54,27 @@ pub struct KernelRng {
     rng: ChaCha20Rng,
 }
 
+// TODO: this hack is necessary because `JitterRng::new_with_timer` accepts only a standalone
+// function without any context
+// MUTEX protects accesses to the static mut TIMER, which stores a closure that returns a time value
+static MUTEX: Mutex<()> = Mutex::new(());
+static mut TIMER: Option<Box<dyn Fn() -> u64>> = None;
+
 impl KernelRng {
     /// Initializes a new [`KernelRng`].
-    pub fn new() -> KernelRng {
+    pub fn new(platform_specific: Pin<&impl PlatformSpecific>) -> KernelRng {
         // Initialize the `JitterRng`.
         let mut jitter = {
-            let mut rng = JitterRng::new_with_timer(timer);
+            let _lock = MUTEX.lock();
+
+            unsafe {
+                let closure: Box<dyn Fn() -> u64> = Box::new(move || {
+                    u64::try_from(platform_specific.monotonic_clock() & 0xffffffffffffffff).unwrap()
+                });
+                TIMER = Some(mem::transmute(closure));
+            }
+
+            let mut rng = JitterRng::new_with_timer(|| unsafe { (TIMER.as_ref().unwrap())() });
 
             // This makes sure that the `JitterRng` is good enough. A panic here indicates that
             // our entropy would be too low.
@@ -66,6 +85,11 @@ impl KernelRng {
             rng.set_rounds(rounds);
             // According to the documentation, we have to discard the first `u64`.
             let _ = rng.next_u64();
+
+            unsafe {
+                TIMER = None;
+            }
+
             rng
         };
 
@@ -126,33 +150,3 @@ fn add_hardware_entropy(hasher: &mut blake3::Hasher) {
 
 #[cfg(not(target_arch = "x86_64"))]
 fn add_hardware_entropy(_: &mut blake3::Hasher) {}
-
-// Note: timer must have nanosecond precision, according to the documentation of `JitterRng`.
-#[cfg(target_arch = "x86_64")]
-fn timer() -> u64 {
-    unsafe { core::arch::x86_64::_rdtsc() }
-}
-#[cfg(target_arch = "arm")]
-fn timer() -> u64 {
-    unsafe {
-        let lo: u32;
-        let hi: u32;
-        // TODO: what about CNTFRQ? which code configures it? initial value is unknown at reset
-        // Reading the CNTPCT register.
-        asm!("mrrc p15, 0, $0, $1, c14": "=r"(lo), "=r"(hi) ::: "volatile");
-        u64::from(hi) << 32 | u64::from(lo)
-    }
-}
-#[cfg(target_arch = "aarch64")]
-fn timer() -> u64 {
-    unsafe {
-        // TODO: stub
-        let val: u64;
-        asm!("mrs $0, CNTPCT_EL0": "=r"(val) ::: "volatile");
-        val
-    }
-}
-#[cfg(not(any(target_arch = "x86_64", target_arch = "arm", target_arch = "aarch64")))]
-fn timer() -> u64 {
-    unimplemented!()
-}

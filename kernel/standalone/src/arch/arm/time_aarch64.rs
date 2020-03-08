@@ -35,7 +35,12 @@ impl TimeControl {
     }
 
     pub fn monotonic_clock(self: &Arc<Self>) -> u128 {
-        0
+        unsafe {
+            // TODO: stub
+            let val: u64;
+            asm!("mrs $0, CNTPCT_EL0": "=r"(val) ::: "volatile");
+            u128::from(val)
+        }
     }
 
     pub fn timer(self: &Arc<Self>, deadline: u128) -> TimerFuture {
