@@ -32,7 +32,7 @@ pub fn init(local_apics: &local::LocalApicsControl) -> Timers {
     // TODO: check whether CPUID is supported at all?
     // TODO: check whether RDTSC is supported
 
-    let interrupt_vector = interrupts::reserve_any_vector().unwrap();
+    let interrupt_vector = interrupts::reserve_any_vector(true).unwrap();
 
     // Configure the timer.
     if local_apics.is_tsc_deadline_supported() {

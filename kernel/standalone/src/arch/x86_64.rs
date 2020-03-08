@@ -69,7 +69,7 @@ extern "C" fn after_boot(multiboot_header: usize) -> ! {
 
         // TODO: panics in BOCHS
         let acpi = acpi::load_acpi_tables(&multiboot_info);
-        let io_apics = if let ::acpi::interrupt::InterruptModel::Apic(apic) = &acpi
+        let mut io_apics = if let ::acpi::interrupt::InterruptModel::Apic(apic) = &acpi
             .interrupt_model
             .expect("No interrupt model found in ACPI table")
         {
@@ -81,12 +81,15 @@ extern "C" fn after_boot(multiboot_header: usize) -> ! {
         let local_apics = Box::leak(Box::new(apic::local::init()));
         let timers = Box::leak(Box::new(apic::timers::init(local_apics)));
 
+        let mut pit = pit::init_pit(&*local_apics, &mut io_apics);
+        let future = pit.timer(core::time::Duration::from_secs(1));
+
         interrupts::load_idt();
 
         let mut kernel_channels = Vec::with_capacity(acpi.application_processors.len());
 
         // TODO: disabled while the APIC is getting reworked
-        for ap in acpi.application_processors.iter().take(0) {
+        for ap in acpi.application_processors.iter().take(1) {
             // TODO: remove take(..), but doesn't work if I do so
             debug_assert!(ap.is_ap);
             if ap.state != ::acpi::ProcessorState::WaitingForSipi {

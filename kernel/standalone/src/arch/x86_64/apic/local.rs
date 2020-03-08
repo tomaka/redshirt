@@ -60,6 +60,13 @@ pub unsafe fn init() -> LocalApicsControl {
     }
 }
 
+// TODO: bad API ; should be a method on LocalApisControl, and a &'static ref passed when
+// initializing the IDT
+pub unsafe fn end_of_interrupt() {
+    let addr = usize::try_from(APIC_BASE_ADDR + 0xB0).unwrap() as *mut u32;
+    addr.write_volatile(0x0);
+}
+
 impl ApicId {
     /// Builds an [`ApicId`] from a raw identifier without checking the value.
     ///

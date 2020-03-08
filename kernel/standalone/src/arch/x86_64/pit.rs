@@ -75,7 +75,7 @@ pub fn init_pit(
     local_apics: &local::LocalApicsControl,
     io_apics: &mut ioapics::IoApicsControl,
 ) -> PitControl {
-    let interrupt_vector = interrupts::reserve_any_vector().unwrap();
+    let interrupt_vector = interrupts::reserve_any_vector(true).unwrap();
     io_apics.isa_irq(0).unwrap().set_destination(
         local_apics.current_apic_id(),
         interrupt_vector.interrupt_num(),
@@ -97,7 +97,12 @@ impl PitControl {
         // TODO: probably rounding errors below
         const TICKS_PER_SEC: u64 = 1_193_182;
         const NANOS_PER_TICK: u128 = 1 + 1_000_000_000 / TICKS_PER_SEC as u128;
-        let num_ticks = 1 + after.as_nanos() / NANOS_PER_TICK;
+        let nanos = after.as_nanos();
+        let num_ticks = if nanos == 0 {
+            0
+        } else {
+            1 + after.as_nanos() / NANOS_PER_TICK
+        };
 
         // The PIT only accepts a 16bits number of ticks, and `num_ticks` probably won't fit
         // in 16bits. We therefore do some euclidian division and remainder.
