@@ -26,11 +26,9 @@ fn main() {
 
         log::info!("Now listening on 0.0.0.0:8000");
 
-        let stream = stream::unfold(listener, |l| {
-            async move {
-                let connec = l.accept().await.0;
-                Some((connec, l))
-            }
+        let stream = stream::unfold(listener, |l| async move {
+            let connec = l.accept().await.0;
+            Some((connec, l))
         });
 
         let mut active_conncs =
@@ -46,16 +44,10 @@ fn main() {
             },
             http,
         )
-        .serve(hyper::service::make_service_fn(|_| {
-            async {
-                Ok::<_, std::io::Error>(hyper::service::service_fn(|_req| {
-                    async {
-                        Ok::<_, std::io::Error>(hyper::Response::new(hyper::Body::from(
-                            "Hello World",
-                        )))
-                    }
-                }))
-            }
+        .serve(hyper::service::make_service_fn(|_| async {
+            Ok::<_, std::io::Error>(hyper::service::service_fn(|_req| async {
+                Ok::<_, std::io::Error>(hyper::Response::new(hyper::Body::from("Hello World")))
+            }))
         }));
 
         loop {
@@ -105,8 +97,6 @@ struct Executor {
 
 impl<T: Future<Output = ()> + 'static> hyper::rt::Executor<T> for Executor {
     fn execute(&self, future: T) {
-        self.pusher
-            .unbounded_send(Box::pin(future))
-            .unwrap()
+        self.pusher.unbounded_send(Box::pin(future)).unwrap()
     }
 }

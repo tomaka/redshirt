@@ -43,7 +43,11 @@ impl Transport for TcpConfig {
     type Output = redshirt_tcp_interface::TcpStream;
     type Error = io::Error;
     type Listener = Pin<
-        Box<dyn Stream<Item = Result<ListenerEvent<Self::ListenerUpgrade>, Self::Error>> + Send>,
+        Box<
+            dyn Stream<
+                    Item = Result<ListenerEvent<Self::ListenerUpgrade, Self::Error>, Self::Error>,
+                > + Send,
+        >,
     >;
     type ListenerUpgrade = future::Ready<Result<Self::Output, Self::Error>>;
     type Dial = Pin<Box<dyn Future<Output = Result<Self::Output, io::Error>> + Send>>;
