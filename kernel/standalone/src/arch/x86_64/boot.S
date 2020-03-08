@@ -38,6 +38,18 @@ _start:
     // Check that we have been loaded by a multiboot2 bootloader.
     cmp $0x36d76289, %eax
     jne .print_err_and_stop
+
+    // Clear the BSS segment.
+    // While this is normally not required, we do it anyway "just in case".
+    mov $__bss_start, %edi
+    mov $__bss_end, %ecx
+    sub $__bss_start, %ecx
+    jb .print_err_and_stop
+    mov $0, %eax
+    cld
+    rep stosb %al, (%edi)
+
+    // Now that the BSS is clear, we can put the value of EBX there.
     mov %ebx, multiboot_info_ptr
 
     // Check that our CPU supports extended CPUID instructions.
@@ -62,7 +74,7 @@ _start:
 
     // Fill the PDPT entries to point to the PDs.
     mov $0, %ecx
-L0: mov %ecx, %eax
+.L0:mov %ecx, %eax
     shl $12, %eax                   // EAX <- ECX * 4096
     addl $pds, %eax                 // EAX <- address of `pds` + ECX * 4096
     or $(1 << 0), %eax              // Present bit. Indicates that the entry is valid.
@@ -70,11 +82,11 @@ L0: mov %ecx, %eax
     movl %eax, pdpt(, %ecx, 8)      // PDPT[ECX * 8] <- EAX
     inc %ecx
     cmp $4, %ecx
-    jne L0
+    jne .L0
 
     // Fill the PD entries to point to 2MiB pages.
     mov $0, %ecx
-L1: mov %ecx, %eax
+.L1:mov %ecx, %eax
     shr $12, %eax                   // EAX <- ECX >> 12
     movl %eax, pds+4(, %ecx, 8)     // PDs[4 + ECX * 8] <- EAX
     mov %ecx, %eax                  // EAX <- ECX
@@ -85,7 +97,7 @@ L1: mov %ecx, %eax
     movl %eax, pds(, %ecx, 8)       // PDs[ECX * 8] <- EAX
     inc %ecx
     cmp $(4 * 512), %ecx
-    jne L1
+    jne .L1
 
     // Set up the control registers.
     mov %cr0, %eax
@@ -134,26 +146,9 @@ _start64:
     movw %ax, %gs
     movw %ax, %ss
 
-    // Since `multiboot_info_ptr` is in the BSS segment, we move out its value before clearing
-    // the BSS.
-    //xor %rdx, %rdx
-    //mov multiboot_info_ptr, %edx
-
-    // Clear the BSS segment.
-    // While this is normally not required, we do it anyway "just in case".
-    // This implementation is very slow, but we don't care as it's just a one time operation.
-    //mov __bss_start, %rdi
-L3: //cmp __bss_end, %rdi
-    //jmp L2//jae L2
-    //movb $0, (%rdi)
-    //inc %rdi
-    //jmp L3
-L2: //nop
-
     // Jump to our Rust code
     // Pass as parameter the content of `multiboot_info_ptr`
     mov multiboot_info_ptr, %rdi
-    //mov %rdx, %rdi
     call after_boot
     cli
     hlt
