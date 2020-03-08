@@ -28,10 +28,21 @@
 //! should only be used in limited circumstances and not under regular load.
 //!
 
-use crate::arch::x86_64::{apic::{ioapics, local}, interrupts};
+use crate::arch::x86_64::{
+    apic::{ioapics, local},
+    interrupts,
+};
 
 use alloc::sync::Arc;
-use core::{convert::TryFrom as _, future::Future, mem, pin::Pin, sync::atomic::{AtomicBool, Ordering}, task::{Context, Poll, Waker}, time::Duration};
+use core::{
+    convert::TryFrom as _,
+    future::Future,
+    mem,
+    pin::Pin,
+    sync::atomic::{AtomicBool, Ordering},
+    task::{Context, Poll, Waker},
+    time::Duration,
+};
 use futures::task::ArcWake;
 use x86_64::structures::port::PortWrite as _;
 
@@ -60,15 +71,17 @@ pub struct PitFuture<'a> {
 ///
 /// There should only ever be one [`PitControl`] alive at any given point in time. Creating
 /// multiple [`PitControl`] is safe, but will lead to logic errors.
-pub fn init_pit(local_apics: &local::LocalApicsControl, io_apics: &mut ioapics::IoApicsControl) -> PitControl {
+pub fn init_pit(
+    local_apics: &local::LocalApicsControl,
+    io_apics: &mut ioapics::IoApicsControl,
+) -> PitControl {
     let interrupt_vector = interrupts::reserve_any_vector().unwrap();
-    io_apics
-        .isa_irq(0).unwrap()
-        .set_destination(local_apics.current_apic_id(), interrupt_vector.interrupt_num());
+    io_apics.isa_irq(0).unwrap().set_destination(
+        local_apics.current_apic_id(),
+        interrupt_vector.interrupt_num(),
+    );
 
-    PitControl {
-        interrupt_vector,
-    }
+    PitControl { interrupt_vector }
 }
 
 impl PitControl {
@@ -122,10 +135,12 @@ impl<'a> Future for PitFuture<'a> {
 
         // TODO: rather than register a Waker, put an implementation of Future that is raised
         // only when an interrupt has actually triggered
-        self.pit.interrupt_vector.register_waker(&futures::task::waker(Arc::new(RaisingArc {
-            inner: cx.waker().clone(),
-            raised: self.raised.clone(),
-        })));
+        self.pit
+            .interrupt_vector
+            .register_waker(&futures::task::waker(Arc::new(RaisingArc {
+                inner: cx.waker().clone(),
+                raised: self.raised.clone(),
+            })));
 
         channel0_one_shot(num_ticks);
         Poll::Pending

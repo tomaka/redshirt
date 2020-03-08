@@ -48,7 +48,10 @@ pub unsafe fn init_io_apics(
     legacy_redirects: impl IntoIterator<Item = (u8, u32)>,
 ) -> IoApicsControl {
     IoApicsControl {
-        io_apics: list.into_iter().map(|cfg| ioapic::init_io_apic(cfg)).collect(),
+        io_apics: list
+            .into_iter()
+            .map(|cfg| ioapic::init_io_apic(cfg))
+            .collect(),
         // TODO: is u8/u32 correct? we convert from the u32 to u8 later, that's bad
         legacy_redirects: legacy_redirects.into_iter().collect(),
     }
@@ -64,12 +67,17 @@ pub unsafe fn init_io_apics(
 // TODO: meh for this method; depends on external library
 pub unsafe fn init_from_acpi(info: &acpi::interrupt::Apic) -> IoApicsControl {
     init_io_apics(
-        info.io_apics.iter().map(|io_apic| ioapic::IoApicDescription {
-            id: io_apic.id,
-            address: usize::try_from(io_apic.address).unwrap(),
-            global_system_interrupt_base: u8::try_from(io_apic.global_system_interrupt_base).unwrap(),
-        }),
-        info.interrupt_source_overrides.iter().map(|ov| (ov.isa_source, ov.global_system_interrupt)),
+        info.io_apics
+            .iter()
+            .map(|io_apic| ioapic::IoApicDescription {
+                id: io_apic.id,
+                address: usize::try_from(io_apic.address).unwrap(),
+                global_system_interrupt_base: u8::try_from(io_apic.global_system_interrupt_base)
+                    .unwrap(),
+            }),
+        info.interrupt_source_overrides
+            .iter()
+            .map(|ov| (ov.isa_source, ov.global_system_interrupt)),
     )
 }
 
@@ -78,7 +86,9 @@ impl IoApicsControl {
     ///
     /// ISA IRQs are considered legacy, but are still used by some hardware.
     pub fn isa_irq(&mut self, isa_irq: u8) -> Option<Irq> {
-        let target = self.legacy_redirects.iter()
+        let target = self
+            .legacy_redirects
+            .iter()
             .find(|(src, _)| *src == isa_irq)
             .map(|(_, dest)| *dest);
 
@@ -95,9 +105,7 @@ impl IoApicsControl {
     pub fn irq(&mut self, irq: u8) -> Option<Irq> {
         for io_apic in self.io_apics.iter_mut() {
             if let Some(inner) = io_apic.irq(irq) {
-                return Some(Irq {
-                    inner,
-                });
+                return Some(Irq { inner });
             }
         }
 
@@ -114,6 +122,7 @@ impl<'a> Irq<'a> {
     ///
     // TODO: add some kind of assignment system, so that we don't accidentally erase a previous assignment
     pub fn set_destination(&mut self, destination: ApicId, destination_interrupt: u8) {
-        self.inner.set_destination(destination, destination_interrupt);
+        self.inner
+            .set_destination(destination, destination_interrupt);
     }
 }

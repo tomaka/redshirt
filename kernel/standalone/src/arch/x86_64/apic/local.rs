@@ -121,8 +121,7 @@ impl LocalApicsControl {
         unsafe {
             assert!(self.tsc_deadline_supported);
             assert!(vector >= 32);
-            let addr =
-                usize::try_from(APIC_BASE_ADDR + 0x320).unwrap() as *mut u32;
+            let addr = usize::try_from(APIC_BASE_ADDR + 0x320).unwrap() as *mut u32;
             let flag = 0b10 << 17;
             addr.write_volatile(flag | u32::from(vector));
 
@@ -137,9 +136,8 @@ impl LocalApicsControl {
         unsafe {
             assert!(!self.tsc_deadline_supported);
             assert!(vector >= 32);
-            let addr =
-                usize::try_from(APIC_BASE_ADDR + 0x320).unwrap() as *mut u32;
-            let periodic = if periodic { 1 << 17  } else { 0 };
+            let addr = usize::try_from(APIC_BASE_ADDR + 0x320).unwrap() as *mut u32;
+            let periodic = if periodic { 1 << 17 } else { 0 };
             addr.write_volatile(periodic | u32::from(vector));
 
             // TODO: hack
@@ -152,8 +150,7 @@ impl LocalApicsControl {
     pub fn set_local_timer_value(&self, value: Option<NonZeroU32>) {
         unsafe {
             assert!(!self.tsc_deadline_supported);
-            let addr =
-                usize::try_from(APIC_BASE_ADDR + 0x380).unwrap() as *mut u32;
+            let addr = usize::try_from(APIC_BASE_ADDR + 0x380).unwrap() as *mut u32;
             let value = value.map(|v| v.get()).unwrap_or(0);
             addr.write_volatile(value);
         }
@@ -162,8 +159,7 @@ impl LocalApicsControl {
     // TODO: bad API
     pub fn disable_local_timer_interrup(&self) {
         unsafe {
-            let addr =
-                usize::try_from(APIC_BASE_ADDR + 0x320).unwrap() as *mut u32;
+            let addr = usize::try_from(APIC_BASE_ADDR + 0x320).unwrap() as *mut u32;
             addr.write_volatile(0x00010000);
         }
     }

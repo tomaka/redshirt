@@ -69,12 +69,11 @@ extern "C" fn after_boot(multiboot_header: usize) -> ! {
 
         // TODO: panics in BOCHS
         let acpi = acpi::load_acpi_tables(&multiboot_info);
-        let io_apics = if let ::acpi::interrupt::InterruptModel::Apic(apic) = &acpi.interrupt_model
+        let io_apics = if let ::acpi::interrupt::InterruptModel::Apic(apic) = &acpi
+            .interrupt_model
             .expect("No interrupt model found in ACPI table")
         {
-            unsafe {
-                apic::ioapics::init_from_acpi(apic)
-            }
+            unsafe { apic::ioapics::init_from_acpi(apic) }
         } else {
             panic!("Legacy PIC mode not supported")
         };
@@ -117,7 +116,13 @@ extern "C" fn after_boot(multiboot_header: usize) -> ! {
             let platform_specific = PlatformSpecificImpl {
                 timers,
                 local_apics,
-                num_cpus: NonZeroU32::new(u32::try_from(kernel_channels.len()).unwrap().checked_add(1).unwrap()).unwrap(),
+                num_cpus: NonZeroU32::new(
+                    u32::try_from(kernel_channels.len())
+                        .unwrap()
+                        .checked_add(1)
+                        .unwrap(),
+                )
+                .unwrap(),
             };
 
             Arc::new(crate::kernel::Kernel::init(platform_specific))
@@ -154,8 +159,13 @@ fn find_free_memory_ranges<'a>(
         // have to remove all the sections we want to keep from the portions of memory that we
         // use.
         let to_avoid = {
-            let elf = elf_sections.sections().map(|s| s.start_address()..s.end_address());
-            let multiboot = iter::once(u64::try_from(multiboot_info.start_address()).unwrap()..u64::try_from(multiboot_info.end_address()).unwrap());
+            let elf = elf_sections
+                .sections()
+                .map(|s| s.start_address()..s.end_address());
+            let multiboot = iter::once(
+                u64::try_from(multiboot_info.start_address()).unwrap()
+                    ..u64::try_from(multiboot_info.end_address()).unwrap(),
+            );
             // TODO: ACPI tables
             // TODO: PCI stuff?
             // TODO: memory map stuff?

@@ -88,7 +88,10 @@ pub unsafe fn init_io_apic(config: IoApicDescription) -> IoApicControl {
     };
 
     // Basic sanity check.
-    assert_eq!(config.id, u8::try_from((io_apic_control.read_register(0) >> 24) & 0b1111).unwrap());
+    assert_eq!(
+        config.id,
+        u8::try_from((io_apic_control.read_register(0) >> 24) & 0b1111).unwrap()
+    );
 
     io_apic_control
 }
@@ -118,10 +121,12 @@ impl IoApicControl {
         assert!(irq_offset <= self.maximum_redirection_entry);
         assert!(destination_interrupt >= 32);
 
-        assert!(destination.get() < (1 << 4));  // Only 4bits are valid.
+        assert!(destination.get() < (1 << 4)); // Only 4bits are valid.
         let value = (u64::from(destination.get()) << 56) | u64::from(destination_interrupt);
 
-        let register_base = 0x10u8.checked_add(irq_offset.checked_mul(2).unwrap()).unwrap();
+        let register_base = 0x10u8
+            .checked_add(irq_offset.checked_mul(2).unwrap())
+            .unwrap();
 
         // Disable interrupts while we're writing the registers, in order to avoid any IRQ
         // happening in-between the two writes.
@@ -157,6 +162,7 @@ impl<'a> Irq<'a> {
     /// Panics if `destination_interrupt` is inferior to 32.
     ///
     pub fn set_destination(&mut self, destination: ApicId, destination_interrupt: u8) {
-        self.control.set_irq(self.irq_offset, destination, destination_interrupt)
+        self.control
+            .set_irq(self.irq_offset, destination, destination_interrupt)
     }
 }

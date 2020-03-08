@@ -27,14 +27,9 @@
 //! - Call [`boot_associated_processor`] for each processor one by one.
 //!
 
-use crate::arch::x86_64::apic::{local::LocalApicsControl, ApicId, timers::Timers};
+use crate::arch::x86_64::apic::{local::LocalApicsControl, timers::Timers, ApicId};
 
-use alloc::{
-    alloc::Layout,
-    boxed::Box,
-    sync::Arc,
-    vec::Vec,
-};
+use alloc::{alloc::Layout, boxed::Box, sync::Arc, vec::Vec};
 use core::{convert::TryFrom as _, mem, ops::Range, ptr, slice};
 use futures::channel::oneshot;
 

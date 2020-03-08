@@ -22,4 +22,3 @@ pub mod ioapics;
 pub mod local;
 pub mod pic;
 pub mod timers;
-

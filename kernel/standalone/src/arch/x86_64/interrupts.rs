@@ -32,7 +32,11 @@
 
 // TODO: handle end-of-interrupt of the APIC
 
-use core::{convert::TryFrom as _, sync::atomic::{AtomicBool, Ordering}, task::Waker};
+use core::{
+    convert::TryFrom as _,
+    sync::atomic::{AtomicBool, Ordering},
+    task::Waker,
+};
 use futures::task::AtomicWaker;
 use x86_64::structures::idt;
 
@@ -82,8 +86,8 @@ impl ReservedInterruptVector {
 
 impl Drop for ReservedInterruptVector {
     fn drop(&mut self) {
-        let _was_reserved = RESERVATIONS[usize::from(self.interrupt - 32)]
-            .swap(false, Ordering::Relaxed);
+        let _was_reserved =
+            RESERVATIONS[usize::from(self.interrupt - 32)].swap(false, Ordering::Relaxed);
         debug_assert!(_was_reserved);
     }
 }
@@ -387,7 +391,7 @@ macro_rules! interrupt_panic {
             $msg,
             $frame.instruction_pointer.as_u64()
         )
-    }
+    };
 }
 
 extern "x86-interrupt" fn int0(frame: &mut idt::InterruptStackFrame) {
@@ -411,12 +415,15 @@ extern "x86-interrupt" fn int1(frame: &mut idt::InterruptStackFrame) {
         asm!("mov %dr7, $0" : "=r"(dr7));
     }
 
-    panic!(r#"Debug interrupt
+    panic!(
+        r#"Debug interrupt
 DR0 = 0x{:016x} ; DR1 = 0x{:016x}
 DR2 = 0x{:016x} ; DR3 = 0x{:016x}
 DR6 = 0x{:016x}
 DR7 = 0x{:016x}
-"#, dr0, dr1, dr2, dr3, dr6, dr7)
+"#,
+        dr0, dr1, dr2, dr3, dr6, dr7
+    )
 }
 
 extern "x86-interrupt" fn int2(frame: &mut idt::InterruptStackFrame) {

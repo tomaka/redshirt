@@ -90,13 +90,15 @@ impl<'a> Timers<'a> {
             self.interrupt_vector.register_waker(waker);
             debug_assert_ne!(*tsc, 0); // 0 would disable the timer
             if self.local_apics.is_tsc_deadline_supported() {
-                self.local_apics.set_local_tsc_deadline(Some(NonZeroU64::new(*tsc).unwrap()));
+                self.local_apics
+                    .set_local_tsc_deadline(Some(NonZeroU64::new(*tsc).unwrap()));
             } else {
                 let ticks = match u32::try_from(1 + ((*tsc - now) / 128)) {
                     Ok(t) => t,
                     Err(_) => return, // FIXME: properly handle
                 };
-                self.local_apics.set_local_timer_value(Some(NonZeroU32::new(ticks).unwrap()));
+                self.local_apics
+                    .set_local_timer_value(Some(NonZeroU32::new(ticks).unwrap()));
             }
         }
     }
@@ -164,8 +166,7 @@ impl<'a> Future for TimerFuture<'a> {
 
             // If we updated the head of the timers list, we need to update the MSR and waker.
             if removed_any {
-                this.timers
-                    .update_apic_timer_state(rdtsc, &mut timers);
+                this.timers.update_apic_timer_state(rdtsc, &mut timers);
             }
 
             return Poll::Ready(());
@@ -227,8 +228,7 @@ impl<'a> Drop for TimerFuture<'a> {
         // If we update the head of the timers list, we need to update the MSR and waker.
         if my_position == 0 {
             let rdtsc = unsafe { core::arch::x86_64::_rdtsc() };
-            self.timers
-                .update_apic_timer_state(rdtsc, &mut timers);
+            self.timers.update_apic_timer_state(rdtsc, &mut timers);
         }
     }
 }
