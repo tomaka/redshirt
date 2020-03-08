@@ -14,7 +14,6 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use crate::{Decode, Encode, EncodedMessage, InterfaceHash, MessageId};
-use byteorder::{ByteOrder as _, LittleEndian};
 use core::{
     convert::TryFrom as _,
     fmt,
@@ -87,11 +86,12 @@ where
         TOutLen: ArrayLength<u8>,
     {
         let mut new_pair = GenericArray::<u8, U8>::default();
-        LittleEndian::write_u32(
-            &mut new_pair[0..4],
-            u32::try_from(buffer.as_ptr() as usize).unwrap(),
+        new_pair[0..4].copy_from_slice(
+            &u32::try_from(buffer.as_ptr() as usize)
+                .unwrap()
+                .to_le_bytes(),
         );
-        LittleEndian::write_u32(&mut new_pair[4..8], u32::try_from(buffer.len()).unwrap());
+        new_pair[4..8].copy_from_slice(&u32::try_from(buffer.len()).unwrap().to_le_bytes());
 
         MessageBuilder {
             allow_delay: self.allow_delay,
@@ -145,6 +145,15 @@ where
         interface: &InterfaceHash,
         needs_answer: bool,
     ) -> Result<Option<MessageId>, EmitErr> {
+        self.emit_raw_impl(interface, needs_answer)
+    }
+
+    #[cfg(target_arch = "wasm32")] // TODO: we should have a proper operating system name instead
+    unsafe fn emit_raw_impl(
+        self,
+        interface: &InterfaceHash,
+        needs_answer: bool,
+    ) -> Result<Option<MessageId>, EmitErr> {
         let mut message_id_out = MaybeUninit::uninit();
 
         let ret = crate::ffi::emit_message(
@@ -165,6 +174,15 @@ where
         } else {
             Ok(None)
         }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    unsafe fn emit_raw_impl(
+        self,
+        _: &InterfaceHash,
+        _: bool,
+    ) -> Result<Option<MessageId>, EmitErr> {
+        unimplemented!()
     }
 }
 
@@ -233,7 +251,15 @@ pub unsafe fn emit_message_with_response<'a, T: Decode>(
 ///
 /// Has no effect if the message is invalid.
 pub fn cancel_message(message_id: MessageId) {
-    unsafe { crate::ffi::cancel_message(&u64::from(message_id)) }
+    #[cfg(target_arch = "wasm32")] // TODO: we should have a proper operating system name instead
+    fn imp(message_id: MessageId) {
+        unsafe { crate::ffi::cancel_message(&u64::from(message_id)) }
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    fn imp(message_id: MessageId) {
+        unreachable!()
+    }
+    imp(message_id)
 }
 
 /// Error that can be retuend by functions that emit a message.

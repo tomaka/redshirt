@@ -77,10 +77,11 @@ where
                 .with_startup_process(build_wasm_module!("../../../modules/x86-pci"))
                 .with_startup_process(build_wasm_module!("../../../modules/ne2000"))
         }
-        #[cfg(target_arch = "arm")]
+        #[cfg(any(target_arch = "arm", target_arch = "aarch64"))]
         {
-            system_builder =
-                system_builder.with_startup_process(build_wasm_module!("../../../modules/arm-log"))
+            system_builder = system_builder
+                .with_startup_process(build_wasm_module!("../../../modules/arm-log"))
+                .with_startup_process(build_wasm_module!("../../../modules/rpi-framebuffer"))
         }
 
         let system = system_builder

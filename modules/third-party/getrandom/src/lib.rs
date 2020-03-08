@@ -15,9 +15,12 @@
 
 //! Override of the `getrandom` crate.
 
+#[cfg(target_arch = "wasm32")]
 mod error;
+#[cfg(target_arch = "wasm32")]
 pub use crate::error::Error;
 
+#[cfg(target_arch = "wasm32")]
 pub fn getrandom(dest: &mut [u8]) -> Result<(), error::Error> {
     if dest.is_empty() {
         return Ok(());
@@ -29,3 +32,6 @@ pub fn getrandom(dest: &mut [u8]) -> Result<(), error::Error> {
 
     Ok(())
 }
+
+#[cfg(not(target_arch = "wasm32"))]
+pub use actual_getrandom::*;

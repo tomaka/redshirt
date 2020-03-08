@@ -19,6 +19,8 @@ use core::fmt::{self, Write};
 #[panic_handler]
 fn panic(panic_info: &core::panic::PanicInfo) -> ! {
     unsafe {
+        // TODO: somehow freeze all CPUs?
+
         init_uart();
 
         let _ = writeln!(DummyWrite, "Kernel panic!");
@@ -79,5 +81,9 @@ fn write_uart(byte: u8) {
 }
 
 fn delay(count: i32) {
-    // TODO: asm!("__delay_%=: subs %[count], %[count], #1; bne __delay_%=\n" : "=r"(count): [count]"0"(count) : "cc");
+    unsafe {
+        for _ in 0..count {
+            asm!("nop" ::: "volatile");
+        }
+    }
 }

@@ -15,8 +15,6 @@
 
 //! Futures executor that works on bare metal.
 
-// TODO: only works because we're single-CPU'ed at the moment
-
 use alloc::sync::Arc;
 use core::future::Future;
 use core::sync::atomic;
@@ -41,6 +39,7 @@ pub fn block_on<R>(future: impl Future<Output = R>) -> R {
             return val;
         }
 
+        // Loop until `woken_up` is true.
         loop {
             if local_wake
                 .woken_up
@@ -49,7 +48,14 @@ pub fn block_on<R>(future: impl Future<Output = R>) -> R {
                 break;
             }
 
-            // TODO: this is a draft; I don't really know well how ARM interrupts work
+            // Enter a low-power state and wait for an event to happen.
+            //
+            // ARM CPUs have a non-accessible 1bit "event register" that is set when an event
+            // happens and cleared only by the `wfe` instruction.
+            //
+            // Thanks to this, if an event happens between the moment when we check the value of
+            // `local_waken.woken_up` and the moment when we call `wfe`, then the `wfe`
+            // instruction will immediately return and we will check the value again.
             unsafe { asm!("wfe" :::: "volatile") }
         }
     }
@@ -61,7 +67,12 @@ struct LocalWake {
 
 impl ArcWake for LocalWake {
     fn wake_by_ref(arc_self: &Arc<Self>) {
-        arc_self.woken_up.store(true, atomic::Ordering::Release);
-        // TODO: wake up original CPU, once we're multi-CPU'ed
+        unsafe {
+            arc_self.woken_up.store(true, atomic::Ordering::Release);
+            // Wakes up all the CPUs that called `wfe`.
+            // Note that this wakes up *all* CPUs, but the ARM architecture doesn't provide any
+            // way to target a single CPU for wake-up.
+            asm!("dsb sy ; sev" :::: "volatile")
+        }
     }
 }
