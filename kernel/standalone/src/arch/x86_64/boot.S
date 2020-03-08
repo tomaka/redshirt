@@ -38,6 +38,18 @@ _start:
     // Check that we have been loaded by a multiboot2 bootloader.
     cmp $0x36d76289, %eax
     jne .print_err_and_stop
+
+    // Clear the BSS segment.
+    // While this is normally not required, we do it anyway "just in case".
+    mov $__bss_start, %edi
+    mov $__bss_end, %ecx
+    sub $__bss_start, %ecx
+    jb .print_err_and_stop
+    mov $0, %al
+    cld
+    rep stosb %al, (%edi)
+
+    // Now that the BSS is clear, we can put the value of EBX there.
     mov %ebx, multiboot_info_ptr
 
     // Check that our CPU supports extended CPUID instructions.
@@ -62,7 +74,7 @@ _start:
 
     // Fill the PDPT entries to point to the PDs.
     mov $0, %ecx
-L0: mov %ecx, %eax
+.L0:mov %ecx, %eax
     shl $12, %eax                   // EAX <- ECX * 4096
     addl $pds, %eax                 // EAX <- address of `pds` + ECX * 4096
     or $(1 << 0), %eax              // Present bit. Indicates that the entry is valid.
@@ -70,11 +82,11 @@ L0: mov %ecx, %eax
     movl %eax, pdpt(, %ecx, 8)      // PDPT[ECX * 8] <- EAX
     inc %ecx
     cmp $4, %ecx
-    jne L0
+    jne .L0
 
     // Fill the PD entries to point to 2MiB pages.
     mov $0, %ecx
-L1: mov %ecx, %eax
+.L1:mov %ecx, %eax
     shr $12, %eax                   // EAX <- ECX >> 12
     movl %eax, pds+4(, %ecx, 8)     // PDs[4 + ECX * 8] <- EAX
     mov %ecx, %eax                  // EAX <- ECX
@@ -85,7 +97,7 @@ L1: mov %ecx, %eax
     movl %eax, pds(, %ecx, 8)       // PDs[ECX * 8] <- EAX
     inc %ecx
     cmp $(4 * 512), %ecx
-    jne L1
+    jne .L1
 
     // Set up the control registers.
     mov %cr0, %eax
@@ -159,18 +171,10 @@ _start64:
 
 .section .rodata
 
-// This is our GDT. It is necessary to have one in order to jump to long mode.
-// It contains two entries: one null entry (mandatory), and one for our kernel.
-.align 0x1000
-gdt_table:
-    .8byte 0
-    .8byte (1 << 53) | (1 << 47) | (1 << 44) | (1 << 43)
-    .skip (0x800 - (2 * 8))
-
 // Small structure whose location is passed to the CPU.
 .align 8
 gdt_ptr:
-    .short 0x800 - 1
+    .short 15
     .long gdt_table
 
 
