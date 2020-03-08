@@ -28,9 +28,10 @@
 //!
 
 use crate::arch::x86_64::apic::{local::LocalApicsControl, timers::Timers, ApicId};
+use crate::arch::x86_64::{executor, interrupts};
 
-use alloc::{alloc::Layout, boxed::Box, sync::Arc, vec::Vec};
-use core::{convert::TryFrom as _, mem, ops::Range, ptr, slice};
+use alloc::{alloc::Layout, boxed::Box};
+use core::{convert::TryFrom as _, ops::Range, ptr, slice};
 use futures::channel::oneshot;
 
 /// Allocator required by the [`boot_associated_processor`] function.
@@ -81,7 +82,7 @@ pub unsafe fn filter_build_ap_boot_alloc<'a>(
                     inner: linked_list_allocator::Heap::new(range.start, WANTED),
                 });
                 if range_size > WANTED {
-                    return Some((range.start + WANTED..range.end));
+                    return Some(range.start + WANTED..range.end);
                 }
                 return None;
             }
@@ -160,6 +161,10 @@ pub unsafe fn boot_associated_processor(
     let (boot_code, init_finished_future) = {
         let (tx, rx) = oneshot::channel();
         let boot_code = move || {
+            unsafe {
+                local_apics.init_local();
+            }
+            interrupts::load_idt();
             let _ = tx.send(());
             boot_code()
         };
@@ -288,16 +293,14 @@ pub unsafe fn boot_associated_processor(
     //       this is however tricky, as we have to make sure we're not sending the second SIPI
     //       if the first one succeeded
     /*let rdtsc = unsafe { core::arch::x86_64::_rdtsc() };
-    super::executor::block_on(local_apics, timers.register_tsc_timer(rdtsc + 1_000_000_000));
+    executor::block_on(local_apics, timers.register_tsc_timer(rdtsc + 1_000_000_000));
     local_apics.send_interprocessor_sipi(target, bootstrap_code_buf.as_mut_ptr() as *const _);*/
 
     // Wait for CPU initialization to finish.
-    // TODO: doesn't work; requires the child CPU to set up their APIC
-    //super::executor::block_on(&local_apics, init_finished_future).unwrap();
+    executor::block_on(local_apics, init_finished_future).unwrap();
 
     // Make sure the buffer is dropped at the end.
-    // TODO: drop(bootstrap_code_buf);
-    mem::forget(bootstrap_code_buf);
+    drop(bootstrap_code_buf);
 }
 
 /// Holds an allocation with the given layout.

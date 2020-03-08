@@ -13,7 +13,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use alloc::sync::Arc;
 use core::{
     convert::TryFrom as _,
     num::{NonZeroU32, NonZeroU64},
@@ -92,7 +91,7 @@ impl LocalApicsControl {
     /// Must only be called once per CPU.
     ///
     // TODO: add debug_assert!s in all the other methods that check if the local APIC is initialized
-    unsafe fn init_local(&self) {
+    pub unsafe fn init_local(&self) {
         assert!(is_apic_supported());
         assert_eq!(self.tsc_deadline_supported, is_tsc_deadline_supported());
 
@@ -164,7 +163,7 @@ impl LocalApicsControl {
     }
 
     // TODO: bad API
-    pub fn disable_local_timer_interrup(&self) {
+    pub fn disable_local_timer_interrupt(&self) {
         unsafe {
             let addr = usize::try_from(APIC_BASE_ADDR + 0x320).unwrap() as *mut u32;
             addr.write_volatile(0x00010000);

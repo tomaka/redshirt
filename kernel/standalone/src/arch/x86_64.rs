@@ -107,7 +107,6 @@ extern "C" fn after_boot(multiboot_header: usize) -> ! {
                 {
                     let local_apics = &*local_apics;
                     move || {
-                        interrupts::load_idt();
                         let kernel = executor::block_on(local_apics, kernel_rx).unwrap();
                         kernel.run();
                     }

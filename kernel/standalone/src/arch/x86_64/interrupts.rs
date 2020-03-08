@@ -16,7 +16,7 @@
 //! x86_64 interrupts handling.
 //!
 //! This module provides handling of interrupts on x86_64. It sets up the interrupts table (IDT)
-//! and allows reserving an interrupt vectors. Once done, you can register a
+//! and allows reserving interrupt vectors. Once done, you can register a
 //! [`Waker`](core::task::Waker) that is waken up when an interrupt happens.
 //! This is done by calling [`ReservedInterruptVector::register_waker`].
 //!
@@ -34,6 +34,7 @@ use crate::arch::x86_64::apic::local;
 
 use core::{
     convert::TryFrom as _,
+    fmt,
     sync::atomic::{AtomicBool, Ordering},
     task::Waker,
 };
@@ -61,6 +62,7 @@ pub fn reserve_any_vector(apic_eoi: bool) -> Result<ReservedInterruptVector, Res
     Err(ReserveErr::Full)
 }
 
+/// Represents control over an interrupt vector.
 pub struct ReservedInterruptVector {
     interrupt: u8,
 }
@@ -68,6 +70,17 @@ pub struct ReservedInterruptVector {
 #[derive(Debug)]
 pub enum ReserveErr {
     Full,
+}
+
+/// Loads the global IDT on the local processor and enables interrupts.
+///
+/// Has to be called once per CPU.
+///
+/// Before this is called, the waker passed to [`ReservedInterruptVector::register_waker`] will
+/// never work.
+pub fn load_idt() {
+    IDT.load();
+    x86_64::instructions::interrupts::enable();
 }
 
 impl ReservedInterruptVector {
@@ -89,22 +102,20 @@ impl ReservedInterruptVector {
     }
 }
 
+impl fmt::Debug for ReservedInterruptVector {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("ReservedInterruptVector")
+            .field(&self.interrupt)
+            .finish()
+    }
+}
+
 impl Drop for ReservedInterruptVector {
     fn drop(&mut self) {
         let _was_reserved =
             RESERVATIONS[usize::from(self.interrupt - 32)].swap(false, Ordering::Relaxed);
         debug_assert!(_was_reserved);
     }
-}
-
-/// Loads the global IDT on the local processor and enables interrupts.
-///
-/// Has to be called once per CPU.
-///
-/// Before this is called, the waker passed to [`set_interrupt_waker`] will never work.
-pub fn load_idt() {
-    IDT.load();
-    x86_64::instructions::interrupts::enable();
 }
 
 lazy_static::lazy_static! {

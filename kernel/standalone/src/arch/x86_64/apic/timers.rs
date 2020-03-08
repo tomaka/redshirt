@@ -15,18 +15,18 @@
 
 use crate::arch::x86_64::{apic::local, interrupts};
 
-use alloc::{collections::VecDeque, sync::Arc};
+use alloc::collections::VecDeque;
 use core::{
     convert::TryFrom as _,
     num::{NonZeroU32, NonZeroU64},
-    ops::Range,
     pin::Pin,
     task::{Context, Poll, Waker},
 };
 use futures::prelude::*;
 use spin::Mutex;
-use x86_64::registers::model_specific::Msr;
-use x86_64::structures::port::{PortRead as _, PortWrite as _};
+
+// TODO: rewrite this code to be cleaner
+// TODO: benchmark the clock using the PIT
 
 pub fn init(local_apics: &local::LocalApicsControl) -> Timers {
     // TODO: check whether CPUID is supported at all?
@@ -125,8 +125,6 @@ pub struct TimerFuture<'a> {
     /// If true, then we are in the list of timers of the `ApicControl`.
     in_timers_list: bool,
 }
-
-const TIMER_MSR: Msr = Msr::new(0x6e0);
 
 // TODO: there's some code duplication for updating the timer value in the APIC
 // TODO: is it actually correct to write `desired_tsc - rdtsc` in the one-shot timer register? is the speed matching?

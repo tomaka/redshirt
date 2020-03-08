@@ -119,6 +119,11 @@ impl PitControl {
     }
 }
 
+// TODO: there are fundamental design questions here:
+// - if an interrupt is not delivered, then the entire logic fails
+// - if a spurious interrupt is delivered, same
+// we need to make sure that interrupts cannot be missed
+
 impl<'a> Future for PitFuture<'a> {
     type Output = ();
 
