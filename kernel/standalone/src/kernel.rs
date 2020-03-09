@@ -62,7 +62,9 @@ where
             .with_native_program(crate::time::TimeHandler::new(
                 self.platform_specific.clone(),
             ))
-            .with_native_program(crate::random::native::RandomNativeProgram::new())
+            .with_native_program(crate::random::native::RandomNativeProgram::new(
+                self.platform_specific.clone(),
+            ))
             .with_startup_process(build_wasm_module!(
                 "../../../modules/p2p-loader",
                 "passive-node"
