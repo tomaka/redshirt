@@ -120,22 +120,24 @@ _start:
     or $(1 << 8), %eax
     wrmsr
 
+    // Set up the GDT. It will become active only after we do the `ljmp` below.
+    lgdt gdt_ptr
+
+    // Activate long mode, and jump to the new segment.
     mov %cr0, %eax
     or $(1 << 0), %eax              // Set protected mode bit.
     or $(1 << 1), %eax              // Set co-processor bit.
     or $(1 << 4), %eax              // Set co-processor extension bit.
     or $(1 << 31), %eax             // Set paging bit.
+    // The official manual says that instruction right after long mode switch must be a branch.
+    // Tutorials typically don't do that and it might not be strictly necessary, but to be safe
+    // let's follow what the manual says.
     movl %eax, %cr0
-    // TODO: official manual says that instruction right after long mode switch must be a branch?!?!?!
 
-    // Set up the GDT to allow us to jump to long mode.
-    lgdt gdt_ptr
-    ljmp $8, $_start64
+    ljmp $8, $.L2
 
 .code64
-.global _start64
-.type _start64, @function
-_start64:
+.L2:
     // Set up the stack.
     movq $stack + KERNEL_STACK_SIZE, %rsp
 
