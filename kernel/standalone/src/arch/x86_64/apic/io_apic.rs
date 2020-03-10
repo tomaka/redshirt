@@ -15,13 +15,30 @@
 
 //! I/O APIC management.
 //!
-//! The I/O APIC is a replacement for the legacy [PIC](super::pic). Its role is to receive
-//! interrupts triggered by the hardware and deliver them to the CPU.
+//! When a piece of hardware (for example a PCI device) wants to notify the CPU of something,
+//! it emits an **IRQ** (Interrupt ReQuest). IRQs have a number associated for identification.
+//!
+//! For example: if a machine has a network device and a sound device, the network device can be
+//! configured to emit an IRQ 3 when a network packet arrive, while a sound device can be
+//! configured to emit an IRQ 5 when the sound buffer has space for a new frame. When an IRQ 3 is
+//! received, we know that it is because the network device has received a network packet.
+//!
+//! When an IRQ is emitted, it is received by an **I/O APIC**, which is what this module is about.
+//! If the I/O APIC has been configured as such, it will then in turn emit an interrupt with the
+//! chosen number on the chosen CPU.
+//!
+//! We are totally free to associate any interrupt number and CPU we want to an IRQ. It is also
+//! possible for multiple IRQs to be configured to produce an identical interrupt.
+//! Keep in mind that the CPU has no way to know what is the source of an interrupt. In
+//! particular, a CPU can't know if an interrupt comes from an IRQ or which IRQ.
+//!
+//! A machine is often composed of multiple I/O APICs, each dedicated to a different range of
+//! IRQs. See also the [../io_apics] module.
 
 // # Implementation notes.
 //
 // Reference document for the I/O APIC:
-// https://pdos.csail.mit.edu/6.828/2016/readings/ia32/ioapic.pdf
+// https://pdos.csail.mit.edu/6.828/2016/readings/ia32/io_apic.pdf
 //
 // The I/O APIC exposes two memory-mapped registers: one selector, and one window.
 // One must write a register number in the selector, then the value of the register is accessible
@@ -49,9 +66,17 @@ pub struct IoApicControl {
     maximum_redirection_entry: u8,
 }
 
+/// Description of an I/O APIC on the hardware.
+///
+/// Correct description is normally obtained from the ACPI tables provided by the firmware.
 pub struct IoApicDescription {
-    pub id: u8,
+    /// Physical memory address where the I/O APIC is mapped.
+    ///
+    /// > **Note**: This code expects that memory is identity-mapped. In other words, it will
+    /// >           convert this address into a pointer and perform memory reads and writes.
     pub address: usize,
+
+    /// First interrupt.
     pub global_system_interrupt_base: u8,
 }
 
@@ -80,20 +105,12 @@ pub unsafe fn init_io_apic(config: IoApicDescription) -> IoApicControl {
         u8::try_from((io_apic_ver >> 16) & 0xff).unwrap()
     };
 
-    let mut io_apic_control = IoApicControl {
+    IoApicControl {
         io_reg_sel_register,
         io_win_register,
         global_system_interrupt_base: config.global_system_interrupt_base,
         maximum_redirection_entry,
-    };
-
-    // Basic sanity check.
-    assert_eq!(
-        config.id,
-        u8::try_from((io_apic_control.read_register(0) >> 24) & 0b1111).unwrap()
-    );
-
-    io_apic_control
+    }
 }
 
 impl IoApicControl {

@@ -29,7 +29,7 @@
 //!
 
 use crate::arch::x86_64::{
-    apic::{ioapics, local},
+    apic::{io_apics, local},
     interrupts,
 };
 
@@ -73,7 +73,7 @@ pub struct PitFuture<'a> {
 /// multiple [`PitControl`] is safe, but will lead to logic errors.
 pub fn init_pit(
     local_apics: &local::LocalApicsControl,
-    io_apics: &mut ioapics::IoApicsControl,
+    io_apics: &mut io_apics::IoApicsControl,
 ) -> PitControl {
     let interrupt_vector = interrupts::reserve_any_vector(true).unwrap();
     io_apics.isa_irq(0).unwrap().set_destination(
