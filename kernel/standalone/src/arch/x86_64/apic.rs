@@ -17,8 +17,8 @@
 
 pub use local::ApicId;
 
-pub mod ioapic;
-pub mod ioapics;
+pub mod io_apic;
+pub mod io_apics;
 pub mod local;
 pub mod pic;
 pub mod timers;

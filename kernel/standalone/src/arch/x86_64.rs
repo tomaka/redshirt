@@ -71,7 +71,7 @@ extern "C" fn after_boot(multiboot_header: usize) -> ! {
             .interrupt_model
             .expect("No interrupt model found in ACPI table")
         {
-            apic::ioapics::init_from_acpi(apic)
+            apic::io_apics::init_from_acpi(apic)
         } else {
             panic!("Legacy PIC mode not supported")
         };
