@@ -15,7 +15,10 @@
 
 //! Futures executor that works on bare metal.
 
-use crate::arch::x86_64::{apic::{local::LocalApicsControl, ApicId}, interrupts};
+use crate::arch::x86_64::{
+    apic::{local::LocalApicsControl, ApicId},
+    interrupts,
+};
 
 use alloc::sync::Arc;
 use core::future::Future;
@@ -122,9 +125,10 @@ impl ArcWake for Waker {
             .compare_and_swap(true, false, atomic::Ordering::SeqCst)
         {
             if arc_self.processor_to_wake != arc_self.apic.current_apic_id() {
-                arc_self
-                    .apic
-                    .send_interprocessor_interrupt(arc_self.processor_to_wake, arc_self.interrupt_vector);
+                arc_self.apic.send_interprocessor_interrupt(
+                    arc_self.processor_to_wake,
+                    arc_self.interrupt_vector,
+                );
             }
         }
     }
