@@ -77,6 +77,7 @@ extern "C" fn after_boot(multiboot_header: usize) -> ! {
         };
 
         let local_apics = Box::leak(Box::new(apic::local::init()));
+        let executor = Box::leak(Box::new(executor::Executor::new(&*local_apics)));
         let timers = Box::leak(Box::new(apic::timers::init(local_apics)));
 
         let mut pit = pit::init_pit(&*local_apics, &mut io_apics);
@@ -97,13 +98,14 @@ extern "C" fn after_boot(multiboot_header: usize) -> ! {
 
             ap_boot::boot_associated_processor(
                 &mut ap_boot_alloc,
+                &*executor,
                 &*local_apics,
                 timers,
                 apic::ApicId::from_unchecked(ap.local_apic_id),
                 {
-                    let local_apics = &*local_apics;
+                    let executor = &*executor;
                     move || {
-                        let kernel = executor::block_on(local_apics, kernel_rx).unwrap();
+                        let kernel = executor.block_on(kernel_rx).unwrap();
                         kernel.run();
                     }
                 },
@@ -115,6 +117,7 @@ extern "C" fn after_boot(multiboot_header: usize) -> ! {
         let kernel = {
             let platform_specific = PlatformSpecificImpl {
                 timers,
+                executor: &*executor,
                 local_apics,
                 num_cpus: NonZeroU32::new(
                     u32::try_from(kernel_channels.len())
@@ -218,6 +221,7 @@ fn find_free_memory_ranges<'a>(
 struct PlatformSpecificImpl {
     timers: &'static apic::timers::Timers<'static>,
     local_apics: &'static apic::local::LocalApicsControl,
+    executor: &'static executor::Executor,
     num_cpus: NonZeroU32,
 }
 
@@ -229,7 +233,7 @@ impl PlatformSpecific for PlatformSpecificImpl {
     }
 
     fn block_on<TRet>(self: Pin<&Self>, future: impl Future<Output = TRet>) -> TRet {
-        executor::block_on(&self.local_apics, future)
+        self.executor.block_on(future)
     }
 
     fn monotonic_clock(self: Pin<&Self>) -> u128 {

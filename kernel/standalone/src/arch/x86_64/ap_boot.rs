@@ -116,6 +116,7 @@ pub unsafe fn filter_build_ap_boot_alloc<'a>(
 // TODO: replace `Infallible` with `!` when stable
 pub unsafe fn boot_associated_processor(
     alloc: &mut ApBootAlloc,
+    executor: &executor::Executor,
     local_apics: &'static LocalApicsControl,
     timers: &Timers,
     target: ApicId,
@@ -285,7 +286,7 @@ pub unsafe fn boot_associated_processor(
     }
 
     // Wait for 10ms to have elapsed since we sent the INIT IPI.
-    super::executor::block_on(local_apics, timers.register_tsc_timer(rdtsc + 10_000_000));
+    executor.block_on(timers.register_tsc_timer(rdtsc + 10_000_000));
 
     // Send the SINIT IPI, pointing to the bootstrap code that we have carefully crafted.
     local_apics.send_interprocessor_sipi(target, bootstrap_code_buf.as_mut_ptr() as *const _);
@@ -300,7 +301,7 @@ pub unsafe fn boot_associated_processor(
     local_apics.send_interprocessor_sipi(target, bootstrap_code_buf.as_mut_ptr() as *const _);*/
 
     // Wait for CPU initialization to finish.
-    executor::block_on(local_apics, init_finished_future).unwrap();
+    executor.block_on(init_finished_future).unwrap();
 
     // Make sure the buffer is dropped at the end.
     drop(bootstrap_code_buf);
