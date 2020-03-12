@@ -320,7 +320,7 @@ struct Allocation<'a, T: alloc::alloc::AllocRef> {
 impl<'a, T: alloc::alloc::AllocRef> Allocation<'a, T> {
     fn new(alloc: &'a mut T, layout: Layout) -> Self {
         unsafe {
-            let buf = alloc.alloc(layout).unwrap();
+            let (buf, _) = alloc.alloc(layout).unwrap();
             Allocation {
                 alloc,
                 inner: buf,

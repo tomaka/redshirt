@@ -15,8 +15,6 @@
 
 #![cfg_attr(feature = "nightly", feature(proc_macro_span))] // TODO: https://github.com/rust-lang/rust/issues/54725
 
-extern crate proc_macro;
-
 use std::{env, fs, path::Path, process::Command};
 
 /// Turns a string of WebAssembly text representation into a binary representation.
@@ -83,6 +81,9 @@ pub fn build_wasm_module(tokens: proc_macro::TokenStream) -> proc_macro::TokenSt
         let macro_call_file = {
             // We go through the stack of Spans until we find one with a file path.
             let mut span = proc_macro::Span::call_site();
+            // For hacky reasons, we go two stacks up to find the call site.
+            span = span.parent().unwrap();
+            span = span.parent().unwrap();
             loop {
                 let src_file = span.source_file();
                 if src_file.is_real() {
@@ -104,7 +105,7 @@ pub fn build_wasm_module(tokens: proc_macro::TokenStream) -> proc_macro::TokenSt
             .arg("read-manifest")
             .current_dir(&wasm_crate_path)
             .output()
-            .unwrap();
+            .expect("Failed to execute `cargo read-manifest`");
         assert!(output.status.success());
         let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
         json.as_object()
