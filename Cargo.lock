@@ -280,6 +280,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "either"
+version = "1.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bb1f6b1ce1c140482ea30ddd3335fc0024ac7ee112895426e0a629a6c20adfe3"
+
+[[package]]
 name = "fnv"
 version = "1.0.6"
 source = "git+https://github.com/dflemstr/rust-fnv#bfc842cc68cd3a2628915f46d3bffa555e4b712d"
@@ -925,6 +931,7 @@ dependencies = [
  "blake3",
  "bs58",
  "crossbeam-queue",
+ "either",
  "fnv 1.0.6 (git+https://github.com/dflemstr/rust-fnv)",
  "futures",
  "hashbrown",

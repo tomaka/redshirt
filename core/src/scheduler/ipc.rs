@@ -36,7 +36,11 @@ pub struct Core {
     pending_events: SegQueue<CoreRunOutcome>,
 
     /// List of running processes.
-    processes: extrinsics::ProcessesCollectionExtrinsics<RefCell<Process>, ()>,
+    processes: extrinsics::ProcessesCollectionExtrinsics<
+        RefCell<Process>,
+        (),
+        crate::extrinsics::NoExtrinsics,
+    >,
 
     /// List of `Pid`s that have been reserved during the construction.
     ///
@@ -75,7 +79,8 @@ pub struct CoreBuilder {
     /// See the corresponding field in `Core`.
     reserved_pids: HashSet<Pid, BuildNoHashHasher<u64>>,
     /// Builder for the [`processes`][Core::processes] field in `Core`.
-    inner_builder: extrinsics::ProcessesCollectionExtrinsicsBuilder,
+    inner_builder:
+        extrinsics::ProcessesCollectionExtrinsicsBuilder<crate::extrinsics::NoExtrinsics>,
 }
 
 /// Outcome of calling [`run`](Core::run).
@@ -161,7 +166,12 @@ struct Process {
 /// Access to a process within the core.
 pub struct CoreProcess<'a> {
     /// Access to the process within the inner collection.
-    process: extrinsics::ProcessesCollectionExtrinsicsProc<'a, RefCell<Process>, ()>,
+    process: extrinsics::ProcessesCollectionExtrinsicsProc<
+        'a,
+        RefCell<Process>,
+        (),
+        crate::extrinsics::NoExtrinsics,
+    >,
 }
 
 impl Core {
@@ -745,7 +755,11 @@ impl CoreBuilder {
 /// If any of the threads of the given process is waiting for a message to arrive, checks the
 /// queue and tries to resume said thread.
 fn try_resume_notification_wait(
-    process: extrinsics::ProcessesCollectionExtrinsicsProc<RefCell<Process>, ()>,
+    process: extrinsics::ProcessesCollectionExtrinsicsProc<
+        RefCell<Process>,
+        (),
+        crate::extrinsics::NoExtrinsics,
+    >,
 ) {
     // TODO: is it a good strategy to just go through threads in linear order? what about
     //       round-robin-ness instead?
@@ -764,6 +778,7 @@ fn try_resume_notification_wait_thread(
     mut thread: extrinsics::ProcessesCollectionExtrinsicsThreadWaitNotification<
         RefCell<Process>,
         (),
+        crate::extrinsics::NoExtrinsics,
     >,
 ) {
     // Try to find a notification in the queue that matches something the user is waiting for.
