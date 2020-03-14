@@ -194,7 +194,7 @@ fn fd_write(
 ) -> ExtrinsicsAction {
     let fd = params.next().unwrap();
     // TODO: return error if wrong fd
-    assert!(fd == RuntimeValue::I32(1) || fd == RuntimeValue::I32(2));      // either stdout or stderr
+    assert!(fd == RuntimeValue::I32(1) || fd == RuntimeValue::I32(2)); // either stdout or stderr
 
     // Get a list of pointers and lengths to write.
     // Elements 0, 2, 4, 6, ... in that list are pointers, and elements 1, 3, 5, 7, ... are
@@ -212,7 +212,8 @@ fn fd_write(
 
     let mut total_written = 0;
     let mut encoded_message = Vec::new();
-    if fd == RuntimeValue::I32(2) { // TODO: handle better?
+    if fd == RuntimeValue::I32(2) {
+        // TODO: handle better?
         encoded_message.push(4); // ERROR log level.
     } else {
         encoded_message.push(2); // INFO log level.
