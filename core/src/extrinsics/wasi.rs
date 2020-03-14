@@ -15,8 +15,8 @@
 
 //! Implementation of the [`Extrinsics`] trait that supports WASI.
 
-use crate::extrinsics::{Extrinsics, ExtrinsicsMemoryAccess, ExtrinsicsAction, SupportedExtrinsic};
-use crate::{Encode as _, EncodedMessage, ThreadId, sig};
+use crate::extrinsics::{Extrinsics, ExtrinsicsAction, ExtrinsicsMemoryAccess, SupportedExtrinsic};
+use crate::{sig, Encode as _, EncodedMessage, ThreadId};
 
 use alloc::{borrow::Cow, vec, vec::IntoIter};
 use core::convert::TryFrom as _;
@@ -45,10 +45,7 @@ enum ExtrinsicIdInner {
 pub struct Context(ContextInner);
 
 enum ContextInner {
-    WaitRandom {
-        out_ptr: u32,
-        remaining_len: u16,
-    },
+    WaitRandom { out_ptr: u32, remaining_len: u16 },
     Finished,
 }
 
@@ -101,7 +98,8 @@ impl Extrinsics for WasiExtrinsics {
                 function_name: Cow::Borrowed("sched_yield"),
                 signature: sig!(() -> I32),
             },
-        ].into_iter()
+        ]
+        .into_iter()
     }
 
     fn new_context(
@@ -112,31 +110,32 @@ impl Extrinsics for WasiExtrinsics {
         mem_access: &mut impl ExtrinsicsMemoryAccess,
     ) -> (Self::Context, ExtrinsicsAction) {
         match id.0 {
-            ExtrinsicIdInner::ClockTimeGet => {
-                unimplemented!()
-            },
-            ExtrinsicIdInner::EnvironGet => {
-                unimplemented!()
-            },
+            ExtrinsicIdInner::ClockTimeGet => unimplemented!(),
+            ExtrinsicIdInner::EnvironGet => unimplemented!(),
             ExtrinsicIdInner::EnvironSizesGet => {
                 let num_ptr = params.next().unwrap().try_into::<i32>().unwrap() as u32;
                 let buf_size_ptr = params.next().unwrap().try_into::<i32>().unwrap() as u32;
                 assert!(params.next().is_none());
 
-                mem_access.write_memory(num_ptr, &0u64.to_le_bytes()).unwrap();     // TODO: don't unwrap
-                mem_access.write_memory(buf_size_ptr, &0u64.to_le_bytes()).unwrap();        // TODO: don't unwrap
+                mem_access
+                    .write_memory(num_ptr, &0u64.to_le_bytes())
+                    .unwrap(); // TODO: don't unwrap
+                mem_access
+                    .write_memory(buf_size_ptr, &0u64.to_le_bytes())
+                    .unwrap(); // TODO: don't unwrap
 
                 let context = ContextInner::Finished;
-                (Context(context), ExtrinsicsAction::Resume(Some(RuntimeValue::I32(0))))
-            },
-            ExtrinsicIdInner::FdWrite => {
-                unimplemented!()
-            },
+                (
+                    Context(context),
+                    ExtrinsicsAction::Resume(Some(RuntimeValue::I32(0))),
+                )
+            }
+            ExtrinsicIdInner::FdWrite => unimplemented!(),
             ExtrinsicIdInner::ProcExit => {
                 // TODO: implement in a better way?
                 let context = ContextInner::Finished;
                 (Context(context), ExtrinsicsAction::ProgramCrash)
-            },
+            }
             ExtrinsicIdInner::RandomGet => {
                 let buf = params.next().unwrap().try_into::<i32>().unwrap() as u32;
                 let len = params.next().unwrap().try_into::<i32>().unwrap();
@@ -147,7 +146,8 @@ impl Extrinsics for WasiExtrinsics {
                     interface: redshirt_random_interface::ffi::INTERFACE,
                     message: redshirt_random_interface::ffi::RandomMessage::Generate {
                         len: len_to_request,
-                    }.encode(),
+                    }
+                    .encode(),
                     response_expected: true,
                 };
 
@@ -157,12 +157,15 @@ impl Extrinsics for WasiExtrinsics {
                 };
 
                 (Context(context), action)
-            },
+            }
             ExtrinsicIdInner::SchedYield => {
                 // TODO: implement in a better way?
                 let context = ContextInner::Finished;
-                (Context(context), ExtrinsicsAction::Resume(Some(RuntimeValue::I32(0))))
-            },
+                (
+                    Context(context),
+                    ExtrinsicsAction::Resume(Some(RuntimeValue::I32(0))),
+                )
+            }
         }
     }
 
