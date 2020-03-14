@@ -21,7 +21,7 @@ use crate::scheduler::{processes, vm};
 use crate::sig;
 use crate::{InterfaceHash, MessageId};
 
-use alloc::{rc::Rc, sync::Arc, vec::Vec};
+use alloc::{sync::Arc, vec::Vec};
 use core::{cell::RefCell, convert::TryFrom as _, fmt, iter, mem, ops::Range};
 use crossbeam_queue::SegQueue;
 use redshirt_syscalls::{EncodedMessage, Pid, ThreadId};
@@ -48,6 +48,7 @@ pub struct ProcessesCollectionExtrinsics<TPud, TTud, TExt: Extrinsics> {
     ///
     /// The threads here must always be in the [`OtherExtrinsicApplyAction`] state.
     local_run_queue: SegQueue<ThreadId>,
+
     // TODO: implement
     /*/// List of processes that have died but that we haven't reported yet to the outside because
     /// they are locked.
@@ -176,7 +177,9 @@ enum LocalThreadState<TExtCtxt> {
     ReadyToRun,
 
     /// Thread is in the middle of a non-hardcoded extrinsic. We now need to apply the given
-    /// action.
+    /// action on the context.
+    ///
+    /// Threads in this state must be pushed to [`ProcessesCollectionExtrinsics::local_run_queue`].
     OtherExtrinsicApplyAction {
         /// Abstract context used to drive the extrinsic call.
         context: TExtCtxt,
