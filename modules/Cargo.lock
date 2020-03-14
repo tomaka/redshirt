@@ -596,20 +596,12 @@ dependencies = [
 [[package]]
 name = "getrandom"
 version = "0.1.14"
-source = "git+https://github.com/rust-random/getrandom#33b859bae16ae0b1c782e48db2ed96eb2306a2fc"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7abc8dd8451921606d809ba32e95b6111925cd2906060d2dcc29c070220503eb"
 dependencies = [
  "cfg-if",
  "libc",
- "wasi",
-]
-
-[[package]]
-name = "getrandom"
-version = "0.1.14"
-dependencies = [
- "getrandom 0.1.14 (git+https://github.com/rust-random/getrandom)",
- "redshirt-random-interface",
- "redshirt-syscalls",
+ "wasi 0.9.0+wasi-snapshot-preview1",
 ]
 
 [[package]]
@@ -1430,7 +1422,7 @@ version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6a6b1679d49b24bbfe0c803429aa1874472f50d9b363131f0e89fc356b544d03"
 dependencies = [
- "getrandom 0.1.14",
+ "getrandom",
  "libc",
  "rand_chacha",
  "rand_core",
@@ -1453,7 +1445,7 @@ version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "90bde5296fc891b0cef12a6d03ddccc162ce7b2aff54160af9338f8d40df6d19"
 dependencies = [
- "getrandom 0.1.14",
+ "getrandom",
 ]
 
 [[package]]
@@ -1511,14 +1503,6 @@ name = "redshirt-pci-interface"
 version = "0.1.0"
 dependencies = [
  "futures 0.3.1",
- "parity-scale-codec",
- "redshirt-syscalls",
-]
-
-[[package]]
-name = "redshirt-random-interface"
-version = "0.1.0"
-dependencies = [
  "parity-scale-codec",
  "redshirt-syscalls",
 ]
@@ -1588,13 +1572,13 @@ dependencies = [
 [[package]]
 name = "ring"
 version = "0.16.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6747f8da1f2b1fabbee1aaa4eb8a11abf9adef0bf58a41cee45db5d59cecdfac"
+source = "git+https://github.com/nhynes/ring?branch=wasi#01cd0070c9aa3e059bdc02e889ea5902a2cb4dea"
 dependencies = [
  "cc",
  "libc",
  "spin",
  "untrusted",
+ "wasi 0.7.0",
  "web-sys",
  "winapi 0.3.8",
 ]
@@ -1989,6 +1973,12 @@ dependencies = [
  "log",
  "try-lock",
 ]
+
+[[package]]
+name = "wasi"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b89c3ce4ce14bdc6fb6beaf9ec7928ca331de5df7e5ea278375642a2f478570d"
 
 [[package]]
 name = "wasi"

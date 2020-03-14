@@ -29,6 +29,8 @@ use alloc::{borrow::Cow, vec::Vec};
 use core::{fmt, iter, ops::Range};
 use wasmi::RuntimeValue;
 
+pub mod wasi;
+
 /// Trait implemented on types that can handle extrinsics.
 ///
 /// The `Default` trait is used to instantiate structs that implement this trait. One instance is
@@ -174,7 +176,7 @@ impl Extrinsics for NoExtrinsics {
         &self,
         _: ThreadId,
         id: &Self::ExtrinsicId,
-        _: impl Iterator<Item = RuntimeValue>,
+        _: impl ExactSizeIterator<Item = RuntimeValue>,
         _: &mut impl ExtrinsicsMemoryAccess,
     ) -> (Self::Context, ExtrinsicsAction) {
         match *id {} // unreachable
