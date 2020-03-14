@@ -14,7 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use p2p_loader::{Network, NetworkConfig};
-use std::env;
+use std::{env, path::Path};
 
 #[cfg(target_arch = "wasm32")]
 fn main() {
@@ -29,17 +29,18 @@ fn main() {
 }
 
 async fn async_main() {
-    let config = NetworkConfig {
-        private_key: if let Ok(key) = env::var("PRIVATE_KEY") {
-            let bytes = base64::decode(&key).unwrap();
-            assert_eq!(bytes.len(), 32);
-            let mut out = [0; 32];
-            out.copy_from_slice(&bytes);
-            Some(out)
-        } else {
-            None
-        },
+    let mut config = NetworkConfig::default();
+    config.private_key = if let Ok(key) = env::var("PRIVATE_KEY") {
+        let bytes = base64::decode(&key).unwrap();
+        assert_eq!(bytes.len(), 32);
+        let mut out = [0; 32];
+        out.copy_from_slice(&bytes);
+        Some(out)
+    } else {
+        None
     };
+    // TODO: hack; use a CLI instead
+    config.watched_directory = Some(Path::new("../target/wasm32-wasi/release").to_owned());
 
     let mut network = Network::<std::convert::Infallible>::start(config); // TODO: use `!`
 
