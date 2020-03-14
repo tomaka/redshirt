@@ -20,9 +20,6 @@
     "max-atomic-width": 32,
     "os": "none",
     "panic-strategy": "abort",
-    "pre-link-args": {
-        "ld": ["--script", "arm-freestanding.ld"]
-    },
     "relocation-model": "static",
     "target-c-int-width": "32",
     "target-endian": "little",

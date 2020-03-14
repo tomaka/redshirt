@@ -15,9 +15,10 @@
 
 //! Native program that handles the `random` interface.
 
+use crate::arch::PlatformSpecific;
 use crate::random::rng::KernelRng;
 
-use alloc::{boxed::Box, vec};
+use alloc::{boxed::Box, sync::Arc, vec};
 use core::{pin::Pin, sync::atomic};
 use crossbeam_queue::SegQueue;
 use futures::prelude::*;
@@ -27,27 +28,33 @@ use redshirt_core::{Decode as _, Encode as _, EncodedMessage, InterfaceHash, Mes
 use redshirt_random_interface::ffi::{GenerateResponse, RandomMessage, INTERFACE};
 
 /// State machine for `random` interface messages handling.
-pub struct RandomNativeProgram {
+pub struct RandomNativeProgram<TPlat> {
     /// If true, we have sent the interface registration message.
     registered: atomic::AtomicBool,
     /// Queue of random number generators. If it is empty, we generate a new one.
     rngs: SegQueue<KernelRng>,
     /// Message responses waiting to be emitted.
     pending_messages: SegQueue<(MessageId, Result<EncodedMessage, ()>)>,
+    /// Platform-specific hooks.
+    platform_specific: Pin<Arc<TPlat>>,
 }
 
-impl RandomNativeProgram {
+impl<TPlat> RandomNativeProgram<TPlat> {
     /// Initializes the new state machine for random messages handling.
-    pub fn new() -> Self {
+    pub fn new(platform_specific: Pin<Arc<TPlat>>) -> Self {
         RandomNativeProgram {
             registered: atomic::AtomicBool::new(false),
             rngs: SegQueue::new(),
             pending_messages: SegQueue::new(),
+            platform_specific,
         }
     }
 }
 
-impl<'a> NativeProgramRef<'a> for &'a RandomNativeProgram {
+impl<'a, TPlat> NativeProgramRef<'a> for &'a RandomNativeProgram<TPlat>
+where
+    TPlat: PlatformSpecific,
+{
     type Future =
         Pin<Box<dyn Future<Output = NativeProgramEvent<Self::MessageIdWrite>> + Send + 'a>>;
     type MessageIdWrite = DummyMessageIdWrite;
@@ -93,7 +100,7 @@ impl<'a> NativeProgramRef<'a> for &'a RandomNativeProgram {
                 let mut rng = if let Ok(rng) = self.rngs.pop() {
                     rng
                 } else {
-                    KernelRng::new()
+                    KernelRng::new(self.platform_specific.as_ref())
                 };
 
                 rng.fill_bytes(&mut out);
