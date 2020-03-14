@@ -155,7 +155,7 @@ pub fn build_wasm_module(tokens: proc_macro::TokenStream) -> proc_macro::TokenSt
         };
         let base = metadata
             .target_directory
-            .join("wasm32-unknown-unknown")
+            .join("wasm32-wasi")
             .join("release");
         let wasm = base.join(format!("{}.wasm", bin_target));
         let deps = base.join(format!("{}.d", bin_target));
@@ -167,7 +167,7 @@ pub fn build_wasm_module(tokens: proc_macro::TokenStream) -> proc_macro::TokenSt
         .arg("rustc")
         .args(&["--bin", &bin_target])
         .arg("--release")
-        .args(&["--target", "wasm32-unknown-unknown"])
+        .args(&["--target", "wasm32-wasi"])
         .arg("--")
         .args(&["-C", "link-arg=--export-table"])
         .current_dir(&wasm_crate_path)
