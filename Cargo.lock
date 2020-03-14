@@ -944,6 +944,7 @@ dependencies = [
  "redshirt-core-proc-macros",
  "redshirt-interface-interface",
  "redshirt-loader-interface",
+ "redshirt-log-interface",
  "redshirt-random-interface",
  "redshirt-syscalls",
  "redshirt-threads-interface",

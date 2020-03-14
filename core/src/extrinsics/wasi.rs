@@ -18,7 +18,11 @@
 use crate::extrinsics::{Extrinsics, ExtrinsicsAction, ExtrinsicsMemoryAccess, SupportedExtrinsic};
 use crate::{sig, Encode as _, EncodedMessage, ThreadId};
 
-use alloc::{borrow::Cow, vec, vec::IntoIter};
+use alloc::{
+    borrow::Cow,
+    vec,
+    vec::{IntoIter, Vec},
+};
 use core::convert::TryFrom as _;
 use wasmi::RuntimeValue;
 
@@ -46,6 +50,7 @@ pub struct Context(ContextInner);
 
 enum ContextInner {
     WaitRandom { out_ptr: u32, remaining_len: u16 },
+    Resume(Option<RuntimeValue>),
     Finished,
 }
 
@@ -125,12 +130,14 @@ impl Extrinsics for WasiExtrinsics {
                     .unwrap(); // TODO: don't unwrap
 
                 let context = ContextInner::Finished;
-                (
-                    Context(context),
-                    ExtrinsicsAction::Resume(Some(RuntimeValue::I32(0))),
-                )
+                let action = ExtrinsicsAction::Resume(Some(RuntimeValue::I32(0)));
+                (Context(context), action)
             }
-            ExtrinsicIdInner::FdWrite => unimplemented!(),
+            ExtrinsicIdInner::FdWrite => {
+                let action = fd_write(params, mem_access);
+                let context = ContextInner::Resume(Some(RuntimeValue::I32(0)));
+                (Context(context), action)
+            }
             ExtrinsicIdInner::ProcExit => {
                 // TODO: implement in a better way?
                 let context = ContextInner::Finished;
@@ -161,10 +168,8 @@ impl Extrinsics for WasiExtrinsics {
             ExtrinsicIdInner::SchedYield => {
                 // TODO: implement in a better way?
                 let context = ContextInner::Finished;
-                (
-                    Context(context),
-                    ExtrinsicsAction::Resume(Some(RuntimeValue::I32(0))),
-                )
+                let action = ExtrinsicsAction::Resume(Some(RuntimeValue::I32(0)));
+                (Context(context), action)
             }
         }
     }
@@ -177,7 +182,64 @@ impl Extrinsics for WasiExtrinsics {
     ) -> ExtrinsicsAction {
         match ctxt.0 {
             ContextInner::WaitRandom { .. } => unimplemented!(),
+            ContextInner::Resume(value) => ExtrinsicsAction::Resume(value),
             ContextInner::Finished => unreachable!(),
         }
+    }
+}
+
+fn fd_write(
+    mut params: impl ExactSizeIterator<Item = RuntimeValue>,
+    mem_access: &mut impl ExtrinsicsMemoryAccess,
+) -> ExtrinsicsAction {
+    let fd = params.next().unwrap();
+    // TODO: return error if wrong fd
+    assert!(fd == RuntimeValue::I32(1) || fd == RuntimeValue::I32(2));      // either stdout or stderr
+
+    // Get a list of pointers and lengths to write.
+    // Elements 0, 2, 4, 6, ... in that list are pointers, and elements 1, 3, 5, 7, ... are
+    // lengths.
+    let list_to_write = {
+        let addr = params.next().unwrap().try_into::<i32>().unwrap() as u32;
+        let num = params.next().unwrap().try_into::<i32>().unwrap() as u32;
+        let list_buf = mem_access.read_memory(addr..addr + 4 * num * 2).unwrap();
+        let mut list_out = Vec::with_capacity(usize::try_from(num).unwrap());
+        for elem in list_buf.chunks(4) {
+            list_out.push(u32::from_le_bytes(<[u8; 4]>::try_from(elem).unwrap()));
+        }
+        list_out
+    };
+
+    let mut total_written = 0;
+    let mut encoded_message = Vec::new();
+    if fd == RuntimeValue::I32(2) { // TODO: handle better?
+        encoded_message.push(4); // ERROR log level.
+    } else {
+        encoded_message.push(2); // INFO log level.
+    }
+
+    for ptr_and_len in list_to_write.windows(2) {
+        let ptr = ptr_and_len[0] as u32;
+        let len = ptr_and_len[1] as u32;
+
+        encoded_message.extend(mem_access.read_memory(ptr..ptr + len).unwrap());
+        total_written += len as usize;
+    }
+
+    // Write to the fourth parameter the number of bytes written to the file descriptor.
+    {
+        let out_ptr = params.next().unwrap().try_into::<i32>().unwrap() as u32;
+        let total_written = u32::try_from(total_written).unwrap();
+        mem_access
+            .write_memory(out_ptr, &total_written.to_le_bytes())
+            .unwrap();
+    }
+
+    assert!(params.next().is_none());
+
+    ExtrinsicsAction::EmitMessage {
+        interface: redshirt_log_interface::ffi::INTERFACE,
+        message: EncodedMessage(encoded_message),
+        response_expected: false,
     }
 }

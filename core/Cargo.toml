@@ -19,6 +19,7 @@ proc-macro-hack = "0.5.11"
 redshirt-core-proc-macros = { path = "../core-proc-macros" }
 redshirt-interface-interface = { path = "../interfaces/interface", default-features = false }
 redshirt-loader-interface = { path = "../interfaces/loader", default-features = false }
+redshirt-log-interface = { path = "../interfaces/log", default-features = false }
 redshirt-random-interface = { path = "../interfaces/random", default-features = false }
 redshirt-syscalls = { path = "../interfaces/syscalls", default-features = false }
 redshirt-threads-interface = { path = "../interfaces/threads", default-features = false }
