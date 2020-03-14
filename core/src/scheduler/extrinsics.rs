@@ -48,7 +48,6 @@ pub struct ProcessesCollectionExtrinsics<TPud, TTud, TExt: Extrinsics> {
     ///
     /// The threads here must always be in the [`OtherExtrinsicApplyAction`] state.
     local_run_queue: SegQueue<ThreadId>,
-
     // TODO: implement
     /*/// List of processes that have died but that we haven't reported yet to the outside because
     /// they are locked.
