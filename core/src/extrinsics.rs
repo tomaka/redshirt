@@ -23,10 +23,10 @@
 //! TODO: write doc on how to implement this trait
 
 use crate::signature::Signature;
-use crate::{EncodedMessage, InterfaceHash, MessageId, ThreadId};
+use crate::{EncodedMessage, InterfaceHash, ThreadId};
 
 use alloc::{borrow::Cow, vec::Vec};
-use core::{iter, ops::Range};
+use core::{fmt, iter, ops::Range};
 use wasmi::RuntimeValue;
 
 /// Trait implemented on types that can handle extrinsics.
@@ -99,10 +99,21 @@ pub trait ExtrinsicsMemoryAccess {
 }
 
 /// Error that can happen when reading or writing the memory of a process.
-#[derive(Debug)] // TODO: Display
+#[derive(Debug)]
 pub enum ExtrinsicsMemoryAccessErr {
     /// The range is outside of the memory allocated to this process.
     OutOfRange,
+}
+
+impl fmt::Display for ExtrinsicsMemoryAccessErr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ExtrinsicsMemoryAccessErr::OutOfRange => write!(
+                f,
+                "The range is outside of the memory allocated to this process."
+            ),
+        }
+    }
 }
 
 /// Description of an extrinsic supported by the implementation of [`Extrinsics`].
