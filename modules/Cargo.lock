@@ -596,20 +596,12 @@ dependencies = [
 [[package]]
 name = "getrandom"
 version = "0.1.14"
-source = "git+https://github.com/rust-random/getrandom#33b859bae16ae0b1c782e48db2ed96eb2306a2fc"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7abc8dd8451921606d809ba32e95b6111925cd2906060d2dcc29c070220503eb"
 dependencies = [
  "cfg-if",
  "libc",
- "wasi",
-]
-
-[[package]]
-name = "getrandom"
-version = "0.1.14"
-dependencies = [
- "getrandom 0.1.14 (git+https://github.com/rust-random/getrandom)",
- "redshirt-random-interface",
- "redshirt-syscalls",
+ "wasi 0.9.0+wasi-snapshot-preview1",
 ]
 
 [[package]]
@@ -1014,12 +1006,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "managed"
-version = "0.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fdcec5e97041c7f0f1c5b7d93f12e57293c831c646f4cc7a5db59460c7ea8de6"
-
-[[package]]
 name = "matches"
 version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1113,15 +1099,11 @@ name = "ne2000"
 version = "0.1.0"
 dependencies = [
  "etherparse",
- "futures 0.3.1",
  "redshirt-hardware-interface",
  "redshirt-interface-interface",
  "redshirt-log-interface",
- "redshirt-network-interface",
  "redshirt-pci-interface",
- "redshirt-random-interface",
  "redshirt-syscalls",
- "redshirt-time-interface",
  "smallvec",
 ]
 
@@ -1134,25 +1116,6 @@ dependencies = [
  "cfg-if",
  "libc",
  "winapi 0.3.8",
-]
-
-[[package]]
-name = "network-manager"
-version = "0.1.0"
-dependencies = [
- "fnv 1.0.6 (git+https://github.com/dflemstr/rust-fnv)",
- "futures 0.3.1",
- "hashbrown",
- "log",
- "parity-scale-codec",
- "redshirt-interface-interface",
- "redshirt-log-interface",
- "redshirt-network-interface",
- "redshirt-syscalls",
- "redshirt-tcp-interface",
- "redshirt-time-interface",
- "smoltcp",
- "thiserror",
 ]
 
 [[package]]
@@ -1459,7 +1422,7 @@ version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6a6b1679d49b24bbfe0c803429aa1874472f50d9b363131f0e89fc356b544d03"
 dependencies = [
- "getrandom 0.1.14",
+ "getrandom",
  "libc",
  "rand_chacha",
  "rand_core",
@@ -1482,7 +1445,7 @@ version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "90bde5296fc891b0cef12a6d03ddccc162ce7b2aff54160af9338f8d40df6d19"
 dependencies = [
- "getrandom 0.1.14",
+ "getrandom",
 ]
 
 [[package]]
@@ -1536,29 +1499,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "redshirt-network-interface"
-version = "0.1.0"
-dependencies = [
- "futures 0.3.1",
- "parity-scale-codec",
- "redshirt-syscalls",
- "tokio",
-]
-
-[[package]]
 name = "redshirt-pci-interface"
 version = "0.1.0"
 dependencies = [
  "futures 0.3.1",
- "parity-scale-codec",
- "redshirt-syscalls",
-]
-
-[[package]]
-name = "redshirt-random-interface"
-version = "0.1.0"
-dependencies = [
- "byteorder",
  "parity-scale-codec",
  "redshirt-syscalls",
 ]
@@ -1628,13 +1572,13 @@ dependencies = [
 [[package]]
 name = "ring"
 version = "0.16.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6747f8da1f2b1fabbee1aaa4eb8a11abf9adef0bf58a41cee45db5d59cecdfac"
+source = "git+https://github.com/nhynes/ring?branch=wasi#01cd0070c9aa3e059bdc02e889ea5902a2cb4dea"
 dependencies = [
  "cc",
  "libc",
  "spin",
  "untrusted",
+ "wasi 0.7.0",
  "web-sys",
  "winapi 0.3.8",
 ]
@@ -1761,17 +1705,6 @@ name = "smallvec"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "44e59e0c9fa00817912ae6e4e6e3c4fe04455e75699d06eedc7d85917ed8e8f4"
-
-[[package]]
-name = "smoltcp"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0fe46639fd2ec79eadf8fe719f237a7a0bd4dac5d957f1ca5bbdbc1c3c39e53a"
-dependencies = [
- "bitflags",
- "byteorder",
- "managed",
-]
 
 [[package]]
 name = "sourcefile"
@@ -2040,6 +1973,12 @@ dependencies = [
  "log",
  "try-lock",
 ]
+
+[[package]]
+name = "wasi"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b89c3ce4ce14bdc6fb6beaf9ec7928ca331de5df7e5ea278375642a2f478570d"
 
 [[package]]
 name = "wasi"

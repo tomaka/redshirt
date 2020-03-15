@@ -62,7 +62,9 @@ where
             .with_native_program(crate::time::TimeHandler::new(
                 self.platform_specific.clone(),
             ))
-            .with_native_program(crate::random::native::RandomNativeProgram::new())
+            .with_native_program(crate::random::native::RandomNativeProgram::new(
+                self.platform_specific.clone(),
+            ))
             .with_startup_process(build_wasm_module!(
                 "../../../modules/p2p-loader",
                 "passive-node"
@@ -78,7 +80,7 @@ where
                 .with_startup_process(build_wasm_module!("../../../modules/x86-pci"))
                 .with_startup_process(build_wasm_module!("../../../modules/ne2000"))
         }
-        #[cfg(target_arch = "arm")]
+        #[cfg(any(target_arch = "arm", target_arch = "aarch64"))]
         {
             system_builder = system_builder
                 .with_startup_process(build_wasm_module!("../../../modules/arm-log"))

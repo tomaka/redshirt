@@ -20,7 +20,7 @@ jobs:
       uses: actions-rs/toolchain@v1
       with:
         toolchain: stable
-        target: wasm32-unknown-unknown
+        target: wasm32-wasi
         override: true
     - name: Install a recent version of clang
       run: |
@@ -46,12 +46,12 @@ jobs:
         path: modules/target
         key: cargo-build-target-${{ hashFiles('modules/Cargo.lock') }}
     - name: Build modules
-      run: cargo build --manifest-path ./modules/Cargo.toml --workspace --exclude stub --locked --verbose --release --target=wasm32-unknown-unknown
+      run: cargo build --manifest-path ./modules/Cargo.toml --workspace --exclude stub --locked --verbose --release --target=wasm32-wasi
     - name: Upload WASM modules
       uses: actions/upload-artifact@v1
       with:
         name: wasm-modules
-        path: modules/target/wasm32-unknown-unknown/release
+        path: modules/target/wasm32-wasi/release
 
   build-hosted:
     name: Build hosted kernel
@@ -67,7 +67,7 @@ jobs:
       uses: actions-rs/toolchain@v1
       with:
         toolchain: stable
-        target: wasm32-unknown-unknown
+        target: wasm32-wasi
         override: true
     - name: Install a recent version of clang
       run: |
@@ -79,7 +79,7 @@ jobs:
       uses: actions/download-artifact@v1
       with:
         name: wasm-modules
-        path: modules/target/wasm32-unknown-unknown/release
+        path: modules/target/wasm32-wasi/release
     - name: Cache cargo registry
       uses: actions/cache@v1
       with:
@@ -110,13 +110,13 @@ jobs:
       uses: actions-rs/toolchain@v1
       with:
         toolchain: stable
-        target: wasm32-unknown-unknown
+        target: wasm32-wasi
         override: true
     - name: Download WASM modules
       uses: actions/download-artifact@v1
       with:
         name: wasm-modules
-        path: modules/target/wasm32-unknown-unknown/release
+        path: modules/target/wasm32-wasi/release
     - name: Cache cargo registry
       uses: actions/cache@v1
       with:
@@ -150,18 +150,19 @@ jobs:
         CC: clang-9
     strategy:
       matrix:
-        target: [x86_64-multiboot2, arm-freestanding]
+        #target: [x86_64-multiboot2, arm-rpi2]  # TODO: not implemented
+        target: [x86_64-multiboot2]
     steps:
     - uses: actions/checkout@v1
     - name: Download WASM modules
       uses: actions/download-artifact@v1
       with:
         name: wasm-modules
-        path: modules/target/wasm32-unknown-unknown/release
-    - name: Install lld
+        path: modules/target/wasm32-wasi/release
+    - name: Install required packages
       run: |
         apt-get update
-        apt-get install -y lld
+        apt-get install -y lld libisoburn1 xorriso grub-pc-bin
     - name: Install a recent version of clang
       run: |
         wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
@@ -186,50 +187,18 @@ jobs:
     - name: Install nightly Rust
       uses: actions-rs/toolchain@v1
       with:
-        toolchain: nightly-2020-02-28
-        target: wasm32-unknown-unknown
+        toolchain: nightly-2020-03-12
+        target: wasm32-wasi
         override: true
     - name: Install rust-src
       run: rustup component add rust-src
-    - name: Build core
-      run: RUST_TARGET_PATH=`pwd` cargo +nightly-2020-02-28 build -Z build-std=core,alloc --target ${{ matrix.target }} --package redshirt-core --release
     - name: Build kernel
-      run: RUST_TARGET_PATH=`pwd` cargo +nightly-2020-02-28 build -Z build-std=core,alloc --target ${{ matrix.target }} --package redshirt-standalone-kernel --release
+      run: cargo run --manifest-path=./kernel/standalone-builder/Cargo.toml -- build-image --target ${{ matrix.target }} --device-type cdrom --out image
     - name: Upload generated kernel
       uses: actions/upload-artifact@master
       with:
         name: kernel-${{ matrix.target }}
-        path: target/${{ matrix.target }}/release/redshirt-standalone-kernel
-
-  build-iso:
-    name: Build bootable x86_64 ISO
-    needs: build-standalone
-    runs-on: ubuntu-latest
-    container:
-      image: ubuntu:xenial
-    steps:
-    - uses: actions/checkout@v1
-    - name: Download kernel
-      uses: actions/download-artifact@v1
-      with:
-        name: kernel-x86_64-multiboot2
-        path: .
-    - name: Install required packages
-      run: |
-        apt-get update
-        apt-get install -y libisoburn1 xorriso grub-pc-bin
-    - name: Prepare file structure
-      run: |
-        mkdir -p iso/boot/grub
-        cp .github/grub.cfg iso/boot/grub
-        mv redshirt-standalone-kernel iso/boot/kernel
-    - name: Build ISO
-      run: grub-mkrescue -o redshirt.iso iso
-    - name: Upload generated kernel
-      uses: actions/upload-artifact@master
-      with:
-        name: bootable-cdrom-x86_64
-        path: redshirt.iso
+        path: image
 
   check-passive-node:
     name: Check p2p passive node
@@ -288,4 +257,4 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: fmt
-          args: --all --manifest-path=kernel/standalone-tester/Cargo.toml -- --check
+          args: --all --manifest-path=kernel/standalone-builder/Cargo.toml -- --check

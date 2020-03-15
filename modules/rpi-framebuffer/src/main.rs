@@ -22,13 +22,6 @@ mod mailbox;
 mod property;
 
 fn main() {
-    std::panic::set_hook(Box::new(|info| {
-        redshirt_log_interface::log(
-            redshirt_log_interface::Level::Error,
-            &format!("Panic: {}\n", info),
-        );
-    }));
-
     redshirt_syscalls::block_on(async_main());
 }
 
