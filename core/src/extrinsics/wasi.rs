@@ -197,9 +197,9 @@ impl Extrinsics for WasiExtrinsics {
                     u32::try_from(value.result.len()).unwrap_or(u32::max_value())
                         <= u32::from(remaining_len)
                 );
-                mem_access.write_memory(out_ptr, &value.result).unwrap();   // TODO: don't unwrap
+                mem_access.write_memory(out_ptr, &value.result).unwrap(); // TODO: don't unwrap
 
-                assert_ne!(value.result.len(), 0);      // TODO: don't unwrap
+                assert_ne!(value.result.len(), 0); // TODO: don't unwrap
                 out_ptr += u32::try_from(value.result.len()).unwrap();
                 remaining_len -= u32::try_from(value.result.len()).unwrap();
 

@@ -1174,8 +1174,10 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
                 // should be improved
                 let decoded = redshirt_syscalls::ffi::decode_notification(&notif.0).unwrap();
                 let message = match decoded {
-                    redshirt_syscalls::ffi::DecodedNotification::Response(response) => response.actual_data.unwrap(),   // TODO: don't unwrap
-                    _ => panic!()
+                    redshirt_syscalls::ffi::DecodedNotification::Response(response) => {
+                        response.actual_data.unwrap()
+                    } // TODO: don't unwrap
+                    _ => panic!(),
                 };
 
                 assert_eq!(index, 0);
