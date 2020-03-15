@@ -46,19 +46,12 @@ use core::{convert::TryFrom as _, pin::Pin};
 use rand_chacha::{ChaCha20Core, ChaCha20Rng};
 use rand_core::{RngCore, SeedableRng as _};
 use rand_jitter::JitterRng;
-use spin::Mutex;
 
 /// Kernel random number generator.
 pub struct KernelRng {
     /// Inner PRNG.
     rng: ChaCha20Rng,
 }
-
-// TODO: this hack is necessary because `JitterRng::new_with_timer` accepts only a standalone
-// function without any context
-// MUTEX protects accesses to the static mut TIMER, which stores a closure that returns a time value
-static MUTEX: Mutex<()> = Mutex::new(());
-static mut TIMER: Option<Box<dyn Fn() -> u64>> = None;
 
 impl KernelRng {
     /// Initializes a new [`KernelRng`].
@@ -79,11 +72,6 @@ impl KernelRng {
             rng.set_rounds(rounds);
             // According to the documentation, we have to discard the first `u64`.
             let _ = rng.next_u64();
-
-            unsafe {
-                TIMER = None;
-            }
-
             rng
         };
 
@@ -122,8 +110,7 @@ impl RngCore for KernelRng {
     }
 }
 
-// TODO: because `JitterRng::new_with_timer` requires a function pointer and not a closure, we
-// can't pass a `PlatformSpecific` trait impl, and instead have to use platform-specific code here
+// TODO: move add_hardware_entropy to the PlatformSpecific trait?
 
 #[cfg(target_arch = "x86_64")]
 fn add_hardware_entropy(hasher: &mut blake3::Hasher) {
