@@ -37,6 +37,8 @@ pub fn init<'a>(
     // TODO: check whether RDTSC is supported
 
     // We use the PIT to figure out approximately how many RDTSC ticks happen per second.
+    // TODO: on some CPUs, the RDTSC goes at a slower rate when the CPU goes to sleep, which happens here with the
+    // executor
     let rdtsc_ticks_per_sec = unsafe {
         let before = core::arch::x86_64::_rdtsc();
         // TODO: once async functions are available in no_std contexts, turn this function into an
