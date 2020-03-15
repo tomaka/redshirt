@@ -1170,6 +1170,14 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
                 )));
             }
             LocalThreadState::OtherExtrinsicWait { mut context, .. } => {
+                // TODO: the way this is handled is clearly not great; the API of this method
+                // should be improved
+                let decoded = redshirt_syscalls::ffi::decode_notification(&notif.0).unwrap();
+                let message = match decoded {
+                    redshirt_syscalls::ffi::DecodedNotification::Response(response) => response.actual_data.unwrap(),   // TODO: don't unwrap
+                    _ => panic!()
+                };
+
                 assert_eq!(index, 0);
                 let action = inner
                     .process_user_data()
@@ -1177,7 +1185,7 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
                     .extrinsics
                     .inject_message_response(
                         &mut context,
-                        Some(notif),
+                        Some(message),
                         &mut MemoryAccessImpl(RefCell::new(&mut inner)),
                     );
                 inner.user_data().state =

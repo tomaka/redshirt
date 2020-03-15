@@ -49,7 +49,7 @@ enum ExtrinsicIdInner {
 pub struct Context(ContextInner);
 
 enum ContextInner {
-    WaitRandom { out_ptr: u32, remaining_len: u16 },
+    WaitRandom { out_ptr: u32, remaining_len: u32 },
     Resume(Option<RuntimeValue>),
     Finished,
 }
@@ -145,10 +145,11 @@ impl Extrinsics for WasiExtrinsics {
             }
             ExtrinsicIdInner::RandomGet => {
                 let buf = params.next().unwrap().try_into::<i32>().unwrap() as u32;
-                let len = params.next().unwrap().try_into::<i32>().unwrap();
+                let len = params.next().unwrap().try_into::<i32>().unwrap() as u32;
                 assert!(params.next().is_none());
 
                 let len_to_request = u16::try_from(len).unwrap_or(u16::max_value());
+                debug_assert!(u32::from(len_to_request) <= len);
                 let action = ExtrinsicsAction::EmitMessage {
                     interface: redshirt_random_interface::ffi::INTERFACE,
                     message: redshirt_random_interface::ffi::RandomMessage::Generate {
@@ -160,7 +161,7 @@ impl Extrinsics for WasiExtrinsics {
 
                 let context = ContextInner::WaitRandom {
                     out_ptr: buf,
-                    remaining_len: len_to_request,
+                    remaining_len: len,
                 };
 
                 (Context(context), action)
@@ -177,12 +178,57 @@ impl Extrinsics for WasiExtrinsics {
     fn inject_message_response(
         &self,
         ctxt: &mut Self::Context,
-        _: Option<EncodedMessage>,
-        _: &mut impl ExtrinsicsMemoryAccess,
+        response: Option<EncodedMessage>,
+        mem_access: &mut impl ExtrinsicsMemoryAccess,
     ) -> ExtrinsicsAction {
         match ctxt.0 {
-            ContextInner::WaitRandom { .. } => unimplemented!(),
-            ContextInner::Resume(value) => ExtrinsicsAction::Resume(value),
+            ContextInner::WaitRandom {
+                mut out_ptr,
+                mut remaining_len,
+            } => {
+                let response = response.unwrap();
+                let value: redshirt_random_interface::ffi::GenerateResponse =
+                    match response.decode() {
+                        Ok(v) => v,
+                        Err(e) => return ExtrinsicsAction::ProgramCrash,
+                    };
+
+                assert!(
+                    u32::try_from(value.result.len()).unwrap_or(u32::max_value())
+                        <= u32::from(remaining_len)
+                );
+                mem_access.write_memory(out_ptr, &value.result).unwrap();   // TODO: don't unwrap
+
+                assert_ne!(value.result.len(), 0);      // TODO: don't unwrap
+                out_ptr += u32::try_from(value.result.len()).unwrap();
+                remaining_len -= u32::try_from(value.result.len()).unwrap();
+
+                if remaining_len == 0 {
+                    ctxt.0 = ContextInner::Finished;
+                    ExtrinsicsAction::Resume(Some(RuntimeValue::I32(0)))
+                } else {
+                    let len_to_request = u16::try_from(remaining_len).unwrap_or(u16::max_value());
+                    debug_assert!(u32::from(len_to_request) <= remaining_len);
+
+                    ctxt.0 = ContextInner::WaitRandom {
+                        out_ptr,
+                        remaining_len,
+                    };
+
+                    ExtrinsicsAction::EmitMessage {
+                        interface: redshirt_random_interface::ffi::INTERFACE,
+                        message: redshirt_random_interface::ffi::RandomMessage::Generate {
+                            len: len_to_request,
+                        }
+                        .encode(),
+                        response_expected: true,
+                    }
+                }
+            }
+            ContextInner::Resume(value) => {
+                ctxt.0 = ContextInner::Finished;
+                ExtrinsicsAction::Resume(value)
+            }
             ContextInner::Finished => unreachable!(),
         }
     }
