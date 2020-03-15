@@ -18,7 +18,10 @@
 use crate::arch::PlatformSpecific;
 
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
-use core::{convert::TryFrom as _, future::Future, iter, num::NonZeroU32, ops::Range, pin::Pin};
+use core::{
+    convert::TryFrom as _, future::Future, iter, num::NonZeroU32, ops::Range, pin::Pin,
+    time::Duration,
+};
 use futures::channel::oneshot;
 use x86_64::structures::port::{PortRead as _, PortWrite as _};
 
@@ -98,16 +101,21 @@ unsafe extern "C" fn after_boot(multiboot_header: usize) -> ! {
     // Initialize an object that can execute futures between CPUs.
     let executor = Box::leak(Box::new(executor::Executor::new(&*local_apics)));
 
-    // TODO: this is unused at the moment
+    // The PIT is an old mechanism for triggering interrupts after a certain delay.
+    // Despite being old, it is still present on all hardware.
     let mut pit = pit::init_pit(&*local_apics, &mut io_apics);
-
-    // Initialize the timers state machine.
-    // This allows us to create `Future`s that resolve after a certain amount of time has passed.
-    let timers = Box::leak(Box::new(apic::timers::init(local_apics)));
 
     // Initialize interrupts so that all the elements initialize above function properly.
     // TODO: make this more fool-proof
     interrupts::load_idt();
+
+    // Initialize the timers state machine.
+    // This allows us to create `Future`s that resolve after a certain amount of time has passed.
+    let timers = Box::leak(Box::new(apic::timers::init(
+        local_apics,
+        &*executor,
+        &mut pit,
+    )));
 
     // This code is only executed by the main processor of the machine, called the **boot
     // processor**. The other processors are called the **associated processors** and must be
@@ -118,8 +126,7 @@ unsafe extern "C" fn after_boot(multiboot_header: usize) -> ! {
     // it to each sender.
     let mut kernel_channels = Vec::with_capacity(acpi_tables.application_processors.len());
 
-    // TODO: it doesn't work if we remove this `take(1)` ; primary suspect is timers implementation
-    for ap in acpi_tables.application_processors.iter().take(1) {
+    for ap in acpi_tables.application_processors.iter() {
         debug_assert!(ap.is_ap);
         // It is possible for some associated processors to be in a disabled state, in which case
         // they **must not** be started. This is generally the case of defective processors.
@@ -273,14 +280,15 @@ impl PlatformSpecific for PlatformSpecificImpl {
     }
 
     fn monotonic_clock(self: Pin<&Self>) -> u128 {
-        // TODO: wrong unit; these are not nanoseconds
-        // TODO: maybe TSC not supported? move method to ApicControl instead?
-        u128::from(unsafe { core::arch::x86_64::_rdtsc() })
+        self.timers.monotonic_clock().as_nanos()
     }
 
     fn timer(self: Pin<&Self>, clock_value: u128) -> Self::TimerFuture {
-        let clock_value = u64::try_from(clock_value).unwrap_or(u64::max_value());
-        self.timers.register_tsc_timer(clock_value)
+        self.timers.register_tsc_timer({
+            let secs = u64::try_from(clock_value / 1_000_000_000).unwrap_or(u64::max_value());
+            let nanos = u32::try_from(clock_value % 1_000_000_000).unwrap();
+            Duration::new(secs, nanos)
+        })
     }
 
     unsafe fn write_port_u8(self: Pin<&Self>, port: u32, data: u8) -> Result<(), ()> {
