@@ -52,7 +52,9 @@ where
     pub fn run(&self) -> ! {
         // We only want a single CPU to run for now.
         if self.running.swap(true, Ordering::SeqCst) {
-            panic!(); // TODO:
+            self.platform_specific
+                .as_ref()
+                .block_on(futures::future::pending::<()>());
         }
 
         let mut system_builder = redshirt_core::system::SystemBuilder::new()
