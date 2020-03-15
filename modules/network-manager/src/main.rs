@@ -28,13 +28,6 @@ use std::{
 };
 
 fn main() {
-    std::panic::set_hook(Box::new(|info| {
-        redshirt_log_interface::log(
-            redshirt_log_interface::Level::Error,
-            &format!("Panic: {}", info),
-        );
-    }));
-
     redshirt_log_interface::init();
     redshirt_syscalls::block_on(async_main())
 }
