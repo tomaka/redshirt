@@ -1006,6 +1006,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "managed"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fdcec5e97041c7f0f1c5b7d93f12e57293c831c646f4cc7a5db59460c7ea8de6"
+
+[[package]]
 name = "matches"
 version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1099,11 +1105,15 @@ name = "ne2000"
 version = "0.1.0"
 dependencies = [
  "etherparse",
+ "futures 0.3.1",
  "redshirt-hardware-interface",
  "redshirt-interface-interface",
  "redshirt-log-interface",
+ "redshirt-network-interface",
  "redshirt-pci-interface",
+ "redshirt-random-interface",
  "redshirt-syscalls",
+ "redshirt-time-interface",
  "smallvec",
 ]
 
@@ -1116,6 +1126,25 @@ dependencies = [
  "cfg-if",
  "libc",
  "winapi 0.3.8",
+]
+
+[[package]]
+name = "network-manager"
+version = "0.1.0"
+dependencies = [
+ "fnv 1.0.6 (git+https://github.com/dflemstr/rust-fnv)",
+ "futures 0.3.1",
+ "hashbrown",
+ "log",
+ "parity-scale-codec",
+ "redshirt-interface-interface",
+ "redshirt-log-interface",
+ "redshirt-network-interface",
+ "redshirt-syscalls",
+ "redshirt-tcp-interface",
+ "redshirt-time-interface",
+ "smoltcp",
+ "thiserror",
 ]
 
 [[package]]
@@ -1499,10 +1528,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "redshirt-network-interface"
+version = "0.1.0"
+dependencies = [
+ "futures 0.3.1",
+ "parity-scale-codec",
+ "redshirt-syscalls",
+ "tokio",
+]
+
+[[package]]
 name = "redshirt-pci-interface"
 version = "0.1.0"
 dependencies = [
  "futures 0.3.1",
+ "parity-scale-codec",
+ "redshirt-syscalls",
+]
+
+[[package]]
+name = "redshirt-random-interface"
+version = "0.1.0"
+dependencies = [
+ "byteorder",
  "parity-scale-codec",
  "redshirt-syscalls",
 ]
@@ -1705,6 +1753,17 @@ name = "smallvec"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "44e59e0c9fa00817912ae6e4e6e3c4fe04455e75699d06eedc7d85917ed8e8f4"
+
+[[package]]
+name = "smoltcp"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0fe46639fd2ec79eadf8fe719f237a7a0bd4dac5d957f1ca5bbdbc1c3c39e53a"
+dependencies = [
+ "bitflags",
+ "byteorder",
+ "managed",
+]
 
 [[package]]
 name = "sourcefile"
