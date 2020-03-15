@@ -891,9 +891,8 @@ dependencies = [
 
 [[package]]
 name = "rand_jitter"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "83784d2e7e7bad28d05c9199633e94d83c7dd739137caa2542e79d24bf5bd2d6"
+version = "0.2.1"
+source = "git+https://github.com/tomaka/rngs?branch=new-with-timer-less-cumbersome#49657d82dc4af29871a354ea988db4785f1dadb6"
 dependencies = [
  "libc",
  "rand_core",

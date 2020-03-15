@@ -41,8 +41,8 @@
 
 use crate::arch::PlatformSpecific;
 
-use alloc::boxed::Box;
-use core::{convert::TryFrom as _, mem, pin::Pin};
+use alloc::sync::Arc;
+use core::{convert::TryFrom as _, pin::Pin};
 use rand_chacha::{ChaCha20Core, ChaCha20Rng};
 use rand_core::{RngCore, SeedableRng as _};
 use rand_jitter::JitterRng;
@@ -62,19 +62,13 @@ static mut TIMER: Option<Box<dyn Fn() -> u64>> = None;
 
 impl KernelRng {
     /// Initializes a new [`KernelRng`].
-    pub fn new(platform_specific: Pin<&impl PlatformSpecific>) -> KernelRng {
+    pub fn new(platform_specific: Pin<Arc<impl PlatformSpecific>>) -> KernelRng {
         // Initialize the `JitterRng`.
         let mut jitter = {
-            let _lock = MUTEX.lock();
-
-            unsafe {
-                let closure: Box<dyn Fn() -> u64> = Box::new(move || {
-                    u64::try_from(platform_specific.monotonic_clock() & 0xffffffffffffffff).unwrap()
-                });
-                TIMER = Some(mem::transmute(closure));
-            }
-
-            let mut rng = JitterRng::new_with_timer(|| unsafe { (TIMER.as_ref().unwrap())() });
+            let mut rng = JitterRng::new_with_timer(move || {
+                u64::try_from(platform_specific.as_ref().monotonic_clock() & 0xffffffffffffffff)
+                    .unwrap()
+            });
 
             // This makes sure that the `JitterRng` is good enough. A panic here indicates that
             // our entropy would be too low.

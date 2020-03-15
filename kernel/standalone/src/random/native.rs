@@ -100,7 +100,7 @@ where
                 let mut rng = if let Ok(rng) = self.rngs.pop() {
                     rng
                 } else {
-                    KernelRng::new(self.platform_specific.as_ref())
+                    KernelRng::new(self.platform_specific.clone())
                 };
 
                 rng.fill_bytes(&mut out);
