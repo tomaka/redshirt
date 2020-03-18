@@ -20,21 +20,29 @@ use libp2p_tcp::TcpConfig;
 #[cfg(target_arch = "wasm32")]
 use tcp_transport::TcpConfig;
 
+use futures::prelude::*;
 use libp2p_core::transport::Transport;
 use libp2p_core::{identity, muxing::StreamMuxerBox, upgrade};
 use libp2p_kad::{
-    record::store::MemoryStore, record::Key, Kademlia, KademliaConfig, KademliaEvent, Quorum,
+    record::store::{MemoryStore, MemoryStoreConfig},
+    record::Key,
+    Kademlia, KademliaConfig, KademliaEvent, Quorum,
 };
 use libp2p_mplex::MplexConfig;
 //use libp2p_noise::NoiseConfig;
 use libp2p_plaintext::PlainText2Config;
 use libp2p_swarm::{Swarm, SwarmEvent};
-use std::{collections::VecDeque, io, time::Duration};
+use std::{collections::VecDeque, io, path::PathBuf, pin::Pin, time::Duration};
+
+mod notifier;
 
 /// Active set of connections to the network.
 pub struct Network<T> {
     // TODO: should have identify and ping as well
     swarm: Swarm<Kademlia<MemoryStore>>,
+
+    /// Stream from the files watcher.
+    notifications: Pin<Box<dyn Stream<Item = notifier::NotifierEvent>>>,
 
     /// List of keys that are currently being fetched.
     active_fetches: Vec<(Key, T)>,
@@ -62,14 +70,28 @@ pub enum NetworkEvent<T> {
 }
 
 /// Configuration of a [`Network`].
+#[non_exhaustive]
 pub struct NetworkConfig {
     /// Hardcoded private key, or `None` to generate one automatically.
     pub private_key: Option<[u8; 32]>,
+
+    /// If `Some`, all the files in this directory and children directories will be automatically
+    /// pushed onto the DHT.
+    ///
+    /// If `#[cfg(feature = "notify")]` isn't enabled, passing `Some` will panic at
+    /// initialization.
+    pub watched_directory: Option<PathBuf>,
 }
 
 impl<T> Network<T> {
     /// Initializes the network.
     pub fn start(config: NetworkConfig) -> Network<T> {
+        let notifications = if let Some(watched_directory) = config.watched_directory {
+            notifier::start_notifier(watched_directory).boxed()
+        } else {
+            stream::pending().boxed()
+        };
+
         let local_keypair = if let Some(mut private_key) = config.private_key {
             let key = identity::ed25519::SecretKey::from_bytes(&mut private_key).unwrap();
             identity::Keypair::Ed25519(From::from(key))
@@ -98,17 +120,32 @@ impl<T> Network<T> {
 
         let kademlia = Kademlia::with_config(
             local_peer_id.clone(),
-            MemoryStore::new(local_peer_id.clone()),
+            MemoryStore::with_config(
+                local_peer_id.clone(),
+                MemoryStoreConfig {
+                    // TODO: that's a max of 2GB; to increase we should be writing this on disk
+                    max_value_bytes: 10 * 1024 * 1024,
+                    max_records: 256,
+                    ..Default::default()
+                },
+            ),
             {
                 let mut cfg = KademliaConfig::default();
+                // TODO: files that are too large don't go through the Kademlia protocol size limit; this should be configured here
                 cfg.set_replication_interval(Some(Duration::from_secs(60)));
                 cfg
             },
         );
 
         let mut swarm = Swarm::new(transport, kademlia, local_peer_id);
-        Swarm::listen_on(&mut swarm, "/ip6/::/tcp/30333".parse().unwrap()).unwrap();
-        Swarm::listen_on(&mut swarm, "/ip4/0.0.0.0/tcp/30333".parse().unwrap()).unwrap();
+
+        // Don't panic if we can't listen on these addresses.
+        if let Err(err) = Swarm::listen_on(&mut swarm, "/ip6/::/tcp/30333".parse().unwrap()) {
+            log::warn!("Failed to start listener: {}", err);
+        }
+        if let Err(err) = Swarm::listen_on(&mut swarm, "/ip4/0.0.0.0/tcp/30333".parse().unwrap()) {
+            log::warn!("Failed to start listener: {}", err);
+        }
 
         // Bootnode.
         swarm.add_address(
@@ -120,16 +157,9 @@ impl<T> Network<T> {
 
         swarm.bootstrap();
 
-        // TODO: use All when network is large enough
-        // TODO: temporary for testing
-        swarm.put_record(
-            libp2p_kad::Record::new(vec![0; 32], vec![5, 6, 7, 8]),
-            libp2p_kad::Quorum::One,
-        );
-        swarm.get_record(&From::from(vec![0; 32]), libp2p_kad::Quorum::One);
-
         Network {
             swarm,
+            notifications,
             active_fetches: Vec::new(),
             events_queue: VecDeque::new(),
         }
@@ -151,8 +181,20 @@ impl<T> Network<T> {
                 return event;
             }
 
-            match self.swarm.next_event().await {
-                SwarmEvent::Behaviour(KademliaEvent::GetRecordResult(Ok(result))) => {
+            let next_event = {
+                let from_swarm = self.swarm.next_event();
+                let from_notifier = self.notifications.next();
+                futures::pin_mut!(from_swarm, from_notifier);
+                match future::select(from_swarm, from_notifier).await {
+                    future::Either::Left((ev, _)) => future::Either::Left(ev),
+                    future::Either::Right((ev, _)) => future::Either::Right(ev),
+                }
+            };
+
+            match next_event {
+                future::Either::Left(SwarmEvent::Behaviour(KademliaEvent::GetRecordResult(
+                    Ok(result),
+                ))) => {
                     for record in result.records {
                         log::debug!("Successfully loaded record from DHT: {:?}", record.key);
                         if let Some(pos) = self
@@ -168,7 +210,9 @@ impl<T> Network<T> {
                         }
                     }
                 }
-                SwarmEvent::Behaviour(KademliaEvent::GetRecordResult(Err(err))) => {
+                future::Either::Left(SwarmEvent::Behaviour(KademliaEvent::GetRecordResult(
+                    Err(err),
+                ))) => {
                     log::info!("Failed to get record: {:?}", err);
                     let fetch_failed_key = err.into_key();
                     if let Some(pos) = self
@@ -181,13 +225,28 @@ impl<T> Network<T> {
                             .push_back(NetworkEvent::FetchFail { user_data });
                     }
                 }
-                SwarmEvent::Behaviour(ev) => log::info!("Other event: {:?}", ev),
-                SwarmEvent::Connected(peer) => log::trace!("Connected to {:?}", peer),
-                SwarmEvent::Disconnected(peer) => log::trace!("Disconnected from {:?}", peer),
-                SwarmEvent::NewListenAddr(_) => {}
-                SwarmEvent::ExpiredListenAddr(_) => {}
-                SwarmEvent::UnreachableAddr { .. } => {}
-                SwarmEvent::StartConnect(_) => {}
+                future::Either::Left(SwarmEvent::Behaviour(ev)) => {
+                    log::info!("Other event: {:?}", ev)
+                }
+                future::Either::Left(SwarmEvent::Connected(peer)) => {
+                    log::trace!("Connected to {:?}", peer)
+                }
+                future::Either::Left(SwarmEvent::Disconnected(peer)) => {
+                    log::trace!("Disconnected from {:?}", peer)
+                }
+                future::Either::Left(SwarmEvent::NewListenAddr(_)) => {}
+                future::Either::Left(SwarmEvent::ExpiredListenAddr(_)) => {}
+                future::Either::Left(SwarmEvent::UnreachableAddr { .. }) => {}
+                future::Either::Left(SwarmEvent::StartConnect(_)) => {}
+                future::Either::Right(Some(notifier::NotifierEvent::InjectDht { hash, data })) => {
+                    // TODO: use Quorum::Majority when network is large enough
+                    // TODO: is republication automatic?
+                    self.swarm.put_record(
+                        libp2p_kad::Record::new(hash.to_vec(), data),
+                        libp2p_kad::Quorum::One,
+                    );
+                }
+                future::Either::Right(None) => panic!(),
             }
         }
     }
@@ -195,6 +254,9 @@ impl<T> Network<T> {
 
 impl Default for NetworkConfig {
     fn default() -> Self {
-        NetworkConfig { private_key: None }
+        NetworkConfig {
+            private_key: None,
+            watched_directory: None,
+        }
     }
 }
