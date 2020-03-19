@@ -85,9 +85,9 @@ pub struct NetworkConfig {
 
 impl<T> Network<T> {
     /// Initializes the network.
-    pub fn start(config: NetworkConfig) -> Network<T> {
+    pub fn start(config: NetworkConfig) -> Result<Network<T>, io::Error> {
         let notifications = if let Some(watched_directory) = config.watched_directory {
-            notifier::start_notifier(watched_directory).boxed()
+            notifier::start_notifier(watched_directory)?.boxed()
         } else {
             stream::pending().boxed()
         };
@@ -157,12 +157,12 @@ impl<T> Network<T> {
 
         swarm.bootstrap();
 
-        Network {
+        Ok(Network {
             swarm,
             notifications,
             active_fetches: Vec::new(),
             events_queue: VecDeque::new(),
-        }
+        })
     }
 
     /// Starts fetching from the network the value corresponding to the given hash.
