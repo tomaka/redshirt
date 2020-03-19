@@ -135,7 +135,6 @@ impl<T> Network<T> {
             ),
             {
                 let mut cfg = KademliaConfig::default();
-                // TODO: files that are too large don't go through the Kademlia protocol size limit; this should be configured here
                 cfg.set_replication_interval(Some(Duration::from_secs(60)));
                 cfg.set_max_packet_size(10 * 1024 * 1024);
                 cfg
