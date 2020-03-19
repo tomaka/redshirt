@@ -30,12 +30,16 @@ pub enum NotifierEvent {
 }
 
 /// Returns a stream of events about the given path in the file system.
-pub fn start_notifier(path: impl AsRef<Path>) -> Result<impl Stream<Item = NotifierEvent>, io::Error> {
+pub fn start_notifier(
+    path: impl AsRef<Path>,
+) -> Result<impl Stream<Item = NotifierEvent>, io::Error> {
     start_notifier_inner(path)
 }
 
 #[cfg(feature = "notify")]
-fn start_notifier_inner(path: impl AsRef<Path>) -> Result<impl Stream<Item = NotifierEvent>, io::Error> {
+fn start_notifier_inner(
+    path: impl AsRef<Path>,
+) -> Result<impl Stream<Item = NotifierEvent>, io::Error> {
     use notify::Watcher as _;
 
     let path = path.as_ref().to_owned();
@@ -117,7 +121,9 @@ fn start_notifier_inner(path: impl AsRef<Path>) -> Result<impl Stream<Item = Not
 }
 
 #[cfg(not(feature = "notify"))]
-fn start_notifier_inner(_: impl AsRef<Path>) -> Result<futures::stream::Pending<NotifierEvent>, io::Error> {
+fn start_notifier_inner(
+    _: impl AsRef<Path>,
+) -> Result<futures::stream::Pending<NotifierEvent>, io::Error> {
     panic!("The notify feature is not enabled")
 }
 
