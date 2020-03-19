@@ -14,7 +14,17 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use p2p_loader::{Network, NetworkConfig};
-use std::{env, path::Path};
+use std::{env, path::PathBuf};
+use structopt::StructOpt;
+
+#[derive(Debug, StructOpt)]
+#[structopt(name = "passive-node", about = "Redshirt peer-to-peer node.")]
+struct CliOptions {
+    /// Path to a directory containing Wasm files to automatically push to the DHT.
+    // TODO: turn into a `Vec`
+    #[structopt(long, parse(from_os_str))]
+    watch: Option<PathBuf>,
+}
 
 #[cfg(target_arch = "wasm32")]
 fn main() {
@@ -29,6 +39,8 @@ fn main() {
 }
 
 async fn async_main() {
+    let cli_opts = CliOptions::from_args();
+
     let mut config = NetworkConfig::default();
     config.private_key = if let Ok(key) = env::var("PRIVATE_KEY") {
         let bytes = base64::decode(&key).unwrap();
@@ -39,11 +51,9 @@ async fn async_main() {
     } else {
         None
     };
-    // TODO: hack; use a CLI instead
-    config.watched_directory = Some(Path::new("../target/wasm32-wasi/release").to_owned());
+    config.watched_directory = cli_opts.watch;
 
-    let mut network = Network::<std::convert::Infallible>::start(config); // TODO: use `!`
-
+    let mut network = Network::<std::convert::Infallible>::start(config).unwrap(); // TODO: use `!`
     loop {
         let _ = network.next_event().await;
     }

@@ -14,7 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use futures::prelude::*;
-use std::{fs, path::Path, time::Duration};
+use std::{fs, io, path::Path, time::Duration};
 use walkdir::WalkDir;
 
 /// Event that the notifier can produce.
@@ -30,12 +30,16 @@ pub enum NotifierEvent {
 }
 
 /// Returns a stream of events about the given path in the file system.
-pub fn start_notifier(path: impl AsRef<Path>) -> impl Stream<Item = NotifierEvent> {
+pub fn start_notifier(
+    path: impl AsRef<Path>,
+) -> Result<impl Stream<Item = NotifierEvent>, io::Error> {
     start_notifier_inner(path)
 }
 
 #[cfg(feature = "notify")]
-fn start_notifier_inner(path: impl AsRef<Path>) -> impl Stream<Item = NotifierEvent> {
+fn start_notifier_inner(
+    path: impl AsRef<Path>,
+) -> Result<impl Stream<Item = NotifierEvent>, io::Error> {
     use notify::Watcher as _;
 
     let path = path.as_ref().to_owned();
@@ -44,7 +48,8 @@ fn start_notifier_inner(path: impl AsRef<Path>) -> impl Stream<Item = NotifierEv
     tx.send(notify::DebouncedEvent::Rescan).unwrap();
     let (mut async_tx, async_rx) = futures::channel::mpsc::channel(2);
 
-    let mut watcher = notify::watcher(tx, Duration::from_secs(5)).unwrap();
+    let mut watcher = notify::watcher(tx, Duration::from_secs(5))
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
     watcher
         .watch(&path, notify::RecursiveMode::Recursive)
         .unwrap();
@@ -110,15 +115,16 @@ fn start_notifier_inner(path: impl AsRef<Path>) -> impl Stream<Item = NotifierEv
                     }
                 }
             })
-        })
-        .unwrap();
+        })?;
 
-    async_rx
+    Ok(async_rx)
 }
 
 #[cfg(not(feature = "notify"))]
-fn start_notifier_inner(_: impl AsRef<Path>) -> futures::stream::Pending<NotifierEvent> {
-    panic!()
+fn start_notifier_inner(
+    _: impl AsRef<Path>,
+) -> Result<futures::stream::Pending<NotifierEvent>, io::Error> {
+    panic!("The notify feature is not enabled")
 }
 
 /// Returns true if the given file content can potentially be a Wasm file.
