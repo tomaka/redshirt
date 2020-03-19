@@ -112,7 +112,11 @@ impl<T> Network<T> {
             .authenticate(PlainText2Config {
                 local_public_key: local_keypair.public(),
             })
-            .multiplex(MplexConfig::default())
+            .multiplex({
+                let mut cfg = MplexConfig::default();
+                cfg.split_send_size(10 * 1024 * 1024);
+                cfg
+            })
             // TODO: timeout
             .map(|(id, muxer), _| (id, StreamMuxerBox::new(muxer)))
             .map_err(|err| io::Error::new(io::ErrorKind::Other, err))
@@ -133,6 +137,7 @@ impl<T> Network<T> {
                 let mut cfg = KademliaConfig::default();
                 // TODO: files that are too large don't go through the Kademlia protocol size limit; this should be configured here
                 cfg.set_replication_interval(Some(Duration::from_secs(60)));
+                cfg.set_max_packet_size(10 * 1024 * 1024);
                 cfg
             },
         );

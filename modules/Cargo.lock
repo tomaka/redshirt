@@ -945,7 +945,7 @@ checksum = "d515b1f41455adea1313a4a2ac8a8a477634fbae63cc6100e3aebb207ce61558"
 [[package]]
 name = "libp2p-core"
 version = "0.16.0"
-source = "git+https://github.com/libp2p/rust-libp2p?rev=97a02950bb0b58ad9e01dacabc4d9a09c3e3954a#97a02950bb0b58ad9e01dacabc4d9a09c3e3954a"
+source = "git+https://github.com/libp2p/rust-libp2p?rev=92ce5d6179c059c52a6c58c6c55ad69544ac2e93#92ce5d6179c059c52a6c58c6c55ad69544ac2e93"
 dependencies = [
  "asn1_der",
  "bs58",
@@ -978,7 +978,7 @@ dependencies = [
 [[package]]
 name = "libp2p-kad"
 version = "0.16.2"
-source = "git+https://github.com/libp2p/rust-libp2p?rev=97a02950bb0b58ad9e01dacabc4d9a09c3e3954a#97a02950bb0b58ad9e01dacabc4d9a09c3e3954a"
+source = "git+https://github.com/libp2p/rust-libp2p?rev=92ce5d6179c059c52a6c58c6c55ad69544ac2e93#92ce5d6179c059c52a6c58c6c55ad69544ac2e93"
 dependencies = [
  "arrayvec",
  "bytes",
@@ -1004,7 +1004,7 @@ dependencies = [
 [[package]]
 name = "libp2p-mplex"
 version = "0.16.0"
-source = "git+https://github.com/libp2p/rust-libp2p?rev=97a02950bb0b58ad9e01dacabc4d9a09c3e3954a#97a02950bb0b58ad9e01dacabc4d9a09c3e3954a"
+source = "git+https://github.com/libp2p/rust-libp2p?rev=92ce5d6179c059c52a6c58c6c55ad69544ac2e93#92ce5d6179c059c52a6c58c6c55ad69544ac2e93"
 dependencies = [
  "bytes",
  "fnv 1.0.6 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1019,7 +1019,7 @@ dependencies = [
 [[package]]
 name = "libp2p-plaintext"
 version = "0.16.0"
-source = "git+https://github.com/libp2p/rust-libp2p?rev=97a02950bb0b58ad9e01dacabc4d9a09c3e3954a#97a02950bb0b58ad9e01dacabc4d9a09c3e3954a"
+source = "git+https://github.com/libp2p/rust-libp2p?rev=92ce5d6179c059c52a6c58c6c55ad69544ac2e93#92ce5d6179c059c52a6c58c6c55ad69544ac2e93"
 dependencies = [
  "bytes",
  "futures",
@@ -1036,7 +1036,7 @@ dependencies = [
 [[package]]
 name = "libp2p-swarm"
 version = "0.16.1"
-source = "git+https://github.com/libp2p/rust-libp2p?rev=97a02950bb0b58ad9e01dacabc4d9a09c3e3954a#97a02950bb0b58ad9e01dacabc4d9a09c3e3954a"
+source = "git+https://github.com/libp2p/rust-libp2p?rev=92ce5d6179c059c52a6c58c6c55ad69544ac2e93#92ce5d6179c059c52a6c58c6c55ad69544ac2e93"
 dependencies = [
  "futures",
  "libp2p-core",
@@ -1049,7 +1049,7 @@ dependencies = [
 [[package]]
 name = "libp2p-tcp"
 version = "0.16.0"
-source = "git+https://github.com/libp2p/rust-libp2p?rev=97a02950bb0b58ad9e01dacabc4d9a09c3e3954a#97a02950bb0b58ad9e01dacabc4d9a09c3e3954a"
+source = "git+https://github.com/libp2p/rust-libp2p?rev=92ce5d6179c059c52a6c58c6c55ad69544ac2e93#92ce5d6179c059c52a6c58c6c55ad69544ac2e93"
 dependencies = [
  "async-std",
  "futures",
@@ -1199,7 +1199,7 @@ checksum = "a97fbd5d00e0e37bfb10f433af8f5aaf631e739368dc9fc28286ca81ca4948dc"
 [[package]]
 name = "multistream-select"
 version = "0.7.0"
-source = "git+https://github.com/libp2p/rust-libp2p?rev=97a02950bb0b58ad9e01dacabc4d9a09c3e3954a#97a02950bb0b58ad9e01dacabc4d9a09c3e3954a"
+source = "git+https://github.com/libp2p/rust-libp2p?rev=92ce5d6179c059c52a6c58c6c55ad69544ac2e93#92ce5d6179c059c52a6c58c6c55ad69544ac2e93"
 dependencies = [
  "bytes",
  "futures",
@@ -1320,7 +1320,7 @@ dependencies = [
 [[package]]
 name = "parity-multiaddr"
 version = "0.7.3"
-source = "git+https://github.com/libp2p/rust-libp2p?rev=97a02950bb0b58ad9e01dacabc4d9a09c3e3954a#97a02950bb0b58ad9e01dacabc4d9a09c3e3954a"
+source = "git+https://github.com/libp2p/rust-libp2p?rev=92ce5d6179c059c52a6c58c6c55ad69544ac2e93#92ce5d6179c059c52a6c58c6c55ad69544ac2e93"
 dependencies = [
  "arrayref",
  "bs58",
