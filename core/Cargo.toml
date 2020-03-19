@@ -7,9 +7,11 @@ edition = "2018"
 publish = false
 
 [dependencies]
+atomicbox = { git = "https://github.com/tomaka/atomicbox", branch = "no_std" } # TODO: https://github.com/jorendorff/atomicbox/pull/4 needs publishing
 blake3 = { version = "0.1.1", default-features = false }
 bs58 = { version = "0.3.0", default-features = false, features = ["alloc"] }
 crossbeam-queue = { version = "0.2.1", default-features = false, features = ["alloc"] }
+either = { version = "1.5.3", default-features = false }
 fnv = { git = "https://github.com/dflemstr/rust-fnv", default-features = false }    # TODO: https://github.com/servo/rust-fnv/pull/22
 futures = { version = "0.3.1", default-features = false }      # TODO: necessary?
 hashbrown = { version = "0.6.0", default-features = false }
@@ -18,6 +20,8 @@ proc-macro-hack = "0.5.11"
 redshirt-core-proc-macros = { path = "../core-proc-macros" }
 redshirt-interface-interface = { path = "../interfaces/interface", default-features = false }
 redshirt-loader-interface = { path = "../interfaces/loader", default-features = false }
+redshirt-log-interface = { path = "../interfaces/log", default-features = false }
+redshirt-random-interface = { path = "../interfaces/random", default-features = false }
 redshirt-syscalls = { path = "../interfaces/syscalls", default-features = false }
 redshirt-threads-interface = { path = "../interfaces/threads", default-features = false }
 rand = { version = "0.7", default-features = false }

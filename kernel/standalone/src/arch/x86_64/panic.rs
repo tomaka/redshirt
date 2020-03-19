@@ -13,7 +13,12 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use alloc::string::String;
+//! Panic handling code.
+//!
+//! This panic handler tries to use as little features as possible, in order to maximize the
+//! chances of the panic message being displayed. In particular, it doesn't perform any heap
+//! allocation.
+
 use core::fmt::{self, Write};
 use x86_64::structures::port::PortWrite as _;
 

@@ -19,8 +19,10 @@ use crate::scheduler::vm;
 use crate::signature::Signature;
 use crate::{Pid, ThreadId};
 
-use alloc::{borrow::Cow, sync::Arc, vec::Vec};
+use alloc::{borrow::Cow, boxed::Box, sync::{Arc, Weak}, vec::Vec};
+use atomicbox::AtomicOptionBox;
 use core::{cell::RefCell, fmt};
+use crossbeam_queue::SegQueue;
 use fnv::FnvBuildHasher;
 use hashbrown::{
     hash_map::{Entry, OccupiedEntry},
@@ -38,19 +40,23 @@ use spin::Mutex;
 /// process and per thread, and allows the user to put extra information associated to a process
 /// or a thread.
 pub struct ProcessesCollection<TExtr, TPud, TTud> {
-    /// Allocations of process IDs.
-    pid_pool: IdPool,
+    /// Allocations of process IDs and thread IDs.
+    pid_tid_pool: IdPool,
 
-    /// Allocation of thread IDs.
-    // TODO: merge with pid_pool?
-    tid_pool: IdPool,
+    /// Queue of processes to run. Can contain obsolete entries.
+    execution_queue: SegQueue<Weak<Process<TPud, TTud>>>,
 
     /// List of running processes.
     ///
     /// We hold `Arc`s to processes in order to count the number of "locks" that have been
     /// acquired. Entries are removed from this list only if the number of strong counts is
     /// equal to 1.
-    processes: RefCell<HashMap<Pid, Arc<Process<TPud, TTud>>, BuildNoHashHasher<u64>>>,
+    // TODO: find a solution for that mutex
+    processes: Mutex<HashMap<Pid, Arc<Process<TPud, TTud>>, BuildNoHashHasher<u64>>>,
+
+    /// For each thread, the process it belongs to.
+    // TODO: find a solution for that mutex
+    threads: Mutex<HashMap<ThreadId, Arc<Process<TPud, TTud>>, BuildNoHashHasher<u64>>>,
 
     /// List of functions that processes can call.
     /// The key of this map is an arbitrary `usize` that we pass to the WASM interpreter.
@@ -68,7 +74,7 @@ pub struct ProcessesCollection<TExtr, TPud, TTud> {
 /// Prototype for a `ProcessesCollection` under construction.
 pub struct ProcessesCollectionBuilder<TExtr> {
     /// See the corresponding field in `ProcessesCollection`.
-    pid_pool: IdPool,
+    pid_tid_pool: IdPool,
     /// See the corresponding field in `ProcessesCollection`.
     extrinsics: Vec<TExtr>,
     /// See the corresponding field in `ProcessesCollection`.
@@ -80,9 +86,9 @@ struct Process<TPud, TTud> {
     /// Identifier of the process.
     pid: Pid,
 
-    /// The virtual machine.
-    // TODO: can we talk about this mutex? it's really not great to have a mutex
-    state_machine: Mutex<vm::ProcessStateMachine<Thread<TTud>>>,
+    /// The virtual machine. Contains `None` if this process is currently being executed.
+    // TODO: replace with an AtomicOption once we find a good no_std crate that contains AtomicOption
+    state_machine: AtomicOptionBox<vm::ProcessStateMachine<Thread<TTud>>>,
 
     /// User-chosen data (opaque to us) that describes the process.
     user_data: TPud,
@@ -108,7 +114,7 @@ pub struct ProcessesCollectionProc<'a, TPud, TTud> {
     process: Arc<Process<TPud, TTud>>,
 
     /// Reference to the same field in [`ProcessesCollection`].
-    tid_pool: &'a IdPool,
+    pid_tid_pool: &'a IdPool,
 }
 
 /// Access to a thread within the collection.
@@ -119,7 +125,7 @@ pub struct ProcessesCollectionThread<'a, TPud, TTud> {
     tid: ThreadId,
 
     /// Reference to the same field in [`ProcessesCollection`].
-    tid_pool: &'a IdPool,
+    pid_tid_pool: &'a IdPool,
 
     /// User data extracted from [`Thread`]. Must be put back when this struct is destroyed.
     /// Always `Some`, except right before destruction.
@@ -206,7 +212,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
         proc_user_data: TPud,
         main_thread_user_data: TTud,
     ) -> Result<ProcessesCollectionProc<TPud, TTud>, vm::NewErr> {
-        let main_thread_id = self.tid_pool.assign(); // TODO: check for duplicates
+        let main_thread_id = self.pid_tid_pool.assign(); // TODO: check for duplicates
         let main_thread_data = Thread {
             user_data: Some(main_thread_user_data),
             thread_id: main_thread_id,
@@ -235,23 +241,36 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
         };
 
         // We only modify `self` at the very end.
-        let new_pid = self.pid_pool.assign();
+        let new_pid = self.pid_tid_pool.assign();
         let process = Arc::new(Process {
             pid: new_pid,
-            state_machine: Mutex::new(state_machine),
+            state_machine: AtomicOptionBox::new(Some(Box::new(state_machine))),
             user_data: proc_user_data,
         });
-        let processes = self.processes.borrow_mut();
-        processes.insert(new_pid, process.clone());
 
-        // Shrink the list from time to time so that it doesn't grow too much.
-        if u64::from(new_pid) % 256 == 0 {
-            processes.shrink_to(PROCESSES_MIN_CAPACITY);
+        {
+            let threads = self.threads.lock();
+            threads.insert(main_thread_id, process.clone());
+            // Shrink the list from time to time so that it doesn't grow too much.
+            if u64::from(new_pid) % 256 == 0 {
+                threads.shrink_to(PROCESSES_MIN_CAPACITY);
+            }
         }
+
+        {
+            let processes = self.processes.lock();
+            processes.insert(new_pid, process.clone());
+            // Shrink the list from time to time so that it doesn't grow too much.
+            if u64::from(new_pid) % 256 == 0 {
+                processes.shrink_to(PROCESSES_MIN_CAPACITY);
+            }
+        }
+
+        self.execution_queue.push(Arc::downgrade(&process));
 
         Ok(ProcessesCollectionProc {
             process,
-            tid_pool: &self.tid_pool,
+            pid_tid_pool: &self.pid_tid_pool,
         })
     }
 
@@ -259,47 +278,45 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
     ///
     /// Which thread is run is implementation-defined and no guarantee is made.
     pub fn run(&self) -> RunOneOutcome<TExtr, TPud, TTud> {
-        let processes = self.processes.borrow_mut();
+        // We start by finding a thread that is ready to run.
+        let (state_machine, thread_index) = loop {
+            let process = match self.execution_queue.pop() {
+                Ok(p) => p,
+                Err(_) => return RunOneOutcome::Idle,
+            };
 
-        // We start by finding a thread in `self.processes` that is ready to run.
-        let (mut process, inner_thread_index): (OccupiedEntry<_, _, _>, usize) = {
-            let entries = processes.iter_mut().collect::<Vec<_>>();
-            // TODO: entries.shuffle(&mut rand::thread_rng());
-            let entry = entries
-                .into_iter()
-                .filter_map(|(k, p)| {
-                    if let Some(i) = p.ready_to_run_thread_index() {
-                        Some((*k, i))
+            let process = match process.upgrade() {
+                Some(p) => p,
+                None => continue,   // Obsolete processes are ignored.
+            };
+
+            // "Lock" the process for execution by extracting the state machine.
+            let process = process.state_machine.take(Ordering::AcqRel).unwrap();
+
+            let thread_index = (0..process.num_threads())
+                .find(|thread_n| {
+                    let mut thread = match process.thread(*thread_n) {
+                        Some(t) => t,
+                        None => unreachable!(),
+                    };
+
+                    if thread.user_data().value_back.is_some() {
+                        debug_assert!(thread.user_data().user_data.is_some());
+                        true
                     } else {
-                        None
+                        false
                     }
                 })
-                .next();
-            match entry {
-                Some((pid, inner_thread_index)) => match processes.entry(pid) {
-                    Entry::Occupied(p) => (p, inner_thread_index),
-                    Entry::Vacant(_) => unreachable!(),
-                },
-                None => return RunOneOutcome::Idle,
-            }
+                .unwrap();
+
+            break (process, thread_index)
         };
 
         // Now run the thread until something happens.
+        // This takes most of the CPU time of this function.
         let run_outcome = {
-            // TODO: keeps the mutex locked while running, obviously not great
-            let mut thread = match process
-                .get_mut()
-                .state_machine
-                .lock()
-                .thread(inner_thread_index)
-            {
-                Some(t) => t,
-                None => unreachable!(),
-            };
-            let value_back = match thread.user_data().value_back.take() {
-                Some(vb) => vb,
-                None => unreachable!(),
-            };
+            let mut thread = state_machine.thread(thread_index).unwrap();
+            let value_back = thread.user_data().value_back.take().unwrap();
             thread.run(value_back)
         };
 
@@ -341,7 +358,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
                 thread_id: user_data.thread_id,
                 process: ProcessesCollectionProc {
                     process,
-                    tid_pool: &mut self.tid_pool,
+                    pid_tid_pool: &mut self.pid_tid_pool,
                 },
                 user_data: match user_data.user_data.take() {
                     Some(ud) => ud,
@@ -365,7 +382,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
                     thread: ProcessesCollectionThread {
                         process,
                         thread_index: inner_thread_index,
-                        tid_pool: &self.tid_pool,
+                        pid_tid_pool: &self.pid_tid_pool,
                         user_data,
                     },
                     id: extrinsic,
@@ -398,14 +415,14 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
     pub fn pids<'a>(
         &'a self,
     ) -> impl ExactSizeIterator<Item = ProcessesCollectionProc<'a, TPud, TTud>> + 'a {
-        let processes = self.processes.borrow();
+        let processes = self.processes.lock();
 
         processes
             .values()
             .cloned()
             .map(|process| ProcessesCollectionProc {
                 process,
-                tid_pool: &self.tid_pool,
+                pid_tid_pool: &self.pid_tid_pool,
             })
             .collect::<Vec<_>>()
             .into_iter()
@@ -428,7 +445,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
 
         Some(ProcessesCollectionProc {
             process: p,
-            tid_pool: &mut self.tid_pool,
+            pid_tid_pool: &mut self.pid_tid_pool,
         })
     }
 
@@ -476,7 +493,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
         Some(ProcessesCollectionThread {
             process,
             tid: id,
-            tid_pool: &self.tid_pool,
+            pid_tid_pool: &self.pid_tid_pool,
             user_data: Some(user_data),
         })
     }
@@ -485,7 +502,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
 impl<TExtr> Default for ProcessesCollectionBuilder<TExtr> {
     fn default() -> ProcessesCollectionBuilder<TExtr> {
         ProcessesCollectionBuilder {
-            pid_pool: IdPool::new(),
+            pid_tid_pool: IdPool::new(),
             extrinsics: Default::default(),
             extrinsics_id_assign: Default::default(),
         }
@@ -502,7 +519,7 @@ impl<TExtr> ProcessesCollectionBuilder<TExtr> {
     pub fn reserve_pid(&mut self) -> Pid {
         // Note that we take `&mut self`. It could be `&self`, but that would expose
         // implementation details.
-        self.pid_pool.assign()
+        self.pid_tid_pool.assign()
     }
 
     /// Registers a function that is available for processes to call.
@@ -545,34 +562,19 @@ impl<TExtr> ProcessesCollectionBuilder<TExtr> {
         debug_assert_eq!(self.extrinsics.len(), self.extrinsics_id_assign.len());
 
         ProcessesCollection {
-            pid_pool: self.pid_pool,
-            tid_pool: IdPool::new(),
-            processes: RefCell::new(HashMap::with_capacity_and_hasher(
+            pid_tid_pool: self.pid_tid_pool,
+            execution_queue: SegQueue::new(),
+            threads: Mutex::new(HashMap::with_capacity_and_hasher(
+                PROCESSES_MIN_CAPACITY,     // TODO: no
+                Default::default(),
+            )),
+            processes: Mutex::new(HashMap::with_capacity_and_hasher(
                 PROCESSES_MIN_CAPACITY,
                 Default::default(),
             )),
             extrinsics: self.extrinsics,
             extrinsics_id_assign: self.extrinsics_id_assign,
         }
-    }
-}
-
-impl<TPud, TTud> Process<TPud, TTud> {
-    /// Finds a thread in this process that is ready to be executed.
-    fn ready_to_run_thread_index(&mut self) -> Option<usize> {
-        let lock = self.state_machine.lock();
-        for thread_n in 0..lock.num_threads() {
-            let mut thread = match lock.thread(thread_n) {
-                Some(t) => t,
-                None => unreachable!(),
-            };
-            if thread.user_data().value_back.is_some() {
-                debug_assert!(thread.user_data().user_data.is_some());
-                return Some(thread_n);
-            }
-        }
-
-        None
     }
 }
 
@@ -601,7 +603,7 @@ impl<'a, TPud, TTud> ProcessesCollectionProc<'a, TPud, TTud> {
         params: Vec<wasmi::RuntimeValue>,
         user_data: TTud,
     ) -> Result<ThreadId, vm::StartErr> {
-        let thread_id = self.tid_pool.assign(); // TODO: check for duplicates
+        let thread_id = self.pid_tid_pool.assign(); // TODO: check for duplicates
         let thread_data = Thread {
             user_data: Some(user_data),
             thread_id,
@@ -668,7 +670,7 @@ impl<'a, TPud, TTud> ProcessesCollectionThread<'a, TPud, TTud> {
     pub fn process(&self) -> ProcessesCollectionProc<'a, TPud, TTud> {
         ProcessesCollectionProc {
             process: self.process.clone(),
-            tid_pool: self.tid_pool,
+            pid_tid_pool: self.pid_tid_pool,
         }
     }
 

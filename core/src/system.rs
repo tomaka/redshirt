@@ -183,7 +183,9 @@ impl System {
                     if self.loading_programs.borrow_mut().remove(&message_id) {
                         let redshirt_loader_interface::ffi::LoadResponse { result } =
                             Decode::decode(response.unwrap()).unwrap();
-                        let module = Module::from_bytes(&result.unwrap()).unwrap();
+                        // TODO: don't unwrap
+                        let module = Module::from_bytes(&result.expect("loader returned error"))
+                            .expect("module isn't proper wasm");
                         match self.core.execute(&module) {
                             Ok(_) => {}
                             Err(_) => panic!(),

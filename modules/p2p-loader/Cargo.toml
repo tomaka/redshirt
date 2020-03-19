@@ -7,19 +7,24 @@ publish = false
 
 [dependencies]
 base64 = { version = "0.11.0", default-features = false, features = ["alloc"] }
+blake3 = { version = "0.1.1", default-features = false }
+bs58 = "0.3.0"
 futures = "0.3"
-libp2p-core = "0.14.0-alpha.1"
-libp2p-kad = "0.14.0-alpha.1"
-libp2p-mplex = "0.14.0-alpha.1"
-#libp2p-secio = "0.14.0-alpha.1"
-libp2p-plaintext = "0.14.0-alpha.1"
-libp2p-swarm = "0.4.0-alpha.1"
+libp2p-core = { git = "https://github.com/libp2p/rust-libp2p", rev = "97a02950bb0b58ad9e01dacabc4d9a09c3e3954a" }
+libp2p-kad = { git = "https://github.com/libp2p/rust-libp2p", rev = "97a02950bb0b58ad9e01dacabc4d9a09c3e3954a" }
+libp2p-mplex = { git = "https://github.com/libp2p/rust-libp2p", rev = "97a02950bb0b58ad9e01dacabc4d9a09c3e3954a" }
+#libp2p-noise = { git = "https://github.com/libp2p/rust-libp2p", rev = "97a02950bb0b58ad9e01dacabc4d9a09c3e3954a" }
+libp2p-plaintext = { git = "https://github.com/libp2p/rust-libp2p", rev = "97a02950bb0b58ad9e01dacabc4d9a09c3e3954a" }
+libp2p-swarm = { git = "https://github.com/libp2p/rust-libp2p", rev = "97a02950bb0b58ad9e01dacabc4d9a09c3e3954a" }
 log = "0.4"
+notify = { version = "4.0.15", optional = true }
 parity-scale-codec = "1.0.5"
+structopt = "0.3.5"
+walkdir = "2.3.1"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 env_logger = "0.7.1"
-libp2p-tcp = "0.14.0-alpha.1"
+libp2p-tcp = { git = "https://github.com/libp2p/rust-libp2p", rev = "97a02950bb0b58ad9e01dacabc4d9a09c3e3954a" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 redshirt-interface-interface = { path = "../../interfaces/interface" }

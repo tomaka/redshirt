@@ -25,6 +25,7 @@ pub const INTERFACE: InterfaceHash = InterfaceHash::from_raw_hash([
 
 #[derive(Debug, Encode, Decode)]
 pub enum LoaderMessage {
+    /// Load the data corresponding to the blake3 hash passed as parameter.
     Load([u8; 32]),
 }
 
