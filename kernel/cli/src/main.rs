@@ -57,17 +57,17 @@ async fn async_main() {
     let mut cli_requested_processes = Vec::new();
 
     for module_path in cli_opts.module_path {
-        let wasm_file_content = fs::read(module_path).expect("failed to read input file");
+        let wasm_file_content = fs::read(&module_path).expect("failed to read input file");
         let module = redshirt_core::module::Module::from_bytes(&wasm_file_content)
             .expect("failed to parse input file");
-        cli_requested_processes.push((module, true));
+        cli_requested_processes.push((module_path, module, true));
     }
 
     for module_path in cli_opts.background_module_path {
-        let wasm_file_content = fs::read(module_path).expect("failed to read input file");
+        let wasm_file_content = fs::read(&module_path).expect("failed to read input file");
         let module = redshirt_core::module::Module::from_bytes(&wasm_file_content)
             .expect("failed to parse input file");
-        cli_requested_processes.push((module, false));
+        cli_requested_processes.push((module_path, module, false));
     }
 
     let system = redshirt_core::system::SystemBuilder::new()
@@ -81,14 +81,16 @@ async fn async_main() {
         ))
         .with_main_programs(cli_opts.module_hash)
         .with_main_programs(cli_opts.background_module_hash)
-        .build();
+        .build()
+        .expect("Failed to start system");
 
     let mut cli_pids = Vec::with_capacity(cli_requested_processes.len());
     // TODO: should also contain the `module_hash`es
-    for (module, foreground) in cli_requested_processes {
-        let pid = system.execute(&module);
-        if foreground {
-            cli_pids.push(pid);
+    for (module_path, module, foreground) in cli_requested_processes {
+        match system.execute(&module) {
+            Ok(pid) if foreground => cli_pids.push(pid),
+            Ok(_) => {}
+            Err(err) => panic!("Failed to load {}: {}", module_path.display(), err),
         }
     }
 
