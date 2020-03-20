@@ -90,7 +90,8 @@ where
 
         let system = system_builder
             .with_main_program(From::from([0; 32])) // TODO: just a test
-            .build();
+            .build()
+            .expect("Failed to start kernel");
 
         loop {
             // TODO: ideally the entire function would be async, and this would be an `await`,
