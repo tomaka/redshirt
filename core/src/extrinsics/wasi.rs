@@ -229,7 +229,7 @@ impl Extrinsics for WasiExtrinsics {
                 let context = ContextInner::Finished;
                 let action = ExtrinsicsAction::Resume(Some(RuntimeValue::I32(0)));
                 (Context(context), action)
-            },
+            }
             ExtrinsicIdInner::ArgsSizesGet => {
                 let num_ptr = params.next().unwrap().try_into::<i32>().unwrap() as u32;
                 let buf_size_ptr = params.next().unwrap().try_into::<i32>().unwrap() as u32;
@@ -245,7 +245,7 @@ impl Extrinsics for WasiExtrinsics {
                 let context = ContextInner::Finished;
                 let action = ExtrinsicsAction::Resume(Some(RuntimeValue::I32(0)));
                 (Context(context), action)
-            },
+            }
             ExtrinsicIdInner::ClockTimeGet => unimplemented!(),
             ExtrinsicIdInner::EnvironGet => unimplemented!(),
             ExtrinsicIdInner::EnvironSizesGet => {
