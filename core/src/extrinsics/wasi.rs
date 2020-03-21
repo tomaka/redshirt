@@ -218,7 +218,22 @@ impl Extrinsics for WasiExtrinsics {
     ) -> (Self::Context, ExtrinsicsAction) {
         match id.0 {
             ExtrinsicIdInner::ArgsGet => unimplemented!(),
-            ExtrinsicIdInner::ArgsSizesGet => unimplemented!(),
+            ExtrinsicIdInner::ArgsSizesGet => {
+                let num_ptr = params.next().unwrap().try_into::<i32>().unwrap() as u32;
+                let buf_size_ptr = params.next().unwrap().try_into::<i32>().unwrap() as u32;
+                assert!(params.next().is_none());
+
+                mem_access
+                    .write_memory(num_ptr, &0u64.to_le_bytes())
+                    .unwrap(); // TODO: don't unwrap
+                mem_access
+                    .write_memory(buf_size_ptr, &0u64.to_le_bytes())
+                    .unwrap(); // TODO: don't unwrap
+
+                let context = ContextInner::Finished;
+                let action = ExtrinsicsAction::Resume(Some(RuntimeValue::I32(0)));
+                (Context(context), action)
+            },
             ExtrinsicIdInner::ClockTimeGet => unimplemented!(),
             ExtrinsicIdInner::EnvironGet => unimplemented!(),
             ExtrinsicIdInner::EnvironSizesGet => {
