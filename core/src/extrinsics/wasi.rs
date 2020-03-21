@@ -15,11 +15,15 @@
 
 //! Implementation of the [`Extrinsics`] trait that supports WASI.
 
+// Reference for function signatures:
+// https://github.com/WebAssembly/wasi-libc/blob/e1149ab0677317c6c981bcbb5e4c159e4d2b9669/libc-bottom-half/headers/public/wasi/api.h
+
 use crate::extrinsics::{Extrinsics, ExtrinsicsAction, ExtrinsicsMemoryAccess, SupportedExtrinsic};
 use crate::{sig, Encode as _, EncodedMessage, ThreadId};
 
 use alloc::{
     borrow::Cow,
+    string::String,
     vec,
     vec::{IntoIter, Vec},
 };
@@ -36,10 +40,24 @@ pub struct ExtrinsicId(ExtrinsicIdInner);
 
 #[derive(Debug, Clone)]
 enum ExtrinsicIdInner {
+    ArgsGet,
+    ArgsSizesGet,
     ClockTimeGet,
     EnvironGet,
     EnvironSizesGet,
+    FdClose,
+    FdFdstatGet,
+    FdFdstatSetFlags,
+    FdFileStatGet,
+    FdPrestatDirName,
+    FdPrestatGet,
+    FdRead,
+    FdSeek,
     FdWrite,
+    PathCreateDirectory,
+    PathFilestatGet,
+    PathOpen,
+    PollOneOff,
     ProcExit,
     RandomGet,
     SchedYield,
@@ -62,6 +80,18 @@ impl Extrinsics for WasiExtrinsics {
     fn supported_extrinsics() -> Self::Iterator {
         vec![
             SupportedExtrinsic {
+                id: ExtrinsicId(ExtrinsicIdInner::ArgsGet),
+                wasm_interface: Cow::Borrowed("wasi_snapshot_preview1"),
+                function_name: Cow::Borrowed("args_get"),
+                signature: sig!((I32, I32) -> I32),
+            },
+            SupportedExtrinsic {
+                id: ExtrinsicId(ExtrinsicIdInner::ArgsSizesGet),
+                wasm_interface: Cow::Borrowed("wasi_snapshot_preview1"),
+                function_name: Cow::Borrowed("args_sizes_get"),
+                signature: sig!((I32, I32) -> I32),
+            },
+            SupportedExtrinsic {
                 id: ExtrinsicId(ExtrinsicIdInner::ClockTimeGet),
                 wasm_interface: Cow::Borrowed("wasi_snapshot_preview1"),
                 function_name: Cow::Borrowed("clock_time_get"),
@@ -80,9 +110,81 @@ impl Extrinsics for WasiExtrinsics {
                 signature: sig!((I32, I32) -> I32),
             },
             SupportedExtrinsic {
+                id: ExtrinsicId(ExtrinsicIdInner::FdClose),
+                wasm_interface: Cow::Borrowed("wasi_snapshot_preview1"),
+                function_name: Cow::Borrowed("fd_close"),
+                signature: sig!((I32) -> I32),
+            },
+            SupportedExtrinsic {
+                id: ExtrinsicId(ExtrinsicIdInner::FdFdstatGet),
+                wasm_interface: Cow::Borrowed("wasi_snapshot_preview1"),
+                function_name: Cow::Borrowed("fd_fdstat_get"),
+                signature: sig!((I32, I32) -> I32),
+            },
+            SupportedExtrinsic {
+                id: ExtrinsicId(ExtrinsicIdInner::FdFdstatSetFlags),
+                wasm_interface: Cow::Borrowed("wasi_snapshot_preview1"),
+                function_name: Cow::Borrowed("fd_fdstat_set_flags"),
+                signature: sig!((I32, I32) -> I32),
+            },
+            SupportedExtrinsic {
+                id: ExtrinsicId(ExtrinsicIdInner::FdFileStatGet),
+                wasm_interface: Cow::Borrowed("wasi_snapshot_preview1"),
+                function_name: Cow::Borrowed("fd_filestat_get"),
+                signature: sig!((I32, I32) -> I32),
+            },
+            SupportedExtrinsic {
+                id: ExtrinsicId(ExtrinsicIdInner::FdPrestatDirName),
+                wasm_interface: Cow::Borrowed("wasi_snapshot_preview1"),
+                function_name: Cow::Borrowed("fd_prestat_dir_name"),
+                signature: sig!((I32, I32, I32) -> I32),
+            },
+            SupportedExtrinsic {
+                id: ExtrinsicId(ExtrinsicIdInner::FdPrestatGet),
+                wasm_interface: Cow::Borrowed("wasi_snapshot_preview1"),
+                function_name: Cow::Borrowed("fd_prestat_get"),
+                signature: sig!((I32, I32) -> I32),
+            },
+            SupportedExtrinsic {
+                id: ExtrinsicId(ExtrinsicIdInner::FdRead),
+                wasm_interface: Cow::Borrowed("wasi_snapshot_preview1"),
+                function_name: Cow::Borrowed("fd_read"),
+                signature: sig!((I32, I32, I32, I32) -> I32),
+            },
+            SupportedExtrinsic {
+                id: ExtrinsicId(ExtrinsicIdInner::FdSeek),
+                wasm_interface: Cow::Borrowed("wasi_snapshot_preview1"),
+                function_name: Cow::Borrowed("fd_seek"),
+                signature: sig!((I32, I64, I32, I32) -> I32),
+            },
+            SupportedExtrinsic {
                 id: ExtrinsicId(ExtrinsicIdInner::FdWrite),
                 wasm_interface: Cow::Borrowed("wasi_snapshot_preview1"),
                 function_name: Cow::Borrowed("fd_write"),
+                signature: sig!((I32, I32, I32, I32) -> I32),
+            },
+            SupportedExtrinsic {
+                id: ExtrinsicId(ExtrinsicIdInner::PathCreateDirectory),
+                wasm_interface: Cow::Borrowed("wasi_snapshot_preview1"),
+                function_name: Cow::Borrowed("path_create_directory"),
+                signature: sig!((I32, I32, I32) -> I32),
+            },
+            SupportedExtrinsic {
+                id: ExtrinsicId(ExtrinsicIdInner::PathFilestatGet),
+                wasm_interface: Cow::Borrowed("wasi_snapshot_preview1"),
+                function_name: Cow::Borrowed("path_filestat_get"),
+                signature: sig!((I32, I32, I32, I32, I32) -> I32),
+            },
+            SupportedExtrinsic {
+                id: ExtrinsicId(ExtrinsicIdInner::PathOpen),
+                wasm_interface: Cow::Borrowed("wasi_snapshot_preview1"),
+                function_name: Cow::Borrowed("path_open"),
+                signature: sig!((I32, I32, I32, I32, I32, I64, I64, I32, I32) -> I32),
+            },
+            SupportedExtrinsic {
+                id: ExtrinsicId(ExtrinsicIdInner::PollOneOff),
+                wasm_interface: Cow::Borrowed("wasi_snapshot_preview1"),
+                function_name: Cow::Borrowed("poll_oneoff"),
                 signature: sig!((I32, I32, I32, I32) -> I32),
             },
             SupportedExtrinsic {
@@ -115,6 +217,8 @@ impl Extrinsics for WasiExtrinsics {
         mem_access: &mut impl ExtrinsicsMemoryAccess,
     ) -> (Self::Context, ExtrinsicsAction) {
         match id.0 {
+            ExtrinsicIdInner::ArgsGet => unimplemented!(),
+            ExtrinsicIdInner::ArgsSizesGet => unimplemented!(),
             ExtrinsicIdInner::ClockTimeGet => unimplemented!(),
             ExtrinsicIdInner::EnvironGet => unimplemented!(),
             ExtrinsicIdInner::EnvironSizesGet => {
@@ -133,12 +237,109 @@ impl Extrinsics for WasiExtrinsics {
                 let action = ExtrinsicsAction::Resume(Some(RuntimeValue::I32(0)));
                 (Context(context), action)
             }
+            ExtrinsicIdInner::FdClose => unimplemented!(),
+            ExtrinsicIdInner::FdFdstatGet => {
+                let _fd = params.next().unwrap().try_into::<i32>().unwrap() as u32;
+                let _stat_out_buf = params.next().unwrap().try_into::<i32>().unwrap() as u32;
+                assert!(params.next().is_none());
+
+                // TODO: stdin/stdout/stderr
+                if _fd <= 2 {
+                    unimplemented!()
+                }
+
+                // Returning `__WASI_ERRNO_NOENT` all the time.
+                let context = ContextInner::Finished;
+                let action = ExtrinsicsAction::Resume(Some(RuntimeValue::I32(44)));
+                (Context(context), action)
+            }
+            ExtrinsicIdInner::FdFdstatSetFlags => unimplemented!(),
+            ExtrinsicIdInner::FdFileStatGet => {
+                let _fd = params.next().unwrap().try_into::<i32>().unwrap() as u32;
+                let _stat_out_buf = params.next().unwrap().try_into::<i32>().unwrap() as u32;
+                assert!(params.next().is_none());
+
+                // TODO: stdin/stdout/stderr
+                if _fd <= 2 {
+                    unimplemented!()
+                }
+
+                // Returning `__WASI_ERRNO_NOENT` all the time.
+                let context = ContextInner::Finished;
+                let action = ExtrinsicsAction::Resume(Some(RuntimeValue::I32(44)));
+                (Context(context), action)
+            }
+            ExtrinsicIdInner::FdPrestatDirName => unimplemented!(),
+            ExtrinsicIdInner::FdPrestatGet => {
+                let _fd = params.next().unwrap().try_into::<i32>().unwrap() as u32;
+                let _out_ptr = params.next().unwrap().try_into::<i32>().unwrap() as u32;
+                assert!(params.next().is_none());
+
+                // TODO: stdin/stdout/stderr
+                if _fd <= 2 {
+                    unimplemented!()
+                }
+
+                // Returning `__WASI_ERRNO_NOENT` all the time.
+                let context = ContextInner::Finished;
+                let action = ExtrinsicsAction::Resume(Some(RuntimeValue::I32(44)));
+                (Context(context), action)
+            }
+            ExtrinsicIdInner::FdRead => unimplemented!(),
+            ExtrinsicIdInner::FdSeek => unimplemented!(),
             ExtrinsicIdInner::FdWrite => {
                 let action = fd_write(params, mem_access);
                 let context = ContextInner::Resume(Some(RuntimeValue::I32(0)));
                 (Context(context), action)
             }
+            ExtrinsicIdInner::PathCreateDirectory => unimplemented!(),
+            ExtrinsicIdInner::PathFilestatGet => unimplemented!(),
+            ExtrinsicIdInner::PathOpen => {
+                let _fd = params.next().unwrap().try_into::<i32>().unwrap() as u32;
+                let _dirflags = params.next().unwrap().try_into::<i32>().unwrap() as u32;
+                let _path = {
+                    let path_buf = params.next().unwrap().try_into::<i32>().unwrap() as u32;
+                    let path_buf_len = params.next().unwrap().try_into::<i32>().unwrap() as u32;
+                    // TODO: don't unwrap below
+                    let path_utf8 = mem_access
+                        .read_memory(path_buf..path_buf + path_buf_len)
+                        .unwrap();
+                    String::from_utf8(path_utf8).unwrap()
+                };
+                let _open_flags = params.next().unwrap().try_into::<i32>().unwrap() as u32;
+                let _fs_rights_base = params.next().unwrap().try_into::<i64>().unwrap() as u64;
+                let _fs_rights_inherting = params.next().unwrap().try_into::<i64>().unwrap() as u64;
+                let _fd_flags = params.next().unwrap().try_into::<i32>().unwrap() as u32;
+                let opened_fd_ptr = params.next().unwrap().try_into::<i32>().unwrap() as u32;
+                assert!(params.next().is_none());
+
+                // TODO: is it necessary to write the fd out buffer when error happens?
+                mem_access
+                    .write_memory(opened_fd_ptr, &0u32.to_le_bytes())
+                    .unwrap(); // TODO: don't unwrap
+
+                // Returning `__WASI_ERRNO_NOENT` all the time.
+                let context = ContextInner::Finished;
+                let action = ExtrinsicsAction::Resume(Some(RuntimeValue::I32(44)));
+                (Context(context), action)
+            }
+            ExtrinsicIdInner::PollOneOff => {
+                let _subscriptions_buf = params.next().unwrap().try_into::<i32>().unwrap() as u32;
+                let _events_out_buf = params.next().unwrap().try_into::<i32>().unwrap() as u32;
+                let _buf_size = params.next().unwrap().try_into::<i32>().unwrap() as u32;
+                let _num_events_out = params.next().unwrap().try_into::<i32>().unwrap() as u32;
+                assert!(params.next().is_none());
+
+                unimplemented!()
+            }
             ExtrinsicIdInner::ProcExit => {
+                let _ret_val = params.next().unwrap().try_into::<i32>().unwrap() as u32;
+                assert!(params.next().is_none());
+
+                // TODO: returning `ProgramCrash` leads to `unimplemented!()`, so we panic
+                // beforehand for a more explicit message
+                panic!("proc_exit called with {:?}", _ret_val);
+
                 // TODO: implement in a better way?
                 let context = ContextInner::Finished;
                 (Context(context), ExtrinsicsAction::ProgramCrash)
@@ -190,7 +391,7 @@ impl Extrinsics for WasiExtrinsics {
                 let value: redshirt_random_interface::ffi::GenerateResponse =
                     match response.decode() {
                         Ok(v) => v,
-                        Err(e) => return ExtrinsicsAction::ProgramCrash,
+                        Err(_) => return ExtrinsicsAction::ProgramCrash,
                     };
 
                 assert!(
