@@ -217,7 +217,19 @@ impl Extrinsics for WasiExtrinsics {
         mem_access: &mut impl ExtrinsicsMemoryAccess,
     ) -> (Self::Context, ExtrinsicsAction) {
         match id.0 {
-            ExtrinsicIdInner::ArgsGet => unimplemented!(),
+            ExtrinsicIdInner::ArgsGet => {
+                let argv_out = params.next().unwrap().try_into::<i32>().unwrap() as u32;
+                let _argv_buf_out = params.next().unwrap().try_into::<i32>().unwrap() as u32;
+                assert!(params.next().is_none());
+
+                mem_access
+                    .write_memory(argv_out, &0u64.to_le_bytes())
+                    .unwrap(); // TODO: don't unwrap
+
+                let context = ContextInner::Finished;
+                let action = ExtrinsicsAction::Resume(Some(RuntimeValue::I32(0)));
+                (Context(context), action)
+            },
             ExtrinsicIdInner::ArgsSizesGet => {
                 let num_ptr = params.next().unwrap().try_into::<i32>().unwrap() as u32;
                 let buf_size_ptr = params.next().unwrap().try_into::<i32>().unwrap() as u32;
@@ -263,9 +275,9 @@ impl Extrinsics for WasiExtrinsics {
                     unimplemented!()
                 }
 
-                // Returning `__WASI_ERRNO_NOENT` all the time.
+                // Returning `__WASI_ERRNO_BADF` all the time.
                 let context = ContextInner::Finished;
-                let action = ExtrinsicsAction::Resume(Some(RuntimeValue::I32(44)));
+                let action = ExtrinsicsAction::Resume(Some(RuntimeValue::I32(8)));
                 (Context(context), action)
             }
             ExtrinsicIdInner::FdFdstatSetFlags => unimplemented!(),
@@ -279,9 +291,9 @@ impl Extrinsics for WasiExtrinsics {
                     unimplemented!()
                 }
 
-                // Returning `__WASI_ERRNO_NOENT` all the time.
+                // Returning `__WASI_ERRNO_BADF` all the time.
                 let context = ContextInner::Finished;
-                let action = ExtrinsicsAction::Resume(Some(RuntimeValue::I32(44)));
+                let action = ExtrinsicsAction::Resume(Some(RuntimeValue::I32(8)));
                 (Context(context), action)
             }
             ExtrinsicIdInner::FdPrestatDirName => unimplemented!(),
@@ -295,9 +307,9 @@ impl Extrinsics for WasiExtrinsics {
                     unimplemented!()
                 }
 
-                // Returning `__WASI_ERRNO_NOENT` all the time.
+                // Returning `__WASI_ERRNO_BADF` all the time.
                 let context = ContextInner::Finished;
-                let action = ExtrinsicsAction::Resume(Some(RuntimeValue::I32(44)));
+                let action = ExtrinsicsAction::Resume(Some(RuntimeValue::I32(8)));
                 (Context(context), action)
             }
             ExtrinsicIdInner::FdRead => unimplemented!(),
@@ -328,6 +340,8 @@ impl Extrinsics for WasiExtrinsics {
                 let opened_fd_ptr = params.next().unwrap().try_into::<i32>().unwrap() as u32;
                 assert!(params.next().is_none());
 
+                panic!("{:?}", _path);
+
                 // TODO: is it necessary to write the fd out buffer when error happens?
                 mem_access
                     .write_memory(opened_fd_ptr, &0u32.to_le_bytes())
@@ -353,6 +367,8 @@ impl Extrinsics for WasiExtrinsics {
 
                 // TODO: returning `ProgramCrash` leads to `unimplemented!()`, so we panic
                 // beforehand for a more explicit message
+                // If the exit code is weird, it's probably one of these values:
+                // https://github.com/WebAssembly/wasi-libc/blob/320054e84f8f2440def3b1c8700cedb8fd697bf8/libc-top-half/musl/include/sysexits.h
                 panic!("proc_exit called with {:?}", _ret_val);
 
                 // TODO: implement in a better way?
