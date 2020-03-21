@@ -948,6 +948,7 @@ dependencies = [
  "redshirt-syscalls",
  "smallvec",
  "spin",
+ "wasi",
  "wasmi",
 ]
 
