@@ -144,6 +144,7 @@ enum ExtrinsicIdInner {
 pub struct Context(ContextInner);
 
 enum ContextInner {
+    WaitClockVal { out_ptr: u32 },
     WaitRandom { out_ptr: u32, remaining_len: u32 },
     Resume(Option<RuntimeValue>),
     Finished,
@@ -327,6 +328,23 @@ impl Extrinsics for WasiExtrinsics {
         mem_access: &mut impl ExtrinsicsMemoryAccess,
     ) -> ExtrinsicsAction {
         match ctxt.0 {
+            ContextInner::WaitClockVal { out_ptr } => {
+                let response = response.unwrap();
+                let value: u128 = match response.decode() {
+                    Ok(v) => v,
+                    Err(_) => return ExtrinsicsAction::ProgramCrash,
+                };
+
+                let converted_value: wasi::Timestamp =
+                    wasi::Timestamp::try_from(value % u128::from(wasi::Timestamp::max_value()))
+                        .unwrap();
+                mem_access
+                    .write_memory(out_ptr, &converted_value.to_le_bytes())
+                    .unwrap(); // TODO: don't unwrap
+
+                ctxt.0 = ContextInner::Finished;
+                ExtrinsicsAction::Resume(Some(RuntimeValue::I32(0)))
+            }
             ContextInner::WaitRandom {
                 mut out_ptr,
                 mut remaining_len,
@@ -400,28 +418,31 @@ fn args_sizes_get(
 fn clock_time_get(
     _: &WasiExtrinsics,
     mut params: impl ExactSizeIterator<Item = RuntimeValue>,
-    mem_access: &mut impl ExtrinsicsMemoryAccess,
+    _: &mut impl ExtrinsicsMemoryAccess,
 ) -> (ContextInner, ExtrinsicsAction) {
     let clock_id = params.next().unwrap().try_into::<i32>().unwrap() as u32;
     let _precision = params.next().unwrap().try_into::<i64>().unwrap();
 
-    let clock_value: u64 = match clock_id {
-        wasi::CLOCKID_REALTIME => 0,  // TODO: wrong; emit message
-        wasi::CLOCKID_MONOTONIC => 0, // TODO: wrong; emit message
-        wasi::CLOCKID_PROCESS_CPUTIME_ID => unimplemented!(),
-        wasi::CLOCKID_THREAD_CPUTIME_ID => unimplemented!(),
-        _ => panic!(),
-    };
-
     let time_out = params.next().unwrap().try_into::<i32>().unwrap() as u32;
     assert!(params.next().is_none());
 
-    mem_access
-        .write_memory(time_out, &clock_value.to_le_bytes())
-        .unwrap();
+    match clock_id {
+        // TODO: as a hack for now handle REALTIME the same as MONOTONIC
+        wasi::CLOCKID_REALTIME | wasi::CLOCKID_MONOTONIC => {
+            let action = ExtrinsicsAction::EmitMessage {
+                interface: redshirt_time_interface::ffi::INTERFACE,
+                message: redshirt_time_interface::ffi::TimeMessage::GetMonotonic.encode(),
+                response_expected: true,
+            };
 
-    let action = ExtrinsicsAction::Resume(Some(RuntimeValue::I32(0)));
-    (ContextInner::Finished, action)
+            let context = ContextInner::WaitClockVal { out_ptr: time_out };
+
+            (context, action)
+        }
+        wasi::CLOCKID_PROCESS_CPUTIME_ID => unimplemented!(),
+        wasi::CLOCKID_THREAD_CPUTIME_ID => unimplemented!(),
+        _ => panic!(),
+    }
 }
 
 fn environ_get(
@@ -537,8 +558,8 @@ fn fd_fdstat_get(
         mem_access
             .write_memory(
                 stat_out_buf,
-                &slice::from_raw_parts(
-                    &stat as *const _ as *const u8,
+                slice::from_raw_parts(
+                    &stat as *const wasi::Fdstat as *const u8,
                     mem::size_of::<wasi::Fdstat>(),
                 ),
             )
@@ -606,7 +627,7 @@ fn fd_prestat_dir_name(
             let action = ExtrinsicsAction::Resume(ret);
             return (ContextInner::Finished, action);
         }
-        FileDescriptor::FilesystemEntry { inode, .. } => "hello", // TODO:
+        FileDescriptor::FilesystemEntry { .. } => b"hello\0", // TODO:
     };
 
     let path_out = params.next().unwrap().try_into::<i32>().unwrap() as u32;
@@ -614,10 +635,11 @@ fn fd_prestat_dir_name(
     assert!(params.next().is_none());
 
     // TODO: is it correct to truncate if the buffer is too small?
+    // TODO: also, do we need a null terminator?
     let to_write = cmp::min(path_out_len, name.len());
     // TODO: don't unwrap
     mem_access
-        .write_memory(path_out, &name.as_bytes()[..to_write])
+        .write_memory(path_out, &name[..to_write])
         .unwrap();
 
     let action = ExtrinsicsAction::Resume(Some(RuntimeValue::I32(0)));
@@ -657,7 +679,7 @@ fn fd_prestat_get(
                 pr_type: wasi::PREOPENTYPE_DIR,
                 u: wasi::PrestatU {
                     dir: wasi::PrestatDir {
-                        pr_name_len: 5, // TODO:
+                        pr_name_len: 6, // TODO:
                     },
                 },
             },
@@ -678,8 +700,8 @@ fn fd_prestat_get(
         mem_access
             .write_memory(
                 prestat_out_buf,
-                &slice::from_raw_parts(
-                    &prestat as *const _ as *const u8,
+                slice::from_raw_parts(
+                    &prestat as *const wasi::Prestat as *const u8,
                     mem::size_of::<wasi::Prestat>(),
                 ),
             )
@@ -902,7 +924,7 @@ fn fd_write(
                 total_written += len as usize;
             }
 
-            debug_assert_eq!(encoded_message.len(), total_written);
+            debug_assert_eq!(encoded_message.len(), total_written + 1);
 
             // Write to the fourth parameter the number of bytes written to the file descriptor.
             {
@@ -988,8 +1010,8 @@ fn path_filestat_get(
         mem_access
             .write_memory(
                 filestat_out_buf,
-                &slice::from_raw_parts(
-                    &filestat as *const _ as *const u8,
+                slice::from_raw_parts(
+                    &filestat as *const wasi::Filestat as *const u8,
                     mem::size_of::<wasi::Filestat>(),
                 ),
             )
@@ -1145,7 +1167,7 @@ fn random_get(
 fn sched_yield(
     _: &WasiExtrinsics,
     mut params: impl ExactSizeIterator<Item = RuntimeValue>,
-    mem_access: &mut impl ExtrinsicsMemoryAccess,
+    _: &mut impl ExtrinsicsMemoryAccess,
 ) -> (ContextInner, ExtrinsicsAction) {
     // TODO: implement in a better way?
     assert!(params.next().is_none());
