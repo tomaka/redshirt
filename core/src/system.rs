@@ -17,35 +17,21 @@ use crate::module::{Module, ModuleHash};
 use crate::native::{self, NativeProgramMessageIdWrite as _};
 use crate::scheduler::{Core, CoreBuilder, CoreRunOutcome, NewErr};
 
-use alloc::{vec, vec::Vec};
+use alloc::vec::Vec;
 use core::{cell::RefCell, iter, num::NonZeroU64, sync::atomic, task::Poll};
 use crossbeam_queue::SegQueue;
-use fnv::FnvBuildHasher;
 use futures::prelude::*;
-use hashbrown::{hash_map::Entry, HashMap, HashSet};
+use hashbrown::HashSet;
 use nohash_hasher::BuildNoHashHasher;
-use redshirt_syscalls::{Decode, Encode, EncodedMessage, MessageId, Pid};
-use smallvec::SmallVec;
+use redshirt_syscalls::{Decode, Encode, MessageId, Pid};
 
 /// Main struct that handles a system, including the scheduler, program loader,
 /// inter-process communication, and so on.
 ///
-/// Natively handles the "interface" and "threads" interfaces.  TODO: indicate hashes
+/// Natively handles the "interface" interface.  TODO: indicate hashes
 pub struct System {
     /// Inner system with inter-process communications.
     core: Core,
-
-    /// List of active futexes. The keys of this hashmap are process IDs and memory addresses, and
-    /// the values of this hashmap are a list of "wait" messages to answer once the corresponding
-    /// futex is woken up.
-    ///
-    /// Lists of messages must never be empty.
-    ///
-    /// Messages are always pushed at the back of the list. Therefore the first element is the
-    /// oldest message.
-    ///
-    /// See the "threads" interface for documentation about what a futex is.
-    futex_waits: RefCell<HashMap<(Pid, u32), SmallVec<[MessageId; 4]>, FnvBuildHasher>>,
 
     /// Collection of programs. Each is assigned a `Pid` that is reserved within `core`.
     /// Can communicate with the WASM programs that are within `core`.
@@ -78,9 +64,6 @@ pub struct SystemBuilder {
 
     /// "Virtual" pid for handling messages on the `interface` interface.
     interface_interface_pid: Pid,
-
-    /// "Virtual" pid for handling messages on the `threads` interface.
-    threads_interface_pid: Pid,
 
     /// "Virtual" pid for the process that sends messages towards the loader.
     load_source_virtual_pid: Pid,
@@ -242,61 +225,6 @@ impl System {
                 message_id,
                 interface,
                 message,
-            } if interface == redshirt_threads_interface::ffi::INTERFACE => {
-                let msg: redshirt_threads_interface::ffi::ThreadsMessage =
-                    Decode::decode(message).unwrap();
-                match msg {
-                    redshirt_threads_interface::ffi::ThreadsMessage::New(new_thread) => {
-                        assert!(message_id.is_none());
-                        self.core
-                            .process_by_id(pid)
-                            .unwrap()
-                            .start_thread(
-                                new_thread.fn_ptr,
-                                vec![wasmi::RuntimeValue::I32(new_thread.user_data as i32)],
-                            )
-                            .unwrap();
-                    }
-                    redshirt_threads_interface::ffi::ThreadsMessage::FutexWake(mut wake) => {
-                        assert!(message_id.is_none());
-                        let mut futex_waits = self.futex_waits.borrow_mut();
-                        if let Some(list) = futex_waits.get_mut(&(pid, wake.addr)) {
-                            while wake.nwake > 0 && !list.is_empty() {
-                                wake.nwake -= 1;
-                                let message_id = list.remove(0);
-                                self.core
-                                    .answer_message(message_id, Ok(EncodedMessage(Vec::new())));
-                            }
-
-                            if list.is_empty() {
-                                futex_waits.remove(&(pid, wake.addr));
-                            }
-                        }
-                        // TODO: implement
-                    }
-                    redshirt_threads_interface::ffi::ThreadsMessage::FutexWait(wait) => {
-                        if let Some(message_id) = message_id {
-                            // TODO: val_cmp
-                            match self.futex_waits.borrow_mut().entry((pid, wait.addr)) {
-                                Entry::Occupied(mut e) => e.get_mut().push(message_id),
-                                Entry::Vacant(e) => {
-                                    e.insert({
-                                        let mut sv = SmallVec::new();
-                                        sv.push(message_id);
-                                        sv
-                                    });
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            CoreRunOutcome::ReservedPidInterfaceMessage {
-                pid,
-                message_id,
-                interface,
-                message,
             } if interface == redshirt_interface_interface::ffi::INTERFACE => {
                 // Handling messages on the `interface` interface.
                 match redshirt_interface_interface::ffi::InterfaceMessage::decode(message) {
@@ -352,13 +280,11 @@ impl SystemBuilder {
         // We handle some low-level interfaces here.
         let mut core = Core::new();
         let interface_interface_pid = core.reserve_pid();
-        let threads_interface_pid = core.reserve_pid();
         let load_source_virtual_pid = core.reserve_pid();
 
         SystemBuilder {
             core,
             interface_interface_pid,
-            threads_interface_pid,
             load_source_virtual_pid,
             startup_processes: Vec::new(),
             programs_to_load: SegQueue::new(),
@@ -419,18 +345,11 @@ impl SystemBuilder {
     pub fn build(self) -> Result<System, NewErr> {
         let core = self.core.build();
 
-        // We ask the core to redirect messages for the `interface` and `threads` interfaces
-        // towards our "virtual" `Pid`s.
+        // We ask the core to redirect messages for the `interface` interface towards our
+        // "virtual" `Pid`.
         match core.set_interface_handler(
             redshirt_interface_interface::ffi::INTERFACE,
             self.interface_interface_pid,
-        ) {
-            Ok(()) => {}
-            Err(_) => unreachable!(),
-        };
-        match core.set_interface_handler(
-            redshirt_threads_interface::ffi::INTERFACE,
-            self.threads_interface_pid,
         ) {
             Ok(()) => {}
             Err(_) => unreachable!(),
@@ -443,7 +362,6 @@ impl SystemBuilder {
         Ok(System {
             core,
             native_programs: self.native_programs,
-            futex_waits: RefCell::new(Default::default()),
             loader_pid: atomic::AtomicU64::new(0),
             load_source_virtual_pid: self.load_source_virtual_pid,
             loading_programs: RefCell::new(Default::default()),

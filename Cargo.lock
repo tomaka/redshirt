@@ -946,7 +946,6 @@ dependencies = [
  "redshirt-log-interface",
  "redshirt-random-interface",
  "redshirt-syscalls",
- "redshirt-threads-interface",
  "smallvec",
  "spin",
  "wasmi",
@@ -1119,14 +1118,6 @@ dependencies = [
  "parity-scale-codec",
  "redshirt-syscalls",
  "tokio",
-]
-
-[[package]]
-name = "redshirt-threads-interface"
-version = "0.1.0"
-dependencies = [
- "parity-scale-codec",
- "redshirt-syscalls",
 ]
 
 [[package]]
