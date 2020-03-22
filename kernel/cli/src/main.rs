@@ -70,10 +70,15 @@ async fn async_main() {
         cli_requested_processes.push((module_path, module, false));
     }
 
+    let framebuffer_context = redshirt_framebuffer_hosted::FramebufferContext::new();
+
     let system = redshirt_core::system::SystemBuilder::new()
         .with_native_program(redshirt_time_hosted::TimerHandler::new())
         .with_native_program(redshirt_tcp_hosted::TcpHandler::new())
         .with_native_program(redshirt_log_hosted::LogHandler::new())
+        .with_native_program(redshirt_framebuffer_hosted::FramebufferHandler::new(
+            &framebuffer_context,
+        ))
         .with_native_program(redshirt_random_hosted::RandomNativeProgram::new())
         .with_startup_process(build_wasm_module!(
             "../../../modules/p2p-loader",
@@ -99,26 +104,34 @@ async fn async_main() {
         return;
     }*/
 
-    loop {
-        let outcome = system.run().await;
-        match outcome {
-            redshirt_core::system::SystemRunOutcome::ProgramFinished {
-                pid,
-                outcome: Err(err),
-            } if cli_pids.iter().any(|p| *p == pid) => {
-                eprintln!("{:?}", err);
-                process::exit(1);
-            }
-            redshirt_core::system::SystemRunOutcome::ProgramFinished {
-                pid,
-                outcome: Ok(()),
-            } => {
-                cli_pids.retain(|p| *p != pid);
-                if cli_pids.is_empty() {
-                    process::exit(0);
+    async_std::task::spawn(async move {
+        loop {
+            let outcome = system.run().await;
+            match outcome {
+                redshirt_core::system::SystemRunOutcome::ProgramFinished {
+                    pid,
+                    outcome: Err(err),
+                } if cli_pids.iter().any(|p| *p == pid) => {
+                    eprintln!("{:?}", err);
+                    process::exit(1);
                 }
+                redshirt_core::system::SystemRunOutcome::ProgramFinished {
+                    pid,
+                    outcome: Ok(()),
+                } => {
+                    cli_pids.retain(|p| *p != pid);
+                    if cli_pids.is_empty() {
+                        process::exit(0);
+                    }
+                }
+                _ => panic!(),
             }
-            _ => panic!(),
         }
-    }
+    });
+
+    framebuffer_context.run(async move {
+        loop {
+            futures::pending!()
+        }
+    });
 }

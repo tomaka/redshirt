@@ -375,3 +375,7 @@ impl Default for SystemBuilder {
         SystemBuilder::new()
     }
 }
+
+// TODO: lol, no, don't do that
+unsafe impl Send for System {}
+unsafe impl Sync for System {}
