@@ -946,6 +946,7 @@ dependencies = [
  "redshirt-log-interface",
  "redshirt-random-interface",
  "redshirt-syscalls",
+ "redshirt-system-time-interface",
  "redshirt-time-interface",
  "smallvec",
  "spin",

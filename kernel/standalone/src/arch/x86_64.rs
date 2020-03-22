@@ -148,7 +148,7 @@ unsafe extern "C" fn after_boot(multiboot_header: usize) -> ! {
                 move || {
                     let kernel = executor.block_on(kernel_rx).unwrap();
                     // The `run()` method never returns.
-                    kernel.run()
+                    executor.block_on(kernel.run())
                 }
             },
         );
@@ -182,7 +182,7 @@ unsafe extern "C" fn after_boot(multiboot_header: usize) -> ! {
 
     // Start the kernel on the boot processor too.
     // This function never returns.
-    kernel.run()
+    executor.block_on(kernel.run())
 }
 
 /// Reads the boot information and find the memory ranges that can be used as a heap.
@@ -273,10 +273,6 @@ impl PlatformSpecific for PlatformSpecificImpl {
 
     fn num_cpus(self: Pin<&Self>) -> NonZeroU32 {
         self.num_cpus
-    }
-
-    fn block_on<TRet>(self: Pin<&Self>, future: impl Future<Output = TRet>) -> TRet {
-        self.executor.block_on(future)
     }
 
     fn monotonic_clock(self: Pin<&Self>) -> u128 {

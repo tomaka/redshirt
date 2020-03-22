@@ -22,6 +22,7 @@ redshirt-loader-interface = { path = "../interfaces/loader", default-features = 
 redshirt-log-interface = { path = "../interfaces/log", default-features = false }
 redshirt-random-interface = { path = "../interfaces/random", default-features = false }
 redshirt-syscalls = { path = "../interfaces/syscalls", default-features = false }
+redshirt-system-time-interface = { path = "../interfaces/system-time", default-features = false }
 redshirt-time-interface = { path = "../interfaces/time", default-features = false }
 rand = { version = "0.7", default-features = false }
 rand_chacha = { version = "0.2.1", default-features = false }
