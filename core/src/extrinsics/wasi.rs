@@ -130,6 +130,7 @@ enum ExtrinsicIdInner {
     FdPrestatGet,
     FdRead,
     FdSeek,
+    FdTell,
     FdWrite,
     PathCreateDirectory,
     PathFilestatGet,
@@ -236,6 +237,12 @@ impl Extrinsics for WasiExtrinsics {
                 signature: sig!((I32, I64, I32, I32) -> I32),
             },
             SupportedExtrinsic {
+                id: ExtrinsicId(ExtrinsicIdInner::FdTell),
+                wasm_interface: Cow::Borrowed("wasi_snapshot_preview1"),
+                function_name: Cow::Borrowed("fd_tell"),
+                signature: sig!((I32, I32) -> I32),
+            },
+            SupportedExtrinsic {
                 id: ExtrinsicId(ExtrinsicIdInner::FdWrite),
                 wasm_interface: Cow::Borrowed("wasi_snapshot_preview1"),
                 function_name: Cow::Borrowed("fd_write"),
@@ -311,6 +318,7 @@ impl Extrinsics for WasiExtrinsics {
             ExtrinsicIdInner::FdPrestatGet => fd_prestat_get(self, params, mem_access),
             ExtrinsicIdInner::FdRead => fd_read(self, params, mem_access),
             ExtrinsicIdInner::FdSeek => fd_seek(self, params, mem_access),
+            ExtrinsicIdInner::FdTell => unimplemented!(),
             ExtrinsicIdInner::FdWrite => fd_write(self, params, mem_access),
             ExtrinsicIdInner::PathCreateDirectory => unimplemented!(),
             ExtrinsicIdInner::PathFilestatGet => path_filestat_get(self, params, mem_access),
@@ -587,16 +595,18 @@ fn fd_fdstat_get(
     let stat_out_buf = u32::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
     assert!(params.next().is_none());
 
-    // TODO: no unsafe
-    unsafe {
-        mem_access.write_memory(
-            stat_out_buf,
-            slice::from_raw_parts(
-                &stat as *const wasi::Fdstat as *const u8,
-                mem::size_of::<wasi::Fdstat>(),
-            ),
-        )?;
-    }
+    // Note: this is a bit of dark magic, but it is the only solution at the moment.
+    mem_access.write_memory(stat_out_buf, &[0; 24])?;
+    mem_access.write_memory(stat_out_buf, &[stat.fs_filetype])?;
+    mem_access.write_memory(stat_out_buf.checked_add(2)?, &stat.fs_flags.to_le_bytes())?;
+    mem_access.write_memory(
+        stat_out_buf.checked_add(8)?,
+        &stat.fs_rights_base.to_le_bytes(),
+    )?;
+    mem_access.write_memory(
+        stat_out_buf.checked_add(16)?,
+        &stat.fs_rights_inheriting.to_le_bytes(),
+    )?;
 
     let action = ExtrinsicsAction::Resume(Some(RuntimeValue::I32(0)));
     Ok((ContextInner::Finished, action))
@@ -622,14 +632,10 @@ fn fd_filestat_get(
         }
     };
 
-    unimplemented!();
-
     let _stat_out_buf = u32::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
     assert!(params.next().is_none());
 
-    // Returning `__WASI_ERRNO_BADF` all the time.
-    let action = ExtrinsicsAction::Resume(Some(RuntimeValue::I32(From::from(wasi::ERRNO_BADF))));
-    Ok((ContextInner::Finished, action))
+    unimplemented!();
 }
 
 fn fd_prestat_dir_name(
@@ -695,7 +701,7 @@ fn fd_prestat_get(
         }
     };
 
-    let prestat = match file_descriptor {
+    let pr_name_len: u32 = match file_descriptor {
         FileDescriptor::Empty | FileDescriptor::LogOut(_) => {
             // TODO: is that the correct return type?
             let ret = Some(RuntimeValue::I32(From::from(wasi::ERRNO_BADF)));
@@ -704,14 +710,7 @@ fn fd_prestat_get(
         }
         FileDescriptor::FilesystemEntry { inode, .. } => match **inode {
             // TODO: we don't know for sure that it's been pre-open
-            Inode::Directory { .. } => wasi::Prestat {
-                pr_type: wasi::PREOPENTYPE_DIR,
-                u: wasi::PrestatU {
-                    dir: wasi::PrestatDir {
-                        pr_name_len: 6, // TODO:
-                    },
-                },
-            },
+            Inode::Directory { .. } => 6, // TODO:
             Inode::File { .. } => {
                 // TODO: is that the correct return type?
                 let ret = Some(RuntimeValue::I32(From::from(wasi::ERRNO_BADF)));
@@ -724,16 +723,10 @@ fn fd_prestat_get(
     let prestat_out_buf = u32::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
     assert!(params.next().is_none());
 
-    // TODO: no unsafe
-    unsafe {
-        mem_access.write_memory(
-            prestat_out_buf,
-            slice::from_raw_parts(
-                &prestat as *const wasi::Prestat as *const u8,
-                mem::size_of::<wasi::Prestat>(),
-            ),
-        )?;
-    }
+    // Note: this is a bit of dark magic, but it is the only solution at the moment.
+    mem_access.write_memory(prestat_out_buf, &[0; 8])?;
+    mem_access.write_memory(prestat_out_buf, &[wasi::PREOPENTYPE_DIR])?;
+    mem_access.write_memory(prestat_out_buf.checked_add(4)?, &pr_name_len.to_le_bytes())?;
 
     let action = ExtrinsicsAction::Resume(Some(RuntimeValue::I32(0)));
     Ok((ContextInner::Finished, action))
@@ -1030,7 +1023,19 @@ fn path_filestat_get(
     let filestat_out_buf = u32::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
     assert!(params.next().is_none());
 
-    // TODO: no unsafe
+    panic!(
+        "{:p} {:p} {:p} {:p} {:p} {:p} {:p} {:p} {:p}",
+        &filestat,
+        &filestat.dev,
+        &filestat.ino,
+        &filestat.filetype,
+        &filestat.nlink,
+        &filestat.size,
+        &filestat.atim,
+        &filestat.mtim,
+        &filestat.ctim
+    );
+    /*// TODO: no unsafe
     unsafe {
         mem_access.write_memory(
             filestat_out_buf,
@@ -1042,7 +1047,7 @@ fn path_filestat_get(
     }
 
     let action = ExtrinsicsAction::Resume(Some(RuntimeValue::I32(0)));
-    Ok((ContextInner::Finished, action))
+    Ok((ContextInner::Finished, action))*/
 }
 
 fn path_open(
