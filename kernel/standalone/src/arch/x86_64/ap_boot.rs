@@ -31,7 +31,7 @@ use crate::arch::x86_64::apic::{local::LocalApicsControl, timers::Timers, ApicId
 use crate::arch::x86_64::{executor, interrupts};
 
 use alloc::{alloc::Layout, boxed::Box};
-use core::{convert::TryFrom as _, ops::Range, ptr, slice};
+use core::{convert::TryFrom as _, ops::Range, ptr, slice, time::Duration};
 use futures::channel::oneshot;
 
 /// Allocator required by the [`boot_associated_processor`] function.
@@ -286,7 +286,7 @@ pub unsafe fn boot_associated_processor(
     }
 
     // Wait for 10ms to have elapsed since we sent the INIT IPI.
-    executor.block_on(timers.register_tsc_timer(rdtsc + 10_000_000));
+    executor.block_on(timers.register_tsc_timer(Duration::from_millis(10)));
 
     // Send the SINIT IPI, pointing to the bootstrap code that we have carefully crafted.
     local_apics.send_interprocessor_sipi(target, bootstrap_code_buf.as_mut_ptr() as *const _);

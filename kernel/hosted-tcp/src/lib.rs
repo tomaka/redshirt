@@ -545,7 +545,11 @@ async fn listener_task(
     mut front_to_back: mpsc::UnboundedReceiver<FrontToBackListener>,
     mut back_to_front: mpsc::Sender<BackToFront>,
 ) {
-    let socket = TcpListener::bind(&local_socket_addr).await.unwrap(); // TODO: don't unwrap
+    let socket = match TcpListener::bind(&local_socket_addr).await {
+        Ok(socket) => socket,
+        Err(_) => return, // TODO: somehow report this
+    };
+
     let mut pending_sockets = VecDeque::new();
 
     loop {

@@ -15,10 +15,13 @@
 
 #![cfg(target_arch = "x86_64")]
 
-use crate::arch::PlatformSpecific;
+use crate::arch::{PlatformSpecific, PortErr};
 
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
-use core::{convert::TryFrom as _, future::Future, iter, num::NonZeroU32, ops::Range, pin::Pin};
+use core::{
+    convert::TryFrom as _, future::Future, iter, num::NonZeroU32, ops::Range, pin::Pin,
+    time::Duration,
+};
 use futures::channel::oneshot;
 use x86_64::structures::port::{PortRead as _, PortWrite as _};
 
@@ -38,108 +41,148 @@ mod pit;
 ///
 /// Since the kernel was loaded by a multiboot2 bootloader, the first parameter is the memory
 /// address of the multiboot header.
+///
+/// # Safety
+///
+/// `multiboot_header` must be a valid memory address that contains valid information.
+///
 #[no_mangle]
-extern "C" fn after_boot(multiboot_header: usize) -> ! {
-    unsafe {
-        let multiboot_info = multiboot2::load(multiboot_header);
+unsafe extern "C" fn after_boot(multiboot_header: usize) -> ! {
+    let multiboot_info = multiboot2::load(multiboot_header);
 
-        // Initialization of the memory allocator.
-        let mut ap_boot_alloc = {
-            let mut ap_boot_alloc = None;
-            // The associated processors (AP) boot code requires its own allocator. We take all
-            // the free ranges reported by the multiboot header and pass them to the `ap_boot`
-            // allocator initialization code so that it can filter out one that it needs.
-            let remaining_ranges = ap_boot::filter_build_ap_boot_alloc(
-                find_free_memory_ranges(&multiboot_info),
-                &mut ap_boot_alloc,
-            );
+    // Initialization of the memory allocator.
+    let mut ap_boot_alloc = {
+        let mut ap_boot_alloc = None;
+        // The associated processors (AP) boot code requires its own allocator. We take all
+        // the free ranges reported by the multiboot header and pass them to the `ap_boot`
+        // allocator initialization code so that it can filter out one that it needs.
+        let remaining_ranges = ap_boot::filter_build_ap_boot_alloc(
+            find_free_memory_ranges(&multiboot_info),
+            &mut ap_boot_alloc,
+        );
 
-            // Pass the free remaining ranges to the main allocator of the kernel.
-            crate::mem_alloc::initialize(remaining_ranges);
+        // Pass the free remaining ranges to the main allocator of the kernel.
+        crate::mem_alloc::initialize(remaining_ranges);
 
-            match ap_boot_alloc {
-                Some(b) => b,
-                None => panic!("Couldn't find free memory range for the AP allocator"),
-            }
-        };
+        match ap_boot_alloc {
+            Some(b) => b,
+            None => panic!("Couldn't find free memory range for the AP allocator"),
+        }
+    };
 
-        apic::pic::init_and_disable_pic();
+    // The first thing that gets executed when a x86 or x86_64 machine starts up is the
+    // motherboard's firmware. Before giving control to the operating system, this firmware writes
+    // into memory a set of data called the **ACPI tables**.
+    // It then (indirectly) passes the memory address of this table to the operating system. This
+    // is part of [the UEFI standard](https://en.wikipedia.org/wiki/UEFI).
+    //
+    // However, this code is not loaded directly by the firmware but rather by a bootloader. This
+    // bootloader must save the information about the ACPI tables and propagate it as part of the
+    // multiboot2 header passed to the operating system.
+    // TODO: panics in BOCHS
+    let acpi_tables = acpi::load_acpi_tables(&multiboot_info);
 
-        // TODO: panics in BOCHS
-        let acpi = acpi::load_acpi_tables(&multiboot_info);
-        let mut io_apics = if let ::acpi::interrupt::InterruptModel::Apic(apic) = &acpi
-            .interrupt_model
-            .expect("No interrupt model found in ACPI table")
-        {
+    // The ACPI tables indicate us information about how to interface with the I/O APICs.
+    // We use this information and initialize the I/O APICs.
+    let mut io_apics = match &acpi_tables.interrupt_model {
+        Some(::acpi::interrupt::InterruptModel::Apic(apic)) => {
+            // The PIC is the legacy equivalent of I/O APICs.
+            apic::pic::init_and_disable_pic();
             apic::io_apics::init_from_acpi(apic)
-        } else {
-            panic!("Legacy PIC mode not supported")
-        };
+        }
+        Some(_) => panic!("Legacy PIC mode not supported"),
+        None => panic!("Interrupt model ACPI table not found"),
+    };
 
-        let local_apics = Box::leak(Box::new(apic::local::init()));
-        let executor = Box::leak(Box::new(executor::Executor::new(&*local_apics)));
-        let timers = Box::leak(Box::new(apic::timers::init(local_apics)));
+    // We then initialize the local APIC.
+    // `Box::leak` gives us a `&'static` reference to the object.
+    let local_apics = Box::leak(Box::new(apic::local::init()));
 
-        let mut pit = pit::init_pit(&*local_apics, &mut io_apics);
+    // Initialize an object that can execute futures between CPUs.
+    let executor = Box::leak(Box::new(executor::Executor::new(&*local_apics)));
 
-        interrupts::load_idt();
+    // The PIT is an old mechanism for triggering interrupts after a certain delay.
+    // Despite being old, it is still present on all hardware.
+    let mut pit = pit::init_pit(&*local_apics, &mut io_apics);
 
-        let mut kernel_channels = Vec::with_capacity(acpi.application_processors.len());
+    // Initialize interrupts so that all the elements initialize above function properly.
+    // TODO: make this more fool-proof
+    interrupts::load_idt();
 
-        // TODO: it doesn't work if we remove this `take(1)` ; primary suspect is timers implementation
-        for ap in acpi.application_processors.iter().take(1) {
-            debug_assert!(ap.is_ap);
-            if ap.state != ::acpi::ProcessorState::WaitingForSipi {
-                continue;
-            }
+    // Initialize the timers state machine.
+    // This allows us to create `Future`s that resolve after a certain amount of time has passed.
+    let timers = Box::leak(Box::new(apic::timers::init(
+        local_apics,
+        &*executor,
+        &mut pit,
+    )));
 
-            let (kernel_tx, kernel_rx) = oneshot::channel::<Arc<crate::kernel::Kernel<_>>>();
-            kernel_channels.push(kernel_tx);
+    // This code is only executed by the main processor of the machine, called the **boot
+    // processor**. The other processors are called the **associated processors** and must be
+    // manually started.
 
-            ap_boot::boot_associated_processor(
-                &mut ap_boot_alloc,
-                &*executor,
-                &*local_apics,
-                timers,
-                apic::ApicId::from_unchecked(ap.local_apic_id),
-                {
-                    let executor = &*executor;
-                    move || {
-                        let kernel = executor.block_on(kernel_rx).unwrap();
-                        kernel.run();
-                    }
-                },
-            );
+    // This Vec will contain one `oneshort::Sender<Arc<Kernel>>` for each associated processor
+    // that has been started. Once the kernel is initialized, we send a reference-counted copy of
+    // it to each sender.
+    let mut kernel_channels = Vec::with_capacity(acpi_tables.application_processors.len());
+
+    for ap in acpi_tables.application_processors.iter() {
+        debug_assert!(ap.is_ap);
+        // It is possible for some associated processors to be in a disabled state, in which case
+        // they **must not** be started. This is generally the case of defective processors.
+        if ap.state != ::acpi::ProcessorState::WaitingForSipi {
+            continue;
         }
 
-        // Now that everything has been initialized and all the processors started,
-        // we can initialize the kernel.
-        let kernel = {
-            let platform_specific = PlatformSpecificImpl {
-                timers,
-                executor: &*executor,
-                local_apics,
-                num_cpus: NonZeroU32::new(
-                    u32::try_from(kernel_channels.len())
-                        .unwrap()
-                        .checked_add(1)
-                        .unwrap(),
-                )
-                .unwrap(),
-            };
+        let (kernel_tx, kernel_rx) = oneshot::channel::<Arc<crate::kernel::Kernel<_>>>();
+        kernel_channels.push(kernel_tx);
 
-            Arc::new(crate::kernel::Kernel::init(platform_specific))
-        };
-
-        // Send an `Arc<Kernel>` to the other processors so that they can run it too.
-        for tx in kernel_channels {
-            if tx.send(kernel.clone()).is_err() {
-                panic!();
-            }
-        }
-
-        kernel.run()
+        ap_boot::boot_associated_processor(
+            &mut ap_boot_alloc,
+            &*executor,
+            &*local_apics,
+            timers,
+            apic::ApicId::from_unchecked(ap.local_apic_id),
+            {
+                let executor = &*executor;
+                move || {
+                    let kernel = executor.block_on(kernel_rx).unwrap();
+                    // The `run()` method never returns.
+                    executor.block_on(kernel.run())
+                }
+            },
+        );
     }
+
+    // Now that everything has been initialized and all the processors started, we can initialize
+    // the kernel.
+    let kernel = {
+        let platform_specific = PlatformSpecificImpl {
+            timers,
+            executor: &*executor,
+            local_apics,
+            num_cpus: NonZeroU32::new(
+                u32::try_from(kernel_channels.len())
+                    .unwrap()
+                    .checked_add(1)
+                    .unwrap(),
+            )
+            .unwrap(),
+        };
+
+        Arc::new(crate::kernel::Kernel::init(platform_specific))
+    };
+
+    // Send an `Arc<Kernel>` to the other processors so that they can run it too.
+    for tx in kernel_channels {
+        if tx.send(kernel.clone()).is_err() {
+            panic!();
+        }
+    }
+
+    // Start the kernel on the boot processor too.
+    // This function never returns.
+    executor.block_on(kernel.run())
 }
 
 /// Reads the boot information and find the memory ranges that can be used as a heap.
@@ -232,69 +275,66 @@ impl PlatformSpecific for PlatformSpecificImpl {
         self.num_cpus
     }
 
-    fn block_on<TRet>(self: Pin<&Self>, future: impl Future<Output = TRet>) -> TRet {
-        self.executor.block_on(future)
-    }
-
     fn monotonic_clock(self: Pin<&Self>) -> u128 {
-        // TODO: wrong unit; these are not nanoseconds
-        // TODO: maybe TSC not supported? move method to ApicControl instead?
-        u128::from(unsafe { core::arch::x86_64::_rdtsc() })
+        self.timers.monotonic_clock().as_nanos()
     }
 
     fn timer(self: Pin<&Self>, clock_value: u128) -> Self::TimerFuture {
-        let clock_value = u64::try_from(clock_value).unwrap_or(u64::max_value());
-        self.timers.register_tsc_timer(clock_value)
+        self.timers.register_tsc_timer({
+            let secs = u64::try_from(clock_value / 1_000_000_000).unwrap_or(u64::max_value());
+            let nanos = u32::try_from(clock_value % 1_000_000_000).unwrap();
+            Duration::new(secs, nanos)
+        })
     }
 
-    unsafe fn write_port_u8(self: Pin<&Self>, port: u32, data: u8) -> Result<(), ()> {
+    unsafe fn write_port_u8(self: Pin<&Self>, port: u32, data: u8) -> Result<(), PortErr> {
         if let Ok(port) = u16::try_from(port) {
             u8::write_to_port(port, data);
             Ok(())
         } else {
-            Err(())
+            Err(PortErr::OutOfRange)
         }
     }
 
-    unsafe fn write_port_u16(self: Pin<&Self>, port: u32, data: u16) -> Result<(), ()> {
+    unsafe fn write_port_u16(self: Pin<&Self>, port: u32, data: u16) -> Result<(), PortErr> {
         if let Ok(port) = u16::try_from(port) {
             u16::write_to_port(port, data);
             Ok(())
         } else {
-            Err(())
+            Err(PortErr::OutOfRange)
         }
     }
 
-    unsafe fn write_port_u32(self: Pin<&Self>, port: u32, data: u32) -> Result<(), ()> {
+    unsafe fn write_port_u32(self: Pin<&Self>, port: u32, data: u32) -> Result<(), PortErr> {
         if let Ok(port) = u16::try_from(port) {
             u32::write_to_port(port, data);
             Ok(())
         } else {
-            Err(())
+            Err(PortErr::OutOfRange)
         }
     }
 
-    unsafe fn read_port_u8(self: Pin<&Self>, port: u32) -> Result<u8, ()> {
+    unsafe fn read_port_u8(self: Pin<&Self>, port: u32) -> Result<u8, PortErr> {
         if let Ok(port) = u16::try_from(port) {
             Ok(u8::read_from_port(port))
         } else {
-            Err(())
+            Err(PortErr::OutOfRange)
         }
     }
 
-    unsafe fn read_port_u16(self: Pin<&Self>, port: u32) -> Result<u16, ()> {
+    unsafe fn read_port_u16(self: Pin<&Self>, port: u32) -> Result<u16, PortErr> {
         if let Ok(port) = u16::try_from(port) {
             Ok(u16::read_from_port(port))
         } else {
-            Err(())
+            Err(PortErr::OutOfRange)
         }
     }
 
-    unsafe fn read_port_u32(self: Pin<&Self>, port: u32) -> Result<u32, ()> {
+    unsafe fn read_port_u32(self: Pin<&Self>, port: u32) -> Result<u32, PortErr> {
         if let Ok(port) = u16::try_from(port) {
             Ok(u32::read_from_port(port))
         } else {
-            Err(())
+            Err(PortErr::OutOfRange)
         }
     }
 }

@@ -19,6 +19,7 @@ use parity_scale_codec::DecodeAll;
 use std::time::Duration;
 
 fn main() {
+    redshirt_log_interface::init();
     redshirt_syscalls::block_on(async_main())
 }
 
@@ -29,7 +30,7 @@ async fn async_main() {
         .await
         .unwrap();
 
-    let mut network = Network::start(Default::default());
+    let mut network = Network::start(Default::default()).unwrap();
 
     loop {
         let next_interface = redshirt_syscalls::next_interface_message();
@@ -63,6 +64,7 @@ async fn async_main() {
         let msg_data =
             redshirt_loader_interface::ffi::LoaderMessage::decode_all(&msg.actual_data.0).unwrap();
         let redshirt_loader_interface::ffi::LoaderMessage::Load(hash_to_load) = msg_data;
+        log::info!("loading {}", bs58::encode(hash_to_load).into_string());
         network.start_fetch(&hash_to_load, msg.message_id.unwrap());
     }
 }

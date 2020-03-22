@@ -553,6 +553,12 @@ impl Core {
         }
     }
 
+    /// Cancels a message previously emitted with [`Core::emit_interface_message_no_answer`] or
+    /// [`Core::emit_interface_message_answer`].
+    pub fn cancel_message(&self, message_id: MessageId) {
+        unimplemented!() // TODO:
+    }
+
     fn emit_interface_message_inner<'a>(
         &self,
         emitter_pid: Pid,

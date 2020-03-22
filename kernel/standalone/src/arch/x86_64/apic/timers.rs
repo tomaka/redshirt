@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::arch::x86_64::{apic::local, interrupts};
+use crate::arch::x86_64::{apic::local, executor, interrupts, pit};
 
 use alloc::collections::VecDeque;
 use core::{
@@ -21,16 +21,33 @@ use core::{
     num::{NonZeroU32, NonZeroU64},
     pin::Pin,
     task::{Context, Poll, Waker},
+    time::Duration,
 };
 use futures::prelude::*;
 use spin::Mutex;
 
 // TODO: rewrite this code to be cleaner
-// TODO: benchmark the clock using the PIT
 
-pub fn init(local_apics: &local::LocalApicsControl) -> Timers {
+pub fn init<'a>(
+    local_apics: &'a local::LocalApicsControl,
+    executor: &executor::Executor,
+    pit: &mut pit::PitControl,
+) -> Timers<'a> {
     // TODO: check whether CPUID is supported at all?
     // TODO: check whether RDTSC is supported
+
+    // We use the PIT to figure out approximately how many RDTSC ticks happen per second.
+    // TODO: on some CPUs, the RDTSC goes at a slower rate when the CPU goes to sleep, which happens here with the
+    // executor
+    let rdtsc_ticks_per_sec = unsafe {
+        let before = core::arch::x86_64::_rdtsc();
+        // TODO: once async functions are available in no_std contexts, turn this function into an
+        // async function, and put an `await` here instead of blocking
+        executor.block_on(pit.timer(Duration::from_secs(1)));
+        let after = core::arch::x86_64::_rdtsc();
+        assert_ne!(after, before);
+        after - before
+    };
 
     let interrupt_vector = interrupts::reserve_any_vector(true).unwrap();
 
@@ -44,6 +61,8 @@ pub fn init(local_apics: &local::LocalApicsControl) -> Timers {
     Timers {
         local_apics,
         interrupt_vector,
+        monotonic_clock_zero: unsafe { core::arch::x86_64::_rdtsc() },
+        rdtsc_ticks_per_sec,
         timers: Mutex::new(VecDeque::with_capacity(32)), // TODO: capacity?
     }
 }
@@ -55,6 +74,12 @@ pub struct Timers<'a> {
     ///
     /// This is the interrupt that the timer will fire.
     interrupt_vector: interrupts::ReservedInterruptVector,
+
+    /// Number of RDTSC ticks when we initialized the struct.
+    monotonic_clock_zero: u64,
+
+    /// Approximate number of RDTSC ticks per second.
+    rdtsc_ticks_per_sec: u64,
 
     /// List of active timers, with the TSC value to reach and the waker to wake. Always ordered
     /// by ascending TSC value.
@@ -69,14 +94,40 @@ pub struct Timers<'a> {
 }
 
 impl<'a> Timers<'a> {
-    /// Returns a `Future` that fires when the TSC (Timestamp Counter) is superior or equal to
-    /// the given value.
-    pub fn register_tsc_timer(&self, value: u64) -> TimerFuture {
+    /// Returns a `Future` that fires when the given amount of time has elapsed.
+    pub fn register_tsc_timer(&self, duration: Duration) -> TimerFuture {
+        // TODO: don't unwrap
+        let tsc_value = duration
+            .as_secs()
+            .checked_mul(self.rdtsc_ticks_per_sec)
+            .unwrap()
+            .checked_add(
+                u64::from(duration.subsec_nanos())
+                    .checked_mul(self.rdtsc_ticks_per_sec)
+                    .unwrap()
+                    .checked_div(1_000_000_000)
+                    .unwrap(),
+            )
+            .unwrap();
+
         TimerFuture {
             timers: self,
-            tsc_value: value,
+            tsc_value,
             in_timers_list: false,
         }
+    }
+
+    pub fn monotonic_clock(&self) -> Duration {
+        let now = unsafe { core::arch::x86_64::_rdtsc() };
+        // TODO: is it correct to have monotonic_clock_zero determined from the main thread,
+        // then compared with the RDTSC of other CPUs?
+        // TODO: check all the math operations here
+        debug_assert!(now >= self.monotonic_clock_zero);
+        let diff_ticks = now - self.monotonic_clock_zero;
+        let whole_secs = diff_ticks / self.rdtsc_ticks_per_sec;
+        let nanos =
+            1_000_000_000 * (diff_ticks % self.rdtsc_ticks_per_sec) / self.rdtsc_ticks_per_sec;
+        Duration::new(whole_secs, u32::try_from(nanos).unwrap())
     }
 
     /// Update the state of the APIC with the front of the list.

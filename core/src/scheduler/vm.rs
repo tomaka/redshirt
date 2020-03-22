@@ -656,7 +656,7 @@ where
 impl fmt::Display for NewErr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            NewErr::Interpreter(_) => write!(f, "Error in the interpreter"),
+            NewErr::Interpreter(err) => write!(f, "Error in the interpreter: {}", err),
             NewErr::StartNotFound => write!(f, "The \"start\" symbol doesn't exist"),
             NewErr::StartIsntAFunction => write!(f, "The \"start\" symbol must be a function"),
             NewErr::MemoryIsntMemory => {

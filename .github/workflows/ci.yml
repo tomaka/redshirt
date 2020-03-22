@@ -66,7 +66,7 @@ jobs:
     - name: Install Rust
       uses: actions-rs/toolchain@v1
       with:
-        toolchain: stable
+        toolchain: nightly-2020-03-22
         target: wasm32-wasi
         override: true
     - name: Install a recent version of clang
@@ -99,46 +99,6 @@ jobs:
       run: cargo build --workspace --exclude redshirt-standalone-kernel --exclude redshirt-core-proc-macros --locked --verbose
     - name: Run tests
       run: cargo test --workspace --exclude redshirt-standalone-kernel --exclude redshirt-core-proc-macros --locked --verbose
-
-  build-hosted-windows:
-    name: Build hosted kernel on Windows
-    needs: build-modules
-    runs-on: windows-latest
-    steps:
-    - uses: actions/checkout@v1
-    - name: Install Rust
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        target: wasm32-wasi
-        override: true
-    - name: Download WASM modules
-      uses: actions/download-artifact@v1
-      with:
-        name: wasm-modules
-        path: modules/target/wasm32-wasi/release
-    - name: Cache cargo registry
-      uses: actions/cache@v1
-      with:
-        path: ~/.cargo/registry
-        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('Cargo.lock') }}
-    - name: Cache cargo index
-      uses: actions/cache@v1
-      with:
-        path: ~/.cargo/git
-        key: ${{ runner.os }}-cargo-index-${{ hashFiles('Cargo.lock') }}
-    - name: Cache cargo build
-      uses: actions/cache@v1
-      with:
-        path: target
-        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('Cargo.lock') }}
-    - name: Build CLI kernel
-      run: cargo rustc --release --package redshirt-cli-kernel --locked --verbose -- -Ctarget-feature=+crt-static
-    - name: Upload generated kernel
-      uses: actions/upload-artifact@master
-      with:
-        name: cli-kernel-windows
-        path: target/release/redshirt-cli-kernel.exe
 
   build-standalone:
     name: Build standalone kernel
@@ -187,7 +147,7 @@ jobs:
     - name: Install nightly Rust
       uses: actions-rs/toolchain@v1
       with:
-        toolchain: nightly-2020-03-12
+        toolchain: nightly-2020-03-22
         target: wasm32-wasi
         override: true
     - name: Install rust-src
@@ -228,8 +188,8 @@ jobs:
         path: modules/target
         key: passive-node-check-target-${{ hashFiles('modules/Cargo.lock') }}
     - name: Check peer-to-peer passive node
-      run: cargo check --manifest-path ./modules/Cargo.toml --package p2p-loader --bin passive-node --locked --verbose
-      
+      run: cargo check --manifest-path ./modules/Cargo.toml --package p2p-loader --bin passive-node --locked --verbose --all-features
+
   fmt:
     name: Rustfmt
     runs-on: ubuntu-latest
