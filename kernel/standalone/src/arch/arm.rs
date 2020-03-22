@@ -124,7 +124,7 @@ fn cpu_enter() -> ! {
     let time = unsafe { time::TimeControl::init() };
 
     let kernel = crate::kernel::Kernel::init(PlatformSpecificImpl { time });
-    kernel.run()
+    executor::block_on(kernel.run())
 }
 
 /// Implementation of [`PlatformSpecific`].
@@ -137,10 +137,6 @@ impl PlatformSpecific for PlatformSpecificImpl {
 
     fn num_cpus(self: Pin<&Self>) -> NonZeroU32 {
         NonZeroU32::new(1).unwrap()
-    }
-
-    fn block_on<TRet>(self: Pin<&Self>, future: impl Future<Output = TRet>) -> TRet {
-        executor::block_on(future)
     }
 
     fn monotonic_clock(self: Pin<&Self>) -> u128 {
