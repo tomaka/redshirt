@@ -596,6 +596,17 @@ fn fd_fdstat_get(
     assert!(params.next().is_none());
 
     // Note: this is a bit of dark magic, but it is the only solution at the moment.
+    // Can be tested with the following snippet:
+    // ```c
+    // #include <stdio.h>
+    // #include <wasi/api.h>
+    // int main() {
+    //     __wasi_fdstat_t* ptr = (__wasi_fdstat_t*)0x1000;
+    //     printf("%p %p %p %p %p %d\n", ptr, &ptr->fs_filetype, &ptr->fs_flags, &ptr->fs_rights_base, &ptr->fs_rights_inheriting, sizeof(__wasi_fdstat_t));
+    //     return 0;
+    // }
+    // ```
+    // Which prints `0x1000 0x1000 0x1002 0x1008 0x1010 24`
     mem_access.write_memory(stat_out_buf, &[0; 24])?;
     mem_access.write_memory(stat_out_buf, &[stat.fs_filetype])?;
     mem_access.write_memory(stat_out_buf.checked_add(2)?, &stat.fs_flags.to_le_bytes())?;
@@ -724,6 +735,17 @@ fn fd_prestat_get(
     assert!(params.next().is_none());
 
     // Note: this is a bit of dark magic, but it is the only solution at the moment.
+    // Can be tested with the following snippet:
+    // ```c
+    // #include <stdio.h>
+    // #include <wasi/api.h>
+    // int main() {
+    //     __wasi_prestat_t* ptr = (__wasi_prestat_t*)0x1000;
+    //     printf("%p %p %p %d\n", ptr, &ptr->tag, &ptr->u.dir, sizeof(__wasi_prestat_t));
+    //     return 0;
+    // }
+    // ```
+    // Which prints `0x1000 0x1000 0x1004 8`
     mem_access.write_memory(prestat_out_buf, &[0; 8])?;
     mem_access.write_memory(prestat_out_buf, &[wasi::PREOPENTYPE_DIR])?;
     mem_access.write_memory(prestat_out_buf.checked_add(4)?, &pr_name_len.to_le_bytes())?;
@@ -1023,31 +1045,51 @@ fn path_filestat_get(
     let filestat_out_buf = u32::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
     assert!(params.next().is_none());
 
-    panic!(
-        "{:p} {:p} {:p} {:p} {:p} {:p} {:p} {:p} {:p}",
-        &filestat,
-        &filestat.dev,
-        &filestat.ino,
-        &filestat.filetype,
-        &filestat.nlink,
-        &filestat.size,
-        &filestat.atim,
-        &filestat.mtim,
-        &filestat.ctim
-    );
-    /*// TODO: no unsafe
-    unsafe {
-        mem_access.write_memory(
-            filestat_out_buf,
-            slice::from_raw_parts(
-                &filestat as *const wasi::Filestat as *const u8,
-                mem::size_of::<wasi::Filestat>(),
-            ),
-        )?;
-    }
+    // Note: this is a bit of dark magic, but it is the only solution at the moment.
+    // Can be tested with the following snippet:
+    // ```c
+    // #include <stdio.h>
+    // #include <wasi/api.h>
+    // int main() {
+    //     __wasi_filestat_t* ptr = (__wasi_filestat_t*)0x1000;
+    //     printf("%p %p %p %p %p %p %p %p %p %d\n", ptr, &ptr->dev, &ptr->ino, &ptr->filetype, &ptr->nlink, &ptr->size, &ptr->atim, &ptr->mtim, &ptr->ctim, sizeof(__wasi_filestat_t));
+    //     return 0;
+    // }
+    // ```
+    // Which prints `0x1000 0x1000 0x1008 0x1010 0x1018 0x1020 0x1028 0x1030 0x1038 64`
+    mem_access.write_memory(filestat_out_buf, &[0; 64])?;
+    mem_access.write_memory(filestat_out_buf, &filestat.dev.to_le_bytes())?;
+    mem_access.write_memory(
+        filestat_out_buf.checked_add(8)?,
+        &filestat.ino.to_le_bytes(),
+    )?;
+    mem_access.write_memory(
+        filestat_out_buf.checked_add(16)?,
+        &filestat.filetype.to_le_bytes(),
+    )?;
+    mem_access.write_memory(
+        filestat_out_buf.checked_add(24)?,
+        &filestat.nlink.to_le_bytes(),
+    )?;
+    mem_access.write_memory(
+        filestat_out_buf.checked_add(32)?,
+        &filestat.size.to_le_bytes(),
+    )?;
+    mem_access.write_memory(
+        filestat_out_buf.checked_add(40)?,
+        &filestat.atim.to_le_bytes(),
+    )?;
+    mem_access.write_memory(
+        filestat_out_buf.checked_add(48)?,
+        &filestat.mtim.to_le_bytes(),
+    )?;
+    mem_access.write_memory(
+        filestat_out_buf.checked_add(56)?,
+        &filestat.ctim.to_le_bytes(),
+    )?;
 
     let action = ExtrinsicsAction::Resume(Some(RuntimeValue::I32(0)));
-    Ok((ContextInner::Finished, action))*/
+    Ok((ContextInner::Finished, action))
 }
 
 fn path_open(
