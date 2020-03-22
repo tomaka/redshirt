@@ -29,6 +29,7 @@ use alloc::{borrow::Cow, vec::Vec};
 use core::{fmt, iter, ops::Range};
 use wasmi::RuntimeValue;
 
+pub mod log_calls;
 pub mod wasi;
 
 /// Trait implemented on types that can handle extrinsics.

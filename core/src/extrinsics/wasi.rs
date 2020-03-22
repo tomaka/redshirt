@@ -33,7 +33,7 @@ use hashbrown::HashMap;
 use spin::Mutex;
 use wasmi::RuntimeValue;
 
-/// Dummy implementation of the [`Extrinsics`] trait.
+/// Implementation of the [`Extrinsics`] trait for WASI.
 #[derive(Debug)]
 pub struct WasiExtrinsics {
     /// Arguments passed to the program.
