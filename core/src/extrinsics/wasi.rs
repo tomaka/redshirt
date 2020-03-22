@@ -79,8 +79,8 @@ impl Default for WasiExtrinsics {
         let fs_root = Arc::new(Inode::Directory {
             entries: Mutex::new({
                 let mut hashmap = HashMap::default();
-                // TODO: hack to toy with DOOM
-                /*hashmap.insert(
+                /*// TODO: hack to toy with DOOM
+                hashmap.insert(
                     "doom1.wad".to_string(),
                     Arc::new(Inode::File {
                         content: include_bytes!("../../../../DOOM/doom1.wad").to_vec(),
@@ -560,8 +560,42 @@ fn fd_fdstat_get(
         }
     };
 
-    let dirs_rights = wasi::RIGHTS_PATH_OPEN | wasi::RIGHTS_FD_READDIR;
-    let files_rights = wasi::RIGHTS_FD_READ | wasi::RIGHTS_FD_SEEK | wasi::RIGHTS_FD_TELL;
+    // TODO: we mimic what wasmtime does, but documentation about these rights is pretty sparse
+    let dirs_rights = wasi::RIGHTS_FD_FDSTAT_SET_FLAGS
+        | wasi::RIGHTS_FD_SYNC
+        | wasi::RIGHTS_FD_ADVISE
+        | wasi::RIGHTS_PATH_CREATE_DIRECTORY
+        | wasi::RIGHTS_PATH_CREATE_FILE
+        | wasi::RIGHTS_PATH_LINK_SOURCE
+        | wasi::RIGHTS_PATH_LINK_TARGET
+        | wasi::RIGHTS_PATH_OPEN
+        | wasi::RIGHTS_FD_READDIR
+        | wasi::RIGHTS_PATH_READLINK
+        | wasi::RIGHTS_PATH_RENAME_SOURCE
+        | wasi::RIGHTS_PATH_RENAME_TARGET
+        | wasi::RIGHTS_PATH_FILESTAT_GET
+        | wasi::RIGHTS_PATH_FILESTAT_SET_SIZE
+        | wasi::RIGHTS_PATH_FILESTAT_SET_TIMES
+        | wasi::RIGHTS_FD_FILESTAT_GET
+        | wasi::RIGHTS_FD_FILESTAT_SET_SIZE
+        | wasi::RIGHTS_FD_FILESTAT_SET_TIMES
+        | wasi::RIGHTS_PATH_SYMLINK
+        | wasi::RIGHTS_PATH_REMOVE_DIRECTORY
+        | wasi::RIGHTS_PATH_UNLINK_FILE
+        | wasi::RIGHTS_POLL_FD_READWRITE;
+    let files_rights = wasi::RIGHTS_FD_DATASYNC
+        | wasi::RIGHTS_FD_READ
+        | wasi::RIGHTS_FD_SEEK
+        | wasi::RIGHTS_FD_FDSTAT_SET_FLAGS
+        | wasi::RIGHTS_FD_SYNC
+        | wasi::RIGHTS_FD_TELL
+        | wasi::RIGHTS_FD_WRITE
+        | wasi::RIGHTS_FD_ADVISE
+        | wasi::RIGHTS_FD_ALLOCATE
+        | wasi::RIGHTS_FD_FILESTAT_GET
+        | wasi::RIGHTS_FD_FILESTAT_SET_SIZE
+        | wasi::RIGHTS_FD_FILESTAT_SET_TIMES
+        | wasi::RIGHTS_POLL_FD_READWRITE;
 
     let stat = match file_descriptor {
         FileDescriptor::Empty => wasi::Fdstat {
@@ -573,8 +607,8 @@ fn fd_fdstat_get(
         FileDescriptor::LogOut(_) => wasi::Fdstat {
             fs_filetype: wasi::FILETYPE_CHARACTER_DEVICE,
             fs_flags: wasi::FDFLAGS_APPEND,
-            fs_rights_base: wasi::RIGHTS_FD_WRITE,
-            fs_rights_inheriting: wasi::RIGHTS_FD_WRITE,
+            fs_rights_base: 0x820004a, // TODO: that's what wasmtime returns, don't know what it means
+            fs_rights_inheriting: 0x820004a, // TODO: that's what wasmtime returns, don't know what it means
         },
         FileDescriptor::FilesystemEntry { inode, .. } => match **inode {
             Inode::Directory { .. } => wasi::Fdstat {
@@ -676,15 +710,18 @@ fn fd_prestat_dir_name(
             let action = ExtrinsicsAction::Resume(ret);
             return Ok((ContextInner::Finished, action));
         }
-        FileDescriptor::FilesystemEntry { .. } => b"hello\0", // TODO:
+        // TODO: correct name; note that no null terminator is needed
+        // note that apparently any value other than an empty string will fail to match relative paths? it's weird
+        // cc https://github.com/CraneStation/wasi-libc/blob/9efc2f428358564fe64c374d762d0bfce1d92507/libc-bottom-half/libpreopen/libpreopen.c#L470
+        FileDescriptor::FilesystemEntry { .. } => b"",
     };
 
     let path_out = u32::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
-    let path_out_len = usize::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
+    let path_out_len = usize::try_from(params.next().unwrap().try_into::<i32>().unwrap())
+        .unwrap_or(usize::max_value());
     assert!(params.next().is_none());
 
     // TODO: is it correct to truncate if the buffer is too small?
-    // TODO: also, do we need a null terminator?
     let to_write = cmp::min(path_out_len, name.len());
     mem_access.write_memory(path_out, &name[..to_write])?;
 
@@ -714,17 +751,16 @@ fn fd_prestat_get(
 
     let pr_name_len: u32 = match file_descriptor {
         FileDescriptor::Empty | FileDescriptor::LogOut(_) => {
-            // TODO: is that the correct return type?
-            let ret = Some(RuntimeValue::I32(From::from(wasi::ERRNO_BADF)));
+            let ret = Some(RuntimeValue::I32(From::from(wasi::ERRNO_NOTSUP)));
             let action = ExtrinsicsAction::Resume(ret);
             return Ok((ContextInner::Finished, action));
         }
         FileDescriptor::FilesystemEntry { inode, .. } => match **inode {
             // TODO: we don't know for sure that it's been pre-open
-            Inode::Directory { .. } => 6, // TODO:
+            Inode::Directory { .. } => 0, // TODO: must match the length of the return value of `fd_prestat_dir_name`
             Inode::File { .. } => {
                 // TODO: is that the correct return type?
-                let ret = Some(RuntimeValue::I32(From::from(wasi::ERRNO_BADF)));
+                let ret = Some(RuntimeValue::I32(From::from(wasi::ERRNO_NOTSUP)));
                 let action = ExtrinsicsAction::Resume(ret);
                 return Ok((ContextInner::Finished, action));
             }
