@@ -43,9 +43,6 @@ pub trait PlatformSpecific: Send + Sync + 'static {
     /// Returns the number of CPUs available.
     fn num_cpus(self: Pin<&Self>) -> NonZeroU32;
 
-    /// Blocks the current core until the given `Future` produces a value.
-    fn block_on<TRet>(self: Pin<&Self>, future: impl Future<Output = TRet>) -> TRet;
-
     /// Returns the number of nanoseconds that happened since an undeterminate moment in time.
     ///
     /// > **Note**: The returned value is provided on a "best effort" basis and is not
