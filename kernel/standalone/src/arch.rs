@@ -28,7 +28,7 @@
 //! After everything has been initialized, the entry point creates a struct that implements the
 //! [`PlatformSpecific`] trait, and initializes and runs a [`Kernel`](crate::kernel::Kernel).
 
-use core::{future::Future, num::NonZeroU32, pin::Pin};
+use core::{fmt, future::Future, num::NonZeroU32, pin::Pin};
 
 mod arm;
 mod x86_64;
@@ -53,20 +53,38 @@ pub trait PlatformSpecific: Send + Sync + 'static {
 
     /// Writes a `u8` on a port. Returns an error if the operation is not supported or if the port
     /// is out of range.
-    unsafe fn write_port_u8(self: Pin<&Self>, port: u32, data: u8) -> Result<(), ()>;
+    unsafe fn write_port_u8(self: Pin<&Self>, port: u32, data: u8) -> Result<(), PortErr>;
     /// Writes a `u16` on a port. Returns an error if the operation is not supported or if the
     /// port is out of range.
-    unsafe fn write_port_u16(self: Pin<&Self>, port: u32, data: u16) -> Result<(), ()>;
+    unsafe fn write_port_u16(self: Pin<&Self>, port: u32, data: u16) -> Result<(), PortErr>;
     /// Writes a `u32` on a port. Returns an error if the operation is not supported or if the
     /// port is out of range.
-    unsafe fn write_port_u32(self: Pin<&Self>, port: u32, data: u32) -> Result<(), ()>;
-    /// Reads a `u8` from a port. Returns an error if the operation is not supported of if the
+    unsafe fn write_port_u32(self: Pin<&Self>, port: u32, data: u32) -> Result<(), PortErr>;
+    /// Reads a `u8` from a port. Returns an error if the operation is not supported or if the
     /// port is out of range.
-    unsafe fn read_port_u8(self: Pin<&Self>, port: u32) -> Result<u8, ()>;
-    /// Reads a `u16` from a port. Returns an error if the operation is not supported of if the
+    unsafe fn read_port_u8(self: Pin<&Self>, port: u32) -> Result<u8, PortErr>;
+    /// Reads a `u16` from a port. Returns an error if the operation is not supported or if the
     /// port is out of range.
-    unsafe fn read_port_u16(self: Pin<&Self>, port: u32) -> Result<u16, ()>;
-    /// Reads a `u32` from a port. Returns an error if the operation is not supported of if the
+    unsafe fn read_port_u16(self: Pin<&Self>, port: u32) -> Result<u16, PortErr>;
+    /// Reads a `u32` from a port. Returns an error if the operation is not supported or if the
     /// port is out of range.
-    unsafe fn read_port_u32(self: Pin<&Self>, port: u32) -> Result<u32, ()>;
+    unsafe fn read_port_u32(self: Pin<&Self>, port: u32) -> Result<u32, PortErr>;
+}
+
+/// Error when requesting to read/write a hardware port.
+#[derive(Debug)]
+pub enum PortErr {
+    /// Operation is not supported by the hardware.
+    Unsupported,
+    /// Port is out of range.
+    OutOfRange,
+}
+
+impl fmt::Display for PortErr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            PortErr::Unsupported => write!(f, "Operation is not supported by the hardware"),
+            PortErr::OutOfRange => write!(f, "Port is out of range"),
+        }
+    }
 }

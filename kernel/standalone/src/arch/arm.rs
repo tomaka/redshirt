@@ -15,7 +15,7 @@
 
 #![cfg(any(target_arch = "arm", target_arch = "aarch64"))]
 
-use crate::arch::PlatformSpecific;
+use crate::arch::{PlatformSpecific, PortErr};
 
 use alloc::sync::Arc;
 use core::{iter, num::NonZeroU32, pin::Pin};
@@ -147,28 +147,28 @@ impl PlatformSpecific for PlatformSpecificImpl {
         self.time.timer(deadline)
     }
 
-    unsafe fn write_port_u8(self: Pin<&Self>, _: u32, _: u8) -> Result<(), ()> {
-        Err(())
+    unsafe fn write_port_u8(self: Pin<&Self>, _: u32, _: u8) -> Result<(), PortErr> {
+        Err(PortErr::Unsupported)
     }
 
-    unsafe fn write_port_u16(self: Pin<&Self>, _: u32, _: u16) -> Result<(), ()> {
-        Err(())
+    unsafe fn write_port_u16(self: Pin<&Self>, _: u32, _: u16) -> Result<(), PortErr> {
+        Err(PortErr::Unsupported)
     }
 
-    unsafe fn write_port_u32(self: Pin<&Self>, _: u32, _: u32) -> Result<(), ()> {
-        Err(())
+    unsafe fn write_port_u32(self: Pin<&Self>, _: u32, _: u32) -> Result<(), PortErr> {
+        Err(PortErr::Unsupported)
     }
 
-    unsafe fn read_port_u8(self: Pin<&Self>, _: u32) -> Result<u8, ()> {
-        Err(())
+    unsafe fn read_port_u8(self: Pin<&Self>, _: u32) -> Result<u8, PortErr> {
+        Err(PortErr::Unsupported)
     }
 
-    unsafe fn read_port_u16(self: Pin<&Self>, _: u32) -> Result<u16, ()> {
-        Err(())
+    unsafe fn read_port_u16(self: Pin<&Self>, _: u32) -> Result<u16, PortErr> {
+        Err(PortErr::Unsupported)
     }
 
-    unsafe fn read_port_u32(self: Pin<&Self>, _: u32) -> Result<u32, ()> {
-        Err(())
+    unsafe fn read_port_u32(self: Pin<&Self>, _: u32) -> Result<u32, PortErr> {
+        Err(PortErr::Unsupported)
     }
 }
 
