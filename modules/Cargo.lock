@@ -1220,7 +1220,7 @@ name = "ne2000"
 version = "0.1.0"
 dependencies = [
  "etherparse",
- "futures 0.3.1",
+ "futures",
  "redshirt-hardware-interface",
  "redshirt-interface-interface",
  "redshirt-log-interface",
@@ -1248,7 +1248,7 @@ name = "network-manager"
 version = "0.1.0"
 dependencies = [
  "fnv 1.0.6 (git+https://github.com/dflemstr/rust-fnv)",
- "futures 0.3.1",
+ "futures",
  "hashbrown",
  "log",
  "parity-scale-codec",
@@ -1679,7 +1679,7 @@ dependencies = [
 name = "redshirt-network-interface"
 version = "0.1.0"
 dependencies = [
- "futures 0.3.1",
+ "futures",
  "parity-scale-codec",
  "redshirt-syscalls",
  "tokio",
