@@ -15,7 +15,7 @@
 
 #![cfg(target_arch = "x86_64")]
 
-use crate::arch::PlatformSpecific;
+use crate::arch::{PlatformSpecific, PortErr};
 
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use core::{
@@ -148,7 +148,7 @@ unsafe extern "C" fn after_boot(multiboot_header: usize) -> ! {
                 move || {
                     let kernel = executor.block_on(kernel_rx).unwrap();
                     // The `run()` method never returns.
-                    kernel.run()
+                    executor.block_on(kernel.run())
                 }
             },
         );
@@ -182,7 +182,7 @@ unsafe extern "C" fn after_boot(multiboot_header: usize) -> ! {
 
     // Start the kernel on the boot processor too.
     // This function never returns.
-    kernel.run()
+    executor.block_on(kernel.run())
 }
 
 /// Reads the boot information and find the memory ranges that can be used as a heap.
@@ -275,10 +275,6 @@ impl PlatformSpecific for PlatformSpecificImpl {
         self.num_cpus
     }
 
-    fn block_on<TRet>(self: Pin<&Self>, future: impl Future<Output = TRet>) -> TRet {
-        self.executor.block_on(future)
-    }
-
     fn monotonic_clock(self: Pin<&Self>) -> u128 {
         self.timers.monotonic_clock().as_nanos()
     }
@@ -291,54 +287,54 @@ impl PlatformSpecific for PlatformSpecificImpl {
         })
     }
 
-    unsafe fn write_port_u8(self: Pin<&Self>, port: u32, data: u8) -> Result<(), ()> {
+    unsafe fn write_port_u8(self: Pin<&Self>, port: u32, data: u8) -> Result<(), PortErr> {
         if let Ok(port) = u16::try_from(port) {
             u8::write_to_port(port, data);
             Ok(())
         } else {
-            Err(())
+            Err(PortErr::OutOfRange)
         }
     }
 
-    unsafe fn write_port_u16(self: Pin<&Self>, port: u32, data: u16) -> Result<(), ()> {
+    unsafe fn write_port_u16(self: Pin<&Self>, port: u32, data: u16) -> Result<(), PortErr> {
         if let Ok(port) = u16::try_from(port) {
             u16::write_to_port(port, data);
             Ok(())
         } else {
-            Err(())
+            Err(PortErr::OutOfRange)
         }
     }
 
-    unsafe fn write_port_u32(self: Pin<&Self>, port: u32, data: u32) -> Result<(), ()> {
+    unsafe fn write_port_u32(self: Pin<&Self>, port: u32, data: u32) -> Result<(), PortErr> {
         if let Ok(port) = u16::try_from(port) {
             u32::write_to_port(port, data);
             Ok(())
         } else {
-            Err(())
+            Err(PortErr::OutOfRange)
         }
     }
 
-    unsafe fn read_port_u8(self: Pin<&Self>, port: u32) -> Result<u8, ()> {
+    unsafe fn read_port_u8(self: Pin<&Self>, port: u32) -> Result<u8, PortErr> {
         if let Ok(port) = u16::try_from(port) {
             Ok(u8::read_from_port(port))
         } else {
-            Err(())
+            Err(PortErr::OutOfRange)
         }
     }
 
-    unsafe fn read_port_u16(self: Pin<&Self>, port: u32) -> Result<u16, ()> {
+    unsafe fn read_port_u16(self: Pin<&Self>, port: u32) -> Result<u16, PortErr> {
         if let Ok(port) = u16::try_from(port) {
             Ok(u16::read_from_port(port))
         } else {
-            Err(())
+            Err(PortErr::OutOfRange)
         }
     }
 
-    unsafe fn read_port_u32(self: Pin<&Self>, port: u32) -> Result<u32, ()> {
+    unsafe fn read_port_u32(self: Pin<&Self>, port: u32) -> Result<u32, PortErr> {
         if let Ok(port) = u16::try_from(port) {
             Ok(u32::read_from_port(port))
         } else {
-            Err(())
+            Err(PortErr::OutOfRange)
         }
     }
 }

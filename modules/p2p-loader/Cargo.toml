@@ -7,7 +7,7 @@ publish = false
 
 [dependencies]
 base64 = { version = "0.11.0", default-features = false, features = ["alloc"] }
-blake3 = { version = "0.1.1", default-features = false }
+blake3 = { version = "0.2.2", default-features = false }
 bs58 = "0.3.0"
 futures = "0.3"
 libp2p-core = { git = "https://github.com/libp2p/rust-libp2p", rev = "92ce5d6179c059c52a6c58c6c55ad69544ac2e93" }

@@ -28,12 +28,12 @@ use alloc::{
     vec,
     vec::{IntoIter, Vec},
 };
-use core::{cmp, convert::TryFrom as _, mem, slice};
+use core::{cmp, convert::TryFrom as _, fmt, mem, slice};
 use hashbrown::HashMap;
 use spin::Mutex;
 use wasmi::RuntimeValue;
 
-/// Dummy implementation of the [`Extrinsics`] trait.
+/// Implementation of the [`Extrinsics`] trait for WASI.
 #[derive(Debug)]
 pub struct WasiExtrinsics {
     /// Arguments passed to the program.
@@ -79,8 +79,8 @@ impl Default for WasiExtrinsics {
         let fs_root = Arc::new(Inode::Directory {
             entries: Mutex::new({
                 let mut hashmap = HashMap::default();
-                // TODO: hack to toy with DOOM
-                /*hashmap.insert(
+                /*// TODO: hack to toy with DOOM
+                hashmap.insert(
                     "doom1.wad".to_string(),
                     Arc::new(Inode::File {
                         content: include_bytes!("../../../../DOOM/doom1.wad").to_vec(),
@@ -130,6 +130,7 @@ enum ExtrinsicIdInner {
     FdPrestatGet,
     FdRead,
     FdSeek,
+    FdTell,
     FdWrite,
     PathCreateDirectory,
     PathFilestatGet,
@@ -144,6 +145,7 @@ enum ExtrinsicIdInner {
 pub struct Context(ContextInner);
 
 enum ContextInner {
+    WaitClockVal { out_ptr: u32 },
     WaitRandom { out_ptr: u32, remaining_len: u32 },
     Resume(Option<RuntimeValue>),
     Finished,
@@ -235,6 +237,12 @@ impl Extrinsics for WasiExtrinsics {
                 signature: sig!((I32, I64, I32, I32) -> I32),
             },
             SupportedExtrinsic {
+                id: ExtrinsicId(ExtrinsicIdInner::FdTell),
+                wasm_interface: Cow::Borrowed("wasi_snapshot_preview1"),
+                function_name: Cow::Borrowed("fd_tell"),
+                signature: sig!((I32, I32) -> I32),
+            },
+            SupportedExtrinsic {
                 id: ExtrinsicId(ExtrinsicIdInner::FdWrite),
                 wasm_interface: Cow::Borrowed("wasi_snapshot_preview1"),
                 function_name: Cow::Borrowed("fd_write"),
@@ -293,7 +301,10 @@ impl Extrinsics for WasiExtrinsics {
         params: impl ExactSizeIterator<Item = RuntimeValue>,
         mem_access: &mut impl ExtrinsicsMemoryAccess,
     ) -> (Self::Context, ExtrinsicsAction) {
-        let (context, action) = match id.0 {
+        // All these function calls have the same return type. They return an error if there is
+        // something fundamentally wrong in the system call (for example: a pointer to
+        // out-of-bounds memory) and we have to make the program crash.
+        let result = match id.0 {
             ExtrinsicIdInner::ArgsGet => args_get(self, params, mem_access),
             ExtrinsicIdInner::ArgsSizesGet => args_sizes_get(self, params, mem_access),
             ExtrinsicIdInner::ClockTimeGet => clock_time_get(self, params, mem_access),
@@ -307,6 +318,7 @@ impl Extrinsics for WasiExtrinsics {
             ExtrinsicIdInner::FdPrestatGet => fd_prestat_get(self, params, mem_access),
             ExtrinsicIdInner::FdRead => fd_read(self, params, mem_access),
             ExtrinsicIdInner::FdSeek => fd_seek(self, params, mem_access),
+            ExtrinsicIdInner::FdTell => unimplemented!(),
             ExtrinsicIdInner::FdWrite => fd_write(self, params, mem_access),
             ExtrinsicIdInner::PathCreateDirectory => unimplemented!(),
             ExtrinsicIdInner::PathFilestatGet => path_filestat_get(self, params, mem_access),
@@ -317,7 +329,13 @@ impl Extrinsics for WasiExtrinsics {
             ExtrinsicIdInner::SchedYield => sched_yield(self, params, mem_access),
         };
 
-        (Context(context), action)
+        match result {
+            Ok((context, action)) => (Context(context), action),
+            Err(WasiCallErr) => (
+                Context(ContextInner::Finished),
+                ExtrinsicsAction::ProgramCrash,
+            ),
+        }
     }
 
     fn inject_message_response(
@@ -327,6 +345,23 @@ impl Extrinsics for WasiExtrinsics {
         mem_access: &mut impl ExtrinsicsMemoryAccess,
     ) -> ExtrinsicsAction {
         match ctxt.0 {
+            ContextInner::WaitClockVal { out_ptr } => {
+                let response = response.unwrap();
+                let value: u128 = match response.decode() {
+                    Ok(v) => v,
+                    Err(_) => return ExtrinsicsAction::ProgramCrash,
+                };
+
+                let converted_value: wasi::Timestamp =
+                    wasi::Timestamp::try_from(value % u128::from(wasi::Timestamp::max_value()))
+                        .unwrap();
+                mem_access
+                    .write_memory(out_ptr, &converted_value.to_le_bytes())
+                    .unwrap(); // TODO: don't unwrap
+
+                ctxt.0 = ContextInner::Finished;
+                ExtrinsicsAction::Resume(Some(RuntimeValue::I32(0)))
+            }
             ContextInner::WaitRandom {
                 mut out_ptr,
                 mut remaining_len,
@@ -380,12 +415,29 @@ impl Extrinsics for WasiExtrinsics {
 }
 
 // Implementations of WASI function calls below.
+//
+// # About unwrapping and panics
+//
+// It is allowed and encouraged to panic in case of an anomaly in the number or the types of
+// arguments. This is because function signatures have normally been verified before the call is
+// made.
+//
+// Any other error condition, including for example converting `i32` parameters to `u32`, should
+// be handled by not panicking.
+
+/// Dummy error type that "absorbs" all possible error types.
+struct WasiCallErr;
+impl<T: fmt::Debug> From<T> for WasiCallErr {
+    fn from(_: T) -> Self {
+        WasiCallErr
+    }
+}
 
 fn args_get(
     state: &WasiExtrinsics,
     params: impl ExactSizeIterator<Item = RuntimeValue>,
     mem_access: &mut impl ExtrinsicsMemoryAccess,
-) -> (ContextInner, ExtrinsicsAction) {
+) -> Result<(ContextInner, ExtrinsicsAction), WasiCallErr> {
     args_or_env_get(&state.args, params, mem_access)
 }
 
@@ -393,42 +445,53 @@ fn args_sizes_get(
     state: &WasiExtrinsics,
     params: impl ExactSizeIterator<Item = RuntimeValue>,
     mem_access: &mut impl ExtrinsicsMemoryAccess,
-) -> (ContextInner, ExtrinsicsAction) {
+) -> Result<(ContextInner, ExtrinsicsAction), WasiCallErr> {
     args_or_env_sizes_get(&state.args, params, mem_access)
 }
 
 fn clock_time_get(
     _: &WasiExtrinsics,
     mut params: impl ExactSizeIterator<Item = RuntimeValue>,
-    mem_access: &mut impl ExtrinsicsMemoryAccess,
-) -> (ContextInner, ExtrinsicsAction) {
-    let clock_id = params.next().unwrap().try_into::<i32>().unwrap() as u32;
+    _: &mut impl ExtrinsicsMemoryAccess,
+) -> Result<(ContextInner, ExtrinsicsAction), WasiCallErr> {
+    let clock_id = u32::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
     let _precision = params.next().unwrap().try_into::<i64>().unwrap();
 
-    let clock_value: u64 = match clock_id {
-        wasi::CLOCKID_REALTIME => 0,  // TODO: wrong; emit message
-        wasi::CLOCKID_MONOTONIC => 0, // TODO: wrong; emit message
-        wasi::CLOCKID_PROCESS_CPUTIME_ID => unimplemented!(),
-        wasi::CLOCKID_THREAD_CPUTIME_ID => unimplemented!(),
-        _ => panic!(),
-    };
-
-    let time_out = params.next().unwrap().try_into::<i32>().unwrap() as u32;
+    let time_out = u32::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
     assert!(params.next().is_none());
 
-    mem_access
-        .write_memory(time_out, &clock_value.to_le_bytes())
-        .unwrap();
+    match clock_id {
+        wasi::CLOCKID_REALTIME => {
+            let action = ExtrinsicsAction::EmitMessage {
+                interface: redshirt_system_time_interface::ffi::INTERFACE,
+                message: redshirt_system_time_interface::ffi::TimeMessage::GetSystem.encode(),
+                response_expected: true,
+            };
 
-    let action = ExtrinsicsAction::Resume(Some(RuntimeValue::I32(0)));
-    (ContextInner::Finished, action)
+            let context = ContextInner::WaitClockVal { out_ptr: time_out };
+            Ok((context, action))
+        }
+        wasi::CLOCKID_MONOTONIC => {
+            let action = ExtrinsicsAction::EmitMessage {
+                interface: redshirt_time_interface::ffi::INTERFACE,
+                message: redshirt_time_interface::ffi::TimeMessage::GetMonotonic.encode(),
+                response_expected: true,
+            };
+
+            let context = ContextInner::WaitClockVal { out_ptr: time_out };
+            Ok((context, action))
+        }
+        wasi::CLOCKID_PROCESS_CPUTIME_ID => unimplemented!(), // TODO:
+        wasi::CLOCKID_THREAD_CPUTIME_ID => unimplemented!(),  // TODO:
+        _ => return Err(WasiCallErr),
+    }
 }
 
 fn environ_get(
     state: &WasiExtrinsics,
     params: impl ExactSizeIterator<Item = RuntimeValue>,
     mem_access: &mut impl ExtrinsicsMemoryAccess,
-) -> (ContextInner, ExtrinsicsAction) {
+) -> Result<(ContextInner, ExtrinsicsAction), WasiCallErr> {
     args_or_env_get(&state.env_vars, params, mem_access)
 }
 
@@ -436,7 +499,7 @@ fn environ_sizes_get(
     state: &WasiExtrinsics,
     params: impl ExactSizeIterator<Item = RuntimeValue>,
     mem_access: &mut impl ExtrinsicsMemoryAccess,
-) -> (ContextInner, ExtrinsicsAction) {
+) -> Result<(ContextInner, ExtrinsicsAction), WasiCallErr> {
     args_or_env_sizes_get(&state.env_vars, params, mem_access)
 }
 
@@ -444,10 +507,10 @@ fn fd_close(
     state: &WasiExtrinsics,
     mut params: impl ExactSizeIterator<Item = RuntimeValue>,
     _: &mut impl ExtrinsicsMemoryAccess,
-) -> (ContextInner, ExtrinsicsAction) {
+) -> Result<(ContextInner, ExtrinsicsAction), WasiCallErr> {
     let mut file_descriptors_lock = state.file_descriptors.lock();
 
-    let fd = params.next().unwrap().try_into::<i32>().unwrap() as usize;
+    let fd = usize::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
     assert!(params.next().is_none());
 
     // Check validity of the file descriptor.
@@ -458,7 +521,7 @@ fn fd_close(
     {
         let ret = Some(RuntimeValue::I32(From::from(wasi::ERRNO_BADF)));
         let action = ExtrinsicsAction::Resume(ret);
-        return (ContextInner::Finished, action);
+        return Ok((ContextInner::Finished, action));
     }
 
     file_descriptors_lock[fd] = None;
@@ -474,31 +537,65 @@ fn fd_close(
     file_descriptors_lock.shrink_to_fit();
 
     let action = ExtrinsicsAction::Resume(Some(RuntimeValue::I32(0)));
-    (ContextInner::Finished, action)
+    Ok((ContextInner::Finished, action))
 }
 
 fn fd_fdstat_get(
     state: &WasiExtrinsics,
     mut params: impl ExactSizeIterator<Item = RuntimeValue>,
     mem_access: &mut impl ExtrinsicsMemoryAccess,
-) -> (ContextInner, ExtrinsicsAction) {
+) -> Result<(ContextInner, ExtrinsicsAction), WasiCallErr> {
     let file_descriptors_lock = state.file_descriptors.lock();
 
     // Find out which file descriptor the user wants to write to.
     let file_descriptor = {
-        let fd = params.next().unwrap().try_into::<i32>().unwrap() as usize;
+        let fd = usize::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
         match file_descriptors_lock.get(fd).and_then(|v| v.as_ref()) {
             Some(fd) => fd,
             None => {
                 let ret = Some(RuntimeValue::I32(From::from(wasi::ERRNO_BADF)));
                 let action = ExtrinsicsAction::Resume(ret);
-                return (ContextInner::Finished, action);
+                return Ok((ContextInner::Finished, action));
             }
         }
     };
 
-    let dirs_rights = wasi::RIGHTS_PATH_OPEN | wasi::RIGHTS_FD_READDIR;
-    let files_rights = wasi::RIGHTS_FD_READ | wasi::RIGHTS_FD_SEEK | wasi::RIGHTS_FD_TELL;
+    // TODO: we mimic what wasmtime does, but documentation about these rights is pretty sparse
+    let dirs_rights = wasi::RIGHTS_FD_FDSTAT_SET_FLAGS
+        | wasi::RIGHTS_FD_SYNC
+        | wasi::RIGHTS_FD_ADVISE
+        | wasi::RIGHTS_PATH_CREATE_DIRECTORY
+        | wasi::RIGHTS_PATH_CREATE_FILE
+        | wasi::RIGHTS_PATH_LINK_SOURCE
+        | wasi::RIGHTS_PATH_LINK_TARGET
+        | wasi::RIGHTS_PATH_OPEN
+        | wasi::RIGHTS_FD_READDIR
+        | wasi::RIGHTS_PATH_READLINK
+        | wasi::RIGHTS_PATH_RENAME_SOURCE
+        | wasi::RIGHTS_PATH_RENAME_TARGET
+        | wasi::RIGHTS_PATH_FILESTAT_GET
+        | wasi::RIGHTS_PATH_FILESTAT_SET_SIZE
+        | wasi::RIGHTS_PATH_FILESTAT_SET_TIMES
+        | wasi::RIGHTS_FD_FILESTAT_GET
+        | wasi::RIGHTS_FD_FILESTAT_SET_SIZE
+        | wasi::RIGHTS_FD_FILESTAT_SET_TIMES
+        | wasi::RIGHTS_PATH_SYMLINK
+        | wasi::RIGHTS_PATH_REMOVE_DIRECTORY
+        | wasi::RIGHTS_PATH_UNLINK_FILE
+        | wasi::RIGHTS_POLL_FD_READWRITE;
+    let files_rights = wasi::RIGHTS_FD_DATASYNC
+        | wasi::RIGHTS_FD_READ
+        | wasi::RIGHTS_FD_SEEK
+        | wasi::RIGHTS_FD_FDSTAT_SET_FLAGS
+        | wasi::RIGHTS_FD_SYNC
+        | wasi::RIGHTS_FD_TELL
+        | wasi::RIGHTS_FD_WRITE
+        | wasi::RIGHTS_FD_ADVISE
+        | wasi::RIGHTS_FD_ALLOCATE
+        | wasi::RIGHTS_FD_FILESTAT_GET
+        | wasi::RIGHTS_FD_FILESTAT_SET_SIZE
+        | wasi::RIGHTS_FD_FILESTAT_SET_TIMES
+        | wasi::RIGHTS_POLL_FD_READWRITE;
 
     let stat = match file_descriptor {
         FileDescriptor::Empty => wasi::Fdstat {
@@ -510,8 +607,8 @@ fn fd_fdstat_get(
         FileDescriptor::LogOut(_) => wasi::Fdstat {
             fs_filetype: wasi::FILETYPE_CHARACTER_DEVICE,
             fs_flags: wasi::FDFLAGS_APPEND,
-            fs_rights_base: wasi::RIGHTS_FD_WRITE,
-            fs_rights_inheriting: wasi::RIGHTS_FD_WRITE,
+            fs_rights_base: 0x820004a, // TODO: that's what wasmtime returns, don't know what it means
+            fs_rights_inheriting: 0x820004a, // TODO: that's what wasmtime returns, don't know what it means
         },
         FileDescriptor::FilesystemEntry { inode, .. } => match **inode {
             Inode::Directory { .. } => wasi::Fdstat {
@@ -529,72 +626,79 @@ fn fd_fdstat_get(
         },
     };
 
-    let stat_out_buf = params.next().unwrap().try_into::<i32>().unwrap() as u32;
+    let stat_out_buf = u32::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
     assert!(params.next().is_none());
 
-    // TODO: no unsafe
-    unsafe {
-        mem_access
-            .write_memory(
-                stat_out_buf,
-                &slice::from_raw_parts(
-                    &stat as *const _ as *const u8,
-                    mem::size_of::<wasi::Fdstat>(),
-                ),
-            )
-            .unwrap(); // TODO: don't unwrap
-    }
+    // Note: this is a bit of dark magic, but it is the only solution at the moment.
+    // Can be tested with the following snippet:
+    // ```c
+    // #include <stdio.h>
+    // #include <wasi/api.h>
+    // int main() {
+    //     __wasi_fdstat_t* ptr = (__wasi_fdstat_t*)0x1000;
+    //     printf("%p %p %p %p %p %d\n", ptr, &ptr->fs_filetype, &ptr->fs_flags, &ptr->fs_rights_base, &ptr->fs_rights_inheriting, sizeof(__wasi_fdstat_t));
+    //     return 0;
+    // }
+    // ```
+    // Which prints `0x1000 0x1000 0x1002 0x1008 0x1010 24`
+    mem_access.write_memory(stat_out_buf, &[0; 24])?;
+    mem_access.write_memory(stat_out_buf, &[stat.fs_filetype])?;
+    mem_access.write_memory(stat_out_buf.checked_add(2)?, &stat.fs_flags.to_le_bytes())?;
+    mem_access.write_memory(
+        stat_out_buf.checked_add(8)?,
+        &stat.fs_rights_base.to_le_bytes(),
+    )?;
+    mem_access.write_memory(
+        stat_out_buf.checked_add(16)?,
+        &stat.fs_rights_inheriting.to_le_bytes(),
+    )?;
 
     let action = ExtrinsicsAction::Resume(Some(RuntimeValue::I32(0)));
-    (ContextInner::Finished, action)
+    Ok((ContextInner::Finished, action))
 }
 
 fn fd_filestat_get(
     state: &WasiExtrinsics,
     mut params: impl ExactSizeIterator<Item = RuntimeValue>,
     mem_access: &mut impl ExtrinsicsMemoryAccess,
-) -> (ContextInner, ExtrinsicsAction) {
+) -> Result<(ContextInner, ExtrinsicsAction), WasiCallErr> {
     let file_descriptors_lock = state.file_descriptors.lock();
 
     // Find out which file descriptor the user wants to write to.
     let file_descriptor = {
-        let fd = params.next().unwrap().try_into::<i32>().unwrap() as usize;
+        let fd = usize::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
         match file_descriptors_lock.get(fd).and_then(|v| v.as_ref()) {
             Some(fd) => fd,
             None => {
                 let ret = Some(RuntimeValue::I32(From::from(wasi::ERRNO_BADF)));
                 let action = ExtrinsicsAction::Resume(ret);
-                return (ContextInner::Finished, action);
+                return Ok((ContextInner::Finished, action));
             }
         }
     };
 
-    unimplemented!();
-
-    let _stat_out_buf = params.next().unwrap().try_into::<i32>().unwrap() as u32;
+    let _stat_out_buf = u32::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
     assert!(params.next().is_none());
 
-    // Returning `__WASI_ERRNO_BADF` all the time.
-    let action = ExtrinsicsAction::Resume(Some(RuntimeValue::I32(From::from(wasi::ERRNO_BADF))));
-    (ContextInner::Finished, action)
+    unimplemented!();
 }
 
 fn fd_prestat_dir_name(
     state: &WasiExtrinsics,
     mut params: impl ExactSizeIterator<Item = RuntimeValue>,
     mem_access: &mut impl ExtrinsicsMemoryAccess,
-) -> (ContextInner, ExtrinsicsAction) {
+) -> Result<(ContextInner, ExtrinsicsAction), WasiCallErr> {
     let file_descriptors_lock = state.file_descriptors.lock();
 
     // Find out which file descriptor the user wants to write to.
     let file_descriptor = {
-        let fd = params.next().unwrap().try_into::<i32>().unwrap() as usize;
+        let fd = usize::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
         match file_descriptors_lock.get(fd).and_then(|v| v.as_ref()) {
             Some(fd) => fd,
             None => {
                 let ret = Some(RuntimeValue::I32(From::from(wasi::ERRNO_BADF)));
                 let action = ExtrinsicsAction::Resume(ret);
-                return (ContextInner::Finished, action);
+                return Ok((ContextInner::Finished, action));
             }
         }
     };
@@ -604,108 +708,104 @@ fn fd_prestat_dir_name(
             // TODO: is that the correct return type?
             let ret = Some(RuntimeValue::I32(From::from(wasi::ERRNO_BADF)));
             let action = ExtrinsicsAction::Resume(ret);
-            return (ContextInner::Finished, action);
+            return Ok((ContextInner::Finished, action));
         }
-        FileDescriptor::FilesystemEntry { inode, .. } => "hello", // TODO:
+        // TODO: correct name; note that no null terminator is needed
+        // note that apparently any value other than an empty string will fail to match relative paths? it's weird
+        // cc https://github.com/CraneStation/wasi-libc/blob/9efc2f428358564fe64c374d762d0bfce1d92507/libc-bottom-half/libpreopen/libpreopen.c#L470
+        FileDescriptor::FilesystemEntry { .. } => b"",
     };
 
-    let path_out = params.next().unwrap().try_into::<i32>().unwrap() as u32;
-    let path_out_len = params.next().unwrap().try_into::<i32>().unwrap() as usize;
+    let path_out = u32::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
+    let path_out_len = usize::try_from(params.next().unwrap().try_into::<i32>().unwrap())
+        .unwrap_or(usize::max_value());
     assert!(params.next().is_none());
 
     // TODO: is it correct to truncate if the buffer is too small?
     let to_write = cmp::min(path_out_len, name.len());
-    // TODO: don't unwrap
-    mem_access
-        .write_memory(path_out, &name.as_bytes()[..to_write])
-        .unwrap();
+    mem_access.write_memory(path_out, &name[..to_write])?;
 
     let action = ExtrinsicsAction::Resume(Some(RuntimeValue::I32(0)));
-    (ContextInner::Finished, action)
+    Ok((ContextInner::Finished, action))
 }
 
 fn fd_prestat_get(
     state: &WasiExtrinsics,
     mut params: impl ExactSizeIterator<Item = RuntimeValue>,
     mem_access: &mut impl ExtrinsicsMemoryAccess,
-) -> (ContextInner, ExtrinsicsAction) {
+) -> Result<(ContextInner, ExtrinsicsAction), WasiCallErr> {
     let file_descriptors_lock = state.file_descriptors.lock();
 
     // Find out which file descriptor the user wants to write to.
     let file_descriptor = {
-        let fd = params.next().unwrap().try_into::<i32>().unwrap() as usize;
+        let fd = usize::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
         match file_descriptors_lock.get(fd).and_then(|v| v.as_ref()) {
             Some(fd) => fd,
             None => {
                 let ret = Some(RuntimeValue::I32(From::from(wasi::ERRNO_BADF)));
                 let action = ExtrinsicsAction::Resume(ret);
-                return (ContextInner::Finished, action);
+                return Ok((ContextInner::Finished, action));
             }
         }
     };
 
-    let prestat = match file_descriptor {
+    let pr_name_len: u32 = match file_descriptor {
         FileDescriptor::Empty | FileDescriptor::LogOut(_) => {
-            // TODO: is that the correct return type?
-            let ret = Some(RuntimeValue::I32(From::from(wasi::ERRNO_BADF)));
+            let ret = Some(RuntimeValue::I32(From::from(wasi::ERRNO_NOTSUP)));
             let action = ExtrinsicsAction::Resume(ret);
-            return (ContextInner::Finished, action);
+            return Ok((ContextInner::Finished, action));
         }
         FileDescriptor::FilesystemEntry { inode, .. } => match **inode {
             // TODO: we don't know for sure that it's been pre-open
-            Inode::Directory { .. } => wasi::Prestat {
-                pr_type: wasi::PREOPENTYPE_DIR,
-                u: wasi::PrestatU {
-                    dir: wasi::PrestatDir {
-                        pr_name_len: 5, // TODO:
-                    },
-                },
-            },
+            Inode::Directory { .. } => 0, // TODO: must match the length of the return value of `fd_prestat_dir_name`
             Inode::File { .. } => {
                 // TODO: is that the correct return type?
-                let ret = Some(RuntimeValue::I32(From::from(wasi::ERRNO_BADF)));
+                let ret = Some(RuntimeValue::I32(From::from(wasi::ERRNO_NOTSUP)));
                 let action = ExtrinsicsAction::Resume(ret);
-                return (ContextInner::Finished, action);
+                return Ok((ContextInner::Finished, action));
             }
         },
     };
 
-    let prestat_out_buf = params.next().unwrap().try_into::<i32>().unwrap() as u32;
+    let prestat_out_buf = u32::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
     assert!(params.next().is_none());
 
-    // TODO: no unsafe
-    unsafe {
-        mem_access
-            .write_memory(
-                prestat_out_buf,
-                &slice::from_raw_parts(
-                    &prestat as *const _ as *const u8,
-                    mem::size_of::<wasi::Prestat>(),
-                ),
-            )
-            .unwrap(); // TODO: don't unwrap
-    }
+    // Note: this is a bit of dark magic, but it is the only solution at the moment.
+    // Can be tested with the following snippet:
+    // ```c
+    // #include <stdio.h>
+    // #include <wasi/api.h>
+    // int main() {
+    //     __wasi_prestat_t* ptr = (__wasi_prestat_t*)0x1000;
+    //     printf("%p %p %p %d\n", ptr, &ptr->tag, &ptr->u.dir, sizeof(__wasi_prestat_t));
+    //     return 0;
+    // }
+    // ```
+    // Which prints `0x1000 0x1000 0x1004 8`
+    mem_access.write_memory(prestat_out_buf, &[0; 8])?;
+    mem_access.write_memory(prestat_out_buf, &[wasi::PREOPENTYPE_DIR])?;
+    mem_access.write_memory(prestat_out_buf.checked_add(4)?, &pr_name_len.to_le_bytes())?;
 
     let action = ExtrinsicsAction::Resume(Some(RuntimeValue::I32(0)));
-    (ContextInner::Finished, action)
+    Ok((ContextInner::Finished, action))
 }
 
 fn fd_read(
     state: &WasiExtrinsics,
     mut params: impl ExactSizeIterator<Item = RuntimeValue>,
     mem_access: &mut impl ExtrinsicsMemoryAccess,
-) -> (ContextInner, ExtrinsicsAction) {
+) -> Result<(ContextInner, ExtrinsicsAction), WasiCallErr> {
     let mut file_descriptors_lock = state.file_descriptors.lock();
 
     // Find out which file descriptor the user wants to read from.
     let mut file_descriptor = {
-        let fd = params.next().unwrap().try_into::<i32>().unwrap() as usize;
+        let fd = usize::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
         match file_descriptors_lock.get_mut(fd).and_then(|v| v.as_mut()) {
             Some(fd) => fd,
             None => {
                 let ret = Some(RuntimeValue::I32(From::from(wasi::ERRNO_BADF)));
                 let action = ExtrinsicsAction::Resume(ret);
-                return (ContextInner::Finished, action);
+                return Ok((ContextInner::Finished, action));
             }
         }
     };
@@ -714,10 +814,11 @@ fn fd_read(
     // Elements 0, 2, 4, 6, ... in that list are pointers, and elements 1, 3, 5, 7, ... are
     // lengths.
     let out_buffers_list = {
-        let addr = params.next().unwrap().try_into::<i32>().unwrap() as u32;
-        let num = params.next().unwrap().try_into::<i32>().unwrap() as u32;
-        let list_buf = mem_access.read_memory(addr..addr + 4 * num * 2).unwrap();
-        let mut list_out = Vec::with_capacity(usize::try_from(num).unwrap());
+        let addr = u32::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
+        let num = u32::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
+        let list_buf = mem_access.read_memory(addr..addr + 4 * num * 2)?;
+        // TODO: don't panic if allocation size is too large
+        let mut list_out = Vec::with_capacity(usize::try_from(num)?);
         for elem in list_buf.chunks(4) {
             list_out.push(u32::from_le_bytes(<[u8; 4]>::try_from(elem).unwrap()));
         }
@@ -735,73 +836,76 @@ fn fd_read(
                     // TODO: is that the correct error?
                     let ret = Some(RuntimeValue::I32(From::from(wasi::ERRNO_BADF)));
                     let action = ExtrinsicsAction::Resume(ret);
-                    return (ContextInner::Finished, action);
+                    return Ok((ContextInner::Finished, action));
                 }
                 Inode::File { content, .. } => {
                     let mut total_read = 0;
                     for buffer in out_buffers_list.chunks(2) {
                         let buffer_ptr = buffer[0];
-                        let buffer_len = buffer[1] as usize;
+                        let buffer_len = usize::try_from(buffer[1])?;
+                        // The cursor position cannot go past `content.len()`, and thus always
+                        // fits in a `usize`.
                         let file_cursor_pos_usize = usize::try_from(*file_cursor_pos).unwrap();
+                        debug_assert!(file_cursor_pos_usize <= content.len());
                         let to_copy = cmp::min(content.len() - file_cursor_pos_usize, buffer_len);
                         if to_copy == 0 {
                             break;
                         }
-                        mem_access
-                            .write_memory(
-                                buffer_ptr,
-                                &content[file_cursor_pos_usize..file_cursor_pos_usize + to_copy],
-                            )
-                            .unwrap();
-                        *file_cursor_pos += u64::try_from(to_copy).unwrap();
+                        mem_access.write_memory(
+                            buffer_ptr,
+                            &content[file_cursor_pos_usize..file_cursor_pos_usize + to_copy],
+                        )?;
+                        *file_cursor_pos = file_cursor_pos.checked_add(u64::try_from(to_copy)?)?;
+                        debug_assert!(
+                            *file_cursor_pos
+                                <= u64::try_from(content.len()).unwrap_or(u64::max_value())
+                        );
                         total_read += to_copy;
                     }
-                    u32::try_from(total_read).unwrap()
+                    u32::try_from(total_read)?
                 }
             }
         }
     };
 
     // Write to the last parameter the number of bytes that have been read in total.
-    let out_ptr = params.next().unwrap().try_into::<i32>().unwrap() as u32;
+    let out_ptr = u32::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
     assert!(params.next().is_none());
-    mem_access
-        .write_memory(out_ptr, &total_read.to_le_bytes())
-        .unwrap();
+    mem_access.write_memory(out_ptr, &total_read.to_le_bytes())?;
 
     let action = ExtrinsicsAction::Resume(Some(RuntimeValue::I32(0)));
-    (ContextInner::Finished, action)
+    Ok((ContextInner::Finished, action))
 }
 
 fn fd_seek(
     state: &WasiExtrinsics,
     mut params: impl ExactSizeIterator<Item = RuntimeValue>,
     mem_access: &mut impl ExtrinsicsMemoryAccess,
-) -> (ContextInner, ExtrinsicsAction) {
+) -> Result<(ContextInner, ExtrinsicsAction), WasiCallErr> {
     let mut file_descriptors_lock = state.file_descriptors.lock();
 
     // Find out which file descriptor the user wants to seek.
     let mut file_descriptor = {
-        let fd = params.next().unwrap().try_into::<i32>().unwrap() as usize;
+        let fd = usize::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
         match file_descriptors_lock.get_mut(fd).and_then(|v| v.as_mut()) {
             Some(fd) => fd,
             None => {
                 let ret = Some(RuntimeValue::I32(From::from(wasi::ERRNO_BADF)));
                 let action = ExtrinsicsAction::Resume(ret);
-                return (ContextInner::Finished, action);
+                return Ok((ContextInner::Finished, action));
             }
         }
     };
 
-    let offset = params.next().unwrap().try_into::<i64>().unwrap();
-    let whence = u8::try_from(params.next().unwrap().try_into::<i32>().unwrap()).unwrap();
+    let offset: i64 = params.next().unwrap().try_into::<i64>().unwrap();
+    let whence = u8::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
 
     let new_offset: u64 = match &mut file_descriptor {
         FileDescriptor::Empty | FileDescriptor::LogOut(_) => {
             // TODO: is that the correct error?
             let ret = Some(RuntimeValue::I32(From::from(wasi::ERRNO_BADF)));
             let action = ExtrinsicsAction::Resume(ret);
-            return (ContextInner::Finished, action);
+            return Ok((ContextInner::Finished, action));
         }
         FileDescriptor::FilesystemEntry {
             inode,
@@ -812,20 +916,20 @@ fn fd_seek(
                     // TODO: is that the correct error?
                     let ret = Some(RuntimeValue::I32(From::from(wasi::ERRNO_BADF)));
                     let action = ExtrinsicsAction::Resume(ret);
-                    return (ContextInner::Finished, action);
+                    return Ok((ContextInner::Finished, action));
                 }
                 Inode::File { content, .. } => {
-                    let max_offset = u64::try_from(content.len()).unwrap();
+                    let max_offset = u64::try_from(content.len())?;
                     // TODO: do that properly
                     let new_offset = match whence {
                         wasi::WHENCE_SET => {
-                            cmp::min(u64::try_from(cmp::max(offset, 0)).unwrap(), max_offset)
+                            cmp::min(u64::try_from(cmp::max(offset, 0))?, max_offset)
                         }
                         wasi::WHENCE_CUR => {
                             cmp::min(file_cursor_pos.saturating_add(offset as u64), max_offset)
                         }
                         wasi::WHENCE_END => cmp::min(
-                            u64::try_from(cmp::max(0, max_offset as i64 + offset)).unwrap(),
+                            u64::try_from(cmp::max(0, max_offset as i64 + offset))?,
                             max_offset,
                         ),
                         _ => panic!(), // TODO: no
@@ -838,32 +942,30 @@ fn fd_seek(
     };
 
     // Write to the last parameter the new offset.
-    let out_ptr = params.next().unwrap().try_into::<i32>().unwrap() as u32;
+    let out_ptr = u32::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
     assert!(params.next().is_none());
-    mem_access
-        .write_memory(out_ptr, &new_offset.to_le_bytes())
-        .unwrap();
+    mem_access.write_memory(out_ptr, &new_offset.to_le_bytes())?;
 
     let action = ExtrinsicsAction::Resume(Some(RuntimeValue::I32(0)));
-    (ContextInner::Finished, action)
+    Ok((ContextInner::Finished, action))
 }
 
 fn fd_write(
     state: &WasiExtrinsics,
     mut params: impl ExactSizeIterator<Item = RuntimeValue>,
     mem_access: &mut impl ExtrinsicsMemoryAccess,
-) -> (ContextInner, ExtrinsicsAction) {
+) -> Result<(ContextInner, ExtrinsicsAction), WasiCallErr> {
     let file_descriptors_lock = state.file_descriptors.lock();
 
     // Find out which file descriptor the user wants to write to.
     let file_descriptor = {
-        let fd = params.next().unwrap().try_into::<i32>().unwrap() as usize;
+        let fd = usize::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
         match file_descriptors_lock.get(fd).and_then(|v| v.as_ref()) {
             Some(fd) => fd,
             None => {
                 let ret = Some(RuntimeValue::I32(From::from(wasi::ERRNO_BADF)));
                 let action = ExtrinsicsAction::Resume(ret);
-                return (ContextInner::Finished, action);
+                return Ok((ContextInner::Finished, action));
             }
         }
     };
@@ -872,10 +974,11 @@ fn fd_write(
     // Elements 0, 2, 4, 6, ... in that list are pointers, and elements 1, 3, 5, 7, ... are
     // lengths.
     let list_to_write = {
-        let addr = params.next().unwrap().try_into::<i32>().unwrap() as u32;
-        let num = params.next().unwrap().try_into::<i32>().unwrap() as u32;
-        let list_buf = mem_access.read_memory(addr..addr + 4 * num * 2).unwrap();
-        let mut list_out = Vec::with_capacity(usize::try_from(num).unwrap());
+        let addr = u32::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
+        let num = u32::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
+        let list_buf = mem_access.read_memory(addr..addr + 4 * num * 2)?;
+        // TODO: don't panic if allocation size is too large
+        let mut list_out = Vec::with_capacity(usize::try_from(num)?);
         for elem in list_buf.chunks(4) {
             list_out.push(u32::from_le_bytes(<[u8; 4]>::try_from(elem).unwrap()));
         }
@@ -887,30 +990,28 @@ fn fd_write(
             // TODO: is that the right error code?
             let ret = Some(RuntimeValue::I32(From::from(wasi::ERRNO_NOSYS)));
             let action = ExtrinsicsAction::Resume(ret);
-            (ContextInner::Finished, action)
+            Ok((ContextInner::Finished, action))
         }
         FileDescriptor::LogOut(log_level) => {
-            let mut total_written = 0;
+            let mut total_written = 0usize;
             let mut encoded_message = Vec::new();
             encoded_message.push(u8::from(*log_level));
 
             for ptr_and_len in list_to_write.chunks(2) {
-                let ptr = ptr_and_len[0] as u32;
-                let len = ptr_and_len[1] as u32;
+                let ptr = ptr_and_len[0];
+                let len = ptr_and_len[1];
 
-                encoded_message.extend(mem_access.read_memory(ptr..ptr + len).unwrap());
-                total_written += len as usize;
+                encoded_message.extend(mem_access.read_memory(ptr..ptr + len)?);
+                total_written = total_written.checked_add(usize::try_from(len)?)?;
             }
 
-            debug_assert_eq!(encoded_message.len(), total_written);
+            debug_assert_eq!(encoded_message.len(), total_written + 1);
 
             // Write to the fourth parameter the number of bytes written to the file descriptor.
             {
-                let out_ptr = params.next().unwrap().try_into::<i32>().unwrap() as u32;
-                let total_written = u32::try_from(total_written).unwrap();
-                mem_access
-                    .write_memory(out_ptr, &total_written.to_le_bytes())
-                    .unwrap();
+                let out_ptr = u32::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
+                let total_written = u32::try_from(total_written)?;
+                mem_access.write_memory(out_ptr, &total_written.to_le_bytes())?;
             }
 
             assert!(params.next().is_none());
@@ -922,9 +1023,9 @@ fn fd_write(
             };
 
             let context = ContextInner::Resume(Some(RuntimeValue::I32(0)));
-            (context, action)
+            Ok((context, action))
         }
-        FileDescriptor::FilesystemEntry { .. } => unimplemented!(),
+        FileDescriptor::FilesystemEntry { .. } => unimplemented!(), // TODO:
     }
 }
 
@@ -932,17 +1033,17 @@ fn path_filestat_get(
     state: &WasiExtrinsics,
     mut params: impl ExactSizeIterator<Item = RuntimeValue>,
     mem_access: &mut impl ExtrinsicsMemoryAccess,
-) -> (ContextInner, ExtrinsicsAction) {
+) -> Result<(ContextInner, ExtrinsicsAction), WasiCallErr> {
     let file_descriptors_lock = state.file_descriptors.lock();
 
     let file_descriptor = {
-        let fd = params.next().unwrap().try_into::<i32>().unwrap() as usize;
+        let fd = usize::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
         match file_descriptors_lock.get(fd).and_then(|v| v.as_ref()) {
             Some(fd) => fd,
             None => {
                 let ret = Some(RuntimeValue::I32(From::from(wasi::ERRNO_BADF)));
                 let action = ExtrinsicsAction::Resume(ret);
-                return (ContextInner::Finished, action);
+                return Ok((ContextInner::Finished, action));
             }
         }
     };
@@ -952,21 +1053,18 @@ fn path_filestat_get(
             // TODO: is that the correct return type?
             let ret = Some(RuntimeValue::I32(From::from(wasi::ERRNO_BADF)));
             let action = ExtrinsicsAction::Resume(ret);
-            return (ContextInner::Finished, action);
+            return Ok((ContextInner::Finished, action));
         }
         FileDescriptor::FilesystemEntry { inode, .. } => inode.clone(),
     };
 
-    let _lookup_flags = params.next().unwrap().try_into::<i32>().unwrap() as u32;
+    let _lookup_flags = u32::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
 
     let path = {
-        let path_buf = params.next().unwrap().try_into::<i32>().unwrap() as u32;
-        let path_buf_len = params.next().unwrap().try_into::<i32>().unwrap() as u32;
-        // TODO: don't unwrap below
-        let path_utf8 = mem_access
-            .read_memory(path_buf..path_buf + path_buf_len)
-            .unwrap();
-        String::from_utf8(path_utf8).unwrap()
+        let path_buf = u32::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
+        let path_buf_len = u32::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
+        let path_utf8 = mem_access.read_memory(path_buf..path_buf + path_buf_len)?;
+        String::from_utf8(path_utf8)? // TODO: return error code?
     };
 
     let resolved_path = match resolve_path(&fd_inode, &path) {
@@ -974,47 +1072,77 @@ fn path_filestat_get(
         None => {
             let action =
                 ExtrinsicsAction::Resume(Some(RuntimeValue::I32(From::from(wasi::ERRNO_NOENT))));
-            return (ContextInner::Finished, action);
+            return Ok((ContextInner::Finished, action));
         }
     };
 
     let filestat = filestat_from_inode(&resolved_path);
 
-    let filestat_out_buf = params.next().unwrap().try_into::<i32>().unwrap() as u32;
+    let filestat_out_buf = u32::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
     assert!(params.next().is_none());
 
-    // TODO: no unsafe
-    unsafe {
-        mem_access
-            .write_memory(
-                filestat_out_buf,
-                &slice::from_raw_parts(
-                    &filestat as *const _ as *const u8,
-                    mem::size_of::<wasi::Filestat>(),
-                ),
-            )
-            .unwrap(); // TODO: don't unwrap
-    }
+    // Note: this is a bit of dark magic, but it is the only solution at the moment.
+    // Can be tested with the following snippet:
+    // ```c
+    // #include <stdio.h>
+    // #include <wasi/api.h>
+    // int main() {
+    //     __wasi_filestat_t* ptr = (__wasi_filestat_t*)0x1000;
+    //     printf("%p %p %p %p %p %p %p %p %p %d\n", ptr, &ptr->dev, &ptr->ino, &ptr->filetype, &ptr->nlink, &ptr->size, &ptr->atim, &ptr->mtim, &ptr->ctim, sizeof(__wasi_filestat_t));
+    //     return 0;
+    // }
+    // ```
+    // Which prints `0x1000 0x1000 0x1008 0x1010 0x1018 0x1020 0x1028 0x1030 0x1038 64`
+    mem_access.write_memory(filestat_out_buf, &[0; 64])?;
+    mem_access.write_memory(filestat_out_buf, &filestat.dev.to_le_bytes())?;
+    mem_access.write_memory(
+        filestat_out_buf.checked_add(8)?,
+        &filestat.ino.to_le_bytes(),
+    )?;
+    mem_access.write_memory(
+        filestat_out_buf.checked_add(16)?,
+        &filestat.filetype.to_le_bytes(),
+    )?;
+    mem_access.write_memory(
+        filestat_out_buf.checked_add(24)?,
+        &filestat.nlink.to_le_bytes(),
+    )?;
+    mem_access.write_memory(
+        filestat_out_buf.checked_add(32)?,
+        &filestat.size.to_le_bytes(),
+    )?;
+    mem_access.write_memory(
+        filestat_out_buf.checked_add(40)?,
+        &filestat.atim.to_le_bytes(),
+    )?;
+    mem_access.write_memory(
+        filestat_out_buf.checked_add(48)?,
+        &filestat.mtim.to_le_bytes(),
+    )?;
+    mem_access.write_memory(
+        filestat_out_buf.checked_add(56)?,
+        &filestat.ctim.to_le_bytes(),
+    )?;
 
     let action = ExtrinsicsAction::Resume(Some(RuntimeValue::I32(0)));
-    (ContextInner::Finished, action)
+    Ok((ContextInner::Finished, action))
 }
 
 fn path_open(
     state: &WasiExtrinsics,
     mut params: impl ExactSizeIterator<Item = RuntimeValue>,
     mem_access: &mut impl ExtrinsicsMemoryAccess,
-) -> (ContextInner, ExtrinsicsAction) {
+) -> Result<(ContextInner, ExtrinsicsAction), WasiCallErr> {
     let mut file_descriptors_lock = state.file_descriptors.lock();
 
     let file_descriptor = {
-        let fd = params.next().unwrap().try_into::<i32>().unwrap() as usize;
+        let fd = usize::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
         match file_descriptors_lock.get(fd).and_then(|v| v.as_ref()) {
             Some(fd) => fd,
             None => {
                 let ret = Some(RuntimeValue::I32(From::from(wasi::ERRNO_BADF)));
                 let action = ExtrinsicsAction::Resume(ret);
-                return (ContextInner::Finished, action);
+                return Ok((ContextInner::Finished, action));
             }
         }
     };
@@ -1024,21 +1152,18 @@ fn path_open(
             // TODO: is that the correct return type?
             let ret = Some(RuntimeValue::I32(From::from(wasi::ERRNO_BADF)));
             let action = ExtrinsicsAction::Resume(ret);
-            return (ContextInner::Finished, action);
+            return Ok((ContextInner::Finished, action));
         }
         FileDescriptor::FilesystemEntry { inode, .. } => inode.clone(),
     };
 
-    let _lookup_flags = params.next().unwrap().try_into::<i32>().unwrap() as u32;
+    let _lookup_flags = u32::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
 
     let path = {
-        let path_buf = params.next().unwrap().try_into::<i32>().unwrap() as u32;
-        let path_buf_len = params.next().unwrap().try_into::<i32>().unwrap() as u32;
-        // TODO: don't unwrap below
-        let path_utf8 = mem_access
-            .read_memory(path_buf..path_buf + path_buf_len)
-            .unwrap();
-        String::from_utf8(path_utf8).unwrap()
+        let path_buf = u32::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
+        let path_buf_len = u32::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
+        let path_utf8 = mem_access.read_memory(path_buf..path_buf + path_buf_len)?;
+        String::from_utf8(path_utf8)? // TODO: return error code?
     };
 
     let resolved_path = match resolve_path(&fd_inode, &path) {
@@ -1046,20 +1171,21 @@ fn path_open(
         None => {
             let action =
                 ExtrinsicsAction::Resume(Some(RuntimeValue::I32(From::from(wasi::ERRNO_NOENT))));
-            return (ContextInner::Finished, action);
+            return Ok((ContextInner::Finished, action));
         }
     };
 
-    let _open_flags = params.next().unwrap().try_into::<i32>().unwrap() as u32;
-    let _fs_rights_base = params.next().unwrap().try_into::<i64>().unwrap() as u64;
-    let _fs_rights_inherting = params.next().unwrap().try_into::<i64>().unwrap() as u64;
-    let _fd_flags = params.next().unwrap().try_into::<i32>().unwrap() as u32;
+    let _open_flags = u32::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
+    let _fs_rights_base = u64::try_from(params.next().unwrap().try_into::<i64>().unwrap())?;
+    let _fs_rights_inherting = u64::try_from(params.next().unwrap().try_into::<i64>().unwrap())?;
+    let _fd_flags = u32::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
 
     let new_fd = if let Some(fd_val) = file_descriptors_lock.iter().position(|fd| fd.is_none()) {
         file_descriptors_lock[fd_val] = Some(FileDescriptor::FilesystemEntry {
             inode: resolved_path,
             file_cursor_pos: 0,
         });
+        // TODO: return error code with "too many fds"
         u32::try_from(fd_val).unwrap()
     } else {
         let fd_val = file_descriptors_lock.len();
@@ -1067,30 +1193,28 @@ fn path_open(
             inode: resolved_path,
             file_cursor_pos: 0,
         }));
+        // TODO: return error code with "too many fds"
         u32::try_from(fd_val).unwrap()
     };
 
-    let opened_fd_ptr = params.next().unwrap().try_into::<i32>().unwrap() as u32;
+    let opened_fd_ptr = u32::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
     assert!(params.next().is_none());
 
-    // TODO: don't unwrap
-    mem_access
-        .write_memory(opened_fd_ptr, &new_fd.to_le_bytes())
-        .unwrap();
+    mem_access.write_memory(opened_fd_ptr, &new_fd.to_le_bytes())?;
 
     let action = ExtrinsicsAction::Resume(Some(RuntimeValue::I32(0)));
-    (ContextInner::Finished, action)
+    Ok((ContextInner::Finished, action))
 }
 
 fn poll_oneoff(
     _: &WasiExtrinsics,
     mut params: impl ExactSizeIterator<Item = RuntimeValue>,
     _: &mut impl ExtrinsicsMemoryAccess,
-) -> (ContextInner, ExtrinsicsAction) {
-    let _subscriptions_buf = params.next().unwrap().try_into::<i32>().unwrap() as u32;
-    let _events_out_buf = params.next().unwrap().try_into::<i32>().unwrap() as u32;
-    let _buf_size = params.next().unwrap().try_into::<i32>().unwrap() as u32;
-    let _num_events_out = params.next().unwrap().try_into::<i32>().unwrap() as u32;
+) -> Result<(ContextInner, ExtrinsicsAction), WasiCallErr> {
+    let _subscriptions_buf = u32::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
+    let _events_out_buf = u32::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
+    let _buf_size = u32::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
+    let _num_events_out = u32::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
     assert!(params.next().is_none());
 
     unimplemented!()
@@ -1100,8 +1224,8 @@ fn proc_exit(
     _: &WasiExtrinsics,
     mut params: impl ExactSizeIterator<Item = RuntimeValue>,
     _: &mut impl ExtrinsicsMemoryAccess,
-) -> (ContextInner, ExtrinsicsAction) {
-    let _ret_val = params.next().unwrap().try_into::<i32>().unwrap() as u32;
+) -> Result<(ContextInner, ExtrinsicsAction), WasiCallErr> {
+    let _ret_val = params.next().unwrap().try_into::<i32>().unwrap();
     assert!(params.next().is_none());
 
     // TODO: returning `ProgramCrash` leads to `unimplemented!()`, so we panic
@@ -1111,16 +1235,16 @@ fn proc_exit(
     panic!("proc_exit called with {:?}", _ret_val);
 
     // TODO: implement in a better way than crashing?
-    (ContextInner::Finished, ExtrinsicsAction::ProgramCrash)
+    Ok((ContextInner::Finished, ExtrinsicsAction::ProgramCrash))
 }
 
 fn random_get(
     _: &WasiExtrinsics,
     mut params: impl ExactSizeIterator<Item = RuntimeValue>,
     _: &mut impl ExtrinsicsMemoryAccess,
-) -> (ContextInner, ExtrinsicsAction) {
-    let buf = params.next().unwrap().try_into::<i32>().unwrap() as u32;
-    let len = params.next().unwrap().try_into::<i32>().unwrap() as u32;
+) -> Result<(ContextInner, ExtrinsicsAction), WasiCallErr> {
+    let buf = u32::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
+    let len = u32::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
     assert!(params.next().is_none());
 
     let len_to_request = u16::try_from(len).unwrap_or(u16::max_value());
@@ -1139,18 +1263,18 @@ fn random_get(
         remaining_len: len,
     };
 
-    (context, action)
+    Ok((context, action))
 }
 
 fn sched_yield(
     _: &WasiExtrinsics,
     mut params: impl ExactSizeIterator<Item = RuntimeValue>,
-    mem_access: &mut impl ExtrinsicsMemoryAccess,
-) -> (ContextInner, ExtrinsicsAction) {
+    _: &mut impl ExtrinsicsMemoryAccess,
+) -> Result<(ContextInner, ExtrinsicsAction), WasiCallErr> {
     // TODO: implement in a better way?
     assert!(params.next().is_none());
     let action = ExtrinsicsAction::Resume(Some(RuntimeValue::I32(0)));
-    (ContextInner::Finished, action)
+    Ok((ContextInner::Finished, action))
 }
 
 // Utility functions below.
@@ -1159,55 +1283,50 @@ fn args_or_env_get(
     list: &[Vec<u8>],
     mut params: impl ExactSizeIterator<Item = RuntimeValue>,
     mem_access: &mut impl ExtrinsicsMemoryAccess,
-) -> (ContextInner, ExtrinsicsAction) {
-    let argv = params.next().unwrap().try_into::<i32>().unwrap() as u32;
-    let argv_buf = params.next().unwrap().try_into::<i32>().unwrap() as u32;
+) -> Result<(ContextInner, ExtrinsicsAction), WasiCallErr> {
+    let argv = u32::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
+    let argv_buf = u32::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
     assert!(params.next().is_none());
 
     let mut argv_pos = 0;
     let mut argv_buf_pos = 0;
 
     for arg in list.iter() {
-        mem_access
-            .write_memory(argv + argv_pos, &(argv_buf + argv_buf_pos).to_le_bytes())
-            .unwrap(); // TODO: don't unwrap
-        argv_pos += 4;
-        mem_access
-            .write_memory(argv_buf + argv_buf_pos, &arg)
-            .unwrap(); // TODO: don't unwrap
-        argv_buf_pos += u32::try_from(arg.len()).unwrap();
-        mem_access
-            .write_memory(argv_buf + argv_buf_pos, &[0])
-            .unwrap(); // TODO: don't unwrap
-        argv_buf_pos += 1;
+        mem_access.write_memory(
+            argv.checked_add(argv_pos)?,
+            &(argv_buf.checked_add(argv_buf_pos)?).to_le_bytes(),
+        )?;
+        argv_pos = argv_pos.checked_add(4)?;
+        mem_access.write_memory(argv_buf.checked_add(argv_buf_pos)?, &arg)?;
+        argv_buf_pos = argv_buf_pos.checked_add(u32::try_from(arg.len())?)?;
+        mem_access.write_memory(argv_buf.checked_add(argv_buf_pos)?, &[0])?;
+        argv_buf_pos = argv_buf_pos.checked_add(1)?;
     }
 
     let action = ExtrinsicsAction::Resume(Some(RuntimeValue::I32(0)));
-    (ContextInner::Finished, action)
+    Ok((ContextInner::Finished, action))
 }
 
 fn args_or_env_sizes_get(
     list: &[Vec<u8>],
     mut params: impl ExactSizeIterator<Item = RuntimeValue>,
     mem_access: &mut impl ExtrinsicsMemoryAccess,
-) -> (ContextInner, ExtrinsicsAction) {
-    let argc_out = params.next().unwrap().try_into::<i32>().unwrap() as u32;
-    let argv_buf_size_out = params.next().unwrap().try_into::<i32>().unwrap() as u32;
+) -> Result<(ContextInner, ExtrinsicsAction), WasiCallErr> {
+    let argc_out = u32::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
+    let argv_buf_size_out = u32::try_from(params.next().unwrap().try_into::<i32>().unwrap())?;
     assert!(params.next().is_none());
 
-    mem_access
-        .write_memory(argc_out, &u32::try_from(list.len()).unwrap().to_le_bytes())
-        .unwrap(); // TODO: don't unwrap
-    let argv_buf_size = list.iter().fold(0, |s, a| s + a.len() + 1);
-    mem_access
-        .write_memory(
-            argv_buf_size_out,
-            &u32::try_from(argv_buf_size).unwrap().to_le_bytes(),
-        )
-        .unwrap(); // TODO: don't unwrap
+    mem_access.write_memory(argc_out, &u32::try_from(list.len())?.to_le_bytes())?;
+    let argv_buf_size = list
+        .iter()
+        .fold(0usize, |s, a| s.saturating_add(a.len()).saturating_add(1));
+    mem_access.write_memory(
+        argv_buf_size_out,
+        &u32::try_from(argv_buf_size)?.to_le_bytes(),
+    )?;
 
     let action = ExtrinsicsAction::Resume(Some(RuntimeValue::I32(0)));
-    (ContextInner::Finished, action)
+    Ok((ContextInner::Finished, action))
 }
 
 fn filestat_from_inode(inode: &Arc<Inode>) -> wasi::Filestat {
