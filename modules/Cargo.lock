@@ -2213,7 +2213,7 @@ checksum = "fc9f36ad51f25b0219a3d4d13b90eb44cd075dff8b6280cca015775d7acaddd8"
 name = "wasm-timer"
 version = "0.2.4"
 dependencies = [
- "futures-timer 3.0.2",
+ "futures-timer 2.0.2",
  "pin-project",
  "redshirt-time-interface",
 ]
