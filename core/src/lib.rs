@@ -150,6 +150,7 @@ macro_rules! from_wat {
 
 mod id_pool;
 
+pub mod extrinsics;
 pub mod module;
 pub mod native;
 pub mod scheduler;

@@ -59,7 +59,7 @@ pub(crate) fn register_message_waker(message_id: MessageId, waker: Waker) -> Wak
 
     let index = state.wakers.insert(Some(waker));
 
-    if index <= state.message_ids.len() {
+    if state.message_ids.len() <= index {
         state.message_ids.resize(index + 1, 0);
     }
 

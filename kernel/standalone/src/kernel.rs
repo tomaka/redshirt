@@ -49,10 +49,12 @@ where
     }
 
     /// Run the kernel. Must be called once per CPU.
-    pub fn run(&self) -> ! {
+    pub async fn run(&self) -> ! {
         // We only want a single CPU to run for now.
         if self.running.swap(true, Ordering::SeqCst) {
-            panic!(); // TODO:
+            loop {
+                futures::future::poll_fn(|_| core::task::Poll::Pending).await
+            }
         }
 
         let mut system_builder = redshirt_core::system::SystemBuilder::new()
@@ -62,7 +64,9 @@ where
             .with_native_program(crate::time::TimeHandler::new(
                 self.platform_specific.clone(),
             ))
-            .with_native_program(crate::random::native::RandomNativeProgram::new())
+            .with_native_program(crate::random::native::RandomNativeProgram::new(
+                self.platform_specific.clone(),
+            ))
             .with_startup_process(build_wasm_module!(
                 "../../../modules/p2p-loader",
                 "passive-node"
@@ -77,7 +81,7 @@ where
                 .with_startup_process(build_wasm_module!("../../../modules/x86-pci"))
                 .with_startup_process(build_wasm_module!("../../../modules/ne2000"))
         }
-        #[cfg(target_arch = "arm")]
+        #[cfg(any(target_arch = "arm", target_arch = "aarch64"))]
         {
             system_builder = system_builder
                 .with_startup_process(build_wasm_module!("../../../modules/arm-log"))
@@ -86,12 +90,11 @@ where
 
         let system = system_builder
             .with_main_program(From::from([0; 32])) // TODO: just a test
-            .build();
+            .build()
+            .expect("Failed to start kernel");
 
         loop {
-            // TODO: ideally the entire function would be async, and this would be an `await`,
-            // but async functions don't work on no_std yet
-            match self.platform_specific.as_ref().block_on(system.run()) {
+            match system.run().await {
                 redshirt_core::system::SystemRunOutcome::ProgramFinished { pid, outcome } => {
                     //console.write(&format!("Program finished {:?} => {:?}\n", pid, outcome));
                 }

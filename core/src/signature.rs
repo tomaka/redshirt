@@ -63,6 +63,16 @@ impl Signature {
         }
     }
 
+    /// Returns a list of all the types of the parameters.
+    pub fn parameters(&self) -> impl ExactSizeIterator<Item = &ValueType> {
+        self.params.iter()
+    }
+
+    /// Returns the type of the return type of the function. `None` means "void".
+    pub fn return_type(&self) -> &Option<ValueType> {
+        &self.ret_ty
+    }
+
     pub(crate) fn matches_wasmi(&self, sig: &wasmi::Signature) -> bool {
         wasmi::Signature::from(self) == *sig
     }

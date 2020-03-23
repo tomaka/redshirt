@@ -88,7 +88,7 @@ extern "C" {
     // TODO: document error that can happen
     pub(crate) fn emit_message(
         interface_hash: *const u8,
-        msg_bufs_ptrs: *const u8,
+        msg_bufs_ptrs: *const u32,
         msg_bufs_num: u32,
         needs_answer: bool,
         allow_delay: bool,

@@ -28,9 +28,13 @@ pub struct Module {
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct ModuleHash([u8; 32]);
 
-/// Error that can happen when calling `from_bytes`.
+/// Error that can happen when calling [`ModuleHash::from_bytes`].
 #[derive(Debug)]
 pub struct FromBytesError {}
+
+/// Error that can happen when calling [`ModuleHash::from_base58`].
+#[derive(Debug)]
+pub struct FromBase58Error {}
 
 impl Module {
     /// Parses a module from WASM bytes.
@@ -77,11 +81,31 @@ impl ModuleHash {
     pub fn from_bytes(buffer: impl AsRef<[u8]>) -> Self {
         ModuleHash(blake3::hash(buffer.as_ref()).into())
     }
+
+    /// Decodes the given base58-encoded string into a hash.
+    ///
+    /// See also https://en.wikipedia.org/wiki/Base58.
+    // TODO: check that we return an error if the string is too long
+    pub fn from_base58(encoding: &str) -> Result<Self, FromBase58Error> {
+        let mut out = [0; 32];
+        let written = bs58::decode(encoding)
+            .into(&mut out)
+            .map_err(|_| FromBase58Error {})?;
+        let mut out2 = [0; 32];
+        out2[32 - written..].copy_from_slice(&out[..written]);
+        Ok(ModuleHash(out2))
+    }
 }
 
 impl fmt::Debug for ModuleHash {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "ModuleHash({})", bs58::encode(&self.0).into_string())
+    }
+}
+
+impl fmt::Display for FromBase58Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "FromBase58Error")
     }
 }
 

@@ -15,25 +15,32 @@
 
 #![cfg(any(target_arch = "arm", target_arch = "aarch64"))]
 
-use crate::arch::PlatformSpecific;
+use crate::arch::{PlatformSpecific, PortErr};
 
 use alloc::sync::Arc;
 use core::{iter, num::NonZeroU32, pin::Pin};
 use futures::prelude::*;
 
+#[cfg(target_arch = "aarch64")]
+use time_aarch64 as time;
+#[cfg(target_arch = "arm")]
+use time_arm as time;
+
 mod executor;
 mod misc;
 mod panic;
-mod time;
+mod time_aarch64;
+mod time_arm;
 
-// TODO: always fails :-/
-/*#[cfg(not(any(target_feature = "armv7-a", target_feature = "armv7-r")))]
-compile_error!("The ARMv7-A or ARMv7-R instruction sets must be enabled");*/
-
-/// This is the main entry point of the kernel for ARM architectures.
+/// This is the main entry point of the kernel for ARM 32bits architectures.
+#[cfg(target_arch = "arm")]
 #[no_mangle]
 #[naked]
 unsafe extern "C" fn _start() -> ! {
+    // TODO: always fails :-/
+    /*#[cfg(not(any(target_feature = "armv7-a", target_feature = "armv7-r")))]
+    compile_error!("The ARMv7-A or ARMv7-R instruction sets must be enabled");*/
+
     // Detect which CPU we are.
     //
     // See sections B4.1.106 and B6.1.67 of the ARM® Architecture Reference Manual
@@ -50,41 +57,74 @@ unsafe extern "C" fn _start() -> ! {
 
     // Only one CPU reaches here.
 
+    // Zero the BSS segment.
+    // TODO: we pray here that the compiler doesn't use the stack
+    let mut ptr = __bss_start;
+    while ptr < __bss_end {
+        ptr.write_volatile(0);
+        ptr = ptr.add(1);
+    }
+
     // Set up the stack.
     asm!(r#"
     .comm stack, 0x400000, 8
     ldr sp, =stack+0x400000"#:::"memory":"volatile");
 
-    // On ARM platforms, the `r0`, `r1` and `r2` registers are used to pass the first three
-    // parameters when calling a function.
-    // Since we don't modify the values of these registers in this function, we can simply branch
-    // to `cpu_enter`, and it will receive the same parameters as what the bootloader passed to
-    // us.
-    // TODO: to be honest, I'd prefer retreiving the values of r0, r1 and r2 in local variables
-    // first, and then pass them to `cpu_enter` as parameters. In practice, though, I don't want
-    // to deal with the syntax of `asm!`.
     asm!(r#"b cpu_enter"#:::"volatile");
     core::hint::unreachable_unchecked()
 }
 
-/// Main Rust entry point. The three parameters are the values of the `r0`, `r1` and `r2`
-/// registers as they were when we entered the kernel.
+/// This is the main entry point of the kernel for ARM 64bits architectures.
+#[cfg(target_arch = "aarch64")]
 #[no_mangle]
-fn cpu_enter(_r0: u32, _r1: u32, _r2: u32) -> ! {
+#[naked]
+unsafe extern "C" fn _start() -> ! {
+    // TODO: review this
+    asm!(r#"
+    mrs x6, MPIDR_EL1
+    and x6, x6, #0x3
+    cbz x6, L0
+    b halt
+L0: nop
+    "#::::"volatile");
+
+    // Only one CPU reaches here.
+
+    // Zero the BSS segment.
+    // TODO: we pray here that the compiler doesn't use the stack
+    let mut ptr = __bss_start;
+    while ptr < __bss_end {
+        ptr.write_volatile(0);
+        ptr = ptr.add(1);
+    }
+
+    // Set up the stack.
+    asm!(r#"
+    .comm stack, 0x400000, 8
+    ldr x5, =stack+0x400000; mov sp, x5"#:::"memory":"volatile");
+
+    asm!(r#"b cpu_enter"#:::"volatile");
+    core::hint::unreachable_unchecked()
+}
+
+extern "C" {
+    static mut __bss_start: *mut u8;
+    static mut __bss_end: *mut u8;
+}
+
+/// Main Rust entry point.
+#[no_mangle]
+fn cpu_enter() -> ! {
     unsafe {
         // TODO: RAM starts at 0, but we start later to avoid the kernel
         // TODO: make this is a cleaner way
         crate::mem_alloc::initialize(iter::once(0xa000000..0x40000000));
     }
 
-    // TODO: The `r0`, `r1` and `r2` parameters are supposedly set by the bootloader, and `r2`
-    // points either to ATAGS or a DTB (device tree) indicating what the hardware supports. This
-    // is unfortunately not supported by QEMU as of the writing of this comment.
-
     let time = unsafe { time::TimeControl::init() };
 
     let kernel = crate::kernel::Kernel::init(PlatformSpecificImpl { time });
-    kernel.run()
+    executor::block_on(kernel.run())
 }
 
 /// Implementation of [`PlatformSpecific`].
@@ -99,10 +139,6 @@ impl PlatformSpecific for PlatformSpecificImpl {
         NonZeroU32::new(1).unwrap()
     }
 
-    fn block_on<TRet>(self: Pin<&Self>, future: impl Future<Output = TRet>) -> TRet {
-        executor::block_on(future)
-    }
-
     fn monotonic_clock(self: Pin<&Self>) -> u128 {
         self.time.monotonic_clock()
     }
@@ -111,28 +147,28 @@ impl PlatformSpecific for PlatformSpecificImpl {
         self.time.timer(deadline)
     }
 
-    unsafe fn write_port_u8(self: Pin<&Self>, _: u32, _: u8) -> Result<(), ()> {
-        Err(())
+    unsafe fn write_port_u8(self: Pin<&Self>, _: u32, _: u8) -> Result<(), PortErr> {
+        Err(PortErr::Unsupported)
     }
 
-    unsafe fn write_port_u16(self: Pin<&Self>, _: u32, _: u16) -> Result<(), ()> {
-        Err(())
+    unsafe fn write_port_u16(self: Pin<&Self>, _: u32, _: u16) -> Result<(), PortErr> {
+        Err(PortErr::Unsupported)
     }
 
-    unsafe fn write_port_u32(self: Pin<&Self>, _: u32, _: u32) -> Result<(), ()> {
-        Err(())
+    unsafe fn write_port_u32(self: Pin<&Self>, _: u32, _: u32) -> Result<(), PortErr> {
+        Err(PortErr::Unsupported)
     }
 
-    unsafe fn read_port_u8(self: Pin<&Self>, _: u32) -> Result<u8, ()> {
-        Err(())
+    unsafe fn read_port_u8(self: Pin<&Self>, _: u32) -> Result<u8, PortErr> {
+        Err(PortErr::Unsupported)
     }
 
-    unsafe fn read_port_u16(self: Pin<&Self>, _: u32) -> Result<u16, ()> {
-        Err(())
+    unsafe fn read_port_u16(self: Pin<&Self>, _: u32) -> Result<u16, PortErr> {
+        Err(PortErr::Unsupported)
     }
 
-    unsafe fn read_port_u32(self: Pin<&Self>, _: u32) -> Result<u32, ()> {
-        Err(())
+    unsafe fn read_port_u32(self: Pin<&Self>, _: u32) -> Result<u32, PortErr> {
+        Err(PortErr::Unsupported)
     }
 }
 

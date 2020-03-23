@@ -398,7 +398,7 @@ async fn socket_task(
 
 /// Function executed in the background for each TCP socket.
 async fn open_socket_task(
-    mut socket: TcpStream,
+    socket: TcpStream,
     mut commands_rx: mpsc::UnboundedReceiver<FrontToBackSocket>,
     mut back_to_front: mpsc::Sender<BackToFront>,
 ) {
@@ -409,7 +409,7 @@ async fn open_socket_task(
     let mut write_buffer_offset = 0;
     // Message to answer when we finish writing the write buffer.
     let mut write_message = None;
-    /// Buffer where to read data into.
+    // Buffer where to read data into.
     let mut read_buffer = Vec::new();
     // Message to answer if we read data.
     let mut read_message = None;
@@ -545,7 +545,11 @@ async fn listener_task(
     mut front_to_back: mpsc::UnboundedReceiver<FrontToBackListener>,
     mut back_to_front: mpsc::Sender<BackToFront>,
 ) {
-    let socket = TcpListener::bind(&local_socket_addr).await.unwrap(); // TODO: don't unwrap
+    let socket = match TcpListener::bind(&local_socket_addr).await {
+        Ok(socket) => socket,
+        Err(_) => return, // TODO: somehow report this
+    };
+
     let mut pending_sockets = VecDeque::new();
 
     loop {
