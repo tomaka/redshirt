@@ -242,6 +242,6 @@ jobs:
           apt-get update
           apt-get install -y clang-9
       - name: Check core intra-doc links
-        run: RUSTDOCFLAGS="--deny intra_doc_link_resolution_failure" cargo +nightly-2020-03-22 doc --verbose --workspace --no-deps --document-private-items
+        run: RUSTDOCFLAGS="--deny intra_doc_link_resolution_failure" cargo doc --verbose --workspace --no-deps --document-private-items
       - name: Check modules intra-doc links
-        run: RUSTDOCFLAGS="--deny intra_doc_link_resolution_failure" cargo +nightly-2020-03-22 doc --verbose --manifest-path modules/Cargo.toml --workspace --no-deps --document-private-items
+        run: RUSTDOCFLAGS="--deny intra_doc_link_resolution_failure" cargo doc --verbose --manifest-path modules/Cargo.toml --workspace --no-deps --document-private-items

@@ -46,7 +46,8 @@ pub struct ProcessesCollectionExtrinsics<TPud, TTud, TExt: Extrinsics> {
     /// List of threads that `inner` considers "interrupted" but that we expose as "ready". We
     /// have to process the external extrinsics for this thread.
     ///
-    /// The threads here must always be in the [`OtherExtrinsicApplyAction`] state.
+    /// The threads here must always be in the [`LocalThreadState::OtherExtrinsicApplyAction`]
+    /// state.
     local_run_queue: SegQueue<ThreadId>,
     // TODO: implement
     /*/// List of processes that have died but that we haven't reported yet to the outside because
