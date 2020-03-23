@@ -316,7 +316,8 @@ impl SystemBuilder {
         self
     }
 
-    /// Shortcut for calling [`with_main_program`] multiple times.
+    /// Shortcut for calling [`with_main_program`](SystemBuilder::with_main_program) multiple
+    /// times.
     pub fn with_main_programs(self, hashes: impl IntoIterator<Item = ModuleHash>) -> Self {
         for hash in hashes {
             self.programs_to_load.push(hash);

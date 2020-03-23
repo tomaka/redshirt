@@ -217,8 +217,8 @@ struct BlockOnState {
     /// to the kernel.
     message_ids: Vec<u64>,
 
-    /// List whose length is identical to [`BlockOnState::messages_ids`]. For each element in
-    /// [`BlockOnState::messages_ids`], contains a corresponding `Waker` that must be waken up
+    /// List whose length is identical to [`BlockOnState::message_ids`]. For each element in
+    /// [`BlockOnState::message_ids`], contains a corresponding `Waker` that must be waken up
     /// when a response comes.
     wakers: Slab<Option<Waker>>,
 
@@ -241,8 +241,7 @@ struct BlockOnState {
 ///
 /// If `block` is true, then the return value is always `Some`.
 ///
-/// See the [`next_notification`](crate::ffi::next_notification) FFI function for the semantics of
-/// `to_poll`.
+/// See the `next_notification` FFI function for the semantics of `to_poll`.
 pub(crate) fn next_notification(to_poll: &mut [u64], block: bool) -> Option<DecodedNotification> {
     next_notification_impl(to_poll, block)
 }

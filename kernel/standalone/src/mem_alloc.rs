@@ -59,6 +59,7 @@ pub unsafe fn initialize(ranges: impl Iterator<Item = Range<usize>>) {
 #[global_allocator]
 static ALLOCATOR: linked_list_allocator::LockedHeap = linked_list_allocator::LockedHeap::empty();
 
+#[cfg(not(any(test, doc, doctest)))]
 #[alloc_error_handler]
 fn alloc_error_handler(layout: core::alloc::Layout) -> ! {
     panic!("allocation of 0x{:x} bytes failed", layout.size())
