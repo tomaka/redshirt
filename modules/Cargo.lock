@@ -1297,7 +1297,6 @@ dependencies = [
  "redshirt-syscalls",
  "redshirt-tcp-interface",
  "redshirt-time-interface",
- "ring",
  "structopt",
  "walkdir",
 ]
@@ -1703,7 +1702,6 @@ version = "0.16.9"
 source = "git+https://github.com/nhynes/ring?branch=wasi#01cd0070c9aa3e059bdc02e889ea5902a2cb4dea"
 dependencies = [
  "cc",
- "lazy_static",
  "libc",
  "spin",
  "untrusted",
