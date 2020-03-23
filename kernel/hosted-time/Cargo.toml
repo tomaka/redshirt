@@ -8,7 +8,7 @@ publish = false
 
 [dependencies]
 futures = "0.3.0"
-futures-timer = "2.0"
+futures-timer = "3.0"
 redshirt-core = { path = "../../core" }
 redshirt-interface-interface = { path = "../../interfaces/interface" }
 redshirt-system-time-interface = { path = "../../interfaces/system-time" }

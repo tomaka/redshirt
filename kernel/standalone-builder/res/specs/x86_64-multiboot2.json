@@ -17,7 +17,7 @@
     "os": "unknown",
     "panic-strategy": "abort",
     "relocation-model": "static",
-    "singlethread": true,
+    "singlethread": false,
     "stack-probes": true,
     "target-c-int-width": "32",
     "target-endian": "little",

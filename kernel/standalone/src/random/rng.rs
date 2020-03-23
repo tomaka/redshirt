@@ -39,7 +39,10 @@
 
 // TODO: I'm not a cryptographer nor a mathematician, but I guess that a ChaCha alone is a bit naive?
 
-use core::convert::TryFrom as _;
+use crate::arch::PlatformSpecific;
+
+use alloc::sync::Arc;
+use core::{convert::TryFrom as _, pin::Pin};
 use rand_chacha::{ChaCha20Core, ChaCha20Rng};
 use rand_core::{RngCore, SeedableRng as _};
 use rand_jitter::JitterRng;
@@ -52,10 +55,13 @@ pub struct KernelRng {
 
 impl KernelRng {
     /// Initializes a new [`KernelRng`].
-    pub fn new() -> KernelRng {
+    pub fn new(platform_specific: Pin<Arc<impl PlatformSpecific>>) -> KernelRng {
         // Initialize the `JitterRng`.
         let mut jitter = {
-            let mut rng = JitterRng::new_with_timer(timer);
+            let mut rng = JitterRng::new_with_timer(move || {
+                u64::try_from(platform_specific.as_ref().monotonic_clock() & 0xffffffffffffffff)
+                    .unwrap()
+            });
 
             // This makes sure that the `JitterRng` is good enough. A panic here indicates that
             // our entropy would be too low.
@@ -104,8 +110,7 @@ impl RngCore for KernelRng {
     }
 }
 
-// TODO: because `JitterRng::new_with_timer` requires a function pointer and not a closure, we
-// can't pass a `PlatformSpecific` trait impl, and instead have to use platform-specific code here
+// TODO: move add_hardware_entropy to the PlatformSpecific trait?
 
 #[cfg(target_arch = "x86_64")]
 fn add_hardware_entropy(hasher: &mut blake3::Hasher) {
@@ -126,33 +131,3 @@ fn add_hardware_entropy(hasher: &mut blake3::Hasher) {
 
 #[cfg(not(target_arch = "x86_64"))]
 fn add_hardware_entropy(_: &mut blake3::Hasher) {}
-
-// Note: timer must have nanosecond precision, according to the documentation of `JitterRng`.
-#[cfg(target_arch = "x86_64")]
-fn timer() -> u64 {
-    unsafe { core::arch::x86_64::_rdtsc() }
-}
-#[cfg(target_arch = "arm")]
-fn timer() -> u64 {
-    unsafe {
-        let lo: u32;
-        let hi: u32;
-        // TODO: what about CNTFRQ? which code configures it? initial value is unknown at reset
-        // Reading the CNTPCT register.
-        asm!("mrrc p15, 0, $0, $1, c14": "=r"(lo), "=r"(hi) ::: "volatile");
-        u64::from(hi) << 32 | u64::from(lo)
-    }
-}
-#[cfg(target_arch = "aarch64")]
-fn timer() -> u64 {
-    unsafe {
-        // TODO: stub
-        let val: u64;
-        asm!("mrs $0, CNTPCT_EL0": "=r"(val) ::: "volatile");
-        val
-    }
-}
-#[cfg(not(any(target_arch = "x86_64", target_arch = "arm", target_arch = "aarch64")))]
-fn timer() -> u64 {
-    unimplemented!()
-}

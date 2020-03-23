@@ -23,6 +23,10 @@ fn main() {
             .file("src/arch/x86_64/boot.S")
             .include("src")
             .compile("libboot.a");
+        cc::Build::new()
+            .file("src/arch/x86_64/ap_boot.S")
+            .include("src")
+            .compile("libapboot.a");
     } else if target.starts_with("arm") || target.starts_with("aarch64") {
         // Nothing more to do.
     } else if target.starts_with("riscv") {

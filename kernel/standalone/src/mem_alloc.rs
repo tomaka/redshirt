@@ -21,6 +21,9 @@ use core::ops::Range;
 ///
 /// After this function returns, you can use heap allocations.
 ///
+/// > **Note**: It is "safe" to try to perform memory allocations before this function has been
+/// >           called, but doing so will result in a panic.
+///
 /// # Panics
 ///
 /// Panics if `range.end` is inferior to `range.start` for any of the elements.
