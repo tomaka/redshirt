@@ -24,7 +24,7 @@ use x86_64::structures::port::PortWrite as _;
 
 // TODO: make panics a bit nicer?
 
-#[cfg(not(any(test, doctest)))]
+#[cfg(not(any(test, doc, doctest)))]
 #[panic_handler]
 fn panic(panic_info: &core::panic::PanicInfo) -> ! {
     // TODO: switch back to text mode somehow?
