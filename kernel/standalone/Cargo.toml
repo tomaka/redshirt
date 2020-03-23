@@ -7,7 +7,7 @@ edition = "2018"
 publish = false
 
 [dependencies]
-blake3 = { version = "0.1.1", default-features = false }
+blake3 = { version = "0.2.2", default-features = false }
 crossbeam-queue = { version = "0.2.1", default-features = false, features = ["alloc"] }
 futures = { version = "0.3.2", default-features = false, features = ["alloc"] }
 hashbrown = { version = "0.7.1", default-features = false }
