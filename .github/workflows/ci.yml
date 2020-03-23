@@ -241,6 +241,8 @@ jobs:
           echo "deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-9 main" >> /etc/apt/sources.list
           apt-get update
           apt-get install -y clang-9
+      - name: Print rustdoc version
+        run: rustcdoc -V
       - name: Check core intra-doc links
         run: RUSTDOCFLAGS="--deny intra_doc_link_resolution_failure" cargo doc --verbose --workspace --no-deps --document-private-items
       - name: Check modules intra-doc links
