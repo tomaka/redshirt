@@ -49,12 +49,12 @@ where
     }
 
     /// Run the kernel. Must be called once per CPU.
-    pub fn run(&self) -> ! {
+    pub async fn run(&self) -> ! {
         // We only want a single CPU to run for now.
         if self.running.swap(true, Ordering::SeqCst) {
-            self.platform_specific
-                .as_ref()
-                .block_on(futures::future::pending::<()>());
+            loop {
+                futures::future::poll_fn(|_| core::task::Poll::Pending).await
+            }
         }
 
         let mut system_builder = redshirt_core::system::SystemBuilder::new()
@@ -90,12 +90,11 @@ where
 
         let system = system_builder
             .with_main_program(From::from([0; 32])) // TODO: just a test
-            .build();
+            .build()
+            .expect("Failed to start kernel");
 
         loop {
-            // TODO: ideally the entire function would be async, and this would be an `await`,
-            // but async functions don't work on no_std yet
-            match self.platform_specific.as_ref().block_on(system.run()) {
+            match system.run().await {
                 redshirt_core::system::SystemRunOutcome::ProgramFinished { pid, outcome } => {
                     //console.write(&format!("Program finished {:?} => {:?}\n", pid, outcome));
                 }

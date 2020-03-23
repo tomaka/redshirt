@@ -15,7 +15,6 @@
 
 //! Interfaces registration.
 
-#![deny(intra_doc_link_resolution_failure)]
 #![no_std]
 
 use futures::prelude::*;

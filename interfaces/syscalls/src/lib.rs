@@ -58,28 +58,27 @@
 //! `Future` returns `Poll::Pending`, the `Waker` has to be stored somewhere and invoked. Since
 //! there is no possibility of having multiple threads, the only moment when the `Waker` can be
 //! invoked is when we explicitly call a function whose role is to do that. The only reasonable
-//! choice for such function is the [`block_on`] function, or similar functions.
+//! choice for such function is the [`block_on()`] function, or similar functions.
 //!
-//! For the same reason, it is also challenging to write an implementation of [`block_on`].
+//! For the same reason, it is also challenging to write an implementation of [`block_on()`].
 //! Putting the current thread to sleep is not enough, because the lack of background threads
-//! makes it impossible for the `Waker` to be invoked. An implementation of [`block_on`] **must**
+//! makes it impossible for the `Waker` to be invoked. An implementation of [`block_on()`] **must**
 //! somehow perform actions that will drive to completion the `Future` it is blocking upon,
 //! otherwise nothing will ever happen.
 //!
 //! Consequently, it has been decided that the implementations of `Future` that this module
-//! provide interact, through a global variable, with the behaviour of [`block_on`]. More
+//! provide interact, through a global variable, with the behaviour of [`block_on()`]. More
 //! precisely, before a `Future` returns `Poll::Pending`, it stores its `Waker` in a global
 //! variable alongside with the ID of the message whose response we are waiting for, and the
-//! [`block_on`] function reads and processes that global variable.
+//! [`block_on()`] function reads and processes that global variable.
 //!
 //! It is not possible to build a `Future` that is not built on top of one of the `Future`
 //! provided by this crate, and every single use-cases of `Future`s that we could think of
 //! can and must be built on top of them. Similarly, it is not possible to build an implementation
-//! of [`block_on`] without having access to the internals of these `Future`s. Tying these
-//! `Future`s to the implementation of [`block_on`] is therefore the logical thing to do.
+//! of [`block_on()`] without having access to the internals of these `Future`s. Tying these
+//! `Future`s to the implementation of [`block_on()`] is therefore the logical thing to do.
 //!
 
-#![deny(intra_doc_link_resolution_failure)]
 #![no_std]
 
 extern crate alloc;

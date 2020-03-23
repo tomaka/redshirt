@@ -93,8 +93,8 @@ impl<T> PhysicalBuffer<T> {
     ///
     /// This function performs a copy of the content of the buffer. This is only safe if `T`
     /// implements `Copy`, or if you guarantee that no multiple copies of the same object are
-    /// being read. In other words, this function is meant to be called from within [`take`] or
-    /// [`read`].
+    /// being read. In other words, this function is meant to be called from within
+    /// [`PhysicalBuffer::take`] or [`PhysicalBuffer::read`].
     unsafe fn read_inner(&self) -> impl Future<Output = T> {
         // Note: we can't use `HardwareOperationsBuilder`, as this would require an `async`
         // function or block, which aren't available in `no_std` environments at the time of
