@@ -16,6 +16,7 @@
 use alloc::string::String;
 use core::fmt::{self, Write};
 
+#[cfg(not(any(test, doctest)))]
 #[panic_handler]
 fn panic(panic_info: &core::panic::PanicInfo) -> ! {
     unsafe {
