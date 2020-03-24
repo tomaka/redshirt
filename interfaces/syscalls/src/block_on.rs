@@ -46,7 +46,7 @@ use futures::{prelude::*, task};
 use hashbrown::HashMap;
 use nohash_hasher::BuildNoHashHasher;
 use slab::Slab;
-use spin::Mutex;
+use spinning_top::Spinlock;
 
 /// Registers a message ID (or 1 for interface messages) and a waker. The `block_on` function will
 /// then ask the kernel for a message corresponding to this ID. If one is received, the `Waker`
@@ -199,8 +199,8 @@ pub fn block_on<T>(future: impl Future<Output = T>) -> T {
 lazy_static::lazy_static! {
     // TODO: we're using a Mutex, which is ok for as long as WASM doesn't have threads
     // if WASM ever gets threads and no pre-emptive multitasking, then we might spin forever
-    static ref STATE: Mutex<BlockOnState> = {
-        Mutex::new(BlockOnState {
+    static ref STATE: Spinlock<BlockOnState> = {
+        Spinlock::new(BlockOnState {
             message_ids: Vec::new(),
             wakers: Slab::new(),
             pending_messages: HashMap::with_capacity_and_hasher(6, Default::default()),
