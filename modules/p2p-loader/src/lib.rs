@@ -42,7 +42,7 @@ pub struct Network<T> {
     swarm: Swarm<Kademlia<MemoryStore>>,
 
     /// Stream from the files watcher.
-    notifications: Pin<Box<dyn Stream<Item = notifier::NotifierEvent>>>,
+    notifications: stream::SelectAll<Pin<Box<dyn Stream<Item = notifier::NotifierEvent> + Send>>>,
 
     /// List of keys that are currently being fetched.
     active_fetches: Vec<(Key, T)>,
@@ -75,21 +75,30 @@ pub struct NetworkConfig {
     /// Hardcoded private key, or `None` to generate one automatically.
     pub private_key: Option<[u8; 32]>,
 
-    /// If `Some`, all the files in this directory and children directories will be automatically
+    /// All the files in this list of directories and children directories will be automatically
     /// pushed onto the DHT.
     ///
     /// If `#[cfg(feature = "notify")]` isn't enabled, passing `Some` will panic at
     /// initialization.
-    pub watched_directory: Option<PathBuf>,
+    // TODO: what happens if the same path is present multiple times? or if one element is a child
+    // of another?
+    pub watched_directories: Vec<PathBuf>,
 }
 
 impl<T> Network<T> {
     /// Initializes the network.
     pub fn start(config: NetworkConfig) -> Result<Network<T>, io::Error> {
-        let notifications = if let Some(watched_directory) = config.watched_directory {
-            notifier::start_notifier(watched_directory)?.boxed()
-        } else {
-            stream::pending().boxed()
+        let notifications = {
+            let mut list = stream::SelectAll::new();
+            for directory in config.watched_directories {
+                list.push(notifier::start_notifier(directory)?.boxed());
+            }
+            // We have to push at least a pending stream, otherwise the `SelectAll` will produce
+            // `None`.
+            if list.is_empty() {
+                list.push(stream::pending().boxed());
+            }
+            list
         };
 
         let local_keypair = if let Some(mut private_key) = config.private_key {
@@ -260,7 +269,7 @@ impl Default for NetworkConfig {
     fn default() -> Self {
         NetworkConfig {
             private_key: None,
-            watched_directory: None,
+            watched_directories: Vec::new(),
         }
     }
 }
