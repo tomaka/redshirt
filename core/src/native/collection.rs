@@ -23,7 +23,7 @@ use hashbrown::HashSet;
 use nohash_hasher::BuildNoHashHasher;
 use redshirt_interface_interface::ffi::InterfaceMessage;
 use redshirt_syscalls::{Decode as _, EncodedMessage, InterfaceHash, MessageId, Pid};
-use spin::Mutex;
+use spinning_top::Spinlock;
 
 /// Collection of objects that implement the [`NativeProgramRef`] trait.
 pub struct NativeProgramsCollection<'ext> {
@@ -69,8 +69,8 @@ pub struct NativeProgramsCollectionMessageIdWrite<'col> {
 /// Wraps around a [`NativeProgramRef`].
 struct Adapter<T> {
     inner: T,
-    registered_interfaces: Mutex<HashSet<InterfaceHash, FnvBuildHasher>>,
-    expected_responses: Mutex<HashSet<MessageId, BuildNoHashHasher<u64>>>,
+    registered_interfaces: Spinlock<HashSet<InterfaceHash, FnvBuildHasher>>,
+    expected_responses: Spinlock<HashSet<MessageId, BuildNoHashHasher<u64>>>,
 }
 
 /// Abstracts over [`Adapter`] so that we can box it.
@@ -100,7 +100,7 @@ trait AbstractMessageIdWrite {
 
 struct MessageIdWriteAdapter<'col, T> {
     inner: Option<T>,
-    expected_responses: &'col Mutex<HashSet<MessageId, BuildNoHashHasher<u64>>>,
+    expected_responses: &'col Spinlock<HashSet<MessageId, BuildNoHashHasher<u64>>>,
 }
 
 impl<'ext> NativeProgramsCollection<'ext> {
@@ -126,8 +126,8 @@ impl<'ext> NativeProgramsCollection<'ext> {
     {
         let adapter = Box::new(Adapter {
             inner: program,
-            registered_interfaces: Mutex::new(HashSet::with_hasher(Default::default())),
-            expected_responses: Mutex::new(HashSet::with_hasher(Default::default())),
+            registered_interfaces: Spinlock::new(HashSet::with_hasher(Default::default())),
+            expected_responses: Spinlock::new(HashSet::with_hasher(Default::default())),
         });
 
         assert!(!self
