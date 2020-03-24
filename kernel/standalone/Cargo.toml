@@ -28,7 +28,7 @@ redshirt-syscalls = { path = "../../interfaces/syscalls", default-features = fal
 redshirt-time-interface = { path = "../../interfaces/time", default-features = false }
 rlibc = "1.0.0"
 smallvec = { version = "1.2.0", default-features = false }
-spin = "0.5.2"
+spinning_top = "0.1.0"
 
 [build-dependencies]
 cc = "1.0"
