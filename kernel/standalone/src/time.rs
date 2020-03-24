@@ -24,7 +24,7 @@ use futures::{prelude::*, stream::FuturesUnordered};
 use redshirt_core::native::{DummyMessageIdWrite, NativeProgramEvent, NativeProgramRef};
 use redshirt_core::{Decode as _, Encode as _, EncodedMessage, InterfaceHash, MessageId, Pid};
 use redshirt_time_interface::ffi::{TimeMessage, INTERFACE};
-use spin::Mutex;
+use spinning_top::Spinlock;
 
 /// State machine for `time` interface messages handling.
 pub struct TimeHandler<TPlat> {
@@ -36,7 +36,7 @@ pub struct TimeHandler<TPlat> {
     // TODO: use futures channels
     pending_messages: SegQueue<(MessageId, Result<EncodedMessage, ()>)>,
     /// List of active timers.
-    timers: Mutex<FuturesUnordered<Pin<Box<dyn Future<Output = MessageId> + Send>>>>,
+    timers: Spinlock<FuturesUnordered<Pin<Box<dyn Future<Output = MessageId> + Send>>>>,
 }
 
 impl<TPlat> TimeHandler<TPlat> {
@@ -50,7 +50,7 @@ impl<TPlat> TimeHandler<TPlat> {
             registered: atomic::AtomicBool::new(false),
             platform_specific,
             pending_messages: SegQueue::new(),
-            timers: Mutex::new(timers),
+            timers: Spinlock::new(timers),
         }
     }
 }

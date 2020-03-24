@@ -24,7 +24,7 @@ use core::{
     time::Duration,
 };
 use futures::prelude::*;
-use spin::Mutex;
+use spinning_top::Spinlock;
 
 // TODO: rewrite this code to be cleaner
 
@@ -63,7 +63,7 @@ pub fn init<'a>(
         interrupt_vector,
         monotonic_clock_zero: unsafe { core::arch::x86_64::_rdtsc() },
         rdtsc_ticks_per_sec,
-        timers: Mutex::new(VecDeque::with_capacity(32)), // TODO: capacity?
+        timers: Spinlock::new(VecDeque::with_capacity(32)), // TODO: capacity?
     }
 }
 
@@ -90,7 +90,7 @@ pub struct Timers<'a> {
     /// interrupt has been triggered and when the awakened timer future is being polled).
     // TODO: timers are processor-local, so this is probably wrong
     // TODO: call shrink_to_fit from time to time?
-    timers: Mutex<VecDeque<(u64, Waker)>>,
+    timers: Spinlock<VecDeque<(u64, Waker)>>,
 }
 
 impl<'a> Timers<'a> {
@@ -134,7 +134,7 @@ impl<'a> Timers<'a> {
     fn update_apic_timer_state(
         &self,
         now: u64,
-        timers: &mut spin::MutexGuard<VecDeque<(u64, Waker)>>,
+        timers: &mut spinning_top::SpinlockGuard<VecDeque<(u64, Waker)>>,
     ) {
         if let Some((tsc, waker)) = timers.front() {
             debug_assert!(*tsc > now);

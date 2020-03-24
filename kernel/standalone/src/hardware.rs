@@ -31,7 +31,7 @@ use redshirt_core::{Decode as _, Encode as _, EncodedMessage, InterfaceHash, Mes
 use redshirt_hardware_interface::ffi::{
     HardwareAccessResponse, HardwareMessage, Operation, INTERFACE,
 };
-use spin::Mutex;
+use spinning_top::Spinlock;
 
 /// State machine for `hardware` interface messages handling.
 pub struct HardwareHandler<TPlat> {
@@ -41,7 +41,7 @@ pub struct HardwareHandler<TPlat> {
     platform_specific: Pin<Arc<TPlat>>,
     /// For each PID, a list of memory allocations.
     // TODO: optimize
-    allocations: Mutex<HashMap<Pid, Vec<Vec<u8>>, BuildNoHashHasher<u64>>>,
+    allocations: Spinlock<HashMap<Pid, Vec<Vec<u8>>, BuildNoHashHasher<u64>>>,
     /// List of messages waiting to be emitted with `next_event`.
     pending_messages: SegQueue<(MessageId, Result<EncodedMessage, ()>)>,
 }
@@ -52,7 +52,7 @@ impl<TPlat> HardwareHandler<TPlat> {
         HardwareHandler {
             registered: atomic::AtomicBool::new(false),
             platform_specific,
-            allocations: Mutex::new(HashMap::default()),
+            allocations: Spinlock::new(HashMap::default()),
             pending_messages: SegQueue::new(),
         }
     }
