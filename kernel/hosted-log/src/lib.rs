@@ -77,7 +77,13 @@ impl<'a> NativeProgramRef<'a> for &'a LogHandler {
                 // Remove any control character from log messages, in order to prevent programs
                 // from polluting the terminal.
                 let message = if decoded.message().chars().any(|c| c.is_control()) {
-                    Cow::Owned(decoded.message().chars().filter(|c| !c.is_control()).collect())
+                    Cow::Owned(
+                        decoded
+                            .message()
+                            .chars()
+                            .filter(|c| !c.is_control())
+                            .collect(),
+                    )
                 } else {
                     Cow::Borrowed(decoded.message())
                 };
