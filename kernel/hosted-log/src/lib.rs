@@ -19,7 +19,7 @@ use futures::prelude::*;
 use redshirt_core::native::{DummyMessageIdWrite, NativeProgramEvent, NativeProgramRef};
 use redshirt_core::{Decode as _, Encode as _, EncodedMessage, InterfaceHash, MessageId, Pid};
 use redshirt_log_interface::ffi::{DecodedLogMessage, Level, INTERFACE};
-use std::{pin::Pin, sync::atomic};
+use std::{borrow::Cow, pin::Pin, sync::atomic};
 
 /// Native program for `log` interface messages handling.
 pub struct LogHandler {
@@ -66,7 +66,7 @@ impl<'a> NativeProgramRef<'a> for &'a LogHandler {
     fn interface_message(
         self,
         interface: InterfaceHash,
-        _message_id: Option<MessageId>,
+        _: Option<MessageId>,
         emitter_pid: Pid,
         message: EncodedMessage,
     ) {
@@ -76,8 +76,11 @@ impl<'a> NativeProgramRef<'a> for &'a LogHandler {
             Ok(decoded) => {
                 // Remove any control character from log messages, in order to prevent programs
                 // from polluting the terminal.
-                let mut message = decoded.message().to_string(); // TODO: only clone if any control character
-                message.retain(|c| !c.is_control());
+                let message = if decoded.message().chars().any(|c| c.is_control()) {
+                    Cow::Owned(decoded.message().chars().filter(|c| !c.is_control()).collect())
+                } else {
+                    Cow::Borrowed(decoded.message())
+                };
                 let mut header_style = ansi_term::Style::default();
                 let level = match decoded.level() {
                     Level::Error => "ERR ",
