@@ -19,7 +19,7 @@ use rand::distributions::{Distribution as _, Uniform};
 use rand_chacha::ChaCha20Rng;
 use rand_core::SeedableRng as _;
 use rand_hc::Hc128Rng;
-use spin::Mutex;
+use spinning_top::Spinlock;
 
 // Maths note: after 3 billion iterations, there's a 2% chance of a collision
 //
@@ -38,7 +38,7 @@ pub struct IdPool {
     /// the ChaCha state when we derive from it.
     // TODO: is it actually needed to have a different algorithm, or is this comment bullshit?
     //       using a different algorithm doesn't hurt, but it'd be better if the comment was correct
-    master_rng: Mutex<Hc128Rng>,
+    master_rng: Spinlock<Hc128Rng>,
 }
 
 impl IdPool {
@@ -47,7 +47,7 @@ impl IdPool {
         IdPool {
             rngs: SegQueue::new(),
             distribution: Uniform::from(0..=u64::max_value()),
-            master_rng: Mutex::new(Hc128Rng::from_seed([0; 32])), // FIXME: proper seed
+            master_rng: Spinlock::new(Hc128Rng::from_seed([0; 32])), // FIXME: proper seed
         }
     }
 
