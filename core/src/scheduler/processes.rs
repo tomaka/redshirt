@@ -21,17 +21,13 @@ use crate::{Pid, ThreadId};
 
 use alloc::{
     borrow::Cow,
-    boxed::Box,
     sync::{Arc, Weak},
     vec::Vec,
 };
-use core::{cell::RefCell, fmt};
+use core::fmt;
 use crossbeam_queue::SegQueue;
 use fnv::FnvBuildHasher;
-use hashbrown::{
-    hash_map::{Entry, OccupiedEntry},
-    HashMap,
-};
+use hashbrown::{hash_map::Entry, HashMap};
 use nohash_hasher::BuildNoHashHasher;
 use spinning_top::Spinlock;
 
@@ -190,7 +186,7 @@ pub enum RunOneOutcome<'a, TExtr, TPud, TTud> {
 
         /// Identifier of the function to call. Corresponds to the value provided at
         /// initialization when resolving imports.
-        id: &'a mut TExtr,
+        id: &'a TExtr,
 
         /// Parameters of the function call.
         params: Vec<wasmi::RuntimeValue>,
@@ -252,7 +248,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
         let process = Arc::new(Process {
             pid: new_pid,
             threads_to_resume: {
-                let mut queue = SegQueue::new();
+                let queue = SegQueue::new();
                 queue.push((main_thread_id, main_thread_user_data, None));
                 queue
             },
@@ -261,7 +257,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
         });
 
         {
-            let processes = self.processes.lock();
+            let mut processes = self.processes.lock();
             processes.insert(new_pid, process.clone());
             // Shrink the list from time to time so that it doesn't grow too much.
             if u64::from(new_pid) % 256 == 0 {
@@ -305,7 +301,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
             };
 
             // "Lock" the process's state machine for execution.
-            let state_machine = match process.state_machine.try_lock() {
+            let mut state_machine = match process.state_machine.try_lock() {
                 Some(st) => st,
                 // If the process is already locked, push it back at the end of the queue.
                 // TODO: this can turn into a spin loop, no? should handle "nothing to do
@@ -319,24 +315,18 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
             // Now run a thread until something happens.
             // This takes most of the CPU time of this function.
             let (thread_user_data, run_outcome) = {
-                let mut run_outcome = None;
                 // If the process was in `self.execution_queue`, then we are guaranteed that a
                 // thread was ready.
                 let (tid, thread_user_data, resume_value) =
                     process.threads_to_resume.pop().unwrap();
-                for thread_index in 0..state_machine.num_threads() {
-                    let mut thread = match state_machine.thread(thread_index) {
-                        Some(t) => t,
-                        None => unreachable!(),
-                    };
-
-                    if thread.user_data().thread_id == tid {
-                        debug_assert!(run_outcome.is_none());
-                        run_outcome = Some(thread.run(resume_value));
-                        break;
-                    }
-                }
-                (thread_user_data, run_outcome.take().unwrap())
+                let thread_index = (0..state_machine.num_threads())
+                    .find(|n| state_machine.thread(*n).unwrap().user_data().thread_id == tid)
+                    .unwrap();
+                let run_outcome = state_machine
+                    .thread(thread_index)
+                    .unwrap()
+                    .run(resume_value);
+                (thread_user_data, run_outcome)
             };
 
             match run_outcome {
@@ -379,8 +369,8 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
                         thread_id: user_data.thread_id,
                         process: ProcessesCollectionProc {
                             collection: self,
-                            process,
-                            pid_tid_pool: &mut self.pid_tid_pool,
+                            process: process.clone(),
+                            pid_tid_pool: &self.pid_tid_pool,
                         },
                         user_data: thread_user_data,
                         value: return_value,
@@ -388,16 +378,20 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
                 }
 
                 // Thread wants to call an extrinsic function.
-                Ok(vm::ExecOutcome::Interrupted { thread, id, params }) => {
+                Ok(vm::ExecOutcome::Interrupted {
+                    mut thread,
+                    id,
+                    params,
+                }) => {
                     // TODO: check params against signature with a debug_assert
-                    let extrinsic = match self.extrinsics.get_mut(id) {
+                    let extrinsic = match self.extrinsics.get(id) {
                         Some(e) => e,
                         None => unreachable!(),
                     };
                     return RunOneOutcome::Interrupted {
                         thread: ProcessesCollectionThread {
                             collection: self,
-                            process,
+                            process: process.clone(),
                             tid: thread.user_data().thread_id,
                             pid_tid_pool: &self.pid_tid_pool,
                             user_data: Some(thread_user_data),
@@ -467,7 +461,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
         Some(ProcessesCollectionProc {
             collection: self,
             process: p,
-            pid_tid_pool: &mut self.pid_tid_pool,
+            pid_tid_pool: &self.pid_tid_pool,
         })
     }
 
@@ -482,7 +476,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
         &self,
         id: ThreadId,
     ) -> Option<ProcessesCollectionThread<TExtr, TPud, TTud>> {
-        let interrupted_threads = self.interrupted_threads.lock();
+        let mut interrupted_threads = self.interrupted_threads.lock();
 
         if let Some((user_data, process)) = interrupted_threads.remove(&id) {
             Some(ProcessesCollectionThread {
@@ -597,7 +591,7 @@ impl<'a, TExtr, TPud, TTud> ProcessesCollectionProc<'a, TExtr, TPud, TTud> {
     /// >           global array of functions.
     // TODO: don't expose wasmi::RuntimeValue in the API
     pub fn start_thread(
-        mut self,
+        &self,
         fn_index: u32,
         params: Vec<wasmi::RuntimeValue>,
         user_data: TTud,
@@ -620,22 +614,28 @@ impl<'a, TExtr, TPud, TTud> ProcessesCollectionProc<'a, TExtr, TPud, TTud> {
     // TODO: bad API because of unique lock system for threads
     pub fn interrupted_threads(
         &self,
-    ) -> impl Iterator<Item = ProcessesCollectionThread<'a, TExtr, TPud, TTud>> {
-        let interrupted_threads = self.collection.interrupted_threads.lock();
+    ) -> impl Iterator<Item = ProcessesCollectionThread<'a, TExtr, TPud, TTud>> + 'a {
+        let mut interrupted_threads = self.collection.interrupted_threads.lock();
 
         let list = interrupted_threads
             .drain_filter(|_, (_, p)| Arc::ptr_eq(p, &self.process))
             .collect::<Vec<_>>();
 
-        unimplemented!()
+        let collection = self.collection;
+        let pid_tid_pool = self.pid_tid_pool;
+        list.into_iter().map(
+            move |(tid, (user_data, process))| ProcessesCollectionThread {
+                collection,
+                process,
+                tid,
+                pid_tid_pool,
+                user_data: Some(user_data),
+            },
+        )
     }
 }
 
-impl<'a, TExtr, TPud, TTud> fmt::Debug for ProcessesCollectionProc<'a, TExtr, TPud, TTud>
-where
-    TPud: fmt::Debug,
-    TTud: fmt::Debug,
-{
+impl<'a, TExtr, TPud, TTud> fmt::Debug for ProcessesCollectionProc<'a, TExtr, TPud, TTud> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // TODO: threads user datas
         f.debug_struct("ProcessesCollectionProc")
@@ -682,7 +682,7 @@ impl<'a, TExtr, TPud, TTud> ProcessesCollectionThread<'a, TExtr, TPud, TTud> {
     pub fn write_memory(&self, offset: u32, value: &[u8]) -> Result<(), ()> {
         // TODO: will block until any other thread to finish executing ; it isn't really possible
         // right now to do otherwise, as the WASM memory model isn't properly defined
-        let lock = self.process.state_machine.lock();
+        let mut lock = self.process.state_machine.lock();
         lock.write_memory(offset, value)
     }
 
@@ -710,18 +710,14 @@ impl<'a, TExtr, TPud, TTud> ProcessesCollectionThread<'a, TExtr, TPud, TTud> {
 impl<'a, TExtr, TPud, TTud> Drop for ProcessesCollectionThread<'a, TExtr, TPud, TTud> {
     fn drop(&mut self) {
         if let Some(user_data) = self.user_data.take() {
-            let interrupted_threads = self.collection.interrupted_threads.lock();
-            let _prev_in = interrupted_threads.insert(self.tid, (user_data, self.process));
+            let mut interrupted_threads = self.collection.interrupted_threads.lock();
+            let _prev_in = interrupted_threads.insert(self.tid, (user_data, self.process.clone()));
             debug_assert!(_prev_in.is_none());
         }
     }
 }
 
-impl<'a, TExtr, TPud, TTud> fmt::Debug for ProcessesCollectionThread<'a, TExtr, TPud, TTud>
-where
-    TPud: fmt::Debug,
-    TTud: fmt::Debug,
-{
+impl<'a, TExtr, TPud, TTud> fmt::Debug for ProcessesCollectionThread<'a, TExtr, TPud, TTud> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         //let id = self.id();
         let pid = self.pid();
