@@ -76,11 +76,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "atomicbox"
-version = "0.3.0"
-source = "git+https://github.com/tomaka/atomicbox?branch=no-std#8ba1f421fd15fffae9e55a99260afa2788602870"
-
-[[package]]
 name = "atty"
 version = "0.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -957,7 +952,6 @@ dependencies = [
 name = "redshirt-core"
 version = "0.1.0"
 dependencies = [
- "atomicbox",
  "blake3",
  "bs58",
  "crossbeam-queue",

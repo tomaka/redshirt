@@ -7,7 +7,6 @@ edition = "2018"
 publish = false
 
 [dependencies]
-atomicbox = { git = "https://github.com/tomaka/atomicbox", branch = "no-std" } # TODO: https://github.com/jorendorff/atomicbox/pull/4 needs publishing
 blake3 = { version = "0.2.2", default-features = false }
 bs58 = { version = "0.3.0", default-features = false, features = ["alloc"] }
 crossbeam-queue = { version = "0.2.1", default-features = false, features = ["alloc"] }

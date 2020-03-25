@@ -631,7 +631,7 @@ where
         let mut inner = self.inner.borrow_mut();
         let mut inner = inner
             .interrupted_thread_by_id(id)
-            .ok_or(ThreadByIdErr::RunningOrDead)?;  // TODO: might now also be already locked
+            .ok_or(ThreadByIdErr::RunningOrDead)?; // TODO: might now also be already locked
 
         // Checking thread locked state.
         debug_assert!(inner.user_data().external_user_data.is_some());
@@ -642,7 +642,7 @@ where
                 Err(ThreadByIdErr::RunningOrDead)
             }
             LocalThreadState::EmitMessage(_) | LocalThreadState::OtherExtrinsicEmit { .. } => {
-                let process_user_data = inner.process_user_data().clone();
+                let process_user_data = inner.process().user_data().clone();
                 let thread_user_data = inner.user_data().external_user_data.take().unwrap();
 
                 Ok(From::from(ProcessesCollectionExtrinsicsThreadEmitMessage {
@@ -653,7 +653,7 @@ where
                 }))
             }
             LocalThreadState::NotificationWait(_) | LocalThreadState::OtherExtrinsicWait { .. } => {
-                let process_user_data = inner.process_user_data().clone();
+                let process_user_data = inner.process().user_data().clone();
                 let thread_user_data = inner.user_data().external_user_data.take().unwrap();
 
                 Ok(From::from(
@@ -992,7 +992,8 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
                 } else {
                     debug_assert!(message_id.is_none());
                     let action = inner
-                        .process_user_data()
+                        .process()
+                        .user_data()
                         .clone()
                         .extrinsics
                         .inject_message_response(
@@ -1014,7 +1015,7 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
     /// Resumes the thread, signalling an error in the emission.
     pub fn refuse_emit(self) {
         let mut inner = self.parent.inner.borrow_mut();
-        let mut inner = inner.thread_by_id(self.tid).unwrap();
+        let mut inner = inner.interrupted_thread_by_id(self.tid).unwrap();
 
         match mem::replace(&mut inner.user_data().state, LocalThreadState::Poisoned) {
             LocalThreadState::EmitMessage(_) => {
@@ -1089,7 +1090,7 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
     /// Returns the list of message IDs that the thread is waiting on. In order.
     // TODO: not great naming. we're waiting either for messages or an interface notif or a process cancelled notif
     pub fn message_ids_iter<'b>(&'b mut self) -> impl Iterator<Item = MessageId> + 'b {
-        let mut inner = self.parent.inner.borrow_mut();
+        let inner = self.parent.inner.borrow_mut();
         let mut inner = inner.interrupted_thread_by_id(self.tid).unwrap();
 
         match inner.user_data().state {
@@ -1188,7 +1189,8 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
 
                 assert_eq!(index, 0);
                 let action = inner
-                    .process_user_data()
+                    .process()
+                    .user_data()
                     .clone()
                     .extrinsics
                     .inject_message_response(
@@ -1306,14 +1308,16 @@ impl<TExtCtxt> LocalThreadState<TExtCtxt> {
 }
 
 /// Implementation of the [`ExtrinsicsMemoryAccess`] trait for a process.
-struct MemoryAccessImpl<'a, 'b, TPud, TTud>(
+struct MemoryAccessImpl<'a, 'b, TExtr, TPud, TTud>(
     // TODO: we use a RefCell because the inner `read_memory` requires a `&mut self` while our
     // public API accepts `&self`. Using a RefCell means we'll panic if `read_memory` is used
     // concurrently.
-    RefCell<&'a mut processes::ProcessesCollectionThread<'b, TPud, TTud>>,
+    RefCell<&'a mut processes::ProcessesCollectionThread<'b, TExtr, TPud, TTud>>,
 );
 
-impl<'a, 'b, TPud, TTud> ExtrinsicsMemoryAccess for MemoryAccessImpl<'a, 'b, TPud, TTud> {
+impl<'a, 'b, TExtr, TPud, TTud> ExtrinsicsMemoryAccess
+    for MemoryAccessImpl<'a, 'b, TExtr, TPud, TTud>
+{
     fn read_memory(&self, range: Range<u32>) -> Result<Vec<u8>, ExtrinsicsMemoryAccessErr> {
         self.0
             .borrow_mut()
