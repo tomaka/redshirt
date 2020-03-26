@@ -775,7 +775,7 @@ impl<'a, TExtr, TPud, TTud> Drop for ProcessesCollectionProc<'a, TExtr, TPud, TT
 
 impl<'a, TExtr, TPud, TTud> ProcessesCollectionThread<'a, TExtr, TPud, TTud> {
     /// Returns the id of the thread. Allows later retrieval by calling
-    /// [`thread_by_id`](ProcessesCollection::thread_by_id).
+    /// [`thread_by_id`](ProcessesCollection::interrupted_thread_by_id).
     ///
     /// [`ThreadId`]s are unique within a [`ProcessesCollection`], independently from the process.
     pub fn tid(&self) -> ThreadId {
