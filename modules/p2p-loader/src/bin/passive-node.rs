@@ -21,9 +21,8 @@ use structopt::StructOpt;
 #[structopt(name = "passive-node", about = "Redshirt peer-to-peer node.")]
 struct CliOptions {
     /// Path to a directory containing Wasm files to automatically push to the DHT.
-    // TODO: turn into a `Vec`
     #[structopt(long, parse(from_os_str))]
-    watch: Option<PathBuf>,
+    watch: Vec<PathBuf>,
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -51,7 +50,7 @@ async fn async_main() {
     } else {
         None
     };
-    config.watched_directory = cli_opts.watch;
+    config.watched_directories = cli_opts.watch;
 
     let mut network = Network::<std::convert::Infallible>::start(config).unwrap(); // TODO: use `!`
     loop {
