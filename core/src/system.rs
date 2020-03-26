@@ -92,7 +92,6 @@ pub enum SystemRunOutcome {
 #[derive(Debug)]
 enum RunOnceOutcome {
     Report(SystemRunOutcome),
-    Idle,
     LoopAgain,
     LoopAgainNow,
 }
@@ -131,14 +130,14 @@ impl System {
                 let run_once_outcome = {
                     let fut = self.run_once();
                     futures::pin_mut!(fut);
-                    futures::ready!(Future::poll(fut, cx))
+                    Future::poll(fut, cx)
                 };
 
-                if let RunOnceOutcome::Report(out) = run_once_outcome {
+                if let Poll::Ready(RunOnceOutcome::Report(out)) = run_once_outcome {
                     return Poll::Ready(out);
                 }
 
-                if let RunOnceOutcome::LoopAgainNow = run_once_outcome {
+                if let Poll::Ready(RunOnceOutcome::LoopAgainNow) = run_once_outcome {
                     continue;
                 }
 
@@ -147,7 +146,7 @@ impl System {
                 let event = match next_event.poll(cx) {
                     Poll::Ready(ev) => ev,
                     Poll::Pending => {
-                        if let RunOnceOutcome::LoopAgain = run_once_outcome {
+                        if let Poll::Ready(RunOnceOutcome::LoopAgain) = run_once_outcome {
                             continue;
                         }
                         return Poll::Pending;

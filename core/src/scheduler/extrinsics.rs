@@ -883,8 +883,6 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
     /// `needs_answer` is true, then you **must** provide a `MessageId`.
     ///
     pub fn accept_emit(mut self, message_id: Option<MessageId>) -> EncodedMessage {
-        let process = self.inner.process();
-
         match mem::replace(
             &mut self.inner.user_data().state,
             LocalThreadState::Poisoned,

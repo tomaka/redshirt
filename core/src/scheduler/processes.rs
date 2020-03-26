@@ -30,13 +30,12 @@ use core::{
     fmt,
     future::Future,
     pin::Pin,
-    task::{Context, Poll, Waker},
+    task::{Context, Poll},
 };
 use crossbeam_queue::SegQueue;
 use fnv::FnvBuildHasher;
 use hashbrown::{hash_map::Entry, HashMap};
 use nohash_hasher::BuildNoHashHasher;
-use slab::Slab;
 use spinning_top::Spinlock;
 
 mod wakers;
