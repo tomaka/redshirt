@@ -24,7 +24,6 @@ use crate::{InterfaceHash, MessageId};
 use alloc::vec::Vec;
 use core::{cell::RefCell, convert::TryFrom as _, fmt, iter, mem, ops::Range};
 use crossbeam_queue::SegQueue;
-use futures::prelude::*;
 use redshirt_syscalls::{EncodedMessage, Pid, ThreadId};
 
 mod calls;
@@ -47,6 +46,7 @@ pub struct ProcessesCollectionExtrinsics<TPud, TTud, TExt: Extrinsics> {
     ///
     /// The threads here must always be in the [`LocalThreadState::OtherExtrinsicApplyAction`]
     /// state.
+    // TODO: we have to notify wakers when we push an element
     local_run_queue: SegQueue<ThreadId>,
 }
 

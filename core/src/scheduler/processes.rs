@@ -903,6 +903,7 @@ mod tests {
     use super::{ProcessesCollectionBuilder, RunOneOutcome};
     use crate::sig;
 
+    use futures::prelude::*;
     use hashbrown::HashSet;
     use std::{
         sync::{Arc, Barrier, Mutex},
@@ -929,7 +930,7 @@ mod tests {
         );
         let processes = ProcessesCollectionBuilder::<()>::default().build();
         processes.execute(&module, (), ()).unwrap();
-        match processes.run() {
+        match futures::executor::block_on(processes.run()) {
             RunOneOutcome::ProcessFinished { outcome, .. } => {
                 assert_eq!(outcome.unwrap(), Some(wasmi::RuntimeValue::I32(5)));
             }
@@ -976,17 +977,17 @@ mod tests {
 
                 let mut local_finished = Vec::with_capacity(num_processes);
                 loop {
-                    match processes.run() {
-                        RunOneOutcome::ProcessFinished { pid, outcome, .. } => {
+                    match processes.run().now_or_never() {
+                        Some(RunOneOutcome::ProcessFinished { pid, outcome, .. }) => {
                             assert_eq!(outcome.unwrap(), Some(wasmi::RuntimeValue::I32(1234)));
                             local_finished.push(pid);
                         }
-                        RunOneOutcome::Interrupted {
+                        Some(RunOneOutcome::Interrupted {
                             thread, id: &98, ..
-                        } => {
+                        }) => {
                             thread.resume(Some(wasmi::RuntimeValue::I32(1234)));
                         }
-                        RunOneOutcome::Idle => break,
+                        None => break,
                         _ => panic!(),
                     };
                 }

@@ -59,7 +59,7 @@ pub struct Registration<'a> {
 impl<'a> Registration<'a> {
     pub fn set_waker(&mut self, waker: &Waker) {
         let mut list = self.list.lock();
-        let mut entry = &mut list[self.index];
+        let entry = &mut list[self.index];
         if let Some(entry) = entry {
             if entry.will_wake(waker) {
                 return;
