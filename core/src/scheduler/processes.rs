@@ -21,7 +21,9 @@ use crate::{Pid, ThreadId};
 
 use alloc::{
     borrow::Cow,
+    collections::VecDeque,
     sync::{Arc, Weak},
+    vec,
     vec::Vec,
 };
 use core::fmt;
@@ -45,22 +47,21 @@ pub struct ProcessesCollection<TExtr, TPud, TTud> {
 
     /// Queue of processes with at least one thread to run. Every time a thread starts or is
     /// resumed, its process gets pushed to the end of this queue. In other words, there isn't
-    /// any unnecessary entry. Can contain obsolete dangling weak pointers in case a process has
-    /// been killed.
+    /// any unnecessary entry.
     // TODO: use something better than a naive round robin?
-    execution_queue: SegQueue<Weak<Process<TPud, TTud>>>,
+    execution_queue: SegQueue<Arc<Process<TPud, TTud>>>,
 
     /// List of running processes.
     ///
-    /// We hold `Arc`s to processes in order to count the number of "locks" that have been
-    /// acquired. Entries are removed from this list only if the number of strong counts is
-    /// equal to 1.
+    /// We hold `Weak`s to processes rather than `Arc`s. Processes are kept alive by the execution
+    /// queue and the interrupted threads, thereby guaranteeing that they are alive only if they
+    /// can potentially continue running.
     // TODO: find a solution for that mutex?
-    processes: Spinlock<HashMap<Pid, Arc<Process<TPud, TTud>>, BuildNoHashHasher<u64>>>,
+    processes: Spinlock<HashMap<Pid, Weak<Process<TPud, TTud>>, BuildNoHashHasher<u64>>>,
 
     /// List of threads waiting to be resumed, plus the user data and the process they belong to.
-    /// Also doesn't contain the threads that have been locked by the user with
-    /// [`ProcessesCollection::interrupted_thread_by_id`].
+    /// Doesn't contain threads that are ready to run and threads that have been locked by the
+    /// user with [`ProcessesCollection::interrupted_thread_by_id`].
     // TODO: find a solution for that mutex?
     interrupted_threads:
         Spinlock<HashMap<ThreadId, (TTud, Arc<Process<TPud, TTud>>), BuildNoHashHasher<u64>>>,
@@ -76,6 +77,14 @@ pub struct ProcessesCollection<TExtr, TPud, TTud> {
     /// This field is never modified after the [`ProcessesCollection`] is created.
     extrinsics_id_assign:
         HashMap<(Cow<'static, str>, Cow<'static, str>), (usize, Signature), FnvBuildHasher>,
+
+    /// Queue of process deaths to report to the external API.
+    death_reports: SegQueue<(
+        Pid,
+        TPud,
+        Vec<(ThreadId, TTud)>,
+        Result<Option<wasmi::RuntimeValue>, wasmi::Trap>,
+    )>,
 }
 
 /// Prototype for a [`ProcessesCollection`] under construction.
@@ -89,22 +98,43 @@ pub struct ProcessesCollectionBuilder<TExtr> {
         HashMap<(Cow<'static, str>, Cow<'static, str>), (usize, Signature), FnvBuildHasher>,
 }
 
-/// Entry in the list of processes. Always addressed through an `Arc`.
+/// Description of a process. Always addressed through an `Arc`.
+///
+/// Note that the process might be dead.
 struct Process<TPud, TTud> {
     /// Identifier of the process.
     pid: Pid,
 
-    /// Queue of threads that are ready to be resumed.
-    threads_to_resume: SegQueue<(ThreadId, TTud, Option<wasmi::RuntimeValue>)>,
-
-    /// The virtual machine.
-    /// Locked if a thread is being executed, or if memory is being accessed.
+    /// Part of the state behind a mutex.
     // TODO: it's obviously not great to have a Mutex here; this should be refactored once the
     // `vm` module supports multithreading
-    state_machine: Spinlock<vm::ProcessStateMachine<Thread>>,
+    lock: Spinlock<ProcessLock<TTud>>,
 
     /// User-chosen data (opaque to us) that describes the process.
     user_data: TPud,
+}
+
+/// Part of a process's state behind a mutex.
+struct ProcessLock<TTud> {
+    /// The actual Wasm virtual machine.
+    vm: vm::ProcessStateMachine<Thread>,
+
+    /// Queue of threads that are ready to be resumed.
+    threads_to_resume: VecDeque<(ThreadId, TTud, Option<wasmi::RuntimeValue>)>,
+
+    /// If `Some`, then the process is in a dead state, the virtual machine is in a poisoned
+    /// state, and we are in the process of collecting all the threads user datas into the
+    /// [`ProcessDeadState`] before notifying the user.
+    dead: Option<ProcessDeadState<TTud>>,
+}
+
+/// Additional optional state to a process if it's been marked for destruction.
+struct ProcessDeadState<TTud> {
+    /// List of dead thread that we will ultimately send to the user.
+    dead_threads: Vec<(ThreadId, TTud)>,
+
+    /// Why the process ended. Never modified once set.
+    outcome: Result<Option<wasmi::RuntimeValue>, wasmi::Trap>,
 }
 
 /// Additional data associated to a thread. Stored within the [`vm::ProcessStateMachine`].
@@ -116,7 +146,7 @@ struct Thread {
 /// Access to a process within the collection.
 pub struct ProcessesCollectionProc<'a, TExtr, TPud, TTud> {
     collection: &'a ProcessesCollection<TExtr, TPud, TTud>,
-    process: Arc<Process<TPud, TTud>>,
+    process: Option<Arc<Process<TPud, TTud>>>,
 
     /// Reference to the same field in [`ProcessesCollection`].
     pid_tid_pool: &'a IdPool,
@@ -125,7 +155,7 @@ pub struct ProcessesCollectionProc<'a, TExtr, TPud, TTud> {
 /// Access to a thread within the collection.
 pub struct ProcessesCollectionThread<'a, TExtr, TPud, TTud> {
     collection: &'a ProcessesCollection<TExtr, TPud, TTud>,
-    process: Arc<Process<TPud, TTud>>,
+    process: Option<Arc<Process<TPud, TTud>>>,
 
     /// Identifier of the thread. Must always match one of the user data in the virtual machine.
     tid: ThreadId,
@@ -247,29 +277,32 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
         let new_pid = self.pid_tid_pool.assign();
         let process = Arc::new(Process {
             pid: new_pid,
-            threads_to_resume: {
-                let queue = SegQueue::new();
-                queue.push((main_thread_id, main_thread_user_data, None));
-                queue
-            },
-            state_machine: Spinlock::new(state_machine),
+            lock: Spinlock::new(ProcessLock {
+                vm: state_machine,
+                threads_to_resume: {
+                    let mut queue = VecDeque::new();
+                    queue.push_back((main_thread_id, main_thread_user_data, None));
+                    queue
+                },
+                dead: None,
+            }),
             user_data: proc_user_data,
         });
 
         {
             let mut processes = self.processes.lock();
-            processes.insert(new_pid, process.clone());
+            processes.insert(new_pid, Arc::downgrade(&process));
             // Shrink the list from time to time so that it doesn't grow too much.
             if u64::from(new_pid) % 256 == 0 {
                 processes.shrink_to(PROCESSES_MIN_CAPACITY);
             }
         }
 
-        self.execution_queue.push(Arc::downgrade(&process));
+        self.execution_queue.push(process.clone());
 
         Ok(ProcessesCollectionProc {
             collection: self,
-            process,
+            process: Some(process),
             pid_tid_pool: &self.pid_tid_pool,
         })
     }
@@ -289,74 +322,98 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
                 "infinite loop detected in scheduler"
             );
 
+            // Items are pushed on `death_reports` when a `Process` struct is destroyed.
+            if let Ok((pid, user_data, dead_threads, outcome)) = self.death_reports.pop() {
+                return RunOneOutcome::ProcessFinished {
+                    pid,
+                    user_data,
+                    dead_threads,
+                    outcome,
+                };
+            }
+
             // We start by finding a process that is ready to run and lock it by extracting the
             // state machine.
-            let process_weak = match self.execution_queue.pop() {
+            let process = match self.execution_queue.pop() {
                 Ok(p) => p,
                 Err(_) => return RunOneOutcome::Idle,
             };
-            let process = match process_weak.upgrade() {
-                Some(p) => p,
-                None => continue, // Obsolete processes are ignored.
-            };
 
             // "Lock" the process's state machine for execution.
-            let mut state_machine = match process.state_machine.try_lock() {
+            let mut proc_state = match process.lock.try_lock() {
                 Some(st) => st,
                 // If the process is already locked, push it back at the end of the queue.
-                // TODO: this can turn into a spin loop, no? should handle "nothing to do
-                // situations"
+                // TODO: this can turn into a spin loop, no? should handle "nothing to do"
+                // situations
                 None => {
-                    self.execution_queue.push(process_weak);
+                    // TODO: don't clone, but Rust throws a borrow error if we don't clone
+                    self.execution_queue.push(process.clone());
                     continue;
                 }
             };
 
+            // If the process was in `self.execution_queue`, then we are guaranteed that a
+            // thread was ready.
+            let (tid, thread_user_data, resume_value) =
+                proc_state.threads_to_resume.pop_front().unwrap();
+
+            // If the process is marked as dying, insert the thread in it and see if we can
+            // finalize the destruction.
+            if let Some(proc_dead) = &mut proc_state.dead {
+                proc_dead.dead_threads.push((tid, thread_user_data));
+                debug_assert!(proc_state.vm.is_poisoned());
+                drop(proc_state); // Drop the lock.
+                self.try_report_process_death(process);
+                continue;
+            }
+
             // Now run a thread until something happens.
             // This takes most of the CPU time of this function.
-            let (thread_user_data, run_outcome) = {
-                // If the process was in `self.execution_queue`, then we are guaranteed that a
-                // thread was ready.
-                let (tid, thread_user_data, resume_value) =
-                    process.threads_to_resume.pop().unwrap();
-                let thread_index = (0..state_machine.num_threads())
-                    .find(|n| state_machine.thread(*n).unwrap().user_data().thread_id == tid)
+            let run_outcome = {
+                debug_assert!(!proc_state.vm.is_poisoned());
+                let thread_index = (0..proc_state.vm.num_threads())
+                    .find(|n| proc_state.vm.thread(*n).unwrap().user_data().thread_id == tid)
                     .unwrap();
-                let run_outcome = state_machine
+                proc_state
+                    .vm
                     .thread(thread_index)
                     .unwrap()
-                    .run(resume_value);
-                (thread_user_data, run_outcome)
+                    .run(resume_value)
             };
 
             match run_outcome {
                 Err(vm::RunErr::BadValueTy { .. }) => panic!(), // TODO:
                 Err(vm::RunErr::Poisoned) => unreachable!(),
 
-                // The entire process has ended or crashed.
+                // The entire process has ended or has crashed.
                 Ok(vm::ExecOutcome::ThreadFinished {
                     thread_index: 0,
                     return_value,
                     user_data: main_thread_user_data,
                 }) => {
-                    /*let other_threads_ud = state_machine.into_user_datas();
-                    let mut dead_threads = Vec::with_capacity(1 + other_threads_ud.len());
-                    dead_threads.push((
-                        main_thread_user_data.thread_id,
-                        main_thread_user_data.user_data,
-                    ));
-                    for thread in other_threads_ud {
-                        dead_threads.push((thread.thread_id, thread.user_data));
+                    debug_assert!(proc_state.vm.is_poisoned());
+                    debug_assert!(proc_state.dead.is_none());
+
+                    let mut dead_threads =
+                        vec![(main_thread_user_data.thread_id, thread_user_data)];
+
+                    // TODO: possible deadlock?
+                    let mut threads = self.interrupted_threads.lock();
+                    // TODO: very inefficient
+                    while let Some(tid) = threads
+                        .iter()
+                        .find(|(_, (_, p))| Arc::ptr_eq(&process, p))
+                        .map(|(k, v)| *k)
+                    {
+                        let (user_data, _) = threads.remove(&tid).unwrap();
+                        dead_threads.push((tid, user_data));
                     }
-                    debug_assert_eq!(dead_threads.len(), dead_threads.capacity());
-                    RunOneOutcome::ProcessFinished {
-                        pid,
-                        user_data: proc.user_data,
+
+                    proc_state.dead = Some(ProcessDeadState {
+                        // TODO: Vec::with_capacity?
                         dead_threads,
                         outcome: Ok(return_value),
-                    }*/
-                    // TODO: handle
-                    unimplemented!()
+                    });
                 }
 
                 // The thread has ended.
@@ -365,16 +422,17 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
                     user_data,
                     ..
                 }) => {
+                    debug_assert!(Arc::strong_count(&process) >= 2);
                     return RunOneOutcome::ThreadFinished {
                         thread_id: user_data.thread_id,
                         process: ProcessesCollectionProc {
                             collection: self,
-                            process: process.clone(),
+                            process: Some(process.clone()),
                             pid_tid_pool: &self.pid_tid_pool,
                         },
                         user_data: thread_user_data,
                         value: return_value,
-                    }
+                    };
                 }
 
                 // Thread wants to call an extrinsic function.
@@ -391,7 +449,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
                     return RunOneOutcome::Interrupted {
                         thread: ProcessesCollectionThread {
                             collection: self,
-                            process: process.clone(),
+                            process: Some(process.clone()),
                             tid: thread.user_data().thread_id,
                             pid_tid_pool: &self.pid_tid_pool,
                             user_data: Some(thread_user_data),
@@ -403,22 +461,24 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
 
                 // An error happened during the execution. We kill the entire process.
                 Ok(vm::ExecOutcome::Errored { error, .. }) => {
-                    /*let (pid, proc) = process.remove_entry();
-                    let dead_threads = proc
-                        .state_machine
-                        .into_user_datas()
-                        .map(|t| (t.thread_id, t.user_data))
-                        .collect::<Vec<_>>();
-                    RunOneOutcome::ProcessFinished {
-                        pid,
-                        user_data: proc.user_data,
-                        dead_threads,
-                        outcome: Err(error),
-                    }*/
-                    // TODO: handle
-                    unimplemented!()
+                    unimplemented!() // TODO:
+                                     /*assert!(proc_state.dead.is_none());
+                                     proc_state.dead = Some(ProcessDeadState {
+                                         dead_threads: Vec::new(),       // FIXME:
+                                         outcome: Err(error),
+                                     });
+
+                                     let dead_threads = proc
+                                         .state_machine
+                                         .into_user_datas()
+                                         .map(|t| (t.thread_id, t.user_data))
+                                         .collect::<Vec<_>>();*/
                 }
             }
+
+            // If we reach here, the process has to be terminated.
+            drop(proc_state);
+            self.try_report_process_death(process);
         }
     }
 
@@ -434,10 +494,16 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
         processes
             .values()
             .cloned()
-            .map(|process| ProcessesCollectionProc {
-                collection: self,
-                process,
-                pid_tid_pool: &self.pid_tid_pool,
+            .filter_map(|process| {
+                if let Some(process) = process.upgrade() {
+                    Some(ProcessesCollectionProc {
+                        collection: self,
+                        process: Some(process),
+                        pid_tid_pool: &self.pid_tid_pool,
+                    })
+                } else {
+                    None
+                }
             })
             .collect::<Vec<_>>()
             .into_iter()
@@ -450,19 +516,24 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
     /// message to be returned for the given process.
     ///
     /// You can call this function mutiple times in order to obtain the lock multiple times.
+    ///
+    /// This method is guaranteed to return `Some` for a process for which you already have an
+    /// existing lock, or if you hold a lock to one of its threads. However, it can return `None`
+    /// for a process that has crashed or finished before said crash or termination has been
+    /// reported with the [`run`](ProcessesCollection::run) method.
     pub fn process_by_id(&self, pid: Pid) -> Option<ProcessesCollectionProc<TExtr, TPud, TTud>> {
         let processes = self.processes.lock();
 
-        let p = processes.get(&pid)?.clone();
-        // TODO: check whether process is dead
-
-        debug_assert_eq!(p.pid, pid);
-
-        Some(ProcessesCollectionProc {
-            collection: self,
-            process: p,
-            pid_tid_pool: &self.pid_tid_pool,
-        })
+        if let Some(p) = processes.get(&pid)?.upgrade() {
+            debug_assert_eq!(p.pid, pid);
+            Some(ProcessesCollectionProc {
+                collection: self,
+                process: Some(p),
+                pid_tid_pool: &self.pid_tid_pool,
+            })
+        } else {
+            None
+        }
     }
 
     /// Returns a thread by its [`ThreadId`], if it exists and is not running.
@@ -481,7 +552,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
         if let Some((user_data, process)) = interrupted_threads.remove(&id) {
             Some(ProcessesCollectionThread {
                 collection: self,
-                process,
+                process: Some(process),
                 tid: id,
                 pid_tid_pool: &self.pid_tid_pool,
                 user_data: Some(user_data),
@@ -489,6 +560,30 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
         } else {
             None
         }
+    }
+
+    /// If the `process` passed as parameter is the last strong reference, then cleans the state
+    /// of `self` for traces.
+    fn try_report_process_death(&self, process: Arc<Process<TPud, TTud>>) {
+        let mut process = match Arc::try_unwrap(process) {
+            Ok(p) => p,
+            Err(_) => return,
+        };
+
+        let _was_in = self.processes.lock().remove(&process.pid);
+        debug_assert!(_was_in.is_some());
+        debug_assert_eq!(_was_in.as_ref().unwrap().weak_count(), 0);
+        debug_assert_eq!(_was_in.as_ref().unwrap().strong_count(), 0);
+
+        debug_assert!(process.lock.get_mut().threads_to_resume.is_empty());
+
+        let dead = process.lock.get_mut().dead.take().unwrap();
+        self.death_reports.push((
+            process.pid,
+            process.user_data,
+            dead.dead_threads,
+            dead.outcome,
+        ));
     }
 }
 
@@ -567,6 +662,7 @@ impl<TExtr> ProcessesCollectionBuilder<TExtr> {
             )),
             extrinsics: self.extrinsics,
             extrinsics_id_assign: self.extrinsics_id_assign,
+            death_reports: SegQueue::new(),
         }
     }
 }
@@ -575,12 +671,12 @@ impl<'a, TExtr, TPud, TTud> ProcessesCollectionProc<'a, TExtr, TPud, TTud> {
     /// Returns the [`Pid`] of the process. Allows later retrieval by calling
     /// [`process_by_id`](ProcessesCollection::process_by_id).
     pub fn pid(&self) -> Pid {
-        self.process.pid
+        self.process.as_ref().unwrap().pid
     }
 
     /// Returns the user data that is associated to the process.
     pub fn user_data(&self) -> &TPud {
-        &self.process.user_data
+        &self.process.as_ref().unwrap().user_data
     }
 
     /// Adds a new thread to the process, starting the function with the given index and passing
@@ -599,14 +695,15 @@ impl<'a, TExtr, TPud, TTud> ProcessesCollectionProc<'a, TExtr, TPud, TTud> {
         let thread_id = self.pid_tid_pool.assign(); // TODO: check for duplicates
         let thread_data = Thread { thread_id };
 
-        self.process
-            .state_machine
-            .lock()
+        let mut process_state = self.process.as_ref().unwrap().lock.lock();
+
+        process_state
+            .vm
             .start_thread_by_id(fn_index, params, thread_data)?;
 
-        self.process
+        process_state
             .threads_to_resume
-            .push((thread_id, user_data, None));
+            .push_back((thread_id, user_data, None));
 
         Ok(thread_id)
     }
@@ -618,7 +715,7 @@ impl<'a, TExtr, TPud, TTud> ProcessesCollectionProc<'a, TExtr, TPud, TTud> {
         let mut interrupted_threads = self.collection.interrupted_threads.lock();
 
         let list = interrupted_threads
-            .drain_filter(|_, (_, p)| Arc::ptr_eq(p, &self.process))
+            .drain_filter(|_, (_, p)| Arc::ptr_eq(p, self.process.as_ref().unwrap()))
             .collect::<Vec<_>>();
 
         let collection = self.collection;
@@ -626,7 +723,7 @@ impl<'a, TExtr, TPud, TTud> ProcessesCollectionProc<'a, TExtr, TPud, TTud> {
         list.into_iter().map(
             move |(tid, (user_data, process))| ProcessesCollectionThread {
                 collection,
-                process,
+                process: Some(process),
                 tid,
                 pid_tid_pool,
                 user_data: Some(user_data),
@@ -645,6 +742,13 @@ impl<'a, TExtr, TPud, TTud> fmt::Debug for ProcessesCollectionProc<'a, TExtr, TP
     }
 }
 
+impl<'a, TExtr, TPud, TTud> Drop for ProcessesCollectionProc<'a, TExtr, TPud, TTud> {
+    fn drop(&mut self) {
+        self.collection
+            .try_report_process_death(self.process.take().unwrap());
+    }
+}
+
 impl<'a, TExtr, TPud, TTud> ProcessesCollectionThread<'a, TExtr, TPud, TTud> {
     /// Returns the id of the thread. Allows later retrieval by calling
     /// [`thread_by_id`](ProcessesCollection::thread_by_id).
@@ -657,7 +761,7 @@ impl<'a, TExtr, TPud, TTud> ProcessesCollectionThread<'a, TExtr, TPud, TTud> {
     /// Returns the [`Pid`] of the process. Allows later retrieval by calling
     /// [`process_by_id`](ProcessesCollection::process_by_id).
     pub fn pid(&self) -> Pid {
-        self.process.pid
+        self.process.as_ref().unwrap().pid
     }
 
     /// Returns the process this thread belongs to.
@@ -672,8 +776,8 @@ impl<'a, TExtr, TPud, TTud> ProcessesCollectionThread<'a, TExtr, TPud, TTud> {
     pub fn read_memory(&self, offset: u32, size: u32) -> Result<Vec<u8>, ()> {
         // TODO: will block until any other thread to finish executing ; it isn't really possible
         // right now to do otherwise, as the WASM memory model isn't properly defined
-        let lock = self.process.state_machine.lock();
-        lock.read_memory(offset, size)
+        let lock = self.process.as_ref().unwrap().lock.lock();
+        lock.vm.read_memory(offset, size)
     }
 
     /// Write the data at the given memory location.
@@ -682,8 +786,8 @@ impl<'a, TExtr, TPud, TTud> ProcessesCollectionThread<'a, TExtr, TPud, TTud> {
     pub fn write_memory(&self, offset: u32, value: &[u8]) -> Result<(), ()> {
         // TODO: will block until any other thread to finish executing ; it isn't really possible
         // right now to do otherwise, as the WASM memory model isn't properly defined
-        let mut lock = self.process.state_machine.lock();
-        lock.write_memory(offset, value)
+        let mut lock = self.process.as_ref().unwrap().lock.lock();
+        lock.vm.write_memory(offset, value)
     }
 
     /// Returns the user data that is associated to the thread.
@@ -697,23 +801,57 @@ impl<'a, TExtr, TPud, TTud> ProcessesCollectionThread<'a, TExtr, TPud, TTud> {
     /// This releases the [`ProcessesCollectionThread`]. The thread can now potentially be run by
     /// calling [`ProcessesCollection::run`].
     pub fn resume(mut self, value: Option<wasmi::RuntimeValue>) {
+        let process = self.process.take().unwrap();
         let user_data = self.user_data.take().unwrap();
-        self.process
-            .threads_to_resume
-            .push((self.tid, user_data, value));
-        self.collection
-            .execution_queue
-            .push(Arc::downgrade(&self.process));
+
+        let push_to_exec_q = {
+            let mut process_state = process.lock.lock();
+            let mut process_state = &mut *process_state;
+            if let Some(death_state) = &mut process_state.dead {
+                debug_assert!(process_state.vm.is_poisoned());
+                death_state.dead_threads.push((self.tid, user_data));
+                false
+            } else {
+                process_state
+                    .threads_to_resume
+                    .push_back((self.tid, user_data, value));
+                true
+            }
+        };
+
+        if push_to_exec_q {
+            self.collection.execution_queue.push(process);
+        }
     }
 }
 
 impl<'a, TExtr, TPud, TTud> Drop for ProcessesCollectionThread<'a, TExtr, TPud, TTud> {
     fn drop(&mut self) {
+        let process = match self.process.take() {
+            Some(p) => p,
+            None => return,
+        };
+
+        // `self.user_data` is `None` if the thread has been resumed, and `Some` if it has been
+        // dropped without being resumed.
         if let Some(user_data) = self.user_data.take() {
-            let mut interrupted_threads = self.collection.interrupted_threads.lock();
-            let _prev_in = interrupted_threads.insert(self.tid, (user_data, self.process.clone()));
-            debug_assert!(_prev_in.is_none());
+            let mut process_state = process.lock.lock();
+            let mut process_state = &mut *process_state;
+
+            if let Some(death_state) = &mut process_state.dead {
+                debug_assert!(process_state.vm.is_poisoned());
+                death_state.dead_threads.push((self.tid, user_data));
+            } else {
+                // TODO: fails debug_assert!(Arc::strong_count(&process) >= 2);
+                let mut interrupted_threads = self.collection.interrupted_threads.lock();
+                let _prev_in = interrupted_threads.insert(self.tid, (user_data, process.clone()));
+                debug_assert!(_prev_in.is_none());
+            }
         }
+
+        // TODO: doesn't have to be called if we push the thread back in `interrupted_threads`,
+        // but that gives borrowing errors
+        self.collection.try_report_process_death(process);
     }
 }
 
@@ -745,4 +883,6 @@ mod tests {
             .with_extrinsic("foo", "test", sig!(()), ())
             .with_extrinsic("foo", "test", sig!(()), ());
     }
+
+    // TODO: add fuzzing here
 }
