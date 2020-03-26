@@ -606,8 +606,30 @@ impl<'a, TExtr, TPud, TTud> Future for RunFuture<'a, TExtr, TPud, TTud> {
                 }
 
                 // An error happened during the execution. We kill the entire process.
-                Ok(vm::ExecOutcome::Errored { error, .. }) => {
-                    unimplemented!() // TODO:
+                Ok(vm::ExecOutcome::Errored { error, mut thread }) => {
+                    // TODO: Vec::with_capacity?
+                    let mut dead_threads = vec![(thread.user_data().thread_id, thread_user_data)];
+                    drop(thread);
+
+                    debug_assert!(proc_state.vm.is_poisoned());
+                    debug_assert!(proc_state.dead.is_none());
+
+                    // TODO: possible deadlock?
+                    let mut threads = this.interrupted_threads.lock();
+                    // TODO: O(n) complexity
+                    while let Some(tid) = threads
+                        .iter()
+                        .find(|(_, (_, p))| Arc::ptr_eq(&process, p))
+                        .map(|(k, _)| *k)
+                    {
+                        let (user_data, _) = threads.remove(&tid).unwrap();
+                        dead_threads.push((tid, user_data));
+                    }
+
+                    proc_state.dead = Some(ProcessDeadState {
+                        dead_threads,
+                        outcome: Err(error),
+                    });
                 }
             }
 
