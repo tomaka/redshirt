@@ -127,7 +127,12 @@ impl System {
                     }
                 }
 
-                let run_once_outcome = self.run_once();
+                // TODO: put an await here instead
+                let run_once_outcome = {
+                    let fut = self.run_once();
+                    futures::pin_mut!(fut);
+                    futures::ready!(Future::poll(fut, cx))
+                };
 
                 if let RunOnceOutcome::Report(out) = run_once_outcome {
                     return Poll::Ready(out);
@@ -184,10 +189,8 @@ impl System {
         })
     }
 
-    fn run_once(&self) -> RunOnceOutcome {
-        match self.core.run() {
-            CoreRunOutcome::Idle => return RunOnceOutcome::Idle,
-
+    async fn run_once(&self) -> RunOnceOutcome {
+        match self.core.run().await {
             CoreRunOutcome::ProgramFinished { pid, outcome, .. } => {
                 self.loader_pid
                     .compare_and_swap(u64::from(pid), 0, atomic::Ordering::AcqRel);

@@ -24,6 +24,7 @@ use crate::{InterfaceHash, MessageId};
 use alloc::vec::Vec;
 use core::{cell::RefCell, convert::TryFrom as _, fmt, iter, mem, ops::Range};
 use crossbeam_queue::SegQueue;
+use futures::prelude::*;
 use redshirt_syscalls::{EncodedMessage, Pid, ThreadId};
 
 mod calls;
@@ -297,9 +298,6 @@ pub enum RunOneOutcome<'a, TPud, TTud, TExt: Extrinsics> {
         /// Message that must be cancelled.
         message_id: MessageId,
     },
-
-    /// No thread is ready to run. Nothing was done.
-    Idle,
 }
 
 impl<TPud, TTud, TExt> ProcessesCollectionExtrinsics<TPud, TTud, TExt>
@@ -340,9 +338,9 @@ where
     /// Runs one thread amongst the collection.
     ///
     /// Which thread is run is implementation-defined and no guarantee is made.
-    pub fn run(&self) -> RunOneOutcome<TPud, TTud, TExt> {
+    pub async fn run<'a>(&'a self) -> RunOneOutcome<'a, TPud, TTud, TExt> {
         loop {
-            if let Some(outcome) = self.run_once() {
+            if let Some(outcome) = self.run_once().await {
                 return outcome;
             }
         }
@@ -350,7 +348,7 @@ where
 
     /// Similar to [`run`](ProcessesCollectionExtrinsics::run). Should be called repeatidly as
     /// long as it returns `None`.
-    fn run_once(&self) -> Option<RunOneOutcome<TPud, TTud, TExt>> {
+    async fn run_once<'a>(&'a self) -> Option<RunOneOutcome<'a, TPud, TTud, TExt>> {
         while let Ok(tid) = self.local_run_queue.pop() {
             // It is possible that the thread no longer exists, for example if the process crashed.
             let mut thread = self.inner.interrupted_thread_by_id(tid)?;
@@ -388,7 +386,7 @@ where
             }
         }
 
-        match self.inner.run() {
+        match self.inner.run().await {
             processes::RunOneOutcome::ProcessFinished {
                 pid,
                 user_data,
@@ -405,6 +403,7 @@ where
                     outcome,
                 });
             }
+
             processes::RunOneOutcome::ThreadFinished {
                 process,
                 user_data,
@@ -422,7 +421,6 @@ where
                     value,
                 })
             }
-            processes::RunOneOutcome::Idle => Some(RunOneOutcome::Idle),
 
             processes::RunOneOutcome::Interrupted {
                 mut thread,
