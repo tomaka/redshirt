@@ -357,8 +357,8 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
             let (tid, thread_user_data, resume_value) =
                 proc_state.threads_to_resume.pop_front().unwrap();
 
-            // If the process is marked as dying, insert the thread in it and see if we can
-            // finalize the destruction.
+            // If the process is marked as dying, insert the thread in the dying state and see if
+            // we can finalize the destruction.
             if let Some(proc_dead) = &mut proc_state.dead {
                 proc_dead.dead_threads.push((tid, thread_user_data));
                 debug_assert!(proc_state.vm.is_poisoned());
@@ -394,23 +394,23 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
                     debug_assert!(proc_state.vm.is_poisoned());
                     debug_assert!(proc_state.dead.is_none());
 
+                    // TODO: Vec::with_capacity?
                     let mut dead_threads =
                         vec![(main_thread_user_data.thread_id, thread_user_data)];
 
                     // TODO: possible deadlock?
                     let mut threads = self.interrupted_threads.lock();
-                    // TODO: very inefficient
+                    // TODO: O(n) complexity
                     while let Some(tid) = threads
                         .iter()
                         .find(|(_, (_, p))| Arc::ptr_eq(&process, p))
-                        .map(|(k, v)| *k)
+                        .map(|(k, _)| *k)
                     {
                         let (user_data, _) = threads.remove(&tid).unwrap();
                         dead_threads.push((tid, user_data));
                     }
 
                     proc_state.dead = Some(ProcessDeadState {
-                        // TODO: Vec::with_capacity?
                         dead_threads,
                         outcome: Ok(return_value),
                     });
@@ -423,11 +423,12 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
                     ..
                 }) => {
                     debug_assert!(Arc::strong_count(&process) >= 2);
+                    drop(proc_state);
                     return RunOneOutcome::ThreadFinished {
                         thread_id: user_data.thread_id,
                         process: ProcessesCollectionProc {
                             collection: self,
-                            process: Some(process.clone()),
+                            process: Some(process),
                             pid_tid_pool: &self.pid_tid_pool,
                         },
                         user_data: thread_user_data,
@@ -446,11 +447,13 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
                         Some(e) => e,
                         None => unreachable!(),
                     };
+                    let tid = thread.user_data().thread_id;
+                    drop(proc_state);
                     return RunOneOutcome::Interrupted {
                         thread: ProcessesCollectionThread {
                             collection: self,
-                            process: Some(process.clone()),
-                            tid: thread.user_data().thread_id,
+                            process: Some(process),
+                            tid,
                             pid_tid_pool: &self.pid_tid_pool,
                             user_data: Some(thread_user_data),
                         },
@@ -462,17 +465,6 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
                 // An error happened during the execution. We kill the entire process.
                 Ok(vm::ExecOutcome::Errored { error, .. }) => {
                     unimplemented!() // TODO:
-                                     /*assert!(proc_state.dead.is_none());
-                                     proc_state.dead = Some(ProcessDeadState {
-                                         dead_threads: Vec::new(),       // FIXME:
-                                         outcome: Err(error),
-                                     });
-
-                                     let dead_threads = proc
-                                         .state_machine
-                                         .into_user_datas()
-                                         .map(|t| (t.thread_id, t.user_data))
-                                         .collect::<Vec<_>>();*/
                 }
             }
 
@@ -806,7 +798,7 @@ impl<'a, TExtr, TPud, TTud> ProcessesCollectionThread<'a, TExtr, TPud, TTud> {
 
         let push_to_exec_q = {
             let mut process_state = process.lock.lock();
-            let mut process_state = &mut *process_state;
+            let process_state = &mut *process_state;
             if let Some(death_state) = &mut process_state.dead {
                 debug_assert!(process_state.vm.is_poisoned());
                 death_state.dead_threads.push((self.tid, user_data));
@@ -821,6 +813,8 @@ impl<'a, TExtr, TPud, TTud> ProcessesCollectionThread<'a, TExtr, TPud, TTud> {
 
         if push_to_exec_q {
             self.collection.execution_queue.push(process);
+        } else {
+            self.collection.try_report_process_death(process);
         }
     }
 }
@@ -836,7 +830,7 @@ impl<'a, TExtr, TPud, TTud> Drop for ProcessesCollectionThread<'a, TExtr, TPud, 
         // dropped without being resumed.
         if let Some(user_data) = self.user_data.take() {
             let mut process_state = process.lock.lock();
-            let mut process_state = &mut *process_state;
+            let process_state = &mut *process_state;
 
             if let Some(death_state) = &mut process_state.dead {
                 debug_assert!(process_state.vm.is_poisoned());
@@ -873,8 +867,14 @@ impl<'a, TExtr, TPud, TTud> fmt::Debug for ProcessesCollectionThread<'a, TExtr, 
 
 #[cfg(test)]
 mod tests {
-    use super::ProcessesCollectionBuilder;
+    use super::{ProcessesCollectionBuilder, RunOneOutcome};
     use crate::sig;
+
+    use hashbrown::HashSet;
+    use std::{
+        sync::{Arc, Barrier, Mutex},
+        thread,
+    };
 
     #[test]
     #[should_panic]
@@ -882,6 +882,92 @@ mod tests {
         ProcessesCollectionBuilder::<()>::default()
             .with_extrinsic("foo", "test", sig!(()), ())
             .with_extrinsic("foo", "test", sig!(()), ());
+    }
+
+    #[test]
+    fn basic() {
+        let module = from_wat!(
+            local,
+            r#"(module
+            (func $_start (result i32)
+                i32.const 5)
+            (export "_start" (func $_start)))
+        "#
+        );
+        let processes = ProcessesCollectionBuilder::<()>::default().build();
+        processes.execute(&module, (), ()).unwrap();
+        match processes.run() {
+            RunOneOutcome::ProcessFinished { outcome, .. } => {
+                assert_eq!(outcome.unwrap(), Some(wasmi::RuntimeValue::I32(5)));
+            }
+            _ => panic!(),
+        };
+    }
+
+    #[test]
+    fn many_processes() {
+        let module = from_wat!(
+            local,
+            r#"(module
+            (import "" "test" (func $test (result i32)))
+            (func $_start (result i32)
+                call $test)
+            (export "_start" (func $_start)))
+        "#
+        );
+        let num_processes = 10000;
+        let num_threads = 8;
+
+        let processes = Arc::new(
+            ProcessesCollectionBuilder::<i32>::default()
+                .with_extrinsic("", "test", sig!(() -> I32), 98)
+                .build(),
+        );
+        let mut spawned_pids = HashSet::<_, fnv::FnvBuildHasher>::default();
+        for _ in 0..num_processes {
+            let pid = processes.execute(&module, (), ()).unwrap().pid();
+            assert!(spawned_pids.insert(pid));
+        }
+
+        let finished_pids = Arc::new(Mutex::new(Vec::new()));
+        let start_barrier = Arc::new(Barrier::new(num_threads));
+        let end_barrier = Arc::new(Barrier::new(num_threads + 1));
+
+        for _ in 0..num_threads {
+            let processes = processes.clone();
+            let finished_pids = finished_pids.clone();
+            let start_barrier = start_barrier.clone();
+            let end_barrier = end_barrier.clone();
+            thread::spawn(move || {
+                start_barrier.wait();
+
+                let mut local_finished = Vec::with_capacity(num_processes);
+                loop {
+                    match processes.run() {
+                        RunOneOutcome::ProcessFinished { pid, outcome, .. } => {
+                            assert_eq!(outcome.unwrap(), Some(wasmi::RuntimeValue::I32(1234)));
+                            local_finished.push(pid);
+                        }
+                        RunOneOutcome::Interrupted {
+                            thread, id: &98, ..
+                        } => {
+                            thread.resume(Some(wasmi::RuntimeValue::I32(1234)));
+                        }
+                        RunOneOutcome::Idle => break,
+                        _ => panic!(),
+                    };
+                }
+
+                finished_pids.lock().unwrap().extend(local_finished);
+                end_barrier.wait();
+            });
+        }
+
+        end_barrier.wait();
+        for pid in finished_pids.lock().unwrap().drain(..) {
+            assert!(spawned_pids.remove(&pid));
+        }
+        assert!(spawned_pids.is_empty());
     }
 
     // TODO: add fuzzing here

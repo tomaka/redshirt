@@ -860,11 +860,10 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
     }
 
     /// Returns the interface to emit the message on.
-    pub fn emit_interface(&mut self) -> InterfaceHash {
-        // TODO: cloning :-/
+    pub fn emit_interface(&mut self) -> &InterfaceHash {
         match self.inner.user_data().state {
-            LocalThreadState::EmitMessage(ref emit) => emit.interface.clone(),
-            LocalThreadState::OtherExtrinsicEmit { ref interface, .. } => interface.clone(),
+            LocalThreadState::EmitMessage(ref emit) => &emit.interface,
+            LocalThreadState::OtherExtrinsicEmit { ref interface, .. } => interface,
             _ => unreachable!(),
         }
     }

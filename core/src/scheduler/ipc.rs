@@ -466,7 +466,7 @@ impl Core {
                 _ => unreachable!(),
             };
 
-            debug_assert_eq!(thread.emit_interface(), interface);
+            debug_assert_eq!(*thread.emit_interface(), interface);
             let emitter_pid = thread.pid().into();
 
             let message_id = if thread.needs_answer() {
