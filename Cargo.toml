@@ -8,6 +8,7 @@ members = [
     "kernel/hosted-tcp",
     "kernel/hosted-time",
     "kernel/standalone",
+    "interfaces/framebuffer",
     "interfaces/hardware",
     "interfaces/interface",
     "interfaces/loader",
