@@ -19,12 +19,12 @@
 
 extern crate alloc;
 
+use alloc::vec::Vec;
 use core::convert::TryFrom as _;
 
 pub mod ffi;
 
 /// Generate `len` bytes of random data and returns them.
-#[cfg(feature = "std")]
 pub async fn generate(len: usize) -> Vec<u8> {
     unsafe {
         let mut out = Vec::with_capacity(len);
@@ -35,7 +35,6 @@ pub async fn generate(len: usize) -> Vec<u8> {
 }
 
 /// Fills `out` with randomly-generated data.
-#[cfg(feature = "std")]
 pub async fn generate_in(out: &mut [u8]) {
     for chunk in out.chunks_mut(usize::from(u16::max_value())) {
         let msg = ffi::RandomMessage::Generate {

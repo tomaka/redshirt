@@ -992,6 +992,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "redshirt-framebuffer-interface"
+version = "0.1.0"
+dependencies = [
+ "redshirt-random-interface",
+ "redshirt-syscalls",
+]
+
+[[package]]
 name = "redshirt-hardware-interface"
 version = "0.1.0"
 dependencies = [
