@@ -6,4 +6,5 @@ authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+redshirt-random-interface = { path = "../random", default-features = false }
 redshirt-syscalls = { path = "../syscalls", default-features = false }

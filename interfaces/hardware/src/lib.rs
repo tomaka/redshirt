@@ -17,7 +17,6 @@
 //!
 //! Use this interface if you're writing a device driver.
 
-#![deny(intra_doc_link_resolution_failure)]
 #![cfg_attr(not(feature = "std"), no_std)]
 
 extern crate alloc;

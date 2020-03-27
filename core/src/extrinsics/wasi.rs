@@ -30,7 +30,7 @@ use alloc::{
 };
 use core::{cmp, convert::TryFrom as _, fmt, mem, slice};
 use hashbrown::HashMap;
-use spin::Mutex;
+use spinning_top::Spinlock;
 use wasmi::RuntimeValue;
 
 /// Implementation of the [`Extrinsics`] trait for WASI.
@@ -46,7 +46,7 @@ pub struct WasiExtrinsics {
     /// The integer representing the file descriptor is the index within that table. Since file
     /// descriptors must not change value over time, we instead replace them with `None` when
     /// closing.
-    file_descriptors: Mutex<Vec<Option<FileDescriptor>>>,
+    file_descriptors: Spinlock<Vec<Option<FileDescriptor>>>,
 
     /// Virtual file system accessible to the program.
     file_system: Arc<Inode>,
@@ -67,7 +67,7 @@ enum FileDescriptor {
 #[derive(Debug)]
 enum Inode {
     Directory {
-        entries: Mutex<HashMap<String, Arc<Inode>, fnv::FnvBuildHasher>>,
+        entries: Spinlock<HashMap<String, Arc<Inode>, fnv::FnvBuildHasher>>,
     },
     File {
         content: Vec<u8>,
@@ -77,7 +77,7 @@ enum Inode {
 impl Default for WasiExtrinsics {
     fn default() -> WasiExtrinsics {
         let fs_root = Arc::new(Inode::Directory {
-            entries: Mutex::new({
+            entries: Spinlock::new({
                 let mut hashmap = HashMap::default();
                 // TODO: hack to toy with DOOM
                 hashmap.insert(
@@ -93,7 +93,7 @@ impl Default for WasiExtrinsics {
         WasiExtrinsics {
             args: vec![b"foo".to_vec()], // TODO: "foo" is a dummy program name
             env_vars: vec![b"HOME=/home".to_vec()], // TODO: dummy
-            file_descriptors: Mutex::new(vec![
+            file_descriptors: Spinlock::new(vec![
                 // stdin
                 Some(FileDescriptor::Empty),
                 // stdout

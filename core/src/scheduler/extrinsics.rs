@@ -46,7 +46,8 @@ pub struct ProcessesCollectionExtrinsics<TPud, TTud, TExt: Extrinsics> {
     /// List of threads that `inner` considers "interrupted" but that we expose as "ready". We
     /// have to process the external extrinsics for this thread.
     ///
-    /// The threads here must always be in the [`OtherExtrinsicApplyAction`] state.
+    /// The threads here must always be in the [`LocalThreadState::OtherExtrinsicApplyAction`]
+    /// state.
     local_run_queue: SegQueue<ThreadId>,
     // TODO: implement
     /*/// List of processes that have died but that we haven't reported yet to the outside because
@@ -110,7 +111,7 @@ pub trait ProcessesCollectionExtrinsicsThreadAccess<'a> {
     // TODO: make it return handle to process instead?
 
     /// Returns the id of the thread. Allows later retrieval by calling
-    /// [`thread_by_id`](ProcessesCollectionExtrinsics::thread_by_id).
+    /// [`interrupted_thread_by_id`](ProcessesCollectionExtrinsics::interrupted_thread_by_id).
     ///
     /// [`ThreadId`]s are unique within a [`ProcessesCollectionExtrinsics`], independently from the
     /// process.
@@ -744,7 +745,7 @@ where
     TExt: Extrinsics,
 {
     /// Returns the [`Pid`] of the process. Allows later retrieval by calling
-    /// [`process_by_id`](ProcessesCollection::process_by_id).
+    /// [`process_by_id`](ProcessesCollectionExtrinsics::process_by_id).
     pub fn pid(&self) -> Pid {
         self.pid
     }
@@ -813,7 +814,8 @@ where
     ///
     /// The termination will happen after all locks to this process have been released.
     ///
-    /// Calling [`abort`] a second time or more has no effect.
+    /// Calling [`abort`](ProcessesCollectionExtrinsicsProc::abort) a second time or more has no
+    /// effect.
     pub fn abort(&self) {
         unimplemented!() // TODO:
     }
@@ -1131,7 +1133,8 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
 
     /// Resume the thread, sending back a notification.
     ///
-    /// `index` must be the index within the list returned by [`message_ids_iter`].
+    /// `index` must be the index within the list returned by
+    /// [`message_ids_iter`](ProcessesCollectionExtrinsicsThreadWaitNotification::message_ids_iter).
     ///
     /// # Panic
     ///

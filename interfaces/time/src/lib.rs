@@ -15,7 +15,6 @@
 
 //! Time.
 
-#![deny(intra_doc_link_resolution_failure)]
 #![no_std]
 
 extern crate alloc;
