@@ -18,42 +18,42 @@ use redshirt_core::{Module, SystemBuilder, SystemRunOutcome};
 
 fn bench(c: &mut Criterion) {
     /* Original code:
-#![feature(alloc_error_handler)]
-#![no_std]
-#![no_main]
+    #![feature(alloc_error_handler)]
+    #![no_std]
+    #![no_main]
 
-#[global_allocator]
-static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
+    #[global_allocator]
+    static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
-#[cfg(not(any(test, doc, doctest)))]
-#[panic_handler]
-fn panic(_: &core::panic::PanicInfo) -> ! {
-    unsafe { core::hint::unreachable_unchecked() }
-}
+    #[cfg(not(any(test, doc, doctest)))]
+    #[panic_handler]
+    fn panic(_: &core::panic::PanicInfo) -> ! {
+        unsafe { core::hint::unreachable_unchecked() }
+    }
 
-#[cfg(not(any(test, doc, doctest)))]
-#[alloc_error_handler]
-fn alloc_error_handler(_: core::alloc::Layout) -> ! {
-    panic!()
-}
+    #[cfg(not(any(test, doc, doctest)))]
+    #[alloc_error_handler]
+    fn alloc_error_handler(_: core::alloc::Layout) -> ! {
+        panic!()
+    }
 
-extern crate alloc;
-use alloc::vec;
-use futures::prelude::*;
-use tiny_keccak::*;
+    extern crate alloc;
+    use alloc::vec;
+    use futures::prelude::*;
+    use tiny_keccak::*;
 
-#[no_mangle]
-fn _start() {
-    let data = [254u8; 4096];
+    #[no_mangle]
+    fn _start() {
+        let data = [254u8; 4096];
 
-    let mut res: [u8; 32] = [0; 32];
-    let mut keccak = tiny_keccak::Keccak::v256();
-    keccak.update(&data);
-    keccak.finalize(&mut res);
+        let mut res: [u8; 32] = [0; 32];
+        let mut keccak = tiny_keccak::Keccak::v256();
+        keccak.update(&data);
+        keccak.finalize(&mut res);
 
-    assert_ne!(res[0] as isize, 0);
-}
-*/
+        assert_ne!(res[0] as isize, 0);
+    }
+    */
     let module = Module::from_bytes(&include_bytes!("keccak.wasm")[..]).unwrap();
 
     c.bench_function("keccak-4096-bytes", |b| {
@@ -67,7 +67,8 @@ fn _start() {
                         _ => panic!(),
                     }
                 }
-            }).unwrap();
+            })
+            .unwrap();
         })
     });
 }
