@@ -83,7 +83,6 @@ impl VbeContext {
             log::trace!("Instruction = {:?}", instruction.code());
 
             assert!(!instruction.has_xrelease_prefix());
-            assert!(!instruction.has_rep_prefix()); // TODO: not implemented
 
             match instruction.code() {
                 iced_x86::Code::And_rm8_imm8
@@ -155,6 +154,9 @@ impl VbeContext {
                         machine.apply_rel_jump(&instruction);
                     }
                 }
+                iced_x86::Code::Jmp_rel16 => {
+                    machine.apply_rel_jump(&instruction);
+                }
                 iced_x86::Code::Jne_rel8_16 => {
                     if !machine.flags_is_zero() {
                         machine.apply_rel_jump(&instruction);
@@ -171,6 +173,14 @@ impl VbeContext {
                     machine.store_in_operand(&instruction, 0, &addr.to_le_bytes());
                 }
 
+                iced_x86::Code::Mov_r8_imm8
+                | iced_x86::Code::Mov_r8_rm8
+                | iced_x86::Code::Mov_rm8_r8 => {
+                    let mut out = [0; 1];
+                    machine.get_operand_value(&instruction, 1, &mut out);
+                    machine.store_in_operand(&instruction, 0, &out);
+                }
+
                 iced_x86::Code::Mov_r16_imm16
                 | iced_x86::Code::Mov_r16_rm16
                 | iced_x86::Code::Mov_rm16_r16
@@ -183,15 +193,41 @@ impl VbeContext {
 
                 iced_x86::Code::Mov_r32_imm32
                 | iced_x86::Code::Mov_r32_rm32
-                | iced_x86::Code::Mov_rm32_r32 => {
+                | iced_x86::Code::Mov_rm32_r32
+                | iced_x86::Code::Mov_EAX_moffs32 => {
                     let mut out = [0; 4];
                     machine.get_operand_value(&instruction, 1, &mut out);
                     machine.store_in_operand(&instruction, 0, &out);
                 }
 
+                iced_x86::Code::Movzx_r32_rm16 => {
+                    let mut out = [0; 2];
+                    machine.get_operand_value(&instruction, 1, &mut out);
+                    let zero_extended = [out[0], out[1], 0, 0];
+                    machine.store_in_operand(&instruction, 0, &zero_extended);
+                }
+
                 iced_x86::Code::Nopd => {}
                 iced_x86::Code::Nopq => {}
                 iced_x86::Code::Nopw => {}
+
+                iced_x86::Code::Or_rm32_imm32 |
+                iced_x86::Code::Or_rm32_r32 |
+                iced_x86::Code::Or_r32_rm32 => {
+                    let mut val1 = [0; 4];
+                    machine.get_operand_value(&instruction, 0, &mut val1);
+                    let mut val2 = [0; 4];
+                    machine.get_operand_value(&instruction, 1, &mut val2);
+
+                    let temp: u32 = u32::from_le_bytes(val1) | u32::from_le_bytes(val2);
+                    machine.store_in_operand(&instruction, 0, &temp.to_le_bytes());
+                    // TODO: flags might not be correct
+                    machine.flags_set_sign((temp & 0x80) != 0);
+                    machine.flags_set_zero(temp == 0);
+                    machine.flags_set_parity_from_val(temp.to_le_bytes()[0]);
+                    machine.flags_set_carry(false);
+                    machine.flags_set_overflow(false);
+                }
 
                 iced_x86::Code::Outsb_DX_m8 => {
                     let mut port = [0; 2];
@@ -211,7 +247,7 @@ impl VbeContext {
                     }
                 }
 
-                iced_x86::Code::Pop_r16 | iced_x86::Code::Pop_rm16 => {
+                iced_x86::Code::Pop_r16 | iced_x86::Code::Pop_rm16 | iced_x86::Code::Popw_DS => {
                     let mut out = [0; 2];
                     machine.stack_pop(&mut out);
                     machine.store_in_operand(&instruction, 0, &out);
@@ -221,13 +257,9 @@ impl VbeContext {
                     machine.stack_pop(&mut out);
                     machine.store_in_operand(&instruction, 0, &out);
                 }
-                iced_x86::Code::Popw_DS => {
-                    let mut out = [0; 2];
-                    machine.stack_pop(&mut out);
-                    machine.regs.ds = u16::from_le_bytes(out);
-                }
 
-                iced_x86::Code::Push_r16 => {
+                iced_x86::Code::Push_r16 |
+                iced_x86::Code::Pushw_DS => {
                     let mut out = [0; 2];
                     machine.get_operand_value(&instruction, 0, &mut out);
                     machine.stack_push(&out);
@@ -237,10 +269,52 @@ impl VbeContext {
                     machine.get_operand_value(&instruction, 0, &mut out);
                     machine.stack_push(&out);
                 }
-                iced_x86::Code::Pushw_DS => machine.stack_push(&machine.regs.ds.to_le_bytes()),
+                iced_x86::Code::Pushfw => {
+                    machine.stack_push(&machine.regs.flags.to_le_bytes());
+                }
+
+                iced_x86::Code::Shl_rm32_imm8 => {
+                    let mut val1 = [0; 4];
+                    machine.get_operand_value(&instruction, 0, &mut val1);
+                    let mut val2 = [0; 1];
+                    machine.get_operand_value(&instruction, 1, &mut val2);
+
+                    let result = u32::from_le_bytes(val1).wrapping_shl(u32::from(u8::from_le_bytes(val2)));
+                    machine.store_in_operand(&instruction, 0, &result.to_le_bytes());
+                    // TODO: clusterfuck of eflags
+                    /*
+                    If the count is 1 or greater, the CF flag is filled with the last bit shifted out of the destination operand and the SF, ZF,
+                    and PF flags are set according to the value of the result. For a 1-bit shift, the OF flag is set if a sign change occurred;
+                    otherwise, it is cleared. For shifts greater than 1 bit, the OF flag is undefined. If a shift occurs, the AF flag is unde-
+                    fined. If the count operand is 0, the flags are not affected. If the count is greater than the operand size, the flags
+                    are undefined.*/
+                }
 
                 iced_x86::Code::Std => machine.flags_set_direction(true),
                 iced_x86::Code::Sti => machine.flags_set_interrupt(true),
+
+                iced_x86::Code::Stosb_m8_AL => {
+                    let mut val = [0; 1];
+                    machine.get_operand_value(&instruction, 1, &mut val);
+                    if !instruction.has_rep_prefix() {
+                        machine.store_in_operand(&instruction, 0, &val);
+                        if machine.flags_is_direction() {
+                            machine.regs.edi = machine.regs.edi.wrapping_sub(1);
+                        } else {
+                            machine.regs.edi = machine.regs.edi.wrapping_add(1);
+                        }
+                    } else {
+                        while machine.regs.ecx != 0 {
+                            machine.store_in_operand(&instruction, 0, &val);
+                            if machine.flags_is_direction() {
+                                machine.regs.edi = machine.regs.edi.wrapping_sub(1);
+                            } else {
+                                machine.regs.edi = machine.regs.edi.wrapping_add(1);
+                            }
+                            machine.regs.ecx -= 1;
+                        }
+                    }
+                }
 
                 iced_x86::Code::Sub_AX_imm16 => {
                     let mut val1 = [0; 2];
@@ -276,7 +350,8 @@ impl VbeContext {
                                                           // FIXME: set AF flag
                 }
 
-                iced_x86::Code::Test_rm8_imm8 => {
+                iced_x86::Code::Test_rm8_imm8 |
+                iced_x86::Code::Test_rm8_r8 => {
                     let mut val1 = [0; 1];
                     machine.get_operand_value(&instruction, 0, &mut val1);
                     let mut val2 = [0; 1];
@@ -417,27 +492,35 @@ impl Machine {
             iced_x86::OpKind::Memory
         ));
 
-        let base = match instruction.memory_base() {
+        let base = u16::try_from(match instruction.memory_base() {
             iced_x86::Register::None => 0,
             reg => {
                 let mut out = [0; 4];
                 self.get_register(reg, &mut out[..reg.size()]);
                 u32::from_le_bytes(out)
             }
-        };
+        } & 0xffff).unwrap();
 
-        let index = match instruction.memory_index() {
+        let index = u16::try_from(match instruction.memory_index() {
             iced_x86::Register::None => 0,
             reg => {
                 let mut out = [0; 4];
                 self.get_register(reg, &mut out[..reg.size()]);
                 u32::from_le_bytes(out)
             }
-        };
+        } & 0xffff).unwrap();
 
-        u16::try_from(base
-            + index * instruction.memory_index_scale()
-            + instruction.memory_displacement()).unwrap()       // TODO: don't panic
+        let index_scale = u16::try_from(instruction.memory_index_scale()).unwrap();
+
+        let base_and_index = base.wrapping_add(index.wrapping_mul(index_scale));
+        
+        if instruction.memory_displacement() >= 0x800 {
+            // Negative number.
+        } else {
+
+        }
+        // TODO: wrong?
+        base_and_index.wrapping_add(u16::try_from(instruction.memory_displacement() & 0xffff).unwrap())
     }
 
     fn memory_operand_address(&self, instruction: &iced_x86::Instruction, op_n: u32) -> u32 {
@@ -537,6 +620,12 @@ impl Machine {
         match instruction.op_kind(op_n) {
             iced_x86::OpKind::Register => {
                 self.store_in_register(instruction.op_register(op_n), val)
+            }
+            iced_x86::OpKind::MemoryESDI => {
+                let addr = (u32::from(self.regs.es) << 4) + (self.regs.edi & 0xffff);
+                let addr_usize = usize::try_from(addr).unwrap();
+                assert!(addr_usize + val.len() <= self.memory.len());
+                self.memory[addr_usize..addr_usize + val.len()].copy_from_slice(val);
             }
             iced_x86::OpKind::Memory => {
                 let addr = self.memory_operand_address(instruction, op_n);
