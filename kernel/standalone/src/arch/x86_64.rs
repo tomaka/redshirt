@@ -80,6 +80,9 @@ unsafe extern "C" fn after_boot(multiboot_header: usize) -> ! {
     // bootloader must save the information about the ACPI tables and propagate it as part of the
     // multiboot2 header passed to the operating system.
     // TODO: panics in BOCHS
+    // TODO: remove these tables from the memory ranges used as heap? `acpi_tables` is a copy of
+    // the table, so once we are past this line there's no problem anymore. But in theory,
+    // the `acpi_tables` variable might allocate over the actual ACPI tables.
     let acpi_tables = acpi::load_acpi_tables(&multiboot_info);
 
     // The ACPI tables indicate us information about how to interface with the I/O APICs.
@@ -198,26 +201,43 @@ fn find_free_memory_ranges<'a>(
     let elf_sections = multiboot_info.elf_sections_tag().unwrap();
 
     mem_map.memory_areas().filter_map(move |area| {
-        let mut area_start = area.start_address();
-        let mut area_end = area.end_address();
-        debug_assert!(area_start <= area_end);
-
-        // The kernel and various information about the system have been loaded into RAM, so we
-        // have to remove all the sections we want to keep from the portions of memory that we
-        // use.
+        // Some parts of the memory have to be avoided, such as the kernel, non-RAM memory,
+        // RAM that might contain important information, and so on.
         let to_avoid = {
+            // We don't want to write over the kernel that has been loaded in memory.
             let elf = elf_sections
                 .sections()
                 .map(|s| s.start_address()..s.end_address());
+
+            // We don't want to use the memory-mapped ROM or video memory.
+            let rom_video_ram = iter::once(0xa0000..0xfffff);
+
+            // Some areas in the first megabyte were used during the booting process. This
+            // includes the 16bits interrupt vector table and the memory used by the BIOS to keep
+            // track of its state.
+            // Note that since we have total control over the hardware there is no fundamental
+            // reason to not overwrite these areas. In practice, however, there are situations
+            // where we would like to read these information later (for example if a VBE driver
+            // wants to access the content of the video BIOS).
+            let important_info = iter::once(0..0x500).chain(iter::once(0x80000..0xa0000));
+
+            // Avoid writing over the multiboot header.
             let multiboot = iter::once(
                 u64::try_from(multiboot_info.start_address()).unwrap()
                     ..u64::try_from(multiboot_info.end_address()).unwrap(),
             );
-            // TODO: ACPI tables
-            // TODO: PCI stuff?
-            // TODO: memory map stuff?
-            elf.chain(multiboot)
+
+            // Apart from the areas above, there are other areas that we want to avoid, in
+            // particular memory-mapped hardware. We trust the multiboot information to not
+            // include them.
+            elf.chain(rom_video_ram)
+                .chain(important_info)
+                .chain(multiboot)
         };
+
+        let mut area_start = area.start_address();
+        let mut area_end = area.end_address();
+        debug_assert!(area_start <= area_end);
 
         for section in to_avoid {
             if section.start >= area_start && section.end <= area_end {
