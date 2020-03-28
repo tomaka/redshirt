@@ -29,13 +29,13 @@ use redshirt_syscalls::{Decode, Encode, MessageId, Pid};
 /// inter-process communication, and so on.
 ///
 /// Natively handles the "interface" interface.  TODO: indicate hashes
-pub struct System {
+pub struct System<'a> {
     /// Inner system with inter-process communications.
     core: Core,
 
     /// Collection of programs. Each is assigned a `Pid` that is reserved within `core`.
     /// Can communicate with the WASM programs that are within `core`.
-    native_programs: native::NativeProgramsCollection<'static>,
+    native_programs: native::NativeProgramsCollection<'a>,
 
     /// PID of the program that handles the `loader` interface, or `0` is no such program exists
     /// yet.
@@ -55,12 +55,12 @@ pub struct System {
 }
 
 /// Prototype for a [`System`].
-pub struct SystemBuilder {
+pub struct SystemBuilder<'a> {
     /// Builder for the inner core.
     core: CoreBuilder,
 
     /// Native programs.
-    native_programs: native::NativeProgramsCollection<'static>,
+    native_programs: native::NativeProgramsCollection<'a>,
 
     /// "Virtual" pid for handling messages on the `interface` interface.
     interface_interface_pid: Pid,
@@ -97,7 +97,7 @@ enum RunOnceOutcome {
     LoopAgainNow,
 }
 
-impl System {
+impl<'a> System<'a> {
     /// Start executing a program.
     pub fn execute(&self, program: &Module) -> Result<Pid, NewErr> {
         Ok(self.core.execute(program)?.pid())
@@ -274,7 +274,7 @@ impl System {
     }
 }
 
-impl SystemBuilder {
+impl<'a> SystemBuilder<'a> {
     /// Starts a new builder.
     pub fn new() -> Self {
         // We handle some low-level interfaces here.
@@ -295,7 +295,7 @@ impl SystemBuilder {
     /// Registers native code that can communicate with the WASM programs.
     pub fn with_native_program<T>(mut self, program: T) -> Self
     where
-        T: Send + 'static,
+        T: Send + 'a,
         for<'r> &'r T: native::NativeProgramRef<'r>,
     {
         self.native_programs.push(self.core.reserve_pid(), program);
@@ -343,7 +343,7 @@ impl SystemBuilder {
     ///
     /// Returns an error if any of the programs passed through
     /// [`SystemBuilder::with_startup_process`] fails to start.
-    pub fn build(self) -> Result<System, NewErr> {
+    pub fn build(self) -> Result<System<'a>, NewErr> {
         let core = self.core.build();
 
         // We ask the core to redirect messages for the `interface` interface towards our
@@ -371,7 +371,7 @@ impl SystemBuilder {
     }
 }
 
-impl Default for SystemBuilder {
+impl<'a> Default for SystemBuilder<'a> {
     fn default() -> Self {
         SystemBuilder::new()
     }
