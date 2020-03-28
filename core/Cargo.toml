@@ -6,6 +6,10 @@ authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
 edition = "2018"
 publish = false
 
+[features]
+default = []
+nightly = ["redshirt-core-proc-macros/nightly"]
+
 [dependencies]
 blake3 = { version = "0.2.2", default-features = false }
 bs58 = { version = "0.3.0", default-features = false, features = ["alloc"] }
@@ -34,6 +38,10 @@ wasi = { version = "0.9.0", default-features = false }
 # TODO: https://github.com/paritytech/wasmi/issues/218
 wasmi = { git = "https://github.com/tomaka/wasmi", branch = "no-std", default-features = false, features = ["core"] }
 
-[features]
-default = []
-nightly = ["redshirt-core-proc-macros/nightly"]
+[dev-dependencies]
+criterion = "0.3"
+futures = "0.3.1"
+
+[[bench]]
+name = "keccak"
+harness = false
