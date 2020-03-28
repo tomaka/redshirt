@@ -14,7 +14,6 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 /// Support for VBE 2.0 and VGA.
-
 mod vbe;
 
 fn main() {
