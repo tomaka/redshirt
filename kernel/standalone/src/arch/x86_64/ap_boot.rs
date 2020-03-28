@@ -70,12 +70,6 @@ pub unsafe fn filter_build_ap_boot_alloc<'a>(
 
     ranges.filter_map(move |mut range| {
         if alloc.is_none() {
-            // FIXME: this is a hack because in practice our RAM starts at 0.
-            // FIXME: this should probably instead be fixed in the linked_list_allocator
-            if range.start == 0 {
-                range.start = 1;
-            }
-
             let range_size = range.end.checked_sub(range.start).unwrap();
             if range.start.saturating_add(WANTED) <= 0x100000 && range_size >= WANTED {
                 *alloc = Some(ApBootAlloc {
