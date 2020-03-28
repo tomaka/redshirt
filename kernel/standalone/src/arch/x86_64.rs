@@ -28,7 +28,7 @@ use x86_64::structures::port::{PortRead as _, PortWrite as _};
 mod acpi;
 mod ap_boot;
 mod apic;
-mod boot_link;
+mod boot;
 mod executor;
 mod interrupts;
 mod panic;
