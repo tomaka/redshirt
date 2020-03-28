@@ -38,7 +38,7 @@ impl VbeContext {
         let mut machine = Machine {
             memory: first_mb.clone(),
             regs: Registers {
-                eax: 0x4f02, // TODO: hack
+                eax: 0x4f00, // TODO: hack
                 ecx: 0,
                 edx: 0,
                 ebx: 0x113,  // TODO: hack
@@ -48,9 +48,9 @@ impl VbeContext {
                 edi: 0,
                 eip: u32::from(int10h_ptr),
                 cs: 0,
-                ss: 0xf000, // TODO:
+                ss: 0xa000, // TODO:
                 ds: 0,
-                es: 0,
+                es: 0x50,
                 fs: 0,
                 gs: 0,
                 flags: 0b0000000000000010,
@@ -68,7 +68,7 @@ impl VbeContext {
         machine.regs.cs = int10h_seg;
         machine.regs.eip = u32::from(int10h_ptr);
 
-        machine.memory[0..4].copy_from_slice(b"VBE2");
+        machine.memory[0x500..0x504].copy_from_slice(b"VBE2");
 
         loop {
             let rip = (u64::from(machine.regs.cs) << 4) + u64::from(machine.regs.eip);
@@ -591,7 +591,7 @@ impl VbeContext {
         }
 
         log::info!("EAX after VBE call: 0x{:x}", machine.regs.eax);
-        log::info!("Signature: {:?}", &machine.memory[0..6]);
+        log::info!("Signature: {:?}", &machine.memory[0x500..0x506]);
     }
 }
 
