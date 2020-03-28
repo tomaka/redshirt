@@ -11,6 +11,7 @@ members = [
     "third-party/wasm-timer",
     "x86-log",
     "x86-pci",
+    "x86-vga-vbe",
 ]
 
 [profile.dev]

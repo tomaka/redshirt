@@ -67,10 +67,10 @@ where
             .with_native_program(crate::random::native::RandomNativeProgram::new(
                 self.platform_specific.clone(),
             ))
-            .with_startup_process(build_wasm_module!(
+            /*.with_startup_process(build_wasm_module!(
                 "../../../modules/p2p-loader",
                 "passive-node"
-            ))
+            ))*/
             .with_startup_process(build_wasm_module!("../../../modules/hello-world"));
 
         // TODO: use a better system than cfgs
@@ -78,8 +78,9 @@ where
         {
             system_builder = system_builder
                 .with_startup_process(build_wasm_module!("../../../modules/x86-log"))
-                .with_startup_process(build_wasm_module!("../../../modules/x86-pci"))
-                .with_startup_process(build_wasm_module!("../../../modules/ne2000"))
+                //.with_startup_process(build_wasm_module!("../../../modules/x86-pci"))
+                .with_startup_process(build_wasm_module!("../../../modules/x86-vga-vbe"))
+                //.with_startup_process(build_wasm_module!("../../../modules/ne2000"))
         }
         #[cfg(any(target_arch = "arm", target_arch = "aarch64"))]
         {

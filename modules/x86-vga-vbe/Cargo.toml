@@ -1,0 +1,18 @@
+[package]
+name = "x86-vga-vbe"
+version = "0.1.0"
+license = "GPL-3.0-or-later"
+authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
+edition = "2018"
+publish = false
+
+[dependencies]
+fnv = { git = "https://github.com/dflemstr/rust-fnv", default-features = false }    # TODO: https://github.com/servo/rust-fnv/pull/22
+hashbrown = { version = "0.7.1", default-features = false }
+iced-x86 = { version = "1.0.1", default-features = false, features = ["decoder", "instr_info", "std"] }
+lazy_static = "1"
+log = "0.4"
+redshirt-hardware-interface = { path = "../../interfaces/hardware" }
+redshirt-interface-interface = { path = "../../interfaces/interface" }
+redshirt-log-interface = { path = "../../interfaces/log" }
+redshirt-syscalls = { path = "../../interfaces/syscalls" }

@@ -22,6 +22,7 @@
 extern crate alloc;
 
 use alloc::{vec, vec::Vec};
+use core::convert::TryFrom as _;
 use futures::prelude::*;
 
 pub mod ffi;
@@ -100,6 +101,17 @@ pub unsafe fn write(address: u64, data: impl Into<Vec<u8>>) {
     let mut builder = HardwareWriteOperationsBuilder::with_capacity(1);
     builder.write(address, data);
     builder.send();
+}
+
+/// Reads memory.
+pub async unsafe fn read(address: u64, len: u32) -> Vec<u8> {
+    let len_usize = usize::try_from(len).unwrap();
+    let mut out = Vec::with_capacity(len_usize);
+    out.set_len(len_usize);
+    let mut ops = HardwareOperationsBuilder::new();
+    ops.read(address, &mut out);
+    ops.send().await;
+    out
 }
 
 /// Reads a single `u32` from the given memory address.

@@ -806,6 +806,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "iced-x86"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6ac869b23369a3125025bf1997e068b1c65e24c79f148d59fc963ba8435a959f"
+dependencies = [
+ "lazy_static",
+ "rustc_version",
+ "static_assertions 0.3.4",
+]
+
+[[package]]
 name = "idna"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1313,7 +1324,7 @@ dependencies = [
  "multihash",
  "percent-encoding",
  "serde",
- "static_assertions",
+ "static_assertions 1.1.0",
  "unsigned-varint",
  "url",
 ]
@@ -1734,6 +1745,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dcf128d1287d2ea9d80910b5f1120d0b8eede3fbf1abe91c40d39ea7d51e6fda"
 
 [[package]]
+name = "rustc_version"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "138e3e0acb6c9fb258b19b67cb8abd63c00679d2851805ea151465464fe9030a"
+dependencies = [
+ "semver",
+]
+
+[[package]]
 name = "rw-stream-sink"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1741,7 +1761,7 @@ checksum = "4da5fcb054c46f5a5dff833b129285a93d3f0179531735e6c866e8cc307d2020"
 dependencies = [
  "futures",
  "pin-project",
- "static_assertions",
+ "static_assertions 1.1.0",
 ]
 
 [[package]]
@@ -1758,6 +1778,21 @@ name = "scopeguard"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d29ab0c6d3fc0ee92fe66e2d99f700eab17a8d57d1c1d3b748380fb20baa78cd"
+
+[[package]]
+name = "semver"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d7eb9ef2c18661902cc47e535f9bc51b78acd254da71d375c2f6720d9a40403"
+dependencies = [
+ "semver-parser",
+]
+
+[[package]]
+name = "semver-parser"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "388a1df253eca08550bef6c72392cfe7c30914bf41df5269b68cbd6ff8f570a3"
 
 [[package]]
 name = "serde"
@@ -1833,6 +1868,12 @@ checksum = "32d801a3a53bcf5071f85fef8d5cab9e5f638fc5580a37e6eb7aba4b37438d24"
 dependencies = [
  "lock_api",
 ]
+
+[[package]]
+name = "static_assertions"
+version = "0.3.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f3eb36b47e512f8f1c9e3d10c2c1965bc992bd9cdb024fa581e2194501c83d3"
 
 [[package]]
 name = "static_assertions"
@@ -2047,7 +2088,7 @@ dependencies = [
  "byteorder",
  "crunchy",
  "rustc-hex",
- "static_assertions",
+ "static_assertions 1.1.0",
 ]
 
 [[package]]
@@ -2335,6 +2376,21 @@ dependencies = [
  "redshirt-pci-interface",
  "redshirt-syscalls",
  "regex",
+]
+
+[[package]]
+name = "x86-vga-vbe"
+version = "0.1.0"
+dependencies = [
+ "fnv 1.0.6 (git+https://github.com/dflemstr/rust-fnv)",
+ "hashbrown",
+ "iced-x86",
+ "lazy_static",
+ "log",
+ "redshirt-hardware-interface",
+ "redshirt-interface-interface",
+ "redshirt-log-interface",
+ "redshirt-syscalls",
 ]
 
 [[package]]
