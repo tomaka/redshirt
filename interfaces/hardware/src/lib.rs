@@ -103,6 +103,13 @@ pub unsafe fn write(address: u64, data: impl Into<Vec<u8>>) {
     builder.send();
 }
 
+/// Reads memory to a buffer.
+pub async unsafe fn read_to(address: u64, mut out: &mut [u8]) {
+    let mut ops = HardwareOperationsBuilder::new();
+    ops.read(address, &mut out);
+    ops.send().await;
+}
+
 /// Reads memory.
 pub async unsafe fn read(address: u64, len: u32) -> Vec<u8> {
     let len_usize = usize::try_from(len).unwrap();

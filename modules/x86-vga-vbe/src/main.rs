@@ -22,5 +22,6 @@ fn main() {
 }
 
 async fn async_main() {
-    let vbe = vbe::VbeContext::new().await;
+    let mut vbe = vbe::VbeContext::new().await;
+    vbe.call();
 }
