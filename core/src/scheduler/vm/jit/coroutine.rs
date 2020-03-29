@@ -19,7 +19,7 @@ use core::{cell::Cell, marker::PhantomData, pin::Pin};
 // Documentation about the x86_64 ABI here: https://github.com/hjl-tools/x86-psABI/wiki/X86-psABI
 
 // TODO: make it works on 32bits
-// TODO: panic safety
+// TODO: the UnwindSafe trait should be enforced but isn't available in core
 // TODO: require Send trait for the closure? it's a bit tricky, need to look into details
 // TODO: will leak heap-allocated stuff if Dropped before it's finished
 
@@ -159,6 +159,11 @@ pub enum RunOut<TRet, TInt> {
 }
 
 impl<TExec: FnOnce() -> TRet, TRet, TInt, TRes> Coroutine<TExec, TInt, TRes> {
+    /// Returns true if running the closure has produced a [`RunOut::Finished`] earlier.
+    pub fn is_finished(&self) -> bool {
+        self.has_finished
+    }
+
     /// Runs the coroutine until it finishes or is interrupted.
     ///
     /// `resume` must be `None` the first time a coroutine is run, then must be `Some` with the

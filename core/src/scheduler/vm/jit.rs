@@ -21,7 +21,7 @@ use crate::module::Module;
 use alloc::{
     borrow::{Cow, ToOwned as _},
     boxed::Box,
-    format,
+    rc::Rc,
     vec::Vec,
 };
 use core::{cell::RefCell, convert::TryInto, fmt, iter};
@@ -30,19 +30,13 @@ use smallvec::SmallVec;
 mod coroutine;
 
 pub struct Jit<T> {
-    instance: wasmtime::Instance,
+    main_thread: coroutine::Coroutine<Box<dyn FnOnce() -> Result<Option<wasmtime::Val>, wasmtime::Trap>>, usize, Option<wasmtime::Val>>,
 
-    /// Stack to use when invoking methods in the WASM VM.
-    exec_stack: Box<[u8]>,
-
-    memory: Option<wasmi::MemoryRef>,
-    indirect_table: Option<wasmi::TableRef>,
+    memory: Rc<RefCell<Option<wasmtime::Memory>>>,
+    indirect_table: Rc<RefCell<Option<wasmtime::Table>>>,
 
     /// We only support one thread. That's its user data.
-    thread_user_data: T,
-
-    /// If true, the state machine is in a poisoned state and cannot run any code anymore.
-    is_poisoned: bool,
+    thread_user_data: Option<T>,
 }
 
 /// Access to a thread within the virtual machine.
@@ -81,12 +75,67 @@ impl<T> Jit<T> {
             }
         }*/
 
-        unimplemented!()
+
+        let memory = Rc::new(RefCell::new(None));
+        let indirect_table = Rc::new(RefCell::new(None));
+        let imports = vec![];   // TODO:
+
+        let main_thread = {
+            let builder = coroutine::CoroutineBuilder::new();
+            let interrupter = builder.interrupter();
+            let memory = memory.clone();
+            let indirect_table = indirect_table.clone();
+            builder.build(Box::new(move || {
+                // TODO: don't unwrap
+                let instance = wasmtime::Instance::new(&module, &imports).unwrap();
+
+                // TODO: return errors instead of silently ignoring the problem
+                if let Some(mem) = instance.get_export("memory") {
+                    if let Some(mem) = mem.memory() {
+                        *memory.borrow_mut() = Some(mem.clone());
+                    }
+                }
+                if let Some(tbl) = instance.get_export("__indirect_function_table") {
+                    if let Some(tbl) = tbl.table() {
+                        *indirect_table.borrow_mut() = Some(tbl.clone());
+                    }
+                }
+        
+                // Try to start executing `_start`.
+                let start_function = if let Some(f) = instance.get_export("_start") {
+                    if let Some(f) = f.func() {
+                        f.clone()
+                    } else {
+                        unimplemented!() // TODO: return Err(NewErr::StartIsntAFunction);
+                    }
+                } else {
+                    unimplemented!() // TODO: return Err(NewErr::StartNotFound);
+                };
+
+                let reinjected: Option<wasmtime::Val> = interrupter.interrupt(0);
+                assert!(reinjected.is_none());
+
+                let result = start_function.call(&[])?;
+                assert!(result.len() == 0 || result.len() == 1); // TODO: I don't know what multiple results means
+                if result.is_empty() {
+                    Ok(None)
+                } else {
+                    Ok(Some(result[0].clone()))   // TODO: don't clone
+                }
+            }) as Box<_>)
+        };
+
+        Ok(Jit {
+            memory,
+            indirect_table,
+            main_thread,
+            thread_user_data: Some(main_thread_user_data),
+        })
     }
 
     /// Returns true if the state machine is in a poisoned state and cannot run anymore.
     pub fn is_poisoned(&self) -> bool {
-        self.is_poisoned
+        self.main_thread.is_finished()
     }
 
     pub fn start_thread_by_id(
@@ -104,7 +153,7 @@ impl<T> Jit<T> {
     }
 
     pub fn thread(&mut self, index: usize) -> Option<Thread<T>> {
-        if index == 0 {
+        if index == 0 && !self.is_poisoned() {
             Some(Thread { vm: self })
         } else {
             None
@@ -112,32 +161,34 @@ impl<T> Jit<T> {
     }
 
     pub fn into_user_datas(self) -> impl ExactSizeIterator<Item = T> {
-        iter::once(self.thread_user_data)
+        self.thread_user_data.into_iter()
     }
 
     /// Copies the given memory range into a `Vec<u8>`.
     ///
     /// Returns an error if the range is invalid or out of range.
     pub fn read_memory(&self, offset: u32, size: u32) -> Result<Vec<u8>, ()> {
-        let mem = match self.memory.as_ref() {
+        let mem = self.memory.borrow();
+        let mem = match mem.as_ref() {
             Some(m) => m,
             None => unreachable!(),
         };
 
-        mem.get(offset, size.try_into().map_err(|_| ())?)
-            .map_err(|_| ())
+        unimplemented!()/*mem.get(offset, size.try_into().map_err(|_| ())?)
+            .map_err(|_| ())*/
     }
 
     /// Write the data at the given memory location.
     ///
     /// Returns an error if the range is invalid or out of range.
     pub fn write_memory(&mut self, offset: u32, value: &[u8]) -> Result<(), ()> {
-        let mem = match self.memory.as_ref() {
+        let mem = self.memory.borrow();
+        let mem = match mem.as_ref() {
             Some(m) => m,
             None => unreachable!(),
         };
 
-        mem.set(offset, value).map_err(|_| ())
+        unimplemented!()//mem.set(offset, value).map_err(|_| ())
     }
 }
 
@@ -160,7 +211,34 @@ impl<'a, T> Thread<'a, T> {
     /// If, however, you call this function after a previous call to [`run`](Thread::run) that was
     /// interrupted by an external function call, then you must pass back the outcome of that call.
     pub fn run(mut self, value: Option<wasmi::RuntimeValue>) -> Result<ExecOutcome<'a, T>, RunErr> {
-        unimplemented!()
+        if self.vm.main_thread.is_finished() {
+            return Err(RunErr::Poisoned)
+        }
+
+        // TODO: check value type
+
+        match self.vm.main_thread.run(None) {      // TODO: correct value
+            coroutine::RunOut::Finished(Err(err)) => {
+                Ok(ExecOutcome::Errored {
+                    thread: From::from(self),
+                    error: unimplemented!(), // TODO: err,
+                })
+            }
+            coroutine::RunOut::Finished(Ok(val)) => {
+                Ok(ExecOutcome::ThreadFinished {
+                    thread_index: 0,
+                    return_value: unimplemented!(), // TODO: Ok(val),
+                    user_data: self.vm.thread_user_data.take().unwrap(),
+                })
+            }
+            coroutine::RunOut::Interrupted(val) => {
+                Ok(ExecOutcome::Interrupted {
+                    thread: From::from(self),
+                    id: val,
+                    params: Vec::new(),     // FIXME:
+                })
+            }
+        }
     }
 
     /// Returns the index of the thread, so that you can retreive the thread later by calling
@@ -173,12 +251,12 @@ impl<'a, T> Thread<'a, T> {
 
     /// Returns the user data associated to that thread.
     pub fn user_data(&mut self) -> &mut T {
-        &mut self.vm.thread_user_data
+        self.vm.thread_user_data.as_mut().unwrap()
     }
 
     /// Turns this thread into the user data associated to it.
     pub fn into_user_data(self) -> &'a mut T {
-        &mut self.vm.thread_user_data
+        self.vm.thread_user_data.as_mut().unwrap()
     }
 }
 
