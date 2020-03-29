@@ -37,7 +37,7 @@ impl VbeContext {
 
         let machine = Machine {
             regs: Registers {
-                eax: 0x4f00, // TODO: hack
+                eax: 0,
                 ecx: 0,
                 edx: 0,
                 ebx: 0x113,  // TODO: hack
@@ -49,7 +49,7 @@ impl VbeContext {
                 cs: 0,
                 ss: 0x9000, // TODO:
                 ds: 0,
-                es: 0x50,
+                es: 0,
                 fs: 0,
                 gs: 0,
                 flags: 0b0000000000000010,
@@ -64,7 +64,61 @@ impl VbeContext {
         }
     }
 
-    pub fn call(&mut self) {
+    pub fn read_memory_nul_terminated_str(&self, mut addr: u32) -> String {
+        let mut out = Vec::new();
+        loop {
+            match self.read_memory_u8(addr) {
+                0 => break,
+                b => out.push(b),
+            };
+            addr += 1;
+        }
+        String::from_utf8(out).unwrap()
+    }
+
+    pub fn read_memory_u8(&self, addr: u32) -> u8 {
+        let mut out = [0; 1];
+        self.read_memory(addr, &mut out);
+        u8::from_le_bytes(out)
+    }
+
+    pub fn read_memory_u16(&self, addr: u32) -> u16 {
+        let mut out = [0; 2];
+        self.read_memory(addr, &mut out);
+        u16::from_le_bytes(out)
+    }
+
+    pub fn read_memory(&self, addr: u32, out: &mut [u8]) {
+        self.machine.read_memory(addr, out)
+    }
+
+    pub fn write_memory(&mut self, addr: u32, data: &[u8]) {
+        self.machine.write_memory(addr, data);
+    }
+
+    pub fn ax(&mut self) -> u16 {
+        u16::try_from(self.machine.regs.eax & 0xffff).unwrap()
+    }
+
+    pub fn set_ax(&mut self, value: u16) {
+        self.machine.regs.eax &= 0xffff0000;
+        self.machine.regs.eax |= u32::from(value);
+    }
+
+    pub fn set_bx(&mut self, value: u16) {
+        self.machine.regs.ebx &= 0xffff0000;
+        self.machine.regs.ebx |= u32::from(value);
+    }
+
+    pub fn set_es_di(&mut self, es: u16, di: u16) {
+        self.machine.regs.es = es;
+        self.machine.regs.edi &= 0xffff0000;
+        self.machine.regs.edi |= u32::from(di);
+    }
+
+    pub fn int10h(&mut self) {
+        assert_eq!(self.machine.regs.eax & 0xff00, 0x4f00);
+
         let mut decoder = iced_x86::Decoder::new(16, &self.memory, iced_x86::DecoderOptions::NONE);
 
         self.machine.stack_push(&self.machine.regs.flags.to_le_bytes());
@@ -78,14 +132,12 @@ impl VbeContext {
         self.machine.regs.cs = self.int10h_seg;
         self.machine.regs.eip = u32::from(self.int10h_ptr);
 
-        self.machine.write_memory(0x500, &b"VBE2"[..]);
-
         let mut instr_counter: u32 = 0;
 
         loop {
             instr_counter = instr_counter.wrapping_add(1);
             if (instr_counter % 1000) == 0 {
-                log::info!("Executed 1000 instructions");
+                log::trace!("Executed 1000 instructions");
             }
 
             let rip = (u64::from(self.machine.regs.cs) << 4) + u64::from(self.machine.regs.eip);
@@ -257,7 +309,6 @@ impl VbeContext {
                 }
 
                 iced_x86::Code::Iretw => {
-                    log::info!("Success!");
                     break;
                 }
 
@@ -601,21 +652,6 @@ impl VbeContext {
                 }
             }
         }
-
-        log::info!("EAX after VBE call: 0x{:x}", self.machine.regs.eax);
-        let mut sig = [0; 512];
-        self.machine.read_memory(0x500, &mut sig[..]);
-        log::info!("Signature: {:?}", &sig[..]);
-
-        let mut oem_ptr_seg = [0; 2];
-        self.machine.read_memory(0x508, &mut oem_ptr_seg[..]);
-        let mut oem_ptr = [0; 2];
-        self.machine.read_memory(0x506, &mut oem_ptr[..]);
-        let oem_ptr = (u32::from(u16::from_le_bytes(oem_ptr_seg)) << 4) + u32::from(u16::from_le_bytes(oem_ptr));
-        let mut str_out = vec![0; 32];
-        self.machine.read_memory(oem_ptr, &mut str_out);
-        let len = str_out.iter().position(|b| *b == 0).unwrap_or(str_out.len());
-        log::info!("OEM string: {:?}", core::str::from_utf8(&str_out[..len]));
     }
 }
 

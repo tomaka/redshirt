@@ -23,5 +23,40 @@ fn main() {
 
 async fn async_main() {
     let mut vbe = vbe::VbeContext::new().await;
-    vbe.call();
+    vbe.set_ax(0x4f00);
+    vbe.set_es_di(0x50, 0x0);
+    vbe.write_memory(0x500, &b"VBE2"[..]);
+    vbe.int10h();
+    assert_eq!(vbe.ax(), 0x4f);
+
+    let mut info_out = [0; 512];
+    vbe.read_memory(0x500, &mut info_out[..]);
+    assert_eq!(&info_out[0..4], b"VESA");
+
+    let video_modes = {
+        let vmodes_seg = vbe.read_memory_u16(0x510);
+        let vmodes_ptr = vbe.read_memory_u16(0x50e);
+        let mut vmodes_addr = (u32::from(vmodes_seg) << 4) + u32::from(vmodes_ptr);
+        let mut modes = Vec::new();
+        loop {
+            let mode = vbe.read_memory_u16(vmodes_addr);
+            if mode == 0xffff {
+                break modes;
+            }
+            vmodes_addr += 2;
+            modes.push(mode);
+        }
+    };
+    log::info!("Video modes = {:?}", video_modes);
+
+    let total_memory = u32::from(vbe.read_memory_u16(0x512)) * 64 * 1024;
+    log::info!("Total memory = 0x{:x}", total_memory);
+
+    let oem_string = {
+        let seg = vbe.read_memory_u16(0x508);
+        let ptr = vbe.read_memory_u16(0x506);
+        let addr = (u32::from(seg) << 4) + u32::from(ptr);
+        vbe.read_memory_nul_terminated_str(addr)
+    };
+    log::info!("OEM string: {}", oem_string);
 }
