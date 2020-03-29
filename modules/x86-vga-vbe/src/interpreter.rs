@@ -15,7 +15,8 @@
 
 use core::convert::TryFrom as _;
 
-pub struct VbeContext {
+/// Intel 80386 real mode interpreter.
+pub struct Interpreter {
     machine: Machine,
     /// First megabyte of memory of the machine. Contains the video BIOS.
     memory: Vec<u8>,
@@ -23,7 +24,7 @@ pub struct VbeContext {
     int10h_ptr: u16,
 }
 
-impl VbeContext {
+impl Interpreter {
     pub async fn new() -> Self {
         let first_mb = unsafe { redshirt_hardware_interface::read(0x0, 0x100000).await };
 
@@ -56,7 +57,7 @@ impl VbeContext {
             },
         };
 
-        VbeContext {
+        Interpreter {
             memory: first_mb,
             machine,
             int10h_seg,
@@ -108,6 +109,11 @@ impl VbeContext {
     pub fn set_bx(&mut self, value: u16) {
         self.machine.regs.ebx &= 0xffff0000;
         self.machine.regs.ebx |= u32::from(value);
+    }
+
+    pub fn set_cx(&mut self, value: u16) {
+        self.machine.regs.ecx &= 0xffff0000;
+        self.machine.regs.ecx |= u32::from(value);
     }
 
     pub fn set_es_di(&mut self, es: u16, di: u16) {
@@ -258,6 +264,22 @@ impl VbeContext {
 
                     let (result, overflow) =
                         u32::from_le_bytes(val1).overflowing_sub(u32::from_le_bytes(val2));
+                    self.machine.flags_set_sign((result & 0x80) != 0);
+                    self.machine.flags_set_zero(result == 0);
+                    self.machine
+                        .flags_set_parity_from_val(result.to_le_bytes()[0]);
+                    self.machine.flags_set_carry(overflow);
+                    self.machine.flags_set_overflow(overflow); // FIXME: this is wrong but I don't understand
+                                                               // FIXME: set AF flag
+                }
+
+                iced_x86::Code::Dec_rm8 => {
+                    let mut val1 = [0; 1];
+                    self.machine.get_operand_value(&instruction, 0, &mut val1);
+                    let (result, overflow) = u8::from_le_bytes(val1).overflowing_sub(1);
+                    // TODO: check flags correctness
+                    self.machine
+                        .store_in_operand(&instruction, 0, &result.to_le_bytes());
                     self.machine.flags_set_sign((result & 0x80) != 0);
                     self.machine.flags_set_zero(result == 0);
                     self.machine
