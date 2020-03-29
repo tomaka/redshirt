@@ -13,8 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::module::Module;
 use super::{ExecOutcome, NewErr, RunErr, StartErr};
+use crate::module::Module;
 
 use alloc::{
     borrow::{Cow, ToOwned as _},

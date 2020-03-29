@@ -21,10 +21,17 @@ use alloc::{
     vec::Vec,
 };
 use core::{cell::RefCell, convert::TryInto, fmt};
-use interpreter as imp;
 use smallvec::SmallVec;
 
+#[cfg(target_arch = "x86_64")]
+mod jit;
+#[cfg(target_arch = "x86_64")]
+use jit::{Jit as ImpStateMachine, Thread as ImpThread};
+
+#[cfg(not(target_arch = "x86_64"))]
 mod interpreter;
+#[cfg(not(target_arch = "x86_64"))]
+use interpreter::{Interpreter as ImpStateMachine, Thread as ImpThread};
 
 /// WASMI state machine dedicated to a process.
 ///
@@ -73,10 +80,10 @@ mod interpreter;
 /// The [`ProcessStateMachine`] is single-threaded. In other words, the VM can only ever run one
 /// thread simultaneously. This might change in the future.
 ///
-pub struct ProcessStateMachine<T>(imp::Interpreter<T>);
+pub struct ProcessStateMachine<T>(ImpStateMachine<T>);
 
 /// Access to a thread within the virtual machine.
-pub struct Thread<'a, T>(imp::Thread<'a, T>);
+pub struct Thread<'a, T>(ImpThread<'a, T>);
 
 /// Outcome of the [`run`](Thread::run) function.
 #[derive(Debug)]
@@ -192,7 +199,11 @@ impl<T> ProcessStateMachine<T> {
         main_thread_user_data: T,
         mut symbols: impl FnMut(&str, &str, &wasmi::Signature) -> Result<usize, ()>,
     ) -> Result<Self, NewErr> {
-        Ok(ProcessStateMachine(imp::Interpreter::new(module, main_thread_user_data, symbols)?))
+        Ok(ProcessStateMachine(ImpStateMachine::new(
+            module,
+            main_thread_user_data,
+            symbols,
+        )?))
     }
 
     /// Returns true if the state machine is in a poisoned state and cannot run anymore.
@@ -214,7 +225,11 @@ impl<T> ProcessStateMachine<T> {
         params: impl Into<Cow<'static, [wasmi::RuntimeValue]>>,
         user_data: T,
     ) -> Result<Thread<T>, StartErr> {
-        Ok(Thread(self.0.start_thread_by_id(function_id, params, user_data)?))
+        Ok(Thread(self.0.start_thread_by_id(
+            function_id,
+            params,
+            user_data,
+        )?))
     }
 
     /// Returns the number of threads that are running.
@@ -255,8 +270,8 @@ impl<T> ProcessStateMachine<T> {
     }
 }
 
-impl<T> From<imp::Interpreter<T>> for ProcessStateMachine<T> {
-    fn from(t: imp::Interpreter<T>) -> Self {
+impl<T> From<ImpStateMachine<T>> for ProcessStateMachine<T> {
+    fn from(t: ImpStateMachine<T>) -> Self {
         Self(t)
     }
 }
@@ -300,8 +315,8 @@ impl<'a, T> Thread<'a, T> {
     }
 }
 
-impl<'a, T> From<imp::Thread<'a, T>> for Thread<'a, T> {
-    fn from(t: imp::Thread<'a, T>) -> Self {
+impl<'a, T> From<ImpThread<'a, T>> for Thread<'a, T> {
+    fn from(t: ImpThread<'a, T>) -> Self {
         Self(t)
     }
 }

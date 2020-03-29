@@ -110,10 +110,12 @@
 //! handler.
 //!
 
+#![feature(asm, global_asm, naked_functions)]
+#![feature(new_uninit)] // TODO: no; definitely can be circumvented too
 #![warn(missing_docs)]
 //#![deny(unsafe_code)] // TODO: 🤷
 #![allow(dead_code)] // TODO: temporary during development
-#![no_std]
+                     // TODO: restore #![no_std]
 
 extern crate alloc;
 
