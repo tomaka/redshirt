@@ -121,7 +121,8 @@ impl VbeContext {
 
         let mut decoder = iced_x86::Decoder::new(16, &self.memory, iced_x86::DecoderOptions::NONE);
 
-        self.machine.stack_push(&self.machine.regs.flags.to_le_bytes());
+        self.machine
+            .stack_push(&self.machine.regs.flags.to_le_bytes());
         self.machine.stack_push(&self.machine.regs.cs.to_le_bytes());
         self.machine.stack_push(
             &u16::try_from(self.machine.regs.eip & 0xffff)
@@ -166,13 +167,15 @@ impl VbeContext {
 
                     let (result, overflow) =
                         u32::from_le_bytes(val1).overflowing_add(u32::from_le_bytes(val2));
-                    self.machine.store_in_operand(&instruction, 0, &result.to_le_bytes());
+                    self.machine
+                        .store_in_operand(&instruction, 0, &result.to_le_bytes());
                     self.machine.flags_set_sign((result & 0x80) != 0);
                     self.machine.flags_set_zero(result == 0);
-                    self.machine.flags_set_parity_from_val(result.to_le_bytes()[0]);
+                    self.machine
+                        .flags_set_parity_from_val(result.to_le_bytes()[0]);
                     self.machine.flags_set_carry(overflow);
                     self.machine.flags_set_overflow(overflow); // FIXME: this is wrong but I don't understand
-                                                          // FIXME: set AF flag
+                                                               // FIXME: set AF flag
                 }
 
                 iced_x86::Code::And_rm8_imm8
@@ -185,7 +188,8 @@ impl VbeContext {
                     self.machine.get_operand_value(&instruction, 1, &mut val2);
 
                     let temp = val1[0] & val2[0];
-                    self.machine.store_in_operand(&instruction, 0, &temp.to_le_bytes());
+                    self.machine
+                        .store_in_operand(&instruction, 0, &temp.to_le_bytes());
                     self.machine.flags_set_sign((temp & 0x80) != 0);
                     self.machine.flags_set_zero(temp == 0);
                     self.machine.flags_set_parity_from_val(temp);
@@ -218,10 +222,11 @@ impl VbeContext {
                         u8::from_le_bytes(val1).overflowing_sub(u8::from_le_bytes(val2));
                     self.machine.flags_set_sign((result & 0x80) != 0);
                     self.machine.flags_set_zero(result == 0);
-                    self.machine.flags_set_parity_from_val(result.to_le_bytes()[0]);
+                    self.machine
+                        .flags_set_parity_from_val(result.to_le_bytes()[0]);
                     self.machine.flags_set_carry(overflow);
                     self.machine.flags_set_overflow(overflow); // FIXME: this is wrong but I don't understand
-                                                          // FIXME: set AF flag
+                                                               // FIXME: set AF flag
                 }
 
                 iced_x86::Code::Cmp_r16_rm16
@@ -236,10 +241,11 @@ impl VbeContext {
                         u16::from_le_bytes(val1).overflowing_sub(u16::from_le_bytes(val2));
                     self.machine.flags_set_sign((result & 0x80) != 0);
                     self.machine.flags_set_zero(result == 0);
-                    self.machine.flags_set_parity_from_val(result.to_le_bytes()[0]);
+                    self.machine
+                        .flags_set_parity_from_val(result.to_le_bytes()[0]);
                     self.machine.flags_set_carry(overflow);
                     self.machine.flags_set_overflow(overflow); // FIXME: this is wrong but I don't understand
-                                                          // FIXME: set AF flag
+                                                               // FIXME: set AF flag
                 }
 
                 iced_x86::Code::Cmp_rm32_r32
@@ -254,10 +260,11 @@ impl VbeContext {
                         u32::from_le_bytes(val1).overflowing_sub(u32::from_le_bytes(val2));
                     self.machine.flags_set_sign((result & 0x80) != 0);
                     self.machine.flags_set_zero(result == 0);
-                    self.machine.flags_set_parity_from_val(result.to_le_bytes()[0]);
+                    self.machine
+                        .flags_set_parity_from_val(result.to_le_bytes()[0]);
                     self.machine.flags_set_carry(overflow);
                     self.machine.flags_set_overflow(overflow); // FIXME: this is wrong but I don't understand
-                                                          // FIXME: set AF flag
+                                                               // FIXME: set AF flag
                 }
 
                 iced_x86::Code::Dec_r16 | iced_x86::Code::Dec_r32 => {
@@ -265,13 +272,15 @@ impl VbeContext {
                     self.machine.get_operand_value(&instruction, 0, &mut val1);
                     let (result, overflow) = u32::from_le_bytes(val1).overflowing_sub(1);
                     // TODO: check flags correctness
-                    self.machine.store_in_operand(&instruction, 0, &result.to_le_bytes());
+                    self.machine
+                        .store_in_operand(&instruction, 0, &result.to_le_bytes());
                     self.machine.flags_set_sign((result & 0x80) != 0);
                     self.machine.flags_set_zero(result == 0);
-                    self.machine.flags_set_parity_from_val(result.to_le_bytes()[0]);
+                    self.machine
+                        .flags_set_parity_from_val(result.to_le_bytes()[0]);
                     self.machine.flags_set_carry(overflow);
                     self.machine.flags_set_overflow(overflow); // FIXME: this is wrong but I don't understand
-                                                          // FIXME: set AF flag
+                                                               // FIXME: set AF flag
                 }
 
                 iced_x86::Code::Imul_r32_rm32_imm8 => {
@@ -284,14 +293,16 @@ impl VbeContext {
 
                     let (result, overflow) =
                         u32::from_le_bytes(val2).overflowing_add(u32::from_le_bytes(val3));
-                    self.machine.store_in_operand(&instruction, 0, &result.to_le_bytes());
+                    self.machine
+                        .store_in_operand(&instruction, 0, &result.to_le_bytes());
                     // TODO: check flags
                     self.machine.flags_set_sign((result & 0x80) != 0);
                     self.machine.flags_set_zero(result == 0);
-                    self.machine.flags_set_parity_from_val(result.to_le_bytes()[0]);
+                    self.machine
+                        .flags_set_parity_from_val(result.to_le_bytes()[0]);
                     self.machine.flags_set_carry(overflow);
                     self.machine.flags_set_overflow(overflow); // FIXME: this is wrong but I don't understand
-                                                          // FIXME: set AF flag
+                                                               // FIXME: set AF flag
                 }
 
                 iced_x86::Code::Inc_r16 | iced_x86::Code::Inc_r32 => {
@@ -299,13 +310,15 @@ impl VbeContext {
                     self.machine.get_operand_value(&instruction, 0, &mut val1);
                     let (result, overflow) = u32::from_le_bytes(val1).overflowing_add(1);
                     // TODO: check flags correctness
-                    self.machine.store_in_operand(&instruction, 0, &result.to_le_bytes());
+                    self.machine
+                        .store_in_operand(&instruction, 0, &result.to_le_bytes());
                     self.machine.flags_set_sign((result & 0x80) != 0);
                     self.machine.flags_set_zero(result == 0);
-                    self.machine.flags_set_parity_from_val(result.to_le_bytes()[0]);
+                    self.machine
+                        .flags_set_parity_from_val(result.to_le_bytes()[0]);
                     self.machine.flags_set_carry(overflow);
                     self.machine.flags_set_overflow(overflow); // FIXME: this is wrong but I don't understand
-                                                          // FIXME: set AF flag
+                                                               // FIXME: set AF flag
                 }
 
                 iced_x86::Code::Iretw => {
@@ -362,8 +375,11 @@ impl VbeContext {
                 }
 
                 iced_x86::Code::Lea_r16_m => {
-                    let addr = self.machine.memory_operand_address_no_segment(&instruction, 1);
-                    self.machine.store_in_operand(&instruction, 0, &addr.to_le_bytes());
+                    let addr = self
+                        .machine
+                        .memory_operand_address_no_segment(&instruction, 1);
+                    self.machine
+                        .store_in_operand(&instruction, 0, &addr.to_le_bytes());
                 }
 
                 iced_x86::Code::Mov_r8_imm8
@@ -399,7 +415,8 @@ impl VbeContext {
                     let mut out = [0; 2];
                     self.machine.get_operand_value(&instruction, 1, &mut out);
                     let zero_extended = [out[0], out[1], 0, 0];
-                    self.machine.store_in_operand(&instruction, 0, &zero_extended);
+                    self.machine
+                        .store_in_operand(&instruction, 0, &zero_extended);
                 }
 
                 iced_x86::Code::Nopd => {}
@@ -416,11 +433,13 @@ impl VbeContext {
                     self.machine.get_operand_value(&instruction, 1, &mut val2);
 
                     let temp: u32 = u32::from_le_bytes(val1) | u32::from_le_bytes(val2);
-                    self.machine.store_in_operand(&instruction, 0, &temp.to_le_bytes());
+                    self.machine
+                        .store_in_operand(&instruction, 0, &temp.to_le_bytes());
                     // TODO: flags might not be correct
                     self.machine.flags_set_sign((temp & 0x80) != 0);
                     self.machine.flags_set_zero(temp == 0);
-                    self.machine.flags_set_parity_from_val(temp.to_le_bytes()[0]);
+                    self.machine
+                        .flags_set_parity_from_val(temp.to_le_bytes()[0]);
                     self.machine.flags_set_carry(false);
                     self.machine.flags_set_overflow(false);
                 }
@@ -487,7 +506,8 @@ impl VbeContext {
                     self.machine.stack_push(&out);
                 }
                 iced_x86::Code::Pushfw => {
-                    self.machine.stack_push(&self.machine.regs.flags.to_le_bytes());
+                    self.machine
+                        .stack_push(&self.machine.regs.flags.to_le_bytes());
                 }
 
                 iced_x86::Code::Retnw => {
@@ -497,7 +517,8 @@ impl VbeContext {
                 }
                 iced_x86::Code::Retnw_imm16 => {
                     let mut num_to_pop = [0; 2];
-                    self.machine.get_operand_value(&instruction, 0, &mut num_to_pop);
+                    self.machine
+                        .get_operand_value(&instruction, 0, &mut num_to_pop);
                     let mut ip_ret = [0; 2];
                     self.machine.stack_pop(&mut ip_ret);
                     for _ in 0..u16::from_le_bytes(num_to_pop) {
@@ -515,7 +536,8 @@ impl VbeContext {
 
                     let result =
                         u32::from_le_bytes(val1).wrapping_shl(u32::from(u8::from_le_bytes(val2)));
-                    self.machine.store_in_operand(&instruction, 0, &result.to_le_bytes());
+                    self.machine
+                        .store_in_operand(&instruction, 0, &result.to_le_bytes());
                     // TODO: clusterfuck of eflags
                     /*
                     If the count is 1 or greater, the CF flag is filled with the last bit shifted out of the destination operand and the SF, ZF,
@@ -533,7 +555,8 @@ impl VbeContext {
 
                     let result =
                         u32::from_le_bytes(val1).wrapping_shr(u32::from(u8::from_le_bytes(val2)));
-                    self.machine.store_in_operand(&instruction, 0, &result.to_le_bytes());
+                    self.machine
+                        .store_in_operand(&instruction, 0, &result.to_le_bytes());
                     // TODO: clusterfuck of eflags
                     /*
                     If the count is 1 or greater, the CF flag is filled with the last bit shifted out of the destination operand and the SF, ZF,
@@ -577,13 +600,15 @@ impl VbeContext {
 
                     let (result, overflow) =
                         u16::from_le_bytes(val1).overflowing_sub(u16::from_le_bytes(val2));
-                    self.machine.store_in_operand(&instruction, 0, &result.to_le_bytes());
+                    self.machine
+                        .store_in_operand(&instruction, 0, &result.to_le_bytes());
                     self.machine.flags_set_sign((result & 0x80) != 0);
                     self.machine.flags_set_zero(result == 0);
-                    self.machine.flags_set_parity_from_val(result.to_le_bytes()[0]);
+                    self.machine
+                        .flags_set_parity_from_val(result.to_le_bytes()[0]);
                     self.machine.flags_set_carry(overflow);
                     self.machine.flags_set_overflow(overflow); // FIXME: this is wrong but I don't understand
-                                                          // FIXME: set AF flag
+                                                               // FIXME: set AF flag
                 }
 
                 iced_x86::Code::Sub_rm32_imm8 | iced_x86::Code::Sub_rm32_r32 => {
@@ -594,13 +619,15 @@ impl VbeContext {
 
                     let (result, overflow) =
                         u32::from_le_bytes(val1).overflowing_sub(u32::from_le_bytes(val2));
-                    self.machine.store_in_operand(&instruction, 0, &result.to_le_bytes());
+                    self.machine
+                        .store_in_operand(&instruction, 0, &result.to_le_bytes());
                     self.machine.flags_set_sign((result & 0x80) != 0);
                     self.machine.flags_set_zero(result == 0);
-                    self.machine.flags_set_parity_from_val(result.to_le_bytes()[0]);
+                    self.machine
+                        .flags_set_parity_from_val(result.to_le_bytes()[0]);
                     self.machine.flags_set_carry(overflow);
                     self.machine.flags_set_overflow(overflow); // FIXME: this is wrong but I don't understand
-                                                          // FIXME: set AF flag
+                                                               // FIXME: set AF flag
                 }
 
                 iced_x86::Code::Test_rm8_imm8 | iced_x86::Code::Test_rm8_r8 => {
@@ -626,7 +653,8 @@ impl VbeContext {
                     let temp = u32::from_le_bytes(val1) & u32::from_le_bytes(val2);
                     self.machine.flags_set_sign((temp & 0x80) != 0);
                     self.machine.flags_set_zero(temp == 0);
-                    self.machine.flags_set_parity_from_val(temp.to_le_bytes()[0]);
+                    self.machine
+                        .flags_set_parity_from_val(temp.to_le_bytes()[0]);
                     self.machine.flags_set_carry(false);
                     self.machine.flags_set_overflow(false);
                 }
@@ -638,10 +666,12 @@ impl VbeContext {
                     self.machine.get_operand_value(&instruction, 1, &mut val2);
 
                     let temp = u32::from_le_bytes(val1) ^ u32::from_le_bytes(val2);
-                    self.machine.store_in_operand(&instruction, 0, &temp.to_le_bytes());
+                    self.machine
+                        .store_in_operand(&instruction, 0, &temp.to_le_bytes());
                     self.machine.flags_set_sign((temp & 0x80) != 0);
                     self.machine.flags_set_zero(temp == 0);
-                    self.machine.flags_set_parity_from_val(temp.to_le_bytes()[0]);
+                    self.machine
+                        .flags_set_parity_from_val(temp.to_le_bytes()[0]);
                     self.machine.flags_set_carry(false);
                     self.machine.flags_set_overflow(false);
                 }
