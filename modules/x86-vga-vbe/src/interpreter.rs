@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use core::convert::TryFrom as _;
+use core::{convert::TryFrom, mem};
 
 /// Intel 80386 real mode interpreter.
 pub struct Interpreter {
@@ -22,6 +22,11 @@ pub struct Interpreter {
     memory: Vec<u8>,
     int10h_seg: u16,
     int10h_ptr: u16,
+}
+
+#[derive(Debug)]
+pub enum Error {
+    InvalidInstruction,
 }
 
 impl Interpreter {
@@ -53,7 +58,7 @@ impl Interpreter {
                 es: 0,
                 fs: 0,
                 gs: 0,
-                flags: 0b0000000000000010,
+                flags: 0b1011000000000010,
             },
         };
 
@@ -122,11 +127,9 @@ impl Interpreter {
         self.machine.regs.edi |= u32::from(di);
     }
 
-    pub fn int10h(&mut self) {
-        assert_eq!(self.machine.regs.eax & 0xff00, 0x4f00);
-
-        let mut decoder = iced_x86::Decoder::new(16, &self.memory, iced_x86::DecoderOptions::NONE);
-
+    pub fn int10h(&mut self) -> Result<(), Error> {
+        // Simulate the `int` opcode by pushing the current FLAGS, CS and EIP, and changing
+        // CS/EIP to the interrupt handler.
         self.machine
             .stack_push(&self.machine.regs.flags.to_le_bytes());
         self.machine.stack_push(&self.machine.regs.cs.to_le_bytes());
@@ -135,10 +138,10 @@ impl Interpreter {
                 .unwrap()
                 .to_le_bytes(),
         );
-
         self.machine.regs.cs = self.int10h_seg;
         self.machine.regs.eip = u32::from(self.int10h_ptr);
 
+        let mut decoder = iced_x86::Decoder::new(16, &self.memory, iced_x86::DecoderOptions::NONE);
         let mut instr_counter: u32 = 0;
 
         loop {
@@ -147,560 +150,635 @@ impl Interpreter {
                 log::trace!("Executed 1000 instructions");
             }
 
+            // We update the position of the decoder at each loop, to be sure that it is in sync.
             let rip = (u64::from(self.machine.regs.cs) << 4) + u64::from(self.machine.regs.eip);
             assert!(usize::try_from(rip).unwrap() < self.memory.len());
             decoder.set_position(usize::try_from(rip).unwrap());
             decoder.set_ip(rip);
 
+            // Decode instruction and update the IP register.
             let instruction = decoder.decode();
-            self.machine.regs.eip += u32::try_from(instruction.len()).unwrap(); // TODO: check segment bounds
-            assert_eq!(
-                decoder.ip(),
-                (u64::from(self.machine.regs.cs) << 4) + u64::from(self.machine.regs.eip)
-            );
-
             assert!(!instruction.has_xrelease_prefix());
+            self.machine.regs.eip = {
+                let ip = u16::try_from(self.machine.regs.eip & 0xffff).unwrap();
+                let new_ip = ip.wrapping_add(u16::try_from(instruction.len()).unwrap());
+                u32::from(new_ip)
+            };
 
-            match instruction.code() {
-                iced_x86::Code::Add_rm32_imm8
-                | iced_x86::Code::Add_rm32_imm32
-                | iced_x86::Code::Add_rm32_r32
-                | iced_x86::Code::Add_r32_rm32 => {
-                    let mut val1 = [0; 4];
-                    self.machine.get_operand_value(&instruction, 0, &mut val1);
-                    let mut val2 = [0; 4];
-                    self.machine.get_operand_value(&instruction, 1, &mut val2);
+            // List here: https://en.wikipedia.org/wiki/X86_instruction_listings#Original_8086/8088_instructions
+            // The objective is to implement up to and including the x386.
+            match instruction.mnemonic() {
+                iced_x86::Mnemonic::Add => {
+                    let value0 = self.machine.fetch_operand_value(&instruction, 0);
+                    let value1 = self.machine.fetch_operand_value(&instruction, 1);
 
-                    let (result, overflow) =
-                        u32::from_le_bytes(val1).overflowing_add(u32::from_le_bytes(val2));
-                    self.machine
-                        .store_in_operand(&instruction, 0, &result.to_le_bytes());
-                    self.machine.flags_set_sign((result & 0x80) != 0);
-                    self.machine.flags_set_zero(result == 0);
-                    self.machine
-                        .flags_set_parity_from_val(result.to_le_bytes()[0]);
+                    let (temp, overflow) = match (value0, value1) {
+                        (Value::U8(value0), Value::U8(value1)) => {
+                            let (v, o) = value0.overflowing_add(value1);
+                            (Value::U8(v), o)
+                        }
+                        (Value::U16(value0), Value::U16(value1)) => {
+                            let (v, o) = value0.overflowing_add(value1);
+                            (Value::U16(v), o)
+                        }
+                        (Value::U32(value0), Value::U32(value1)) => {
+                            let (v, o) = value0.overflowing_add(value1);
+                            (Value::U32(v), o)
+                        }
+                        _ => unreachable!(),
+                    };
+
+                    self.machine.store_in_operand(&instruction, 0, temp);
+
+                    self.machine.flags_set_sign_from_val(temp);
+                    self.machine.flags_set_zero_from_val(temp);
+                    self.machine.flags_set_parity_from_val(temp);
                     self.machine.flags_set_carry(overflow);
-                    self.machine.flags_set_overflow(overflow); // FIXME: this is wrong but I don't understand
-                                                               // FIXME: set AF flag
+                    self.machine
+                        .flags_set_overflow(overflow != temp.left_most_bit());
+                    // TODO: the adjust flag
                 }
 
-                iced_x86::Code::And_rm8_imm8
-                | iced_x86::Code::And_rm8_r8
-                | iced_x86::Code::And_r8_rm8
-                | iced_x86::Code::And_AL_imm8 => {
-                    let mut val1 = [0; 1];
-                    self.machine.get_operand_value(&instruction, 0, &mut val1);
-                    let mut val2 = [0; 1];
-                    self.machine.get_operand_value(&instruction, 1, &mut val2);
+                iced_x86::Mnemonic::And => {
+                    let value0 = self.machine.fetch_operand_value(&instruction, 0);
+                    let value1 = self.machine.fetch_operand_value(&instruction, 1);
 
-                    let temp = val1[0] & val2[0];
-                    self.machine
-                        .store_in_operand(&instruction, 0, &temp.to_le_bytes());
-                    self.machine.flags_set_sign((temp & 0x80) != 0);
-                    self.machine.flags_set_zero(temp == 0);
+                    let temp = match (value0, value1) {
+                        (Value::U8(value0), Value::U8(value1)) => Value::U8(value0 & value1),
+                        (Value::U16(value0), Value::U16(value1)) => Value::U16(value0 & value1),
+                        (Value::U32(value0), Value::U32(value1)) => Value::U32(value0 & value1),
+                        _ => unreachable!(),
+                    };
+
+                    self.machine.store_in_operand(&instruction, 0, temp);
+
+                    self.machine.flags_set_sign_from_val(temp);
+                    self.machine.flags_set_zero_from_val(temp);
                     self.machine.flags_set_parity_from_val(temp);
                     self.machine.flags_set_carry(false);
                     self.machine.flags_set_overflow(false);
+                    // adjust flag is undefined
                 }
 
-                iced_x86::Code::Call_rel16 => {
-                    self.machine.stack_push(
-                        &u16::try_from(self.machine.regs.eip & 0xffff)
-                            .unwrap()
-                            .to_le_bytes(),
-                    );
+                iced_x86::Mnemonic::Call => {
+                    let ip = u16::try_from(self.machine.regs.eip & 0xffff).unwrap();
+                    self.machine.stack_push_value(Value::U16(ip));
                     self.machine.apply_rel_jump(&instruction);
                 }
 
-                iced_x86::Code::Cld => self.machine.flags_set_direction(false),
-                iced_x86::Code::Cli => self.machine.flags_set_interrupt(false),
+                iced_x86::Mnemonic::Clc => self.machine.flags_set_carry(false),
+                iced_x86::Mnemonic::Cld => self.machine.flags_set_direction(false),
+                iced_x86::Mnemonic::Cli => self.machine.flags_set_interrupt(false),
 
-                iced_x86::Code::Cmp_AL_imm8
-                | iced_x86::Code::Cmp_r8_rm8
-                | iced_x86::Code::Cmp_rm8_r8
-                | iced_x86::Code::Cmp_rm8_imm8 => {
-                    let mut val1 = [0; 1];
-                    self.machine.get_operand_value(&instruction, 0, &mut val1);
-                    let mut val2 = [0; 1];
-                    self.machine.get_operand_value(&instruction, 1, &mut val2);
+                iced_x86::Mnemonic::Cmp => {
+                    let value0 = self.machine.fetch_operand_value(&instruction, 0);
+                    let value1 = self.machine.fetch_operand_value(&instruction, 1);
 
-                    let (result, overflow) =
-                        u8::from_le_bytes(val1).overflowing_sub(u8::from_le_bytes(val2));
-                    self.machine.flags_set_sign((result & 0x80) != 0);
-                    self.machine.flags_set_zero(result == 0);
-                    self.machine
-                        .flags_set_parity_from_val(result.to_le_bytes()[0]);
+                    let (temp, overflow) = match (value0, value1) {
+                        (Value::U8(value0), Value::U8(value1)) => {
+                            let (v, o) = value0.overflowing_sub(value1);
+                            (Value::U8(v), o)
+                        }
+                        (Value::U16(value0), Value::U16(value1)) => {
+                            let (v, o) = value0.overflowing_sub(value1);
+                            (Value::U16(v), o)
+                        }
+                        (Value::U32(value0), Value::U32(value1)) => {
+                            let (v, o) = value0.overflowing_sub(value1);
+                            (Value::U32(v), o)
+                        }
+                        _ => unreachable!(),
+                    };
+
+                    self.machine.flags_set_sign_from_val(temp);
+                    self.machine.flags_set_zero_from_val(temp);
+                    self.machine.flags_set_parity_from_val(temp);
                     self.machine.flags_set_carry(overflow);
-                    self.machine.flags_set_overflow(overflow); // FIXME: this is wrong but I don't understand
-                                                               // FIXME: set AF flag
+                    self.machine
+                        .flags_set_overflow(overflow != temp.left_most_bit());
+                    // TODO: the adjust flag
                 }
 
-                iced_x86::Code::Cmp_r16_rm16
-                | iced_x86::Code::Cmp_rm16_r16
-                | iced_x86::Code::Cmp_rm16_imm8 => {
-                    let mut val1 = [0; 2];
-                    self.machine.get_operand_value(&instruction, 0, &mut val1);
-                    let mut val2 = [0; 2];
-                    self.machine.get_operand_value(&instruction, 1, &mut val2);
+                iced_x86::Mnemonic::Dec => {
+                    let value = self.machine.fetch_operand_value(&instruction, 0);
+                    let (temp, overflow) = match value {
+                        Value::U8(value) => {
+                            let (v, o) = value.overflowing_sub(1);
+                            (Value::U8(v), o)
+                        }
+                        Value::U16(value) => {
+                            let (v, o) = value.overflowing_sub(1);
+                            (Value::U16(v), o)
+                        }
+                        Value::U32(value) => {
+                            let (v, o) = value.overflowing_sub(1);
+                            (Value::U32(v), o)
+                        }
+                        _ => unreachable!(),
+                    };
 
-                    let (result, overflow) =
-                        u16::from_le_bytes(val1).overflowing_sub(u16::from_le_bytes(val2));
-                    self.machine.flags_set_sign((result & 0x80) != 0);
-                    self.machine.flags_set_zero(result == 0);
+                    self.machine.store_in_operand(&instruction, 0, temp);
+
+                    self.machine.flags_set_sign_from_val(temp);
+                    self.machine.flags_set_zero_from_val(temp);
+                    self.machine.flags_set_parity_from_val(temp);
                     self.machine
-                        .flags_set_parity_from_val(result.to_le_bytes()[0]);
+                        .flags_set_overflow(overflow != temp.left_most_bit());
+                    // TODO: the adjust flag
+                    // Carry flag is not affected.
+                }
+
+                iced_x86::Mnemonic::Imul if matches!(instruction.op_count(), 1 | 2) => {
+                    let value0 = self.machine.fetch_operand_value(&instruction, 0);
+                    let value1 = self.machine.fetch_operand_value(&instruction, 1);
+
+                    let (temp, overflow) = match (value0, value1) {
+                        (Value::U8(value0), Value::U8(value1)) => {
+                            let (v, o) = value0.overflowing_mul(value1);
+                            (Value::U8(v), o)
+                        }
+                        (Value::U16(value0), Value::U16(value1)) => {
+                            let (v, o) = value0.overflowing_mul(value1);
+                            (Value::U16(v), o)
+                        }
+                        (Value::U32(value0), Value::U32(value1)) => {
+                            let (v, o) = value0.overflowing_mul(value1);
+                            (Value::U32(v), o)
+                        }
+                        _ => unreachable!(),
+                    };
+
+                    self.machine.store_in_operand(&instruction, 0, temp);
+
+                    // TODO: not sure whether this is actually correct for CF and OF;
+                    // documentation seems contradictory
                     self.machine.flags_set_carry(overflow);
-                    self.machine.flags_set_overflow(overflow); // FIXME: this is wrong but I don't understand
-                                                               // FIXME: set AF flag
+                    self.machine.flags_set_overflow(overflow);
+                    // Sign, zero, parity and adjust flags are undefined.
                 }
 
-                iced_x86::Code::Cmp_rm32_r32
-                | iced_x86::Code::Cmp_rm32_imm8
-                | iced_x86::Code::Cmp_rm32_imm32 => {
-                    let mut val1 = [0; 4];
-                    self.machine.get_operand_value(&instruction, 0, &mut val1);
-                    let mut val2 = [0; 4];
-                    self.machine.get_operand_value(&instruction, 1, &mut val2);
+                iced_x86::Mnemonic::Imul if instruction.op_count() == 3 => {
+                    let value0 = self.machine.fetch_operand_value(&instruction, 0);
+                    let value1 = self.machine.fetch_operand_value(&instruction, 1);
+                    let value2 = self.machine.fetch_operand_value(&instruction, 2);
 
-                    let (result, overflow) =
-                        u32::from_le_bytes(val1).overflowing_sub(u32::from_le_bytes(val2));
-                    self.machine.flags_set_sign((result & 0x80) != 0);
-                    self.machine.flags_set_zero(result == 0);
-                    self.machine
-                        .flags_set_parity_from_val(result.to_le_bytes()[0]);
+                    let (temp, overflow) = match (value1, value2) {
+                        (Value::U8(value1), Value::U8(value2)) => {
+                            let (v, o) = value1.overflowing_mul(value2);
+                            (Value::U8(v), o)
+                        }
+                        (Value::U16(value1), Value::U16(value2)) => {
+                            let (v, o) = value1.overflowing_mul(value2);
+                            (Value::U16(v), o)
+                        }
+                        (Value::U32(value1), Value::U32(value2)) => {
+                            let (v, o) = value1.overflowing_mul(value2);
+                            (Value::U32(v), o)
+                        }
+                        _ => unreachable!(),
+                    };
+
+                    self.machine.store_in_operand(&instruction, 0, temp);
+
+                    // TODO: not sure whether this is actually correct for CF and OF;
+                    // documentation seems contradictory
                     self.machine.flags_set_carry(overflow);
-                    self.machine.flags_set_overflow(overflow); // FIXME: this is wrong but I don't understand
-                                                               // FIXME: set AF flag
+                    self.machine.flags_set_overflow(overflow);
+                    // Sign, zero, parity and adjust flags are undefined.
                 }
 
-                iced_x86::Code::Dec_rm8 => {
-                    let mut val1 = [0; 1];
-                    self.machine.get_operand_value(&instruction, 0, &mut val1);
-                    let (result, overflow) = u8::from_le_bytes(val1).overflowing_sub(1);
-                    // TODO: check flags correctness
+                iced_x86::Mnemonic::Inc => {
+                    let value = self.machine.fetch_operand_value(&instruction, 0);
+                    let (temp, overflow) = match value {
+                        Value::U8(value) => {
+                            let (v, o) = value.overflowing_add(1);
+                            (Value::U8(v), o)
+                        }
+                        Value::U16(value) => {
+                            let (v, o) = value.overflowing_add(1);
+                            (Value::U16(v), o)
+                        }
+                        Value::U32(value) => {
+                            let (v, o) = value.overflowing_add(1);
+                            (Value::U32(v), o)
+                        }
+                        _ => unreachable!(),
+                    };
+
+                    self.machine.store_in_operand(&instruction, 0, temp);
+
+                    self.machine.flags_set_sign_from_val(temp);
+                    self.machine.flags_set_zero_from_val(temp);
+                    self.machine.flags_set_parity_from_val(temp);
                     self.machine
-                        .store_in_operand(&instruction, 0, &result.to_le_bytes());
-                    self.machine.flags_set_sign((result & 0x80) != 0);
-                    self.machine.flags_set_zero(result == 0);
-                    self.machine
-                        .flags_set_parity_from_val(result.to_le_bytes()[0]);
-                    self.machine.flags_set_carry(overflow);
-                    self.machine.flags_set_overflow(overflow); // FIXME: this is wrong but I don't understand
-                                                               // FIXME: set AF flag
+                        .flags_set_overflow(overflow != temp.left_most_bit());
+                    // TODO: the adjust flag
+                    // Carry flag is not affected.
                 }
 
-                iced_x86::Code::Dec_r16 | iced_x86::Code::Dec_r32 => {
-                    let mut val1 = [0; 4];
-                    self.machine.get_operand_value(&instruction, 0, &mut val1);
-                    let (result, overflow) = u32::from_le_bytes(val1).overflowing_sub(1);
-                    // TODO: check flags correctness
-                    self.machine
-                        .store_in_operand(&instruction, 0, &result.to_le_bytes());
-                    self.machine.flags_set_sign((result & 0x80) != 0);
-                    self.machine.flags_set_zero(result == 0);
-                    self.machine
-                        .flags_set_parity_from_val(result.to_le_bytes()[0]);
-                    self.machine.flags_set_carry(overflow);
-                    self.machine.flags_set_overflow(overflow); // FIXME: this is wrong but I don't understand
-                                                               // FIXME: set AF flag
+                iced_x86::Mnemonic::Iret => {
+                    break Ok(());
                 }
 
-                iced_x86::Code::Imul_r32_rm32_imm8 => {
-                    let mut val1 = [0; 4];
-                    self.machine.get_operand_value(&instruction, 0, &mut val1);
-                    let mut val2 = [0; 4];
-                    self.machine.get_operand_value(&instruction, 1, &mut val2);
-                    let mut val3 = [0; 4];
-                    self.machine.get_operand_value(&instruction, 2, &mut val3);
-
-                    let (result, overflow) =
-                        u32::from_le_bytes(val2).overflowing_add(u32::from_le_bytes(val3));
-                    self.machine
-                        .store_in_operand(&instruction, 0, &result.to_le_bytes());
-                    // TODO: check flags
-                    self.machine.flags_set_sign((result & 0x80) != 0);
-                    self.machine.flags_set_zero(result == 0);
-                    self.machine
-                        .flags_set_parity_from_val(result.to_le_bytes()[0]);
-                    self.machine.flags_set_carry(overflow);
-                    self.machine.flags_set_overflow(overflow); // FIXME: this is wrong but I don't understand
-                                                               // FIXME: set AF flag
-                }
-
-                iced_x86::Code::Inc_r16 | iced_x86::Code::Inc_r32 => {
-                    let mut val1 = [0; 4];
-                    self.machine.get_operand_value(&instruction, 0, &mut val1);
-                    let (result, overflow) = u32::from_le_bytes(val1).overflowing_add(1);
-                    // TODO: check flags correctness
-                    self.machine
-                        .store_in_operand(&instruction, 0, &result.to_le_bytes());
-                    self.machine.flags_set_sign((result & 0x80) != 0);
-                    self.machine.flags_set_zero(result == 0);
-                    self.machine
-                        .flags_set_parity_from_val(result.to_le_bytes()[0]);
-                    self.machine.flags_set_carry(overflow);
-                    self.machine.flags_set_overflow(overflow); // FIXME: this is wrong but I don't understand
-                                                               // FIXME: set AF flag
-                }
-
-                iced_x86::Code::Iretw => {
-                    break;
-                }
-
-                iced_x86::Code::Ja_rel8_16 => {
+                iced_x86::Mnemonic::Ja => {
                     if !self.machine.flags_is_carry() && !self.machine.flags_is_zero() {
                         self.machine.apply_rel_jump(&instruction);
                     }
                 }
-                iced_x86::Code::Jb_rel8_16 => {
+                iced_x86::Mnemonic::Jae => {
+                    if !self.machine.flags_is_carry() {
+                        self.machine.apply_rel_jump(&instruction);
+                    }
+                }
+                iced_x86::Mnemonic::Jb => {
                     if self.machine.flags_is_carry() {
                         self.machine.apply_rel_jump(&instruction);
                     }
                 }
-                iced_x86::Code::Jbe_rel8_16 => {
+                iced_x86::Mnemonic::Jbe => {
                     if self.machine.flags_is_carry() || self.machine.flags_is_zero() {
                         self.machine.apply_rel_jump(&instruction);
                     }
                 }
-                iced_x86::Code::Je_rel8_16 => {
+                iced_x86::Mnemonic::Jcxz => {
+                    if self.machine.regs.ecx & 0xffff == 0 {
+                        self.machine.apply_rel_jump(&instruction);
+                    }
+                }
+                iced_x86::Mnemonic::Je => {
                     if self.machine.flags_is_zero() {
                         self.machine.apply_rel_jump(&instruction);
                     }
                 }
-                iced_x86::Code::Je_rel16 => {
-                    if self.machine.flags_is_zero() {
+                iced_x86::Mnemonic::Jecxz => {
+                    if self.machine.regs.ecx == 0 {
                         self.machine.apply_rel_jump(&instruction);
                     }
                 }
-                iced_x86::Code::Jg_rel8_16 => {
+                iced_x86::Mnemonic::Jg => {
                     if !self.machine.flags_is_zero() && !self.machine.flags_is_sign() {
                         self.machine.apply_rel_jump(&instruction);
                     }
                 }
-                iced_x86::Code::Jle_rel8_16 => {
+                iced_x86::Mnemonic::Jge => {
+                    if !self.machine.flags_is_sign() {
+                        self.machine.apply_rel_jump(&instruction);
+                    }
+                }
+                iced_x86::Mnemonic::Jl => {
+                    if self.machine.flags_is_sign() {
+                        self.machine.apply_rel_jump(&instruction);
+                    }
+                }
+                iced_x86::Mnemonic::Jle => {
                     if self.machine.flags_is_zero() && !self.machine.flags_is_sign() {
                         self.machine.apply_rel_jump(&instruction);
                     }
                 }
-                iced_x86::Code::Jmp_rel8_16 | iced_x86::Code::Jmp_rel16 => {
+                iced_x86::Mnemonic::Jmp => {
                     self.machine.apply_rel_jump(&instruction);
                 }
-                iced_x86::Code::Jne_rel8_16 => {
+                iced_x86::Mnemonic::Jne => {
                     if !self.machine.flags_is_zero() {
                         self.machine.apply_rel_jump(&instruction);
                     }
                 }
-                iced_x86::Code::Jne_rel16 => {
-                    if !self.machine.flags_is_zero() {
+                iced_x86::Mnemonic::Jno => {
+                    if !self.machine.flags_is_overflow() {
+                        self.machine.apply_rel_jump(&instruction);
+                    }
+                }
+                iced_x86::Mnemonic::Jnp => {
+                    if !self.machine.flags_is_parity() {
+                        self.machine.apply_rel_jump(&instruction);
+                    }
+                }
+                iced_x86::Mnemonic::Jns => {
+                    if !self.machine.flags_is_sign() {
+                        self.machine.apply_rel_jump(&instruction);
+                    }
+                }
+                iced_x86::Mnemonic::Jo => {
+                    if self.machine.flags_is_overflow() {
+                        self.machine.apply_rel_jump(&instruction);
+                    }
+                }
+                iced_x86::Mnemonic::Jp => {
+                    if self.machine.flags_is_parity() {
+                        self.machine.apply_rel_jump(&instruction);
+                    }
+                }
+                iced_x86::Mnemonic::Js => {
+                    if self.machine.flags_is_sign() {
                         self.machine.apply_rel_jump(&instruction);
                     }
                 }
 
-                iced_x86::Code::Lea_r16_m => {
-                    let addr = self
-                        .machine
-                        .memory_operand_address_no_segment(&instruction, 1);
+                iced_x86::Mnemonic::Lea => {
+                    let ptr = self.machine.memory_operand_pointer(&instruction, 1);
                     self.machine
-                        .store_in_operand(&instruction, 0, &addr.to_le_bytes());
+                        .store_in_operand(&instruction, 0, Value::U16(ptr));
                 }
 
-                iced_x86::Code::Mov_r8_imm8
-                | iced_x86::Code::Mov_rm8_imm8
-                | iced_x86::Code::Mov_r8_rm8
-                | iced_x86::Code::Mov_rm8_r8 => {
-                    let mut out = [0; 1];
-                    self.machine.get_operand_value(&instruction, 1, &mut out);
-                    self.machine.store_in_operand(&instruction, 0, &out);
+                iced_x86::Mnemonic::Mov => {
+                    // TODO: when executing `mov reg, sreg`, the upper bits of `reg` are zeroed
+                    // on modern processors; implement properly
+                    let value = self.machine.fetch_operand_value(&instruction, 1);
+                    self.machine.store_in_operand(&instruction, 0, value);
                 }
 
-                iced_x86::Code::Mov_r16_imm16
-                | iced_x86::Code::Mov_rm16_imm16
-                | iced_x86::Code::Mov_r16_rm16
-                | iced_x86::Code::Mov_rm16_r16
-                | iced_x86::Code::Mov_rm16_Sreg
-                | iced_x86::Code::Mov_Sreg_rm16 => {
-                    let mut out = [0; 2];
-                    self.machine.get_operand_value(&instruction, 1, &mut out);
-                    self.machine.store_in_operand(&instruction, 0, &out);
-                }
+                iced_x86::Mnemonic::Movzx => {
+                    let value = self.machine.fetch_operand_value(&instruction, 1);
 
-                iced_x86::Code::Mov_r32_imm32
-                | iced_x86::Code::Mov_r32_rm32
-                | iced_x86::Code::Mov_rm32_r32
-                | iced_x86::Code::Mov_EAX_moffs32 => {
-                    let mut out = [0; 4];
-                    self.machine.get_operand_value(&instruction, 1, &mut out);
-                    self.machine.store_in_operand(&instruction, 0, &out);
-                }
-
-                iced_x86::Code::Movzx_r32_rm16 => {
-                    let mut out = [0; 2];
-                    self.machine.get_operand_value(&instruction, 1, &mut out);
-                    let zero_extended = [out[0], out[1], 0, 0];
-                    self.machine
-                        .store_in_operand(&instruction, 0, &zero_extended);
-                }
-
-                iced_x86::Code::Nopd => {}
-                iced_x86::Code::Nopq => {}
-                iced_x86::Code::Nopw => {}
-
-                iced_x86::Code::Or_rm32_imm8
-                | iced_x86::Code::Or_rm32_imm32
-                | iced_x86::Code::Or_rm32_r32
-                | iced_x86::Code::Or_r32_rm32 => {
-                    let mut val1 = [0; 4];
-                    self.machine.get_operand_value(&instruction, 0, &mut val1);
-                    let mut val2 = [0; 4];
-                    self.machine.get_operand_value(&instruction, 1, &mut val2);
-
-                    let temp: u32 = u32::from_le_bytes(val1) | u32::from_le_bytes(val2);
-                    self.machine
-                        .store_in_operand(&instruction, 0, &temp.to_le_bytes());
-                    // TODO: flags might not be correct
-                    self.machine.flags_set_sign((temp & 0x80) != 0);
-                    self.machine.flags_set_zero(temp == 0);
-                    self.machine
-                        .flags_set_parity_from_val(temp.to_le_bytes()[0]);
-                    self.machine.flags_set_carry(false);
-                    self.machine.flags_set_overflow(false);
-                }
-
-                iced_x86::Code::Out_imm8_AL | iced_x86::Code::Out_DX_AL => {
-                    assert!(!instruction.has_rep_prefix()); // TODO: not supported
-                    let mut port = [0; 2];
-                    self.machine.get_operand_value(&instruction, 0, &mut port);
-                    let mut data = [0; 1];
-                    self.machine.get_operand_value(&instruction, 1, &mut data);
-                    unsafe {
-                        redshirt_hardware_interface::port_write_u8(
-                            u32::from(u16::from_le_bytes(port)),
-                            u8::from_le_bytes(data),
-                        );
-                    }
-                }
-                iced_x86::Code::Outsb_DX_m8 => {
-                    assert!(!instruction.has_rep_prefix()); // TODO: not supported
-                    let mut port = [0; 2];
-                    self.machine.get_operand_value(&instruction, 0, &mut port);
-                    let mut data = [0; 1];
-                    self.machine.get_operand_value(&instruction, 1, &mut data);
-                    unsafe {
-                        redshirt_hardware_interface::port_write_u8(
-                            u32::from(u16::from_le_bytes(port)),
-                            u8::from_le_bytes(data),
-                        );
-                    }
-                    if self.machine.flags_is_direction() {
-                        self.machine.regs.esi = self.machine.regs.esi.wrapping_sub(1);
-                    } else {
-                        self.machine.regs.esi = self.machine.regs.esi.wrapping_add(1);
-                    }
-                }
-
-                iced_x86::Code::Pop_r16 | iced_x86::Code::Pop_rm16 | iced_x86::Code::Popw_DS => {
-                    let mut out = [0; 2];
-                    self.machine.stack_pop(&mut out);
-                    self.machine.store_in_operand(&instruction, 0, &out);
-                }
-                iced_x86::Code::Pop_r32 | iced_x86::Code::Pop_rm32 => {
-                    let mut out = [0; 4];
-                    self.machine.stack_pop(&mut out);
-                    self.machine.store_in_operand(&instruction, 0, &out);
-                }
-                iced_x86::Code::Popfw => {
-                    let mut out = [0; 2];
-                    self.machine.stack_pop(&mut out);
-                    self.machine.regs.flags = u16::from_le_bytes(out);
-                    // TODO: ensure correctness
-                }
-
-                iced_x86::Code::Push_r16 | iced_x86::Code::Push_rm16 | iced_x86::Code::Pushw_DS => {
-                    let mut out = [0; 2];
-                    self.machine.get_operand_value(&instruction, 0, &mut out);
-                    self.machine.stack_push(&out);
-                }
-                iced_x86::Code::Pushd_imm32
-                | iced_x86::Code::Push_r32
-                | iced_x86::Code::Push_rm32 => {
-                    let mut out = [0; 4];
-                    self.machine.get_operand_value(&instruction, 0, &mut out);
-                    self.machine.stack_push(&out);
-                }
-                iced_x86::Code::Pushfw => {
-                    self.machine
-                        .stack_push(&self.machine.regs.flags.to_le_bytes());
-                }
-
-                iced_x86::Code::Retnw => {
-                    let mut ip_ret = [0; 2];
-                    self.machine.stack_pop(&mut ip_ret);
-                    self.machine.regs.eip = u32::from(u16::from_le_bytes(ip_ret));
-                }
-                iced_x86::Code::Retnw_imm16 => {
-                    let mut num_to_pop = [0; 2];
-                    self.machine
-                        .get_operand_value(&instruction, 0, &mut num_to_pop);
-                    let mut ip_ret = [0; 2];
-                    self.machine.stack_pop(&mut ip_ret);
-                    for _ in 0..u16::from_le_bytes(num_to_pop) {
-                        let mut dummy = [0; 1];
-                        self.machine.stack_pop(&mut dummy);
-                    }
-                    self.machine.regs.eip = u32::from(u16::from_le_bytes(ip_ret));
-                }
-
-                iced_x86::Code::Shl_rm32_imm8 => {
-                    let mut val1 = [0; 4];
-                    self.machine.get_operand_value(&instruction, 0, &mut val1);
-                    let mut val2 = [0; 1];
-                    self.machine.get_operand_value(&instruction, 1, &mut val2);
-
-                    let result =
-                        u32::from_le_bytes(val1).wrapping_shl(u32::from(u8::from_le_bytes(val2)));
-                    self.machine
-                        .store_in_operand(&instruction, 0, &result.to_le_bytes());
-                    // TODO: clusterfuck of eflags
-                    /*
-                    If the count is 1 or greater, the CF flag is filled with the last bit shifted out of the destination operand and the SF, ZF,
-                    and PF flags are set according to the value of the result. For a 1-bit shift, the OF flag is set if a sign change occurred;
-                    otherwise, it is cleared. For shifts greater than 1 bit, the OF flag is undefined. If a shift occurs, the AF flag is unde-
-                    fined. If the count operand is 0, the flags are not affected. If the count is greater than the operand size, the flags
-                    are undefined.*/
-                }
-
-                iced_x86::Code::Shr_rm32_imm8 => {
-                    let mut val1 = [0; 4];
-                    self.machine.get_operand_value(&instruction, 0, &mut val1);
-                    let mut val2 = [0; 1];
-                    self.machine.get_operand_value(&instruction, 1, &mut val2);
-
-                    let result =
-                        u32::from_le_bytes(val1).wrapping_shr(u32::from(u8::from_le_bytes(val2)));
-                    self.machine
-                        .store_in_operand(&instruction, 0, &result.to_le_bytes());
-                    // TODO: clusterfuck of eflags
-                    /*
-                    If the count is 1 or greater, the CF flag is filled with the last bit shifted out of the destination operand and the SF, ZF,
-                    and PF flags are set according to the value of the result. For a 1-bit shift, the OF flag is set if a sign change occurred;
-                    otherwise, it is cleared. For shifts greater than 1 bit, the OF flag is undefined. If a shift occurs, the AF flag is unde-
-                    fined. If the count operand is 0, the flags are not affected. If the count is greater than the operand size, the flags
-                    are undefined.*/
-                }
-
-                iced_x86::Code::Std => self.machine.flags_set_direction(true),
-                iced_x86::Code::Sti => self.machine.flags_set_interrupt(true),
-
-                iced_x86::Code::Stosb_m8_AL => {
-                    let mut val = [0; 1];
-                    self.machine.get_operand_value(&instruction, 1, &mut val);
-                    if !instruction.has_rep_prefix() {
-                        self.machine.store_in_operand(&instruction, 0, &val);
-                        if self.machine.flags_is_direction() {
-                            self.machine.regs.edi = self.machine.regs.edi.wrapping_sub(1);
-                        } else {
-                            self.machine.regs.edi = self.machine.regs.edi.wrapping_add(1);
+                    // We need to figure out the size of the destination.
+                    // We implement this in a very lazy and inefficient way by reading its value
+                    // in order to determine its size.
+                    match (self.machine.fetch_operand_value(&instruction, 0), value) {
+                        (Value::U16(_), Value::U8(v)) => {
+                            self.machine
+                                .store_in_operand(&instruction, 0, Value::U16(u16::from(v)))
                         }
-                    } else {
-                        while self.machine.regs.ecx != 0 {
-                            self.machine.store_in_operand(&instruction, 0, &val);
-                            if self.machine.flags_is_direction() {
-                                self.machine.regs.edi = self.machine.regs.edi.wrapping_sub(1);
-                            } else {
-                                self.machine.regs.edi = self.machine.regs.edi.wrapping_add(1);
-                            }
-                            self.machine.regs.ecx -= 1;
+                        (Value::U32(_), Value::U8(v)) => {
+                            self.machine
+                                .store_in_operand(&instruction, 0, Value::U32(u32::from(v)))
                         }
+                        (Value::U32(_), Value::U16(v)) => {
+                            self.machine
+                                .store_in_operand(&instruction, 0, Value::U32(u32::from(v)))
+                        }
+                        _ => unreachable!(),
                     }
                 }
 
-                iced_x86::Code::Sub_AX_imm16 => {
-                    let mut val1 = [0; 2];
-                    self.machine.get_operand_value(&instruction, 0, &mut val1);
-                    let mut val2 = [0; 2];
-                    self.machine.get_operand_value(&instruction, 1, &mut val2);
+                iced_x86::Mnemonic::Nop => {}
 
-                    let (result, overflow) =
-                        u16::from_le_bytes(val1).overflowing_sub(u16::from_le_bytes(val2));
-                    self.machine
-                        .store_in_operand(&instruction, 0, &result.to_le_bytes());
-                    self.machine.flags_set_sign((result & 0x80) != 0);
-                    self.machine.flags_set_zero(result == 0);
-                    self.machine
-                        .flags_set_parity_from_val(result.to_le_bytes()[0]);
-                    self.machine.flags_set_carry(overflow);
-                    self.machine.flags_set_overflow(overflow); // FIXME: this is wrong but I don't understand
-                                                               // FIXME: set AF flag
-                }
+                iced_x86::Mnemonic::Or => {
+                    let value0 = self.machine.fetch_operand_value(&instruction, 0);
+                    let value1 = self.machine.fetch_operand_value(&instruction, 1);
 
-                iced_x86::Code::Sub_rm32_imm8 | iced_x86::Code::Sub_rm32_r32 => {
-                    let mut val1 = [0; 4];
-                    self.machine.get_operand_value(&instruction, 0, &mut val1);
-                    let mut val2 = [0; 4];
-                    self.machine.get_operand_value(&instruction, 1, &mut val2);
+                    let temp = match (value0, value1) {
+                        (Value::U8(value0), Value::U8(value1)) => Value::U8(value0 | value1),
+                        (Value::U16(value0), Value::U16(value1)) => Value::U16(value0 | value1),
+                        (Value::U32(value0), Value::U32(value1)) => Value::U32(value0 | value1),
+                        _ => unreachable!(),
+                    };
 
-                    let (result, overflow) =
-                        u32::from_le_bytes(val1).overflowing_sub(u32::from_le_bytes(val2));
-                    self.machine
-                        .store_in_operand(&instruction, 0, &result.to_le_bytes());
-                    self.machine.flags_set_sign((result & 0x80) != 0);
-                    self.machine.flags_set_zero(result == 0);
-                    self.machine
-                        .flags_set_parity_from_val(result.to_le_bytes()[0]);
-                    self.machine.flags_set_carry(overflow);
-                    self.machine.flags_set_overflow(overflow); // FIXME: this is wrong but I don't understand
-                                                               // FIXME: set AF flag
-                }
+                    self.machine.store_in_operand(&instruction, 0, temp);
 
-                iced_x86::Code::Test_rm8_imm8 | iced_x86::Code::Test_rm8_r8 => {
-                    let mut val1 = [0; 1];
-                    self.machine.get_operand_value(&instruction, 0, &mut val1);
-                    let mut val2 = [0; 1];
-                    self.machine.get_operand_value(&instruction, 1, &mut val2);
-
-                    let temp = val1[0] & val2[0];
-                    self.machine.flags_set_sign((temp & 0x80) != 0);
-                    self.machine.flags_set_zero(temp == 0);
+                    self.machine.flags_set_sign_from_val(temp);
+                    self.machine.flags_set_zero_from_val(temp);
                     self.machine.flags_set_parity_from_val(temp);
                     self.machine.flags_set_carry(false);
                     self.machine.flags_set_overflow(false);
+                    // adjust flag is undefined
                 }
 
-                iced_x86::Code::Test_rm32_r32 => {
-                    let mut val1 = [0; 4];
-                    self.machine.get_operand_value(&instruction, 0, &mut val1);
-                    let mut val2 = [0; 4];
-                    self.machine.get_operand_value(&instruction, 1, &mut val2);
+                iced_x86::Mnemonic::Out => {
+                    let port =
+                        u16::try_from(self.machine.fetch_operand_value(&instruction, 0)).unwrap();
+                    let data =
+                        u8::try_from(self.machine.fetch_operand_value(&instruction, 1)).unwrap();
+                    unsafe {
+                        redshirt_hardware_interface::port_write_u8(u32::from(port), data);
+                    }
+                }
 
-                    let temp = u32::from_le_bytes(val1) & u32::from_le_bytes(val2);
-                    self.machine.flags_set_sign((temp & 0x80) != 0);
-                    self.machine.flags_set_zero(temp == 0);
+                iced_x86::Mnemonic::Pop => {
+                    // We need to figure out how much data to pop.
+                    // We implement this in a very lazy and inefficient way by reading the
+                    // location where we will pop to in order to determine its size.
+                    match self.machine.fetch_operand_value(&instruction, 0) {
+                        Value::U8(_) => {
+                            let val = Value::U8(self.machine.stack_pop_u8());
+                            self.machine.store_in_operand(&instruction, 0, val);
+                        }
+                        Value::U16(_) => {
+                            let val = Value::U16(self.machine.stack_pop_u16());
+                            self.machine.store_in_operand(&instruction, 0, val);
+                        }
+                        Value::U32(_) => {
+                            let val = Value::U32(self.machine.stack_pop_u32());
+                            self.machine.store_in_operand(&instruction, 0, val);
+                        }
+                    }
+                }
+                iced_x86::Mnemonic::Popf => {
+                    let val = self.machine.stack_pop_u16();
+                    self.machine.regs.flags = val & 0b0000111111010101;
+                }
+
+                iced_x86::Mnemonic::Push => {
+                    let value = self.machine.fetch_operand_value(&instruction, 0);
+                    self.machine.stack_push_value(value);
+                }
+                iced_x86::Mnemonic::Pushf => {
                     self.machine
-                        .flags_set_parity_from_val(temp.to_le_bytes()[0]);
+                        .stack_push_value(Value::U16(self.machine.regs.flags));
+                }
+
+                iced_x86::Mnemonic::Ret if instruction.op_count() == 0 => {
+                    let ip = self.machine.stack_pop_u16();
+                    self.machine.regs.eip = u32::from(ip);
+                }
+                iced_x86::Mnemonic::Ret if instruction.op_count() == 1 => {
+                    let num_to_pop = self
+                        .machine
+                        .fetch_operand_value(&instruction, 0)
+                        .extend_to_u32();
+                    let ip = self.machine.stack_pop_u16();
+                    for _ in 0..num_to_pop {
+                        let _ = self.machine.stack_pop_u8();
+                    }
+                    self.machine.regs.eip = u32::from(ip);
+                }
+
+                iced_x86::Mnemonic::Sahf => {
+                    self.machine
+                        .flags_set_sign(self.machine.regs.eax & (1 << 7) != 0);
+                    self.machine
+                        .flags_set_zero(self.machine.regs.eax & (1 << 6) != 0);
+                    self.machine
+                        .flags_set_adjust(self.machine.regs.eax & (1 << 4) != 0);
+                    self.machine
+                        .flags_set_parity(self.machine.regs.eax & (1 << 2) != 0);
+                    self.machine
+                        .flags_set_carry(self.machine.regs.eax & (1 << 0) != 0);
+                }
+
+                iced_x86::Mnemonic::Shl => {
+                    let mut value0 = self.machine.fetch_operand_value(&instruction, 0);
+                    let value1 = self.machine.fetch_operand_value(&instruction, 1);
+
+                    for _ in 0..value1.extend_to_u32() {
+                        let overflow = match value0 {
+                            Value::U8(v) => {
+                                let (v, o) = v.overflowing_shl(1);
+                                value0 = Value::U8(v);
+                                o
+                            }
+                            Value::U16(v) => {
+                                let (v, o) = v.overflowing_shl(1);
+                                value0 = Value::U16(v);
+                                o
+                            }
+                            Value::U32(v) => {
+                                let (v, o) = v.overflowing_shl(1);
+                                value0 = Value::U32(v);
+                                o
+                            }
+                            _ => unreachable!(),
+                        };
+
+                        self.machine.flags_set_sign_from_val(value0);
+                        self.machine.flags_set_zero_from_val(value0);
+                        self.machine.flags_set_parity_from_val(value0);
+                        self.machine.flags_set_carry(overflow);
+                        self.machine
+                            .flags_set_overflow(overflow != value0.left_most_bit());
+                        // The adjust flag is undefined
+                    }
+
+                    self.machine.store_in_operand(&instruction, 0, value0);
+                }
+
+                iced_x86::Mnemonic::Shr => {
+                    let mut value0 = self.machine.fetch_operand_value(&instruction, 0);
+                    let value1 = self.machine.fetch_operand_value(&instruction, 1);
+
+                    for _ in 0..value1.extend_to_u32() {
+                        let overflow = match value0 {
+                            Value::U8(v) => {
+                                let (v, o) = v.overflowing_shr(1);
+                                value0 = Value::U8(v);
+                                o
+                            }
+                            Value::U16(v) => {
+                                let (v, o) = v.overflowing_shr(1);
+                                value0 = Value::U16(v);
+                                o
+                            }
+                            Value::U32(v) => {
+                                let (v, o) = v.overflowing_shr(1);
+                                value0 = Value::U32(v);
+                                o
+                            }
+                            _ => unreachable!(),
+                        };
+
+                        self.machine.flags_set_sign_from_val(value0);
+                        self.machine.flags_set_zero_from_val(value0);
+                        self.machine.flags_set_parity_from_val(value0);
+                        self.machine.flags_set_carry(overflow);
+                        self.machine
+                            .flags_set_overflow(overflow != value0.left_most_bit());
+                        // The adjust flag is undefined
+                    }
+
+                    self.machine.store_in_operand(&instruction, 0, value0);
+                }
+
+                iced_x86::Mnemonic::Stc => self.machine.flags_set_carry(true),
+                iced_x86::Mnemonic::Std => self.machine.flags_set_direction(true),
+                iced_x86::Mnemonic::Sti => self.machine.flags_set_interrupt(true),
+
+                iced_x86::Mnemonic::Stosb => {
+                    let val = self.machine.fetch_operand_value(&instruction, 1);
+
+                    if instruction.has_rep_prefix() {
+                        while self.machine.regs.ecx & 0xffff != 0 {
+                            self.machine.store_in_operand(&instruction, 0, val);
+                            if self.machine.flags_is_direction() {
+                                self.machine.dec_di();
+                            } else {
+                                self.machine.inc_di();
+                            }
+                            self.machine.dec_cx();
+                        }
+                    } else {
+                        self.machine.store_in_operand(&instruction, 0, val);
+                        if self.machine.flags_is_direction() {
+                            self.machine.dec_di();
+                        } else {
+                            self.machine.inc_di();
+                        }
+                    }
+                }
+
+                iced_x86::Mnemonic::Sub => {
+                    let value0 = self.machine.fetch_operand_value(&instruction, 0);
+                    let value1 = self.machine.fetch_operand_value(&instruction, 1);
+
+                    let (temp, overflow) = match (value0, value1) {
+                        (Value::U8(value0), Value::U8(value1)) => {
+                            let (v, o) = value0.overflowing_sub(value1);
+                            (Value::U8(v), o)
+                        }
+                        (Value::U16(value0), Value::U16(value1)) => {
+                            let (v, o) = value0.overflowing_sub(value1);
+                            (Value::U16(v), o)
+                        }
+                        (Value::U32(value0), Value::U32(value1)) => {
+                            let (v, o) = value0.overflowing_sub(value1);
+                            (Value::U32(v), o)
+                        }
+                        _ => unreachable!(),
+                    };
+
+                    self.machine.store_in_operand(&instruction, 0, temp);
+
+                    self.machine.flags_set_sign_from_val(temp);
+                    self.machine.flags_set_zero_from_val(temp);
+                    self.machine.flags_set_parity_from_val(temp);
+                    self.machine.flags_set_carry(overflow);
+                    self.machine
+                        .flags_set_overflow(overflow != temp.left_most_bit());
+                    // TODO: the adjust flag
+                }
+
+                iced_x86::Mnemonic::Test => {
+                    let value0 = self.machine.fetch_operand_value(&instruction, 0);
+                    let value1 = self.machine.fetch_operand_value(&instruction, 1);
+
+                    let temp = match (value0, value1) {
+                        (Value::U8(value0), Value::U8(value1)) => Value::U8(value0 & value1),
+                        (Value::U16(value0), Value::U16(value1)) => Value::U16(value0 & value1),
+                        (Value::U32(value0), Value::U32(value1)) => Value::U32(value0 & value1),
+                        _ => unreachable!(),
+                    };
+
+                    self.machine.flags_set_sign_from_val(temp);
+                    self.machine.flags_set_zero_from_val(temp);
+                    self.machine.flags_set_parity_from_val(temp);
                     self.machine.flags_set_carry(false);
                     self.machine.flags_set_overflow(false);
+                    // adjust flag is undefined
                 }
 
-                iced_x86::Code::Xor_rm32_r32 | iced_x86::Code::Xor_r32_rm32 => {
-                    let mut val1 = [0; 4];
-                    self.machine.get_operand_value(&instruction, 0, &mut val1);
-                    let mut val2 = [0; 4];
-                    self.machine.get_operand_value(&instruction, 1, &mut val2);
+                iced_x86::Mnemonic::Xor => {
+                    let value0 = self.machine.fetch_operand_value(&instruction, 0);
+                    let value1 = self.machine.fetch_operand_value(&instruction, 1);
 
-                    let temp = u32::from_le_bytes(val1) ^ u32::from_le_bytes(val2);
-                    self.machine
-                        .store_in_operand(&instruction, 0, &temp.to_le_bytes());
-                    self.machine.flags_set_sign((temp & 0x80) != 0);
-                    self.machine.flags_set_zero(temp == 0);
-                    self.machine
-                        .flags_set_parity_from_val(temp.to_le_bytes()[0]);
+                    let temp = match (value0, value1) {
+                        (Value::U8(value0), Value::U8(value1)) => Value::U8(value0 ^ value1),
+                        (Value::U16(value0), Value::U16(value1)) => Value::U16(value0 ^ value1),
+                        (Value::U32(value0), Value::U32(value1)) => Value::U32(value0 ^ value1),
+                        _ => unreachable!(),
+                    };
+
+                    self.machine.store_in_operand(&instruction, 0, temp);
+
+                    self.machine.flags_set_sign_from_val(temp);
+                    self.machine.flags_set_zero_from_val(temp);
+                    self.machine.flags_set_parity_from_val(temp);
                     self.machine.flags_set_carry(false);
                     self.machine.flags_set_overflow(false);
+                    // adjust flag is undefined
                 }
 
-                _ => {
-                    log::error!("Unsupported instruction: {:?}", instruction.code());
-                    break;
+                iced_x86::Mnemonic::INVALID => return Err(Error::InvalidInstruction),
+                opcode => {
+                    log::error!("Unsupported instruction: {:?}", opcode);
+                    return Err(Error::InvalidInstruction);
                 }
             }
         }
@@ -744,7 +822,7 @@ impl Machine {
 
     /// Pushes data on the stack.
     fn stack_push(&mut self, data: &[u8]) {
-        // TODO: don't panic
+        // TODO: don't panic; handle overflows, but also respect segment
         self.regs.esp = self
             .regs
             .esp
@@ -752,6 +830,24 @@ impl Machine {
             .unwrap();
         let addr = (u32::from(self.regs.ss) << 4) + self.regs.esp;
         self.write_memory(addr, data);
+    }
+
+    /// Pushes a value on the stack.
+    fn stack_push_value(&mut self, value: Value) {
+        match value {
+            Value::U8(v) => {
+                let data = v.to_le_bytes();
+                self.stack_push(&data);
+            }
+            Value::U16(v) => {
+                let data = v.to_le_bytes();
+                self.stack_push(&data);
+            }
+            Value::U32(v) => {
+                let data = v.to_le_bytes();
+                self.stack_push(&data);
+            }
+        }
     }
 
     /// Pops data from the stack.
@@ -766,6 +862,24 @@ impl Machine {
             .unwrap();
     }
 
+    fn stack_pop_u8(&mut self) -> u8 {
+        let mut out = [0; 1];
+        self.stack_pop(&mut out);
+        u8::from_le_bytes(out)
+    }
+
+    fn stack_pop_u16(&mut self) -> u16 {
+        let mut out = [0; 2];
+        self.stack_pop(&mut out);
+        u16::from_le_bytes(out)
+    }
+
+    fn stack_pop_u32(&mut self) -> u32 {
+        let mut out = [0; 4];
+        self.stack_pop(&mut out);
+        u32::from_le_bytes(out)
+    }
+
     fn flags_is_carry(&self) -> bool {
         (self.regs.flags & 1 << 0) != 0
     }
@@ -778,6 +892,10 @@ impl Machine {
         }
     }
 
+    fn flags_is_parity(&self) -> bool {
+        (self.regs.flags & 1 << 2) != 0
+    }
+
     fn flags_set_parity(&mut self, val: bool) {
         if val {
             self.regs.flags |= 1 << 2;
@@ -786,12 +904,20 @@ impl Machine {
         }
     }
 
-    fn flags_set_parity_from_val(&mut self, val: u8) {
-        self.flags_set_parity((val.count_ones() % 2) == 0);
+    fn flags_set_parity_from_val(&mut self, val: Value) {
+        self.flags_set_parity(match val {
+            Value::U8(val) => (val.count_ones() % 2) == 0,
+            Value::U16(val) => ((val & 0xff).count_ones() % 2) == 0,
+            Value::U32(val) => ((val & 0xff).count_ones() % 2) == 0,
+        });
     }
 
     fn flags_is_zero(&self) -> bool {
         (self.regs.flags & 1 << 6) != 0
+    }
+
+    fn flags_set_zero_from_val(&mut self, val: Value) {
+        self.flags_set_zero(val.is_zero())
     }
 
     fn flags_set_zero(&mut self, val: bool) {
@@ -802,8 +928,24 @@ impl Machine {
         }
     }
 
+    fn flags_is_adjust(&self) -> bool {
+        (self.regs.flags & 1 << 4) != 0
+    }
+
+    fn flags_set_adjust(&mut self, val: bool) {
+        if val {
+            self.regs.flags |= 1 << 4;
+        } else {
+            self.regs.flags &= !(1 << 4);
+        }
+    }
+
     fn flags_is_sign(&self) -> bool {
         (self.regs.flags & 1 << 7) != 0
+    }
+
+    fn flags_set_sign_from_val(&mut self, val: Value) {
+        self.flags_set_sign(val.left_most_bit())
     }
 
     fn flags_set_sign(&mut self, val: bool) {
@@ -834,6 +976,10 @@ impl Machine {
         }
     }
 
+    fn flags_is_overflow(&self) -> bool {
+        (self.regs.flags & 1 << 11) != 0
+    }
+
     fn flags_set_overflow(&mut self, val: bool) {
         if val {
             self.regs.flags |= 1 << 11;
@@ -842,277 +988,368 @@ impl Machine {
         }
     }
 
-    fn memory_operand_address_no_segment(
-        &self,
-        instruction: &iced_x86::Instruction,
-        op_n: u32,
-    ) -> u16 {
+    fn dec_cx(&mut self) {
+        let cx = u16::try_from(self.regs.ecx & 0xffff).unwrap();
+        let new_cx = cx.wrapping_sub(1);
+        self.regs.ecx &= 0xffff0000;
+        self.regs.ecx |= u32::from(new_cx);
+    }
+
+    fn dec_si(&mut self) {
+        let si = u16::try_from(self.regs.esi & 0xffff).unwrap();
+        let new_si = si.wrapping_sub(1);
+        self.regs.esi &= 0xffff0000;
+        self.regs.esi |= u32::from(new_si);
+    }
+
+    fn inc_si(&mut self) {
+        let si = u16::try_from(self.regs.esi & 0xffff).unwrap();
+        let new_si = si.wrapping_add(1);
+        self.regs.esi &= 0xffff0000;
+        self.regs.esi |= u32::from(new_si);
+    }
+
+    fn dec_di(&mut self) {
+        let di = u16::try_from(self.regs.edi & 0xffff).unwrap();
+        let new_di = di.wrapping_sub(1);
+        self.regs.edi &= 0xffff0000;
+        self.regs.edi |= u32::from(new_di);
+    }
+
+    fn inc_di(&mut self) {
+        let di = u16::try_from(self.regs.edi & 0xffff).unwrap();
+        let new_di = di.wrapping_add(1);
+        self.regs.edi &= 0xffff0000;
+        self.regs.edi |= u32::from(new_di);
+    }
+
+    /// Assumes that operand `op_n` of `instruction` is of type `Memory`, and loads the pointer
+    /// value without the segment.
+    fn memory_operand_pointer(&self, instruction: &iced_x86::Instruction, op_n: u32) -> u16 {
         assert!(matches!(
             instruction.op_kind(op_n),
             iced_x86::OpKind::Memory
         ));
 
-        let base = u16::try_from(
-            match instruction.memory_base() {
-                iced_x86::Register::None => 0,
-                reg => {
-                    let mut out = [0; 4];
-                    self.get_register(reg, &mut out[..reg.size()]);
-                    u32::from_le_bytes(out)
-                }
-            } & 0xffff,
-        )
-        .unwrap();
+        let base = match instruction.memory_base() {
+            iced_x86::Register::None => 0,
+            reg => match self.register(reg) {
+                Value::U8(v) => u16::from(v),
+                Value::U16(v) => v,
+                Value::U32(v) => u16::try_from(v).unwrap(), // TODO: is this correct?
+            },
+        };
 
-        let index = u16::try_from(
-            match instruction.memory_index() {
-                iced_x86::Register::None => 0,
-                reg => {
-                    let mut out = [0; 4];
-                    self.get_register(reg, &mut out[..reg.size()]);
-                    u32::from_le_bytes(out)
-                }
-            } & 0xffff,
-        )
-        .unwrap();
+        let index = match instruction.memory_index() {
+            iced_x86::Register::None => 0,
+            reg => match self.register(reg) {
+                Value::U8(v) => u16::from(v),
+                Value::U16(v) => v,
+                Value::U32(v) => u16::try_from(v).unwrap(), // TODO: is this correct?
+            },
+        };
 
         let index_scale = u16::try_from(instruction.memory_index_scale()).unwrap();
 
         let base_and_index = base.wrapping_add(index.wrapping_mul(index_scale));
-
-        if instruction.memory_displacement() >= 0x800 {
-            // Negative number.
-        } else {
-        }
-        // TODO: wrong?
-        base_and_index
-            .wrapping_add(u16::try_from(instruction.memory_displacement() & 0xffff).unwrap())
+        let disp = u16::try_from(instruction.memory_displacement() & 0xffff).unwrap();
+        base_and_index.wrapping_add(disp)
     }
 
-    fn memory_operand_address(&self, instruction: &iced_x86::Instruction, op_n: u32) -> u32 {
-        let base = u32::from(self.memory_operand_address_no_segment(instruction, op_n));
-
-        let segment = u32::from({
-            let mut out = [0; 2];
-            self.get_register(instruction.memory_segment(), &mut out);
-            u16::from_le_bytes(out)
-        });
-
-        (segment << 4) + base
-    }
-
-    fn get_operand_value(&self, instruction: &iced_x86::Instruction, op_n: u32, out: &mut [u8]) {
-        match instruction.op_kind(op_n) {
-            iced_x86::OpKind::Register => self.get_register(instruction.op_register(op_n), out),
-            iced_x86::OpKind::Immediate8 => {
-                out.copy_from_slice(&instruction.immediate8().to_le_bytes())
-            }
-            iced_x86::OpKind::Immediate16 => {
-                out.copy_from_slice(&instruction.immediate16().to_le_bytes())
-            }
-            iced_x86::OpKind::Immediate32 => {
-                out.copy_from_slice(&instruction.immediate32().to_le_bytes())
-            }
-            iced_x86::OpKind::Immediate64 => {
-                out.copy_from_slice(&instruction.immediate64().to_le_bytes())
-            }
-            iced_x86::OpKind::Immediate8to16 => {
-                out.copy_from_slice(&instruction.immediate8to16().to_le_bytes())
-            }
-            iced_x86::OpKind::Immediate8to32 => {
-                out.copy_from_slice(&instruction.immediate8to32().to_le_bytes())
-            }
-            iced_x86::OpKind::Immediate8to64 => {
-                out.copy_from_slice(&instruction.immediate8to64().to_le_bytes())
-            }
-            iced_x86::OpKind::Immediate32to64 => {
-                out.copy_from_slice(&instruction.immediate32to64().to_le_bytes())
-            }
+    fn fetch_operand_value(&self, instruction: &iced_x86::Instruction, op_n: u32) -> Value {
+        let (segment, pointer) = match instruction.op_kind(op_n) {
+            iced_x86::OpKind::Register => return self.register(instruction.op_register(op_n)),
+            iced_x86::OpKind::Immediate8 => return Value::U8(instruction.immediate8()),
+            iced_x86::OpKind::Immediate16 => return Value::U16(instruction.immediate16()),
+            iced_x86::OpKind::Immediate32 => return Value::U32(instruction.immediate32()),
+            iced_x86::OpKind::Immediate8to16 => unsafe {
+                return Value::U16(mem::transmute(instruction.immediate8to16()));
+                // TODO: the objective is to cast without changing any bit
+            },
+            iced_x86::OpKind::Immediate8to32 => unsafe {
+                return Value::U32(mem::transmute(instruction.immediate8to32()));
+                // TODO: the objective is to cast without changing any bit
+            },
             iced_x86::OpKind::MemorySegSI => {
-                let mut segment_base = [0; 2];
-                self.get_register(instruction.memory_segment(), &mut segment_base);
-                let addr =
-                    (u32::from(u16::from_le_bytes(segment_base)) << 4) + (self.regs.esi & 0xffff);
-                self.read_memory(addr, out);
+                let segment = u16::try_from(self.register(instruction.memory_segment())).unwrap();
+                let pointer = u16::try_from(self.regs.esi & 0xffff).unwrap();
+                (segment, pointer)
             }
             iced_x86::OpKind::Memory => {
-                let addr = self.memory_operand_address(instruction, op_n);
-                self.read_memory(addr, out);
+                let segment = u16::try_from(self.register(instruction.memory_segment())).unwrap();
+                let pointer = self.memory_operand_pointer(instruction, op_n);
+                (segment, pointer)
             }
             ty => unimplemented!("{:?}", ty),
+        };
+
+        // TODO: the memory reads are wrong; should explicitely pass segment and pointer
+        let mem_address = (u32::from(segment) << 4) + u32::from(pointer);
+
+        match instruction.memory_size().size() {
+            1 => {
+                let mut out = [0; 1];
+                self.read_memory(mem_address, &mut out);
+                Value::U8(u8::from_le_bytes(out))
+            }
+            2 => {
+                let mut out = [0; 2];
+                self.read_memory(mem_address, &mut out);
+                Value::U16(u16::from_le_bytes(out))
+            }
+            4 => {
+                let mut out = [0; 4];
+                self.read_memory(mem_address, &mut out);
+                Value::U32(u32::from_le_bytes(out))
+            }
+            _ => unreachable!(),
         }
     }
 
-    fn get_register(&self, register: iced_x86::Register, out: &mut [u8]) {
+    fn register(&self, register: iced_x86::Register) -> Value {
         match register {
-            iced_x86::Register::AL => out.copy_from_slice(&self.regs.eax.to_le_bytes()[..1]),
-            iced_x86::Register::CL => out.copy_from_slice(&self.regs.ecx.to_le_bytes()[..1]),
-            iced_x86::Register::DL => out.copy_from_slice(&self.regs.edx.to_le_bytes()[..1]),
-            iced_x86::Register::BL => out.copy_from_slice(&self.regs.ebx.to_le_bytes()[..1]),
-            iced_x86::Register::AH => out.copy_from_slice(&self.regs.eax.to_le_bytes()[1..2]),
-            iced_x86::Register::CH => out.copy_from_slice(&self.regs.ecx.to_le_bytes()[1..2]),
-            iced_x86::Register::DH => out.copy_from_slice(&self.regs.edx.to_le_bytes()[1..2]),
-            iced_x86::Register::BH => out.copy_from_slice(&self.regs.ebx.to_le_bytes()[1..2]),
-            iced_x86::Register::AX => out.copy_from_slice(&self.regs.eax.to_le_bytes()[..2]),
-            iced_x86::Register::CX => out.copy_from_slice(&self.regs.ecx.to_le_bytes()[..2]),
-            iced_x86::Register::DX => out.copy_from_slice(&self.regs.edx.to_le_bytes()[..2]),
-            iced_x86::Register::BX => out.copy_from_slice(&self.regs.ebx.to_le_bytes()[..2]),
-            iced_x86::Register::SP => out.copy_from_slice(&self.regs.esp.to_le_bytes()[..2]),
-            iced_x86::Register::BP => out.copy_from_slice(&self.regs.ebp.to_le_bytes()[..2]),
-            iced_x86::Register::SI => out.copy_from_slice(&self.regs.esi.to_le_bytes()[..2]),
-            iced_x86::Register::DI => out.copy_from_slice(&self.regs.edi.to_le_bytes()[..2]),
-            iced_x86::Register::EAX => out.copy_from_slice(&self.regs.eax.to_le_bytes()),
-            iced_x86::Register::ECX => out.copy_from_slice(&self.regs.ecx.to_le_bytes()),
-            iced_x86::Register::EDX => out.copy_from_slice(&self.regs.edx.to_le_bytes()),
-            iced_x86::Register::EBX => out.copy_from_slice(&self.regs.ebx.to_le_bytes()),
-            iced_x86::Register::ESP => out.copy_from_slice(&self.regs.esp.to_le_bytes()),
-            iced_x86::Register::EBP => out.copy_from_slice(&self.regs.ebp.to_le_bytes()),
-            iced_x86::Register::ESI => out.copy_from_slice(&self.regs.esi.to_le_bytes()),
-            iced_x86::Register::EDI => out.copy_from_slice(&self.regs.edi.to_le_bytes()),
-            iced_x86::Register::ES => out.copy_from_slice(&self.regs.es.to_le_bytes()),
-            iced_x86::Register::CS => out.copy_from_slice(&self.regs.cs.to_le_bytes()),
-            iced_x86::Register::SS => out.copy_from_slice(&self.regs.ss.to_le_bytes()),
-            iced_x86::Register::DS => out.copy_from_slice(&self.regs.ds.to_le_bytes()),
-            iced_x86::Register::FS => out.copy_from_slice(&self.regs.fs.to_le_bytes()),
-            iced_x86::Register::GS => out.copy_from_slice(&self.regs.gs.to_le_bytes()),
+            iced_x86::Register::AL => Value::U8(u8::try_from(self.regs.eax & 0xff).unwrap()),
+            iced_x86::Register::CL => Value::U8(u8::try_from(self.regs.ecx & 0xff).unwrap()),
+            iced_x86::Register::DL => Value::U8(u8::try_from(self.regs.edx & 0xff).unwrap()),
+            iced_x86::Register::BL => Value::U8(u8::try_from(self.regs.ebx & 0xff).unwrap()),
+            iced_x86::Register::AH => Value::U8(u8::try_from((self.regs.eax >> 8) & 0xff).unwrap()),
+            iced_x86::Register::CH => Value::U8(u8::try_from((self.regs.ecx >> 8) & 0xff).unwrap()),
+            iced_x86::Register::DH => Value::U8(u8::try_from((self.regs.edx >> 8) & 0xff).unwrap()),
+            iced_x86::Register::BH => Value::U8(u8::try_from((self.regs.ebx >> 8) & 0xff).unwrap()),
+            iced_x86::Register::AX => Value::U16(u16::try_from(self.regs.eax & 0xffff).unwrap()),
+            iced_x86::Register::CX => Value::U16(u16::try_from(self.regs.ecx & 0xffff).unwrap()),
+            iced_x86::Register::DX => Value::U16(u16::try_from(self.regs.edx & 0xffff).unwrap()),
+            iced_x86::Register::BX => Value::U16(u16::try_from(self.regs.ebx & 0xffff).unwrap()),
+            iced_x86::Register::SP => Value::U16(u16::try_from(self.regs.esp & 0xffff).unwrap()),
+            iced_x86::Register::BP => Value::U16(u16::try_from(self.regs.ebp & 0xffff).unwrap()),
+            iced_x86::Register::SI => Value::U16(u16::try_from(self.regs.esi & 0xffff).unwrap()),
+            iced_x86::Register::DI => Value::U16(u16::try_from(self.regs.edi & 0xffff).unwrap()),
+            iced_x86::Register::EAX => Value::U32(self.regs.eax),
+            iced_x86::Register::ECX => Value::U32(self.regs.ecx),
+            iced_x86::Register::EDX => Value::U32(self.regs.edx),
+            iced_x86::Register::EBX => Value::U32(self.regs.ebx),
+            iced_x86::Register::ESP => Value::U32(self.regs.esp),
+            iced_x86::Register::EBP => Value::U32(self.regs.ebp),
+            iced_x86::Register::ESI => Value::U32(self.regs.esi),
+            iced_x86::Register::EDI => Value::U32(self.regs.edi),
+            iced_x86::Register::ES => Value::U16(self.regs.es),
+            iced_x86::Register::CS => Value::U16(self.regs.cs),
+            iced_x86::Register::SS => Value::U16(self.regs.ss),
+            iced_x86::Register::DS => Value::U16(self.regs.ds),
+            iced_x86::Register::FS => Value::U16(self.regs.fs),
+            iced_x86::Register::GS => Value::U16(self.regs.gs),
             reg => unimplemented!("{:?}", reg),
         }
     }
 
-    fn store_in_operand(&mut self, instruction: &iced_x86::Instruction, op_n: u32, val: &[u8]) {
-        match instruction.op_kind(op_n) {
+    fn store_in_operand(&mut self, instruction: &iced_x86::Instruction, op_n: u32, val: Value) {
+        let (segment, pointer) = match instruction.op_kind(op_n) {
             iced_x86::OpKind::Register => {
-                self.store_in_register(instruction.op_register(op_n), val)
+                return self.store_in_register(instruction.op_register(op_n), val);
             }
             iced_x86::OpKind::MemoryESDI => {
-                let addr = (u32::from(self.regs.es) << 4) + (self.regs.edi & 0xffff);
-                self.write_memory(addr, val);
+                (self.regs.es, u16::try_from(self.regs.edi & 0xffff).unwrap())
             }
             iced_x86::OpKind::Memory => {
-                let addr = self.memory_operand_address(instruction, op_n);
-                self.write_memory(addr, val);
+                let segment = u16::try_from(self.register(instruction.memory_segment())).unwrap();
+                let pointer = self.memory_operand_pointer(instruction, op_n);
+                (segment, pointer)
             }
             ty => unimplemented!("{:?}", ty),
+        };
+
+        // TODO: the memory writes are wrong; should explicitely pass segment and pointer
+        let mem_address = (u32::from(segment) << 4) + u32::from(pointer);
+
+        match val {
+            Value::U8(val) => {
+                self.write_memory(mem_address, &val.to_le_bytes());
+            }
+            Value::U16(val) => {
+                self.write_memory(mem_address, &val.to_le_bytes());
+            }
+            Value::U32(val) => {
+                self.write_memory(mem_address, &val.to_le_bytes());
+            }
         }
     }
 
-    fn store_in_register(&mut self, register: iced_x86::Register, val: &[u8]) {
-        match register {
-            iced_x86::Register::AL => {
-                assert_eq!(val.len(), 1);
+    fn store_in_register(&mut self, register: iced_x86::Register, val: Value) {
+        match (register, val) {
+            (iced_x86::Register::AL, Value::U8(val)) => {
                 self.regs.eax &= 0xffffff00;
-                self.regs.eax |= u32::from(val[0]);
+                self.regs.eax |= u32::from(val);
             }
-            iced_x86::Register::CL => {
-                assert_eq!(val.len(), 1);
+            (iced_x86::Register::CL, Value::U8(val)) => {
                 self.regs.ecx &= 0xffffff00;
-                self.regs.ecx |= u32::from(val[0]);
+                self.regs.ecx |= u32::from(val);
             }
-            iced_x86::Register::DL => {
-                assert_eq!(val.len(), 1);
+            (iced_x86::Register::DL, Value::U8(val)) => {
                 self.regs.edx &= 0xffffff00;
-                self.regs.edx |= u32::from(val[0]);
+                self.regs.edx |= u32::from(val);
             }
-            iced_x86::Register::BL => {
-                assert_eq!(val.len(), 1);
+            (iced_x86::Register::BL, Value::U8(val)) => {
                 self.regs.ebx &= 0xffffff00;
-                self.regs.ebx |= u32::from(val[0]);
+                self.regs.ebx |= u32::from(val);
             }
-            iced_x86::Register::AH => {
-                assert_eq!(val.len(), 1);
+            (iced_x86::Register::AH, Value::U8(val)) => {
                 self.regs.eax &= 0xffff00ff;
-                self.regs.eax |= u32::from(val[0]) << 4;
+                self.regs.eax |= u32::from(val) << 8;
             }
-            iced_x86::Register::CH => {
-                assert_eq!(val.len(), 1);
+            (iced_x86::Register::CH, Value::U8(val)) => {
                 self.regs.ecx &= 0xffff00ff;
-                self.regs.ecx |= u32::from(val[0]) << 4;
+                self.regs.ecx |= u32::from(val) << 8;
             }
-            iced_x86::Register::DH => {
-                assert_eq!(val.len(), 1);
+            (iced_x86::Register::DH, Value::U8(val)) => {
                 self.regs.edx &= 0xffff00ff;
-                self.regs.edx |= u32::from(val[0]) << 4;
+                self.regs.edx |= u32::from(val) << 8;
             }
-            iced_x86::Register::BH => {
-                assert_eq!(val.len(), 1);
+            (iced_x86::Register::BH, Value::U8(val)) => {
                 self.regs.ebx &= 0xffff00ff;
-                self.regs.ebx |= u32::from(val[0]) << 4;
+                self.regs.ebx |= u32::from(val) << 8;
             }
-            iced_x86::Register::AX => {
+            (iced_x86::Register::AX, Value::U16(val)) => {
                 self.regs.eax &= 0xffff0000;
-                self.regs.eax |= u32::from(u16::from_le_bytes(<[u8; 2]>::try_from(val).unwrap()));
+                self.regs.eax |= u32::from(val);
             }
-            iced_x86::Register::CX => {
+            (iced_x86::Register::CX, Value::U16(val)) => {
                 self.regs.ecx &= 0xffff0000;
-                self.regs.ecx |= u32::from(u16::from_le_bytes(<[u8; 2]>::try_from(val).unwrap()));
+                self.regs.ecx |= u32::from(val);
             }
-            iced_x86::Register::DX => {
+            (iced_x86::Register::DX, Value::U16(val)) => {
                 self.regs.edx &= 0xffff0000;
-                self.regs.edx |= u32::from(u16::from_le_bytes(<[u8; 2]>::try_from(val).unwrap()));
+                self.regs.edx |= u32::from(val);
             }
-            iced_x86::Register::BX => {
+            (iced_x86::Register::BX, Value::U16(val)) => {
                 self.regs.ebx &= 0xffff0000;
-                self.regs.ebx |= u32::from(u16::from_le_bytes(<[u8; 2]>::try_from(val).unwrap()));
+                self.regs.ebx |= u32::from(val);
             }
-            iced_x86::Register::SP => {
+            (iced_x86::Register::SP, Value::U16(val)) => {
                 self.regs.esp &= 0xffff0000;
-                self.regs.esp |= u32::from(u16::from_le_bytes(<[u8; 2]>::try_from(val).unwrap()));
+                self.regs.esp |= u32::from(val);
             }
-            iced_x86::Register::BP => {
+            (iced_x86::Register::BP, Value::U16(val)) => {
                 self.regs.ebp &= 0xffff0000;
-                self.regs.ebp |= u32::from(u16::from_le_bytes(<[u8; 2]>::try_from(val).unwrap()));
+                self.regs.ebp |= u32::from(val);
             }
-            iced_x86::Register::SI => {
+            (iced_x86::Register::SI, Value::U16(val)) => {
                 self.regs.esi &= 0xffff0000;
-                self.regs.esi |= u32::from(u16::from_le_bytes(<[u8; 2]>::try_from(val).unwrap()));
+                self.regs.esi |= u32::from(val);
             }
-            iced_x86::Register::DI => {
+            (iced_x86::Register::DI, Value::U16(val)) => {
                 self.regs.edi &= 0xffff0000;
-                self.regs.edi |= u32::from(u16::from_le_bytes(<[u8; 2]>::try_from(val).unwrap()));
+                self.regs.edi |= u32::from(val);
             }
-            iced_x86::Register::EAX => {
-                self.regs.eax = u32::from_le_bytes(<[u8; 4]>::try_from(val).unwrap())
+            (iced_x86::Register::EAX, Value::U32(val)) => {
+                self.regs.eax = val;
             }
-            iced_x86::Register::ECX => {
-                self.regs.ecx = u32::from_le_bytes(<[u8; 4]>::try_from(val).unwrap())
+            (iced_x86::Register::ECX, Value::U32(val)) => {
+                self.regs.ecx = val;
             }
-            iced_x86::Register::EDX => {
-                self.regs.edx = u32::from_le_bytes(<[u8; 4]>::try_from(val).unwrap())
+            (iced_x86::Register::EDX, Value::U32(val)) => {
+                self.regs.edx = val;
             }
-            iced_x86::Register::EBX => {
-                self.regs.ebx = u32::from_le_bytes(<[u8; 4]>::try_from(val).unwrap())
+            (iced_x86::Register::EBX, Value::U32(val)) => {
+                self.regs.ebx = val;
             }
-            iced_x86::Register::ESP => {
-                self.regs.esp = u32::from_le_bytes(<[u8; 4]>::try_from(val).unwrap())
+            (iced_x86::Register::ESP, Value::U32(val)) => {
+                self.regs.esp = val;
             }
-            iced_x86::Register::EBP => {
-                self.regs.ebp = u32::from_le_bytes(<[u8; 4]>::try_from(val).unwrap())
+            (iced_x86::Register::EBP, Value::U32(val)) => {
+                self.regs.ebp = val;
             }
-            iced_x86::Register::ESI => {
-                self.regs.esi = u32::from_le_bytes(<[u8; 4]>::try_from(val).unwrap())
+            (iced_x86::Register::ESI, Value::U32(val)) => {
+                self.regs.esi = val;
             }
-            iced_x86::Register::EDI => {
-                self.regs.edi = u32::from_le_bytes(<[u8; 4]>::try_from(val).unwrap())
+            (iced_x86::Register::EDI, Value::U32(val)) => {
+                self.regs.edi = val;
             }
-            iced_x86::Register::ES => {
-                self.regs.es = u16::from_le_bytes(<[u8; 2]>::try_from(val).unwrap())
+            (iced_x86::Register::ES, Value::U16(val)) => {
+                self.regs.es = val;
             }
-            iced_x86::Register::CS => {
-                self.regs.cs = u16::from_le_bytes(<[u8; 2]>::try_from(val).unwrap())
+            (iced_x86::Register::CS, Value::U16(_)) => {
+                // Forbidden.
+                panic!()
             }
-            iced_x86::Register::SS => {
-                self.regs.ss = u16::from_le_bytes(<[u8; 2]>::try_from(val).unwrap())
+            (iced_x86::Register::SS, Value::U16(val)) => {
+                self.regs.ss = val;
             }
-            iced_x86::Register::DS => {
-                self.regs.ds = u16::from_le_bytes(<[u8; 2]>::try_from(val).unwrap())
+            (iced_x86::Register::DS, Value::U16(val)) => {
+                self.regs.ds = val;
             }
-            iced_x86::Register::FS => {
-                self.regs.fs = u16::from_le_bytes(<[u8; 2]>::try_from(val).unwrap())
+            (iced_x86::Register::FS, Value::U16(val)) => {
+                self.regs.fs = val;
             }
-            iced_x86::Register::GS => {
-                self.regs.gs = u16::from_le_bytes(<[u8; 2]>::try_from(val).unwrap())
+            (iced_x86::Register::GS, Value::U16(val)) => {
+                self.regs.gs = val;
             }
             reg => unimplemented!("{:?}", reg),
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+enum Value {
+    U8(u8),
+    U16(u16),
+    U32(u32),
+}
+
+impl Value {
+    fn left_most_bit(&self) -> bool {
+        match *self {
+            Value::U8(val) => val & 0x80 != 0,
+            Value::U16(val) => val & 0x8000 != 0,
+            Value::U32(val) => val & 0x80000000 != 0,
+        }
+    }
+
+    fn extend_to_u32(&self) -> u32 {
+        match *self {
+            Value::U8(val) => u32::from(val),
+            Value::U16(val) => u32::from(val),
+            Value::U32(val) => val,
+        }
+    }
+
+    fn is_zero(&self) -> bool {
+        match *self {
+            Value::U8(val) => val == 0,
+            Value::U16(val) => val == 0,
+            Value::U32(val) => val == 0,
+        }
+    }
+}
+
+impl TryFrom<Value> for u8 {
+    type Error = ();
+    fn try_from(v: Value) -> Result<Self, ()> {
+        if let Value::U8(v) = v {
+            Ok(v)
+        } else {
+            Err(())
+        }
+    }
+}
+
+impl TryFrom<Value> for u16 {
+    type Error = ();
+    fn try_from(v: Value) -> Result<Self, ()> {
+        if let Value::U16(v) = v {
+            Ok(v)
+        } else {
+            Err(())
+        }
+    }
+}
+
+impl TryFrom<Value> for u32 {
+    type Error = ();
+    fn try_from(v: Value) -> Result<Self, ()> {
+        if let Value::U32(v) = v {
+            Ok(v)
+        } else {
+            Err(())
         }
     }
 }

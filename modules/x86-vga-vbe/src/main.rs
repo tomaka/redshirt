@@ -67,7 +67,7 @@ async fn async_main() {
     interpreter.set_ax(0x4f00);
     interpreter.set_es_di(0x50, 0x0);
     interpreter.write_memory(0x500, &b"VBE2"[..]);
-    interpreter.int10h();
+    interpreter.int10h().unwrap();
     assert_eq!(interpreter.ax(), 0x4f);
 
     let mut info_out = [0; 512];
@@ -101,11 +101,12 @@ async fn async_main() {
     };
     log::info!("OEM string: {}", oem_string);
 
-    for mode in video_modes.iter().take(1) {    // TODO: remove take(1)
+    for mode in video_modes.iter().take(1) {
+        // TODO: remove take(1)
         interpreter.set_ax(0x4f01);
         interpreter.set_cx(*mode);
         interpreter.set_es_di(0x50, 0x0);
-        interpreter.int10h();
+        interpreter.int10h().unwrap();
         log::error!("EAX after call: 0x{:x}", interpreter.ax());
 
         let mut info_out = [0; 256];
