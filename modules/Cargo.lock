@@ -2383,6 +2383,7 @@ name = "x86-vga-vbe"
 version = "0.1.0"
 dependencies = [
  "fnv 1.0.6 (git+https://github.com/dflemstr/rust-fnv)",
+ "futures",
  "hashbrown",
  "iced-x86",
  "lazy_static",

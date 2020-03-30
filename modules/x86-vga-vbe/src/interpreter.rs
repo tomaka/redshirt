@@ -15,6 +15,8 @@
 
 use core::{convert::TryFrom, mem};
 
+mod tests;
+
 /// Intel 80386 real mode interpreter.
 pub struct Interpreter {
     machine: Machine,
@@ -32,7 +34,10 @@ pub enum Error {
 impl Interpreter {
     pub async fn new() -> Self {
         let first_mb = unsafe { redshirt_hardware_interface::read(0x0, 0x100000).await };
+        Self::from_memory(first_mb).await
+    }
 
+    pub async fn from_memory(first_mb: Vec<u8>) -> Self {
         let int10h_seg = u16::from_le_bytes(
             <[u8; 2]>::try_from(&first_mb[(0x10 * 4) + 2..(0x10 * 4) + 4]).unwrap(),
         );
@@ -42,6 +47,7 @@ impl Interpreter {
         log::trace!("Segment = 0x{:x}, pointer = 0x{:x}", int10h_seg, int10h_ptr);
 
         let machine = Machine {
+            local_memory: first_mb.clone(),
             regs: Registers {
                 eax: 0,
                 ecx: 0,
@@ -538,9 +544,10 @@ impl Interpreter {
                         u16::try_from(self.machine.fetch_operand_value(&instruction, 0)).unwrap();
                     let data =
                         u8::try_from(self.machine.fetch_operand_value(&instruction, 1)).unwrap();
-                    unsafe {
+                    // TODO: restore
+                    /*unsafe {
                         redshirt_hardware_interface::port_write_u8(u32::from(port), data);
-                    }
+                    }*/
                 }
 
                 iced_x86::Mnemonic::Pop => {
@@ -787,6 +794,7 @@ impl Interpreter {
 
 pub struct Machine {
     regs: Registers,
+    local_memory: Vec<u8>,
 }
 
 impl Machine {
@@ -794,12 +802,13 @@ impl Machine {
         let out_len = u32::try_from(out.len()).unwrap();
         assert!(addr + out_len <= 0x100000);
 
+        out.copy_from_slice(&self.local_memory[usize::try_from(addr).unwrap()..usize::try_from(addr + out_len).unwrap()]);
         // TODO: asyncify?
-        redshirt_syscalls::block_on(async move {
+        /*redshirt_syscalls::block_on(async move {
             unsafe {
                 redshirt_hardware_interface::read_to(u64::from(addr), out).await;
             }
-        });
+        });*/
     }
 
     fn write_memory(&mut self, addr: u32, data: &[u8]) {
@@ -808,10 +817,10 @@ impl Machine {
 
         // TODO: detect if we overwrite the program and reload the decoder
         // TODO: the VBE docs say that only I/O port operations are used
-
-        unsafe {
+        self.local_memory[usize::try_from(addr).unwrap()..usize::try_from(addr + data_len).unwrap()].copy_from_slice(data);
+        /*unsafe {
             redshirt_hardware_interface::write(u64::from(addr), data);
-        }
+        }*/
     }
 
     fn apply_rel_jump(&mut self, instruction: &iced_x86::Instruction) {

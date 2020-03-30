@@ -16,3 +16,6 @@ redshirt-hardware-interface = { path = "../../interfaces/hardware" }
 redshirt-interface-interface = { path = "../../interfaces/interface" }
 redshirt-log-interface = { path = "../../interfaces/log" }
 redshirt-syscalls = { path = "../../interfaces/syscalls" }
+
+[dev-dependencies]
+futures = "0.3.4"
