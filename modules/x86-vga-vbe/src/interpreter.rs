@@ -1298,9 +1298,9 @@ enum Value {
 impl Value {
     fn left_most_bit(&self) -> bool {
         match *self {
-            Value::U8(val) => val & 0x80 != 0,
-            Value::U16(val) => val & 0x8000 != 0,
-            Value::U32(val) => val & 0x80000000 != 0,
+            Value::U8(val) => (val & 0x80) != 0,
+            Value::U16(val) => (val & 0x8000) != 0,
+            Value::U32(val) => (val & 0x80000000) != 0,
         }
     }
 
