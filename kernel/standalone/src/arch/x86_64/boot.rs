@@ -13,23 +13,22 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-// This file contains the entry point of our kernel.
-//
-// Once the bootloader finishes loading the kernel (as an ELF file), it will run its entry point,
-// which is the `_start` function defined in this file.
-//
-// Since we are conforming to the multiboot2 specifications, the bootloader is expected to set the
-// ebx register to the memory address of a data structure containing information about the
-// environment.
-//
-// The environment in which we start in is the protected mode where the kernel is identity-mapped.
-//
-// The role of the `_start` function below is to perform some checks, set up everything that is
-// needed to run freestanding 64bits Rust code (i.e. a stack, paging, long mode), and call the
-// `after_boot` Rust function.
+//! This file contains the entry point of our kernel.
+//!
+//! Once the bootloader finishes loading the kernel (as an ELF file), it will run its entry point,
+//! which is the `_start` function defined in this file.
+//!
+//! Since we are conforming to the multiboot2 specifications, the bootloader is expected to set the
+//! ebx register to the memory address of a data structure containing information about the
+//! environment.
+//!
+//! The environment in which we start in is the protected mode where the kernel is identity-mapped.
+//!
+//! The role of the `_start` function below is to perform some checks, set up everything that is
+//! needed to run freestanding 64bits Rust code (i.e. a stack, paging, long mode), and call the
+//! `after_boot` Rust function.
 
-#define KERNEL_STACK_SIZE 0x800000
-
+global_asm! {r#"
 .section .text
 .code32
 .global _start
@@ -139,7 +138,7 @@ _start:
 .code64
 .L2:
     // Set up the stack.
-    movq $stack + KERNEL_STACK_SIZE, %rsp
+    movq $stack + 0x800000, %rsp
 
     movw $0, %ax
     movw %ax, %ds
@@ -190,7 +189,43 @@ gdt_ptr:
 .comm pds, 4 * 0x1000, 0x1000
 
 // Stack used by the kernel.
-.comm stack, KERNEL_STACK_SIZE, 0x8
+.comm stack, 0x800000, 0x8
 
 // Small variable used to store the value of ebx passed by the bootloader.
 .comm multiboot_info_ptr, 4, 8
+
+"#}
+
+// TODO: figure out how to remove these
+#[no_mangle]
+pub extern "C" fn fmod(a: f64, b: f64) -> f64 {
+    libm::fmod(a, b)
+}
+#[no_mangle]
+pub extern "C" fn fmodf(a: f32, b: f32) -> f32 {
+    libm::fmodf(a, b)
+}
+#[no_mangle]
+pub extern "C" fn fmin(a: f64, b: f64) -> f64 {
+    libm::fmin(a, b)
+}
+#[no_mangle]
+pub extern "C" fn fminf(a: f32, b: f32) -> f32 {
+    libm::fminf(a, b)
+}
+#[no_mangle]
+pub extern "C" fn fmax(a: f64, b: f64) -> f64 {
+    libm::fmax(a, b)
+}
+#[no_mangle]
+pub extern "C" fn fmaxf(a: f32, b: f32) -> f32 {
+    libm::fmaxf(a, b)
+}
+#[no_mangle]
+pub extern "C" fn __truncdfsf2(a: f64) -> f32 {
+    libm::trunc(a) as f32 // TODO: correct?
+}
+
+// TODO: move somewhere better and document
+#[no_mangle]
+static gdt_table: [u64; 2] = [0, (1 << 53) | (1 << 47) | (1 << 44) | (1 << 43)];
