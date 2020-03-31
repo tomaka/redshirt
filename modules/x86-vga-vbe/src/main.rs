@@ -55,6 +55,8 @@
 //! >           to write than a 32bits emulator.
 //!
 
+use core::convert::TryFrom as _;
+
 mod interpreter;
 
 fn main() {
@@ -102,16 +104,60 @@ async fn async_main() {
     log::info!("OEM string: {}", oem_string);
 
     for mode in video_modes.iter() {
-        // TODO: remove take(1)
+        assert!(*mode < (1 << 9));
+
         interpreter.set_ax(0x4f01);
         interpreter.set_cx(*mode);
         interpreter.set_es_di(0x50, 0x0);
         interpreter.int10h().unwrap();
-        log::error!("EAX after call: 0x{:x}", interpreter.ax());
+        assert_eq!(interpreter.ax(), 0x4f);
 
         let mut info_out = [0; 256];
         interpreter.read_memory(0x500, &mut info_out[..]);
-        log::debug!("Mode info: {:?}", &info_out[..]);
+
+        let mode_attributes = u16::from_le_bytes(<[u8; 2]>::try_from(&info_out[0..2]).unwrap());
+        if mode_attributes & (1 << 0) == 0 {
+            // Skip unsupported video modes.
+            continue;
+        }
+        if mode_attributes & (1 << 4) == 0 {
+            // Skip text modes.
+            continue;
+        }
+        if mode_attributes & (1 << 7) == 0 {
+            // Skip modes that don't support the linear framebuffer.
+            continue;
+        }
+
+        let x_resolution = u16::from_le_bytes(<[u8; 2]>::try_from(&info_out[0x12..0x14]).unwrap());
+        let y_resolution = u16::from_le_bytes(<[u8; 2]>::try_from(&info_out[0x14..0x16]).unwrap());
+        log::debug!(
+            "Detected video mode: {}x{} pixels",
+            x_resolution,
+            y_resolution
+        );
+
+        let phys_base = u32::from_le_bytes(<[u8; 4]>::try_from(&info_out[0x28..0x2c]).unwrap());
+        log::debug!("Framebuffer located at 0x{:x}", phys_base);
+
+        if x_resolution > 850 {
+            interpreter.set_ax(0x4f02);
+            interpreter.set_bx((1 << 14) | *mode);
+            interpreter.int10h().unwrap();
+            assert_eq!(interpreter.ax(), 0x4f);
+
+            unsafe {
+                let mut ops = redshirt_hardware_interface::HardwareWriteOperationsBuilder::new();
+                ops.memset(
+                    u64::from(phys_base),
+                    u64::from(x_resolution) * u64::from(y_resolution) * 4,
+                    0xff,
+                );
+                ops.send();
+            }
+
+            break;
+        }
     }
 
     /*interpreter.set_ax(0x4f02);
