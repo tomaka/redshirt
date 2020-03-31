@@ -101,7 +101,7 @@ async fn async_main() {
     };
     log::info!("OEM string: {}", oem_string);
 
-    for mode in video_modes.iter().take(1) {
+    for mode in video_modes.iter() {
         // TODO: remove take(1)
         interpreter.set_ax(0x4f01);
         interpreter.set_cx(*mode);
@@ -113,4 +113,8 @@ async fn async_main() {
         interpreter.read_memory(0x500, &mut info_out[..]);
         log::debug!("Mode info: {:?}", &info_out[..]);
     }
+
+    /*interpreter.set_ax(0x4f02);
+    interpreter.set_bx(*video_modes.last().unwrap());
+    interpreter.int10h().unwrap();*/
 }

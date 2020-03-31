@@ -18,7 +18,8 @@ use super::Interpreter;
 #[test]
 fn basic_entry_point_works() {
     futures::executor::block_on(async move {
-        let mut interpreter = Interpreter::from_memory(include_bytes!("test-mem.bin").to_vec()).await;
+        let mut interpreter =
+            Interpreter::from_memory(include_bytes!("test-mem.bin").to_vec()).await;
         interpreter.set_ax(0x4f00);
         interpreter.set_es_di(0x50, 0x0);
         interpreter.write_memory(0x500, &b"VBE2"[..]);
@@ -44,10 +45,10 @@ fn basic_entry_point_works() {
             }
         };
         log::info!("Video modes = {:?}", video_modes);
-    
+
         let total_memory = u32::from(interpreter.read_memory_u16(0x512)) * 64 * 1024;
         log::info!("Total memory = 0x{:x}", total_memory);
-    
+
         let oem_string = {
             let seg = interpreter.read_memory_u16(0x508);
             let ptr = interpreter.read_memory_u16(0x506);

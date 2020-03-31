@@ -143,12 +143,39 @@ pub unsafe fn port_write_u8(port: u32, data: u8) {
     builder.send();
 }
 
+pub unsafe fn port_write_u16(port: u32, data: u16) {
+    let mut builder = HardwareWriteOperationsBuilder::with_capacity(1);
+    builder.port_write_u16(port, data);
+    builder.send();
+}
+
+pub unsafe fn port_write_u32(port: u32, data: u32) {
+    let mut builder = HardwareWriteOperationsBuilder::with_capacity(1);
+    builder.port_write_u32(port, data);
+    builder.send();
+}
+
 /// Reads the given port.
-#[cfg(feature = "std")]
 pub async unsafe fn port_read_u8(port: u32) -> u8 {
     let mut builder = HardwareOperationsBuilder::with_capacity(1);
     let mut out = 0;
     builder.port_read_u8(port, &mut out);
+    builder.send().await;
+    out
+}
+
+pub async unsafe fn port_read_u16(port: u32) -> u16 {
+    let mut builder = HardwareOperationsBuilder::with_capacity(1);
+    let mut out = 0;
+    builder.port_read_u16(port, &mut out);
+    builder.send().await;
+    out
+}
+
+pub async unsafe fn port_read_u32(port: u32) -> u32 {
+    let mut builder = HardwareOperationsBuilder::with_capacity(1);
+    let mut out = 0;
+    builder.port_read_u32(port, &mut out);
     builder.send().await;
     out
 }
