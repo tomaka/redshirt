@@ -617,31 +617,20 @@ impl Interpreter {
                     let value1 = self.machine.fetch_operand_value(&instruction, 1);
 
                     for _ in 0..value1.extend_to_u32() {
-                        let overflow = match value0 {
-                            Value::U8(v) => {
-                                let (v, o) = v.overflowing_shl(1);
-                                value0 = Value::U8(v);
-                                o
-                            }
-                            Value::U16(v) => {
-                                let (v, o) = v.overflowing_shl(1);
-                                value0 = Value::U16(v);
-                                o
-                            }
-                            Value::U32(v) => {
-                                let (v, o) = v.overflowing_shl(1);
-                                value0 = Value::U32(v);
-                                o
-                            }
-                            _ => unreachable!(),
+                        let shifted_bit = value0.left_most_bit();
+
+                        value0 = match value0 {
+                            Value::U8(v) => Value::U8(v.wrapping_shl(1)),
+                            Value::U16(v) => Value::U16(v.wrapping_shl(1)),
+                            Value::U32(v) => Value::U32(v.wrapping_shl(1)),
                         };
 
                         self.machine.flags_set_sign_from_val(value0);
                         self.machine.flags_set_zero_from_val(value0);
                         self.machine.flags_set_parity_from_val(value0);
-                        self.machine.flags_set_carry(overflow);
+                        self.machine.flags_set_carry(shifted_bit);
                         self.machine
-                            .flags_set_overflow(overflow != value0.left_most_bit());
+                            .flags_set_overflow(shifted_bit != value0.left_most_bit());
                         // The adjust flag is undefined
                     }
 
@@ -653,31 +642,21 @@ impl Interpreter {
                     let value1 = self.machine.fetch_operand_value(&instruction, 1);
 
                     for _ in 0..value1.extend_to_u32() {
-                        let overflow = match value0 {
-                            Value::U8(v) => {
-                                let (v, o) = v.overflowing_shr(1);
-                                value0 = Value::U8(v);
-                                o
-                            }
-                            Value::U16(v) => {
-                                let (v, o) = v.overflowing_shr(1);
-                                value0 = Value::U16(v);
-                                o
-                            }
-                            Value::U32(v) => {
-                                let (v, o) = v.overflowing_shr(1);
-                                value0 = Value::U32(v);
-                                o
-                            }
-                            _ => unreachable!(),
+                        let shifted_bit = (value0.extend_to_u32() & 0x1) != 0;
+                        let sign_bit = value0.left_most_bit();
+
+                        value0 = match value0 {
+                            Value::U8(v) => Value::U8(v.wrapping_shr(1)),
+                            Value::U16(v) => Value::U16(v.wrapping_shr(1)),
+                            Value::U32(v) => Value::U32(v.wrapping_shr(1)),
                         };
 
                         self.machine.flags_set_sign_from_val(value0);
                         self.machine.flags_set_zero_from_val(value0);
                         self.machine.flags_set_parity_from_val(value0);
-                        self.machine.flags_set_carry(overflow);
+                        self.machine.flags_set_carry(shifted_bit);
                         self.machine
-                            .flags_set_overflow(overflow != value0.left_most_bit());
+                            .flags_set_overflow(sign_bit != value0.left_most_bit());
                         // The adjust flag is undefined
                     }
 
