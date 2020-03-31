@@ -148,8 +148,11 @@ fn build_x86_multiboot2_cdrom_iso(
         &br#"
 set timeout=5
 set default=0
+set gfxmode=auto
+set gfxpayload=auto
 
 menuentry "redshirt" {
+    insmod all_video
     multiboot2 /boot/kernel
 }
             "#[..],
