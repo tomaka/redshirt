@@ -140,7 +140,7 @@ async fn async_main() {
         let phys_base = u32::from_le_bytes(<[u8; 4]>::try_from(&info_out[0x28..0x2c]).unwrap());
         log::debug!("Framebuffer located at 0x{:x}", phys_base);
 
-        if x_resolution > 850 {
+        if x_resolution > 150 {
             interpreter.set_ax(0x4f02);
             interpreter.set_bx((1 << 14) | *mode);
             interpreter.int10h().unwrap();

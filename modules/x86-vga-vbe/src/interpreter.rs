@@ -226,6 +226,23 @@ impl Interpreter {
                     // adjust flag is undefined
                 }
 
+                iced_x86::Mnemonic::Bt => {
+                    let value0 = self.machine.fetch_operand_value(&instruction, 0);
+                    let value1 = self.machine.fetch_operand_value(&instruction, 1);
+
+                    // TODO: might not be correct; there's some weirdness with when it's memory
+                    let bit = match (value0, value1) {
+                        (Value::U8(value0), Value::U8(value1)) => (value0 & (1u8.wrapping_shl(u32::from(value1)))) != 0,
+                        (Value::U16(value0), Value::U8(value1)) => (value0 & (1u16.wrapping_shl(u32::from(value1)))) != 0,
+                        (Value::U16(value0), Value::U16(value1)) => (value0 & (1u16.wrapping_shl(u32::from(value1)))) != 0,
+                        (Value::U32(value0), Value::U8(value1)) => (value0 & (1u32.wrapping_shl(u32::from(value1)))) != 0,
+                        (Value::U32(value0), Value::U32(value1)) => (value0 & (1u32.wrapping_shl(u32::from(value1)))) != 0,
+                        _ => unreachable!(),
+                    };
+
+                    self.machine.flags_set_carry(bit);
+                }
+
                 iced_x86::Mnemonic::Call => {
                     match instruction.code() {
                         iced_x86::Code::Call_ptr1616 | iced_x86::Code::Call_m1616 => {
@@ -662,6 +679,17 @@ impl Interpreter {
 
                 iced_x86::Mnemonic::Nop => {}
 
+                iced_x86::Mnemonic::Not => {
+                    let value = self.machine.fetch_operand_value(&instruction, 0);
+                    let result = match value {
+                        Value::U8(value) => Value::U8(value ^ 0xff),
+                        Value::U16(value) => Value::U16(value ^ 0xffff),
+                        Value::U32(value) => Value::U32(value ^ 0xffffffff),
+                        _ => unreachable!(),
+                    };
+                    self.machine.store_in_operand(&instruction, 0, result);
+                }
+
                 iced_x86::Mnemonic::Or => {
                     let value0 = self.machine.fetch_operand_value(&instruction, 0);
                     let value1 = self.machine.fetch_operand_value(&instruction, 1);
@@ -771,6 +799,40 @@ impl Interpreter {
                         .flags_set_parity(self.machine.regs.eax & (1 << 2) != 0);
                     self.machine
                         .flags_set_carry(self.machine.regs.eax & (1 << 0) != 0);
+                }
+
+                iced_x86::Mnemonic::Sbb => {
+                    let value0 = self.machine.fetch_operand_value(&instruction, 0);
+                    let value1 = self.machine.fetch_operand_value(&instruction, 1);
+
+                    let (temp, overflow) = match (value0, value1) {
+                        (Value::U8(value0), Value::U8(value1)) => {
+                            let carry_val = if self.machine.flags_is_carry() { 1 } else { 0 };
+                            let (v, o) = value0.overflowing_sub(value1.wrapping_add(carry_val));
+                            (Value::U8(v), o)
+                        }
+                        (Value::U16(value0), Value::U16(value1)) => {
+                            let carry_val = if self.machine.flags_is_carry() { 1 } else { 0 };
+                            let (v, o) = value0.overflowing_sub(value1.wrapping_add(carry_val));
+                            (Value::U16(v), o)
+                        }
+                        (Value::U32(value0), Value::U32(value1)) => {
+                            let carry_val = if self.machine.flags_is_carry() { 1 } else { 0 };
+                            let (v, o) = value0.overflowing_sub(value1.wrapping_add(carry_val));
+                            (Value::U32(v), o)
+                        }
+                        _ => unreachable!(),
+                    };
+
+                    self.machine.store_in_operand(&instruction, 0, temp);
+
+                    self.machine.flags_set_sign_from_val(temp);
+                    self.machine.flags_set_zero_from_val(temp);
+                    self.machine.flags_set_parity_from_val(temp);
+                    self.machine.flags_set_carry(overflow);
+                    self.machine
+                        .flags_set_overflow(overflow != temp.left_most_bit());
+                    // TODO: the adjust flag
                 }
 
                 iced_x86::Mnemonic::Seta => {
