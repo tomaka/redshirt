@@ -55,9 +55,8 @@
 //! >           to write than a 32bits emulator.
 //!
 
-use core::convert::TryFrom as _;
-
 mod interpreter;
+mod vbe;
 
 fn main() {
     redshirt_log_interface::init();
@@ -65,102 +64,12 @@ fn main() {
 }
 
 async fn async_main() {
-    let mut interpreter = interpreter::Interpreter::new().await;
-    interpreter.set_ax(0x4f00);
-    interpreter.set_es_di(0x50, 0x0);
-    interpreter.write_memory(0x500, &b"VBE2"[..]);
-    interpreter.int10h().unwrap();
-    assert_eq!(interpreter.ax(), 0x4f);
-
-    let mut info_out = [0; 512];
-    interpreter.read_memory(0x500, &mut info_out[..]);
-    assert_eq!(&info_out[0..4], b"VESA");
-
-    let video_modes = {
-        let vmodes_seg = interpreter.read_memory_u16(0x510);
-        let vmodes_ptr = interpreter.read_memory_u16(0x50e);
-        let mut vmodes_addr = (u32::from(vmodes_seg) << 4) + u32::from(vmodes_ptr);
-        let mut modes = Vec::new();
-        loop {
-            let mode = interpreter.read_memory_u16(vmodes_addr);
-            if mode == 0xffff {
-                break modes;
-            }
-            vmodes_addr += 2;
-            modes.push(mode);
-        }
-    };
-    log::info!("Video modes = {:?}", video_modes);
-
-    let total_memory = u32::from(interpreter.read_memory_u16(0x512)) * 64 * 1024;
-    log::info!("Total memory = 0x{:x}", total_memory);
-
-    let oem_string = {
-        let seg = interpreter.read_memory_u16(0x508);
-        let ptr = interpreter.read_memory_u16(0x506);
-        let addr = (u32::from(seg) << 4) + u32::from(ptr);
-        interpreter.read_memory_nul_terminated_str(addr)
-    };
-    log::info!("OEM string: {}", oem_string);
-
-    for mode in video_modes.iter() {
-        assert!(*mode < (1 << 9));
-
-        interpreter.set_ax(0x4f01);
-        interpreter.set_cx(*mode);
-        interpreter.set_es_di(0x50, 0x0);
-        interpreter.int10h().unwrap();
-        assert_eq!(interpreter.ax(), 0x4f);
-
-        let mut info_out = [0; 256];
-        interpreter.read_memory(0x500, &mut info_out[..]);
-
-        let mode_attributes = u16::from_le_bytes(<[u8; 2]>::try_from(&info_out[0..2]).unwrap());
-        if mode_attributes & (1 << 0) == 0 {
-            // Skip unsupported video modes.
-            continue;
-        }
-        if mode_attributes & (1 << 4) == 0 {
-            // Skip text modes.
-            continue;
-        }
-        if mode_attributes & (1 << 7) == 0 {
-            // Skip modes that don't support the linear framebuffer.
-            continue;
-        }
-
-        let x_resolution = u16::from_le_bytes(<[u8; 2]>::try_from(&info_out[0x12..0x14]).unwrap());
-        let y_resolution = u16::from_le_bytes(<[u8; 2]>::try_from(&info_out[0x14..0x16]).unwrap());
-        log::debug!(
-            "Detected video mode: {}x{} pixels",
-            x_resolution,
-            y_resolution
-        );
-
-        let phys_base = u32::from_le_bytes(<[u8; 4]>::try_from(&info_out[0x28..0x2c]).unwrap());
-        log::debug!("Framebuffer located at 0x{:x}", phys_base);
-
-        if x_resolution > 150 {
-            interpreter.set_ax(0x4f02);
-            interpreter.set_bx((1 << 14) | *mode);
-            interpreter.int10h().unwrap();
-            assert_eq!(interpreter.ax(), 0x4f);
-
-            unsafe {
-                let mut ops = redshirt_hardware_interface::HardwareWriteOperationsBuilder::new();
-                ops.memset(
-                    u64::from(phys_base),
-                    u64::from(x_resolution) * u64::from(y_resolution) * 4,
-                    0xff,
-                );
-                ops.send();
-            }
-
-            break;
-        }
-    }
-
-    /*interpreter.set_ax(0x4f02);
-    interpreter.set_bx(*video_modes.last().unwrap());
-    interpreter.int10h().unwrap();*/
+    let mut vbe = vbe::load_vbe_info().await.unwrap();
+    // TODO: mode selection
+    let mode = vbe
+        .modes()
+        .find(|m| m.pixels_dimensions().0 > 1500)
+        .unwrap()
+        .num();
+    vbe.set_current_mode(mode).await;
 }

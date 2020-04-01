@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use core::{convert::TryFrom, mem};
+use core::{convert::TryFrom, fmt, mem};
 
 mod tests;
 
@@ -29,6 +29,14 @@ pub struct Interpreter {
 #[derive(Debug)]
 pub enum Error {
     InvalidInstruction,
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Error::InvalidInstruction => write!(f, "Invalid instruction"),
+        }
+    }
 }
 
 impl Interpreter {
@@ -232,11 +240,21 @@ impl Interpreter {
 
                     // TODO: might not be correct; there's some weirdness with when it's memory
                     let bit = match (value0, value1) {
-                        (Value::U8(value0), Value::U8(value1)) => (value0 & (1u8.wrapping_shl(u32::from(value1)))) != 0,
-                        (Value::U16(value0), Value::U8(value1)) => (value0 & (1u16.wrapping_shl(u32::from(value1)))) != 0,
-                        (Value::U16(value0), Value::U16(value1)) => (value0 & (1u16.wrapping_shl(u32::from(value1)))) != 0,
-                        (Value::U32(value0), Value::U8(value1)) => (value0 & (1u32.wrapping_shl(u32::from(value1)))) != 0,
-                        (Value::U32(value0), Value::U32(value1)) => (value0 & (1u32.wrapping_shl(u32::from(value1)))) != 0,
+                        (Value::U8(value0), Value::U8(value1)) => {
+                            (value0 & (1u8.wrapping_shl(u32::from(value1)))) != 0
+                        }
+                        (Value::U16(value0), Value::U8(value1)) => {
+                            (value0 & (1u16.wrapping_shl(u32::from(value1)))) != 0
+                        }
+                        (Value::U16(value0), Value::U16(value1)) => {
+                            (value0 & (1u16.wrapping_shl(u32::from(value1)))) != 0
+                        }
+                        (Value::U32(value0), Value::U8(value1)) => {
+                            (value0 & (1u32.wrapping_shl(u32::from(value1)))) != 0
+                        }
+                        (Value::U32(value0), Value::U32(value1)) => {
+                            (value0 & (1u32.wrapping_shl(u32::from(value1)))) != 0
+                        }
                         _ => unreachable!(),
                     };
 
