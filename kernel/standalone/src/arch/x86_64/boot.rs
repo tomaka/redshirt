@@ -34,6 +34,8 @@ global_asm! {r#"
 .global _start
 .type _start, @function
 _start:
+    cli
+
     // Check that we have been loaded by a multiboot2 bootloader.
     cmp $0x36d76289, %eax
     jne .print_err_and_stop
