@@ -14,57 +14,16 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 //! Panic handling code.
-//!
-//! This panic handler tries to use as little features as possible, in order to maximize the
-//! chances of the panic message being displayed. In particular, it doesn't perform any heap
-//! allocation.
 
-use core::{
-    convert::TryFrom as _,
-    fmt::{self, Write},
-};
+use alloc::sync::Arc;
 use spinning_top::Spinlock;
-
-// TODO: make panics a bit nicer?
-
-#[derive(Debug, Clone)]
-pub struct FramebufferInfo {
-    /// Where the framebuffer starts.
-    pub address: usize,
-    /// Width of the screen, either in pixels or characters.
-    pub width: u32,
-    /// Height of the screen, either in pixels or characters.
-    pub height: u32,
-    /// In order to reach the second line of pixels or characters, one has to advance this number of bytes.
-    pub pitch: usize,
-    /// Number of bytes a character occupies in memory.
-    pub bpp: usize,
-    /// Format of the framebuffer's data.
-    pub format: FramebufferFormat,
-}
-
-/// Format of the framebuffer's data.
-#[derive(Debug, Clone)]
-pub enum FramebufferFormat {
-    /// One ASCII character followed with one byte of characteristics.
-    Text,
-    // TODO: should indicate the precise fields
-    Rgb,
-}
 
 /// Modifies the framebuffer information. Used when printing a panic.
 pub fn set_framebuffer_info(info: FramebufferInfo) {
     *FB_INFO.lock() = info;
 }
 
-static FB_INFO: Spinlock<FramebufferInfo> = Spinlock::new(FramebufferInfo {
-    address: 0xb8000,
-    width: 80,
-    height: 25,
-    pitch: 160,
-    bpp: 2,
-    format: FramebufferFormat::Text,
-});
+static PANIC_LOGGER: Spinlock<Option<Arc<KLogger>>> = Spinlock::new(None);
 
 #[cfg(not(any(test, doc, doctest)))]
 #[panic_handler]

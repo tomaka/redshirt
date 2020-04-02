@@ -1165,6 +1165,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "redshirt-kernel-log-interface"
+version = "0.1.0"
+dependencies = [
+ "parity-scale-codec",
+ "redshirt-syscalls",
+]
+
+[[package]]
 name = "redshirt-loader-interface"
 version = "0.1.0"
 dependencies = [

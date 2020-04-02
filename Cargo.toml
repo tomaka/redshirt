@@ -11,6 +11,7 @@ members = [
     "interfaces/framebuffer",
     "interfaces/hardware",
     "interfaces/interface",
+    "interfaces/kernel-log",
     "interfaces/loader",
     "interfaces/log",
     "interfaces/pci",

@@ -28,6 +28,9 @@
 //! After everything has been initialized, the entry point creates a struct that implements the
 //! [`PlatformSpecific`] trait, and initializes and runs a [`Kernel`](crate::kernel::Kernel).
 
+use crate::klog::KLogger;
+
+use alloc::sync::Arc;
 use core::{fmt, future::Future, num::NonZeroU32, pin::Pin};
 
 mod arm;
@@ -42,6 +45,11 @@ pub trait PlatformSpecific: Send + Sync + 'static {
 
     /// Returns the number of CPUs available.
     fn num_cpus(self: Pin<&Self>) -> NonZeroU32;
+
+    /// Passes a `KLogger` that the panic handler must use in order to print panics.
+    ///
+    /// Before this method is called for the first time, printing panics is platform-specific.
+    fn set_panic_logger(self: Pin<&Self>, klogger: Arc<KLogger>);
 
     /// Returns the number of nanoseconds that happened since an undeterminate moment in time.
     ///

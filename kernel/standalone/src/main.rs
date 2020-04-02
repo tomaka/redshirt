@@ -32,6 +32,7 @@ extern crate rlibc;
 mod arch;
 mod hardware;
 mod kernel;
+mod klog;
 mod mem_alloc;
 mod random;
 mod time;
