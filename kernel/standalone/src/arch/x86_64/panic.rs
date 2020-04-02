@@ -19,29 +19,62 @@
 //! chances of the panic message being displayed. In particular, it doesn't perform any heap
 //! allocation.
 
-use core::fmt::{self, Write};
-use x86_64::structures::port::PortWrite as _;
+use core::{
+    convert::TryFrom as _,
+    fmt::{self, Write},
+};
+use spinning_top::Spinlock;
 
 // TODO: make panics a bit nicer?
+
+#[derive(Debug, Clone)]
+pub struct FramebufferInfo {
+    /// Where the framebuffer starts.
+    pub address: usize,
+    /// Width of the screen, either in pixels or characters.
+    pub width: u32,
+    /// Height of the screen, either in pixels or characters.
+    pub height: u32,
+    /// In order to reach the second line of pixels or characters, one has to advance this number of bytes.
+    pub pitch: usize,
+    /// Number of bytes a character occupies in memory.
+    pub bpp: usize,
+    /// Format of the framebuffer's data.
+    pub format: FramebufferFormat,
+}
+
+/// Format of the framebuffer's data.
+#[derive(Debug, Clone)]
+pub enum FramebufferFormat {
+    /// One ASCII character followed with one byte of characteristics.
+    Text,
+    // TODO: should indicate the precise fields
+    Rgb,
+}
+
+/// Modifies the framebuffer information. Used when printing a panic.
+pub fn set_framebuffer_info(info: FramebufferInfo) {
+    *FB_INFO.lock() = info;
+}
+
+static FB_INFO: Spinlock<FramebufferInfo> = Spinlock::new(FramebufferInfo {
+    address: 0xb8000,
+    width: 80,
+    height: 25,
+    pitch: 160,
+    bpp: 2,
+    format: FramebufferFormat::Text,
+});
 
 #[cfg(not(any(test, doc, doctest)))]
 #[panic_handler]
 fn panic(panic_info: &core::panic::PanicInfo) -> ! {
-    // TODO: switch back to text mode somehow?
-    let mut console = Console {
-        cursor_x: 0,
-        cursor_y: 0,
-    };
+    let info = FB_INFO.lock();
 
-    let _ = writeln!(console, "Kernel panic!");
-    let _ = writeln!(console, "{}", panic_info);
-    let _ = writeln!(console, "");
-
-    // Disable the text mode cursor.
-    unsafe {
-        u8::write_to_port(0x3d4, 0x0a);
-        u8::write_to_port(0x3d5, 0x20);
-    }
+    let mut printer = Printer::from(&*info);
+    let _ = writeln!(printer, "Kernel panic!");
+    let _ = writeln!(printer, "{}", panic_info);
+    let _ = writeln!(printer, "");
 
     // Freeze forever.
     loop {
@@ -50,45 +83,60 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
     }
 }
 
-struct Console {
-    cursor_x: u8,
-    cursor_y: u8,
+struct Printer<'a> {
+    info: &'a FramebufferInfo,
+    cursor_x: u32,
+    cursor_y: u32,
+    character_width: u32,
+    character_height: u32,
 }
 
-impl fmt::Write for Console {
+impl<'a> From<&'a FramebufferInfo> for Printer<'a> {
+    fn from(info: &'a FramebufferInfo) -> Self {
+        let (character_width, character_height) = match info.format {
+            FramebufferFormat::Text => (1, 1),
+            FramebufferFormat::Rgb { .. } => {
+                // TODO: yeah, no
+                (info.width / 100, info.height / 25)
+            }
+        };
+
+        Printer {
+            info,
+            cursor_x: 0,
+            cursor_y: 0,
+            character_width,
+            character_height,
+        }
+    }
+}
+
+impl<'a> fmt::Write for Printer<'a> {
     fn write_str(&mut self, message: &str) -> fmt::Result {
-        unsafe {
-            for chr in message.chars() {
-                if !chr.is_ascii() {
-                    continue;
-                }
+        for chr in message.chars() {
+            if !chr.is_ascii() {
+                continue;
+            }
+            // TODO: better way to convert to ASCII?
+            let chr = chr as u8;
 
-                // We assume that panic messages are never more than 25 lines and discard
-                // everything after.
-                if self.cursor_y >= 25 {
-                    break;
-                }
+            // We assume that panic messages are never more than the height of the screen
+            // and discard everything after.
+            if self.cursor_y >= self.info.height {
+                break;
+            }
 
-                if chr == '\n' {
-                    while self.cursor_x != 80 {
-                        ptr_of(self.cursor_x, self.cursor_y).write_volatile(0);
-                        self.cursor_x += 1;
-                    }
+            if chr == b'\n' {
+                self.carriage_return();
+                continue;
+            }
 
-                    self.cursor_x = 0;
-                    self.cursor_y += 1;
-                    continue;
-                }
+            self.print_at_cursor(chr);
 
-                let chr = chr as u8;
-                ptr_of(self.cursor_x, self.cursor_y).write_volatile(u16::from(chr) | 0xc00);
-
-                debug_assert!(self.cursor_x < 80);
-                self.cursor_x += 1;
-                if self.cursor_x == 80 {
-                    self.cursor_x = 0;
-                    self.cursor_y += 1;
-                }
+            debug_assert!(self.cursor_x < self.info.width);
+            self.cursor_x = self.cursor_x.saturating_add(self.character_width);
+            if self.cursor_x > self.info.width.saturating_sub(self.character_width) {
+                self.carriage_return();
             }
         }
 
@@ -96,12 +144,42 @@ impl fmt::Write for Console {
     }
 }
 
-fn ptr_of(x: u8, y: u8) -> *mut u16 {
-    assert!(x < 80);
-    assert!(y < 25);
+impl<'a> Printer<'a> {
+    fn print_at_cursor(&mut self, chr: u8) {
+        unsafe {
+            let y_offset = self
+                .info
+                .pitch
+                .saturating_mul(usize::try_from(self.cursor_y).unwrap_or(usize::max_value()));
+            let x_offset = usize::try_from(self.cursor_x)
+                .unwrap_or(usize::max_value())
+                .saturating_mul(self.info.bpp);
+            let addr = (self.info.address as *mut u8).add(x_offset.saturating_add(y_offset));
 
-    unsafe {
-        let offset = isize::from(y) * 80 + isize::from(x);
-        (0xb8000 as *mut u16).offset(offset)
+            match self.info.format {
+                FramebufferFormat::Text => {
+                    (addr as *mut u16).write_volatile(u16::from(chr) | 0xc00);
+                }
+                FramebufferFormat::Rgb => {
+                    for x in (self.cursor_x as usize)..((self.cursor_x+self.character_width) as usize) {
+                        for y in (self.cursor_y as usize)..((self.cursor_y+self.character_height) as usize) {
+                            let px_addr = addr.add(x * self.info.bpp).add(y * self.info.pitch);
+                            for offset in 0..self.info.bpp {
+                                *px_addr.add(offset) = 0xff;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn carriage_return(&mut self) {
+        self.cursor_x = 0;
+        self.cursor_y = self.cursor_y.saturating_add(self.character_height);
+        if !matches!(self.info.format, FramebufferFormat::Text) {
+            // Some padding.
+            self.cursor_y = self.cursor_y.saturating_add(4);
+        }
     }
 }

@@ -3,12 +3,17 @@
 [[package]]
 name = "acpi"
 version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "caea302502224d49217ea29fd72cbb52e9bcffe02b9722d6a4637fd70d944239"
 dependencies = [
  "bit_field 0.10.0",
  "log",
 ]
+
+[[package]]
+name = "acpi"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "caea302502224d49217ea29fd72cbb52e9bcffe02b9722d6a4637fd70d944239"
+replace = "acpi 0.7.0"
 
 [[package]]
 name = "ansi_term"
@@ -1220,7 +1225,7 @@ dependencies = [
 name = "redshirt-standalone-kernel"
 version = "0.1.0"
 dependencies = [
- "acpi",
+ "acpi 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "blake3",
  "cc",
  "crossbeam-queue",

@@ -34,6 +34,9 @@ global_asm! {r#"
 .global _start
 .type _start, @function
 _start:
+    // Disabling interruptions as long as we are not ready to accept them.
+    // This is normally already done by the bootloader, but I costs nothing to do it here again
+    // just in case.
     cli
 
     // Check that we have been loaded by a multiboot2 bootloader.
@@ -82,7 +85,7 @@ _start:
     or $(1 << 1), %eax              // Read/write bit. Indicates that the entry is writable.
     movl %eax, pdpt(, %ecx, 8)      // PDPT[ECX * 8] <- EAX
     inc %ecx
-    cmp $4, %ecx
+    cmp $32, %ecx
     jne .L0
 
     // Fill the PD entries to point to 2MiB pages.
@@ -97,7 +100,7 @@ _start:
     or $(1 << 7), %eax              // Indicates a 2MiB page.
     movl %eax, pds(, %ecx, 8)       // PDs[ECX * 8] <- EAX
     inc %ecx
-    cmp $(4 * 512), %ecx
+    cmp $(32 * 512), %ecx
     jne .L1
 
     // Set up the control registers.
@@ -184,11 +187,11 @@ gdt_ptr:
 .section .bss
 // PML4. The entry point for our paging system.
 .comm pml4, 0x1000, 0x1000
-// One PDPT. Maps 512GB of memory. Only the first four entries are used.
+// One PDPT. Maps 512GB of memory. Only the first thirty-two entries are used.
 .comm pdpt, 0x1000, 0x1000
-// Four PDs for the first four entries in the PDPT. Each PD maps 1GB of memory.
-// TODO: how can we be sure that mapping 4GiB is enough, and that the kernel doesn't go above?
-.comm pds, 4 * 0x1000, 0x1000
+// Thirty-two PDs for the first thirty-two entries in the PDPT. Each PD maps 1GB of memory.
+// TODO: how can we be sure that mapping 32GiB is enough, and that the kernel doesn't go above?
+.comm pds, 32 * 0x1000, 0x1000
 
 // Stack used by the kernel.
 .comm stack, 0x800000, 0x8

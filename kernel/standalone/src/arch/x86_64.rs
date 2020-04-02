@@ -50,6 +50,26 @@ mod pit;
 unsafe extern "C" fn after_boot(multiboot_header: usize) -> ! {
     let multiboot_info = multiboot2::load(multiboot_header);
 
+    // Initialize the panic handler to what multiboot has told us.
+    if let Some(fb_info) = multiboot_info.framebuffer_tag() {
+        panic::set_framebuffer_info(panic::FramebufferInfo {
+            address: usize::try_from(fb_info.address).unwrap(),
+            width: fb_info.width,
+            height: fb_info.height,
+            pitch: usize::try_from(fb_info.pitch).unwrap(),
+            bpp: usize::from(fb_info.bpp),
+            format: match fb_info.buffer_type {
+                multiboot2::FramebufferType::Text => panic::FramebufferFormat::Text,
+                multiboot2::FramebufferType::Indexed { .. } => {
+                    panic::FramebufferFormat::Rgb
+                }
+                multiboot2::FramebufferType::RGB { .. } => {
+                    panic::FramebufferFormat::Rgb
+                }
+            },
+        });
+    }
+
     // Initialization of the memory allocator.
     let mut ap_boot_alloc = {
         let mut ap_boot_alloc = None;
@@ -69,6 +89,8 @@ unsafe extern "C" fn after_boot(multiboot_header: usize) -> ! {
             None => panic!("Couldn't find free memory range for the AP allocator"),
         }
     };
+
+    panic!("test");
 
     // The first thing that gets executed when a x86 or x86_64 machine starts up is the
     // motherboard's firmware. Before giving control to the operating system, this firmware writes
@@ -129,7 +151,7 @@ unsafe extern "C" fn after_boot(multiboot_header: usize) -> ! {
     // it to each sender.
     let mut kernel_channels = Vec::with_capacity(acpi_tables.application_processors.len());
 
-    for ap in acpi_tables.application_processors.iter() {
+    for ap in acpi_tables.application_processors.iter().take(0) {
         debug_assert!(ap.is_ap);
         // It is possible for some associated processors to be in a disabled state, in which case
         // they **must not** be started. This is generally the case of defective processors.
@@ -204,6 +226,13 @@ fn find_free_memory_ranges<'a>(
         // Some parts of the memory have to be avoided, such as the kernel, non-RAM memory,
         // RAM that might contain important information, and so on.
         let to_avoid = {
+            // TODO: for now, the code in boot.rs only maps the first 32GiB of memory. We avoid
+            // anything above this limit
+            //let unmapped = iter::once(0x2000000000 .. u64::max_value());
+            // TODO: linked_list_allocator seems to misbehave when we use a lot of memory, so for
+            // now we restrict ourselves to the first 2GiB.
+            let unmapped = iter::once(0x80000000..u64::max_value());
+
             // We don't want to write over the kernel that has been loaded in memory.
             let elf = elf_sections
                 .sections()
@@ -233,6 +262,7 @@ fn find_free_memory_ranges<'a>(
             elf.chain(rom_video_ram)
                 .chain(important_info)
                 .chain(multiboot)
+                .chain(unmapped)
         };
 
         let mut area_start = area.start_address();
