@@ -35,6 +35,6 @@ cc = "1.0"
 walkdir = "2.2.9"
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
-acpi = "0.7.0"
+acpi = { git = "https://github.com/tomaka/acpi", branch = "optional-local-nmi" }
 multiboot2 = "0.8.1"
 x86_64 = "0.8.2"
