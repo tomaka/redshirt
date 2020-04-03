@@ -129,7 +129,8 @@ unsafe extern "C" fn after_boot(multiboot_header: usize) -> ! {
     // it to each sender.
     let mut kernel_channels = Vec::with_capacity(acpi_tables.application_processors.len());
 
-    for ap in acpi_tables.application_processors.iter() {
+    // TODO: this `take(0)` disables APs for now; it seems to not work on VirtualBox or actual hardware
+    for ap in acpi_tables.application_processors.iter().take(0) {
         debug_assert!(ap.is_ap);
         // It is possible for some associated processors to be in a disabled state, in which case
         // they **must not** be started. This is generally the case of defective processors.
@@ -204,6 +205,13 @@ fn find_free_memory_ranges<'a>(
         // Some parts of the memory have to be avoided, such as the kernel, non-RAM memory,
         // RAM that might contain important information, and so on.
         let to_avoid = {
+            // TODO: for now, the code in boot.rs only maps the first 32GiB of memory. We avoid
+            // anything above this limit
+            //let unmapped = iter::once(0x2000000000 .. u64::max_value());
+            // TODO: linked_list_allocator seems to misbehave when we use a lot of memory, so for
+            // now we restrict ourselves to the first 2GiB.
+            let unmapped = iter::once(0x80000000..u64::max_value());
+
             // We don't want to write over the kernel that has been loaded in memory.
             let elf = elf_sections
                 .sections()
@@ -233,6 +241,7 @@ fn find_free_memory_ranges<'a>(
             elf.chain(rom_video_ram)
                 .chain(important_info)
                 .chain(multiboot)
+                .chain(unmapped)
         };
 
         let mut area_start = area.start_address();
