@@ -2,8 +2,9 @@
 # It is not intended for manual editing.
 [[package]]
 name = "acpi"
-version = "0.7.0"
-source = "git+https://github.com/tomaka/acpi?branch=optional-local-nmi#5371f74527b6caf7ad8a0988029e9c866fe99ecf"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f425a8a7e096bddbd7277c5942f4a4d9498d1a829495c685cc7bc81e69b8995"
 dependencies = [
  "bit_field 0.10.0",
  "log",
