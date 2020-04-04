@@ -20,8 +20,7 @@
 /// - A `0` byte followed with a UTF-8 log message.
 /// - A `1` byte followed with a SCALE-codec-encoded [`KernelLogMethod`].
 ///
-
-use parity_scale_codec::{Encode, Decode};
+use parity_scale_codec::{Decode, Encode};
 use redshirt_syscalls::InterfaceHash;
 
 // TODO: this has been randomly generated; instead should be a hash or something
@@ -65,6 +64,12 @@ pub struct FramebufferInfo {
 pub enum FramebufferFormat {
     /// One ASCII character followed with one byte of characteristics.
     Text,
-    // TODO: should indicate the precise color map
-    Rgb,
+    Rgb {
+        red_size: u8,
+        red_position: u8,
+        green_size: u8,
+        green_position: u8,
+        blue_size: u8,
+        blue_position: u8,
+    },
 }

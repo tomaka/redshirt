@@ -13,22 +13,46 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use crate::klog::video;
+
+use core::fmt;
+use redshirt_kernel_log_interface::ffi::{FramebufferFormat, KernelLogMethod};
 use spinning_top::Spinlock;
 
 pub struct KLogger {
-    method: Spinlock<KernelLogMethod>,
+    inner: Spinlock<Inner>,
+}
+
+struct Inner {
+    method: KernelLogMethod,
+    terminal: Option<video::Terminal>,
 }
 
 impl KLogger {
     pub const fn new(method: KernelLogMethod) -> KLogger {
         KLogger {
+            inner: Spinlock::new(Inner {
+                method,
+                terminal: None,
+            }),
             method: Spinlock::new(method),
         }
     }
 
-    pub fn panic_printer(&self) -> PanicPrinter {
-        PanicPrinter {
+    /// Returns an object that implements `core::fmt::Write` for writing logs.
+    pub fn log_printer<'a>(&'a self) -> impl fmt::Write + 'a {
+        Printer {
             klogger: self,
+            panic_message: false,
+        }
+    }
+
+    /// Returns an object that implements `core::fmt::Write` designed for printing a panic
+    /// message.
+    pub fn panic_printer<'a>(&'a self) -> impl fmt::Write + 'a {
+        Printer {
+            klogger: self,
+            panic_message: true,
         }
     }
 
@@ -38,6 +62,7 @@ impl KLogger {
     }
 }
 
-pub struct PanicPrinter<'a> {
+struct Printer<'a> {
     klogger: &'a KLogger,
+    panic_message: bool,
 }

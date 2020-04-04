@@ -16,6 +16,7 @@
 #![cfg(target_arch = "x86_64")]
 
 use crate::arch::{PlatformSpecific, PortErr};
+use crate::klog::KLogger;
 
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use core::{
@@ -23,6 +24,7 @@ use core::{
     time::Duration,
 };
 use futures::channel::oneshot;
+use redshirt_kernel_log_interface::ffi::{FramebufferFormat, FramebufferInfo, KernelLogMethod};
 use x86_64::structures::port::{PortRead as _, PortWrite as _};
 
 mod acpi;
@@ -50,26 +52,6 @@ mod pit;
 unsafe extern "C" fn after_boot(multiboot_header: usize) -> ! {
     let multiboot_info = multiboot2::load(multiboot_header);
 
-    // Initialize the panic handler to what multiboot has told us.
-    if let Some(fb_info) = multiboot_info.framebuffer_tag() {
-        panic::set_framebuffer_info(panic::FramebufferInfo {
-            address: usize::try_from(fb_info.address).unwrap(),
-            width: fb_info.width,
-            height: fb_info.height,
-            pitch: usize::try_from(fb_info.pitch).unwrap(),
-            bpp: usize::from(fb_info.bpp),
-            format: match fb_info.buffer_type {
-                multiboot2::FramebufferType::Text => panic::FramebufferFormat::Text,
-                multiboot2::FramebufferType::Indexed { .. } => {
-                    panic::FramebufferFormat::Rgb
-                }
-                multiboot2::FramebufferType::RGB { .. } => {
-                    panic::FramebufferFormat::Rgb
-                }
-            },
-        });
-    }
-
     // Initialization of the memory allocator.
     let mut ap_boot_alloc = {
         let mut ap_boot_alloc = None;
@@ -90,6 +72,29 @@ unsafe extern "C" fn after_boot(multiboot_header: usize) -> ! {
         }
     };
 
+    // Initialize the panic handler to what multiboot has told us.
+    //
+    // For as long as it is not replaced, we will use this to print kernel logs.
+    if let Some(fb_info) = multiboot_info.framebuffer_tag() {
+        panic::set_logger(Arc::new(KLogger::new(KernelLogMethod {
+            enabled: true,
+            framebuffer: Some(FramebufferInfo {
+                address: fb_info.address,
+                width: fb_info.width,
+                height: fb_info.height,
+                pitch: u64::from(fb_info.pitch),
+                bytes_per_character: fb_info.bpp,
+                format: match fb_info.buffer_type {
+                    multiboot2::FramebufferType::Text => FramebufferFormat::Text,
+                    multiboot2::FramebufferType::Indexed { .. } => FramebufferFormat::Rgb,
+                    multiboot2::FramebufferType::RGB { .. } => FramebufferFormat::Rgb,
+                },
+            }),
+            uart: None,
+        })));
+    }
+
+    // TODO: remove
     panic!("test");
 
     // The first thing that gets executed when a x86 or x86_64 machine starts up is the
@@ -323,6 +328,10 @@ impl PlatformSpecific for PlatformSpecificImpl {
 
     fn num_cpus(self: Pin<&Self>) -> NonZeroU32 {
         self.num_cpus
+    }
+
+    fn set_panic_logger(self: Pin<&Self>, klogger: Arc<KLogger>) {
+        panic::set_logger(klogger)
     }
 
     fn monotonic_clock(self: Pin<&Self>) -> u128 {

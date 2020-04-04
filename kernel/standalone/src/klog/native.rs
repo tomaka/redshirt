@@ -19,45 +19,42 @@
 
 use crate::klog::KLogger;
 
-use alloc::{boxed::Box, sync::Arc, vec};
-use core::{pin::Pin, sync::atomic};
+use alloc::{boxed::Box, sync::Arc};
+use core::{fmt::Write as _, pin::Pin, str, sync::atomic};
 use crossbeam_queue::SegQueue;
 use futures::prelude::*;
-use rand_core::RngCore as _;
 use redshirt_core::native::{DummyMessageIdWrite, NativeProgramEvent, NativeProgramRef};
-use redshirt_core::{Decode as _, Encode as _, EncodedMessage, InterfaceHash, MessageId, Pid};
-use redshirt_random_interface::ffi::{GenerateResponse, RandomMessage, INTERFACE};
+use redshirt_core::{Encode as _, EncodedMessage, InterfaceHash, MessageId, Pid};
+use redshirt_kernel_log_interface::ffi::{KernelLogMethod, INTERFACE};
 
 /// State machine for `random` interface messages handling.
-pub struct KernelLogNativeProgram<TPlat> {
+pub struct KernelLogNativeProgram {
     /// If true, we have sent the interface registration message.
     registered: atomic::AtomicBool,
+    /// Message responses waiting to be emitted.
+    pending_messages: SegQueue<(MessageId, Result<EncodedMessage, ()>)>,
     /// Object to configure.
     klogger: Arc<KLogger>,
 }
 
-impl<TPlat> KernelLogNativeProgram<TPlat> {
+impl KernelLogNativeProgram {
     /// Initializes the native program.
     pub fn new(klogger: Arc<KLogger>) -> Self {
         KernelLogNativeProgram {
             registered: atomic::AtomicBool::new(false),
-            rngs: SegQueue::new(),
             pending_messages: SegQueue::new(),
-            platform_specific,
+            klogger,
         }
     }
 }
 
-impl<'a, TPlat> NativeProgramRef<'a> for &'a KernelLogNativeProgram<TPlat>
-where
-    TPlat: PlatformSpecific,
-{
+impl<'a> NativeProgramRef<'a> for &'a KernelLogNativeProgram {
     type Future =
         Pin<Box<dyn Future<Output = NativeProgramEvent<Self::MessageIdWrite>> + Send + 'a>>;
     type MessageIdWrite = DummyMessageIdWrite;
 
     fn next_event(self) -> Self::Future {
-        /*if !self.registered.swap(true, atomic::Ordering::Relaxed) {
+        if !self.registered.swap(true, atomic::Ordering::Relaxed) {
             return Box::pin(future::ready(NativeProgramEvent::Emit {
                 interface: redshirt_interface_interface::ffi::INTERFACE,
                 message_id_write: None,
@@ -73,7 +70,7 @@ where
             }))
         } else {
             Box::pin(future::pending())
-        }*/
+        }
     }
 
     fn interface_message(
@@ -84,29 +81,35 @@ where
         message: EncodedMessage,
     ) {
         debug_assert_eq!(interface, INTERFACE);
-
-        let message_id = match message_id {
-            Some(m) => m,
-            None => return,
-        };
-
-        match RandomMessage::decode(message) {
-            Ok(RandomMessage::Generate { len }) => {
-                let mut out = vec![0; usize::from(len)];
-
-                let mut rng = if let Ok(rng) = self.rngs.pop() {
-                    rng
-                } else {
-                    KernelRng::new(self.platform_specific.clone())
-                };
-
-                rng.fill_bytes(&mut out);
-                self.rngs.push(rng);
-                let response = GenerateResponse { result: out };
-                self.pending_messages
-                    .push((message_id, Ok(response.encode())));
+        match message.0.get(0) {
+            Some(0) => {
+                // Log message.
+                let message = &message.0[1..];
+                if message.is_ascii() {
+                    self.klogger
+                        .log_printer()
+                        .write_str(str::from_utf8(message).unwrap());
+                }
             }
-            Err(_) => self.pending_messages.push((message_id, Err(()))),
+            Some(1) => {
+                // New log method.
+                unimplemented!(); // TODO:
+                                  /*if let Ok(method) = KernelLogMethod::decode(&message.0[1..]) {
+                                      self.klogger.set_method(method);
+                                      if let Some(message_id) = message_id {
+                                          self.pending_messages.push((message_id, Ok(().encode())))
+                                      }
+                                  } else {
+                                      if let Some(message_id) = message_id {
+                                          self.pending_messages.push((message_id, Err(())))
+                                      }
+                                  }*/
+            }
+            _ => {
+                if let Some(message_id) = message_id {
+                    self.pending_messages.push((message_id, Err(())))
+                }
+            }
         }
     }
 

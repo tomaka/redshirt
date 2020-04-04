@@ -1,0 +1,190 @@
+// Copyright (C) 2019-2020  Pierre Krieger
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+use core::{fmt, mem::MaybeUninit};
+use redshirt_kernel_log_interface::ffi::{FramebufferFormat, FramebufferInfo};
+
+pub struct Terminal {
+    framebuffer: FramebufferInfo,
+    cursor_x: u32,
+    cursor_y: u32,
+    character_width: u32,
+    character_height: u32,
+}
+
+impl Terminal {
+    /// Clears the given framebuffer and returns a terminal.
+    pub fn new(&mut self, framebuffer: FramebufferInfo) -> Terminal {
+        clear_screen(&framebuffer);
+
+        let character_dims = 8; // TODO: proper calculation based on screen dimensions
+        Terminal {
+            framebuffer,
+            cursor_x: 0,
+            cursor_y: 0,
+            character_width: character_dims,
+            character_height: character_dims,
+        }
+    }
+
+    /// Returns an object that implements `core::fmt::Write` designed for printing a message.
+    pub fn printer<'a>(&'a mut self, color: [u8; 3]) -> impl fmt::Write + 'a {
+        struct Printer<'a> {
+            klog: &'a mut Terminal,
+            color: [u8; 3],
+        }
+        impl<'a> fmt::Write for Printer<'a> {
+            fn write_str(&mut self, message: &str) -> fmt::Result {
+                self.klog.print(message, self.color);
+                Ok(())
+            }
+        }
+        Printer { klog: self, color }
+    }
+
+    /// Adds a message to the terminal.
+    fn print(&mut self, message: &str, color: [u8; 3]) {
+        for chr in message.chars() {
+            if !chr.is_ascii() {
+                continue;
+            }
+            // TODO: better way to convert to ASCII?
+            let chr = chr as u8;
+
+            if chr == b'\n' {
+                self.carriage_return();
+                continue;
+            }
+
+            self.print_at_cursor(chr);
+
+            debug_assert!(self.cursor_x < self.info.width);
+            self.cursor_x = self.cursor_x.saturating_add(self.character_width);
+            if self.cursor_x > self.info.width.saturating_sub(self.character_width) {
+                self.carriage_return();
+            }
+        }
+    }
+
+    fn print_at_cursor(&mut self, chr: u8) {
+        unsafe {
+            let y_offset = self
+                .info
+                .pitch
+                .saturating_mul(usize::try_from(self.cursor_y).unwrap_or(usize::max_value()));
+            let x_offset = usize::try_from(self.cursor_x)
+                .unwrap_or(usize::max_value())
+                .saturating_mul(self.info.bpp);
+            let addr = (self.info.address as *mut u8).add(x_offset.saturating_add(y_offset));
+
+            match self.info.format {
+                FramebufferFormat::Text => {
+                    (addr as *mut u16).write_volatile(u16::from(chr) | 0xc00);
+                }
+                FramebufferFormat::Rgb { .. } => {
+                    for x in
+                        (self.cursor_x as usize)..((self.cursor_x + self.character_width) as usize)
+                    {
+                        for y in (self.cursor_y as usize)
+                            ..((self.cursor_y + self.character_height) as usize)
+                        {
+                            let px_addr = addr.add(x * self.info.bpp).add(y * self.info.pitch);
+                            for offset in 0..self.info.bpp {
+                                *px_addr.add(offset) = 0xff;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn line_down(&mut self) {
+        // Note that we read from the framebuffer here, which is extremely slow, but is also the
+        // only way we can avoid memory allocations.
+        copy_row_up(&self.framebuffer, self.character_width);
+        self.cursor_x = 0;
+        self.cursor_y = self.cursor_y.saturating_sub(self.character_height);
+    }
+
+    fn carriage_return(&mut self) {
+        self.cursor_x = 0;
+        self.cursor_y = self.cursor_y.saturating_add(self.character_height);
+        if !matches!(self.info.format, FramebufferFormat::Text) {
+            // Some padding.
+            // TODO: implement better
+            self.cursor_y = self.cursor_y.saturating_add(4);
+        }
+        if self.cursor_y >= self.info.height {
+            self.line_down();
+        }
+    }
+}
+
+/// Font data generated by a build script.
+///
+/// Contains the 128 ASCII characters. Each character is 8x8 bytes. Each byte contains the
+/// opacity of the corresponding pixel, where `0x0` means transparent and `0xff` means opaque.
+const FONT_DATA: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/font.bin"));
+
+/// Copies all the rows of the framebuffer `n` rows up and clears the last `n` rows.
+unsafe fn copy_row_up(info: &FramebufferInfo, rows_up: u32) {
+    let ptr = match usize::try_from(info.address) {
+        Ok(p) => p as *mut u8,
+        _ => return,
+    };
+
+    let pitch = match usize::try_from(info.pitch) {
+        Ok(p) => p,
+        _ => return,
+    };
+
+    let bpp = usize::from(info.bytes_per_pixel);
+
+    for y in 0..info.height {
+        let ptr = ptr.add(pitch.saturating_mul(y));
+        for byte in 0..bpp.saturating_mul(info.width) {
+            *ptr.add(byte) = 0x0;
+        }
+    }
+}
+
+/// Writes `0x0` on the entire framebuffer.
+unsafe fn clear_screen(info: &FramebufferInfo) {
+    let ptr = match usize::try_from(info.address) {
+        Ok(p) => p as *mut u8,
+        _ => return,
+    };
+
+    let pitch = match usize::try_from(info.pitch) {
+        Ok(p) => p,
+        _ => return,
+    };
+
+    let bpp = usize::from(info.bytes_per_pixel);
+
+    for y in 0..info.height {
+        let ptr = ptr.add(pitch.saturating_mul(y));
+        for byte in 0..bpp.saturating_mul(info.width) {
+            *ptr.add(byte) = 0x0;
+        }
+    }
+}
+
+unsafe fn write_rgb_color(dest: *mut u8, info: &FramebufferInfo, color: [u8; 3]) {
+    let pixel_to_write = MaybeUninit::<[u8; 256]>::uninit().assume_init();
+
+    //info.bytes_per_pixel
+}

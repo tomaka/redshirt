@@ -15,22 +15,43 @@
 
 //! Panic handling code.
 
+use crate::klog::KLogger;
+
 use alloc::sync::Arc;
+use core::fmt::Write as _;
+use redshirt_kernel_log_interface::ffi::{FramebufferFormat, FramebufferInfo, KernelLogMethod};
 use spinning_top::Spinlock;
 
-/// Modifies the framebuffer information. Used when printing a panic.
-pub fn set_framebuffer_info(info: FramebufferInfo) {
-    *FB_INFO.lock() = info;
+/// Modifies the logger to use when printing a panic.
+pub fn set_logger(logger: Arc<KLogger>) {
+    *PANIC_LOGGER.lock() = Some(logger);
 }
 
 static PANIC_LOGGER: Spinlock<Option<Arc<KLogger>>> = Spinlock::new(None);
+const DEFAULT_LOGGER: KLogger = KLogger::new(KernelLogMethod {
+    enabled: true,
+    framebuffer: Some(FramebufferInfo {
+        address: 0xb8000,
+        width: 80,
+        height: 25,
+        pitch: 160,
+        bytes_per_character: 2,
+        format: FramebufferFormat::Text,
+    }),
+    uart: None,
+});
 
 #[cfg(not(any(test, doc, doctest)))]
 #[panic_handler]
 fn panic(panic_info: &core::panic::PanicInfo) -> ! {
-    let info = FB_INFO.lock();
+    let logger = PANIC_LOGGER.lock();
+    let logger = if let Some(l) = &*logger {
+        l
+    } else {
+        &DEFAULT_LOGGER
+    };
 
-    let mut printer = Printer::from(&*info);
+    let mut printer = logger.panic_printer();
     let _ = writeln!(printer, "Kernel panic!");
     let _ = writeln!(printer, "{}", panic_info);
     let _ = writeln!(printer, "");
@@ -39,106 +60,5 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
     loop {
         x86_64::instructions::interrupts::disable();
         x86_64::instructions::hlt();
-    }
-}
-
-struct Printer<'a> {
-    info: &'a FramebufferInfo,
-    cursor_x: u32,
-    cursor_y: u32,
-    character_width: u32,
-    character_height: u32,
-}
-
-impl<'a> From<&'a FramebufferInfo> for Printer<'a> {
-    fn from(info: &'a FramebufferInfo) -> Self {
-        let (character_width, character_height) = match info.format {
-            FramebufferFormat::Text => (1, 1),
-            FramebufferFormat::Rgb { .. } => {
-                // TODO: yeah, no
-                (info.width / 100, info.height / 25)
-            }
-        };
-
-        Printer {
-            info,
-            cursor_x: 0,
-            cursor_y: 0,
-            character_width,
-            character_height,
-        }
-    }
-}
-
-impl<'a> fmt::Write for Printer<'a> {
-    fn write_str(&mut self, message: &str) -> fmt::Result {
-        for chr in message.chars() {
-            if !chr.is_ascii() {
-                continue;
-            }
-            // TODO: better way to convert to ASCII?
-            let chr = chr as u8;
-
-            // We assume that panic messages are never more than the height of the screen
-            // and discard everything after.
-            if self.cursor_y >= self.info.height {
-                break;
-            }
-
-            if chr == b'\n' {
-                self.carriage_return();
-                continue;
-            }
-
-            self.print_at_cursor(chr);
-
-            debug_assert!(self.cursor_x < self.info.width);
-            self.cursor_x = self.cursor_x.saturating_add(self.character_width);
-            if self.cursor_x > self.info.width.saturating_sub(self.character_width) {
-                self.carriage_return();
-            }
-        }
-
-        Ok(())
-    }
-}
-
-impl<'a> Printer<'a> {
-    fn print_at_cursor(&mut self, chr: u8) {
-        unsafe {
-            let y_offset = self
-                .info
-                .pitch
-                .saturating_mul(usize::try_from(self.cursor_y).unwrap_or(usize::max_value()));
-            let x_offset = usize::try_from(self.cursor_x)
-                .unwrap_or(usize::max_value())
-                .saturating_mul(self.info.bpp);
-            let addr = (self.info.address as *mut u8).add(x_offset.saturating_add(y_offset));
-
-            match self.info.format {
-                FramebufferFormat::Text => {
-                    (addr as *mut u16).write_volatile(u16::from(chr) | 0xc00);
-                }
-                FramebufferFormat::Rgb => {
-                    for x in (self.cursor_x as usize)..((self.cursor_x+self.character_width) as usize) {
-                        for y in (self.cursor_y as usize)..((self.cursor_y+self.character_height) as usize) {
-                            let px_addr = addr.add(x * self.info.bpp).add(y * self.info.pitch);
-                            for offset in 0..self.info.bpp {
-                                *px_addr.add(offset) = 0xff;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    fn carriage_return(&mut self) {
-        self.cursor_x = 0;
-        self.cursor_y = self.cursor_y.saturating_add(self.character_height);
-        if !matches!(self.info.format, FramebufferFormat::Text) {
-            // Some padding.
-            self.cursor_y = self.cursor_y.saturating_add(4);
-        }
     }
 }

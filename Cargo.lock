@@ -34,6 +34,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "approx"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f0e60b75072ecd4168020818c0107f2857bb6c4e64252d8d3983f6263b40a5c3"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "arrayref"
 version = "0.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -826,6 +835,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ebcec7c9c2a95cacc7cd0ecb89d8a8454eca13906f6deb55258ffff0adeb9405"
 
 [[package]]
+name = "ordered-float"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "18869315e81473c951eb56ad5558bbc56978562d3ecfb87abb7a1e944cea4518"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "parity-scale-codec"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1235,7 +1253,6 @@ version = "0.1.0"
 dependencies = [
  "acpi 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "blake3",
- "cc",
  "crossbeam-queue",
  "futures",
  "hashbrown",
@@ -1250,14 +1267,15 @@ dependencies = [
  "redshirt-core",
  "redshirt-hardware-interface",
  "redshirt-interface-interface",
+ "redshirt-kernel-log-interface",
  "redshirt-log-interface",
  "redshirt-random-interface",
  "redshirt-syscalls",
  "redshirt-time-interface",
  "rlibc",
+ "rusttype",
  "smallvec",
  "spinning_top",
- "walkdir",
  "x86_64",
 ]
 
@@ -1374,6 +1392,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "rusttype"
+version = "0.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "14a911032fb5791ccbeec9f28fdcb9bf0983b81f227bafdfd227c658d0731c8a"
+dependencies = [
+ "approx",
+ "arrayvec",
+ "ordered-float",
+ "stb_truetype",
+]
+
+[[package]]
 name = "ryu"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1468,6 +1498,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32d801a3a53bcf5071f85fef8d5cab9e5f638fc5580a37e6eb7aba4b37438d24"
 dependencies = [
  "lock_api",
+]
+
+[[package]]
+name = "stb_truetype"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f77b6b07e862c66a9f3e62a07588fee67cd90a9135a2b942409f195507b4fb51"
+dependencies = [
+ "byteorder",
 ]
 
 [[package]]

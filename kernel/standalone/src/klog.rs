@@ -22,7 +22,21 @@
 //! After you have initialized a [`KLogger`], you should also call
 //! [`crate::arch::PlatformSpecific::set_panic_logger`] in order for the panic handler to use it
 //! to print panic log messages.
+//!
+//! # Panic-free code
+//!
+//! The code within this module is designed to be as panic-free as possible. In other words, you
+//! can assume that a [`KLogger`] will be capable of printing a panic message without itself
+//! triggering a nested panic.
+//!
+//! In particular, none of the code within this module does any heap allocation. Note that APIs
+//! that use a [`KLogger`] typically wrap it within an `Arc`. In order to account for possible
+//! allocation errors during the allocation of this `Arc`, one is encouraged to create a default
+//! fallback [`KLogger`] (using the const [`KLogger::new`] method) in order to print potential
+//! panic messages before the actual [`KLogger`] is properly set up.
 
-pub use logger::{KLogger, PanicPrinter};
+pub use logger::KLogger;
 
 mod logger;
+mod native;
+mod video;

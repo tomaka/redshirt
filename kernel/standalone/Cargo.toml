@@ -20,10 +20,11 @@ rand_core = { version = "0.5.1", default-features = false }
 # TODO: needs https://github.com/rust-random/rngs/pull/5
 rand_jitter = { git = "https://github.com/tomaka/rngs", branch = "new-with-timer-less-cumbersome", default-features = false }
 redshirt-core = { path = "../../core", features = ["nightly"] }
-redshirt-interface-interface = { path = "../../interfaces/interface", default-features = false }
 redshirt-hardware-interface = { path = "../../interfaces/hardware", default-features = false }
-redshirt-random-interface = { path = "../../interfaces/random", default-features = false }
+redshirt-interface-interface = { path = "../../interfaces/interface", default-features = false }
+redshirt-kernel-log-interface = { path = "../../interfaces/kernel-log", default-features = false }
 redshirt-log-interface = { path = "../../interfaces/log", default-features = false }
+redshirt-random-interface = { path = "../../interfaces/random", default-features = false }
 redshirt-syscalls = { path = "../../interfaces/syscalls", default-features = false }
 redshirt-time-interface = { path = "../../interfaces/time", default-features = false }
 rlibc = "1.0.0"
@@ -31,8 +32,7 @@ smallvec = { version = "1.2.0", default-features = false }
 spinning_top = "0.1.0"
 
 [build-dependencies]
-cc = "1.0"
-walkdir = "2.2.9"
+rusttype = "0.8.2"
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 acpi = "0.7.0"

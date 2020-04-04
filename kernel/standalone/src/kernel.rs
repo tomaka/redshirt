@@ -71,20 +71,19 @@ where
                 "../../../modules/p2p-loader",
                 "passive-node"
             ))
+            .with_startup_process(build_wasm_module!("../../../modules/log-to-kernel"))
             .with_startup_process(build_wasm_module!("../../../modules/hello-world"));
 
         // TODO: use a better system than cfgs
         #[cfg(target_arch = "x86_64")]
         {
             system_builder = system_builder
-                .with_startup_process(build_wasm_module!("../../../modules/x86-log"))
                 .with_startup_process(build_wasm_module!("../../../modules/x86-pci"))
                 .with_startup_process(build_wasm_module!("../../../modules/ne2000"))
         }
         #[cfg(any(target_arch = "arm", target_arch = "aarch64"))]
         {
             system_builder = system_builder
-                .with_startup_process(build_wasm_module!("../../../modules/arm-log"))
                 .with_startup_process(build_wasm_module!("../../../modules/rpi-framebuffer"))
         }
 
