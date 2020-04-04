@@ -238,6 +238,8 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
         Arc::new(crate::kernel::Kernel::init(platform_specific))
     };
 
+    writeln!(logger.log_printer(), "Boot successful").unwrap();
+
     // Send an `Arc<Kernel>` to the other processors so that they can run it too.
     for tx in kernel_channels {
         if tx.send(kernel.clone()).is_err() {
@@ -247,7 +249,6 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
 
     // Start the kernel on the boot processor too.
     // This function never returns.
-    writeln!(logger.log_printer(), "Boot successful").unwrap();
     executor.block_on(kernel.run())
 }
 
