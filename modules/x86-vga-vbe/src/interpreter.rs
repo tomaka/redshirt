@@ -22,8 +22,6 @@ pub struct Interpreter {
     machine: Machine,
     /// First megabyte of memory of the machine. Contains the video BIOS.
     memory: Vec<u8>,
-    int10h_seg: u16,
-    int10h_ptr: u16,
 }
 
 #[derive(Debug)]
@@ -46,14 +44,6 @@ impl Interpreter {
     }
 
     pub async fn from_memory(first_mb: Vec<u8>) -> Self {
-        let int10h_seg = u16::from_le_bytes(
-            <[u8; 2]>::try_from(&first_mb[(0x10 * 4) + 2..(0x10 * 4) + 4]).unwrap(),
-        );
-        let int10h_ptr = u16::from_le_bytes(
-            <[u8; 2]>::try_from(&first_mb[(0x10 * 4) + 0..(0x10 * 4) + 2]).unwrap(),
-        );
-        log::trace!("Segment = 0x{:x}, pointer = 0x{:x}", int10h_seg, int10h_ptr);
-
         let machine = Machine {
             local_memory: first_mb.clone(),
             regs: Registers {
@@ -65,7 +55,7 @@ impl Interpreter {
                 ebp: 0,
                 esi: 0,
                 edi: 0,
-                eip: u32::from(int10h_ptr),
+                eip: 0,
                 cs: 0,
                 ss: 0x9000, // TODO:
                 ds: 0,
@@ -79,8 +69,6 @@ impl Interpreter {
         Interpreter {
             memory: first_mb,
             machine,
-            int10h_seg,
-            int10h_ptr,
         }
     }
 
@@ -142,18 +130,7 @@ impl Interpreter {
     }
 
     pub fn int10h(&mut self) -> Result<(), Error> {
-        // Simulate the `int` opcode by pushing the current FLAGS, CS and EIP, and changing
-        // CS/EIP to the interrupt handler.
-        self.machine
-            .stack_push(&self.machine.regs.flags.to_le_bytes());
-        self.machine.stack_push(&self.machine.regs.cs.to_le_bytes());
-        self.machine.stack_push(
-            &u16::try_from(self.machine.regs.eip & 0xffff)
-                .unwrap()
-                .to_le_bytes(),
-        );
-        self.machine.regs.cs = self.int10h_seg;
-        self.machine.regs.eip = u32::from(self.int10h_ptr);
+        self.machine.int_opcode(0x10);
 
         let mut decoder = iced_x86::Decoder::new(16, &self.memory, iced_x86::DecoderOptions::NONE);
         let mut instr_counter: u32 = 0;
@@ -561,6 +538,12 @@ impl Interpreter {
                     // Carry flag is not affected.
                 }
 
+                iced_x86::Mnemonic::Int => {
+                    let value = self.machine.fetch_operand_value(&instruction, 0);
+                    self.machine.int_opcode(u8::try_from(value).unwrap());
+                    log::info!("Int 0x{:?}", value);
+                }
+
                 iced_x86::Mnemonic::Iret => {
                     break Ok(());
                 }
@@ -665,6 +648,31 @@ impl Interpreter {
                         .store_in_operand(&instruction, 0, Value::U16(ptr));
                 }
 
+                iced_x86::Mnemonic::Loop => {
+                    let cx = self.machine.register(iced_x86::Register::CX);
+                    let cx = cx.dec();
+                    self.machine.store_in_register(iced_x86::Register::CX, cx);
+                    if cx.is_zero() {
+                        self.machine.apply_rel_jump(&instruction);
+                    }
+                }
+                iced_x86::Mnemonic::Loope => {
+                    let cx = self.machine.register(iced_x86::Register::CX);
+                    let cx = cx.dec();
+                    self.machine.store_in_register(iced_x86::Register::CX, cx);
+                    if cx.is_zero() {
+                        self.machine.apply_rel_jump(&instruction);
+                    }
+                }
+                iced_x86::Mnemonic::Loopne => {
+                    let cx = self.machine.register(iced_x86::Register::CX);
+                    let cx = cx.dec();
+                    self.machine.store_in_register(iced_x86::Register::CX, cx);
+                    if !cx.is_zero() {
+                        self.machine.apply_rel_jump(&instruction);
+                    }
+                }
+
                 iced_x86::Mnemonic::Mov => {
                     // TODO: when executing `mov reg, sreg`, the upper bits of `reg` are zeroed
                     // on modern processors; implement properly
@@ -764,18 +772,94 @@ impl Interpreter {
                         }
                     }
                 }
+                iced_x86::Mnemonic::Popa => {
+                    match instruction.code() {
+                        iced_x86::Code::Popaw => {
+                            let val = Value::U16(self.machine.stack_pop_u16());
+                            self.machine.store_in_register(iced_x86::Register::DI, val);
+                            let val = Value::U16(self.machine.stack_pop_u16());
+                            self.machine.store_in_register(iced_x86::Register::SI, val);
+                            let val = Value::U16(self.machine.stack_pop_u16());
+                            self.machine.store_in_register(iced_x86::Register::BP, val);
+                            let _ = self.machine.stack_pop_u16();
+                            let val = Value::U16(self.machine.stack_pop_u16());
+                            self.machine.store_in_register(iced_x86::Register::BX, val);
+                            let val = Value::U16(self.machine.stack_pop_u16());
+                            self.machine.store_in_register(iced_x86::Register::DX, val);
+                            let val = Value::U16(self.machine.stack_pop_u16());
+                            self.machine.store_in_register(iced_x86::Register::CX, val);
+                            let val = Value::U16(self.machine.stack_pop_u16());
+                            self.machine.store_in_register(iced_x86::Register::AX, val);
+                        }
+                        iced_x86::Code::Popad => {
+                            let val = Value::U32(self.machine.stack_pop_u32());
+                            self.machine.store_in_register(iced_x86::Register::EDI, val);
+                            let val = Value::U32(self.machine.stack_pop_u32());
+                            self.machine.store_in_register(iced_x86::Register::ESI, val);
+                            let val = Value::U32(self.machine.stack_pop_u32());
+                            self.machine.store_in_register(iced_x86::Register::EBP, val);
+                            let _ = self.machine.stack_pop_u32();
+                            let val = Value::U32(self.machine.stack_pop_u32());
+                            self.machine.store_in_register(iced_x86::Register::EBX, val);
+                            let val = Value::U32(self.machine.stack_pop_u32());
+                            self.machine.store_in_register(iced_x86::Register::EDX, val);
+                            let val = Value::U32(self.machine.stack_pop_u32());
+                            self.machine.store_in_register(iced_x86::Register::ECX, val);
+                            let val = Value::U32(self.machine.stack_pop_u32());
+                            self.machine.store_in_register(iced_x86::Register::EAX, val);
+                        }
+                        _ => unreachable!()
+                    }
+                }
                 iced_x86::Mnemonic::Popf => {
-                    let val = self.machine.stack_pop_u16();
-                    self.machine.regs.flags = val & 0b0000111111010101;
+                    match instruction.code() {
+                        iced_x86::Code::Popfw => {
+                            let val = self.machine.stack_pop_u16();
+                            self.machine.regs.flags = val & 0b0000111111010101;
+                        }
+                        _ => unimplemented!()
+                    }
                 }
 
                 iced_x86::Mnemonic::Push => {
                     let value = self.machine.fetch_operand_value(&instruction, 0);
                     self.machine.stack_push_value(value);
                 }
+                iced_x86::Mnemonic::Pusha => {
+                    match instruction.code() {
+                        iced_x86::Code::Pushaw => {
+                            let sp = self.machine.register(iced_x86::Register::SP);
+                            self.machine.stack_push_value(self.machine.register(iced_x86::Register::AX));
+                            self.machine.stack_push_value(self.machine.register(iced_x86::Register::CX));
+                            self.machine.stack_push_value(self.machine.register(iced_x86::Register::DX));
+                            self.machine.stack_push_value(self.machine.register(iced_x86::Register::BX));
+                            self.machine.stack_push_value(sp);
+                            self.machine.stack_push_value(self.machine.register(iced_x86::Register::BP));
+                            self.machine.stack_push_value(self.machine.register(iced_x86::Register::SI));
+                            self.machine.stack_push_value(self.machine.register(iced_x86::Register::DI));
+                        }
+                        iced_x86::Code::Pushad => {
+                            let esp = self.machine.register(iced_x86::Register::ESP);
+                            self.machine.stack_push_value(self.machine.register(iced_x86::Register::EAX));
+                            self.machine.stack_push_value(self.machine.register(iced_x86::Register::ECX));
+                            self.machine.stack_push_value(self.machine.register(iced_x86::Register::EDX));
+                            self.machine.stack_push_value(self.machine.register(iced_x86::Register::EBX));
+                            self.machine.stack_push_value(esp);
+                            self.machine.stack_push_value(self.machine.register(iced_x86::Register::EBP));
+                            self.machine.stack_push_value(self.machine.register(iced_x86::Register::ESI));
+                            self.machine.stack_push_value(self.machine.register(iced_x86::Register::EDI));
+                        }
+                        _ => unreachable!()
+                    }
+                }
                 iced_x86::Mnemonic::Pushf => {
-                    self.machine
-                        .stack_push_value(Value::U16(self.machine.regs.flags));
+                    match instruction.code() {
+                        iced_x86::Code::Pushfw => {
+                            self.machine
+                                .stack_push_value(Value::U16(self.machine.regs.flags));
+                        },
+                        _ => unimplemented!()
+                    }
                 }
 
                 iced_x86::Mnemonic::Ret => {
@@ -819,6 +903,74 @@ impl Interpreter {
                         .flags_set_carry(self.machine.regs.eax & (1 << 0) != 0);
                 }
 
+
+                iced_x86::Mnemonic::Sal | iced_x86::Mnemonic::Shl => {
+                    let mut value0 = self.machine.fetch_operand_value(&instruction, 0);
+                    let value1 = self.machine.fetch_operand_value(&instruction, 1);
+
+                    for _ in 0..value1.extend_to_u32() {
+                        let shifted_bit = value0.left_most_bit();
+
+                        value0 = match value0 {
+                            Value::U8(v) => Value::U8(v.wrapping_shl(1)),
+                            Value::U16(v) => Value::U16(v.wrapping_shl(1)),
+                            Value::U32(v) => Value::U32(v.wrapping_shl(1)),
+                        };
+
+                        self.machine.flags_set_sign_from_val(value0);
+                        self.machine.flags_set_zero_from_val(value0);
+                        self.machine.flags_set_parity_from_val(value0);
+                        self.machine.flags_set_carry(shifted_bit);
+                        self.machine
+                            .flags_set_overflow(shifted_bit != value0.left_most_bit());
+                        // The adjust flag is undefined
+                    }
+
+                    self.machine.store_in_operand(&instruction, 0, value0);
+                }
+
+                iced_x86::Mnemonic::Sar | iced_x86::Mnemonic::Shr => {
+                    let mut value0 = self.machine.fetch_operand_value(&instruction, 0);
+                    let value1 = self.machine.fetch_operand_value(&instruction, 1);
+
+                    let sign_extension = if let iced_x86::Mnemonic::Sar = instruction.mnemonic() {
+                        if value0.left_most_bit() {
+                            1u8
+                        } else {
+                            0u8
+                        }
+                    } else {
+                        0u8
+                    };
+
+                    for _ in 0..value1.extend_to_u32() {
+                        let shifted_bit = (value0.extend_to_u32() & 0x1) != 0;
+                        let sign_bit = value0.left_most_bit();
+
+                        value0 = match value0 {
+                            Value::U8(v) => {
+                                Value::U8((u8::from(sign_extension) << 7) | v.wrapping_shr(1))
+                            }
+                            Value::U16(v) => {
+                                Value::U16((u16::from(sign_extension) << 15) | v.wrapping_shr(1))
+                            }
+                            Value::U32(v) => {
+                                Value::U32((u32::from(sign_extension) << 31) | v.wrapping_shr(1))
+                            }
+                        };
+
+                        self.machine.flags_set_sign_from_val(value0);
+                        self.machine.flags_set_zero_from_val(value0);
+                        self.machine.flags_set_parity_from_val(value0);
+                        self.machine.flags_set_carry(shifted_bit);
+                        self.machine
+                            .flags_set_overflow(sign_bit != value0.left_most_bit());
+                        // The adjust flag is undefined
+                    }
+
+                    self.machine.store_in_operand(&instruction, 0, value0);
+                }
+
                 iced_x86::Mnemonic::Sbb => {
                     let value0 = self.machine.fetch_operand_value(&instruction, 0);
                     let value1 = self.machine.fetch_operand_value(&instruction, 1);
@@ -851,6 +1003,74 @@ impl Interpreter {
                     self.machine
                         .flags_set_overflow(overflow != temp.left_most_bit());
                     // TODO: the adjust flag
+                }
+
+                iced_x86::Mnemonic::Scasb | iced_x86::Mnemonic::Scasw | iced_x86::Mnemonic::Scasd => {
+                    // TODO: this should really be simplified?
+                    let value0 = self.machine.fetch_operand_value(&instruction, 0);
+
+                    let counter_reg = match value0 {
+                        Value::U8(_) => iced_x86::Register::CX,
+                        Value::U16(_) => iced_x86::Register::CX,
+                        Value::U32(_) => iced_x86::Register::ECX,
+                    };
+
+                    loop {
+                        if instruction.has_repe_prefix() || instruction.has_repne_prefix() {
+                            if self.machine.register(counter_reg).is_zero() {
+                                break;
+                            }
+                        }
+
+                        let value1 = self.machine.fetch_operand_value(&instruction, 1);
+
+                        let (temp, overflow) = match (value0, value1) {
+                            (Value::U8(value0), Value::U8(value1)) => {
+                                let (v, o) = value0.overflowing_sub(value1);
+                                (Value::U8(v), o)
+                            }
+                            (Value::U16(value0), Value::U16(value1)) => {
+                                let (v, o) = value0.overflowing_sub(value1);
+                                (Value::U16(v), o)
+                            }
+                            (Value::U32(value0), Value::U32(value1)) => {
+                                let (v, o) = value0.overflowing_sub(value1);
+                                (Value::U32(v), o)
+                            }
+                            _ => unreachable!(),
+                        };
+
+                        self.machine.flags_set_sign_from_val(temp);
+                        self.machine.flags_set_zero_from_val(temp);
+                        self.machine.flags_set_parity_from_val(temp);
+                        self.machine.flags_set_carry(overflow);
+                        self.machine
+                            .flags_set_overflow(overflow != temp.left_most_bit());
+                        // TODO: the adjust flag
+
+                        if self.machine.flags_is_direction() {
+                            self.machine.sub_di(u16::from(value0.size()));
+                        } else {
+                            self.machine.add_di(u16::from(value0.size()));
+                        }
+
+                        if instruction.has_repe_prefix() || instruction.has_repne_prefix() {
+                            let ecx = self.machine.register(counter_reg);
+                            self.machine.store_in_register(counter_reg, ecx.dec());
+                        }
+
+                        if instruction.has_repe_prefix() {
+                            if !self.machine.flags_is_zero() {
+                                break;
+                            }
+                        } else if instruction.has_repne_prefix() {
+                            if self.machine.flags_is_zero() {
+                                break;
+                            }
+                        } else {
+                            break;
+                        }
+                    }
                 }
 
                 iced_x86::Mnemonic::Seta => {
@@ -954,73 +1174,6 @@ impl Interpreter {
                     self.machine.store_in_operand(&instruction, 0, value);
                 }
 
-                iced_x86::Mnemonic::Sal | iced_x86::Mnemonic::Shl => {
-                    let mut value0 = self.machine.fetch_operand_value(&instruction, 0);
-                    let value1 = self.machine.fetch_operand_value(&instruction, 1);
-
-                    for _ in 0..value1.extend_to_u32() {
-                        let shifted_bit = value0.left_most_bit();
-
-                        value0 = match value0 {
-                            Value::U8(v) => Value::U8(v.wrapping_shl(1)),
-                            Value::U16(v) => Value::U16(v.wrapping_shl(1)),
-                            Value::U32(v) => Value::U32(v.wrapping_shl(1)),
-                        };
-
-                        self.machine.flags_set_sign_from_val(value0);
-                        self.machine.flags_set_zero_from_val(value0);
-                        self.machine.flags_set_parity_from_val(value0);
-                        self.machine.flags_set_carry(shifted_bit);
-                        self.machine
-                            .flags_set_overflow(shifted_bit != value0.left_most_bit());
-                        // The adjust flag is undefined
-                    }
-
-                    self.machine.store_in_operand(&instruction, 0, value0);
-                }
-
-                iced_x86::Mnemonic::Sar | iced_x86::Mnemonic::Shr => {
-                    let mut value0 = self.machine.fetch_operand_value(&instruction, 0);
-                    let value1 = self.machine.fetch_operand_value(&instruction, 1);
-
-                    let sign_extension = if let iced_x86::Mnemonic::Sar = instruction.mnemonic() {
-                        if value0.left_most_bit() {
-                            1u8
-                        } else {
-                            0u8
-                        }
-                    } else {
-                        0u8
-                    };
-
-                    for _ in 0..value1.extend_to_u32() {
-                        let shifted_bit = (value0.extend_to_u32() & 0x1) != 0;
-                        let sign_bit = value0.left_most_bit();
-
-                        value0 = match value0 {
-                            Value::U8(v) => {
-                                Value::U8((u8::from(sign_extension) << 7) | v.wrapping_shr(1))
-                            }
-                            Value::U16(v) => {
-                                Value::U16((u16::from(sign_extension) << 15) | v.wrapping_shr(1))
-                            }
-                            Value::U32(v) => {
-                                Value::U32((u32::from(sign_extension) << 31) | v.wrapping_shr(1))
-                            }
-                        };
-
-                        self.machine.flags_set_sign_from_val(value0);
-                        self.machine.flags_set_zero_from_val(value0);
-                        self.machine.flags_set_parity_from_val(value0);
-                        self.machine.flags_set_carry(shifted_bit);
-                        self.machine
-                            .flags_set_overflow(sign_bit != value0.left_most_bit());
-                        // The adjust flag is undefined
-                    }
-
-                    self.machine.store_in_operand(&instruction, 0, value0);
-                }
-
                 iced_x86::Mnemonic::Stc => self.machine.flags_set_carry(true),
                 iced_x86::Mnemonic::Std => self.machine.flags_set_direction(true),
                 iced_x86::Mnemonic::Sti => self.machine.flags_set_interrupt(true),
@@ -1032,18 +1185,18 @@ impl Interpreter {
                         while self.machine.regs.ecx & 0xffff != 0 {
                             self.machine.store_in_operand(&instruction, 0, val);
                             if self.machine.flags_is_direction() {
-                                self.machine.dec_di();
+                                self.machine.sub_di(1);
                             } else {
-                                self.machine.inc_di();
+                                self.machine.add_di(1);
                             }
                             self.machine.dec_cx();
                         }
                     } else {
                         self.machine.store_in_operand(&instruction, 0, val);
                         if self.machine.flags_is_direction() {
-                            self.machine.dec_di();
+                            self.machine.sub_di(1);
                         } else {
-                            self.machine.inc_di();
+                            self.machine.add_di(1);
                         }
                     }
                 }
@@ -1096,6 +1249,13 @@ impl Interpreter {
                     self.machine.flags_set_carry(false);
                     self.machine.flags_set_overflow(false);
                     // adjust flag is undefined
+                }
+
+                iced_x86::Mnemonic::Xchg => {
+                    let value0 = self.machine.fetch_operand_value(&instruction, 0);
+                    let value1 = self.machine.fetch_operand_value(&instruction, 1);
+                    self.machine.store_in_operand(&instruction, 0, value1);
+                    self.machine.store_in_operand(&instruction, 1, value0);
                 }
 
                 iced_x86::Mnemonic::Xor => {
@@ -1169,6 +1329,26 @@ impl Machine {
         // TODO: check segment bounds
         // TODO: this function's usefulness is debatable; it exists because I didn't realize that near_branch16() automatically calculated the target
         self.regs.eip = u32::from(instruction.near_branch16());
+    }
+
+    fn int_opcode(&mut self, vector: u8) {
+        self.stack_push(&self.regs.flags.to_le_bytes());
+        self.stack_push(&self.regs.cs.to_le_bytes());
+        self.stack_push(
+            &u16::try_from(self.regs.eip & 0xffff)
+                .unwrap()
+                .to_le_bytes(),
+        );
+
+        let vector = u32::from(vector);
+
+        let mut seg = [0; 2];
+        let mut ptr = [0; 2];
+        self.read_memory((vector * 4) + 2, &mut seg);
+        self.read_memory(vector * 4, &mut ptr);
+
+        self.regs.cs = u16::from_le_bytes(seg);
+        self.regs.eip = u32::from(u16::from_le_bytes(ptr));
     }
 
     /// Pushes data on the stack.
@@ -1360,16 +1540,16 @@ impl Machine {
         self.regs.esi |= u32::from(new_si);
     }
 
-    fn dec_di(&mut self) {
+    fn sub_di(&mut self, n: u16) {
         let di = u16::try_from(self.regs.edi & 0xffff).unwrap();
-        let new_di = di.wrapping_sub(1);
+        let new_di = di.wrapping_sub(n);
         self.regs.edi &= 0xffff0000;
         self.regs.edi |= u32::from(new_di);
     }
 
-    fn inc_di(&mut self) {
+    fn add_di(&mut self, n: u16) {
         let di = u16::try_from(self.regs.edi & 0xffff).unwrap();
-        let new_di = di.wrapping_add(1);
+        let new_di = di.wrapping_add(n);
         self.regs.edi &= 0xffff0000;
         self.regs.edi |= u32::from(new_di);
     }
@@ -1424,6 +1604,11 @@ impl Machine {
             iced_x86::OpKind::MemorySegSI => {
                 let segment = u16::try_from(self.register(instruction.memory_segment())).unwrap();
                 let pointer = u16::try_from(self.regs.esi & 0xffff).unwrap();
+                (segment, pointer)
+            }
+            iced_x86::OpKind::MemoryESDI => {
+                let segment = u16::try_from(self.regs.es).unwrap();
+                let pointer = u16::try_from(self.regs.edi & 0xffff).unwrap();
                 (segment, pointer)
             }
             iced_x86::OpKind::Memory => {
@@ -1647,6 +1832,22 @@ enum Value {
 }
 
 impl Value {
+    fn size(&self) -> u8 {
+        match *self {
+            Value::U8(_) => 1,
+            Value::U16(_) => 2,
+            Value::U32(_) => 4,
+        }
+    }
+
+    fn dec(&self) -> Value {
+        match *self {
+            Value::U8(val) => Value::U8(val.wrapping_sub(1)),
+            Value::U16(val) => Value::U16(val.wrapping_sub(1)),
+            Value::U32(val) => Value::U32(val.wrapping_sub(1)),
+        }
+    }
+
     fn left_most_bit(&self) -> bool {
         match *self {
             Value::U8(val) => (val & 0x80) != 0,
