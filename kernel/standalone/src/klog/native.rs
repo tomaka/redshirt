@@ -17,6 +17,7 @@
 
 // TODO: the `kernel_log` interface doesn't actually exist yet
 
+use crate::arch::PlatformSpecific;
 use crate::klog::KLogger;
 
 use alloc::{boxed::Box, sync::Arc};
@@ -28,27 +29,30 @@ use redshirt_core::{Encode as _, EncodedMessage, InterfaceHash, MessageId, Pid};
 use redshirt_kernel_log_interface::ffi::{KernelLogMethod, INTERFACE};
 
 /// State machine for `random` interface messages handling.
-pub struct KernelLogNativeProgram {
+pub struct KernelLogNativeProgram<TPlat> {
     /// If true, we have sent the interface registration message.
     registered: atomic::AtomicBool,
     /// Message responses waiting to be emitted.
     pending_messages: SegQueue<(MessageId, Result<EncodedMessage, ()>)>,
-    /// Object to configure.
-    klogger: Arc<KLogger>,
+    /// Platform-specific hooks.
+    platform_specific: Pin<Arc<TPlat>>,
 }
 
-impl KernelLogNativeProgram {
+impl<TPlat> KernelLogNativeProgram<TPlat> {
     /// Initializes the native program.
-    pub fn new(klogger: Arc<KLogger>) -> Self {
+    pub fn new(platform_specific: Pin<Arc<TPlat>>) -> Self {
         KernelLogNativeProgram {
             registered: atomic::AtomicBool::new(false),
             pending_messages: SegQueue::new(),
-            klogger,
+            platform_specific,
         }
     }
 }
 
-impl<'a> NativeProgramRef<'a> for &'a KernelLogNativeProgram {
+impl<'a, TPlat> NativeProgramRef<'a> for &'a KernelLogNativeProgram<TPlat>
+where
+    TPlat: PlatformSpecific,
+{
     type Future =
         Pin<Box<dyn Future<Output = NativeProgramEvent<Self::MessageIdWrite>> + Send + 'a>>;
     type MessageIdWrite = DummyMessageIdWrite;
@@ -86,9 +90,8 @@ impl<'a> NativeProgramRef<'a> for &'a KernelLogNativeProgram {
                 // Log message.
                 let message = &message.0[1..];
                 if message.is_ascii() {
-                    self.klogger
-                        .log_printer()
-                        .write_str(str::from_utf8(message).unwrap());
+                    self.platform_specific
+                        .write_log(str::from_utf8(message).unwrap());
                 }
             }
             Some(1) => {

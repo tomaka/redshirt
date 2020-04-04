@@ -19,10 +19,6 @@
 //! that needs to be configured with a certain logging output method, and is then capable of
 //! outputting logs.
 //!
-//! After you have initialized a [`KLogger`], you should also call
-//! [`crate::arch::PlatformSpecific::set_panic_logger`] in order for the panic handler to use it
-//! to print panic log messages.
-//!
 //! # Panic-free code
 //!
 //! The code within this module is designed to be as panic-free as possible. In other words, you
@@ -36,6 +32,7 @@
 //! panic messages before the actual [`KLogger`] is properly set up.
 
 pub use logger::KLogger;
+pub use native::KernelLogNativeProgram;
 
 mod logger;
 mod native;

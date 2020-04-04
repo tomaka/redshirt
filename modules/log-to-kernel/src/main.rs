@@ -36,11 +36,10 @@ async fn async_main() -> ! {
 
         assert_eq!(msg.interface, ffi::INTERFACE);
 
-        // TODO: better code
         if let Ok(message) = ffi::DecodedLogMessage::decode(msg.actual_data) {
-            // TODO: check asciiness
             redshirt_kernel_log_interface::log(message.message().as_bytes());
         }
+        // TODO: show the PID and log level, as commented out below
         /*if let Ok(message) = ffi::DecodedLogMessage::decode(msg.actual_data) {
             let level = match message.level() {
                 ffi::Level::Error => b"ERR ",

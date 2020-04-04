@@ -17,52 +17,80 @@ use crate::klog::video;
 
 use core::fmt;
 use redshirt_kernel_log_interface::ffi::{FramebufferFormat, KernelLogMethod};
-use spinning_top::Spinlock;
+use spinning_top::{Spinlock, SpinlockGuard};
 
 pub struct KLogger {
     inner: Spinlock<Inner>,
 }
 
-struct Inner {
-    method: KernelLogMethod,
-    terminal: Option<video::Terminal>,
+enum Inner {
+    Disabled(KernelLogMethod),
+    Enabled { terminal: Option<video::Terminal> },
 }
 
 impl KLogger {
-    pub const fn new(method: KernelLogMethod) -> KLogger {
-        KLogger {
-            inner: Spinlock::new(Inner {
-                method,
-                terminal: None,
-            }),
-            method: Spinlock::new(method),
+    pub const unsafe fn new(method: KernelLogMethod) -> KLogger {
+        if method.enabled {
+            KLogger {
+                inner: Spinlock::new(Inner::Enabled {
+                    terminal: match method.framebuffer {
+                        Some(fb) => Some(video::Terminal::new(fb)),
+                        None => None,
+                    },
+                }),
+            }
+        } else {
+            KLogger {
+                inner: Spinlock::new(Inner::Disabled(method)),
+            }
         }
     }
 
     /// Returns an object that implements `core::fmt::Write` for writing logs.
+    ///
+    /// The returned object holds a lock to some important information. Please call this method
+    /// and destroy the object as soon as possible.
     pub fn log_printer<'a>(&'a self) -> impl fmt::Write + 'a {
         Printer {
-            klogger: self,
+            inner: self.inner.lock(),
             panic_message: false,
         }
     }
 
     /// Returns an object that implements `core::fmt::Write` designed for printing a panic
     /// message.
+    ///
+    /// The returned object holds a lock to some important information. Please call this method
+    /// and destroy the object as soon as possible.
     pub fn panic_printer<'a>(&'a self) -> impl fmt::Write + 'a {
         Printer {
-            klogger: self,
+            inner: self.inner.lock(),
             panic_message: true,
         }
     }
 
     /// Modifies the way logs should be printed.
     pub fn set_method(&self, method: KernelLogMethod) {
-        *self.method.lock() = method;
+        unimplemented!() // TODO:
     }
 }
 
 struct Printer<'a> {
-    klogger: &'a KLogger,
+    inner: SpinlockGuard<'a, Inner>,
     panic_message: bool,
+}
+
+impl<'a> fmt::Write for Printer<'a> {
+    fn write_str(&mut self, message: &str) -> fmt::Result {
+        match &mut *self.inner {
+            Inner::Disabled(_) => {} // TODO: push to some buffer
+            Inner::Enabled { terminal } => {
+                if let Some(terminal) = terminal {
+                    // TODO: red for panics
+                    terminal.printer([0xff, 0xff, 0xff]).write_str(message)?;
+                }
+            }
+        }
+        Ok(())
+    }
 }

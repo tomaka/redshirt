@@ -28,18 +28,7 @@ pub fn set_logger(logger: Arc<KLogger>) {
 }
 
 static PANIC_LOGGER: Spinlock<Option<Arc<KLogger>>> = Spinlock::new(None);
-const DEFAULT_LOGGER: KLogger = KLogger::new(KernelLogMethod {
-    enabled: true,
-    framebuffer: Some(FramebufferInfo {
-        address: 0xb8000,
-        width: 80,
-        height: 25,
-        pitch: 160,
-        bytes_per_character: 2,
-        format: FramebufferFormat::Text,
-    }),
-    uart: None,
-});
+static DEFAULT_LOGGER: KLogger = unsafe { KLogger::new(super::DEFAULT_LOG_METHOD) };
 
 #[cfg(not(any(test, doc, doctest)))]
 #[panic_handler]
@@ -55,6 +44,7 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
     let _ = writeln!(printer, "Kernel panic!");
     let _ = writeln!(printer, "{}", panic_info);
     let _ = writeln!(printer, "");
+    drop(printer);
 
     // Freeze forever.
     loop {

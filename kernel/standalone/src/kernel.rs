@@ -23,6 +23,8 @@
 //!
 
 use crate::arch::PlatformSpecific;
+use crate::klog::KLogger;
+
 use alloc::sync::Arc;
 use core::pin::Pin;
 use core::sync::atomic::{AtomicBool, Ordering};
@@ -65,6 +67,9 @@ where
                 self.platform_specific.clone(),
             ))
             .with_native_program(crate::random::native::RandomNativeProgram::new(
+                self.platform_specific.clone(),
+            ))
+            .with_native_program(crate::klog::KernelLogNativeProgram::new(
                 self.platform_specific.clone(),
             ))
             .with_startup_process(build_wasm_module!(
