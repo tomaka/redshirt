@@ -2,8 +2,9 @@
 # It is not intended for manual editing.
 [[package]]
 name = "acpi"
-version = "0.7.0"
-source = "git+https://github.com/tomaka/acpi?branch=optional-local-nmi#5371f74527b6caf7ad8a0988029e9c866fe99ecf"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f425a8a7e096bddbd7277c5942f4a4d9498d1a829495c685cc7bc81e69b8995"
 dependencies = [
  "bit_field 0.10.0",
  "log",
@@ -25,6 +26,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d52a9bb7ec0cf484c551830a7ce27bd20d67eac647e1befb56b0be4ee39a55d2"
 dependencies = [
  "winapi 0.3.8",
+]
+
+[[package]]
+name = "approx"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f0e60b75072ecd4168020818c0107f2857bb6c4e64252d8d3983f6263b40a5c3"
+dependencies = [
+ "num-traits",
 ]
 
 [[package]]
@@ -820,6 +830,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ebcec7c9c2a95cacc7cd0ecb89d8a8454eca13906f6deb55258ffff0adeb9405"
 
 [[package]]
+name = "ordered-float"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "18869315e81473c951eb56ad5558bbc56978562d3ecfb87abb7a1e944cea4518"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "parity-scale-codec"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1159,6 +1178,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "redshirt-kernel-log-interface"
+version = "0.1.0"
+dependencies = [
+ "parity-scale-codec",
+ "redshirt-syscalls",
+]
+
+[[package]]
 name = "redshirt-loader-interface"
 version = "0.1.0"
 dependencies = [
@@ -1221,7 +1248,6 @@ version = "0.1.0"
 dependencies = [
  "acpi",
  "blake3",
- "cc",
  "crossbeam-queue",
  "futures",
  "hashbrown",
@@ -1236,14 +1262,15 @@ dependencies = [
  "redshirt-core",
  "redshirt-hardware-interface",
  "redshirt-interface-interface",
+ "redshirt-kernel-log-interface",
  "redshirt-log-interface",
  "redshirt-random-interface",
  "redshirt-syscalls",
  "redshirt-time-interface",
  "rlibc",
+ "rusttype",
  "smallvec",
  "spinning_top",
- "walkdir",
  "x86_64",
 ]
 
@@ -1360,6 +1387,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "rusttype"
+version = "0.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "14a911032fb5791ccbeec9f28fdcb9bf0983b81f227bafdfd227c658d0731c8a"
+dependencies = [
+ "approx",
+ "arrayvec",
+ "ordered-float",
+ "stb_truetype",
+]
+
+[[package]]
 name = "ryu"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1454,6 +1493,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32d801a3a53bcf5071f85fef8d5cab9e5f638fc5580a37e6eb7aba4b37438d24"
 dependencies = [
  "lock_api",
+]
+
+[[package]]
+name = "stb_truetype"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f77b6b07e862c66a9f3e62a07588fee67cd90a9135a2b942409f195507b4fb51"
+dependencies = [
+ "byteorder",
 ]
 
 [[package]]
