@@ -648,27 +648,19 @@ impl Interpreter {
                         .store_in_operand(&instruction, 0, Value::U16(ptr));
                 }
 
-                iced_x86::Mnemonic::Loop => {
+                iced_x86::Mnemonic::Loop
+                | iced_x86::Mnemonic::Loope
+                | iced_x86::Mnemonic::Loopne => {
                     let cx = self.machine.register(iced_x86::Register::CX);
                     let cx = cx.dec();
                     self.machine.store_in_register(iced_x86::Register::CX, cx);
-                    if cx.is_zero() {
-                        self.machine.apply_rel_jump(&instruction);
-                    }
-                }
-                iced_x86::Mnemonic::Loope => {
-                    let cx = self.machine.register(iced_x86::Register::CX);
-                    let cx = cx.dec();
-                    self.machine.store_in_register(iced_x86::Register::CX, cx);
-                    if cx.is_zero() {
-                        self.machine.apply_rel_jump(&instruction);
-                    }
-                }
-                iced_x86::Mnemonic::Loopne => {
-                    let cx = self.machine.register(iced_x86::Register::CX);
-                    let cx = cx.dec();
-                    self.machine.store_in_register(iced_x86::Register::CX, cx);
-                    if !cx.is_zero() {
+                    let could_jump = match instruction.mnemonic() {
+                        iced_x86::Mnemonic::Loop => true,
+                        iced_x86::Mnemonic::Loope => self.machine.flags_is_zero(),
+                        iced_x86::Mnemonic::Loopne => !self.machine.flags_is_zero(),
+                        _ => unreachable!(),
+                    };
+                    if !cx.is_zero() && could_jump {
                         self.machine.apply_rel_jump(&instruction);
                     }
                 }
@@ -772,95 +764,101 @@ impl Interpreter {
                         }
                     }
                 }
-                iced_x86::Mnemonic::Popa => {
-                    match instruction.code() {
-                        iced_x86::Code::Popaw => {
-                            let val = Value::U16(self.machine.stack_pop_u16());
-                            self.machine.store_in_register(iced_x86::Register::DI, val);
-                            let val = Value::U16(self.machine.stack_pop_u16());
-                            self.machine.store_in_register(iced_x86::Register::SI, val);
-                            let val = Value::U16(self.machine.stack_pop_u16());
-                            self.machine.store_in_register(iced_x86::Register::BP, val);
-                            let _ = self.machine.stack_pop_u16();
-                            let val = Value::U16(self.machine.stack_pop_u16());
-                            self.machine.store_in_register(iced_x86::Register::BX, val);
-                            let val = Value::U16(self.machine.stack_pop_u16());
-                            self.machine.store_in_register(iced_x86::Register::DX, val);
-                            let val = Value::U16(self.machine.stack_pop_u16());
-                            self.machine.store_in_register(iced_x86::Register::CX, val);
-                            let val = Value::U16(self.machine.stack_pop_u16());
-                            self.machine.store_in_register(iced_x86::Register::AX, val);
-                        }
-                        iced_x86::Code::Popad => {
-                            let val = Value::U32(self.machine.stack_pop_u32());
-                            self.machine.store_in_register(iced_x86::Register::EDI, val);
-                            let val = Value::U32(self.machine.stack_pop_u32());
-                            self.machine.store_in_register(iced_x86::Register::ESI, val);
-                            let val = Value::U32(self.machine.stack_pop_u32());
-                            self.machine.store_in_register(iced_x86::Register::EBP, val);
-                            let _ = self.machine.stack_pop_u32();
-                            let val = Value::U32(self.machine.stack_pop_u32());
-                            self.machine.store_in_register(iced_x86::Register::EBX, val);
-                            let val = Value::U32(self.machine.stack_pop_u32());
-                            self.machine.store_in_register(iced_x86::Register::EDX, val);
-                            let val = Value::U32(self.machine.stack_pop_u32());
-                            self.machine.store_in_register(iced_x86::Register::ECX, val);
-                            let val = Value::U32(self.machine.stack_pop_u32());
-                            self.machine.store_in_register(iced_x86::Register::EAX, val);
-                        }
-                        _ => unreachable!()
+                iced_x86::Mnemonic::Popa => match instruction.code() {
+                    iced_x86::Code::Popaw => {
+                        let val = Value::U16(self.machine.stack_pop_u16());
+                        self.machine.store_in_register(iced_x86::Register::DI, val);
+                        let val = Value::U16(self.machine.stack_pop_u16());
+                        self.machine.store_in_register(iced_x86::Register::SI, val);
+                        let val = Value::U16(self.machine.stack_pop_u16());
+                        self.machine.store_in_register(iced_x86::Register::BP, val);
+                        let _ = self.machine.stack_pop_u16();
+                        let val = Value::U16(self.machine.stack_pop_u16());
+                        self.machine.store_in_register(iced_x86::Register::BX, val);
+                        let val = Value::U16(self.machine.stack_pop_u16());
+                        self.machine.store_in_register(iced_x86::Register::DX, val);
+                        let val = Value::U16(self.machine.stack_pop_u16());
+                        self.machine.store_in_register(iced_x86::Register::CX, val);
+                        let val = Value::U16(self.machine.stack_pop_u16());
+                        self.machine.store_in_register(iced_x86::Register::AX, val);
                     }
-                }
-                iced_x86::Mnemonic::Popf => {
-                    match instruction.code() {
-                        iced_x86::Code::Popfw => {
-                            let val = self.machine.stack_pop_u16();
-                            self.machine.regs.flags = val & 0b0000111111010101;
-                        }
-                        _ => unimplemented!()
+                    iced_x86::Code::Popad => {
+                        let val = Value::U32(self.machine.stack_pop_u32());
+                        self.machine.store_in_register(iced_x86::Register::EDI, val);
+                        let val = Value::U32(self.machine.stack_pop_u32());
+                        self.machine.store_in_register(iced_x86::Register::ESI, val);
+                        let val = Value::U32(self.machine.stack_pop_u32());
+                        self.machine.store_in_register(iced_x86::Register::EBP, val);
+                        let _ = self.machine.stack_pop_u32();
+                        let val = Value::U32(self.machine.stack_pop_u32());
+                        self.machine.store_in_register(iced_x86::Register::EBX, val);
+                        let val = Value::U32(self.machine.stack_pop_u32());
+                        self.machine.store_in_register(iced_x86::Register::EDX, val);
+                        let val = Value::U32(self.machine.stack_pop_u32());
+                        self.machine.store_in_register(iced_x86::Register::ECX, val);
+                        let val = Value::U32(self.machine.stack_pop_u32());
+                        self.machine.store_in_register(iced_x86::Register::EAX, val);
                     }
-                }
+                    _ => unreachable!(),
+                },
+                iced_x86::Mnemonic::Popf => match instruction.code() {
+                    iced_x86::Code::Popfw => {
+                        let val = self.machine.stack_pop_u16();
+                        self.machine.regs.flags = val & 0b0000111111010101;
+                    }
+                    _ => unimplemented!(),
+                },
 
                 iced_x86::Mnemonic::Push => {
                     let value = self.machine.fetch_operand_value(&instruction, 0);
                     self.machine.stack_push_value(value);
                 }
-                iced_x86::Mnemonic::Pusha => {
-                    match instruction.code() {
-                        iced_x86::Code::Pushaw => {
-                            let sp = self.machine.register(iced_x86::Register::SP);
-                            self.machine.stack_push_value(self.machine.register(iced_x86::Register::AX));
-                            self.machine.stack_push_value(self.machine.register(iced_x86::Register::CX));
-                            self.machine.stack_push_value(self.machine.register(iced_x86::Register::DX));
-                            self.machine.stack_push_value(self.machine.register(iced_x86::Register::BX));
-                            self.machine.stack_push_value(sp);
-                            self.machine.stack_push_value(self.machine.register(iced_x86::Register::BP));
-                            self.machine.stack_push_value(self.machine.register(iced_x86::Register::SI));
-                            self.machine.stack_push_value(self.machine.register(iced_x86::Register::DI));
-                        }
-                        iced_x86::Code::Pushad => {
-                            let esp = self.machine.register(iced_x86::Register::ESP);
-                            self.machine.stack_push_value(self.machine.register(iced_x86::Register::EAX));
-                            self.machine.stack_push_value(self.machine.register(iced_x86::Register::ECX));
-                            self.machine.stack_push_value(self.machine.register(iced_x86::Register::EDX));
-                            self.machine.stack_push_value(self.machine.register(iced_x86::Register::EBX));
-                            self.machine.stack_push_value(esp);
-                            self.machine.stack_push_value(self.machine.register(iced_x86::Register::EBP));
-                            self.machine.stack_push_value(self.machine.register(iced_x86::Register::ESI));
-                            self.machine.stack_push_value(self.machine.register(iced_x86::Register::EDI));
-                        }
-                        _ => unreachable!()
+                iced_x86::Mnemonic::Pusha => match instruction.code() {
+                    iced_x86::Code::Pushaw => {
+                        let sp = self.machine.register(iced_x86::Register::SP);
+                        self.machine
+                            .stack_push_value(self.machine.register(iced_x86::Register::AX));
+                        self.machine
+                            .stack_push_value(self.machine.register(iced_x86::Register::CX));
+                        self.machine
+                            .stack_push_value(self.machine.register(iced_x86::Register::DX));
+                        self.machine
+                            .stack_push_value(self.machine.register(iced_x86::Register::BX));
+                        self.machine.stack_push_value(sp);
+                        self.machine
+                            .stack_push_value(self.machine.register(iced_x86::Register::BP));
+                        self.machine
+                            .stack_push_value(self.machine.register(iced_x86::Register::SI));
+                        self.machine
+                            .stack_push_value(self.machine.register(iced_x86::Register::DI));
                     }
-                }
-                iced_x86::Mnemonic::Pushf => {
-                    match instruction.code() {
-                        iced_x86::Code::Pushfw => {
-                            self.machine
-                                .stack_push_value(Value::U16(self.machine.regs.flags));
-                        },
-                        _ => unimplemented!()
+                    iced_x86::Code::Pushad => {
+                        let esp = self.machine.register(iced_x86::Register::ESP);
+                        self.machine
+                            .stack_push_value(self.machine.register(iced_x86::Register::EAX));
+                        self.machine
+                            .stack_push_value(self.machine.register(iced_x86::Register::ECX));
+                        self.machine
+                            .stack_push_value(self.machine.register(iced_x86::Register::EDX));
+                        self.machine
+                            .stack_push_value(self.machine.register(iced_x86::Register::EBX));
+                        self.machine.stack_push_value(esp);
+                        self.machine
+                            .stack_push_value(self.machine.register(iced_x86::Register::EBP));
+                        self.machine
+                            .stack_push_value(self.machine.register(iced_x86::Register::ESI));
+                        self.machine
+                            .stack_push_value(self.machine.register(iced_x86::Register::EDI));
                     }
-                }
+                    _ => unreachable!(),
+                },
+                iced_x86::Mnemonic::Pushf => match instruction.code() {
+                    iced_x86::Code::Pushfw => {
+                        self.machine
+                            .stack_push_value(Value::U16(self.machine.regs.flags));
+                    }
+                    _ => unimplemented!(),
+                },
 
                 iced_x86::Mnemonic::Ret => {
                     let num_to_pop = if instruction.op_count() == 1 {
@@ -902,7 +900,6 @@ impl Interpreter {
                     self.machine
                         .flags_set_carry(self.machine.regs.eax & (1 << 0) != 0);
                 }
-
 
                 iced_x86::Mnemonic::Sal | iced_x86::Mnemonic::Shl => {
                     let mut value0 = self.machine.fetch_operand_value(&instruction, 0);
@@ -1005,7 +1002,9 @@ impl Interpreter {
                     // TODO: the adjust flag
                 }
 
-                iced_x86::Mnemonic::Scasb | iced_x86::Mnemonic::Scasw | iced_x86::Mnemonic::Scasd => {
+                iced_x86::Mnemonic::Scasb
+                | iced_x86::Mnemonic::Scasw
+                | iced_x86::Mnemonic::Scasd => {
                     // TODO: this should really be simplified?
                     let value0 = self.machine.fetch_operand_value(&instruction, 0);
 
@@ -1334,11 +1333,7 @@ impl Machine {
     fn int_opcode(&mut self, vector: u8) {
         self.stack_push(&self.regs.flags.to_le_bytes());
         self.stack_push(&self.regs.cs.to_le_bytes());
-        self.stack_push(
-            &u16::try_from(self.regs.eip & 0xffff)
-                .unwrap()
-                .to_le_bytes(),
-        );
+        self.stack_push(&u16::try_from(self.regs.eip & 0xffff).unwrap().to_le_bytes());
 
         let vector = u32::from(vector);
 

@@ -85,7 +85,7 @@ where
             system_builder = system_builder
                 //.with_startup_process(build_wasm_module!("../../../modules/x86-pci"))
                 .with_startup_process(build_wasm_module!("../../../modules/x86-vga-vbe"))
-                //.with_startup_process(build_wasm_module!("../../../modules/ne2000"))
+            //.with_startup_process(build_wasm_module!("../../../modules/ne2000"))
         }
         #[cfg(any(target_arch = "arm", target_arch = "aarch64"))]
         {
