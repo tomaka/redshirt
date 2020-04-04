@@ -68,7 +68,7 @@ pub unsafe fn filter_build_ap_boot_alloc<'a>(
     // value from `_ap_boot_end - _ap_boot_start`.
     const WANTED: usize = 0x4000;
 
-    ranges.filter_map(move |mut range| {
+    ranges.filter_map(move |range| {
         if alloc.is_none() {
             let range_size = range.end.checked_sub(range.start).unwrap();
             if range.start.saturating_add(WANTED) <= 0x100000 && range_size >= WANTED {
@@ -426,13 +426,11 @@ struct Allocation<'a, T: alloc::alloc::AllocRef> {
 
 impl<'a, T: alloc::alloc::AllocRef> Allocation<'a, T> {
     fn new(alloc: &'a mut T, layout: Layout) -> Self {
-        unsafe {
-            let (buf, _) = alloc.alloc(layout).unwrap();
-            Allocation {
-                alloc,
-                inner: buf,
-                layout,
-            }
+        let (buf, _) = alloc.alloc(layout).unwrap();
+        Allocation {
+            alloc,
+            inner: buf,
+            layout,
         }
     }
 
@@ -464,7 +462,7 @@ extern "C" fn ap_after_boot(to_exec: usize) -> ! {
     unsafe {
         let to_exec = to_exec as ApAfterBootParam;
         let to_exec = Box::from_raw(to_exec);
-        let ret = (*to_exec)();
-        match ret {} // TODO: remove this `ret` thingy once `!` is stable
+        let _ret = (*to_exec)();
+        match _ret {} // TODO: remove this `ret` thingy once `!` is stable
     }
 }

@@ -28,9 +28,6 @@
 //! After everything has been initialized, the entry point creates a struct that implements the
 //! [`PlatformSpecific`] trait, and initializes and runs a [`Kernel`](crate::kernel::Kernel).
 
-use crate::klog::KLogger;
-
-use alloc::sync::Arc;
 use core::{fmt, future::Future, num::NonZeroU32, pin::Pin};
 use redshirt_kernel_log_interface::ffi::KernelLogMethod;
 

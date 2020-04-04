@@ -16,7 +16,7 @@
 use crate::klog::video;
 
 use core::fmt;
-use redshirt_kernel_log_interface::ffi::{FramebufferFormat, KernelLogMethod};
+use redshirt_kernel_log_interface::ffi::KernelLogMethod;
 use spinning_top::{Spinlock, SpinlockGuard};
 
 pub struct KLogger {
@@ -70,7 +70,7 @@ impl KLogger {
     }
 
     /// Modifies the way logs should be printed.
-    pub fn set_method(&self, method: KernelLogMethod) {
+    pub fn set_method(&self, _method: KernelLogMethod) {
         unimplemented!() // TODO:
     }
 }

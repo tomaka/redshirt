@@ -20,8 +20,8 @@ use crate::klog::KLogger;
 
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use core::{
-    convert::TryFrom as _, fmt::Write as _, future::Future, iter, num::NonZeroU32, ops::Range,
-    pin::Pin, time::Duration,
+    convert::TryFrom as _, fmt::Write as _, iter, num::NonZeroU32, ops::Range, pin::Pin,
+    time::Duration,
 };
 use futures::channel::oneshot;
 use redshirt_kernel_log_interface::ffi::{FramebufferFormat, FramebufferInfo, KernelLogMethod};
@@ -138,7 +138,6 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
     // However, this code is not loaded directly by the firmware but rather by a bootloader. This
     // bootloader must save the information about the ACPI tables and propagate it as part of the
     // multiboot2 header passed to the operating system.
-    // TODO: panics in BOCHS
     // TODO: remove these tables from the memory ranges used as heap? `acpi_tables` is a copy of
     // the table, so once we are past this line there's no problem anymore. But in theory,
     // the `acpi_tables` variable might allocate over the actual ACPI tables.
@@ -223,8 +222,6 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
     let kernel = {
         let platform_specific = PlatformSpecificImpl {
             timers,
-            executor: &*executor,
-            local_apics,
             num_cpus: NonZeroU32::new(
                 u32::try_from(kernel_channels.len())
                     .unwrap()
@@ -355,8 +352,6 @@ fn find_free_memory_ranges<'a>(
 /// Implementation of [`PlatformSpecific`].
 struct PlatformSpecificImpl {
     timers: &'static apic::timers::Timers<'static>,
-    local_apics: &'static apic::local::LocalApicsControl,
-    executor: &'static executor::Executor,
     num_cpus: NonZeroU32,
     logger: Arc<KLogger>,
 }
