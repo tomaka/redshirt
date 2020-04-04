@@ -23,7 +23,6 @@
 //!
 
 use crate::arch::PlatformSpecific;
-use crate::klog::KLogger;
 
 use alloc::sync::Arc;
 use core::pin::Pin;
@@ -93,14 +92,12 @@ where
         }
 
         let system = system_builder
-            .with_main_program(From::from([0; 32])) // TODO: just a test
             .build()
             .expect("Failed to start kernel");
 
         loop {
             match system.run().await {
-                redshirt_core::system::SystemRunOutcome::ProgramFinished { pid, outcome } => {
-                    //console.write(&format!("Program finished {:?} => {:?}\n", pid, outcome));
+                redshirt_core::system::SystemRunOutcome::ProgramFinished { .. } => {
                 }
                 _ => panic!(),
             }
