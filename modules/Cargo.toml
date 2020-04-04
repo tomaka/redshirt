@@ -1,15 +1,14 @@
 [workspace]
 members = [
-    "arm-log",
     "hello-world",
     "http-server",
+    "log-to-kernel",
     "ne2000",
     "p2p-loader",
     "rpi-framebuffer",
     "stub",
     "third-party/time",
     "third-party/wasm-timer",
-    "x86-log",
     "x86-pci",
     "x86-vga-vbe",
 ]

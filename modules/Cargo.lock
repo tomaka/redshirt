@@ -25,16 +25,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "013a6e0a2cbe3d20f9c60b65458f7a7f7a5e636c5d0f45a5a6aee5d4b1f01785"
 
 [[package]]
-name = "arm-log"
-version = "0.1.0"
-dependencies = [
- "redshirt-hardware-interface",
- "redshirt-interface-interface",
- "redshirt-log-interface",
- "redshirt-syscalls",
-]
-
-[[package]]
 name = "arrayref"
 version = "0.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1094,6 +1084,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "log-to-kernel"
+version = "0.1.0"
+dependencies = [
+ "redshirt-interface-interface",
+ "redshirt-kernel-log-interface",
+ "redshirt-log-interface",
+ "redshirt-syscalls",
+]
+
+[[package]]
 name = "matches"
 version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1615,6 +1615,14 @@ name = "redshirt-interface-interface"
 version = "0.1.0"
 dependencies = [
  "futures",
+ "parity-scale-codec",
+ "redshirt-syscalls",
+]
+
+[[package]]
+name = "redshirt-kernel-log-interface"
+version = "0.1.0"
+dependencies = [
  "parity-scale-codec",
  "redshirt-syscalls",
 ]
@@ -2350,16 +2358,6 @@ checksum = "d59cefebd0c892fa2dd6de581e937301d8552cb44489cdff035c6187cb63fa5e"
 dependencies = [
  "winapi 0.2.8",
  "winapi-build",
-]
-
-[[package]]
-name = "x86-log"
-version = "0.1.0"
-dependencies = [
- "redshirt-hardware-interface",
- "redshirt-interface-interface",
- "redshirt-log-interface",
- "redshirt-syscalls",
 ]
 
 [[package]]
