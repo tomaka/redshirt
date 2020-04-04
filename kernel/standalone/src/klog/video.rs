@@ -118,7 +118,10 @@ impl Terminal {
                 }
                 FramebufferFormat::Rgb { .. } => {
                     let src_data = {
-                        let idx = usize::from(chr % 128) * 64;
+                        let idx = usize::from(chr) * 64;
+                        if (idx + 64) > FONT_DATA.len() {
+                            return;
+                        }
                         &FONT_DATA[idx..idx + 64]
                     };
 

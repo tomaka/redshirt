@@ -130,8 +130,6 @@ unsafe extern "C" fn after_boot(multiboot_header: usize) -> ! {
     // For as long as it is not replaced, we will use this to print kernel logs.
     panic::set_logger(logger.clone());
 
-    panic!("test");
-
     // The first thing that gets executed when a x86 or x86_64 machine starts up is the
     // motherboard's firmware. Before giving control to the operating system, this firmware writes
     // into memory a set of data called the **ACPI tables**.

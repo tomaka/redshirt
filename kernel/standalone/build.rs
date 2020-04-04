@@ -40,9 +40,19 @@ fn gen_font() -> Vec<u8> {
             .scaled(rusttype::Scale { x: 8.0, y: 8.0 })
             .positioned(rusttype::Point { x: 0.0, y: 0.0 });
 
+        // `pixel_bound_box` returns `None` for glyphs that are empty (like the space character)
+        let bbox = match glyph.pixel_bounding_box() {
+            Some(b) => b,
+            None => continue,
+        };
+
         glyph.draw(|x, y, value| {
-            assert!(x < 8);
-            assert!(y < 8);
+            let x = i32::try_from(x).unwrap() + bbox.min.x;
+            let y = 8 + i32::try_from(y).unwrap() + bbox.min.y;
+            if x < 0 || x >= 8 || y < 0 || y >= 8 {
+                return;
+            }
+
             assert!(value >= 0.0 && value <= 1.0);
             let value = (value * 255.0) as u8;
             let b_pos = usize::from(ascii_chr) * 8 * 8 + usize::try_from(x + y * 8).unwrap();
