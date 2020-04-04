@@ -20,8 +20,8 @@ use crate::klog::KLogger;
 
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use core::{
-    convert::TryFrom as _, fmt::Write as _, iter, num::NonZeroU32, ops::Range,
-    pin::Pin, time::Duration,
+    convert::TryFrom as _, fmt::Write as _, iter, num::NonZeroU32, ops::Range, pin::Pin,
+    time::Duration,
 };
 use futures::channel::oneshot;
 use redshirt_kernel_log_interface::ffi::{FramebufferFormat, FramebufferInfo, KernelLogMethod};

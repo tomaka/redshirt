@@ -91,14 +91,11 @@ where
                 .with_startup_process(build_wasm_module!("../../../modules/rpi-framebuffer"))
         }
 
-        let system = system_builder
-            .build()
-            .expect("Failed to start kernel");
+        let system = system_builder.build().expect("Failed to start kernel");
 
         loop {
             match system.run().await {
-                redshirt_core::system::SystemRunOutcome::ProgramFinished { .. } => {
-                }
+                redshirt_core::system::SystemRunOutcome::ProgramFinished { .. } => {}
                 _ => panic!(),
             }
         }
