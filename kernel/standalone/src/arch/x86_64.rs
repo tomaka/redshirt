@@ -189,7 +189,7 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
     let mut kernel_channels = Vec::with_capacity(acpi_tables.application_processors.len());
 
     writeln!(logger.log_printer(), "Initializing associated processors").unwrap();
-    // TODO: remove this `take(0)`
+    // TODO: this `take(0)` disables APs for now; it seems to not work on VirtualBox or actual hardware
     for ap in acpi_tables.application_processors.iter().take(0) {
         debug_assert!(ap.is_ap);
         // It is possible for some associated processors to be in a disabled state, in which case

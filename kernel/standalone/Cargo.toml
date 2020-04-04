@@ -35,6 +35,6 @@ spinning_top = "0.1.0"
 rusttype = "0.8.2"
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
-acpi = "0.7.0"
+acpi = { git = "https://github.com/tomaka/acpi", branch = "optional-local-nmi" }
 multiboot2 = "0.8.1"
 x86_64 = "0.8.2"
