@@ -53,7 +53,7 @@ impl KLogger {
     pub fn log_printer<'a>(&'a self) -> impl fmt::Write + 'a {
         Printer {
             inner: self.inner.lock(),
-            panic_message: false,
+            color: [0xdd, 0xdd, 0xdd],
         }
     }
 
@@ -65,7 +65,7 @@ impl KLogger {
     pub fn panic_printer<'a>(&'a self) -> impl fmt::Write + 'a {
         Printer {
             inner: self.inner.lock(),
-            panic_message: true,
+            color: [0xff, 0x0, 0x0],
         }
     }
 
@@ -77,7 +77,7 @@ impl KLogger {
 
 struct Printer<'a> {
     inner: SpinlockGuard<'a, Inner>,
-    panic_message: bool,
+    color: [u8; 3],
 }
 
 impl<'a> fmt::Write for Printer<'a> {
@@ -87,7 +87,7 @@ impl<'a> fmt::Write for Printer<'a> {
             Inner::Enabled { terminal } => {
                 if let Some(terminal) = terminal {
                     // TODO: red for panics
-                    terminal.printer([0xff, 0xff, 0xff]).write_str(message)?;
+                    terminal.printer(self.color).write_str(message)?;
                 }
             }
         }

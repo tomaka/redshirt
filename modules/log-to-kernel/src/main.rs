@@ -17,7 +17,6 @@
 
 use redshirt_log_interface::ffi;
 use redshirt_syscalls::{Decode, EncodedMessage};
-use std::{convert::TryFrom as _, fmt, sync::atomic};
 
 fn main() {
     redshirt_syscalls::block_on(async_main());
@@ -37,29 +36,20 @@ async fn async_main() -> ! {
         assert_eq!(msg.interface, ffi::INTERFACE);
 
         if let Ok(message) = ffi::DecodedLogMessage::decode(msg.actual_data) {
-            redshirt_kernel_log_interface::log(message.message().as_bytes());
-        }
-        // TODO: show the PID and log level, as commented out below
-        /*if let Ok(message) = ffi::DecodedLogMessage::decode(msg.actual_data) {
             let level = match message.level() {
-                ffi::Level::Error => b"ERR ",
-                ffi::Level::Warn => b"WARN",
-                ffi::Level::Info => b"INFO",
-                ffi::Level::Debug => b"DEBG",
-                ffi::Level::Trace => b"TRCE",
+                ffi::Level::Error => "ERR ",
+                ffi::Level::Warn => "WARN",
+                ffi::Level::Info => "INFO",
+                ffi::Level::Debug => "DEBG",
+                ffi::Level::Trace => "TRCE",
             };
 
-            write_utf8_bytes(b"[").await;
-            write_utf8_bytes(format!("{:?}", msg.emitter_pid).as_bytes()).await;
-            write_utf8_bytes(b"] [").await;
-            write_utf8_bytes(level).await;
-            write_utf8_bytes(b"] ").await;
-            write_untrusted_str(message.message()).await;
-            write_utf8_bytes(b"\n").await;
+            let kernel_message =
+                format!("[{:?}] [{}] {}", msg.emitter_pid, level, message.message());
+            redshirt_kernel_log_interface::log(kernel_message.as_bytes());
         } else {
-            write_utf8_bytes(b"[").await;
-            write_untrusted_str(&format!("{:?}", msg.emitter_pid)).await;
-            write_utf8_bytes(b"] Bad log message\n").await;
-        }*/
+            let kernel_message = format!("[{:?}] Bad log message", msg.emitter_pid);
+            redshirt_kernel_log_interface::log(kernel_message.as_bytes());
+        }
     }
 }

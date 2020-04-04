@@ -59,11 +59,11 @@ const DEFAULT_LOG_METHOD: KernelLogMethod = KernelLogMethod {
 ///
 /// # Safety
 ///
-/// `multiboot_header` must be a valid memory address that contains valid information.
+/// `multiboot_info` must be a valid memory address that contains valid information.
 ///
 #[no_mangle]
-unsafe extern "C" fn after_boot(multiboot_header: usize) -> ! {
-    let multiboot_info = multiboot2::load(multiboot_header);
+unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
+    let multiboot_info = multiboot2::load(multiboot_info);
 
     // Initialization of the memory allocator.
     let mut ap_boot_alloc = {
@@ -85,6 +85,7 @@ unsafe extern "C" fn after_boot(multiboot_header: usize) -> ! {
         }
     };
 
+    // Now that we have a memory allocator, initialize the logging system .
     let logger = Arc::new(KLogger::new({
         if let Some(fb_info) = multiboot_info.framebuffer_tag() {
             KernelLogMethod {
@@ -125,9 +126,7 @@ unsafe extern "C" fn after_boot(multiboot_header: usize) -> ! {
         }
     }));
 
-    // Initialize the panic handler to what multiboot has told us.
-    //
-    // For as long as it is not replaced, we will use this to print kernel logs.
+    // If a panic happens, we want it to use the logging system we just created.
     panic::set_logger(logger.clone());
 
     // The first thing that gets executed when a x86 or x86_64 machine starts up is the
@@ -189,6 +188,8 @@ unsafe extern "C" fn after_boot(multiboot_header: usize) -> ! {
     // it to each sender.
     let mut kernel_channels = Vec::with_capacity(acpi_tables.application_processors.len());
 
+    writeln!(logger.log_printer(), "Initializing associated processors").unwrap();
+    // TODO: remove this `take(0)`
     for ap in acpi_tables.application_processors.iter().take(0) {
         debug_assert!(ap.is_ap);
         // It is possible for some associated processors to be in a disabled state, in which case
@@ -231,7 +232,7 @@ unsafe extern "C" fn after_boot(multiboot_header: usize) -> ! {
                     .unwrap(),
             )
             .unwrap(),
-            logger,
+            logger: logger.clone(),
         };
 
         Arc::new(crate::kernel::Kernel::init(platform_specific))
@@ -246,6 +247,7 @@ unsafe extern "C" fn after_boot(multiboot_header: usize) -> ! {
 
     // Start the kernel on the boot processor too.
     // This function never returns.
+    writeln!(logger.log_printer(), "Boot successful").unwrap();
     executor.block_on(kernel.run())
 }
 

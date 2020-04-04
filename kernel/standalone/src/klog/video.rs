@@ -22,6 +22,10 @@ pub struct Terminal {
     cursor_y: u32,
     character_width: u32,
     character_height: u32,
+    /// If this is false, we need to clear the screen before doing anything more.
+    /// This is not done immediately at initialization in order to have `new` be a `const`
+    /// function.
+    screen_cleared: bool,
 }
 
 impl Terminal {
@@ -39,21 +43,20 @@ impl Terminal {
             cursor_y: 0,
             character_width: character_dims,
             character_height: character_dims,
-        }
-    }
-
-    /// Clears the framebuffer with black.
-    pub fn clear_screen(&mut self) {
-        // Safety is covered by `Terminal::new`.
-        unsafe {
-            clear_screen(&self.framebuffer);
-            self.cursor_x = 0;
-            self.cursor_y = 0;
+            screen_cleared: false,
         }
     }
 
     /// Returns an object that implements `core::fmt::Write` designed for printing a message.
     pub fn printer<'a>(&'a mut self, color: [u8; 3]) -> impl fmt::Write + 'a {
+        if !self.screen_cleared {
+            // Safety is covered by `Terminal::new`.
+            unsafe {
+                clear_screen(&self.framebuffer);
+                self.screen_cleared = true;
+            }
+        }
+
         struct Printer<'a> {
             klog: &'a mut Terminal,
             color: [u8; 3],
@@ -113,8 +116,8 @@ impl Terminal {
 
             match self.framebuffer.format {
                 FramebufferFormat::Text => {
-                    // TODO: proper color
-                    (addr as *mut u16).write_volatile(u16::from(chr) | 0xc00);
+                    let attrs = u16::from(term_color(color)) << 8;
+                    (addr as *mut u16).write_volatile(u16::from(chr) | attrs);
                 }
                 FramebufferFormat::Rgb { .. } => {
                     let src_data = {
@@ -173,17 +176,7 @@ impl Terminal {
     fn carriage_return(&mut self) {
         self.cursor_x = 0;
         self.cursor_y = self.cursor_y.saturating_add(self.character_height);
-        if !matches!(self.framebuffer.format, FramebufferFormat::Text) {
-            // Some padding.
-            // TODO: implement better
-            self.cursor_y = self.cursor_y.saturating_add(4);
-        }
-        while self.cursor_y
-            >= self
-                .framebuffer
-                .height
-                .saturating_add(self.character_height)
-        {
+        while self.cursor_y >= self.framebuffer.height {
             self.line_down();
         }
     }
@@ -318,4 +311,39 @@ unsafe fn write_rgb_color(dst: *mut u8, info: &FramebufferInfo, color: [u8; 3]) 
         dst,
         usize::from(info.bytes_per_character),
     );
+}
+
+/// Returns the most appropriate "text mode characteristics" byte from an RGB color.
+fn term_color(color: [u8; 3]) -> u8 {
+    const AVAILABLE: [[u8; 4]; 16] = [
+        [0x00, 0x00, 0x00, 0x0],
+        [0x00, 0x00, 0xaa, 0x1],
+        [0x00, 0xaa, 0x00, 0x2],
+        [0x00, 0xaa, 0xaa, 0x3],
+        [0xaa, 0x00, 0x00, 0x4],
+        [0xaa, 0x00, 0xaa, 0x5],
+        [0xaa, 0xaa, 0x00, 0x6],
+        [0xaa, 0xaa, 0xaa, 0x7],
+        [0x55, 0x55, 0x55, 0x8],
+        [0x55, 0x55, 0xff, 0x9],
+        [0x55, 0xff, 0x55, 0xa],
+        [0x55, 0xff, 0xff, 0xb],
+        [0xff, 0x55, 0x55, 0xc],
+        [0xff, 0x55, 0xff, 0xd],
+        [0xff, 0xff, 0x55, 0xe],
+        [0xff, 0xff, 0xff, 0xf],
+    ];
+
+    // We find the closest color from the ones available.
+    AVAILABLE
+        .iter()
+        .map(|val| {
+            let distance = (i16::from(color[0]) - i16::from(val[0])).abs()
+                + (i16::from(color[1]) - i16::from(val[1])).abs()
+                + (i16::from(color[2]) - i16::from(val[2])).abs();
+            (distance, val[3])
+        })
+        .min_by_key(|v| v.0)
+        .unwrap()
+        .1
 }
