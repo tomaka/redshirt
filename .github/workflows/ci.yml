@@ -19,7 +19,7 @@ jobs:
     - name: Install Rust
       uses: actions-rs/toolchain@v1
       with:
-        toolchain: stable
+        toolchain: nightly-2020-03-22
         target: wasm32-wasi
         override: true
     - name: Install a recent version of clang
@@ -99,6 +99,8 @@ jobs:
       run: cargo build --workspace --exclude redshirt-standalone-kernel --exclude redshirt-core-proc-macros --locked --verbose
     - name: Run tests
       run: cargo test --workspace --exclude redshirt-standalone-kernel --exclude redshirt-core-proc-macros --locked --verbose
+    - name: Check that benches compile
+      run: cargo bench --workspace --no-run --exclude redshirt-standalone-kernel --exclude redshirt-core-proc-macros --locked --verbose
 
   build-standalone:
     name: Build standalone kernel

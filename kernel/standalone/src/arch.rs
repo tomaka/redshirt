@@ -29,6 +29,7 @@
 //! [`PlatformSpecific`] trait, and initializes and runs a [`Kernel`](crate::kernel::Kernel).
 
 use core::{fmt, future::Future, num::NonZeroU32, pin::Pin};
+use redshirt_kernel_log_interface::ffi::KernelLogMethod;
 
 mod arm;
 mod x86_64;
@@ -42,6 +43,15 @@ pub trait PlatformSpecific: Send + Sync + 'static {
 
     /// Returns the number of CPUs available.
     fn num_cpus(self: Pin<&Self>) -> NonZeroU32;
+
+    /// Prints a log message. You are strongly encouraged to only use ASCII characters. The
+    /// implementation is free to discard any non-supported character.
+    fn write_log(&self, message: &str);
+    /// Modifies the way logs should be printed. This also influences panics.
+    ///
+    /// Even if you are not using the logging system, it is important to call this method when for
+    /// example the video mode changes, so that the kernel knows how to print panic messages.
+    fn set_logger_method(&self, method: KernelLogMethod);
 
     /// Returns the number of nanoseconds that happened since an undeterminate moment in time.
     ///

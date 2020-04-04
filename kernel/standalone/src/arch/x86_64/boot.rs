@@ -13,28 +13,32 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-// This file contains the entry point of our kernel.
-//
-// Once the bootloader finishes loading the kernel (as an ELF file), it will run its entry point,
-// which is the `_start` function defined in this file.
-//
-// Since we are conforming to the multiboot2 specifications, the bootloader is expected to set the
-// ebx register to the memory address of a data structure containing information about the
-// environment.
-//
-// The environment in which we start in is the protected mode where the kernel is identity-mapped.
-//
-// The role of the `_start` function below is to perform some checks, set up everything that is
-// needed to run freestanding 64bits Rust code (i.e. a stack, paging, long mode), and call the
-// `after_boot` Rust function.
+//! This file contains the entry point of our kernel.
+//!
+//! Once the bootloader finishes loading the kernel (as an ELF file), it will run its entry point,
+//! which is the `_start` function defined in this file.
+//!
+//! Since we are conforming to the multiboot2 specifications, the bootloader is expected to set the
+//! ebx register to the memory address of a data structure containing information about the
+//! environment.
+//!
+//! The environment in which we start in is the protected mode where the kernel is identity-mapped.
+//!
+//! The role of the `_start` function below is to perform some checks, set up everything that is
+//! needed to run freestanding 64bits Rust code (i.e. a stack, paging, long mode), and call the
+//! `after_boot` Rust function.
 
-#define KERNEL_STACK_SIZE 0x800000
-
+global_asm! {r#"
 .section .text
 .code32
 .global _start
 .type _start, @function
 _start:
+    // Disabling interruptions as long as we are not ready to accept them.
+    // This is normally already done by the bootloader, but I costs nothing to do it here again
+    // just in case.
+    cli
+
     // Check that we have been loaded by a multiboot2 bootloader.
     cmp $0x36d76289, %eax
     jne .print_err_and_stop
@@ -81,7 +85,7 @@ _start:
     or $(1 << 1), %eax              // Read/write bit. Indicates that the entry is writable.
     movl %eax, pdpt(, %ecx, 8)      // PDPT[ECX * 8] <- EAX
     inc %ecx
-    cmp $4, %ecx
+    cmp $32, %ecx
     jne .L0
 
     // Fill the PD entries to point to 2MiB pages.
@@ -96,7 +100,7 @@ _start:
     or $(1 << 7), %eax              // Indicates a 2MiB page.
     movl %eax, pds(, %ecx, 8)       // PDs[ECX * 8] <- EAX
     inc %ecx
-    cmp $(4 * 512), %ecx
+    cmp $(32 * 512), %ecx
     jne .L1
 
     // Set up the control registers.
@@ -139,7 +143,7 @@ _start:
 .code64
 .L2:
     // Set up the stack.
-    movq $stack + KERNEL_STACK_SIZE, %rsp
+    movq $stack + 0x800000, %rsp
 
     movw $0, %ax
     movw %ax, %ds
@@ -183,14 +187,50 @@ gdt_ptr:
 .section .bss
 // PML4. The entry point for our paging system.
 .comm pml4, 0x1000, 0x1000
-// One PDPT. Maps 512GB of memory. Only the first four entries are used.
+// One PDPT. Maps 512GB of memory. Only the first thirty-two entries are used.
 .comm pdpt, 0x1000, 0x1000
-// Four PDs for the first four entries in the PDPT. Each PD maps 1GB of memory.
-// TODO: how can we be sure that mapping 4GiB is enough, and that the kernel doesn't go above?
-.comm pds, 4 * 0x1000, 0x1000
+// Thirty-two PDs for the first thirty-two entries in the PDPT. Each PD maps 1GB of memory.
+// TODO: how can we be sure that mapping 32GiB is enough, and that the kernel doesn't go above?
+.comm pds, 32 * 0x1000, 0x1000
 
 // Stack used by the kernel.
-.comm stack, KERNEL_STACK_SIZE, 0x8
+.comm stack, 0x800000, 0x8
 
 // Small variable used to store the value of ebx passed by the bootloader.
 .comm multiboot_info_ptr, 4, 8
+
+"#}
+
+// TODO: figure out how to remove these
+#[no_mangle]
+pub extern "C" fn fmod(a: f64, b: f64) -> f64 {
+    libm::fmod(a, b)
+}
+#[no_mangle]
+pub extern "C" fn fmodf(a: f32, b: f32) -> f32 {
+    libm::fmodf(a, b)
+}
+#[no_mangle]
+pub extern "C" fn fmin(a: f64, b: f64) -> f64 {
+    libm::fmin(a, b)
+}
+#[no_mangle]
+pub extern "C" fn fminf(a: f32, b: f32) -> f32 {
+    libm::fminf(a, b)
+}
+#[no_mangle]
+pub extern "C" fn fmax(a: f64, b: f64) -> f64 {
+    libm::fmax(a, b)
+}
+#[no_mangle]
+pub extern "C" fn fmaxf(a: f32, b: f32) -> f32 {
+    libm::fmaxf(a, b)
+}
+#[no_mangle]
+pub extern "C" fn __truncdfsf2(a: f64) -> f32 {
+    libm::trunc(a) as f32 // TODO: correct?
+}
+
+// TODO: move somewhere better and document
+#[no_mangle]
+static gdt_table: [u64; 2] = [0, (1 << 53) | (1 << 47) | (1 << 44) | (1 << 43)];
