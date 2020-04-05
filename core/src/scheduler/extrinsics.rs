@@ -234,7 +234,7 @@ pub enum RunOneOutcome<'a, TPud, TTud, TExt: Extrinsics> {
         dead_threads: Vec<(ThreadId, TTud)>,
 
         /// Value returned by the main thread that has finished, or error that happened.
-        outcome: Result<Option<wasmi::RuntimeValue>, wasmi::Trap>,
+        outcome: Result<Option<crate::WasmValue>, wasmi::Trap>,
     },
 
     /// A thread in a process has finished.
@@ -249,7 +249,7 @@ pub enum RunOneOutcome<'a, TPud, TTud, TExt: Extrinsics> {
         user_data: TTud,
 
         /// Value returned by the function that was executed.
-        value: Option<wasmi::RuntimeValue>,
+        value: Option<crate::WasmValue>,
     },
 
     /// A thread in a process wants to emit a message.
@@ -719,11 +719,11 @@ where
     /// > **Note**: The "function ID" is the index of the function in the WASM module. WASM
     /// >           doesn't have function pointers. Instead, all the functions are part of a single
     /// >           global array of functions.
-    // TODO: don't expose wasmi::RuntimeValue in the API
+    // TODO: don't expose crate::WasmValue in the API
     pub fn start_thread(
         &self,
         fn_index: u32,
-        params: Vec<wasmi::RuntimeValue>,
+        params: Vec<crate::WasmValue>,
         user_data: TTud,
     ) -> Result<ThreadId, vm::StartErr> {
         self.inner.start_thread(
@@ -902,7 +902,7 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
                 }
 
                 self.inner.user_data().state = LocalThreadState::ReadyToRun;
-                self.inner.resume(Some(wasmi::RuntimeValue::I32(0)));
+                self.inner.resume(Some(crate::WasmValue::I32(0)));
                 emit.message
             }
             LocalThreadState::OtherExtrinsicEmit {
@@ -949,7 +949,7 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
         ) {
             LocalThreadState::EmitMessage(_) => {
                 self.inner.user_data().state = LocalThreadState::ReadyToRun;
-                self.inner.resume(Some(wasmi::RuntimeValue::I32(1)));
+                self.inner.resume(Some(crate::WasmValue::I32(1)));
             }
             LocalThreadState::OtherExtrinsicEmit { context, .. } => {
                 // TODO: don't know what else to do here than crash the program
@@ -1074,7 +1074,7 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
                 };
 
                 self.inner.user_data().state = LocalThreadState::ReadyToRun;
-                self.inner.resume(Some(wasmi::RuntimeValue::I32(
+                self.inner.resume(Some(crate::WasmValue::I32(
                     i32::try_from(notif_size_u32).unwrap(),
                 )));
             }
@@ -1121,7 +1121,7 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
         });
 
         self.inner.user_data().state = LocalThreadState::ReadyToRun;
-        self.inner.resume(Some(wasmi::RuntimeValue::I32(
+        self.inner.resume(Some(crate::WasmValue::I32(
             i32::try_from(notif_size).unwrap(),
         )));
     }
@@ -1141,7 +1141,7 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
         }
 
         self.inner.user_data().state = LocalThreadState::ReadyToRun;
-        self.inner.resume(Some(wasmi::RuntimeValue::I32(0)));
+        self.inner.resume(Some(crate::WasmValue::I32(0)));
     }
 }
 

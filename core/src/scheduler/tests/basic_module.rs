@@ -38,7 +38,7 @@ fn basic_module() {
             ..
         }) => {
             assert_eq!(pid, expected_pid);
-            assert_eq!(ret_val, Some(wasmi::RuntimeValue::I32(5)));
+            assert!(matches!(ret_val, Some(crate::WasmValue::I32(5))));
         }
         _ => panic!(),
     }

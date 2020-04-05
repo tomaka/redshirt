@@ -93,7 +93,7 @@ pub struct ProcessesCollection<TExtr, TPud, TTud> {
         Pid,
         TPud,
         Vec<(ThreadId, TTud)>,
-        Result<Option<wasmi::RuntimeValue>, wasmi::Trap>,
+        Result<Option<crate::WasmValue>, wasmi::Trap>,
     )>,
 }
 
@@ -130,7 +130,7 @@ struct ProcessLock<TTud> {
     vm: vm::ProcessStateMachine<Thread>,
 
     /// Queue of threads that are ready to be resumed.
-    threads_to_resume: VecDeque<(ThreadId, TTud, Option<wasmi::RuntimeValue>)>,
+    threads_to_resume: VecDeque<(ThreadId, TTud, Option<crate::WasmValue>)>,
 
     /// If `Some`, then the process is in a dead state, the virtual machine is in a poisoned
     /// state, and we are in the process of collecting all the threads user datas into the
@@ -144,7 +144,7 @@ struct ProcessDeadState<TTud> {
     dead_threads: Vec<(ThreadId, TTud)>,
 
     /// Why the process ended. Never modified once set.
-    outcome: Result<Option<wasmi::RuntimeValue>, wasmi::Trap>,
+    outcome: Result<Option<crate::WasmValue>, wasmi::Trap>,
 }
 
 /// Additional data associated to a thread. Stored within the [`vm::ProcessStateMachine`].
@@ -197,7 +197,7 @@ pub enum RunOneOutcome<'a, TExtr, TPud, TTud> {
         dead_threads: Vec<(ThreadId, TTud)>,
 
         /// Value returned by the main thread that has finished, or error that happened.
-        outcome: Result<Option<wasmi::RuntimeValue>, wasmi::Trap>,
+        outcome: Result<Option<crate::WasmValue>, wasmi::Trap>,
     },
 
     /// A thread in a process has finished.
@@ -212,7 +212,7 @@ pub enum RunOneOutcome<'a, TExtr, TPud, TTud> {
         user_data: TTud,
 
         /// Value returned by the function that was executed.
-        value: Option<wasmi::RuntimeValue>,
+        value: Option<crate::WasmValue>,
     },
 
     /// The currently-executed function has been paused due to a call to an external function.
@@ -229,7 +229,7 @@ pub enum RunOneOutcome<'a, TExtr, TPud, TTud> {
         id: &'a TExtr,
 
         /// Parameters of the function call.
-        params: Vec<wasmi::RuntimeValue>,
+        params: Vec<crate::WasmValue>,
     },
 }
 
@@ -730,11 +730,11 @@ impl<'a, TExtr, TPud, TTud> ProcessesCollectionProc<'a, TExtr, TPud, TTud> {
     /// > **Note**: The "function ID" is the index of the function in the WASM module. WASM
     /// >           doesn't have function pointers. Instead, all the functions are part of a single
     /// >           global array of functions.
-    // TODO: don't expose wasmi::RuntimeValue in the API
+    // TODO: don't expose crate::WasmValue in the API
     pub fn start_thread(
         &self,
         fn_index: u32,
-        params: Vec<wasmi::RuntimeValue>,
+        params: Vec<crate::WasmValue>,
         user_data: TTud,
     ) -> Result<ThreadId, vm::StartErr> {
         let thread_id = self.pid_tid_pool.assign(); // TODO: check for duplicates
@@ -845,7 +845,7 @@ impl<'a, TExtr, TPud, TTud> ProcessesCollectionThread<'a, TExtr, TPud, TTud> {
     ///
     /// This releases the [`ProcessesCollectionThread`]. The thread can now potentially be run by
     /// calling [`ProcessesCollection::run`].
-    pub fn resume(mut self, value: Option<wasmi::RuntimeValue>) {
+    pub fn resume(mut self, value: Option<crate::WasmValue>) {
         let process = self.process.take().unwrap();
         let user_data = self.user_data.take().unwrap();
 
@@ -953,7 +953,7 @@ mod tests {
         processes.execute(&module, (), ()).unwrap();
         match futures::executor::block_on(processes.run()) {
             RunOneOutcome::ProcessFinished { outcome, .. } => {
-                assert_eq!(outcome.unwrap(), Some(wasmi::RuntimeValue::I32(5)));
+                assert!(matches!(outcome.unwrap(), Some(crate::WasmValue::I32(5))));
             }
             _ => panic!(),
         };
@@ -1000,13 +1000,13 @@ mod tests {
                 loop {
                     match processes.run().now_or_never() {
                         Some(RunOneOutcome::ProcessFinished { pid, outcome, .. }) => {
-                            assert_eq!(outcome.unwrap(), Some(wasmi::RuntimeValue::I32(1234)));
+                            assert!(matches!(outcome.unwrap(), Some(crate::WasmValue::I32(1234))));
                             local_finished.push(pid);
                         }
                         Some(RunOneOutcome::Interrupted {
                             thread, id: &98, ..
                         }) => {
-                            thread.resume(Some(wasmi::RuntimeValue::I32(1234)));
+                            thread.resume(Some(crate::WasmValue::I32(1234)));
                         }
                         None => break,
                         _ => panic!(),

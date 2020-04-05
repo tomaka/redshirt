@@ -30,7 +30,7 @@ use redshirt_syscalls::EncodedMessage;
 /// Returns an error if the call is invalid.
 pub fn parse_extrinsic_next_notification<TExtr, TPud, TTud>(
     thread: &mut processes::ProcessesCollectionThread<TExtr, TPud, TTud>,
-    params: Vec<wasmi::RuntimeValue>,
+    params: Vec<crate::WasmValue>,
 ) -> Result<NotificationWait, ExtrinsicNextNotificationErr> {
     // We use an assert here rather than a runtime check because the WASM VM (rather than us) is
     // supposed to check the function signature.
@@ -38,7 +38,7 @@ pub fn parse_extrinsic_next_notification<TExtr, TPud, TTud>(
 
     let notifs_ids_ptr = u32::try_from(
         params[0]
-            .try_into::<i32>()
+            .into_i32()
             .ok_or(ExtrinsicNextNotificationErr::BadParameter)?,
     )
     .map_err(|_| ExtrinsicNextNotificationErr::BadParameter)?;
@@ -46,7 +46,7 @@ pub fn parse_extrinsic_next_notification<TExtr, TPud, TTud>(
     let notifs_ids = {
         let len = u32::try_from(
             params[1]
-                .try_into::<i32>()
+                .into_i32()
                 .ok_or(ExtrinsicNextNotificationErr::BadParameter)?,
         )
         .map_err(|_| ExtrinsicNextNotificationErr::BadParameter)?;
@@ -68,18 +68,18 @@ pub fn parse_extrinsic_next_notification<TExtr, TPud, TTud>(
 
     let out_pointer = u32::try_from(
         params[2]
-            .try_into::<i32>()
+            .into_i32()
             .ok_or(ExtrinsicNextNotificationErr::BadParameter)?,
     )
     .map_err(|_| ExtrinsicNextNotificationErr::BadParameter)?;
     let out_size = u32::try_from(
         params[3]
-            .try_into::<i32>()
+            .into_i32()
             .ok_or(ExtrinsicNextNotificationErr::BadParameter)?,
     )
     .map_err(|_| ExtrinsicNextNotificationErr::BadParameter)?;
     let block = params[4]
-        .try_into::<i32>()
+        .into_i32()
         .ok_or(ExtrinsicNextNotificationErr::BadParameter)?
         != 0;
 
@@ -129,7 +129,7 @@ pub enum ExtrinsicNextNotificationErr {
 /// Returns an error if the call is invalid.
 pub fn parse_extrinsic_emit_message<TExtr, TPud, TTud>(
     thread: &mut processes::ProcessesCollectionThread<TExtr, TPud, TTud>,
-    params: Vec<wasmi::RuntimeValue>,
+    params: Vec<crate::WasmValue>,
 ) -> Result<EmitMessage, ExtrinsicEmitMessageErr> {
     // We use an assert here rather than a runtime check because the WASM VM (rather than us) is
     // supposed to check the function signature.
@@ -138,7 +138,7 @@ pub fn parse_extrinsic_emit_message<TExtr, TPud, TTud>(
     let interface: InterfaceHash = {
         let addr = u32::try_from(
             params[0]
-                .try_into::<i32>()
+                .into_i32()
                 .ok_or(ExtrinsicEmitMessageErr::BadParameter)?,
         )
         .map_err(|_| ExtrinsicEmitMessageErr::BadParameter)?;
@@ -155,13 +155,13 @@ pub fn parse_extrinsic_emit_message<TExtr, TPud, TTud>(
     let message = {
         let addr = u32::try_from(
             params[1]
-                .try_into::<i32>()
+                .into_i32()
                 .ok_or(ExtrinsicEmitMessageErr::BadParameter)?,
         )
         .map_err(|_| ExtrinsicEmitMessageErr::BadParameter)?;
         let num_bufs = u32::try_from(
             params[2]
-                .try_into::<i32>()
+                .into_i32()
                 .ok_or(ExtrinsicEmitMessageErr::BadParameter)?,
         )
         .map_err(|_| ExtrinsicEmitMessageErr::BadParameter)?;
@@ -193,18 +193,18 @@ pub fn parse_extrinsic_emit_message<TExtr, TPud, TTud>(
     };
 
     let needs_answer = params[3]
-        .try_into::<i32>()
+        .into_i32()
         .ok_or(ExtrinsicEmitMessageErr::BadParameter)?
         != 0;
     let allow_delay = params[4]
-        .try_into::<i32>()
+        .into_i32()
         .ok_or(ExtrinsicEmitMessageErr::BadParameter)?
         != 0;
     let message_id_write = if needs_answer {
         Some(
             u32::try_from(
                 params[5]
-                    .try_into::<i32>()
+                    .into_i32()
                     .ok_or(ExtrinsicEmitMessageErr::BadParameter)?,
             )
             .map_err(|_| ExtrinsicEmitMessageErr::BadParameter)?,
@@ -251,7 +251,7 @@ pub enum ExtrinsicEmitMessageErr {
 /// Returns an error if the call is invalid.
 pub fn parse_extrinsic_emit_answer<TExtr, TPud, TTud>(
     thread: &mut processes::ProcessesCollectionThread<TExtr, TPud, TTud>,
-    params: Vec<wasmi::RuntimeValue>,
+    params: Vec<crate::WasmValue>,
 ) -> Result<EmitAnswer, ExtrinsicEmitAnswerErr> {
     // We use an assert here rather than a runtime check because the WASM VM (rather than us) is
     // supposed to check the function signature.
@@ -260,7 +260,7 @@ pub fn parse_extrinsic_emit_answer<TExtr, TPud, TTud>(
     let message_id = {
         let addr = u32::try_from(
             params[0]
-                .try_into::<i32>()
+                .into_i32()
                 .ok_or(ExtrinsicEmitAnswerErr::BadParameter)?,
         )
         .map_err(|_| ExtrinsicEmitAnswerErr::BadParameter)?;
@@ -273,13 +273,13 @@ pub fn parse_extrinsic_emit_answer<TExtr, TPud, TTud>(
     let response = {
         let addr = u32::try_from(
             params[1]
-                .try_into::<i32>()
+                .into_i32()
                 .ok_or(ExtrinsicEmitAnswerErr::BadParameter)?,
         )
         .map_err(|_| ExtrinsicEmitAnswerErr::BadParameter)?;
         let sz = u32::try_from(
             params[2]
-                .try_into::<i32>()
+                .into_i32()
                 .ok_or(ExtrinsicEmitAnswerErr::BadParameter)?,
         )
         .map_err(|_| ExtrinsicEmitAnswerErr::BadParameter)?;
@@ -321,7 +321,7 @@ pub enum ExtrinsicEmitAnswerErr {
 /// Returns an error if the call is invalid.
 pub fn parse_extrinsic_emit_message_error<TExtr, TPud, TTud>(
     thread: &mut processes::ProcessesCollectionThread<TExtr, TPud, TTud>,
-    params: Vec<wasmi::RuntimeValue>,
+    params: Vec<crate::WasmValue>,
 ) -> Result<MessageId, ExtrinsicEmitMessageErrorErr> {
     // We use an assert here rather than a runtime check because the WASM VM (rather than us) is
     // supposed to check the function signature.
@@ -330,7 +330,7 @@ pub fn parse_extrinsic_emit_message_error<TExtr, TPud, TTud>(
     let msg_id = {
         let addr = u32::try_from(
             params[0]
-                .try_into::<i32>()
+                .into_i32()
                 .ok_or(ExtrinsicEmitMessageErrorErr::BadParameter)?,
         )
         .map_err(|_| ExtrinsicEmitMessageErrorErr::BadParameter)?;
@@ -359,7 +359,7 @@ pub enum ExtrinsicEmitMessageErrorErr {
 /// Returns an error if the call is invalid.
 pub fn parse_extrinsic_cancel_message<TExtr, TPud, TTud>(
     thread: &mut processes::ProcessesCollectionThread<TExtr, TPud, TTud>,
-    params: Vec<wasmi::RuntimeValue>,
+    params: Vec<crate::WasmValue>,
 ) -> Result<MessageId, ExtrinsicCancelMessageErr> {
     // We use an assert here rather than a runtime check because the WASM VM (rather than us) is
     // supposed to check the function signature.
@@ -368,7 +368,7 @@ pub fn parse_extrinsic_cancel_message<TExtr, TPud, TTud>(
     let msg_id = {
         let addr = u32::try_from(
             params[0]
-                .try_into::<i32>()
+                .into_i32()
                 .ok_or(ExtrinsicCancelMessageErr::BadParameter)?,
         )
         .map_err(|_| ExtrinsicCancelMessageErr::BadParameter)?;
