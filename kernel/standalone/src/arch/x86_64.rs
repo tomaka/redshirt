@@ -33,6 +33,7 @@ mod apic;
 mod boot;
 mod executor;
 mod interrupts;
+mod paging;
 mod panic;
 mod pit;
 
@@ -84,6 +85,8 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
             None => panic!("Couldn't find free memory range for the AP allocator"),
         }
     };
+
+    let _paging = paging::load_identity_mapping();
 
     // Now that we have a memory allocator, initialize the logging system .
     let logger = Arc::new(KLogger::new({
