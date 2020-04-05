@@ -49,8 +49,6 @@ pub struct ApicId(u8);
 /// physical memory.
 ///
 pub unsafe fn init() -> LocalApicsControl {
-    // TODO: check whether CPUID is supported at all?
-
     // We don't support platforms without an APIC.
     assert!(is_apic_supported());
 
@@ -73,12 +71,12 @@ impl ApicId {
     ///
     /// There must be a processor with the given APIC ID.
     ///
-    pub unsafe fn from_unchecked(val: u8) -> Self {
+    pub const unsafe fn from_unchecked(val: u8) -> Self {
         ApicId(val)
     }
 
     /// Returns the integer value of this ID.
-    pub fn get(&self) -> u8 {
+    pub const fn get(&self) -> u8 {
         self.0
     }
 }
@@ -92,6 +90,7 @@ impl LocalApicsControl {
     ///
     // TODO: add debug_assert!s in all the other methods that check if the local APIC is initialized
     pub unsafe fn init_local(&self) {
+        // TODO: assert!(core::arch::x86_64::has_cpuid());  unstable for now
         assert!(is_apic_supported());
         assert_eq!(self.tsc_deadline_supported, is_tsc_deadline_supported());
 
@@ -118,6 +117,7 @@ impl LocalApicsControl {
         current_apic_id()
     }
 
+    /// Returns true if the hardware supports TSC deadline mode.
     pub fn is_tsc_deadline_supported(&self) -> bool {
         self.tsc_deadline_supported
     }
