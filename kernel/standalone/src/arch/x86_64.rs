@@ -216,8 +216,13 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
 
         match ap_boot_result {
             Ok(()) => kernel_channels.push(kernel_tx),
-            Err(err) =>
-                writeln!(logger.log_printer(), "error while initializing AP#{}: {}", ap.processor_uid, err).unwrap()
+            Err(err) => writeln!(
+                logger.log_printer(),
+                "error while initializing AP#{}: {}",
+                ap.processor_uid,
+                err
+            )
+            .unwrap(),
         }
     }
 
@@ -244,7 +249,7 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
     // Send an `Arc<Kernel>` to the other processors so that they can run it too.
     for tx in kernel_channels {
         if tx.send(kernel.clone()).is_err() {
-            panic!();
+            panic!("failed to send kernel to associated processor");
         }
     }
 

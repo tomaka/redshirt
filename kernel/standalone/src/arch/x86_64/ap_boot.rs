@@ -32,7 +32,7 @@ use crate::arch::x86_64::{executor, interrupts};
 
 use alloc::{alloc::Layout, boxed::Box};
 use core::{convert::TryFrom as _, fmt, ops::Range, ptr, slice, time::Duration};
-use futures::{prelude::*, channel::oneshot};
+use futures::{channel::oneshot, prelude::*};
 
 /// Allocator required by the [`boot_associated_processor`] function.
 pub struct ApBootAlloc {
