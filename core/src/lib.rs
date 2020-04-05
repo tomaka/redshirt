@@ -122,7 +122,7 @@ pub use self::system::{System, SystemBuilder, SystemRunOutcome};
 pub use redshirt_syscalls::{
     Decode, Encode, EncodedMessage, InterfaceHash, MessageId, Pid, ThreadId,
 };
-pub use wasmi::RuntimeValue; // TODO: wrap around instead?
+pub use wasm_value::{ValueType, WasmValue};
 
 #[cfg(feature = "nightly")]
 #[cfg_attr(docsrs, doc(cfg(feature = "nightly")))] // TODO: enable unconditonally after https://github.com/rust-lang/rust/issues/43781
@@ -149,6 +149,7 @@ macro_rules! from_wat {
 }
 
 mod id_pool;
+mod wasm_value;
 
 pub mod extrinsics;
 pub mod module;

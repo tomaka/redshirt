@@ -17,11 +17,10 @@
 //! all the calls to the `log` interface for debugging.
 
 use crate::extrinsics::{Extrinsics, ExtrinsicsAction, ExtrinsicsMemoryAccess, SupportedExtrinsic};
-use crate::{EncodedMessage, ThreadId};
+use crate::{EncodedMessage, ThreadId, WasmValue};
 
 use alloc::{borrow::Cow, format, string::String, vec, vec::Vec};
 use core::mem;
-use wasmi::RuntimeValue;
 
 /// Implementation of the [`Extrinsics`] trait that logs all calls to the underlying handler.
 ///
@@ -100,7 +99,7 @@ where
         &self,
         thread_id: ThreadId,
         id: &Self::ExtrinsicId,
-        params: impl ExactSizeIterator<Item = RuntimeValue>,
+        params: impl ExactSizeIterator<Item = WasmValue>,
         mem_access: &mut impl ExtrinsicsMemoryAccess,
     ) -> (Self::Context, ExtrinsicsAction) {
         let params = params.collect::<Vec<_>>();
