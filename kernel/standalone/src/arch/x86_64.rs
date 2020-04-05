@@ -197,7 +197,6 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
         }
 
         let (kernel_tx, kernel_rx) = oneshot::channel::<Arc<crate::kernel::Kernel<_>>>();
-        kernel_channels.push(kernel_tx);
 
         let ap_boot_result = ap_boot::boot_associated_processor(
             &mut ap_boot_alloc,
@@ -215,8 +214,10 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
             },
         );
 
-        if let Err(err) = ap_boot_result {
-            let _ = write!(logger.log_printer(), "error while initializing AP#{}: {}", ap.processor_uid, err);
+        match ap_boot_result {
+            Ok(()) => kernel_channels.push(kernel_tx),
+            Err(err) =>
+                writeln!(logger.log_printer(), "error while initializing AP#{}: {}", ap.processor_uid, err).unwrap()
         }
     }
 
