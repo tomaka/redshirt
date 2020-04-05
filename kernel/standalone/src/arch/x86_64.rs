@@ -187,9 +187,8 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
     // it to each sender.
     let mut kernel_channels = Vec::with_capacity(acpi_tables.application_processors.len());
 
-    writeln!(logger.log_printer(), "Initializing associated processors").unwrap();
-    // TODO: this `take(0)` disables APs for now; it seems to not work on VirtualBox or actual hardware
-    for ap in acpi_tables.application_processors.iter().take(0) {
+    writeln!(logger.log_printer(), "initializing associated processors").unwrap();
+    for ap in acpi_tables.application_processors.iter() {
         debug_assert!(ap.is_ap);
         // It is possible for some associated processors to be in a disabled state, in which case
         // they **must not** be started. This is generally the case of defective processors.
@@ -198,9 +197,8 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
         }
 
         let (kernel_tx, kernel_rx) = oneshot::channel::<Arc<crate::kernel::Kernel<_>>>();
-        kernel_channels.push(kernel_tx);
 
-        ap_boot::boot_associated_processor(
+        let ap_boot_result = ap_boot::boot_associated_processor(
             &mut ap_boot_alloc,
             &*executor,
             &*local_apics,
@@ -215,6 +213,17 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
                 }
             },
         );
+
+        match ap_boot_result {
+            Ok(()) => kernel_channels.push(kernel_tx),
+            Err(err) => writeln!(
+                logger.log_printer(),
+                "error while initializing AP#{}: {}",
+                ap.processor_uid,
+                err
+            )
+            .unwrap(),
+        }
     }
 
     // Now that everything has been initialized and all the processors started, we can initialize
@@ -235,12 +244,12 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
         Arc::new(crate::kernel::Kernel::init(platform_specific))
     };
 
-    writeln!(logger.log_printer(), "Boot successful").unwrap();
+    writeln!(logger.log_printer(), "boot successful").unwrap();
 
     // Send an `Arc<Kernel>` to the other processors so that they can run it too.
     for tx in kernel_channels {
         if tx.send(kernel.clone()).is_err() {
-            panic!();
+            panic!("failed to send kernel to associated processor");
         }
     }
 

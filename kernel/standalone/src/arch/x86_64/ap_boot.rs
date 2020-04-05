@@ -31,8 +31,8 @@ use crate::arch::x86_64::apic::{local::LocalApicsControl, timers::Timers, ApicId
 use crate::arch::x86_64::{executor, interrupts};
 
 use alloc::{alloc::Layout, boxed::Box};
-use core::{convert::TryFrom as _, ops::Range, ptr, slice, time::Duration};
-use futures::channel::oneshot;
+use core::{convert::TryFrom as _, fmt, ops::Range, ptr, slice, time::Duration};
+use futures::{channel::oneshot, prelude::*};
 
 /// Allocator required by the [`boot_associated_processor`] function.
 pub struct ApBootAlloc {
@@ -86,6 +86,21 @@ pub unsafe fn filter_build_ap_boot_alloc<'a>(
     })
 }
 
+/// Error that can happen during initialization.
+#[derive(Debug, Clone)]
+pub enum Error {
+    /// Associated processor is unresponsive.
+    Timeout,
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Error::Timeout => write!(f, "associated processor is unresponsive"),
+        }
+    }
+}
+
 /// Bootstraps the given processor, making it execute `boot_code`.
 ///
 /// This function returns once the target processor has been successfully initialized and has
@@ -115,7 +130,7 @@ pub unsafe fn boot_associated_processor(
     timers: &Timers,
     target: ApicId,
     boot_code: impl FnOnce() -> core::convert::Infallible + Send + 'static,
-) {
+) -> Result<(), Error> {
     // In order to boot an associated processor, we must send to it an inter-processor interrupt
     // (IPI) containing the offset of a 4kiB memory page containing the code that it must start
     // executing. The CS register of the target processor will take the value that we send, the
@@ -144,7 +159,8 @@ pub unsafe fn boot_associated_processor(
     // Start by sending an INIT IPI to the target so that it reboots.
     local_apics.send_interprocessor_init(target);
 
-    let rdtsc = core::arch::x86_64::_rdtsc(); // TODO: crappy code
+    // Later we will wait for 10ms to have elapsed since the INIT.
+    let wait_after_init = timers.register_tsc_timer(Duration::from_millis(10));
 
     // Write the template code to the buffer.
     ptr::copy_nonoverlapping(
@@ -155,7 +171,7 @@ pub unsafe fn boot_associated_processor(
 
     // Later, we will want to wait until the AP has finished initializing. To do so, we create
     // a channel and modify `boot_code` to signal that channel before doing anything more.
-    let (boot_code, init_finished_future) = {
+    let (boot_code, mut init_finished_future) = {
         let (tx, rx) = oneshot::channel();
         let boot_code = move || {
             local_apics.init_local();
@@ -277,25 +293,39 @@ pub unsafe fn boot_associated_processor(
     }
 
     // Wait for 10ms to have elapsed since we sent the INIT IPI.
-    executor.block_on(timers.register_tsc_timer(Duration::from_millis(10)));
+    executor.block_on(wait_after_init);
 
-    // Send the SINIT IPI, pointing to the bootstrap code that we have carefully crafted.
-    local_apics.send_interprocessor_sipi(target, bootstrap_code_buf.as_mut_ptr() as *const _);
+    // Because the APIC doesn't automatically try submitting the SIPI in case the target CPU was
+    // busy, we might have to try multiple times.
+    let mut attempts = 0;
+    let result = loop {
+        // Failure to initialize.
+        if attempts >= 2 {
+            // Before returning an error, we free the closure that was destined to be run by
+            // the AP.
+            let param = ap_after_boot_param as ApAfterBootParam;
+            let _ = Box::from_raw(param);
+            break Err(Error::Timeout);
+        }
+        attempts += 1;
 
-    // TODO: the APIC doesn't automatically try resubmitting the SIPI in case the target CPU was
-    //       busy, so we should send a second SIPI if the first one timed out
-    //       (the Intel manual also recommends doing so)
-    //       this is however tricky, as we have to make sure we're not sending the second SIPI
-    //       if the first one succeeded
-    /*let rdtsc = unsafe { core::arch::x86_64::_rdtsc() };
-    executor::block_on(local_apics, timers.register_tsc_timer(rdtsc + 1_000_000_000));
-    local_apics.send_interprocessor_sipi(target, bootstrap_code_buf.as_mut_ptr() as *const _);*/
+        // Send the SINIT IPI, pointing to the bootstrap code that we have carefully crafted.
+        local_apics.send_interprocessor_sipi(target, bootstrap_code_buf.as_mut_ptr() as *const _);
 
-    // Wait for CPU initialization to finish.
-    executor.block_on(init_finished_future).unwrap();
+        // Wait for the processor initialization to finish, but with a timeout in order to not
+        // wait forever if nothing happens.
+        let ap_ready_timeout = timers.register_tsc_timer(Duration::from_secs(1));
+        futures::pin_mut!(ap_ready_timeout);
+        match executor.block_on(future::select(ap_ready_timeout, &mut init_finished_future)) {
+            future::Either::Left(_) => continue,
+            future::Either::Right(_) => break Ok(()),
+        }
+    };
 
     // Make sure the buffer is dropped at the end.
     drop(bootstrap_code_buf);
+
+    result
 }
 
 // The code here is the template in question. Just like any code, is included in the kernel and
@@ -327,8 +357,10 @@ _ap_boot_start:
     movw %ax, %gs
     movw %ax, %ss
 
-    // TODO: properly set up and document the flags here. There's some 1G pages thing that we may not want
-    movl $((1 << 10) | (1 << 9) | (1 << 5)), %eax
+    movl $0, %eax
+    or $(1 << 10), %eax             // Set SIMD floating point exceptions bit.
+    or $(1 << 9), %eax              // Set OSFXSR bit, which enables SIMD.
+    or $(1 << 5), %eax              // Set physical address extension (PAE) bit.
     movl %eax, %cr4
 
 .global _ap_boot_marker3
