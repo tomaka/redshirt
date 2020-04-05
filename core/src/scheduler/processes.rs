@@ -1000,7 +1000,10 @@ mod tests {
                 loop {
                     match processes.run().now_or_never() {
                         Some(RunOneOutcome::ProcessFinished { pid, outcome, .. }) => {
-                            assert!(matches!(outcome.unwrap(), Some(crate::WasmValue::I32(1234))));
+                            assert!(matches!(
+                                outcome.unwrap(),
+                                Some(crate::WasmValue::I32(1234))
+                            ));
                             local_finished.push(pid);
                         }
                         Some(RunOneOutcome::Interrupted {
