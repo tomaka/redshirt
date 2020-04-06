@@ -77,14 +77,32 @@ extern "C" {
 /// Main Rust entry point.
 #[no_mangle]
 unsafe fn cpu_enter() -> ! {
-    // TODO: memory allocations!
-
     // Initialize the logging system.
     log::set_logger(KLogger::new(KernelLogMethod {
         enabled: true,
         framebuffer: None,
         uart: Some(init_uart()),
     }));
+
+    // Initialize the memory allocator.
+    // TODO: make this is a cleaner way; this is specific to the hifive
+    crate::mem_alloc::initialize(iter::once({
+        let free_mem_start = __bss_end as usize;
+        // TODO: don't know why but bss_end is zero
+        let free_mem_start = if free_mem_start == 0 {
+            0x80002800  // TODO: hack
+        } else {
+            free_mem_start
+        };
+        let ram_end = 0x80000000 + 16 * 1024;
+        free_mem_start..ram_end
+    }));
+
+    // Start the kernel
+    let kernel = {
+        let platform_specific = PlatformSpecificImpl {};
+        crate::kernel::Kernel::init(platform_specific)
+    };
 
     panic!("Hello world!");
 }
