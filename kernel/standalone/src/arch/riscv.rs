@@ -15,7 +15,7 @@
 
 #![cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
 
-use crate::arch::PlatformSpecific;
+use crate::arch::{PlatformSpecific, PortErr};
 
 use alloc::sync::Arc;
 use core::{
@@ -25,6 +25,7 @@ use core::{
     pin::Pin,
 };
 use futures::prelude::*;
+use redshirt_kernel_log_interface::ffi::KernelLogMethod;
 
 mod panic;
 
@@ -97,10 +98,6 @@ impl PlatformSpecific for PlatformSpecificImpl {
         NonZeroU32::new(1).unwrap()
     }
 
-    fn block_on<TRet>(self: Pin<&Self>, future: impl Future<Output = TRet>) -> TRet {
-        unimplemented!()
-    }
-
     fn monotonic_clock(self: Pin<&Self>) -> u128 {
         unimplemented!()
     }
@@ -109,27 +106,35 @@ impl PlatformSpecific for PlatformSpecificImpl {
         unimplemented!()
     }
 
-    unsafe fn write_port_u8(self: Pin<&Self>, _: u32, _: u8) -> Result<(), ()> {
-        Err(())
+    fn write_log(&self, message: &str) {
+        unimplemented!()
     }
 
-    unsafe fn write_port_u16(self: Pin<&Self>, _: u32, _: u16) -> Result<(), ()> {
-        Err(())
+    fn set_logger_method(&self, method: KernelLogMethod) {
+        unimplemented!()
     }
 
-    unsafe fn write_port_u32(self: Pin<&Self>, _: u32, _: u32) -> Result<(), ()> {
-        Err(())
+    unsafe fn write_port_u8(self: Pin<&Self>, _: u32, _: u8) -> Result<(), PortErr> {
+        Err(PortErr::Unsupported)
     }
 
-    unsafe fn read_port_u8(self: Pin<&Self>, _: u32) -> Result<u8, ()> {
-        Err(())
+    unsafe fn write_port_u16(self: Pin<&Self>, _: u32, _: u16) -> Result<(), PortErr> {
+        Err(PortErr::Unsupported)
     }
 
-    unsafe fn read_port_u16(self: Pin<&Self>, _: u32) -> Result<u16, ()> {
-        Err(())
+    unsafe fn write_port_u32(self: Pin<&Self>, _: u32, _: u32) -> Result<(), PortErr> {
+        Err(PortErr::Unsupported)
     }
 
-    unsafe fn read_port_u32(self: Pin<&Self>, _: u32) -> Result<u32, ()> {
-        Err(())
+    unsafe fn read_port_u8(self: Pin<&Self>, _: u32) -> Result<u8, PortErr> {
+        Err(PortErr::Unsupported)
+    }
+
+    unsafe fn read_port_u16(self: Pin<&Self>, _: u32) -> Result<u16, PortErr> {
+        Err(PortErr::Unsupported)
+    }
+
+    unsafe fn read_port_u32(self: Pin<&Self>, _: u32) -> Result<u32, PortErr> {
+        Err(PortErr::Unsupported)
     }
 }
