@@ -28,9 +28,9 @@ const LAYOUT: alloc::alloc::Layout =
 
 /// Represents a PML4, PDPT, PD or PT. In other words, a table used in the paging system.
 ///
-/// Note that this API is entirely safe despite the fact that we modify the memory's layout,
-/// which is an extremely unsafe thing to do. The safety is covered when loading a table into
-/// the CR3 register.
+/// Note that this API is entirely marked as safe despite the fact that we modify the memory's
+/// layout, which is an extremely unsafe thing to do. The safety is covered when loading a table
+/// into the CR3 register.
 pub struct RawPageTable {
     /// Because we have some alignment constraints, we need to allocate manually.
     table: *mut usize,

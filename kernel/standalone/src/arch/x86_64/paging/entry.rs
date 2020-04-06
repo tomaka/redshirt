@@ -167,6 +167,49 @@ impl TryFrom<DecodedPde2M> for EncodedEntry {
     }
 }
 
+pub struct DecodedPde4M {
+    pub present: bool,
+    pub read_write: bool,
+    pub user: bool,
+    pub write_through: bool,
+    pub cache_disable: bool,
+    pub accessed: bool,
+    pub dirty: bool,
+    pub global: bool,
+    pub attributes_table: bool,
+    pub physical_address: usize,
+}
+
+impl TryFrom<DecodedPde4M> for EncodedEntry {
+    type Error = ();
+    fn try_from(decoded: DecodedPde4M) -> Result<Self, Self::Error> {
+        if decoded.physical_address % (4 * 1024 * 1024) != 0 {
+            return Err(());
+        }
+
+        // Note: we would normally add support for PAE here. PAE allow accessing 36bits of
+        // physical memory as opposed to 32bits. Supporting PAE in an identity-mapped scheme,
+        // however, makes little sense, as we could not actually access the extra available
+        // physical memory.
+
+        TryFrom::try_from(DecodedAll {
+            present: decoded.present,
+            read_write: decoded.read_write,
+            user: decoded.user,
+            write_through: decoded.write_through,
+            cache_disable: decoded.cache_disable,
+            accessed: decoded.accessed,
+            dirty: decoded.dirty,
+            bit7: true,
+            global: decoded.global,
+            bit12: decoded.attributes_table,
+            physical_address: decoded.physical_address,
+            protection_key: 0,
+            execute_disable: false,
+        })
+    }
+}
+
 /// Intermediary type common to all types of entries.
 struct DecodedAll {
     present: bool,

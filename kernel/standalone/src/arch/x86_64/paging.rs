@@ -13,6 +13,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+//! Paging and virtual memory.
+//!
+//! This module contains everything related to paging and caching memory.
+
 use alloc::vec::Vec;
 use core::convert::TryFrom;
 use raw_table::RawPageTable;
@@ -20,6 +24,7 @@ use raw_table::RawPageTable;
 mod cr3;
 mod entry;
 mod raw_table;
+mod table;
 
 pub unsafe fn load_identity_mapping() -> Paging {
     let mut pds = Vec::with_capacity(32);
