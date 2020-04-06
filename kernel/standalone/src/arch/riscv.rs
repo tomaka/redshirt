@@ -29,7 +29,7 @@ use futures::prelude::*;
 use redshirt_kernel_log_interface::ffi::{KernelLogMethod, UartInfo};
 
 mod interrupts;
-mod panic;
+mod log;
 
 /// This is the main entry point of the kernel for RISC-V architectures.
 #[no_mangle]
@@ -80,7 +80,7 @@ unsafe fn cpu_enter() -> ! {
     // TODO: memory allocations!
 
     // Initialize the logging system.
-    panic::set_logger(KLogger::new(KernelLogMethod {
+    log::set_logger(KLogger::new(KernelLogMethod {
         enabled: true,
         framebuffer: None,
         uart: Some(init_uart()),
@@ -139,6 +139,7 @@ impl PlatformSpecific for PlatformSpecificImpl {
     type TimerFuture = future::Pending<()>;
 
     fn num_cpus(self: Pin<&Self>) -> NonZeroU32 {
+        // TODO:
         NonZeroU32::new(1).unwrap()
     }
 
@@ -151,11 +152,13 @@ impl PlatformSpecific for PlatformSpecificImpl {
     }
 
     fn write_log(&self, message: &str) {
-        unimplemented!()
+        log::write_log(message);
     }
 
     fn set_logger_method(&self, method: KernelLogMethod) {
-        unimplemented!()
+        unsafe {
+            log::set_logger(KLogger::new(method));
+        }
     }
 
     unsafe fn write_port_u8(self: Pin<&Self>, _: u32, _: u8) -> Result<(), PortErr> {

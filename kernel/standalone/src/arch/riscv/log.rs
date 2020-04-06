@@ -24,17 +24,27 @@ use spinning_top::Spinlock;
 
 /// Modifies the logger to use when printing a panic.
 pub fn set_logger(logger: KLogger) {
-    *PANIC_LOGGER.lock() = Some(logger);
+    *LOGGER.lock() = Some(logger);
 }
 
-static PANIC_LOGGER: Spinlock<Option<KLogger>> = Spinlock::new(None);
+/// Uses the current logger to write a log message.
+///
+/// Has no effect is no logger has been set.
+pub fn write_log(message: &str) {
+    let logger = LOGGER.lock();
+    if let Some(l) = &*logger {
+        let _ = l.log_printer().write_str(message);
+    }
+}
+
+static LOGGER: Spinlock<Option<KLogger>> = Spinlock::new(None);
 
 #[cfg(not(any(test, doc, doctest)))]
 #[panic_handler]
 fn panic(panic_info: &core::panic::PanicInfo) -> ! {
     // TODO: somehow freeze all CPUs?
 
-    let logger = PANIC_LOGGER.lock();
+    let logger = LOGGER.lock();
 
     // We only print a panic if the panic logger is set. This sucks, but there's no real way we
     // can handle panics before even basic initialization has been performed.
