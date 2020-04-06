@@ -16,6 +16,7 @@
 #![cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
 
 use crate::arch::{PlatformSpecific, PortErr};
+use crate::klog::KLogger;
 
 use alloc::sync::Arc;
 use core::{
@@ -25,8 +26,9 @@ use core::{
     pin::Pin,
 };
 use futures::prelude::*;
-use redshirt_kernel_log_interface::ffi::KernelLogMethod;
+use redshirt_kernel_log_interface::ffi::{KernelLogMethod, UartInfo};
 
+mod interrupts;
 mod panic;
 
 /// This is the main entry point of the kernel for RISC-V architectures.
@@ -74,7 +76,16 @@ extern "C" {
 
 /// Main Rust entry point.
 #[no_mangle]
-fn cpu_enter() -> ! {
+unsafe fn cpu_enter() -> ! {
+    // TODO: memory allocations!
+
+    // Initialize the logging system.
+    panic::set_logger(KLogger::new(KernelLogMethod {
+        enabled: true,
+        framebuffer: None,
+        uart: Some(init_uart()),
+    }));
+
     panic!("Hello world!");
 }
 
@@ -84,6 +95,39 @@ fn abort() -> ! {
     loop {
         unsafe {
             asm!("wfi");
+        }
+    }
+}
+
+// TODO: this is architecture-specific and very hacky
+fn init_uart() -> UartInfo {
+    unsafe {
+        let prci_hfrosccfg = (0x10008000 as *mut u32).read_volatile();
+        (0x10008000 as *mut u32).write_volatile(prci_hfrosccfg | (1 << 30));
+
+        let prci_pllcfg = (0x10008008 as *mut u32).read_volatile();
+        (0x10008008 as *mut u32).write_volatile(prci_pllcfg | (1 << 18) | (1 << 17));
+        let prci_pllcfg = (0x10008008 as *mut u32).read_volatile();
+        (0x10008008 as *mut u32).write_volatile(prci_pllcfg | (1 << 16));
+
+        let prci_hfrosccfg = (0x10008000 as *mut u32).read_volatile();
+        (0x10008000 as *mut u32).write_volatile(prci_hfrosccfg & !(1 << 30));
+
+        let gpio_iof_sel = (0x1001203c as *mut u32).read_volatile();
+        (0x1001203c as *mut u32).write_volatile(gpio_iof_sel & !0x00030000);
+
+        let gpio_iof_en = (0x10012038 as *mut u32).read_volatile();
+        (0x10012038 as *mut u32).write_volatile(gpio_iof_en | 0x00030000);
+
+        (0x10013018 as *mut u32).write_volatile(138);
+
+        let uart_reg_tx_ctrl = (0x10013008 as *mut u32).read_volatile();
+        (0x10013008 as *mut u32).write_volatile(uart_reg_tx_ctrl | 1);
+
+        UartInfo {
+            wait_low_address: 0x10013000,
+            wait_low_mask: 0x80000000,
+            write_address: 0x10013000,
         }
     }
 }

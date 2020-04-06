@@ -13,65 +13,42 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use alloc::string::String;
-use core::fmt::{self, Write};
+//! Panic handling code.
 
+use crate::klog::KLogger;
+
+use alloc::sync::Arc;
+use core::fmt::Write as _;
+use redshirt_kernel_log_interface::ffi::{FramebufferFormat, FramebufferInfo, KernelLogMethod};
+use spinning_top::Spinlock;
+
+/// Modifies the logger to use when printing a panic.
+pub fn set_logger(logger: KLogger) {
+    *PANIC_LOGGER.lock() = Some(logger);
+}
+
+static PANIC_LOGGER: Spinlock<Option<KLogger>> = Spinlock::new(None);
+
+#[cfg(not(any(test, doc, doctest)))]
 #[panic_handler]
 fn panic(panic_info: &core::panic::PanicInfo) -> ! {
     // TODO: somehow freeze all CPUs?
 
-    init();
-    let _ = writeln!(DummyWrite, "Kernel panic!");
-    let _ = writeln!(DummyWrite, "{}", panic_info);
+    let logger = PANIC_LOGGER.lock();
 
-    unsafe {
-        // Freeze forever.
-        loop {
+    // We only print a panic if the panic logger is set. This sucks, but there's no real way we
+    // can handle panics before even basic initialization has been performed.
+    if let Some(l) = &*logger {
+        let mut printer = l.panic_printer();
+        let _ = writeln!(printer, "Kernel panic!");
+        let _ = writeln!(printer, "{}", panic_info);
+        let _ = writeln!(printer, "");
+    }
+
+    // Freeze forever.
+    loop {
+        unsafe {
             asm!("wfi");
         }
-    }
-}
-
-fn init() {
-    unsafe {
-        let prci_hfrosccfg = (0x10008000 as *mut u32).read_volatile();
-        (0x10008000 as *mut u32).write_volatile(prci_hfrosccfg | (1 << 30));
-
-        let prci_pllcfg = (0x10008008 as *mut u32).read_volatile();
-        (0x10008008 as *mut u32).write_volatile(prci_pllcfg | (1 << 18) | (1 << 17));
-        let prci_pllcfg = (0x10008008 as *mut u32).read_volatile();
-        (0x10008008 as *mut u32).write_volatile(prci_pllcfg | (1 << 16));
-
-        let prci_hfrosccfg = (0x10008000 as *mut u32).read_volatile();
-        (0x10008000 as *mut u32).write_volatile(prci_hfrosccfg & !(1 << 30));
-
-        let gpio_iof_sel = (0x1001203c as *mut u32).read_volatile();
-        (0x1001203c as *mut u32).write_volatile(gpio_iof_sel & !0x00030000);
-
-        let gpio_iof_en = (0x10012038 as *mut u32).read_volatile();
-        (0x10012038 as *mut u32).write_volatile(gpio_iof_en | 0x00030000);
-
-        (0x10013018 as *mut u32).write_volatile(138);
-
-        let uart_reg_tx_ctrl = (0x10013008 as *mut u32).read_volatile();
-        (0x10013008 as *mut u32).write_volatile(uart_reg_tx_ctrl | 1);
-    }
-}
-
-struct DummyWrite;
-impl fmt::Write for DummyWrite {
-    fn write_str(&mut self, message: &str) -> fmt::Result {
-        for byte in message.as_bytes() {
-            write_uart(*byte);
-        }
-        Ok(())
-    }
-}
-
-fn write_uart(byte: u8) {
-    unsafe {
-        // Wait for UART to become ready to transmit.
-        while ((0x10013000 as *mut u32).read_volatile() & 0x80000000) != 0 {}
-        (0x10013000 as *mut u32).write_volatile(u32::from(byte));
     }
 }
