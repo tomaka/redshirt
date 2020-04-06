@@ -16,6 +16,14 @@ There are two binaries available in this repository:
 - The freestanding kernel is a multiboot2-compliant kernel that can be loaded with GRUB2 or any
   compliant bootloader.
 
+Switch to Rust nightly:
+
+```
+cargo clean
+rustup toolchain install nightly
+rustup default nightly
+```
+
 For the hosted kernel:
 
 ```
