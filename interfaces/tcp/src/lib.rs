@@ -18,8 +18,6 @@
 //! Allows opening asynchronous TCP sockets and listeners, similar to what the `tokio` or
 //! `async-std` libraries do.
 
-#![deny(intra_doc_link_resolution_failure)]
-
 use futures::{lock::Mutex, prelude::*, ready};
 use redshirt_syscalls::{Encode as _, MessageResponseFuture};
 use std::{

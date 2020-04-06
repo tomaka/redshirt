@@ -39,7 +39,7 @@ use core::{
     task::{Context, Poll, Waker},
 };
 use futures::prelude::*;
-use spin::Mutex;
+use spinning_top::Spinlock;
 
 /// All the time-related functionalities.
 pub struct TimeControl {
@@ -52,7 +52,7 @@ pub struct TimeControl {
     /// The first timer in the list must always match what the hardware timer is configured for.
     /// Any operation that modifies the first element must also update the hardware timer by
     /// calling [`update_hardware`].
-    timers: Mutex<Vec<Timer>>,
+    timers: Spinlock<Vec<Timer>>,
 
     /// Each timer in [`TimerControl::timers`] is assigned a private id for identification. This
     /// counter increases linearly and contains the ID to assign to the next timer to put in the
@@ -104,7 +104,7 @@ impl TimeControl {
         //       check the state of the timers and fire the wakers
 
         Arc::new(TimeControl {
-            timers: Mutex::new(Vec::new()),
+            timers: Spinlock::new(Vec::new()),
             next_timer_id: From::from(1),
         })
     }
