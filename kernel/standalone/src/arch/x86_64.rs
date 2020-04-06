@@ -33,6 +33,7 @@ mod apic;
 mod boot;
 mod executor;
 mod interrupts;
+mod mrtt;
 mod paging;
 mod panic;
 mod pit;
