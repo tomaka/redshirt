@@ -433,16 +433,15 @@ impl Extrinsics for WasiExtrinsics {
                         encoded_message.push(u8::from(*level));
                         encoded_message.extend(buffer.drain(..split_pos));
                         buffer.remove(0);
-        
+
                         let action = ExtrinsicsAction::EmitMessage {
                             interface: redshirt_log_interface::ffi::INTERFACE,
                             message: EncodedMessage(encoded_message),
                             response_expected: false,
                         };
-        
+
                         ctxt.0 = ContextInner::TryFlushLogOut(fd);
                         action
-        
                     } else {
                         ctxt.0 = ContextInner::Finished;
                         ExtrinsicsAction::Resume(Some(WasmValue::I32(0)))
@@ -1073,7 +1072,6 @@ fn fd_write(
 
                 let context = ContextInner::TryFlushLogOut(fd);
                 Ok((context, action))
-
             } else {
                 let action = ExtrinsicsAction::Resume(Some(WasmValue::I32(0)));
                 return Ok((ContextInner::Finished, action));
