@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::{module::Module, ValueType, WasmValue};
+use crate::{module::Module, signature::Signature, ValueType, WasmValue};
 
 use alloc::{
     borrow::{Cow, ToOwned as _},
@@ -233,10 +233,10 @@ impl<T> ProcessStateMachine<T> {
     pub fn new(
         module: &Module,
         main_thread_user_data: T,
-        mut symbols: impl FnMut(&str, &str, &wasmi::Signature) -> Result<usize, ()>,
+        mut symbols: impl FnMut(&str, &str, &Signature) -> Result<usize, ()>,
     ) -> Result<Self, NewErr> {
         struct ImportResolve<'a>(
-            RefCell<&'a mut dyn FnMut(&str, &str, &wasmi::Signature) -> Result<usize, ()>>,
+            RefCell<&'a mut dyn FnMut(&str, &str, &Signature) -> Result<usize, ()>>,
         );
         impl<'a> wasmi::ImportResolver for ImportResolve<'a> {
             fn resolve_func(
@@ -246,7 +246,7 @@ impl<T> ProcessStateMachine<T> {
                 signature: &wasmi::Signature,
             ) -> Result<wasmi::FuncRef, wasmi::Error> {
                 let closure = &mut **self.0.borrow_mut();
-                let index = match closure(module_name, field_name, signature) {
+                let index = match closure(module_name, field_name, &From::from(signature)) {
                     Ok(i) => i,
                     Err(_) => {
                         return Err(wasmi::Error::Instantiation(format!(

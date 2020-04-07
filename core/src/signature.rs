@@ -65,10 +65,6 @@ impl Signature {
     pub fn return_type(&self) -> &Option<ValueType> {
         &self.ret_ty
     }
-
-    pub(crate) fn matches_wasmi(&self, sig: &wasmi::Signature) -> bool {
-        wasmi::Signature::from(self) == *sig
-    }
 }
 
 impl<'a> From<&'a Signature> for wasmi::Signature {
@@ -87,6 +83,21 @@ impl<'a> From<&'a Signature> for wasmi::Signature {
 impl From<Signature> for wasmi::Signature {
     fn from(sig: Signature) -> wasmi::Signature {
         wasmi::Signature::from(&sig)
+    }
+}
+
+impl<'a> From<&'a wasmi::Signature> for Signature {
+    fn from(sig: &'a wasmi::Signature) -> Signature {
+        Signature::new(
+            sig.params().iter().cloned().map(ValueType::from),
+            sig.return_type().map(ValueType::from),
+        )
+    }
+}
+
+impl From<wasmi::Signature> for Signature {
+    fn from(sig: wasmi::Signature) -> Signature {
+        Signature::from(&sig)
     }
 }
 
