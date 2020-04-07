@@ -21,6 +21,7 @@
 #![feature(alloc_error_handler)] // TODO: https://github.com/rust-lang/rust/issues/66741
 #![feature(asm)]
 #![feature(core_intrinsics)]
+#![feature(const_if_match)] // TODO: https://github.com/rust-lang/rust/issues/49146
 #![feature(global_asm)] // TODO: https://github.com/rust-lang/rust/issues/35119
 #![feature(naked_functions)] // TODO: https://github.com/rust-lang/rust/issues/32408
 #![feature(panic_info_message)] // TODO: https://github.com/rust-lang/rust/issues/66745
@@ -32,6 +33,7 @@ extern crate rlibc;
 mod arch;
 mod hardware;
 mod kernel;
+mod klog;
 mod mem_alloc;
 mod random;
 mod time;

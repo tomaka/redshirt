@@ -419,7 +419,7 @@ extern "x86-interrupt" fn int0(frame: &mut idt::InterruptStackFrame) {
     interrupt_panic!("Division by zero", frame);
 }
 
-extern "x86-interrupt" fn int1(frame: &mut idt::InterruptStackFrame) {
+extern "x86-interrupt" fn int1(_frame: &mut idt::InterruptStackFrame) {
     let dr0: u64;
     let dr1: u64;
     let dr2: u64;
@@ -471,7 +471,7 @@ extern "x86-interrupt" fn int7(frame: &mut idt::InterruptStackFrame) {
     interrupt_panic!("Coprocessor not available", frame);
 }
 
-extern "x86-interrupt" fn int8(frame: &mut idt::InterruptStackFrame, _: u64) -> ! {
+extern "x86-interrupt" fn int8(_frame: &mut idt::InterruptStackFrame, _: u64) -> ! {
     // A double fault happens when an exception happens while an exception was already
     // being handled.
     //

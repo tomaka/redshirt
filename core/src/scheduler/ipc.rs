@@ -106,7 +106,7 @@ pub enum CoreRunOutcome {
         /// How the program ended. If `Ok`, it has gracefully terminated. If `Err`, something
         /// bad happened.
         // TODO: force Ok to i32?
-        outcome: Result<Option<wasmi::RuntimeValue>, wasmi::Trap>,
+        outcome: Result<Option<crate::WasmValue>, wasmi::Trap>,
     },
 
     /// Thread has tried to emit a message on an interface that isn't registered. The thread is
@@ -714,11 +714,11 @@ impl<'a> CoreProcess<'a> {
 
     /// Adds a new thread to the process, starting the function with the given index and passing
     /// the given parameters.
-    // TODO: don't expose wasmi::RuntimeValue
+    // TODO: don't expose crate::WasmValue
     pub fn start_thread(
         self,
         fn_index: u32,
-        params: Vec<wasmi::RuntimeValue>,
+        params: Vec<crate::WasmValue>,
     ) -> Result<(), vm::StartErr> {
         self.process.start_thread(fn_index, params, ())?;
         Ok(())

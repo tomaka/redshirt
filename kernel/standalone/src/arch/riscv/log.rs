@@ -23,32 +23,42 @@ use redshirt_kernel_log_interface::ffi::{FramebufferFormat, FramebufferInfo, Ker
 use spinning_top::Spinlock;
 
 /// Modifies the logger to use when printing a panic.
-pub fn set_logger(logger: Arc<KLogger>) {
-    *PANIC_LOGGER.lock() = Some(logger);
+pub fn set_logger(logger: KLogger) {
+    *LOGGER.lock() = Some(logger);
 }
 
-static PANIC_LOGGER: Spinlock<Option<Arc<KLogger>>> = Spinlock::new(None);
-static DEFAULT_LOGGER: KLogger = unsafe { KLogger::new(super::DEFAULT_LOG_METHOD) };
+/// Uses the current logger to write a log message.
+///
+/// Has no effect is no logger has been set.
+pub fn write_log(message: &str) {
+    let logger = LOGGER.lock();
+    if let Some(l) = &*logger {
+        let _ = l.log_printer().write_str(message);
+    }
+}
+
+static LOGGER: Spinlock<Option<KLogger>> = Spinlock::new(None);
 
 #[cfg(not(any(test, doc, doctest)))]
 #[panic_handler]
 fn panic(panic_info: &core::panic::PanicInfo) -> ! {
-    let logger = PANIC_LOGGER.lock();
-    let logger = if let Some(l) = &*logger {
-        l
-    } else {
-        &DEFAULT_LOGGER
-    };
+    // TODO: somehow freeze all CPUs?
 
-    let mut printer = logger.panic_printer();
-    let _ = writeln!(printer, "Kernel panic!");
-    let _ = writeln!(printer, "{}", panic_info);
-    let _ = writeln!(printer, "");
-    drop(printer);
+    let logger = LOGGER.lock();
+
+    // We only print a panic if the panic logger is set. This sucks, but there's no real way we
+    // can handle panics before even basic initialization has been performed.
+    if let Some(l) = &*logger {
+        let mut printer = l.panic_printer();
+        let _ = writeln!(printer, "Kernel panic!");
+        let _ = writeln!(printer, "{}", panic_info);
+        let _ = writeln!(printer, "");
+    }
 
     // Freeze forever.
     loop {
-        x86_64::instructions::interrupts::disable();
-        x86_64::instructions::hlt();
+        unsafe {
+            asm!("wfi");
+        }
     }
 }

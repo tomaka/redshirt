@@ -13,6 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use crate::ValueType;
+
 use alloc::vec::Vec;
 use smallvec::SmallVec;
 
@@ -33,23 +35,14 @@ pub struct Signature {
 macro_rules! sig {
     (($($p:ident),*)) => {{
         let params = core::iter::empty();
-        $(let params = params.chain(core::iter::once($crate::signature::ValueType::$p));)*
+        $(let params = params.chain(core::iter::once($crate::ValueType::$p));)*
         $crate::signature::Signature::new(params, None)
     }};
     (($($p:ident),*) -> $ret:ident) => {{
         let params = core::iter::empty();
-        $(let params = params.chain(core::iter::once($crate::signature::ValueType::$p));)*
-        $crate::signature::Signature::new(params, Some($crate::signature::ValueType::$ret))
+        $(let params = params.chain(core::iter::once($crate::ValueType::$p));)*
+        $crate::signature::Signature::new(params, Some($crate::ValueType::$ret))
     }};
-}
-
-// TODO: what about U32/U64/etc.?
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub enum ValueType {
-    I32,
-    I64,
-    F32,
-    F64,
 }
 
 impl Signature {

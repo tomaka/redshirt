@@ -103,6 +103,7 @@ impl FromStr for DeviceTy {
 
 #[derive(Debug)]
 enum Target {
+    HiFiveRiscV,
     RaspberryPi2,
     RaspberryPi3,
     X8664Multiboot2,
@@ -111,6 +112,7 @@ enum Target {
 impl From<Target> for redshirt_standalone_builder::image::Target {
     fn from(target: Target) -> redshirt_standalone_builder::image::Target {
         match target {
+            Target::HiFiveRiscV => redshirt_standalone_builder::image::Target::HiFiveRiscV,
             Target::RaspberryPi2 => redshirt_standalone_builder::image::Target::RaspberryPi2,
             Target::RaspberryPi3 => redshirt_standalone_builder::image::Target::RaspberryPi3,
             Target::X8664Multiboot2 => redshirt_standalone_builder::image::Target::X8664Multiboot2,
@@ -125,6 +127,7 @@ impl FromStr for Target {
         match s {
             "arm-rpi2" => Ok(Target::RaspberryPi2),
             "arm-rpi3" => Ok(Target::RaspberryPi3),
+            "riscv-hifive" => Ok(Target::HiFiveRiscV),
             "x86_64-multiboot2" => Ok(Target::X8664Multiboot2),
             _ => Err("unrecognized target".to_string()),
         }

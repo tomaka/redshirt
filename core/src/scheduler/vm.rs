@@ -13,7 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::module::Module;
+use crate::{module::Module, ValueType, WasmValue};
+
 use alloc::{
     borrow::{Cow, ToOwned as _},
     boxed::Box,
@@ -103,7 +104,7 @@ pub enum ExecOutcome<'a, T> {
         thread_index: usize,
 
         /// Return value of the thread function.
-        return_value: Option<wasmi::RuntimeValue>,
+        return_value: Option<WasmValue>,
 
         /// User data that was stored within the thread.
         user_data: T,
@@ -127,7 +128,7 @@ pub enum ExecOutcome<'a, T> {
         id: usize,
 
         /// Parameters of the function call.
-        params: Vec<wasmi::RuntimeValue>,
+        params: Vec<WasmValue>,
     },
 
     /// The currently-executed function has finished with an error. The state machine is now in a
@@ -178,9 +179,9 @@ pub enum RunErr {
     /// Passed a wrong value back.
     BadValueTy {
         /// Type of the value that was expected.
-        expected: Option<wasmi::ValueType>,
+        expected: Option<ValueType>,
         /// Type of the value that was actually passed.
-        obtained: Option<wasmi::ValueType>,
+        obtained: Option<ValueType>,
     },
 }
 
@@ -222,7 +223,7 @@ impl<T> ProcessStateMachine<T> {
     pub fn start_thread_by_id(
         &mut self,
         function_id: u32,
-        params: impl Into<Cow<'static, [wasmi::RuntimeValue]>>,
+        params: impl IntoIterator<Item = WasmValue>,
         user_data: T,
     ) -> Result<Thread<T>, StartErr> {
         Ok(Thread(self.0.start_thread_by_id(
@@ -292,7 +293,7 @@ impl<'a, T> Thread<'a, T> {
     /// a value of `None`.
     /// If, however, you call this function after a previous call to [`run`](Thread::run) that was
     /// interrupted by an external function call, then you must pass back the outcome of that call.
-    pub fn run(mut self, value: Option<wasmi::RuntimeValue>) -> Result<ExecOutcome<'a, T>, RunErr> {
+    pub fn run(mut self, value: Option<WasmValue>) -> Result<ExecOutcome<'a, T>, RunErr> {
         self.0.run(value)
     }
 
@@ -373,7 +374,7 @@ impl fmt::Display for RunErr {
 #[cfg(test)]
 mod tests {
     use super::{ExecOutcome, NewErr, ProcessStateMachine};
-    use crate::module::Module;
+    use crate::WasmValue;
 
     #[test]
     fn starts_if_main() {
@@ -422,7 +423,7 @@ mod tests {
             ProcessStateMachine::new(&module, (), |_, _, _| unreachable!()).unwrap();
         match state_machine.thread(0).unwrap().run(None) {
             Ok(ExecOutcome::ThreadFinished {
-                return_value: Some(wasmi::RuntimeValue::I32(5)),
+                return_value: Some(WasmValue::I32(5)),
                 ..
             }) => {}
             _ => panic!(),
@@ -455,10 +456,10 @@ mod tests {
         match state_machine
             .thread(0)
             .unwrap()
-            .run(Some(wasmi::RuntimeValue::I32(2227)))
+            .run(Some(WasmValue::I32(2227)))
         {
             Ok(ExecOutcome::ThreadFinished {
-                return_value: Some(wasmi::RuntimeValue::I32(2227)),
+                return_value: Some(WasmValue::I32(2227)),
                 ..
             }) => {}
             _ => panic!(),

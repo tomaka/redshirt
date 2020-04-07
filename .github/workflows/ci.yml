@@ -19,7 +19,7 @@ jobs:
     - name: Install Rust
       uses: actions-rs/toolchain@v1
       with:
-        toolchain: stable
+        toolchain: nightly-2020-03-22
         target: wasm32-wasi
         override: true
     - name: Install a recent version of clang
