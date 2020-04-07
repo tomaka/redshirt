@@ -35,43 +35,38 @@ mod log;
 mod misc;
 
 /// This is the main entry point of the kernel for RISC-V architectures.
-#[no_mangle]
-#[naked]
-unsafe extern "C" fn _start() -> ! {
+global_asm!(r#"
+.global _start
+_start:
     // Disable interrupts and clear pending interrupts.
-    asm!("csrw mie, 0 ; csrw mip, 0");
+    csrw mie, 0
+    csrw mip, 0
 
     // TODO: ???
-    /*asm!("
     .option push
     .option norelax
-        la gp, __global_pointer$
+    la gp, __global_pointer$
     .option pop
-    ":::"memory":"volatile");*/
 
     // Zero the BSS segment.
-    // TODO: we pray here that the compiler doesn't use the stack
-    let mut ptr = __bss_start;
-    while ptr < __bss_end {
-        ptr.write_volatile(0);
-        ptr = ptr.add(1);
-    }
+    la a0, __bss_start
+    la a1, __bss_end
+.L0:sb zero, 0(a0)
+    addi a0, a0, 1
+    bltu a0, a1, .L0
 
     // Set up the stack.
-    // TODO: better way
+    // TODO: make stack size configurable
     // TODO: we don't have any stack protection in place
-    asm!(r#"
     .comm stack, 0x2000, 8
-
     la sp, stack
-    lui t0, %hi(0x2000)
-    add t0, t0, %lo(0x2000)
+    li t0, 0x2000
     add sp, sp, t0
 
-    add s0, sp, zero"#:::"memory":"volatile");
+    add fp, sp, zero
 
-    cpu_enter();
-}
+    j cpu_enter
+"#);
 
 extern "C" {
     static mut __bss_start: *mut u8;
