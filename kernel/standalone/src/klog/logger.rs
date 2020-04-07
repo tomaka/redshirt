@@ -96,7 +96,10 @@ impl<'a> fmt::Write for Printer<'a> {
 
                 if let Some(uart) = uart {
                     unsafe {
-                        if let (Ok(r_addr), Ok(w_addr)) = (usize::try_from(uart.wait_low_address), usize::try_from(uart.write_address)) {
+                        if let (Ok(r_addr), Ok(w_addr)) = (
+                            usize::try_from(uart.wait_low_address),
+                            usize::try_from(uart.write_address),
+                        ) {
                             for byte in message.as_bytes() {
                                 loop {
                                     let v = (r_addr as *const u32).read_volatile();

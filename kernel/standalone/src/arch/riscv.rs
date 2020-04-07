@@ -35,7 +35,8 @@ mod log;
 mod misc;
 
 /// This is the main entry point of the kernel for RISC-V architectures.
-global_asm!(r#"
+global_asm!(
+    r#"
 .global _start
 _start:
     // Disable interrupts and clear pending interrupts.
@@ -65,7 +66,8 @@ _start:
     add fp, sp, zero
 
     j cpu_enter
-"#);
+"#
+);
 
 // TODO: remove this
 extern "C" {
@@ -91,11 +93,18 @@ unsafe fn cpu_enter() -> ! {
         free_mem_start..ram_end
     }));
 
+    // Initialize interrupts.
+    let _interrupts = interrupts::init();
+
     // Initialize the kernel.
     let kernel = {
         let platform_specific = PlatformSpecificImpl {};
         crate::kernel::Kernel::init(platform_specific)
     };
+
+    // TODO: there's a stack overflow in practice when we call `kernel.run()`; the interrupt
+    // handler fails to show that because it uses the stack
+    panic!("We pre-emptively panic because running the kernel is known to overflow the stack");
 
     // Run the kernel. This call never returns.
     executor::block_on(kernel.run())
