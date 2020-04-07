@@ -20,6 +20,7 @@ use crate::klog::KLogger;
 
 use alloc::sync::Arc;
 use core::{
+    convert::TryFrom as _,
     fmt::{self, Write as _},
     iter,
     num::NonZeroU32,
@@ -28,8 +29,10 @@ use core::{
 use futures::prelude::*;
 use redshirt_kernel_log_interface::ffi::{KernelLogMethod, UartInfo};
 
+mod executor;
 mod interrupts;
 mod log;
+mod misc;
 
 /// This is the main entry point of the kernel for RISC-V architectures.
 #[no_mangle]
@@ -56,6 +59,7 @@ unsafe extern "C" fn _start() -> ! {
 
     // Set up the stack.
     // TODO: better way
+    // TODO: we don't have any stack protection in place
     asm!(r#"
     .comm stack, 0x2000, 8
 
@@ -98,13 +102,14 @@ unsafe fn cpu_enter() -> ! {
         free_mem_start..ram_end
     }));
 
-    // Start the kernel
+    // Initialize the kernel.
     let kernel = {
         let platform_specific = PlatformSpecificImpl {};
         crate::kernel::Kernel::init(platform_specific)
     };
 
-    panic!("Hello world!");
+    // Run the kernel. This call never returns.
+    executor::block_on(kernel.run())
 }
 
 // TODO: why is this symbol required?
@@ -161,8 +166,42 @@ impl PlatformSpecific for PlatformSpecificImpl {
         NonZeroU32::new(1).unwrap()
     }
 
+    #[cfg(target_pointer_width = "32")]
     fn monotonic_clock(self: Pin<&Self>) -> u128 {
-        unimplemented!()
+        // TODO: unit is probably the wrong unit; we're supposed to return nanoseconds
+        // TODO: this is only supported in the "I" version of RISC-V; check that
+        unsafe {
+            // Because we can't read the entire register atomically, we have to carefully handle
+            // the possibility of an overflow of the lower bits during the reads.
+            // TODO: for now we're doing this carefully, but using this loop might prevent
+            // the compiler from using `cmov`-type instructions
+            let val = loop {
+                let lo: u32;
+                let hi1: u32;
+                let hi2: u32;
+
+                asm!("rdtimeh $0" : "=r"(hi1));
+                asm!("rdtime $0" : "=r"(lo));
+                asm!("rdtimeh $0" : "=r"(hi2));
+
+                if hi1 == hi2 {
+                    break (u64::from(hi1) << 32) | u64::from(lo);
+                }
+            };
+
+            u128::from(val)
+        }
+    }
+
+    #[cfg(target_pointer_width = "64")]
+    fn monotonic_clock(self: Pin<&Self>) -> u128 {
+        // TODO: unit is probably the wrong unit; we're supposed to return nanoseconds
+        // TODO: this is only supported in the "I" version of RISC-V; check that
+        unsafe {
+            let val: u64;
+            asm!("rdtime $0" : "=r"(val));
+            u128::from(val)
+        }
     }
 
     fn timer(self: Pin<&Self>, deadline: u128) -> Self::TimerFuture {
