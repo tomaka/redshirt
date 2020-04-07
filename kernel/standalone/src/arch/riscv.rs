@@ -62,15 +62,15 @@ _start:
     la sp, stack
     li t0, 0x2000
     add sp, sp, t0
-
     add fp, sp, zero
 
     j cpu_enter
 "#);
 
+// TODO: remove this
 extern "C" {
-    static mut __bss_start: *mut u8;
-    static mut __bss_end: *mut u8;
+    static mut __bss_start: u8;
+    static mut __bss_end: u8;
 }
 
 /// Main Rust entry point.
@@ -86,13 +86,7 @@ unsafe fn cpu_enter() -> ! {
     // Initialize the memory allocator.
     // TODO: make this is a cleaner way; this is specific to the hifive
     crate::mem_alloc::initialize(iter::once({
-        let free_mem_start = __bss_end as usize;
-        // TODO: don't know why but bss_end is zero
-        let free_mem_start = if free_mem_start == 0 {
-            0x80002800  // TODO: hack
-        } else {
-            free_mem_start
-        };
+        let free_mem_start = &__bss_end as *const u8 as usize;
         let ram_end = 0x80000000 + 16 * 1024;
         free_mem_start..ram_end
     }));
@@ -112,6 +106,7 @@ unsafe fn cpu_enter() -> ! {
 fn abort() -> ! {
     loop {
         unsafe {
+            asm!("ebreak");
             asm!("wfi");
         }
     }
@@ -167,17 +162,16 @@ impl PlatformSpecific for PlatformSpecificImpl {
         // TODO: this is only supported in the "I" version of RISC-V; check that
         unsafe {
             // Because we can't read the entire register atomically, we have to carefully handle
-            // the possibility of an overflow of the lower bits during the reads.
-            // TODO: for now we're doing this carefully, but using this loop might prevent
-            // the compiler from using `cmov`-type instructions
+            // the possibility of an overflow of the lower bits during the reads. This is also
+            // shown as the example that the manual uses for reading the clock on RV32I.
             let val = loop {
                 let lo: u32;
                 let hi1: u32;
                 let hi2: u32;
 
-                asm!("rdtimeh $0" : "=r"(hi1));
-                asm!("rdtime $0" : "=r"(lo));
-                asm!("rdtimeh $0" : "=r"(hi2));
+                // Note that we put all three instructions in the same `asm!`, to prevent the
+                // compiler from reordering them.
+                asm!("rdtimeh $0 ; rdtime $1 ; rdtimeh $2" : "=r"(hi1), "=r"(lo), "=r"(hi2));
 
                 if hi1 == hi2 {
                     break (u64::from(hi1) << 32) | u64::from(lo);
