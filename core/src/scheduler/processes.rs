@@ -205,7 +205,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
                     if let Some((index, expected_signature)) =
                         extrinsics_id_assign.get(&(interface.into(), function.into()))
                     {
-                        if expected_signature.matches_wasmi(obtained_signature) {
+                        if expected_signature == obtained_signature {
                             return Ok(*index);
                         } else {
                             // TODO: way to report the signature mismatch?
