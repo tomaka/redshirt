@@ -16,7 +16,7 @@
 // TODO: everything here is unsafe and prototipal
 
 use super::{ExecOutcome, NewErr, RunErr, StartErr};
-use crate::module::Module;
+use crate::{WasmValue, module::Module};
 
 use alloc::{
     borrow::{Cow, ToOwned as _},
@@ -141,7 +141,7 @@ impl<T> Jit<T> {
     pub fn start_thread_by_id(
         &mut self,
         _: u32,
-        _: impl Into<Cow<'static, [wasmi::RuntimeValue]>>,
+        _: impl IntoIterator<Item = WasmValue>,
         _: T,
     ) -> Result<Thread<T>, StartErr> {
         unimplemented!()
@@ -210,7 +210,7 @@ impl<'a, T> Thread<'a, T> {
     /// a value of `None`.
     /// If, however, you call this function after a previous call to [`run`](Thread::run) that was
     /// interrupted by an external function call, then you must pass back the outcome of that call.
-    pub fn run(mut self, value: Option<wasmi::RuntimeValue>) -> Result<ExecOutcome<'a, T>, RunErr> {
+    pub fn run(mut self, value: Option<WasmValue>) -> Result<ExecOutcome<'a, T>, RunErr> {
         if self.vm.main_thread.is_finished() {
             return Err(RunErr::Poisoned)
         }
