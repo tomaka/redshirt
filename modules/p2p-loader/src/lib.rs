@@ -16,22 +16,21 @@
 #[cfg(target_arch = "wasm32")] // TODO: not great to have cfg blocks
 mod tcp_transport;
 #[cfg(not(target_arch = "wasm32"))]
-use libp2p_tcp::TcpConfig;
+use libp2p::tcp::TcpConfig;
 #[cfg(target_arch = "wasm32")]
 use tcp_transport::TcpConfig;
 
 use futures::prelude::*;
-use libp2p_core::transport::Transport;
-use libp2p_core::{identity, muxing::StreamMuxerBox, upgrade};
-use libp2p_kad::{
+use libp2p::core::transport::Transport;
+use libp2p::core::{identity, muxing::StreamMuxerBox, upgrade};
+use libp2p::kad::{
     record::store::{MemoryStore, MemoryStoreConfig},
     record::Key,
     Kademlia, KademliaConfig, KademliaEvent, Quorum,
 };
-use libp2p_mplex::MplexConfig;
-//use libp2p_noise::NoiseConfig;
-use libp2p_plaintext::PlainText2Config;
-use libp2p_swarm::{Swarm, SwarmEvent};
+use libp2p::mplex::MplexConfig;
+use libp2p::plaintext::PlainText2Config;
+use libp2p::swarm::{Swarm, SwarmEvent};
 use std::{collections::VecDeque, io, path::PathBuf, pin::Pin, time::Duration};
 
 mod notifier;
@@ -111,7 +110,7 @@ impl<T> Network<T> {
         log::info!("Local peer id: {}", local_peer_id);
 
         // TODO: libp2p-noise doesn't compile for WASM
-        /*let noise_keypair = libp2p_noise::Keypair::new()
+        /*let noise_keypair = libp2p::noise::Keypair::new()
         .into_authentic(&local_keypair)
         .unwrap();*/
 
@@ -241,22 +240,30 @@ impl<T> Network<T> {
                 future::Either::Left(SwarmEvent::Behaviour(ev)) => {
                     log::info!("Other event: {:?}", ev)
                 }
-                future::Either::Left(SwarmEvent::Connected(peer)) => {
-                    log::trace!("Connected to {:?}", peer)
+                future::Either::Left(SwarmEvent::ConnectionEstablished { peer_id, .. }) => {
+                    log::trace!("Connected to {:?}", peer_id)
                 }
-                future::Either::Left(SwarmEvent::Disconnected(peer)) => {
-                    log::trace!("Disconnected from {:?}", peer)
+                future::Either::Left(SwarmEvent::ConnectionClosed { peer_id, .. }) => {
+                    log::trace!("Disconnected from {:?}", peer_id)
                 }
                 future::Either::Left(SwarmEvent::NewListenAddr(_)) => {}
                 future::Either::Left(SwarmEvent::ExpiredListenAddr(_)) => {}
                 future::Either::Left(SwarmEvent::UnreachableAddr { .. }) => {}
-                future::Either::Left(SwarmEvent::StartConnect(_)) => {}
+                future::Either::Left(SwarmEvent::Dialing(_)) => {}
+                future::Either::Left(SwarmEvent::IncomingConnection { .. }) => {}
+                future::Either::Left(SwarmEvent::IncomingConnectionError { .. }) => {}
+                future::Either::Left(SwarmEvent::BannedPeer { .. }) => {}
+                future::Either::Left(SwarmEvent::UnknownPeerUnreachableAddr { .. }) => {}
+                future::Either::Left(SwarmEvent::ListenerError { .. }) => {}
+                future::Either::Left(SwarmEvent::ListenerClosed { reason, .. }) => {
+                    log::warn!("Listener closed: {:?}", reason);
+                }
                 future::Either::Right(Some(notifier::NotifierEvent::InjectDht { hash, data })) => {
                     // TODO: use Quorum::Majority when network is large enough
                     // TODO: is republication automatic?
                     self.swarm.put_record(
-                        libp2p_kad::Record::new(hash.to_vec(), data),
-                        libp2p_kad::Quorum::One,
+                        libp2p::kad::Record::new(hash.to_vec(), data),
+                        libp2p::kad::Quorum::One,
                     );
                 }
                 future::Either::Right(None) => panic!(),
