@@ -16,7 +16,7 @@
 #[cfg(target_arch = "wasm32")] // TODO: not great to have cfg blocks
 mod tcp_transport;
 #[cfg(not(target_arch = "wasm32"))]
-use libp2p::tcp::TcpConfig;
+use libp2p_tcp::TcpConfig;
 #[cfg(target_arch = "wasm32")]
 use tcp_transport::TcpConfig;
 
