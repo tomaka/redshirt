@@ -690,9 +690,6 @@ dependencies = [
 [[package]]
 name = "hello-world"
 version = "0.1.0"
-dependencies = [
- "redshirt-log-interface",
-]
 
 [[package]]
 name = "hermit-abi"
