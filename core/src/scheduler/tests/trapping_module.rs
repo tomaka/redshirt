@@ -14,16 +14,15 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use crate::scheduler::{Core, CoreRunOutcome};
-use crate::InterfaceHash;
 
 #[test]
 fn trapping_module() {
     let module = from_wat!(
         local,
         r#"(module
-        (func $main (param $p0 i32) (param $p1 i32) (result i32)
+        (func $_start
             unreachable)
-        (export "main" (func $main)))
+        (export "_start" (func $_start)))
     "#
     );
 
