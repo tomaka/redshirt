@@ -333,21 +333,10 @@ impl<T> ProcessStateMachine<T> {
             threads: SmallVec::new(),
         };
 
-        // Try to start executing `_start` or `main`.
-        // TODO: executing `main` is a hack right now in order to support wasm32-unknown-unknown which doesn't have
-        // a `_start` function
+        // Try to start executing `_start`.
         match state_machine.start_thread_by_name("_start", &[][..], main_thread_user_data) {
             Ok(_) => {}
-            Err((StartErr::FunctionNotFound, user_data)) => {
-                static ARGC_ARGV: [wasmi::RuntimeValue; 2] =
-                    [wasmi::RuntimeValue::I32(0), wasmi::RuntimeValue::I32(0)];
-                match state_machine.start_thread_by_name("main", &ARGC_ARGV[..], user_data) {
-                    Ok(_) => {}
-                    Err((StartErr::FunctionNotFound, _)) => return Err(NewErr::StartNotFound),
-                    Err((StartErr::Poisoned, _)) => unreachable!(),
-                    Err((StartErr::NotAFunction, _)) => return Err(NewErr::StartIsntAFunction),
-                }
-            }
+            Err((StartErr::FunctionNotFound, _)) => return Err(NewErr::StartNotFound),
             Err((StartErr::Poisoned, _)) => unreachable!(),
             Err((StartErr::NotAFunction, _)) => return Err(NewErr::StartIsntAFunction),
         };
