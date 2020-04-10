@@ -13,7 +13,70 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::arch::x86_64::{apic::local, executor, interrupts, pit};
+//! Timers handling on x86/x86_64.
+//!
+//! # Overview
+//!
+//! When it comes to monotonic time (as opposed to a real-life time clock), multiple mechanisms
+//! exist:
+//!
+//! - The PIT (Programmable Interrupt Timer) is a legacy way of triggering an interrupt after a
+//! certain amount of timer has elapsed. The PIT is unique on the system.
+//! - x86/x86_64 CPUs optionally provide a register named TSC (TimeStamp Counter) whose value is
+//! accessible using the `RDTSC` instruction. The value is increased at a uniform rate, even if
+//! the processor is halted (`hlt` instruction). Each CPU on the system has a separate TSC value.
+//! - Each CPU also has a local APIC that can trigger an interrupt after a certain number of
+//! timer cycles has passed, or, if supported, when the TSC reaches a certain value. Each CPU has
+//! its own local APIC, and the interrupt will only concern this CPU in particular.
+//! - The HPET is a more recent version of the PIT.
+//!
+//! # Timers management
+//!
+//! ## One timer at a time
+//!
+//! In order to fire a single timer after a certain duration, we use the TSC as a reference point.
+//! As part of the initialization process, we measure the rate at which the TSC increases, and
+//! thus can determine at which TSC value the requested duration will have elapsed.
+//!
+//! We then use the local APIC in TSC deadline value if supported, or regular mode if not.
+//!
+//! In regular mode, considering that the timer value is 32bits, it might be necessary to chain
+//! multiple timers before the desired TSC value is reached.
+//!
+//! By using the TSC as the reference value, we can check at any time whether the timer has been
+//! fired. The local APIC's timer is use solely for its capability of waking up a halted CPU.
+//!
+//! Keep in mind, though, that each CPU has a different TSC value.
+// TODO: yeah that's actually a problem ^
+//!
+//! ## Multiple timers
+//!
+//! In a perfect world we would like to either distribute timers uniformly amongst the multiple
+//! CPUs, so that the overhead of handling interrupts is distributed uniformly, or alternatively
+//! we would like to setup a timer on the CPU that is actually waiting for the timer to be
+//! resolved.
+//!
+//! In practice, though, we cannot directly configure the local APICs of other CPUs, and for the
+//! sake of simplicity we employ the following strategy:
+//!
+//! - There exists a list of timers shared between all CPUs.
+//! - When a timer is created:
+//!   - If the current CPU is already handling a timer:
+//!      - If the currently-handled timer will fire sooner than the newly-created timer, add the
+//!        newly-created timer to this shared list.
+//!      - If instead the currently-handled timer would fire later than the newly-created timer,
+//!        add the current timer to this shared list and configure the current CPU for the
+//!        newly-created timer.
+//!   - If the current CPU is not currently handling any timer, add the newly-created timer to
+//!     the shared list.
+//! - When a timer interrupt is fired, the CPU that has been interrupted picks the next pending
+//!   timer from the shared list and configures itself for it.
+//! - To cancel a timer:
+//!    - If the timer is in the list, remove it.
+//!    - If the timer is being handled by a CPU, don't do anything.
+//!
+
+use crate::arch::x86_64::{apic::local, interrupts, pit};
 
 use alloc::collections::VecDeque;
 use core::{
@@ -26,41 +89,33 @@ use core::{
 use futures::prelude::*;
 use spinning_top::Spinlock;
 
-// TODO: rewrite this code to be cleaner
-
-pub fn init<'a>(
+/// Initializes the timers system for x86_64.
+pub async fn init<'a>(
     local_apics: &'a local::LocalApicsControl,
-    executor: &executor::Executor,
     pit: &mut pit::PitControl,
 ) -> Timers<'a> {
-    // TODO: check whether CPUID is supported at all?
-    // TODO: check whether RDTSC is supported
+    // TODO: check if TSC is supported somewhere with CPUID.1:EDX.TSC[bit 4] == 1
 
     // We use the PIT to figure out approximately how many RDTSC ticks happen per second.
-    // TODO: on some CPUs, the RDTSC goes at a slower rate when the CPU goes to sleep, which happens here with the
-    // executor
+    // TODO: instead of using the PIT, we can use CPUID[EAX=0x15] to find the frequency, but that
+    // might not be available and does AMD support it?
     let rdtsc_ticks_per_sec = unsafe {
+        // We use fences in order to guarantee that the RDTSC instructions don't get moved around.
+        // TODO: not sure about these Ordering values
+        // TODO: are the fences the same as core::arch::x86_64::_mm_mfence()?
         let before = core::arch::x86_64::_rdtsc();
-        // TODO: once async functions are available in no_std contexts, turn this function into an
-        // async function, and put an `await` here instead of blocking
-        executor.block_on(pit.timer(Duration::from_secs(1)));
+        core::sync::atomic::fence(core::sync::atomic::Ordering::Release);
+        pit.timer(Duration::from_secs(1)).await;
+        core::sync::atomic::fence(core::sync::atomic::Ordering::Acquire);
         let after = core::arch::x86_64::_rdtsc();
-        assert_ne!(after, before);
+
+        assert!(after > before);
         after - before
     };
 
-    let interrupt_vector = interrupts::reserve_any_vector(true).unwrap();
-
-    // Configure the timer.
-    if local_apics.is_tsc_deadline_supported() {
-        local_apics.enable_local_timer_interrupt_tsc_deadline(interrupt_vector.interrupt_num());
-    } else {
-        local_apics.enable_local_timer_interrupt(false, interrupt_vector.interrupt_num());
-    }
-
     Timers {
         local_apics,
-        interrupt_vector,
+        interrupt_vector: interrupts::reserve_any_vector(true).unwrap(),
         monotonic_clock_zero: unsafe { core::arch::x86_64::_rdtsc() },
         rdtsc_ticks_per_sec,
         timers: Spinlock::new(VecDeque::with_capacity(32)), // TODO: capacity?
@@ -95,7 +150,7 @@ pub struct Timers<'a> {
 
 impl<'a> Timers<'a> {
     /// Returns a `Future` that fires when the given amount of time has elapsed.
-    pub fn register_tsc_timer(&self, duration: Duration) -> TimerFuture {
+    pub fn register_timer(&self, duration: Duration) -> TimerFuture {
         // TODO: don't unwrap
         let tsc_value = duration
             .as_secs()
@@ -178,7 +233,6 @@ pub struct TimerFuture<'a> {
 }
 
 // TODO: there's some code duplication for updating the timer value in the APIC
-// TODO: is it actually correct to write `desired_tsc - rdtsc` in the one-shot timer register? is the speed matching?
 
 impl<'a> Future for TimerFuture<'a> {
     type Output = ();
