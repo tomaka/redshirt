@@ -23,6 +23,7 @@
 //!
 
 use crate::arch::PlatformSpecific;
+
 use alloc::sync::Arc;
 use core::pin::Pin;
 use core::sync::atomic::{AtomicBool, Ordering};
@@ -67,37 +68,34 @@ where
             .with_native_program(crate::random::native::RandomNativeProgram::new(
                 self.platform_specific.clone(),
             ))
+            .with_native_program(crate::klog::KernelLogNativeProgram::new(
+                self.platform_specific.clone(),
+            ))
             .with_startup_process(build_wasm_module!(
                 "../../../modules/p2p-loader",
                 "passive-node"
             ))
+            .with_startup_process(build_wasm_module!("../../../modules/log-to-kernel"))
             .with_startup_process(build_wasm_module!("../../../modules/hello-world"));
 
         // TODO: use a better system than cfgs
         #[cfg(target_arch = "x86_64")]
         {
             system_builder = system_builder
-                .with_startup_process(build_wasm_module!("../../../modules/x86-log"))
                 .with_startup_process(build_wasm_module!("../../../modules/x86-pci"))
                 .with_startup_process(build_wasm_module!("../../../modules/ne2000"))
         }
         #[cfg(any(target_arch = "arm", target_arch = "aarch64"))]
         {
             system_builder = system_builder
-                .with_startup_process(build_wasm_module!("../../../modules/arm-log"))
                 .with_startup_process(build_wasm_module!("../../../modules/rpi-framebuffer"))
         }
 
-        let system = system_builder
-            .with_main_program(From::from([0; 32])) // TODO: just a test
-            .build()
-            .expect("Failed to start kernel");
+        let system = system_builder.build().expect("Failed to start kernel");
 
         loop {
             match system.run().await {
-                redshirt_core::system::SystemRunOutcome::ProgramFinished { pid, outcome } => {
-                    //console.write(&format!("Program finished {:?} => {:?}\n", pid, outcome));
-                }
+                redshirt_core::system::SystemRunOutcome::ProgramFinished { .. } => {}
                 _ => panic!(),
             }
         }

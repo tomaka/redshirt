@@ -13,6 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use crate::ValueType;
+
 use alloc::vec::Vec;
 use smallvec::SmallVec;
 
@@ -33,23 +35,14 @@ pub struct Signature {
 macro_rules! sig {
     (($($p:ident),*)) => {{
         let params = core::iter::empty();
-        $(let params = params.chain(core::iter::once($crate::signature::ValueType::$p));)*
+        $(let params = params.chain(core::iter::once($crate::ValueType::$p));)*
         $crate::signature::Signature::new(params, None)
     }};
     (($($p:ident),*) -> $ret:ident) => {{
         let params = core::iter::empty();
-        $(let params = params.chain(core::iter::once($crate::signature::ValueType::$p));)*
-        $crate::signature::Signature::new(params, Some($crate::signature::ValueType::$ret))
+        $(let params = params.chain(core::iter::once($crate::ValueType::$p));)*
+        $crate::signature::Signature::new(params, Some($crate::ValueType::$ret))
     }};
-}
-
-// TODO: what about U32/U64/etc.?
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub enum ValueType {
-    I32,
-    I64,
-    F32,
-    F64,
 }
 
 impl Signature {
@@ -72,10 +65,6 @@ impl Signature {
     pub fn return_type(&self) -> &Option<ValueType> {
         &self.ret_ty
     }
-
-    pub(crate) fn matches_wasmi(&self, sig: &wasmi::Signature) -> bool {
-        wasmi::Signature::from(self) == *sig
-    }
 }
 
 impl<'a> From<&'a Signature> for wasmi::Signature {
@@ -94,6 +83,21 @@ impl<'a> From<&'a Signature> for wasmi::Signature {
 impl From<Signature> for wasmi::Signature {
     fn from(sig: Signature) -> wasmi::Signature {
         wasmi::Signature::from(&sig)
+    }
+}
+
+impl<'a> From<&'a wasmi::Signature> for Signature {
+    fn from(sig: &'a wasmi::Signature) -> Signature {
+        Signature::new(
+            sig.params().iter().cloned().map(ValueType::from),
+            sig.return_type().map(ValueType::from),
+        )
+    }
+}
+
+impl From<wasmi::Signature> for Signature {
+    fn from(sig: wasmi::Signature) -> Signature {
+        Signature::from(&sig)
     }
 }
 

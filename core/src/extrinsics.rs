@@ -22,12 +22,11 @@
 //!
 //! TODO: write doc on how to implement this trait
 
-use crate::signature::Signature;
+use crate::{signature::Signature, wasm_value::WasmValue};
 use crate::{EncodedMessage, InterfaceHash, ThreadId};
 
 use alloc::{borrow::Cow, vec::Vec};
 use core::{fmt, iter, ops::Range};
-use wasmi::RuntimeValue;
 
 pub mod log_calls;
 pub mod wasi;
@@ -59,24 +58,24 @@ pub trait Extrinsics: Default {
     ///
     /// Returns what to do next on this context.
     ///
-    /// Returning [`ExtrinsicAction::Resume`] or [`ExtrinsicAction::ProgramCrash`] finishes the
+    /// Returning [`ExtrinsicsAction::Resume`] or [`ExtrinsicsAction::ProgramCrash`] finishes the
     /// extrinsic call and destroys the context.
     fn new_context(
         &self,
         tid: ThreadId,
         id: &Self::ExtrinsicId,
-        params: impl ExactSizeIterator<Item = RuntimeValue>,
+        params: impl ExactSizeIterator<Item = WasmValue>,
         proc_access: &mut impl ExtrinsicsMemoryAccess,
     ) -> (Self::Context, ExtrinsicsAction);
 
-    /// If [`ExtrinsicAction::EmitMessage`] has been emitted, this function is later called in
+    /// If [`ExtrinsicsAction::EmitMessage`] has been emitted, this function is later called in
     /// order to notify of the response.
     ///
     /// The response is `None` if no response is expected.
     ///
     /// Returns what to do next on this context.
     ///
-    /// Returning [`ExtrinsicAction::Resume`] or [`ExtrinsicAction::ProgramCrash`] finishes the
+    /// Returning [`ExtrinsicsAction::Resume`] or [`ExtrinsicsAction::ProgramCrash`] finishes the
     /// extrinsic call and destroys the context.
     fn inject_message_response(
         &self,
@@ -122,7 +121,8 @@ impl fmt::Display for ExtrinsicsMemoryAccessErr {
 /// Description of an extrinsic supported by the implementation of [`Extrinsics`].
 #[derive(Debug)]
 pub struct SupportedExtrinsic<TExtId> {
-    /// Identifier of the extrinsic. Passed to [`new_context`] when the extrinsic is called.
+    /// Identifier of the extrinsic. Passed to [`Extrinsics::new_context`] when the extrinsic is
+    /// called.
     pub id: TExtId,
 
     /// Name of the interface the function belongs to.
@@ -135,8 +135,8 @@ pub struct SupportedExtrinsic<TExtId> {
     /// Name of the function.
     pub function_name: Cow<'static, str>,
 
-    /// Signature of the function. The parameters passed to [`new_context`] are guaranteed to
-    /// match this signature.
+    /// Signature of the function. The parameters passed to [`Extrinsics::new_context`] are
+    /// guaranteed to match this signature.
     pub signature: Signature,
 }
 
@@ -147,7 +147,7 @@ pub enum ExtrinsicsAction {
     ProgramCrash,
 
     /// Successfully finish the call and return with the given value.
-    Resume(Option<RuntimeValue>),
+    Resume(Option<WasmValue>),
 
     /// Emit a message.
     ///
@@ -177,7 +177,7 @@ impl Extrinsics for NoExtrinsics {
         &self,
         _: ThreadId,
         id: &Self::ExtrinsicId,
-        _: impl ExactSizeIterator<Item = RuntimeValue>,
+        _: impl ExactSizeIterator<Item = WasmValue>,
         _: &mut impl ExtrinsicsMemoryAccess,
     ) -> (Self::Context, ExtrinsicsAction) {
         match *id {} // unreachable

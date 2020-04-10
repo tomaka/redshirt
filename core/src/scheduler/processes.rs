@@ -88,7 +88,7 @@ struct Thread<TTud> {
 
     /// Value to use when resuming. If `Some`, the process is ready for a round of running. If
     /// `None`, then we're waiting for the user to call `resume`.
-    value_back: Option<Option<wasmi::RuntimeValue>>,
+    value_back: Option<Option<crate::WasmValue>>,
 }
 
 /// Access to a process within the collection.
@@ -128,7 +128,7 @@ pub enum RunOneOutcome<'a, TExtr, TPud, TTud> {
         dead_threads: Vec<(ThreadId, TTud)>,
 
         /// Value returned by the main thread that has finished, or error that happened.
-        outcome: Result<Option<wasmi::RuntimeValue>, wasmi::Trap>,
+        outcome: Result<Option<crate::WasmValue>, wasmi::Trap>,
     },
 
     /// A thread in a process has finished.
@@ -143,7 +143,7 @@ pub enum RunOneOutcome<'a, TExtr, TPud, TTud> {
         user_data: TTud,
 
         /// Value returned by the function that was executed.
-        value: Option<wasmi::RuntimeValue>,
+        value: Option<crate::WasmValue>,
     },
 
     /// The currently-executed function has been paused due to a call to an external function.
@@ -160,7 +160,7 @@ pub enum RunOneOutcome<'a, TExtr, TPud, TTud> {
         id: &'a mut TExtr,
 
         /// Parameters of the function call.
-        params: Vec<wasmi::RuntimeValue>,
+        params: Vec<crate::WasmValue>,
     },
 
     /// No thread is ready to run. Nothing was done.
@@ -205,7 +205,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
                     if let Some((index, expected_signature)) =
                         extrinsics_id_assign.get(&(interface.into(), function.into()))
                     {
-                        if expected_signature.matches_wasmi(obtained_signature) {
+                        if expected_signature == obtained_signature {
                             return Ok(*index);
                         } else {
                             // TODO: way to report the signature mismatch?
@@ -513,11 +513,11 @@ impl<'a, TPud, TTud> ProcessesCollectionProc<'a, TPud, TTud> {
     /// > **Note**: The "function ID" is the index of the function in the WASM module. WASM
     /// >           doesn't have function pointers. Instead, all the functions are part of a single
     /// >           global array of functions.
-    // TODO: don't expose wasmi::RuntimeValue in the API
+    // TODO: don't expose crate::WasmValue in the API
     pub fn start_thread(
         mut self,
         fn_index: u32,
-        params: Vec<wasmi::RuntimeValue>,
+        params: Vec<crate::WasmValue>,
         user_data: TTud,
     ) -> Result<ProcessesCollectionThread<'a, TPud, TTud>, vm::StartErr> {
         let thread_id = self.tid_pool.assign(); // TODO: check for duplicates
@@ -644,7 +644,7 @@ impl<'a, TPud, TTud> ProcessesCollectionThread<'a, TPud, TTud> {
 
     /// After [`RunOneOutcome::Interrupted`] is returned, use this function to feed back the value
     /// to use as the return type of the function that has been called.
-    pub fn resume(&mut self, value: Option<wasmi::RuntimeValue>) {
+    pub fn resume(&mut self, value: Option<crate::WasmValue>) {
         let user_data = self.inner().into_user_data();
 
         // TODO: check type of the value?

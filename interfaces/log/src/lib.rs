@@ -20,7 +20,6 @@
 //! How these logs are handled is at the discretion of the rest of the system, but the intent is
 //! for them to be shown to a human being if desired.
 
-#![deny(intra_doc_link_resolution_failure)]
 #![no_std]
 
 extern crate alloc;

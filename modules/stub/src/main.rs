@@ -25,11 +25,13 @@
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
+#[cfg(not(any(test, doc, doctest)))]
 #[panic_handler]
 fn panic(_: &core::panic::PanicInfo) -> ! {
     unsafe { core::hint::unreachable_unchecked() }
 }
 
+#[cfg(not(any(test, doc, doctest)))]
 #[alloc_error_handler]
 fn alloc_error_handler(_: core::alloc::Layout) -> ! {
     panic!()
