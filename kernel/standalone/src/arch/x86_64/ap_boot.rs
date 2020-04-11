@@ -30,7 +30,10 @@
 use crate::arch::x86_64::apic::{local::LocalApicsControl, timers::Timers, ApicId};
 use crate::arch::x86_64::{executor, interrupts};
 
-use alloc::{alloc::{AllocInit, Layout}, boxed::Box};
+use alloc::{
+    alloc::{AllocInit, Layout},
+    boxed::Box,
+};
 use core::{convert::TryFrom as _, fmt, ops::Range, ptr, slice, time::Duration};
 use futures::{channel::oneshot, prelude::*};
 
