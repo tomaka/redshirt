@@ -11,10 +11,11 @@ building it.
 
 **Important**: At the moment, most of the compilation requires a nightly version of Rust. See also https://github.com/tomaka/redshirt/issues/300.
 
-You also need to install the `wasm32-wasi` target, as the Wasm modules are compiled for Wasi.
+You also need to install the `wasm32-wasi` target, as the Wasm modules are compiled for Wasi, and the `rust-src` component in order to build the standalone kernel.
 
 ```
 rustup toolchain install --target=wasm32-wasi nightly
+rustup component add --toolchain=nightly rust-src
 ```
 
 There are two binaries available in this repository:
