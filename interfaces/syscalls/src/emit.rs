@@ -19,6 +19,7 @@ use core::{
     fmt,
     marker::PhantomData,
     mem::MaybeUninit,
+    num::NonZeroU64,
     pin::Pin,
     task::{Context, Poll},
 };
@@ -166,7 +167,9 @@ where
         }
 
         if needs_answer {
-            Ok(Some(MessageId::from(message_id_out.assume_init())))
+            Ok(Some(MessageId::from(NonZeroU64::new_unchecked(
+                message_id_out.assume_init(),
+            ))))
         } else {
             Ok(None)
         }

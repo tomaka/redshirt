@@ -97,7 +97,7 @@ pub use interface_message::{
 pub use response::{message_response, message_response_sync_raw, MessageResponseFuture};
 pub use traits::{Decode, Encode, EncodedMessage};
 
-use core::{cmp::PartialEq, fmt};
+use core::{cmp::PartialEq, fmt, num::NonZeroU64};
 
 mod block_on;
 mod emit;
@@ -109,10 +109,17 @@ pub mod ffi;
 
 /// Identifier of a running process within a core.
 // TODO: move to a Pid module?
+// TODO: should be NonZeroU64?
 #[derive(
     Copy, Clone, PartialEq, Eq, Hash, parity_scale_codec::Encode, parity_scale_codec::Decode,
 )]
 pub struct Pid(u64);
+
+impl From<NonZeroU64> for Pid {
+    fn from(id: NonZeroU64) -> Pid {
+        Pid(id.get())
+    }
+}
 
 impl From<u64> for Pid {
     fn from(id: u64) -> Pid {
@@ -134,10 +141,17 @@ impl fmt::Debug for Pid {
 
 /// Identifier of a running thread within a core.
 // TODO: move to a separate module?
+// TODO: should be NonZeroU64?
 #[derive(
     Copy, Clone, PartialEq, Eq, Hash, parity_scale_codec::Encode, parity_scale_codec::Decode,
 )]
 pub struct ThreadId(u64);
+
+impl From<NonZeroU64> for ThreadId {
+    fn from(id: NonZeroU64) -> ThreadId {
+        ThreadId(id.get())
+    }
+}
 
 impl From<u64> for ThreadId {
     fn from(id: u64) -> ThreadId {
@@ -159,20 +173,27 @@ impl fmt::Debug for ThreadId {
 
 /// Identifier of a message to answer.
 // TODO: move to a MessageId module?
+// TODO: the MessageId with value 1 is also invalid because of wait_notifications' API
 #[derive(
     Copy, Clone, PartialEq, Eq, Hash, parity_scale_codec::Encode, parity_scale_codec::Decode,
 )]
-pub struct MessageId(u64); // TODO: should be NonZeroU64
+pub struct MessageId(NonZeroU64);
 
-impl From<u64> for MessageId {
-    fn from(id: u64) -> MessageId {
+impl From<NonZeroU64> for MessageId {
+    fn from(id: NonZeroU64) -> MessageId {
         MessageId(id)
+    }
+}
+
+impl From<MessageId> for NonZeroU64 {
+    fn from(mid: MessageId) -> NonZeroU64 {
+        mid.0
     }
 }
 
 impl From<MessageId> for u64 {
     fn from(mid: MessageId) -> u64 {
-        mid.0
+        mid.0.get()
     }
 }
 
