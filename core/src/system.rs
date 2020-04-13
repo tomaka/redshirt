@@ -13,6 +13,16 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+//! Core system, alongside with support for native programs, and some predefined interfaces and
+//! features.
+//!
+//! Natively handles the following interfaces:
+//! TODO: indicate hashes
+//! TODO: more details
+//!
+//! - `interface`.
+//!
+
 use crate::module::{Module, ModuleHash};
 use crate::native::{self, NativeProgramMessageIdWrite as _};
 use crate::scheduler::{Core, CoreBuilder, CoreRunOutcome, NewErr};
@@ -29,7 +39,7 @@ use spinning_top::Spinlock;
 /// Main struct that handles a system, including the scheduler, program loader,
 /// inter-process communication, and so on.
 ///
-/// Natively handles the "interface" interface.  TODO: indicate hashes
+/// See [the module-level documentation](super) for more information.
 pub struct System<'a> {
     /// Inner system with inter-process communications.
     core: Core,

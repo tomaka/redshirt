@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::{module::Module, signature::Signature, ValueType, WasmValue};
+use crate::{module::Module, primitives::Signature, ValueType, WasmValue};
 
 use alloc::{
     borrow::{Cow, ToOwned as _},
@@ -691,7 +691,7 @@ impl fmt::Display for RunErr {
 #[cfg(test)]
 mod tests {
     use super::{ExecOutcome, NewErr, ProcessStateMachine};
-    use crate::WasmValue;
+    use crate::primitives::WasmValue;
 
     #[test]
     fn starts_if_main() {

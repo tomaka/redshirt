@@ -23,12 +23,12 @@ use crate::{sig, Encode as _, EncodedMessage, ThreadId, WasmValue};
 
 use alloc::{
     borrow::Cow,
-    string::{String, ToString as _},
+    string::String,
     sync::Arc,
     vec,
     vec::{IntoIter, Vec},
 };
-use core::{cmp, convert::TryFrom as _, fmt, mem, slice};
+use core::{cmp, convert::TryFrom as _, fmt};
 use hashbrown::HashMap;
 use spinning_top::Spinlock;
 
@@ -706,7 +706,7 @@ fn fd_fdstat_get(
 fn fd_filestat_get(
     state: &WasiExtrinsics,
     mut params: impl ExactSizeIterator<Item = WasmValue>,
-    mem_access: &mut impl ExtrinsicsMemoryAccess,
+    _mem_access: &mut impl ExtrinsicsMemoryAccess,
 ) -> Result<(ContextInner, ExtrinsicsAction), WasiCallErr> {
     let file_descriptors_lock = state.file_descriptors.lock();
 
