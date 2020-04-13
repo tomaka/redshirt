@@ -19,7 +19,7 @@ use crate::scheduler::processes;
 use crate::{InterfaceHash, MessageId};
 
 use alloc::{vec, vec::Vec};
-use core::convert::TryFrom as _;
+use core::{convert::TryFrom as _, num::NonZeroU64};
 use redshirt_syscalls::EncodedMessage;
 
 /// Analyzes a call to `next_notification` made by the given thread.
@@ -59,9 +59,12 @@ pub fn parse_extrinsic_next_notification<TPud, TTud>(
             .map_err(|_| ExtrinsicNextNotificationErr::BadParameter)?;
         let len_usize = usize::try_from(len)
             .map_err(|_| ExtrinsicNextNotificationErr::TooManyNotificationIds { requested: len })?;
-        let mut out = vec![MessageId::from(0u64); len_usize];
-        for (o, i) in out.iter_mut().zip(mem.chunks(8)) {
-            *o = MessageId::from(u64::from_le_bytes(<[u8; 8]>::try_from(i).unwrap()));
+        let mut out = Vec::with_capacity(len_usize);
+        for i in mem.chunks(8) {
+            let id = u64::from_le_bytes(<[u8; 8]>::try_from(i).unwrap());
+            if let Some(id) = NonZeroU64::new(id) {
+                out.push(MessageId::from(id));
+            }
         }
         out
     };
@@ -267,7 +270,8 @@ pub fn parse_extrinsic_emit_answer<TPud, TTud>(
         let buf = thread
             .read_memory(addr, 8)
             .map_err(|_| ExtrinsicEmitAnswerErr::BadParameter)?;
-        MessageId::from(u64::from_le_bytes(<[u8; 8]>::try_from(&buf[..]).unwrap()))
+        let id = u64::from_le_bytes(<[u8; 8]>::try_from(&buf[..]).unwrap());
+        MessageId::from(NonZeroU64::new(id).ok_or(ExtrinsicEmitAnswerErr::ZeroMessageId)?)
     };
 
     let response = {
@@ -310,6 +314,8 @@ pub struct EmitAnswer {
 pub enum ExtrinsicEmitAnswerErr {
     /// Bad type or invalid value for a parameter.
     BadParameter,
+    /// The message id is zero.
+    ZeroMessageId,
 }
 
 /// Analyzes a call to `emit_message_error` made by the given thread.
@@ -337,7 +343,8 @@ pub fn parse_extrinsic_emit_message_error<TPud, TTud>(
         let buf = thread
             .read_memory(addr, 8)
             .map_err(|_| ExtrinsicEmitMessageErrorErr::BadParameter)?;
-        MessageId::from(u64::from_le_bytes(<[u8; 8]>::try_from(&buf[..]).unwrap()))
+        let id = u64::from_le_bytes(<[u8; 8]>::try_from(&buf[..]).unwrap());
+        MessageId::from(NonZeroU64::new(id).ok_or(ExtrinsicEmitMessageErrorErr::ZeroMessageId)?)
     };
 
     Ok(msg_id)
@@ -348,6 +355,8 @@ pub fn parse_extrinsic_emit_message_error<TPud, TTud>(
 pub enum ExtrinsicEmitMessageErrorErr {
     /// Bad type or invalid value for a parameter.
     BadParameter,
+    /// The message id is zero.
+    ZeroMessageId,
 }
 
 /// Analyzes a call to `cancel_message` made by the given thread.
@@ -375,7 +384,8 @@ pub fn parse_extrinsic_cancel_message<TPud, TTud>(
         let buf = thread
             .read_memory(addr, 8)
             .map_err(|_| ExtrinsicCancelMessageErr::BadParameter)?;
-        MessageId::from(u64::from_le_bytes(<[u8; 8]>::try_from(&buf[..]).unwrap()))
+        let id = u64::from_le_bytes(<[u8; 8]>::try_from(&buf[..]).unwrap());
+        MessageId::from(NonZeroU64::new(id).ok_or(ExtrinsicCancelMessageErr::ZeroMessageId)?)
     };
 
     Ok(msg_id)
@@ -386,4 +396,6 @@ pub fn parse_extrinsic_cancel_message<TPud, TTud>(
 pub enum ExtrinsicCancelMessageErr {
     /// Bad type or invalid value for a parameter.
     BadParameter,
+    /// The message id is zero.
+    ZeroMessageId,
 }

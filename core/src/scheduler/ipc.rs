@@ -22,7 +22,7 @@ use crate::scheduler::{
 use crate::InterfaceHash;
 
 use alloc::{collections::VecDeque, vec::Vec};
-use core::{cell::RefCell, convert::TryFrom, iter, mem};
+use core::{cell::RefCell, convert::TryFrom, iter, mem, num::NonZeroU64};
 use crossbeam_queue::SegQueue;
 use fnv::FnvBuildHasher;
 use hashbrown::{hash_map::Entry, HashMap, HashSet};
@@ -806,16 +806,19 @@ fn try_resume_notification_wait_thread(
         }
 
         // For that notification in queue, grab the value that must be in `msg_ids` in order to match.
-        let msg_id = match &thread.process_user_data().borrow_mut().notifications_queue
-            [index_in_queue]
-        {
-            redshirt_syscalls::ffi::NotificationBuilder::Interface(_) => MessageId::from(1),
-            redshirt_syscalls::ffi::NotificationBuilder::ProcessDestroyed(_) => MessageId::from(1),
-            redshirt_syscalls::ffi::NotificationBuilder::Response(response) => {
-                debug_assert!(u64::from(response.message_id()) >= 2);
-                response.message_id()
-            }
-        };
+        let msg_id =
+            match &thread.process_user_data().borrow_mut().notifications_queue[index_in_queue] {
+                redshirt_syscalls::ffi::NotificationBuilder::Interface(_) => {
+                    MessageId::from(NonZeroU64::new(1).unwrap())
+                }
+                redshirt_syscalls::ffi::NotificationBuilder::ProcessDestroyed(_) => {
+                    MessageId::from(NonZeroU64::new(1).unwrap())
+                }
+                redshirt_syscalls::ffi::NotificationBuilder::Response(response) => {
+                    debug_assert!(u64::from(response.message_id()) >= 2);
+                    response.message_id()
+                }
+            };
 
         if let Some(p) = thread.message_ids_iter().position(|id| id == msg_id.into()) {
             break p;
