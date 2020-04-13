@@ -22,9 +22,16 @@ mod mailbox;
 mod property;
 
 fn main() {
+    redshirt_log_interface::init();
     redshirt_syscalls::block_on(async_main());
 }
 
 async fn async_main() {
     property::init().await;
+
+    // TODO: also call the klogger interface after init
+
+    redshirt_interface_interface::register_interface(redshirt_framebuffer_interface::ffi::INTERFACE)
+        .await
+        .unwrap();
 }

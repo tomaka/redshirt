@@ -134,8 +134,15 @@ struct Packet2 {
     data: [u32; 8],
 }
 
+pub struct FramebufferInfo {
+    /// Address of the framebuffer in physical memory.
+    pub physical_address: u64,
+    pub width: u32,
+    pub height: u32,
+}
+
 // TODO: make more generic and explicit, with tags and all, to be more robust to code changes
-pub async fn init() {
+pub async fn init() -> FramebufferInfo {
     let buffer1 = redshirt_hardware_interface::malloc::PhysicalBuffer::new(Packet1 {
         data: [
             80, // The whole buffer is 80 bytes

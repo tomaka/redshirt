@@ -1634,6 +1634,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2439c63f3f6139d1b57529d16bc3b8bb855230c8efcc5d3a896c8bea7c3b1e84"
 
 [[package]]
+name = "redshirt-framebuffer-interface"
+version = "0.1.0"
+dependencies = [
+ "redshirt-random-interface",
+ "redshirt-syscalls",
+]
+
+[[package]]
 name = "redshirt-hardware-interface"
 version = "0.1.0"
 dependencies = [
@@ -1681,6 +1689,14 @@ name = "redshirt-pci-interface"
 version = "0.1.0"
 dependencies = [
  "futures",
+ "parity-scale-codec",
+ "redshirt-syscalls",
+]
+
+[[package]]
+name = "redshirt-random-interface"
+version = "0.1.0"
+dependencies = [
  "parity-scale-codec",
  "redshirt-syscalls",
 ]
@@ -1766,6 +1782,7 @@ name = "rpi-framebuffer"
 version = "0.1.0"
 dependencies = [
  "parity-scale-codec",
+ "redshirt-framebuffer-interface",
  "redshirt-hardware-interface",
  "redshirt-interface-interface",
  "redshirt-log-interface",
