@@ -89,6 +89,13 @@ where
         {
             system_builder = system_builder
                 .with_startup_process(build_wasm_module!("../../../modules/rpi-framebuffer"))
+                .with_startup_process({
+                    // TODO: turn this into a procedural macro, but the Cargo bug where activated
+                    // features are the same between proc-macro-deps and regular deps makes this
+                    // impossible
+                    const DOOM: &[u8] = include_bytes!("../../../modules/doom.wasm");
+                    redshirt_core::module::Module::from_bytes(&DOOM).unwrap()
+                })
         }
 
         let system = system_builder.build().expect("Failed to start kernel");
