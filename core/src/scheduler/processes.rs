@@ -15,8 +15,8 @@
 
 use crate::id_pool::IdPool;
 use crate::module::Module;
+use crate::primitives::Signature;
 use crate::scheduler::vm;
-use crate::signature::Signature;
 use alloc::{borrow::Cow, vec::Vec};
 use core::fmt;
 use fnv::FnvBuildHasher;
