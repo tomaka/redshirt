@@ -113,7 +113,7 @@
 #![warn(missing_docs)]
 //#![deny(unsafe_code)] // TODO: 🤷
 #![allow(dead_code)] // TODO: temporary during development
-#![no_std]
+#![cfg_attr(not(test), no_std)]
 
 extern crate alloc;
 

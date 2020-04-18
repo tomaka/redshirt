@@ -204,6 +204,9 @@ pub enum DecodedNotification {
     ///
     /// Whenever a process that has emitted events on one of our interfaces stops, a
     /// `ProcessDestroyed` notification is sent.
+    ///
+    /// Note that this is done on a "best effort" basis. It is possible that these notifications
+    /// don't get immediately delivered, and that spurious notifications get emitted.
     ProcessDestroyed(DecodedProcessDestroyedNotification),
 }
 
@@ -263,6 +266,20 @@ impl InterfaceNotificationBuilder {
     /// Updates the `index_in_list` field of the message.
     pub fn set_index_in_list(&mut self, value: u32) {
         self.data[49..53].copy_from_slice(&value.to_le_bytes());
+    }
+
+    /// Returns the [`MessageId`] that was put in the builder.
+    pub fn message_id(&self) -> Option<MessageId> {
+        let id = u64::from_le_bytes([
+            self.data[33], self.data[34], self.data[35], self.data[36], self.data[37],
+            self.data[38], self.data[39], self.data[40],
+        ]);
+
+        if let Some(id) = NonZeroU64::new(id) {
+            Some(From::from(id))
+        } else {
+            None
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -507,6 +524,7 @@ mod tests {
         let mut int_notif =
             build_interface_notification(&interface_hash, message_id, pid, 0xf00baa, &message);
         int_notif.set_index_in_list(index_in_list);
+        assert_eq!(int_notif.message_id(), message_id);
 
         let decoded = decode_interface_notification(&int_notif.into_bytes()).unwrap();
         assert_eq!(decoded.interface, interface_hash);
