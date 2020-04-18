@@ -30,7 +30,7 @@ pub struct InterfaceHandlers {
 /// Which way an interface is handled.
 #[derive(Debug, Clone)]
 enum InterfaceState {
-    /// Interface has been registered using [`Core::set_interface_handler`].
+    /// Interface has been registered.
     Process(Pid),
     /// Interface hasn't been registered yet, but has been requested.
     Requested(Vec<WaitingForInterface>),
