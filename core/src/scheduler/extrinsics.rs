@@ -352,11 +352,11 @@ where
         while let Ok(tid) = self.local_run_queue.pop() {
             // It is possible that the thread no longer exists, for example if the process crashed.
             let mut thread = self.inner.interrupted_thread_by_id(tid)?;
-            match mem::replace(&mut thread.user_data().state, LocalThreadState::Poisoned) {
+            match mem::replace(&mut thread.user_data_mut().state, LocalThreadState::Poisoned) {
                 LocalThreadState::OtherExtrinsicApplyAction { context, action } => match action {
                     ExtrinsicsAction::ProgramCrash => unimplemented!(),
                     ExtrinsicsAction::Resume(value) => {
-                        thread.user_data().state = LocalThreadState::ReadyToRun;
+                        thread.user_data_mut().state = LocalThreadState::ReadyToRun;
                         thread.resume(value)
                     }
                     ExtrinsicsAction::EmitMessage {
@@ -364,7 +364,7 @@ where
                         message,
                         response_expected,
                     } => {
-                        thread.user_data().state = LocalThreadState::OtherExtrinsicEmit {
+                        thread.user_data_mut().state = LocalThreadState::OtherExtrinsicEmit {
                             context,
                             interface,
                             message,
@@ -432,7 +432,7 @@ where
                     Ok(m) => m,
                     Err(_) => panic!(), // TODO:
                 };
-                thread.user_data().state = LocalThreadState::NotificationWait(next_msg);
+                thread.user_data_mut().state = LocalThreadState::NotificationWait(next_msg);
                 let process = ProcessesCollectionExtrinsicsProc {
                     parent: self,
                     inner: thread.process(),
@@ -455,7 +455,7 @@ where
                     Ok(m) => m,
                     Err(_) => panic!(), // TODO:
                 };
-                thread.user_data().state = LocalThreadState::EmitMessage(emit_msg);
+                thread.user_data_mut().state = LocalThreadState::EmitMessage(emit_msg);
                 let process = ProcessesCollectionExtrinsicsProc {
                     parent: self,
                     inner: thread.process(),
@@ -553,7 +553,7 @@ where
                         params.iter().cloned(),
                         &mut MemoryAccessImpl(RefCell::new(thread)),
                     );
-                thread.user_data().state =
+                thread.user_data_mut().state =
                     LocalThreadState::OtherExtrinsicApplyAction { context, action };
                 self.local_run_queue.push(thread_id);
                 None
@@ -719,7 +719,6 @@ where
     /// > **Note**: The "function ID" is the index of the function in the WASM module. WASM
     /// >           doesn't have function pointers. Instead, all the functions are part of a single
     /// >           global array of functions.
-    // TODO: don't expose crate::WasmValue in the API
     pub fn start_thread(
         &self,
         fn_index: u32,
@@ -734,26 +733,6 @@ where
                 external_user_data: user_data,
             },
         )
-    }
-
-    /// Returns a list of all threads that are in an interrupted state.
-    // TODO: what about the threads that are interrupted but already locked?
-    // TODO: implement better
-    pub fn interrupted_threads(
-        &self,
-    ) -> impl Iterator<Item = ProcessesCollectionExtrinsicsThread<'a, TPud, TTud, TExt>> {
-        let parent = self.parent;
-        self.inner
-            .interrupted_threads()
-            .filter_map(move |thread| {
-                match parent.interrupted_thread_by_id(thread.tid()) {
-                    Ok(t) => Some(t),
-                    Err(ThreadByIdErr::AlreadyLocked) => unimplemented!(), // TODO: what to do here?
-                    Err(ThreadByIdErr::RunningOrDead) => None,
-                }
-            })
-            .collect::<Vec<_>>()
-            .into_iter()
     }
 
     /// Marks the process as aborting.
@@ -884,7 +863,7 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
     ///
     pub fn accept_emit(mut self, message_id: Option<MessageId>) -> EncodedMessage {
         match mem::replace(
-            &mut self.inner.user_data().state,
+            &mut self.inner.user_data_mut().state,
             LocalThreadState::Poisoned,
         ) {
             LocalThreadState::EmitMessage(emit) => {
@@ -901,7 +880,7 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
                     assert!(message_id.is_none());
                 }
 
-                self.inner.user_data().state = LocalThreadState::ReadyToRun;
+                self.inner.user_data_mut().state = LocalThreadState::ReadyToRun;
                 self.inner.resume(Some(crate::WasmValue::I32(0)));
                 emit.message
             }
@@ -913,7 +892,7 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
             } => {
                 if response_expected {
                     let message_id = message_id.unwrap();
-                    self.inner.user_data().state = LocalThreadState::OtherExtrinsicWait {
+                    self.inner.user_data_mut().state = LocalThreadState::OtherExtrinsicWait {
                         context,
                         message: message_id,
                     };
@@ -930,7 +909,7 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
                             None,
                             &mut MemoryAccessImpl(RefCell::new(&mut self.inner)),
                         );
-                    self.inner.user_data().state =
+                    self.inner.user_data_mut().state =
                         LocalThreadState::OtherExtrinsicApplyAction { context, action };
                     self.process.parent.local_run_queue.push(self.inner.tid());
                 }
@@ -944,16 +923,16 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
     /// Resumes the thread, signalling an error in the emission.
     pub fn refuse_emit(mut self) {
         match mem::replace(
-            &mut self.inner.user_data().state,
+            &mut self.inner.user_data_mut().state,
             LocalThreadState::Poisoned,
         ) {
             LocalThreadState::EmitMessage(_) => {
-                self.inner.user_data().state = LocalThreadState::ReadyToRun;
+                self.inner.user_data_mut().state = LocalThreadState::ReadyToRun;
                 self.inner.resume(Some(crate::WasmValue::I32(1)));
             }
             LocalThreadState::OtherExtrinsicEmit { context, .. } => {
                 // TODO: don't know what else to do here than crash the program
-                self.inner.user_data().state = LocalThreadState::OtherExtrinsicApplyAction {
+                self.inner.user_data_mut().state = LocalThreadState::OtherExtrinsicApplyAction {
                     context,
                     action: ExtrinsicsAction::ProgramCrash,
                 };
@@ -983,7 +962,7 @@ impl<'a, TPud, TTud, TExt: Extrinsics> ProcessesCollectionExtrinsicsThreadAccess
     }
 
     fn user_data(&mut self) -> &mut TTud {
-        &mut self.inner.user_data().external_user_data
+        &mut self.inner.user_data_mut().external_user_data
     }
 }
 
@@ -1020,7 +999,7 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
     }
 
     /// Returns the maximum size allowed for a notification.
-    pub fn allowed_notification_size(&mut self) -> usize {
+    pub fn allowed_notification_size(&self) -> usize {
         match self.inner.user_data().state {
             LocalThreadState::NotificationWait(ref wait) => usize::try_from(wait.out_size).unwrap(),
             LocalThreadState::OtherExtrinsicWait { .. } => usize::max_value(),
@@ -1029,7 +1008,7 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
     }
 
     /// Returns true if we should block the thread waiting for a notification to come.
-    pub fn block(&mut self) -> bool {
+    pub fn block(&self) -> bool {
         match self.inner.user_data().state {
             LocalThreadState::NotificationWait(ref wait) => wait.block,
             LocalThreadState::OtherExtrinsicWait { .. } => true,
@@ -1050,7 +1029,7 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
     ///
     pub fn resume_notification(mut self, index: usize, notif: EncodedMessage) {
         match mem::replace(
-            &mut self.inner.user_data().state,
+            &mut self.inner.user_data_mut().state,
             LocalThreadState::Poisoned,
         ) {
             LocalThreadState::NotificationWait(wait) => {
@@ -1073,7 +1052,7 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
                     Err(_) => panic!(), // TODO: can legit happen
                 };
 
-                self.inner.user_data().state = LocalThreadState::ReadyToRun;
+                self.inner.user_data_mut().state = LocalThreadState::ReadyToRun;
                 self.inner.resume(Some(crate::WasmValue::I32(
                     i32::try_from(notif_size_u32).unwrap(),
                 )));
@@ -1101,7 +1080,7 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
                         Some(message),
                         &mut MemoryAccessImpl(RefCell::new(&mut self.inner)),
                     );
-                self.inner.user_data().state =
+                self.inner.user_data_mut().state =
                     LocalThreadState::OtherExtrinsicApplyAction { context, action };
                 self.process.parent.local_run_queue.push(self.inner.tid());
             }
@@ -1112,7 +1091,7 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
     /// Resume the thread, indicating that the notification is too large for the provided buffer.
     pub fn resume_notification_too_big(mut self, notif_size: usize) {
         debug_assert!({
-            let expected = match &mut self.inner.user_data().state {
+            let expected = match &mut self.inner.user_data_mut().state {
                 LocalThreadState::NotificationWait(wait) => wait.out_size,
                 LocalThreadState::OtherExtrinsicWait { .. } => panic!(),
                 _ => unreachable!(),
@@ -1120,7 +1099,7 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
             expected < u32::try_from(notif_size).unwrap()
         });
 
-        self.inner.user_data().state = LocalThreadState::ReadyToRun;
+        self.inner.user_data_mut().state = LocalThreadState::ReadyToRun;
         self.inner.resume(Some(crate::WasmValue::I32(
             i32::try_from(notif_size).unwrap(),
         )));
@@ -1140,7 +1119,7 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
             _ => unreachable!(),
         }
 
-        self.inner.user_data().state = LocalThreadState::ReadyToRun;
+        self.inner.user_data_mut().state = LocalThreadState::ReadyToRun;
         self.inner.resume(Some(crate::WasmValue::I32(0)));
     }
 }
@@ -1164,7 +1143,7 @@ impl<'a, TPud, TTud, TExt: Extrinsics> ProcessesCollectionExtrinsicsThreadAccess
     }
 
     fn user_data(&mut self) -> &mut TTud {
-        &mut self.inner.user_data().external_user_data
+        &mut self.inner.user_data_mut().external_user_data
     }
 }
 

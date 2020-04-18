@@ -15,8 +15,8 @@
 
 use crate::id_pool::IdPool;
 use crate::module::Module;
+use crate::primitives::Signature;
 use crate::scheduler::vm;
-use crate::signature::Signature;
 use crate::{Pid, ThreadId};
 
 use alloc::{
@@ -268,7 +268,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
                     if let Some((index, expected_signature)) =
                         extrinsics_id_assign.get(&(interface.into(), function.into()))
                     {
-                        if expected_signature.matches_wasmi(obtained_signature) {
+                        if expected_signature == obtained_signature {
                             return Ok(*index);
                         } else {
                             // TODO: way to report the signature mismatch?
@@ -836,7 +836,12 @@ impl<'a, TExtr, TPud, TTud> ProcessesCollectionThread<'a, TExtr, TPud, TTud> {
     }
 
     /// Returns the user data that is associated to the thread.
-    pub fn user_data(&mut self) -> &mut TTud {
+    pub fn user_data(&self) -> &TTud {
+        self.user_data.as_ref().unwrap()
+    }
+
+    /// Returns the user data that is associated to the thread.
+    pub fn user_data_mut(&mut self) -> &mut TTud {
         self.user_data.as_mut().unwrap()
     }
 

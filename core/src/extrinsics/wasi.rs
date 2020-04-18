@@ -23,12 +23,12 @@ use crate::{sig, Encode as _, EncodedMessage, ThreadId, WasmValue};
 
 use alloc::{
     borrow::Cow,
-    string::{String, ToString as _},
+    string::String,
     sync::Arc,
     vec,
     vec::{IntoIter, Vec},
 };
-use core::{cmp, convert::TryFrom as _, fmt, mem, slice};
+use core::{cmp, convert::TryFrom as _, fmt};
 use hashbrown::HashMap;
 use spinning_top::Spinlock;
 
@@ -55,7 +55,11 @@ pub struct WasiExtrinsics {
 enum FileDescriptor {
     /// Valid file descriptor but that points to nothing.
     Empty,
-    LogOut(redshirt_log_interface::Level),
+    LogOut {
+        /// We buffer data and emit a log message only on line splits.
+        buffer: Vec<u8>,
+        level: redshirt_log_interface::Level,
+    },
     FilesystemEntry {
         inode: Arc<Inode>,
         /// Position of the cursor within the file. Always 0 for directories.
@@ -96,9 +100,15 @@ impl Default for WasiExtrinsics {
                 // stdin
                 Some(FileDescriptor::Empty),
                 // stdout
-                Some(FileDescriptor::LogOut(redshirt_log_interface::Level::Info)),
+                Some(FileDescriptor::LogOut {
+                    level: redshirt_log_interface::Level::Info,
+                    buffer: Vec::new(),
+                }),
                 // stderr
-                Some(FileDescriptor::LogOut(redshirt_log_interface::Level::Error)),
+                Some(FileDescriptor::LogOut {
+                    level: redshirt_log_interface::Level::Error,
+                    buffer: Vec::new(),
+                }),
                 // pre-opened access to filesystem
                 Some(FileDescriptor::FilesystemEntry {
                     inode: fs_root.clone(),
@@ -146,6 +156,7 @@ pub struct Context(ContextInner);
 enum ContextInner {
     WaitClockVal { out_ptr: u32 },
     WaitRandom { out_ptr: u32, remaining_len: u32 },
+    TryFlushLogOut(usize),
     Resume(Option<WasmValue>),
     Finished,
 }
@@ -404,6 +415,42 @@ impl Extrinsics for WasiExtrinsics {
                     }
                 }
             }
+            ContextInner::TryFlushLogOut(fd) => {
+                let mut file_descriptors_lock = self.file_descriptors.lock();
+                let file_descriptor = {
+                    match file_descriptors_lock.get_mut(fd).and_then(|v| v.as_mut()) {
+                        Some(fd) => fd,
+                        None => {
+                            ctxt.0 = ContextInner::Finished;
+                            return ExtrinsicsAction::Resume(Some(WasmValue::I32(0)));
+                        }
+                    }
+                };
+
+                if let FileDescriptor::LogOut { level, buffer } = file_descriptor {
+                    if let Some(split_pos) = buffer.iter().position(|c| *c == b'\n') {
+                        let mut encoded_message = Vec::new();
+                        encoded_message.push(u8::from(*level));
+                        encoded_message.extend(buffer.drain(..split_pos));
+                        buffer.remove(0);
+
+                        let action = ExtrinsicsAction::EmitMessage {
+                            interface: redshirt_log_interface::ffi::INTERFACE,
+                            message: EncodedMessage(encoded_message),
+                            response_expected: false,
+                        };
+
+                        ctxt.0 = ContextInner::TryFlushLogOut(fd);
+                        action
+                    } else {
+                        ctxt.0 = ContextInner::Finished;
+                        ExtrinsicsAction::Resume(Some(WasmValue::I32(0)))
+                    }
+                } else {
+                    ctxt.0 = ContextInner::Finished;
+                    ExtrinsicsAction::Resume(Some(WasmValue::I32(0)))
+                }
+            }
             ContextInner::Resume(value) => {
                 ctxt.0 = ContextInner::Finished;
                 ExtrinsicsAction::Resume(value)
@@ -603,7 +650,7 @@ fn fd_fdstat_get(
             fs_rights_base: 0,
             fs_rights_inheriting: 0,
         },
-        FileDescriptor::LogOut(_) => wasi::Fdstat {
+        FileDescriptor::LogOut { .. } => wasi::Fdstat {
             fs_filetype: wasi::FILETYPE_CHARACTER_DEVICE,
             fs_flags: wasi::FDFLAGS_APPEND,
             fs_rights_base: 0x820004a, // TODO: that's what wasmtime returns, don't know what it means
@@ -659,7 +706,7 @@ fn fd_fdstat_get(
 fn fd_filestat_get(
     state: &WasiExtrinsics,
     mut params: impl ExactSizeIterator<Item = WasmValue>,
-    mem_access: &mut impl ExtrinsicsMemoryAccess,
+    _mem_access: &mut impl ExtrinsicsMemoryAccess,
 ) -> Result<(ContextInner, ExtrinsicsAction), WasiCallErr> {
     let file_descriptors_lock = state.file_descriptors.lock();
 
@@ -703,7 +750,7 @@ fn fd_prestat_dir_name(
     };
 
     let name = match file_descriptor {
-        FileDescriptor::Empty | FileDescriptor::LogOut(_) => {
+        FileDescriptor::Empty | FileDescriptor::LogOut { .. } => {
             // TODO: is that the correct return type?
             let ret = Some(WasmValue::I32(From::from(wasi::ERRNO_BADF)));
             let action = ExtrinsicsAction::Resume(ret);
@@ -749,7 +796,7 @@ fn fd_prestat_get(
     };
 
     let pr_name_len: u32 = match file_descriptor {
-        FileDescriptor::Empty | FileDescriptor::LogOut(_) => {
+        FileDescriptor::Empty | FileDescriptor::LogOut { .. } => {
             let ret = Some(WasmValue::I32(From::from(wasi::ERRNO_NOTSUP)));
             let action = ExtrinsicsAction::Resume(ret);
             return Ok((ContextInner::Finished, action));
@@ -825,7 +872,7 @@ fn fd_read(
     };
 
     let total_read: u32 = match &mut file_descriptor {
-        FileDescriptor::Empty | FileDescriptor::LogOut(_) => 0,
+        FileDescriptor::Empty | FileDescriptor::LogOut { .. } => 0,
         FileDescriptor::FilesystemEntry {
             inode,
             file_cursor_pos,
@@ -900,7 +947,7 @@ fn fd_seek(
     let whence = u8::try_from(params.next().unwrap().into_i32().unwrap())?;
 
     let new_offset: u64 = match &mut file_descriptor {
-        FileDescriptor::Empty | FileDescriptor::LogOut(_) => {
+        FileDescriptor::Empty | FileDescriptor::LogOut { .. } => {
             // TODO: is that the correct error?
             let ret = Some(WasmValue::I32(From::from(wasi::ERRNO_BADF)));
             let action = ExtrinsicsAction::Resume(ret);
@@ -954,12 +1001,12 @@ fn fd_write(
     mut params: impl ExactSizeIterator<Item = WasmValue>,
     mem_access: &mut impl ExtrinsicsMemoryAccess,
 ) -> Result<(ContextInner, ExtrinsicsAction), WasiCallErr> {
-    let file_descriptors_lock = state.file_descriptors.lock();
+    let mut file_descriptors_lock = state.file_descriptors.lock();
 
     // Find out which file descriptor the user wants to write to.
+    let fd = usize::try_from(params.next().unwrap().into_i32().unwrap())?;
     let file_descriptor = {
-        let fd = usize::try_from(params.next().unwrap().into_i32().unwrap())?;
-        match file_descriptors_lock.get(fd).and_then(|v| v.as_ref()) {
+        match file_descriptors_lock.get_mut(fd).and_then(|v| v.as_mut()) {
             Some(fd) => fd,
             None => {
                 let ret = Some(WasmValue::I32(From::from(wasi::ERRNO_BADF)));
@@ -991,20 +1038,15 @@ fn fd_write(
             let action = ExtrinsicsAction::Resume(ret);
             Ok((ContextInner::Finished, action))
         }
-        FileDescriptor::LogOut(log_level) => {
+        FileDescriptor::LogOut { level, buffer } => {
             let mut total_written = 0usize;
-            let mut encoded_message = Vec::new();
-            encoded_message.push(u8::from(*log_level));
-
             for ptr_and_len in list_to_write.chunks(2) {
                 let ptr = ptr_and_len[0];
                 let len = ptr_and_len[1];
 
-                encoded_message.extend(mem_access.read_memory(ptr..ptr + len)?);
+                buffer.extend(mem_access.read_memory(ptr..ptr + len)?);
                 total_written = total_written.checked_add(usize::try_from(len)?)?;
             }
-
-            debug_assert_eq!(encoded_message.len(), total_written + 1);
 
             // Write to the fourth parameter the number of bytes written to the file descriptor.
             {
@@ -1015,14 +1057,25 @@ fn fd_write(
 
             assert!(params.next().is_none());
 
-            let action = ExtrinsicsAction::EmitMessage {
-                interface: redshirt_log_interface::ffi::INTERFACE,
-                message: EncodedMessage(encoded_message),
-                response_expected: false,
-            };
+            // Flush `buffer` into a log message if possible.
+            if let Some(split_pos) = buffer.iter().position(|c| *c == b'\n') {
+                let mut encoded_message = Vec::new();
+                encoded_message.push(u8::from(*level));
+                encoded_message.extend(buffer.drain(..split_pos));
+                buffer.remove(0);
 
-            let context = ContextInner::Resume(Some(WasmValue::I32(0)));
-            Ok((context, action))
+                let action = ExtrinsicsAction::EmitMessage {
+                    interface: redshirt_log_interface::ffi::INTERFACE,
+                    message: EncodedMessage(encoded_message),
+                    response_expected: false,
+                };
+
+                let context = ContextInner::TryFlushLogOut(fd);
+                Ok((context, action))
+            } else {
+                let action = ExtrinsicsAction::Resume(Some(WasmValue::I32(0)));
+                return Ok((ContextInner::Finished, action));
+            }
         }
         FileDescriptor::FilesystemEntry { .. } => unimplemented!(), // TODO:
     }
@@ -1048,7 +1101,7 @@ fn path_filestat_get(
     };
 
     let fd_inode = match file_descriptor {
-        FileDescriptor::Empty | FileDescriptor::LogOut(_) => {
+        FileDescriptor::Empty | FileDescriptor::LogOut { .. } => {
             // TODO: is that the correct return type?
             let ret = Some(WasmValue::I32(From::from(wasi::ERRNO_BADF)));
             let action = ExtrinsicsAction::Resume(ret);
@@ -1147,7 +1200,7 @@ fn path_open(
     };
 
     let fd_inode = match file_descriptor {
-        FileDescriptor::Empty | FileDescriptor::LogOut(_) => {
+        FileDescriptor::Empty | FileDescriptor::LogOut { .. } => {
             // TODO: is that the correct return type?
             let ret = Some(WasmValue::I32(From::from(wasi::ERRNO_BADF)));
             let action = ExtrinsicsAction::Resume(ret);

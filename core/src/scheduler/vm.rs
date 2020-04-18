@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::{module::Module, ValueType, WasmValue};
+use crate::{module::Module, primitives::Signature, ValueType, WasmValue};
 
 use alloc::{
     borrow::{Cow, ToOwned as _},
@@ -233,10 +233,10 @@ impl<T> ProcessStateMachine<T> {
     pub fn new(
         module: &Module,
         main_thread_user_data: T,
-        mut symbols: impl FnMut(&str, &str, &wasmi::Signature) -> Result<usize, ()>,
+        mut symbols: impl FnMut(&str, &str, &Signature) -> Result<usize, ()>,
     ) -> Result<Self, NewErr> {
         struct ImportResolve<'a>(
-            RefCell<&'a mut dyn FnMut(&str, &str, &wasmi::Signature) -> Result<usize, ()>>,
+            RefCell<&'a mut dyn FnMut(&str, &str, &Signature) -> Result<usize, ()>>,
         );
         impl<'a> wasmi::ImportResolver for ImportResolve<'a> {
             fn resolve_func(
@@ -246,7 +246,7 @@ impl<T> ProcessStateMachine<T> {
                 signature: &wasmi::Signature,
             ) -> Result<wasmi::FuncRef, wasmi::Error> {
                 let closure = &mut **self.0.borrow_mut();
-                let index = match closure(module_name, field_name, signature) {
+                let index = match closure(module_name, field_name, &From::from(signature)) {
                     Ok(i) => i,
                     Err(_) => {
                         return Err(wasmi::Error::Instantiation(format!(
@@ -333,21 +333,10 @@ impl<T> ProcessStateMachine<T> {
             threads: SmallVec::new(),
         };
 
-        // Try to start executing `_start` or `main`.
-        // TODO: executing `main` is a hack right now in order to support wasm32-unknown-unknown which doesn't have
-        // a `_start` function
+        // Try to start executing `_start`.
         match state_machine.start_thread_by_name("_start", &[][..], main_thread_user_data) {
             Ok(_) => {}
-            Err((StartErr::FunctionNotFound, user_data)) => {
-                static ARGC_ARGV: [wasmi::RuntimeValue; 2] =
-                    [wasmi::RuntimeValue::I32(0), wasmi::RuntimeValue::I32(0)];
-                match state_machine.start_thread_by_name("main", &ARGC_ARGV[..], user_data) {
-                    Ok(_) => {}
-                    Err((StartErr::FunctionNotFound, _)) => return Err(NewErr::StartNotFound),
-                    Err((StartErr::Poisoned, _)) => unreachable!(),
-                    Err((StartErr::NotAFunction, _)) => return Err(NewErr::StartIsntAFunction),
-                }
-            }
+            Err((StartErr::FunctionNotFound, _)) => return Err(NewErr::StartNotFound),
             Err((StartErr::Poisoned, _)) => unreachable!(),
             Err((StartErr::NotAFunction, _)) => return Err(NewErr::StartIsntAFunction),
         };
@@ -702,7 +691,7 @@ impl fmt::Display for RunErr {
 #[cfg(test)]
 mod tests {
     use super::{ExecOutcome, NewErr, ProcessStateMachine};
-    use crate::WasmValue;
+    use crate::primitives::WasmValue;
 
     #[test]
     fn starts_if_main() {

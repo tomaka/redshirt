@@ -14,7 +14,6 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use crate::scheduler::{Core, CoreRunOutcome};
-use crate::InterfaceHash;
 use futures::prelude::*;
 
 #[test]

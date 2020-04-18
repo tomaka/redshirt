@@ -32,6 +32,7 @@ use core::{fmt, future::Future, num::NonZeroU32, pin::Pin};
 use redshirt_kernel_log_interface::ffi::KernelLogMethod;
 
 mod arm;
+mod riscv;
 mod x86_64;
 
 /// Access to all the platform-specific information.

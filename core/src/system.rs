@@ -13,22 +13,33 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+//! Core system, alongside with support for native programs, and some predefined interfaces and
+//! features.
+//!
+//! Natively handles the following interfaces:
+//! TODO: indicate hashes
+//! TODO: more details
+//!
+//! - `interface`.
+//!
+
 use crate::module::{Module, ModuleHash};
 use crate::native::{self, NativeProgramMessageIdWrite as _};
 use crate::scheduler::{Core, CoreBuilder, CoreRunOutcome, NewErr};
 
 use alloc::vec::Vec;
-use core::{cell::RefCell, iter, num::NonZeroU64, sync::atomic, task::Poll};
+use core::{cell::RefCell, iter, num::NonZeroU64, task::Poll};
 use crossbeam_queue::SegQueue;
 use futures::prelude::*;
 use hashbrown::HashSet;
 use nohash_hasher::BuildNoHashHasher;
 use redshirt_syscalls::{Decode, Encode, MessageId, Pid};
+use spinning_top::Spinlock;
 
 /// Main struct that handles a system, including the scheduler, program loader,
 /// inter-process communication, and so on.
 ///
-/// Natively handles the "interface" interface.  TODO: indicate hashes
+/// See [the module-level documentation](super) for more information.
 pub struct System<'a> {
     /// Inner system with inter-process communications.
     core: Core,
@@ -37,10 +48,10 @@ pub struct System<'a> {
     /// Can communicate with the WASM programs that are within `core`.
     native_programs: native::NativeProgramsCollection<'a>,
 
-    /// PID of the program that handles the `loader` interface, or `0` is no such program exists
-    /// yet.
+    /// PID of the program that handles the `loader` interface, or `None` is no such program
+    /// exists yet.
     // TODO: add timeout for loader interface availability?
-    loader_pid: atomic::AtomicU64,
+    loader_pid: Spinlock<Option<NonZeroU64>>,
 
     /// List of programs to load if the loader interface handler is available.
     programs_to_load: SegQueue<ModuleHash>,
@@ -113,7 +124,7 @@ impl<'a> System<'a> {
         future::poll_fn(move |cx| {
             loop {
                 // If we have a handler for the loader interface, start loading pending programs.
-                if let Some(_) = NonZeroU64::new(self.loader_pid.load(atomic::Ordering::Relaxed)) {
+                if let Some(_) = self.loader_pid.lock().clone() {
                     while let Ok(hash) = self.programs_to_load.pop() {
                         // TODO: can this not fail if the handler crashed in parallel in a
                         // multithreaded situation?
@@ -191,8 +202,10 @@ impl<'a> System<'a> {
     async fn run_once(&self) -> RunOnceOutcome {
         match self.core.run().await {
             CoreRunOutcome::ProgramFinished { pid, outcome, .. } => {
-                self.loader_pid
-                    .compare_and_swap(u64::from(pid), 0, atomic::Ordering::AcqRel);
+                let mut loader_pid = self.loader_pid.lock();
+                if *loader_pid == NonZeroU64::new(u64::from(pid)) {
+                    *loader_pid = None;
+                }
                 self.native_programs.process_destroyed(pid);
                 return RunOnceOutcome::Report(SystemRunOutcome::ProgramFinished {
                     pid,
@@ -248,8 +261,7 @@ impl<'a> System<'a> {
                             && interface_hash == redshirt_loader_interface::ffi::INTERFACE
                         {
                             debug_assert_ne!(u64::from(pid), 0);
-                            self.loader_pid
-                                .swap(u64::from(pid), atomic::Ordering::AcqRel);
+                            *self.loader_pid.lock() = NonZeroU64::new(u64::from(pid));
                             return RunOnceOutcome::LoopAgainNow;
                         }
                     }
@@ -365,7 +377,7 @@ impl<'a> SystemBuilder<'a> {
         Ok(System {
             core,
             native_programs: self.native_programs,
-            loader_pid: atomic::AtomicU64::new(0),
+            loader_pid: Spinlock::new(None),
             load_source_virtual_pid: self.load_source_virtual_pid,
             loading_programs: RefCell::new(Default::default()),
             programs_to_load: self.programs_to_load,

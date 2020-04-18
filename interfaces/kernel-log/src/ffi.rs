@@ -39,7 +39,23 @@ pub struct KernelLogMethod {
     /// If `Some`, the logs will be printed on a video framebuffer.
     pub framebuffer: Option<FramebufferInfo>,
 
-    pub uart: Option<()>, // TODO:
+    /// If `Some`, logs will be emitted on an UART.
+    pub uart: Option<UartInfo>,
+}
+
+/// Information about how the kernel should print on an UART.
+///
+/// In order to write, the kernel should repeatidly read 32bits from `wait_low_address` until
+/// its value, when AND-ed with `wait_low_mask`, reads 0. Then it should write 32bits to
+/// `write_address`.
+#[derive(Debug, Clone, Encode, Decode)]
+pub struct UartInfo {
+    /// Location in physical memory where to read th evalue to compare.
+    pub wait_low_address: u64,
+    /// Mask to compare the value read from `wait_low_address`.
+    pub wait_low_mask: u32,
+    /// Location in physical memory where to write the byte when ready.
+    pub write_address: u64,
 }
 
 /// Information about how the kernel should print on the framebuffer.
