@@ -1141,6 +1141,7 @@ dependencies = [
  "redshirt-syscalls",
  "redshirt-system-time-interface",
  "redshirt-time-interface",
+ "slab 0.4.2 (git+https://github.com/baloo/slab?rev=88b456131de20750e785655d1e62cd0b6e10d44b)",
  "smallvec",
  "spinning_top",
  "wasi",

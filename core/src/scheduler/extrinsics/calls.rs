@@ -28,8 +28,8 @@ use redshirt_syscalls::EncodedMessage;
 /// has no side effect.
 ///
 /// Returns an error if the call is invalid.
-pub fn parse_extrinsic_next_notification<TPud, TTud>(
-    thread: &mut processes::ProcessesCollectionThread<TPud, TTud>,
+pub fn parse_extrinsic_next_notification<TExtr, TPud, TTud>(
+    thread: &mut processes::ProcessesCollectionThread<TExtr, TPud, TTud>,
     params: Vec<crate::WasmValue>,
 ) -> Result<NotificationWait, ExtrinsicNextNotificationErr> {
     // We use an assert here rather than a runtime check because the WASM VM (rather than us) is
@@ -130,8 +130,8 @@ pub enum ExtrinsicNextNotificationErr {
 /// has no side effect.
 ///
 /// Returns an error if the call is invalid.
-pub fn parse_extrinsic_emit_message<TPud, TTud>(
-    thread: &mut processes::ProcessesCollectionThread<TPud, TTud>,
+pub fn parse_extrinsic_emit_message<TExtr, TPud, TTud>(
+    thread: &mut processes::ProcessesCollectionThread<TExtr, TPud, TTud>,
     params: Vec<crate::WasmValue>,
 ) -> Result<EmitMessage, ExtrinsicEmitMessageErr> {
     // We use an assert here rather than a runtime check because the WASM VM (rather than us) is
@@ -252,8 +252,8 @@ pub enum ExtrinsicEmitMessageErr {
 /// has no side effect.
 ///
 /// Returns an error if the call is invalid.
-pub fn parse_extrinsic_emit_answer<TPud, TTud>(
-    thread: &mut processes::ProcessesCollectionThread<TPud, TTud>,
+pub fn parse_extrinsic_emit_answer<TExtr, TPud, TTud>(
+    thread: &mut processes::ProcessesCollectionThread<TExtr, TPud, TTud>,
     params: Vec<crate::WasmValue>,
 ) -> Result<EmitAnswer, ExtrinsicEmitAnswerErr> {
     // We use an assert here rather than a runtime check because the WASM VM (rather than us) is
@@ -325,8 +325,8 @@ pub enum ExtrinsicEmitAnswerErr {
 /// has no side effect.
 ///
 /// Returns an error if the call is invalid.
-pub fn parse_extrinsic_emit_message_error<TPud, TTud>(
-    thread: &mut processes::ProcessesCollectionThread<TPud, TTud>,
+pub fn parse_extrinsic_emit_message_error<TExtr, TPud, TTud>(
+    thread: &mut processes::ProcessesCollectionThread<TExtr, TPud, TTud>,
     params: Vec<crate::WasmValue>,
 ) -> Result<MessageId, ExtrinsicEmitMessageErrorErr> {
     // We use an assert here rather than a runtime check because the WASM VM (rather than us) is
@@ -366,8 +366,8 @@ pub enum ExtrinsicEmitMessageErrorErr {
 /// has no side effect.
 ///
 /// Returns an error if the call is invalid.
-pub fn parse_extrinsic_cancel_message<TPud, TTud>(
-    thread: &mut processes::ProcessesCollectionThread<TPud, TTud>,
+pub fn parse_extrinsic_cancel_message<TExtr, TPud, TTud>(
+    thread: &mut processes::ProcessesCollectionThread<TExtr, TPud, TTud>,
     params: Vec<crate::WasmValue>,
 ) -> Result<MessageId, ExtrinsicCancelMessageErr> {
     // We use an assert here rather than a runtime check because the WASM VM (rather than us) is

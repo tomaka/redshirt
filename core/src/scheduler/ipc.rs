@@ -131,9 +131,6 @@ pub enum CoreRunOutcome {
         message_id: MessageId,
         response: Result<EncodedMessage, ()>,
     },
-
-    /// Nothing to do. No thread is ready to run.
-    Idle,
 }
 
 /// Additional information about a process.
@@ -177,9 +174,9 @@ impl Core {
     }
 
     /// Run the core once.
-    pub fn run(&self) -> CoreRunOutcome {
+    pub async fn run(&self) -> CoreRunOutcome {
         loop {
-            match self.run_inner() {
+            match self.run_inner().await {
                 Some(ev) => break ev,
                 None => {}
             }
@@ -188,14 +185,14 @@ impl Core {
 
     /// Same as [`Core::run`]. Returns `None` if no event should be returned and we should loop
     /// again.
-    fn run_inner(&self) -> Option<CoreRunOutcome> {
+    async fn run_inner(&self) -> Option<CoreRunOutcome> {
         if let Ok(ev) = self.pending_events.pop() {
             return Some(ev);
         }
 
         // Note: we use a temporary `run_outcome` variable in order to solve weird borrowing
         // issues. Feel free to try to remove it if you manage.
-        let run_outcome = self.processes.run();
+        let run_outcome = self.processes.run().await;
         match run_outcome {
             extrinsics::RunOneOutcome::ProcessFinished {
                 pid,
@@ -365,8 +362,6 @@ impl Core {
                     .remove_if_emitted_by(message_id, process.pid());
                 None
             }
-
-            extrinsics::RunOneOutcome::Idle => Some(CoreRunOutcome::Idle),
         }
     }
 
@@ -413,7 +408,7 @@ impl Core {
                         Ok(_) => unreachable!(),
                     };
 
-                    debug_assert_eq!(thread.emit_interface(), interface);
+                    debug_assert_eq!(*thread.emit_interface(), interface);
                     let emitter_pid = thread.pid();
 
                     let message_id = if thread.needs_answer() {

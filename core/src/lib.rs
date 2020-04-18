@@ -113,6 +113,8 @@
 #![warn(missing_docs)]
 //#![deny(unsafe_code)] // TODO: 🤷
 #![allow(dead_code)] // TODO: temporary during development
+
+// The crate uses the stdlib for testing purposes.
 #![cfg_attr(not(test), no_std)]
 
 extern crate alloc;

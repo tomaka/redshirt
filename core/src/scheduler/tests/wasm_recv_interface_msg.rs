@@ -18,6 +18,7 @@ use crate::scheduler::{Core, CoreRunOutcome};
 use crate::{EncodedMessage, InterfaceHash};
 
 use alloc::vec;
+use futures::prelude::*;
 
 #[test]
 fn wasm_recv_interface_msg() {
@@ -73,12 +74,12 @@ fn wasm_recv_interface_msg() {
         EncodedMessage(vec![1, 2, 3, 4, 5, 6, 7, 8]),
     );
 
-    match core.run() {
-        CoreRunOutcome::ProgramFinished {
+    match core.run().now_or_never() {
+        Some(CoreRunOutcome::ProgramFinished {
             pid: finished_pid,
             outcome,
             ..
-        } => {
+        }) => {
             assert_eq!(finished_pid, wasm_proc_pid);
             assert!(outcome.is_ok());
         }

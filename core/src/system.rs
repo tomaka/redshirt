@@ -103,7 +103,6 @@ pub enum SystemRunOutcome {
 #[derive(Debug)]
 enum RunOnceOutcome {
     Report(SystemRunOutcome),
-    Idle,
     LoopAgain,
     LoopAgainNow,
 }
@@ -138,13 +137,18 @@ impl<'a> System<'a> {
                     }
                 }
 
-                let run_once_outcome = self.run_once();
+                // TODO: put an await here instead
+                let run_once_outcome = {
+                    let fut = self.run_once();
+                    futures::pin_mut!(fut);
+                    Future::poll(fut, cx)
+                };
 
-                if let RunOnceOutcome::Report(out) = run_once_outcome {
+                if let Poll::Ready(RunOnceOutcome::Report(out)) = run_once_outcome {
                     return Poll::Ready(out);
                 }
 
-                if let RunOnceOutcome::LoopAgainNow = run_once_outcome {
+                if let Poll::Ready(RunOnceOutcome::LoopAgainNow) = run_once_outcome {
                     continue;
                 }
 
@@ -153,7 +157,7 @@ impl<'a> System<'a> {
                 let event = match next_event.poll(cx) {
                     Poll::Ready(ev) => ev,
                     Poll::Pending => {
-                        if let RunOnceOutcome::LoopAgain = run_once_outcome {
+                        if let Poll::Ready(RunOnceOutcome::LoopAgain) = run_once_outcome {
                             continue;
                         }
                         return Poll::Pending;
@@ -195,10 +199,8 @@ impl<'a> System<'a> {
         })
     }
 
-    fn run_once(&self) -> RunOnceOutcome {
-        match self.core.run() {
-            CoreRunOutcome::Idle => return RunOnceOutcome::Idle,
-
+    async fn run_once(&self) -> RunOnceOutcome {
+        match self.core.run().await {
             CoreRunOutcome::ProgramFinished { pid, outcome, .. } => {
                 let mut loader_pid = self.loader_pid.lock();
                 if *loader_pid == NonZeroU64::new(u64::from(pid)) {

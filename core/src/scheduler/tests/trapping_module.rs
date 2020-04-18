@@ -14,6 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use crate::scheduler::{Core, CoreRunOutcome};
+use futures::prelude::*;
 
 #[test]
 fn trapping_module() {
@@ -29,12 +30,12 @@ fn trapping_module() {
     let core = Core::new().build();
     let expected_pid = core.execute(&module).unwrap().pid();
 
-    match core.run() {
-        CoreRunOutcome::ProgramFinished {
+    match core.run().now_or_never() {
+        Some(CoreRunOutcome::ProgramFinished {
             pid,
             outcome: Err(_),
             ..
-        } => {
+        }) => {
             assert_eq!(pid, expected_pid);
         }
         _ => panic!(),
