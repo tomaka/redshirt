@@ -18,6 +18,7 @@ use crate::scheduler::{Core, CoreRunOutcome};
 use crate::{EncodedMessage, InterfaceHash};
 
 use alloc::vec;
+use futures::prelude::*;
 
 #[test]
 fn wasm_recv_interface_msg() {
@@ -54,7 +55,7 @@ fn wasm_recv_interface_msg() {
     */
     let module = Module::from_bytes(&include_bytes!("./wasm_recv_interface_msg.wasm")[..]).unwrap();
 
-    let interface = redshirt_syscalls::InterfaceHash::from_raw_hash([
+    let interface = InterfaceHash::from_raw_hash([
         0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16,
         0x17, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35,
         0x36, 0x37,
@@ -73,12 +74,12 @@ fn wasm_recv_interface_msg() {
         EncodedMessage(vec![1, 2, 3, 4, 5, 6, 7, 8]),
     );
 
-    match core.run() {
-        CoreRunOutcome::ProgramFinished {
+    match core.run().now_or_never() {
+        Some(CoreRunOutcome::ProgramFinished {
             pid: finished_pid,
             outcome,
             ..
-        } => {
+        }) => {
             assert_eq!(finished_pid, wasm_proc_pid);
             assert!(outcome.is_ok());
         }

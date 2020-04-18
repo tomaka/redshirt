@@ -1,5 +1,5 @@
 The **redshirt** operating system is an experiment to build some kind of operating-system-like
-environment where executables are all in WASM and are loaded from an IPFS-like decentralized
+environment where executables are all in Wasm and are loaded from an IPFS-like decentralized
 network.
 
 I'm frequently telling people what my vision of an operating system would be. Now I've started
@@ -9,48 +9,47 @@ building it.
 
 # How to test
 
-There are two binaries available in this repository:
+**Important**: At the moment, most of the compilation requires a nightly version of Rust. See also https://github.com/tomaka/redshirt/issues/300.
 
-- The "hosted kernel" is a regular binary that executes WASM programs and uses the host operating
-  system.
-- The freestanding kernel is a multiboot2-compliant kernel that can be loaded with GRUB2 or any
-  compliant bootloader.
-
-For the hosted kernel:
+You also need to install the `wasm32-wasi` target, as the Wasm modules are compiled for Wasi, and the `rust-src` component in order to build the standalone kernel.
 
 ```
-# You need the WASI target installed:
-rustup target add wasm32-wasi
+rustup toolchain install --target=wasm32-wasi nightly
+rustup component add --toolchain=nightly rust-src
+```
 
-# Then:
-cargo run
+There are two binaries available in this repository:
+
+- The "CLI kernel" is a regular binary that executes Wasi programs and leverages functionalities from the host operating system.
+- The freestanding kernel is a bare-metal kernel.
+
+For the CLI kernel:
+
+```
+# TODO: `--module-hash` must be passed the hash of the module to load,
+# but there is no modules-hosting platform at t the moment
+# See https://github.com/tomaka/redshirt/issues/333
+cargo +nightly run -- --module-hash=A
 ```
 
 For the freestanding kernel:
 
 ```
-rustup target add wasm32-wasi
 cd kernel/standalone-builder
-cargo run -- emulator-run --emulator qemu --target arm-rpi2
-```
-
-The freestanding kernel also supports x86_64:
-
-```
-cargo run -- emulator-run --emulator qemu --target x86_64-multiboot2
+cargo +nightly run -- emulator-run --emulator qemu --target x86_64-multiboot2
 ```
 
 # Repository structure
 
 Short overview of the structure of the repository:
 
-- `core` is a crate containing all the core infrastructure of interpreting WASM and inter-process
+- `core` is a crate containing all the core infrastructure of interpreting Wasm and inter-process
   communication. It is meant to become `#![no_std]`-compatible.
-- `interfaces` contains crates that provide definitions and helpers for WASM programs to use
+- `interfaces` contains crates that provide definitions and helpers for Wasm programs to use
   (examples: `tcp` for TCP/IP, `window` for windowing).
 - `kernel` contains the kernel binaries, plus crates that implement interfaces using the host's
   environment (e.g.: implements the `tcp` interface using Linux's or Window's TCP/IP).
-- `modules` contains WASM programs.
+- `modules` contains Wasm programs.
 
 # Contributing
 
@@ -67,10 +66,10 @@ to get in touch if you want to contribute anything non-trivial.
   or something similar.
 
 - If it ever becomes a real OS, everything would be run in ring 0. Isolation is guaranteed by the
-  WASM interpreter, and no hardware capability is required.
+  Wasm interpreter, and no hardware capability is required.
 
 - Programs are referred to by their hash, not by a file name. For example you don't tell the OS
-  "execute /usr/bin/foo". Instead you say "execute A45d9a21c3a7". The WASM binary, if it doesn't
+  "execute /usr/bin/foo". Instead you say "execute A45d9a21c3a7". The Wasm binary, if it doesn't
   exist locally, is fetched from a peer-to-peer network similar to IPFS.
 
 - There exists 3 core syscalls (send a message, send an answer, wait for a notification), and
@@ -86,7 +85,7 @@ to get in touch if you want to contribute anything non-trivial.
 - Low-level interfaces are handled by the kernel itself. On desktop, the kernel handles for example
   TCP/IP, UDP, file system, etc. by asking the host OS. On bare metal, the provided interfaces would
   be for example "interrupt handler manager", "PCI", etc. and the handler for the TCP/IP interface
-  would be a regular WASM process that communicates with the PCI, Ethernet, etc. interfaces.
+  would be a regular Wasm process that communicates with the PCI, Ethernet, etc. interfaces.
 
 - For security purposes, the user could choose to grant or deny to access to interface on a
   per-program basis, much like Android/browsers/etc. do. Don't want "sudoku" to access TCP/IP?
@@ -100,4 +99,4 @@ to get in touch if you want to contribute anything non-trivial.
   becomes incompatible. There's no version number.
 
 - The programs loader is itself just an interface handler. In other words, when the kernel wants to
-  start a program, it sends an IPC message to a process that then returns the WASM bytecode.
+  start a program, it sends an IPC message to a process that then returns the Wasm bytecode.

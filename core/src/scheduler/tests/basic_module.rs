@@ -14,7 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use crate::scheduler::{Core, CoreRunOutcome};
-use crate::InterfaceHash;
+use futures::prelude::*;
 
 #[test]
 fn basic_module() {
@@ -30,14 +30,14 @@ fn basic_module() {
     let core = Core::new().build();
     let expected_pid = core.execute(&module).unwrap().pid();
 
-    match core.run() {
-        CoreRunOutcome::ProgramFinished {
+    match core.run().now_or_never() {
+        Some(CoreRunOutcome::ProgramFinished {
             pid,
             outcome: Ok(ret_val),
             ..
-        } => {
+        }) => {
             assert_eq!(pid, expected_pid);
-            assert_eq!(ret_val, Some(wasmi::RuntimeValue::I32(5)));
+            assert!(matches!(ret_val, Some(crate::WasmValue::I32(5))));
         }
         _ => panic!(),
     }

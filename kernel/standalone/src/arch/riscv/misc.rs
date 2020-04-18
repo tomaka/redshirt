@@ -13,17 +13,15 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#[link(name = "boot")]
-extern "C" {}
-
 // TODO: figure out how to remove these
+
 #[no_mangle]
-pub extern "C" fn fmod(a: f64, b: f64) -> f64 {
-    libm::fmod(a, b)
+pub extern "C" fn fmod(x: f64, y: f64) -> f64 {
+    libm::fmod(x, y)
 }
 #[no_mangle]
-pub extern "C" fn fmodf(a: f32, b: f32) -> f32 {
-    libm::fmodf(a, b)
+pub extern "C" fn fmodf(x: f32, y: f32) -> f32 {
+    libm::fmodf(x, y)
 }
 #[no_mangle]
 pub extern "C" fn fmin(a: f64, b: f64) -> f64 {
@@ -42,10 +40,10 @@ pub extern "C" fn fmaxf(a: f32, b: f32) -> f32 {
     libm::fmaxf(a, b)
 }
 #[no_mangle]
+pub extern "C" fn __aeabi_d2f(a: f64) -> f32 {
+    libm::trunc(a) as f32 // TODO: correct?
+}
+#[no_mangle]
 pub extern "C" fn __truncdfsf2(a: f64) -> f32 {
     libm::trunc(a) as f32 // TODO: correct?
 }
-
-// TODO: move somewhere better and document
-#[no_mangle]
-static gdt_table: [u64; 2] = [0, (1 << 53) | (1 << 47) | (1 << 44) | (1 << 43)];

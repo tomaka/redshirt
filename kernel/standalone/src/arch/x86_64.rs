@@ -16,25 +16,40 @@
 #![cfg(target_arch = "x86_64")]
 
 use crate::arch::{PlatformSpecific, PortErr};
+use crate::klog::KLogger;
 
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use core::{
-    convert::TryFrom as _, future::Future, iter, num::NonZeroU32, ops::Range, pin::Pin,
+    convert::TryFrom as _, fmt::Write as _, iter, num::NonZeroU32, ops::Range, pin::Pin,
     time::Duration,
 };
 use futures::channel::oneshot;
+use redshirt_kernel_log_interface::ffi::{FramebufferFormat, FramebufferInfo, KernelLogMethod};
 use x86_64::structures::port::{PortRead as _, PortWrite as _};
 
 mod acpi;
 mod ap_boot;
 mod apic;
-mod boot_link;
+mod boot;
 mod executor;
 mod interrupts;
 mod panic;
 mod pit;
 
-/// Called by `boot.S` after basic set up has been performed.
+const DEFAULT_LOG_METHOD: KernelLogMethod = KernelLogMethod {
+    enabled: true,
+    framebuffer: Some(FramebufferInfo {
+        address: 0xb8000,
+        width: 80,
+        height: 25,
+        pitch: 160,
+        bytes_per_character: 2,
+        format: FramebufferFormat::Text,
+    }),
+    uart: None,
+};
+
+/// Called by `boot.rs` after basic set up has been performed.
 ///
 /// When this function is called, a stack has been set up and as much memory space as possible has
 /// been identity-mapped (i.e. the virtual memory is equal to the physical memory).
@@ -44,11 +59,11 @@ mod pit;
 ///
 /// # Safety
 ///
-/// `multiboot_header` must be a valid memory address that contains valid information.
+/// `multiboot_info` must be a valid memory address that contains valid information.
 ///
 #[no_mangle]
-unsafe extern "C" fn after_boot(multiboot_header: usize) -> ! {
-    let multiboot_info = multiboot2::load(multiboot_header);
+unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
+    let multiboot_info = multiboot2::load(multiboot_info);
 
     // Initialization of the memory allocator.
     let mut ap_boot_alloc = {
@@ -70,16 +85,63 @@ unsafe extern "C" fn after_boot(multiboot_header: usize) -> ! {
         }
     };
 
+    // Now that we have a memory allocator, initialize the logging system .
+    let logger = Arc::new(KLogger::new({
+        if let Some(fb_info) = multiboot_info.framebuffer_tag() {
+            KernelLogMethod {
+                enabled: true,
+                framebuffer: Some(FramebufferInfo {
+                    address: fb_info.address,
+                    width: fb_info.width,
+                    height: fb_info.height,
+                    pitch: u64::from(fb_info.pitch),
+                    bytes_per_character: fb_info.bpp / 8,
+                    format: match fb_info.buffer_type {
+                        multiboot2::FramebufferType::Text => FramebufferFormat::Text,
+                        multiboot2::FramebufferType::Indexed { .. } => FramebufferFormat::Rgb {
+                            // FIXME: that is completely wrong
+                            red_size: 8,
+                            red_position: 0,
+                            green_size: 8,
+                            green_position: 16,
+                            blue_size: 8,
+                            blue_position: 24,
+                        },
+                        multiboot2::FramebufferType::RGB { red, green, blue } => {
+                            FramebufferFormat::Rgb {
+                                red_size: red.size,
+                                red_position: red.position,
+                                green_size: green.size,
+                                green_position: green.position,
+                                blue_size: blue.size,
+                                blue_position: blue.position,
+                            }
+                        }
+                    },
+                }),
+                uart: None,
+            }
+        } else {
+            DEFAULT_LOG_METHOD.clone()
+        }
+    }));
+
+    // If a panic happens, we want it to use the logging system we just created.
+    panic::set_logger(logger.clone());
+    writeln!(logger.log_printer(), "basic initialization ok").unwrap();
+
     // The first thing that gets executed when a x86 or x86_64 machine starts up is the
     // motherboard's firmware. Before giving control to the operating system, this firmware writes
     // into memory a set of data called the **ACPI tables**.
     // It then (indirectly) passes the memory address of this table to the operating system. This
     // is part of [the UEFI standard](https://en.wikipedia.org/wiki/UEFI).
     //
-    // However, this code is not loaded directly by the firmware but rather by a bootloader. This
-    // bootloader must save the information about the ACPI tables and propagate it as part of the
-    // multiboot2 header passed to the operating system.
-    // TODO: panics in BOCHS
+    // However, this code is not loaded directly by the operating system but rather by a
+    // bootloader. This bootloader must save the information about the ACPI tables and propagate it
+    // as part of the multiboot2 header passed to the operating system.
+    // TODO: remove these tables from the memory ranges used as heap? `acpi_tables` is a copy of
+    // the table, so once we are past this line there's no problem anymore. But in theory,
+    // the `acpi_tables` variable might allocate over the actual ACPI tables.
     let acpi_tables = acpi::load_acpi_tables(&multiboot_info);
 
     // The ACPI tables indicate us information about how to interface with the I/O APICs.
@@ -126,7 +188,9 @@ unsafe extern "C" fn after_boot(multiboot_header: usize) -> ! {
     // it to each sender.
     let mut kernel_channels = Vec::with_capacity(acpi_tables.application_processors.len());
 
-    for ap in acpi_tables.application_processors.iter() {
+    writeln!(logger.log_printer(), "initializing associated processors").unwrap();
+    // TODO: remove this `take(0)` after https://github.com/tomaka/redshirt/issues/379
+    for ap in acpi_tables.application_processors.iter().take(0) {
         debug_assert!(ap.is_ap);
         // It is possible for some associated processors to be in a disabled state, in which case
         // they **must not** be started. This is generally the case of defective processors.
@@ -135,9 +199,8 @@ unsafe extern "C" fn after_boot(multiboot_header: usize) -> ! {
         }
 
         let (kernel_tx, kernel_rx) = oneshot::channel::<Arc<crate::kernel::Kernel<_>>>();
-        kernel_channels.push(kernel_tx);
 
-        ap_boot::boot_associated_processor(
+        let ap_boot_result = ap_boot::boot_associated_processor(
             &mut ap_boot_alloc,
             &*executor,
             &*local_apics,
@@ -152,6 +215,17 @@ unsafe extern "C" fn after_boot(multiboot_header: usize) -> ! {
                 }
             },
         );
+
+        match ap_boot_result {
+            Ok(()) => kernel_channels.push(kernel_tx),
+            Err(err) => writeln!(
+                logger.log_printer(),
+                "error while initializing AP#{}: {}",
+                ap.processor_uid,
+                err
+            )
+            .unwrap(),
+        }
     }
 
     // Now that everything has been initialized and all the processors started, we can initialize
@@ -159,8 +233,6 @@ unsafe extern "C" fn after_boot(multiboot_header: usize) -> ! {
     let kernel = {
         let platform_specific = PlatformSpecificImpl {
             timers,
-            executor: &*executor,
-            local_apics,
             num_cpus: NonZeroU32::new(
                 u32::try_from(kernel_channels.len())
                     .unwrap()
@@ -168,15 +240,18 @@ unsafe extern "C" fn after_boot(multiboot_header: usize) -> ! {
                     .unwrap(),
             )
             .unwrap(),
+            logger: logger.clone(),
         };
 
         Arc::new(crate::kernel::Kernel::init(platform_specific))
     };
 
+    writeln!(logger.log_printer(), "boot successful").unwrap();
+
     // Send an `Arc<Kernel>` to the other processors so that they can run it too.
     for tx in kernel_channels {
         if tx.send(kernel.clone()).is_err() {
-            panic!();
+            panic!("failed to send kernel to associated processor");
         }
     }
 
@@ -198,26 +273,51 @@ fn find_free_memory_ranges<'a>(
     let elf_sections = multiboot_info.elf_sections_tag().unwrap();
 
     mem_map.memory_areas().filter_map(move |area| {
-        let mut area_start = area.start_address();
-        let mut area_end = area.end_address();
-        debug_assert!(area_start <= area_end);
-
-        // The kernel and various information about the system have been loaded into RAM, so we
-        // have to remove all the sections we want to keep from the portions of memory that we
-        // use.
+        // Some parts of the memory have to be avoided, such as the kernel, non-RAM memory,
+        // RAM that might contain important information, and so on.
         let to_avoid = {
+            // TODO: for now, the code in boot.rs only maps the first 32GiB of memory. We avoid
+            // anything above this limit
+            //let unmapped = iter::once(0x2000000000 .. u64::max_value());
+            // TODO: linked_list_allocator seems to misbehave when we use a lot of memory, so for
+            // now we restrict ourselves to the first 2GiB.
+            let unmapped = iter::once(0x80000000..u64::max_value());
+
+            // We don't want to write over the kernel that has been loaded in memory.
             let elf = elf_sections
                 .sections()
                 .map(|s| s.start_address()..s.end_address());
+
+            // We don't want to use the memory-mapped ROM or video memory.
+            let rom_video_ram = iter::once(0xa0000..0xfffff);
+
+            // Some areas in the first megabyte were used during the booting process. This
+            // includes the 16bits interrupt vector table and the memory used by the BIOS to keep
+            // track of its state.
+            // Note that since we have total control over the hardware there is no fundamental
+            // reason to not overwrite these areas. In practice, however, there are situations
+            // where we would like to read these information later (for example if a VBE driver
+            // wants to access the content of the video BIOS).
+            let important_info = iter::once(0..0x500).chain(iter::once(0x80000..0xa0000));
+
+            // Avoid writing over the multiboot header.
             let multiboot = iter::once(
                 u64::try_from(multiboot_info.start_address()).unwrap()
                     ..u64::try_from(multiboot_info.end_address()).unwrap(),
             );
-            // TODO: ACPI tables
-            // TODO: PCI stuff?
-            // TODO: memory map stuff?
-            elf.chain(multiboot)
+
+            // Apart from the areas above, there are other areas that we want to avoid, in
+            // particular memory-mapped hardware. We trust the multiboot information to not
+            // include them.
+            elf.chain(rom_video_ram)
+                .chain(important_info)
+                .chain(multiboot)
+                .chain(unmapped)
         };
+
+        let mut area_start = area.start_address();
+        let mut area_end = area.end_address();
+        debug_assert!(area_start <= area_end);
 
         for section in to_avoid {
             if section.start >= area_start && section.end <= area_end {
@@ -263,9 +363,8 @@ fn find_free_memory_ranges<'a>(
 /// Implementation of [`PlatformSpecific`].
 struct PlatformSpecificImpl {
     timers: &'static apic::timers::Timers<'static>,
-    local_apics: &'static apic::local::LocalApicsControl,
-    executor: &'static executor::Executor,
     num_cpus: NonZeroU32,
+    logger: Arc<KLogger>,
 }
 
 impl PlatformSpecific for PlatformSpecificImpl {
@@ -285,6 +384,14 @@ impl PlatformSpecific for PlatformSpecificImpl {
             let nanos = u32::try_from(clock_value % 1_000_000_000).unwrap();
             Duration::new(secs, nanos)
         })
+    }
+
+    fn write_log(&self, message: &str) {
+        writeln!(self.logger.log_printer(), "{}", message).unwrap();
+    }
+
+    fn set_logger_method(&self, method: KernelLogMethod) {
+        self.logger.set_method(method)
     }
 
     unsafe fn write_port_u8(self: Pin<&Self>, port: u32, data: u8) -> Result<(), PortErr> {

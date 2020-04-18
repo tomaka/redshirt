@@ -13,34 +13,45 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+//! Core system, alongside with support for native programs, and some predefined interfaces and
+//! features.
+//!
+//! Natively handles the following interfaces:
+//! TODO: indicate hashes
+//! TODO: more details
+//!
+//! - `interface`.
+//!
+
 use crate::module::{Module, ModuleHash};
 use crate::native::{self, NativeProgramMessageIdWrite as _};
 use crate::scheduler::{Core, CoreBuilder, CoreRunOutcome, NewErr};
 
 use alloc::vec::Vec;
-use core::{cell::RefCell, iter, num::NonZeroU64, sync::atomic, task::Poll};
+use core::{cell::RefCell, iter, num::NonZeroU64, task::Poll};
 use crossbeam_queue::SegQueue;
 use futures::prelude::*;
 use hashbrown::HashSet;
 use nohash_hasher::BuildNoHashHasher;
 use redshirt_syscalls::{Decode, Encode, MessageId, Pid};
+use spinning_top::Spinlock;
 
 /// Main struct that handles a system, including the scheduler, program loader,
 /// inter-process communication, and so on.
 ///
-/// Natively handles the "interface" interface.  TODO: indicate hashes
-pub struct System {
+/// See [the module-level documentation](super) for more information.
+pub struct System<'a> {
     /// Inner system with inter-process communications.
     core: Core,
 
     /// Collection of programs. Each is assigned a `Pid` that is reserved within `core`.
     /// Can communicate with the WASM programs that are within `core`.
-    native_programs: native::NativeProgramsCollection<'static>,
+    native_programs: native::NativeProgramsCollection<'a>,
 
-    /// PID of the program that handles the `loader` interface, or `0` is no such program exists
-    /// yet.
+    /// PID of the program that handles the `loader` interface, or `None` is no such program
+    /// exists yet.
     // TODO: add timeout for loader interface availability?
-    loader_pid: atomic::AtomicU64,
+    loader_pid: Spinlock<Option<NonZeroU64>>,
 
     /// List of programs to load if the loader interface handler is available.
     programs_to_load: SegQueue<ModuleHash>,
@@ -51,16 +62,16 @@ pub struct System {
     /// Set of messages that we emitted of requests to load a program from the loader interface.
     /// All these messages expect a `redshirt_loader_interface::ffi::LoadResponse` as answer.
     // TODO: call shink_to_fit from time to time
-    loading_programs: RefCell<HashSet<MessageId, BuildNoHashHasher<u64>>>,
+    loading_programs: Spinlock<HashSet<MessageId, BuildNoHashHasher<u64>>>,
 }
 
 /// Prototype for a [`System`].
-pub struct SystemBuilder {
+pub struct SystemBuilder<'a> {
     /// Builder for the inner core.
     core: CoreBuilder,
 
     /// Native programs.
-    native_programs: native::NativeProgramsCollection<'static>,
+    native_programs: native::NativeProgramsCollection<'a>,
 
     /// "Virtual" pid for handling messages on the `interface` interface.
     interface_interface_pid: Pid,
@@ -92,12 +103,11 @@ pub enum SystemRunOutcome {
 #[derive(Debug)]
 enum RunOnceOutcome {
     Report(SystemRunOutcome),
-    Idle,
     LoopAgain,
     LoopAgainNow,
 }
 
-impl System {
+impl<'a> System<'a> {
     /// Start executing a program.
     pub fn execute(&self, program: &Module) -> Result<Pid, NewErr> {
         Ok(self.core.execute(program)?.pid())
@@ -114,7 +124,7 @@ impl System {
         future::poll_fn(move |cx| {
             loop {
                 // If we have a handler for the loader interface, start loading pending programs.
-                if let Some(_) = NonZeroU64::new(self.loader_pid.load(atomic::Ordering::Relaxed)) {
+                if let Some(_) = self.loader_pid.lock().clone() {
                     while let Ok(hash) = self.programs_to_load.pop() {
                         // TODO: can this not fail if the handler crashed in parallel in a
                         // multithreaded situation?
@@ -123,17 +133,22 @@ impl System {
                             redshirt_loader_interface::ffi::INTERFACE,
                             redshirt_loader_interface::ffi::LoaderMessage::Load(From::from(hash)),
                         );
-                        self.loading_programs.borrow_mut().insert(message_id);
+                        self.loading_programs.lock().insert(message_id);
                     }
                 }
 
-                let run_once_outcome = self.run_once();
+                // TODO: put an await here instead
+                let run_once_outcome = {
+                    let fut = self.run_once();
+                    futures::pin_mut!(fut);
+                    Future::poll(fut, cx)
+                };
 
-                if let RunOnceOutcome::Report(out) = run_once_outcome {
+                if let Poll::Ready(RunOnceOutcome::Report(out)) = run_once_outcome {
                     return Poll::Ready(out);
                 }
 
-                if let RunOnceOutcome::LoopAgainNow = run_once_outcome {
+                if let Poll::Ready(RunOnceOutcome::LoopAgainNow) = run_once_outcome {
                     continue;
                 }
 
@@ -142,7 +157,7 @@ impl System {
                 let event = match next_event.poll(cx) {
                     Poll::Ready(ev) => ev,
                     Poll::Pending => {
-                        if let RunOnceOutcome::LoopAgain = run_once_outcome {
+                        if let Poll::Ready(RunOnceOutcome::LoopAgain) = run_once_outcome {
                             continue;
                         }
                         return Poll::Pending;
@@ -184,13 +199,13 @@ impl System {
         })
     }
 
-    fn run_once(&self) -> RunOnceOutcome {
-        match self.core.run() {
-            CoreRunOutcome::Idle => return RunOnceOutcome::Idle,
-
+    async fn run_once(&self) -> RunOnceOutcome {
+        match self.core.run().await {
             CoreRunOutcome::ProgramFinished { pid, outcome, .. } => {
-                self.loader_pid
-                    .compare_and_swap(u64::from(pid), 0, atomic::Ordering::AcqRel);
+                let mut loader_pid = self.loader_pid.lock();
+                if *loader_pid == NonZeroU64::new(u64::from(pid)) {
+                    *loader_pid = None;
+                }
                 self.native_programs.process_destroyed(pid);
                 return RunOnceOutcome::Report(SystemRunOutcome::ProgramFinished {
                     pid,
@@ -205,7 +220,7 @@ impl System {
                 response,
                 ..
             } => {
-                if self.loading_programs.borrow_mut().remove(&message_id) {
+                if self.loading_programs.lock().remove(&message_id) {
                     let redshirt_loader_interface::ffi::LoadResponse { result } =
                         Decode::decode(response.unwrap()).unwrap();
                     // TODO: don't unwrap
@@ -246,8 +261,7 @@ impl System {
                             && interface_hash == redshirt_loader_interface::ffi::INTERFACE
                         {
                             debug_assert_ne!(u64::from(pid), 0);
-                            self.loader_pid
-                                .swap(u64::from(pid), atomic::Ordering::AcqRel);
+                            *self.loader_pid.lock() = NonZeroU64::new(u64::from(pid));
                             return RunOnceOutcome::LoopAgainNow;
                         }
                     }
@@ -274,7 +288,7 @@ impl System {
     }
 }
 
-impl SystemBuilder {
+impl<'a> SystemBuilder<'a> {
     /// Starts a new builder.
     pub fn new() -> Self {
         // We handle some low-level interfaces here.
@@ -295,7 +309,7 @@ impl SystemBuilder {
     /// Registers native code that can communicate with the WASM programs.
     pub fn with_native_program<T>(mut self, program: T) -> Self
     where
-        T: Send + 'static,
+        T: Send + Sync + 'a,
         for<'r> &'r T: native::NativeProgramRef<'r>,
     {
         self.native_programs.push(self.core.reserve_pid(), program);
@@ -343,7 +357,7 @@ impl SystemBuilder {
     ///
     /// Returns an error if any of the programs passed through
     /// [`SystemBuilder::with_startup_process`] fails to start.
-    pub fn build(self) -> Result<System, NewErr> {
+    pub fn build(self) -> Result<System<'a>, NewErr> {
         let core = self.core.build();
 
         // We ask the core to redirect messages for the `interface` interface towards our
@@ -363,20 +377,25 @@ impl SystemBuilder {
         Ok(System {
             core,
             native_programs: self.native_programs,
-            loader_pid: atomic::AtomicU64::new(0),
+            loader_pid: Spinlock::new(None),
             load_source_virtual_pid: self.load_source_virtual_pid,
-            loading_programs: RefCell::new(Default::default()),
+            loading_programs: Spinlock::new(Default::default()),
             programs_to_load: self.programs_to_load,
         })
     }
 }
 
-impl Default for SystemBuilder {
+impl<'a> Default for SystemBuilder<'a> {
     fn default() -> Self {
         SystemBuilder::new()
     }
 }
 
-// TODO: lol, no, don't do that
-unsafe impl Send for System {}
-unsafe impl Sync for System {}
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn send_sync() {
+        fn is_send_sync<T: Send + Sync>() {}
+        is_send_sync::<super::System>()
+    }
+}

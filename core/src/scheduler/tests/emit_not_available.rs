@@ -15,6 +15,7 @@
 
 use crate::scheduler::{Core, CoreRunOutcome};
 use crate::InterfaceHash;
+use futures::prelude::*;
 
 #[test]
 fn emit_not_available() {
@@ -37,9 +38,8 @@ fn emit_not_available() {
         r#"
 (module
     (type $t0 (func (param i32 i32 i32 i32 i32 i32) (result i32)))
-    (type $t1 (func (param i32 i32) (result i32)))
     (import "redshirt" "emit_message" (func $_ZN27redshirt_syscalls3ffi12emit_message17h508280f1400e36efE (type $t0)))
-    (func $main (type $t1) (param $p0 i32) (param $p1 i32) (result i32)
+    (func $_start (result i32)
         (local $l0 i32)
         get_global $g0
         i32.const 64
@@ -92,15 +92,15 @@ fn emit_not_available() {
     (memory $memory 17)
     (global $g0 (mut i32) (i32.const 1048576))
     (export "memory" (memory 0))
-    (export "main" (func $main))
+    (export "_start" (func $_start))
     (data (i32.const 1048576) "\01\02\03\04\05\06\07\08"))"#
     );
 
     let core = Core::new().build();
     core.execute(&module).unwrap();
 
-    match core.run() {
-        CoreRunOutcome::ThreadWaitUnavailableInterface { interface, .. } => {
+    match core.run().now_or_never() {
+        Some(CoreRunOutcome::ThreadWaitUnavailableInterface { interface, .. }) => {
             assert_eq!(
                 interface,
                 InterfaceHash::from_raw_hash([
@@ -113,8 +113,8 @@ fn emit_not_available() {
         _ => panic!(),
     }
 
-    match core.run() {
-        CoreRunOutcome::Idle => {}
+    match core.run().now_or_never() {
+        None => {}
         _ => panic!(),
     }
 }

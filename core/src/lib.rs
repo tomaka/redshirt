@@ -113,17 +113,24 @@
 #![warn(missing_docs)]
 //#![deny(unsafe_code)] // TODO: 🤷
 #![allow(dead_code)] // TODO: temporary during development
-#![no_std]
+
+// The crate uses the stdlib for testing purposes.
+#![cfg_attr(not(test), no_std)]
 
 extern crate alloc;
 
 pub use self::module::Module;
 pub use self::system::{System, SystemBuilder, SystemRunOutcome};
+pub use primitives::{ValueType, WasmValue};
 pub use redshirt_syscalls::{
     Decode, Encode, EncodedMessage, InterfaceHash, MessageId, Pid, ThreadId,
 };
-pub use wasmi::RuntimeValue; // TODO: wrap around instead?
 
+/// Compiles a WASM module and includes it similar to `include_bytes!`.
+///
+/// Must be passed the path to a directory containing a `Cargo.toml`.
+/// Can be passed an optional second argument containing the binary name to compile. Mandatory if
+/// the package contains multiple binaries.
 #[cfg(feature = "nightly")]
 #[cfg_attr(docsrs, doc(cfg(feature = "nightly")))] // TODO: enable unconditonally after https://github.com/rust-lang/rust/issues/43781
 #[proc_macro_hack::proc_macro_hack]
@@ -153,6 +160,6 @@ mod id_pool;
 pub mod extrinsics;
 pub mod module;
 pub mod native;
+pub mod primitives;
 pub mod scheduler;
-pub mod signature;
 pub mod system;
