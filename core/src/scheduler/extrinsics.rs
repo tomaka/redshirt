@@ -352,7 +352,10 @@ where
         while let Ok(tid) = self.local_run_queue.pop() {
             // It is possible that the thread no longer exists, for example if the process crashed.
             let mut thread = self.inner.interrupted_thread_by_id(tid)?;
-            match mem::replace(&mut thread.user_data_mut().state, LocalThreadState::Poisoned) {
+            match mem::replace(
+                &mut thread.user_data_mut().state,
+                LocalThreadState::Poisoned,
+            ) {
                 LocalThreadState::OtherExtrinsicApplyAction { context, action } => match action {
                     ExtrinsicsAction::ProgramCrash => unimplemented!(),
                     ExtrinsicsAction::Resume(value) => {
