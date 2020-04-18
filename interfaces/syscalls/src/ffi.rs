@@ -271,8 +271,14 @@ impl InterfaceNotificationBuilder {
     /// Returns the [`MessageId`] that was put in the builder.
     pub fn message_id(&self) -> Option<MessageId> {
         let id = u64::from_le_bytes([
-            self.data[33], self.data[34], self.data[35], self.data[36], self.data[37],
-            self.data[38], self.data[39], self.data[40],
+            self.data[33],
+            self.data[34],
+            self.data[35],
+            self.data[36],
+            self.data[37],
+            self.data[38],
+            self.data[39],
+            self.data[40],
         ]);
 
         if let Some(id) = NonZeroU64::new(id) {
