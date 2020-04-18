@@ -13,7 +13,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::id_pool::IdPool;
 use crate::module::Module;
 use crate::scheduler::{
     extrinsics::{self, ProcessesCollectionExtrinsicsThreadAccess as _},
@@ -21,16 +20,43 @@ use crate::scheduler::{
 };
 use crate::InterfaceHash;
 
-use alloc::{collections::VecDeque, vec::Vec};
-use core::{cell::RefCell, convert::TryFrom, iter, mem, num::NonZeroU64};
+use alloc::vec::Vec;
 use crossbeam_queue::SegQueue;
 use fnv::FnvBuildHasher;
-use hashbrown::{hash_map::Entry, HashMap, HashSet};
+use hashbrown::HashSet;
 use nohash_hasher::BuildNoHashHasher;
 use redshirt_syscalls::{Encode, EncodedMessage, MessageId, Pid, ThreadId};
 use smallvec::SmallVec;
+use spinning_top::Spinlock;
+
+mod active_messages;
+mod interface_handlers;
+mod notifications_queue;
+mod waiting_threads;
 
 /// Handles scheduling processes and inter-process communications.
+//
+// This struct synchronizes the following components in a lock-free way:
+//
+// - The underlying VMs.
+// - A list of interfaces (akin to a `map<interface_hash, ...>`), associated with either the PID
+//   of the handler, or a list of threads waiting to deliver a message/notifications waiting to
+//   be delivered.
+// - For each process, a list of notifications waiting to be delivered.
+// - For each process, a list of threads blocked waiting for notifications and that we have failed
+//   to resume in the past.
+// - A list of active messages waiting to be answered.
+//
+// While each of these components is updated atomically, there exists no synchronization between
+// them. As such, the implementation heavily relies on the fact that message IDs, process IDs,
+// and thread IDs are unique.
+//
+// For example, delivering a message to an interface consists in atomically looking for the process
+// that handles this interface, then atomically delivering it. If, in parallel, that process has
+// terminated but has not yet been unregistered as the handler of the interface, then we know it
+// from the fact that he process ID is no longer valid. This wouldn't be possible if process IDs
+// were reused.
+//
 // TODO: make extrinsics configurable
 pub struct Core {
     /// Queue of events to return in priority when `run` is called.
@@ -38,40 +64,21 @@ pub struct Core {
 
     /// List of running processes.
     processes: extrinsics::ProcessesCollectionExtrinsics<
-        RefCell<Process>,
+        Process,
         (),
         crate::extrinsics::wasi::WasiExtrinsics,
     >,
 
-    /// List of `Pid`s that have been reserved during the construction.
+    /// List of [`Pid`]s that have been reserved during the construction.
     ///
     /// Never modified after initialization.
     reserved_pids: HashSet<Pid, BuildNoHashHasher<u64>>,
 
     /// For each interface, which program is fulfilling it.
-    interfaces: RefCell<HashMap<InterfaceHash, InterfaceState, FnvBuildHasher>>,
+    interfaces: interface_handlers::InterfaceHandlers,
 
-    /// Pool of identifiers for messages.
-    message_id_pool: IdPool,
-
-    /// List of messages that have been emitted by a process and that are waiting for a response.
-    // TODO: doc about hash safety
-    // TODO: call shrink_to from time to time
-    messages_to_answer: RefCell<HashMap<MessageId, Pid, BuildNoHashHasher<u64>>>,
-}
-
-/// Which way an interface is handled.
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum InterfaceState {
-    /// Interface has been registered using [`Core::set_interface_handler`].
-    Process(Pid),
-    /// Interface hasn't been registered yet, but has been requested.
-    Requested {
-        /// List of threads waiting for this interface.
-        threads: SmallVec<[ThreadId; 4]>,
-        /// Other messages waiting to be delivered to this interface.
-        other: Vec<(Pid, Option<MessageId>, EncodedMessage)>,
-    },
+    /// List of messages that are waiting for an answer. Associates messages to their senders.
+    active_messages: active_messages::ActiveMessages,
 }
 
 /// Prototype for a `Core` under construction.
@@ -92,15 +99,7 @@ pub enum CoreRunOutcome {
         /// Id of the program that has stopped.
         pid: Pid,
 
-        /// List of messages emitted using [`Core::emit_interface_message_answer`] that were
-        /// supposed to be handled by the process that has just terminated.
-        unhandled_messages: Vec<MessageId>,
-
-        /// List of messages for which a [`CoreRunOutcome::ReservedPidInterfaceMessage`] has been
-        /// emitted but that no loner need answering.
-        cancelled_messages: Vec<MessageId>,
-
-        /// List of interfaces that were registered by th process and no longer are.
+        /// List of interfaces that were registered by the process and no longer are.
         unregistered_interfaces: Vec<InterfaceHash>,
 
         /// How the program ended. If `Ok`, it has gracefully terminated. If `Err`, something
@@ -110,8 +109,7 @@ pub enum CoreRunOutcome {
     },
 
     /// Thread has tried to emit a message on an interface that isn't registered. The thread is
-    /// now in sleep mode. You can either wake it up by calling [`Core::set_interface_handler`],
-    /// or resume the thread with an "interface not available error" by calling . // TODO
+    /// now in sleep mode. You can either wake it up by calling [`Core::set_interface_handler`].
     ThreadWaitUnavailableInterface {
         /// Thread that emitted the message.
         thread_id: ThreadId,
@@ -142,22 +140,17 @@ pub enum CoreRunOutcome {
 #[derive(Debug)]
 struct Process {
     /// Notifications available for retrieval by the process by calling `next_notification`.
-    ///
-    /// Note that the [`DecodedResponseNotification::index_in_list`](redshirt_syscalls::ffi::DecodedResponseNotification::index_in_list)
-    /// and [`DecodedInterfaceNotification::index_in_list`](redshirt_syscalls::ffi::DecodedInterfaceNotification::index_in_list) fields are
-    /// set to a dummy value, and must be filled before actually delivering the notification.
-    // TODO: call shrink_to_fit from time to time
-    notifications_queue: VecDeque<redshirt_syscalls::ffi::NotificationBuilder>,
+    notifications_queue: notifications_queue::NotificationsQueue,
 
     /// Interfaces that the process has registered.
-    registered_interfaces: SmallVec<[InterfaceHash; 1]>,
+    registered_interfaces: Spinlock<SmallVec<[InterfaceHash; 1]>>,
+
+    /// List of threads that are frozen waiting for new notifications.
+    wait_notifications_threads: waiting_threads::WaitingThreads,
 
     /// List of interfaces that this process has used. When the process dies, we notify all the
     /// handlers about it.
     used_interfaces: HashSet<InterfaceHash, FnvBuildHasher>,
-
-    /// List of messages that the process has emitted and that are waiting for an answer.
-    emitted_messages: SmallVec<[MessageId; 8]>,
 
     /// List of messages that the process is expected to answer.
     messages_to_answer: SmallVec<[MessageId; 8]>,
@@ -168,14 +161,14 @@ pub struct CoreProcess<'a> {
     /// Access to the process within the inner collection.
     process: extrinsics::ProcessesCollectionExtrinsicsProc<
         'a,
-        RefCell<Process>,
+        Process,
         (),
         crate::extrinsics::wasi::WasiExtrinsics,
     >,
 }
 
 impl Core {
-    /// Initialies a new `Core`.
+    /// Initializes a new `Core`.
     pub fn new() -> CoreBuilder {
         CoreBuilder {
             reserved_pids: HashSet::with_hasher(Default::default()),
@@ -207,138 +200,117 @@ impl Core {
             extrinsics::RunOneOutcome::ProcessFinished {
                 pid,
                 outcome,
-                dead_threads,
+                dead_threads: _,
                 user_data,
             } => {
-                for (dead_thread_id, dead_thread_state) in dead_threads {
-                    match dead_thread_state {
-                        _ => {} // TODO:
-                    }
-                }
-
-                let user_data = user_data.into_inner();
-
                 // Unregister the interfaces this program had registered.
                 let mut unregistered_interfaces = Vec::new();
-                for interface in user_data.registered_interfaces {
-                    let _interface = self.interfaces.borrow_mut().remove(&interface);
-                    debug_assert_eq!(_interface, Some(InterfaceState::Process(pid)));
+                for interface in user_data.registered_interfaces.into_inner() {
+                    let _interface = self.interfaces.unregister(interface.clone());
+                    debug_assert_eq!(_interface, Some(pid));
                     unregistered_interfaces.push(interface);
                 }
 
-                // Cancelling messages that the process had emitted.
-                // TODO: this only handles messages emitted through the external API
-                let mut cancelled_messages = Vec::new();
-                for emitted_message in user_data.emitted_messages {
-                    let _emitter = self
-                        .messages_to_answer
-                        .borrow_mut()
-                        .remove(&emitted_message);
-                    debug_assert_eq!(_emitter, Some(pid));
-                    cancelled_messages.push(emitted_message);
+                // TODO: send message errors for interface messages that the process has received
+                //       but not answered
+                // TODO: empty the content of active_messages?
+
+                // There were maybe interface messages in the notifications queue of the process,
+                // in which case emit an error for each of them.
+                for message_id in user_data
+                    .notifications_queue
+                    .into_pending_interface_notifications_messages()
+                {
+                    self.answer_message_inner(message_id, Err(()));
                 }
 
                 // Notify interface handlers about the process stopping.
+                //
+                // Note that it is possible for the interface handler to be replaced by a
+                // different one in a racy way, but that will result in a spurious process
+                // destroyed notification, which isn't a problem.
                 for interface in user_data.used_interfaces {
-                    match self.interfaces.borrow().get(&interface) {
-                        Some(InterfaceState::Process(p)) => {
-                            if let Some(process) = self.processes.process_by_id(*p) {
-                                let notif = From::from(
-                                    redshirt_syscalls::ffi::build_process_destroyed_notification(
-                                        pid.into(),
-                                        0,
-                                    ),
-                                );
-
+                    match self.interfaces.get(&interface) {
+                        interface_handlers::Interface::Registered(handler_pid) => {
+                            if let Some(process) = self.processes.process_by_id(handler_pid) {
                                 process
                                     .user_data()
-                                    .borrow_mut()
                                     .notifications_queue
-                                    .push_back(notif);
-                                try_resume_notification_wait(process);
-                            } // TODO: notify externals as well?
+                                    .push_process_destroyed_notification(pid);
+                                self.try_resume_notification_wait(process);
+                            } else {
+                                // There's no need to emit a notification towards handlers with
+                                // reserved PIDs, as the `ProgramFinished` event we are going to
+                                // emit does the job.
+                            }
                         }
-                        None => unreachable!(),
-                        _ => {}
+                        // This can be reached if the interface handler has terminated
+                        // in-between.
+                        interface_handlers::Interface::Unregistered(_) => {}
                     }
                 }
-
-                // TODO: also, what do we do with the pending messages and all?
 
                 Some(CoreRunOutcome::ProgramFinished {
                     pid,
                     unregistered_interfaces,
-                    // TODO: this only handles messages emitted through the external API
-                    unhandled_messages: user_data.messages_to_answer.to_vec(), // TODO: to_vec overhead
-                    cancelled_messages,
                     outcome,
                 })
             }
 
             extrinsics::RunOneOutcome::ThreadFinished { .. } => {
-                // TODO: report?
+                // TODO: report
                 None
             }
 
             extrinsics::RunOneOutcome::ThreadWaitNotification(thread) => {
-                try_resume_notification_wait_thread(thread);
+                // We immediately try to resume the thread with a notification.
+                if let Err(mut thread) = try_resume_notification_wait_thread(thread) {
+                    // If the thread couldn't be resumed, we add it to a list for later.
+                    let tid = thread.tid();
+                    thread
+                        .process_user_data()
+                        .wait_notifications_threads
+                        .push(tid);
+                }
+
                 None
             }
 
             extrinsics::RunOneOutcome::ThreadEmitMessage(mut thread) => {
                 let emitter_pid = thread.pid();
                 let interface = thread.emit_interface().clone();
-                thread
-                    .process_user_data()
-                    .borrow_mut()
-                    .used_interfaces
-                    .insert(interface.clone());
+                // TODO: restore; plus we have to do the same for external messages
+                /*thread
+                .process_user_data()
+                .used_interfaces
+                .insert(interface.clone());*/
 
-                let mut self_interfaces_borrow = self.interfaces.borrow_mut();
-                match (
-                    self_interfaces_borrow.get_mut(&interface),
-                    thread.allow_delay(),
-                ) {
-                    (Some(InterfaceState::Process(pid)), _) => {
+                match (self.interfaces.get(&interface), thread.allow_delay()) {
+                    (interface_handlers::Interface::Registered(handler_pid), _) => {
                         let message_id = if thread.needs_answer() {
-                            Some(loop {
-                                let id: MessageId = self.message_id_pool.assign();
-                                if u64::from(id) == 0 || u64::from(id) == 1 {
-                                    continue;
-                                }
-                                match self.messages_to_answer.borrow_mut().entry(id) {
-                                    Entry::Occupied(_) => continue,
-                                    Entry::Vacant(e) => e.insert(emitter_pid),
-                                };
-                                break id;
-                            })
+                            Some(self.active_messages.add_message(thread.pid()))
                         } else {
                             None
                         };
 
                         let message = thread.accept_emit(message_id);
-                        if let Some(process) = self.processes.process_by_id(*pid) {
-                            let notif = redshirt_syscalls::ffi::build_interface_notification(
-                                &interface,
-                                message_id,
-                                emitter_pid,
-                                0,
-                                &message,
-                            )
-                            .into();
-
+                        if let Some(process) = self.processes.process_by_id(handler_pid) {
                             process
                                 .user_data()
-                                .borrow_mut()
                                 .notifications_queue
-                                .push_back(notif);
-                            try_resume_notification_wait(process);
+                                .push_interface_notification(
+                                    &interface,
+                                    message_id,
+                                    emitter_pid,
+                                    message,
+                                );
+                            self.try_resume_notification_wait(process);
                             None
-                        } else if self.reserved_pids.contains(pid) {
+                        } else if self.reserved_pids.contains(&handler_pid) {
                             Some(CoreRunOutcome::ReservedPidInterfaceMessage {
                                 pid: emitter_pid,
                                 message_id,
-                                interface,
+                                interface: interface.clone(),
                                 message,
                             })
                         } else {
@@ -348,28 +320,15 @@ impl Core {
                             None
                         }
                     }
-                    (None, false) | (Some(InterfaceState::Requested { .. }), false) => {
+                    (interface_handlers::Interface::Unregistered(..), false) => {
                         thread.refuse_emit();
                         None
                     }
-                    (Some(InterfaceState::Requested { threads, .. }), true) => {
-                        threads.push(thread.tid());
+                    (interface_handlers::Interface::Unregistered(reg), true) => {
+                        reg.insert_waiting_thread(thread.tid());
                         Some(CoreRunOutcome::ThreadWaitUnavailableInterface {
                             thread_id: thread.tid(),
-                            interface,
-                        })
-                    }
-                    (None, true) => {
-                        self_interfaces_borrow.insert(
-                            interface.clone(),
-                            InterfaceState::Requested {
-                                threads: iter::once(thread.tid()).collect(),
-                                other: Vec::new(),
-                            },
-                        );
-                        Some(CoreRunOutcome::ThreadWaitUnavailableInterface {
-                            thread_id: thread.tid(),
-                            interface,
+                            interface: interface.clone(),
                         })
                     }
                 }
@@ -381,21 +340,29 @@ impl Core {
                 ..
             } => {
                 // TODO: check ownership of the message
-                let response = response.clone();
+                let response = response.clone(); // TODO: why clone?
                 drop(run_outcome);
-                self.answer_message_inner(message_id, Ok(response))
+                self.answer_message_inner(message_id, Ok(response));
+                None
             }
 
             extrinsics::RunOneOutcome::ThreadEmitMessageError { message_id, .. } => {
                 // TODO: check ownership of the message
                 drop(run_outcome);
-                self.answer_message_inner(message_id, Err(()))
+                self.answer_message_inner(message_id, Err(()));
+                None
             }
 
-            extrinsics::RunOneOutcome::ThreadCancelMessage { message_id, .. } => {
-                // TODO: check ownership of the message
-                drop(run_outcome);
-                self.messages_to_answer.borrow_mut().remove(&message_id);
+            extrinsics::RunOneOutcome::ThreadCancelMessage {
+                message_id,
+                process,
+                ..
+            } => {
+                // Cancelling a message is implemented by simply removing it from the list of
+                // active messages. For the sake of simplicity, no effort is for example being
+                // made to maybe remove the notification destined to the interface handler.
+                self.active_messages
+                    .remove_if_emitted_by(message_id, process.pid());
                 None
             }
 
@@ -409,112 +376,100 @@ impl Core {
         Some(CoreProcess { process: p })
     }
 
+    /// Sets which process is the handler of which interface.
     // TODO: better API
-    pub fn set_interface_handler(&self, interface: InterfaceHash, process: Pid) -> Result<(), ()> {
-        if self.processes.process_by_id(process).is_none() {
-            if !self.reserved_pids.contains(&process) {
-                return Err(());
-            }
-        } else {
-            debug_assert!(!self.reserved_pids.contains(&process));
-        }
+    pub fn set_interface_handler(
+        &self,
+        interface: InterfaceHash,
+        new_handler_pid: Pid,
+    ) -> Result<(), ()> {
+        // Start by checking whether the process is alive.
+        let new_handler = match self.processes.process_by_id(new_handler_pid) {
+            Some(p) => Some(p),
+            None if !self.reserved_pids.contains(&new_handler_pid) => return Err(()),
+            None => None,
+        };
 
-        let (thread_ids, other_messages) =
-            match self.interfaces.borrow_mut().entry(interface.clone()) {
-                Entry::Vacant(e) => {
-                    e.insert(InterfaceState::Process(process));
-                    return Ok(());
-                }
-                Entry::Occupied(mut e) => {
-                    // Check whether interface was already registered.
-                    if let InterfaceState::Requested { .. } = *e.get_mut() {
+        // Registering the interface. We have stored a list of things to deliver to that interface
+        // as soon as it is registered.
+        for requested in self
+            .interfaces
+            .set_interface_handler(interface.clone(), new_handler_pid)?
+        {
+            match requested {
+                // A thread is blocked waiting to deliver a message on this interface.
+                interface_handlers::WaitingForInterface::Thread(thread_id) => {
+                    // Lock the thread that wants to deliver the message.
+                    let mut thread = match self.processes.interrupted_thread_by_id(thread_id) {
+                        Ok(extrinsics::ProcessesCollectionExtrinsicsThread::EmitMessage(t)) => t,
+                        // It is possible for the process that owns the thread has crashed or
+                        // terminated since then.
+                        Err(extrinsics::ThreadByIdErr::RunningOrDead) => continue,
+                        // There's no reason to lock this thread except to resume it after the
+                        // interface is registered (which we're doing right now).
+                        Err(extrinsics::ThreadByIdErr::AlreadyLocked) => unreachable!(),
+                        // The thread must be in the `EmitMessage` state, otherwise there's a
+                        // state inconsistency.
+                        Ok(_) => unreachable!(),
+                    };
+
+                    debug_assert_eq!(thread.emit_interface(), interface);
+                    let emitter_pid = thread.pid();
+
+                    let message_id = if thread.needs_answer() {
+                        Some(self.active_messages.add_message(emitter_pid))
                     } else {
-                        return Err(());
+                        None
                     };
-                    match mem::replace(e.get_mut(), InterfaceState::Process(process)) {
-                        InterfaceState::Requested { threads, other } => (threads, other),
-                        _ => unreachable!(),
+
+                    let message = thread.accept_emit(message_id);
+
+                    if let Some(new_handler) = &new_handler {
+                        new_handler
+                            .user_data()
+                            .notifications_queue
+                            .push_interface_notification(
+                                &interface,
+                                message_id,
+                                emitter_pid,
+                                message,
+                            );
+                    } else {
+                        debug_assert!(self.reserved_pids.contains(&new_handler_pid));
+                        self.pending_events
+                            .push(CoreRunOutcome::ReservedPidInterfaceMessage {
+                                pid: emitter_pid,
+                                message_id,
+                                interface: interface.clone(),
+                                message,
+                            });
                     }
                 }
-            };
 
-        // Send the `other_messages`.
-        // TODO: should we preserve the order w.r.t. `threads`?
-        for (emitter_pid, message_id, message_data) in other_messages {
-            let notif = From::from(redshirt_syscalls::ffi::build_interface_notification(
-                &interface,
-                message_id,
-                emitter_pid,
-                0,
-                &message_data,
-            ));
-
-            match self.processes.process_by_id(process) {
-                Some(p) => p
-                    .user_data()
-                    .borrow_mut()
-                    .notifications_queue
-                    .push_back(notif),
-                None => unreachable!(),
-            }
-        }
-
-        // Now process the threads that were waiting for this interface to be registered.
-        for thread_id in thread_ids {
-            let mut thread = match self.processes.interrupted_thread_by_id(thread_id) {
-                Ok(extrinsics::ProcessesCollectionExtrinsicsThread::EmitMessage(t)) => t,
-                _ => unreachable!(),
-            };
-
-            debug_assert_eq!(thread.emit_interface(), interface);
-            let emitter_pid = thread.pid().into();
-
-            let message_id = if thread.needs_answer() {
-                Some(loop {
-                    let id: MessageId = self.message_id_pool.assign();
-                    if u64::from(id) == 0 || u64::from(id) == 1 {
-                        continue;
-                    }
-                    match self.messages_to_answer.borrow_mut().entry(id) {
-                        Entry::Occupied(_) => continue,
-                        Entry::Vacant(e) => e.insert(emitter_pid),
-                    };
-                    break id;
-                })
-            } else {
-                None
-            };
-
-            let message = thread.accept_emit(message_id);
-
-            if let Some(interface_handler_proc) = self.processes.process_by_id(process) {
-                let notif = From::from(redshirt_syscalls::ffi::build_interface_notification(
-                    &interface,
-                    message_id,
+                interface_handlers::WaitingForInterface::ImmediateDelivery {
                     emitter_pid,
-                    0,
-                    &message,
-                ));
-
-                interface_handler_proc
-                    .user_data()
-                    .borrow_mut()
-                    .notifications_queue
-                    .push_back(notif);
-            } else {
-                debug_assert!(self.reserved_pids.contains(&process));
-                self.pending_events
-                    .push(CoreRunOutcome::ReservedPidInterfaceMessage {
-                        pid: emitter_pid,
-                        message_id,
-                        interface: interface.clone(),
-                        message,
-                    });
+                    message_id,
+                    message,
+                } => match &new_handler {
+                    Some(p) => p
+                        .user_data()
+                        .notifications_queue
+                        .push_interface_notification(&interface, message_id, emitter_pid, message),
+                    None => self
+                        .pending_events
+                        .push(CoreRunOutcome::ReservedPidInterfaceMessage {
+                            pid: new_handler_pid,
+                            message_id,
+                            interface: interface.clone(),
+                            message,
+                        }),
+                },
             }
         }
 
-        if let Some(interface_handler_proc) = self.processes.process_by_id(process) {
-            try_resume_notification_wait(interface_handler_proc);
+        // Attempt to wake up the threads that were waiting for a notification.
+        if let Some(new_handler) = new_handler {
+            self.try_resume_notification_wait(new_handler);
         }
 
         Ok(())
@@ -531,7 +486,8 @@ impl Core {
         message: impl Encode,
     ) {
         assert!(self.reserved_pids.contains(&emitter_pid));
-        let _out = self.emit_interface_message_inner(emitter_pid, interface, message, false);
+        let _out =
+            self.emit_interface_message_inner(interface, emitter_pid, message.encode(), false);
         debug_assert!(_out.is_none());
     }
 
@@ -547,7 +503,7 @@ impl Core {
         message: impl Encode,
     ) -> MessageId {
         assert!(self.reserved_pids.contains(&emitter_pid));
-        match self.emit_interface_message_inner(emitter_pid, interface, message, true) {
+        match self.emit_interface_message_inner(interface, emitter_pid, message.encode(), true) {
             Some(m) => m,
             None => unreachable!(),
         }
@@ -559,75 +515,57 @@ impl Core {
         unimplemented!() // TODO:
     }
 
+    /// Common function for emitting a message on an interface from the public API.
+    ///
+    /// If `needs_answer` is true, then `Some` is always returned. If `needs_answer` is false
+    /// then `None` is always returned.
     fn emit_interface_message_inner<'a>(
         &self,
-        emitter_pid: Pid,
         interface: InterfaceHash,
-        message: impl Encode,
+        emitter_pid: Pid,
+        message: EncodedMessage,
         needs_answer: bool,
     ) -> Option<MessageId> {
-        let mut messages_to_answer = self.messages_to_answer.borrow_mut();
+        let message_id = if needs_answer {
+            Some(self.active_messages.add_message(emitter_pid))
+        } else {
+            None
+        };
 
-        let (message_id, messages_to_answer_entry) = if needs_answer {
-            loop {
-                let id: MessageId = self.message_id_pool.assign();
-                if u64::from(id) == 0 || u64::from(id) == 1 {
-                    continue;
-                }
-                match messages_to_answer.entry(id) {
-                    Entry::Vacant(e) => break (Some(id), Some(e)),
-                    Entry::Occupied(_) => continue,
+        match self.interfaces.get(&interface) {
+            interface_handlers::Interface::Registered(handler_pid) => {
+                if let Some(handler_process) = self.processes.process_by_id(handler_pid) {
+                    handler_process
+                        .user_data()
+                        .notifications_queue
+                        .push_interface_notification(&interface, message_id, emitter_pid, message);
+                    self.try_resume_notification_wait(handler_process);
+                } else if self.reserved_pids.contains(&emitter_pid) {
+                    self.pending_events
+                        .push(CoreRunOutcome::ReservedPidInterfaceMessage {
+                            pid: emitter_pid,
+                            message_id: None,
+                            interface,
+                            message: message.encode(),
+                        });
+                } else {
+                    // This situation can be reached if the program that was registered as the
+                    // interface handler has stopped running, and we have not yet removed it from
+                    // its role of interface handler.
+                    //
+                    // This is equivalent to the situation where the message has been sent
+                    // successfully but the program stopped afterwards. Consequently, we handle
+                    // it the same way: by reporting an error to the emitter.
+                    if let Some(message_id) = message_id {
+                        self.answer_message_inner(message_id, Err(()));
+                    }
                 };
             }
-        } else {
-            (None, None)
-        };
-
-        let pid = match self
-            .interfaces
-            .borrow_mut()
-            .entry(interface.clone())
-            .or_insert_with(|| InterfaceState::Requested {
-                threads: SmallVec::new(),
-                other: Vec::new(),
-            }) {
-            InterfaceState::Process(pid) => *pid,
-            InterfaceState::Requested { other, .. } => {
-                other.push((emitter_pid, message_id, message.encode()));
-                return message_id;
+            interface_handlers::Interface::Unregistered(interface) => {
+                interface.insert_waiting_message(emitter_pid, message_id, message);
             }
-        };
-
-        if let Some(process) = self.processes.process_by_id(pid) {
-            let notif = redshirt_syscalls::ffi::build_interface_notification(
-                &interface,
-                message_id,
-                emitter_pid,
-                0,
-                &message.encode(),
-            );
-
-            process
-                .user_data()
-                .borrow_mut()
-                .notifications_queue
-                .push_back(From::from(notif));
-            try_resume_notification_wait(process);
-        } else if self.reserved_pids.contains(&emitter_pid) {
-            self.pending_events
-                .push(CoreRunOutcome::ReservedPidInterfaceMessage {
-                    pid: emitter_pid,
-                    message_id: None,
-                    interface,
-                    message: message.encode(),
-                });
-        } else {
-            unimplemented!()
-        };
-
-        if let Some(messages_to_answer_entry) = messages_to_answer_entry {
-            messages_to_answer_entry.insert(emitter_pid);
         }
+
         message_id
     }
 
@@ -638,51 +576,30 @@ impl Core {
     /// answered through this method.
     // TODO: better API
     pub fn answer_message(&self, message_id: MessageId, response: Result<EncodedMessage, ()>) {
-        let ret = self.answer_message_inner(message_id, response);
-        // TODO: ret can be none if message has been cancelled
-        //assert!(ret.is_none());
+        self.answer_message_inner(message_id, response);
     }
 
-    // TODO: better API
-    fn answer_message_inner(
-        &self,
-        message_id: MessageId,
-        response: Result<EncodedMessage, ()>,
-    ) -> Option<CoreRunOutcome> {
-        if let Some(emitter_pid) = self.messages_to_answer.borrow_mut().remove(&message_id) {
-            if let Some(process) = self.processes.process_by_id(emitter_pid) {
-                let notif = From::from(redshirt_syscalls::ffi::build_response_notification(
-                    message_id,
-                    // We a dummy value here and fill it up later when actually delivering the notif.
-                    0,
-                    match &response {
-                        Ok(r) => Ok(r),
-                        Err(()) => Err(()),
-                    },
-                ));
+    /// Common function for answering a message.
+    fn answer_message_inner(&self, message_id: MessageId, response: Result<EncodedMessage, ()>) {
+        let emitter_pid = match self.active_messages.remove(message_id) {
+            Some(pid) => pid,
+            None => return,
+        };
 
-                process
-                    .user_data()
-                    .borrow_mut()
-                    .notifications_queue
-                    .push_back(notif);
-                process
-                    .user_data()
-                    .borrow_mut()
-                    .emitted_messages
-                    .retain(|m| *m != message_id);
-                try_resume_notification_wait(process);
-                None
-            } else {
-                Some(CoreRunOutcome::MessageResponse {
-                    message_id,
-                    response,
-                })
-            }
+        if let Some(process) = self.processes.process_by_id(emitter_pid) {
+            process
+                .user_data()
+                .notifications_queue
+                .push_response(message_id, response);
+            self.try_resume_notification_wait(process);
+        } else if self.reserved_pids.contains(&emitter_pid) {
+            self.pending_events.push(CoreRunOutcome::MessageResponse {
+                message_id,
+                response,
+            });
         } else {
-            // TODO: this can happen if message was cancelled
-            // TODO: figure this out more properly?
-            None
+            // It is possible for the emitter of the message to have stopped or crashed, and we
+            // had not updated `active_messages` yet.
         }
     }
 
@@ -691,18 +608,44 @@ impl Core {
     /// Each import of the [`Module`](crate::module::Module) is resolved.
     pub fn execute(&self, module: &Module) -> Result<CoreProcess, vm::NewErr> {
         let proc_metadata = Process {
-            notifications_queue: VecDeque::new(),
-            registered_interfaces: SmallVec::new(),
+            notifications_queue: notifications_queue::NotificationsQueue::new(),
+            registered_interfaces: Spinlock::new(SmallVec::new()),
             used_interfaces: HashSet::with_hasher(Default::default()),
-            emitted_messages: SmallVec::new(),
             messages_to_answer: SmallVec::new(),
+            wait_notifications_threads: waiting_threads::WaitingThreads::new(),
         };
 
-        let process = self
-            .processes
-            .execute(module, RefCell::new(proc_metadata), ())?;
+        let process = self.processes.execute(module, proc_metadata, ())?;
 
         Ok(CoreProcess { process })
+    }
+
+    /// Tries to resume all the threads of the process that are waiting for an notification.
+    fn try_resume_notification_wait(
+        &self,
+        process: extrinsics::ProcessesCollectionExtrinsicsProc<
+            Process,
+            (),
+            crate::extrinsics::wasi::WasiExtrinsics,
+        >,
+    ) {
+        // The actual work being done here is actually quite complicated in order to ensure that
+        // each `ThreadId` is only accessed once at a time, but the exposed API is very simple.
+        for thread_access in process.user_data().wait_notifications_threads.access() {
+            let thread = match self
+                .processes
+                .interrupted_thread_by_id(thread_access.thread_id())
+            {
+                Ok(extrinsics::ProcessesCollectionExtrinsicsThread::WaitNotification(thread)) => {
+                    thread
+                }
+                _ => unreachable!(),
+            };
+
+            if try_resume_notification_wait_thread(thread).is_ok() {
+                thread_access.remove();
+            }
+        }
     }
 }
 
@@ -714,7 +657,6 @@ impl<'a> CoreProcess<'a> {
 
     /// Adds a new thread to the process, starting the function with the given index and passing
     /// the given parameters.
-    // TODO: don't expose crate::WasmValue
     pub fn start_thread(
         self,
         fn_index: u32,
@@ -724,9 +666,10 @@ impl<'a> CoreProcess<'a> {
         Ok(())
     }
 
-    /// Kills the process immediately.
+    /// Starts killing the process.
+    // TODO: more docs
     pub fn abort(&self) {
-        self.process.abort(); // TODO: clean up
+        self.process.abort();
     }
 }
 
@@ -751,102 +694,75 @@ impl CoreBuilder {
         Core {
             pending_events: SegQueue::new(),
             processes: self.inner_builder.build(),
-            interfaces: RefCell::new(Default::default()),
+            interfaces: interface_handlers::InterfaceHandlers::new(),
             reserved_pids: self.reserved_pids,
-            message_id_pool: IdPool::new(),
-            messages_to_answer: RefCell::new(HashMap::default()),
-        }
-    }
-}
-
-/// If any of the threads of the given process is waiting for a message to arrive, checks the
-/// queue and tries to resume said thread.
-fn try_resume_notification_wait(
-    process: extrinsics::ProcessesCollectionExtrinsicsProc<
-        RefCell<Process>,
-        (),
-        crate::extrinsics::wasi::WasiExtrinsics,
-    >,
-) {
-    // TODO: is it a good strategy to just go through threads in linear order? what about
-    //       round-robin-ness instead?
-    for thread in process.interrupted_threads() {
-        if let extrinsics::ProcessesCollectionExtrinsicsThread::WaitNotification(t) = thread {
-            try_resume_notification_wait_thread(t)
+            active_messages: active_messages::ActiveMessages::new(),
         }
     }
 }
 
 /// If the given thread is waiting for a notification to arrive, checks the queue and tries to
 /// resume said thread.
-// TODO: in order to call this function, we essentially have to put the state machine in a "bad"
-// state (notifications in queue and thread would accept said notification); not great
+///
+/// Returns back the thread within an `Err` if it couldn't be resumed.
 fn try_resume_notification_wait_thread(
     mut thread: extrinsics::ProcessesCollectionExtrinsicsThreadWaitNotification<
-        RefCell<Process>,
+        Process,
         (),
         crate::extrinsics::wasi::WasiExtrinsics,
     >,
-) {
-    // Try to find a notification in the queue that matches something the user is waiting for.
-    let mut index_in_queue = 0;
-    let index_in_msg_ids = loop {
-        if index_in_queue
-            >= thread
-                .process_user_data()
-                .borrow_mut()
-                .notifications_queue
-                .len()
-        {
-            // No notification found.
-            if !thread.block() {
-                thread.resume_no_notification();
+) -> Result<
+    (),
+    extrinsics::ProcessesCollectionExtrinsicsThreadWaitNotification<
+        Process,
+        (),
+        crate::extrinsics::wasi::WasiExtrinsics,
+    >,
+> {
+    // Note that the code below is a bit weird and unelegant, but this is to bypass spurious
+    // borrowing errors.
+    let (entry_size, index_and_notif) = {
+        // Try to find a notification in the queue that matches something the user is waiting for.
+        // TODO: don't alloc a Vec
+        let messages = thread.message_ids_iter().collect::<Vec<_>>();
+
+        let entry = thread
+            .process_user_data()
+            .notifications_queue
+            .find(&messages);
+
+        let entry = match entry {
+            Some(e) => e,
+            None => {
+                // No notification found.
+                drop(entry);
+                if !thread.block() {
+                    thread.resume_no_notification();
+                    return Ok(());
+                } else {
+                    return Err(thread);
+                }
             }
-            return;
-        }
+        };
 
-        // For that notification in queue, grab the value that must be in `msg_ids` in order to match.
-        let msg_id =
-            match &thread.process_user_data().borrow_mut().notifications_queue[index_in_queue] {
-                redshirt_syscalls::ffi::NotificationBuilder::Interface(_) => {
-                    MessageId::from(NonZeroU64::new(1).unwrap())
-                }
-                redshirt_syscalls::ffi::NotificationBuilder::ProcessDestroyed(_) => {
-                    MessageId::from(NonZeroU64::new(1).unwrap())
-                }
-                redshirt_syscalls::ffi::NotificationBuilder::Response(response) => {
-                    debug_assert!(u64::from(response.message_id()) >= 2);
-                    response.message_id()
-                }
-            };
+        let entry_size = entry.size();
+        let index_and_notif = if entry_size <= thread.allowed_notification_size() {
+            // Pop the notification from the queue for delivery.
+            let index_in_msg_ids = entry.index_in_msg_ids();
+            let notification = entry.extract();
+            Some((index_in_msg_ids, notification))
+        } else {
+            None
+        };
 
-        if let Some(p) = thread.message_ids_iter().position(|id| id == msg_id.into()) {
-            break p;
-        }
-
-        index_in_queue += 1;
+        (entry_size, index_and_notif)
     };
 
-    // If we reach here, we have found a notification that matches what the user wants.
-
-    let notif_length =
-        thread.process_user_data().borrow_mut().notifications_queue[index_in_queue].len();
-
-    // TODO: maybe extrinsics could have some API shortcut here
-    if notif_length <= thread.allowed_notification_size() {
-        // Pop the notification from the queue, so that we don't deliver it twice.
-        let mut notification = thread
-            .process_user_data()
-            .borrow_mut()
-            .notifications_queue
-            .remove(index_in_queue)
-            .unwrap();
-
-        // Adjust the `index_in_list` field of the notification to match what we have.
-        notification.set_index_in_list(u32::try_from(index_in_msg_ids).unwrap());
-        // TODO: crappy to pass an EncodedMessage
-        thread.resume_notification(index_in_msg_ids, EncodedMessage(notification.into_bytes()))
+    if let Some((index_in_msg_ids, notification)) = index_and_notif {
+        thread.resume_notification(index_in_msg_ids, notification)
     } else {
-        thread.resume_notification_too_big(notif_length)
+        thread.resume_notification_too_big(entry_size)
     }
+
+    Ok(())
 }

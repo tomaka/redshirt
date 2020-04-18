@@ -761,7 +761,6 @@ where
     /// > **Note**: The "function ID" is the index of the function in the WASM module. WASM
     /// >           doesn't have function pointers. Instead, all the functions are part of a single
     /// >           global array of functions.
-    // TODO: don't expose crate::WasmValue in the API
     pub fn start_thread(
         &self,
         fn_index: u32,
@@ -781,33 +780,6 @@ where
         )?;
 
         Ok(())
-    }
-
-    /// Returns a list of all threads that are in an interrupted state.
-    // TODO: what about the threads that are interrupted by already locked?
-    // TODO: implement better
-    pub fn interrupted_threads(
-        &self,
-    ) -> impl Iterator<Item = ProcessesCollectionExtrinsicsThread<'a, TPud, TTud, TExt>> {
-        let mut inner = self.parent.inner.borrow_mut();
-        let inner = inner.process_by_id(self.pid).unwrap();
-
-        let mut out = Vec::new();
-
-        let mut thread = Some(inner.main_thread());
-        while let Some(mut thread_inner) = thread.take() {
-            out.push(thread_inner.tid());
-            thread = thread_inner.next_thread();
-        }
-
-        let parent = self.parent;
-        out.into_iter().filter_map(move |tid| {
-            match parent.interrupted_thread_by_id(tid) {
-                Ok(t) => Some(t),
-                Err(ThreadByIdErr::AlreadyLocked) => unimplemented!(), // TODO: what to do here?
-                Err(ThreadByIdErr::RunningOrDead) => None,
-            }
-        })
     }
 
     /// Marks the process as aborting.
@@ -1108,7 +1080,7 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
     }
 
     /// Returns the maximum size allowed for a notification.
-    pub fn allowed_notification_size(&mut self) -> usize {
+    pub fn allowed_notification_size(&self) -> usize {
         let mut inner = self.parent.inner.borrow_mut();
         let mut inner = inner.thread_by_id(self.tid).unwrap();
 
@@ -1120,7 +1092,7 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
     }
 
     /// Returns true if we should block the thread waiting for a notification to come.
-    pub fn block(&mut self) -> bool {
+    pub fn block(&self) -> bool {
         let mut inner = self.parent.inner.borrow_mut();
         let mut inner = inner.thread_by_id(self.tid).unwrap();
 
