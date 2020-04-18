@@ -62,7 +62,7 @@ pub struct System<'a> {
     /// Set of messages that we emitted of requests to load a program from the loader interface.
     /// All these messages expect a `redshirt_loader_interface::ffi::LoadResponse` as answer.
     // TODO: call shink_to_fit from time to time
-    loading_programs: RefCell<HashSet<MessageId, BuildNoHashHasher<u64>>>,
+    loading_programs: Spinlock<HashSet<MessageId, BuildNoHashHasher<u64>>>,
 }
 
 /// Prototype for a [`System`].
@@ -133,7 +133,7 @@ impl<'a> System<'a> {
                             redshirt_loader_interface::ffi::INTERFACE,
                             redshirt_loader_interface::ffi::LoaderMessage::Load(From::from(hash)),
                         );
-                        self.loading_programs.borrow_mut().insert(message_id);
+                        self.loading_programs.lock().insert(message_id);
                     }
                 }
 
@@ -220,7 +220,7 @@ impl<'a> System<'a> {
                 response,
                 ..
             } => {
-                if self.loading_programs.borrow_mut().remove(&message_id) {
+                if self.loading_programs.lock().remove(&message_id) {
                     let redshirt_loader_interface::ffi::LoadResponse { result } =
                         Decode::decode(response.unwrap()).unwrap();
                     // TODO: don't unwrap
@@ -309,7 +309,7 @@ impl<'a> SystemBuilder<'a> {
     /// Registers native code that can communicate with the WASM programs.
     pub fn with_native_program<T>(mut self, program: T) -> Self
     where
-        T: Send + 'a,
+        T: Send + Sync + 'a,
         for<'r> &'r T: native::NativeProgramRef<'r>,
     {
         self.native_programs.push(self.core.reserve_pid(), program);
@@ -379,7 +379,7 @@ impl<'a> SystemBuilder<'a> {
             native_programs: self.native_programs,
             loader_pid: Spinlock::new(None),
             load_source_virtual_pid: self.load_source_virtual_pid,
-            loading_programs: RefCell::new(Default::default()),
+            loading_programs: Spinlock::new(Default::default()),
             programs_to_load: self.programs_to_load,
         })
     }
@@ -388,5 +388,14 @@ impl<'a> SystemBuilder<'a> {
 impl<'a> Default for SystemBuilder<'a> {
     fn default() -> Self {
         SystemBuilder::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn send_sync() {
+        fn is_send_sync<T: Send + Sync>() {}
+        is_send_sync::<super::System>()
     }
 }
