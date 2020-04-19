@@ -115,7 +115,7 @@ impl NotificationsQueue {
     /// If an entry is found, its corresponding index within `indices` is stored in the returned
     /// `Entry`.
     // TODO: better param type
-    pub fn find(&self, indices: &[MessageId]) -> Option<Entry> {
+    pub fn find(&self, indices: &[Option<MessageId>]) -> Option<Entry> {
         let notifications_queue = self.notifications_queue.lock();
 
         let mut index_in_queue = 0;
@@ -137,7 +137,7 @@ impl NotificationsQueue {
                 }
             };
 
-            if let Some(p) = indices.iter().position(|id| *id == msg_id) {
+            if let Some(p) = indices.iter().position(|id| *id == Some(msg_id)) {
                 break p;
             }
 
