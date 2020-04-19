@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use crate::extrinsics::NoExtrinsics;
 use crate::module::Module;
 use crate::scheduler::{Core, CoreRunOutcome};
 use crate::{EncodedMessage, InterfaceHash};
@@ -61,7 +62,7 @@ fn wasm_recv_interface_msg() {
         0x36, 0x37,
     ]);
 
-    let mut builder = Core::new();
+    let mut builder = Core::<NoExtrinsics>::new();
     let reserved_pid = builder.reserve_pid();
     let core = builder.build();
     let wasm_proc_pid = core.execute(&module).unwrap().0.pid();

@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use crate::extrinsics::Extrinsics;
 use crate::module::Module;
 use crate::scheduler::{
     extrinsics::{self, ProcessesCollectionExtrinsicsThreadAccess as _},
@@ -57,8 +58,7 @@ mod waiting_threads;
 // from the fact that he process ID is no longer valid. This wouldn't be possible if process IDs
 // were reused.
 //
-// TODO: make extrinsics configurable
-pub struct Core {
+pub struct Core<TExt: Extrinsics> {
     /// Queue of events to return in priority when `run` is called.
     pending_events: SegQueue<CoreRunOutcome>,
 
@@ -66,7 +66,7 @@ pub struct Core {
     processes: extrinsics::ProcessesCollectionExtrinsics<
         Process,
         (),
-        crate::extrinsics::wasi::WasiExtrinsics,
+        TExt,
     >,
 
     /// List of [`Pid`]s that have been reserved during the construction.
@@ -82,12 +82,11 @@ pub struct Core {
 }
 
 /// Prototype for a `Core` under construction.
-pub struct CoreBuilder {
+pub struct CoreBuilder<TExt: Extrinsics> {
     /// See the corresponding field in `Core`.
     reserved_pids: HashSet<Pid, BuildNoHashHasher<u64>>,
     /// Builder for the [`processes`][Core::processes] field in `Core`.
-    inner_builder:
-        extrinsics::ProcessesCollectionExtrinsicsBuilder<crate::extrinsics::wasi::WasiExtrinsics>,
+    inner_builder: extrinsics::ProcessesCollectionExtrinsicsBuilder<TExt>,
 }
 
 /// Outcome of calling [`run`](Core::run).
@@ -154,19 +153,19 @@ struct Process {
 }
 
 /// Access to a process within the core.
-pub struct CoreProcess<'a> {
+pub struct CoreProcess<'a, TExt: Extrinsics> {
     /// Access to the process within the inner collection.
     process: extrinsics::ProcessesCollectionExtrinsicsProc<
         'a,
         Process,
         (),
-        crate::extrinsics::wasi::WasiExtrinsics,
+        TExt,
     >,
 }
 
-impl Core {
-    /// Initializes a new `Core`.
-    pub fn new() -> CoreBuilder {
+impl<TExt: Extrinsics> Core<TExt> {
+    /// Initializes a new [`CoreBuilder`].
+    pub fn new() -> CoreBuilder<TExt> {
         CoreBuilder {
             reserved_pids: HashSet::with_hasher(Default::default()),
             inner_builder: extrinsics::ProcessesCollectionExtrinsicsBuilder::default(),
@@ -261,7 +260,7 @@ impl Core {
 
             extrinsics::RunOneOutcome::ThreadWaitNotification(thread) => {
                 // We immediately try to resume the thread with a notification.
-                if let Err(mut thread) = try_resume_notification_wait_thread(thread) {
+                if let Err(thread) = try_resume_notification_wait_thread(thread) {
                     // If the thread couldn't be resumed, we add it to a list for later.
                     let tid = thread.tid();
                     thread
@@ -366,7 +365,7 @@ impl Core {
     }
 
     /// Returns an object granting access to a process, if it exists.
-    pub fn process_by_id(&self, pid: Pid) -> Option<CoreProcess> {
+    pub fn process_by_id(&self, pid: Pid) -> Option<CoreProcess<TExt>> {
         let p = self.processes.process_by_id(pid)?;
         Some(CoreProcess { process: p })
     }
@@ -601,7 +600,7 @@ impl Core {
     /// Start executing the module passed as parameter.
     ///
     /// Each import of the [`Module`](crate::module::Module) is resolved.
-    pub fn execute(&self, module: &Module) -> Result<(CoreProcess, ThreadId), vm::NewErr> {
+    pub fn execute(&self, module: &Module) -> Result<(CoreProcess<TExt>, ThreadId), vm::NewErr> {
         let proc_metadata = Process {
             notifications_queue: notifications_queue::NotificationsQueue::new(),
             registered_interfaces: Spinlock::new(SmallVec::new()),
@@ -621,7 +620,7 @@ impl Core {
         process: extrinsics::ProcessesCollectionExtrinsicsProc<
             Process,
             (),
-            crate::extrinsics::wasi::WasiExtrinsics,
+            TExt,
         >,
     ) {
         // The actual work being done here is actually quite complicated in order to ensure that
@@ -644,7 +643,7 @@ impl Core {
     }
 }
 
-impl<'a> CoreProcess<'a> {
+impl<'a, TExt: Extrinsics> CoreProcess<'a, TExt> {
     /// Returns the [`Pid`] of the process.
     pub fn pid(&self) -> Pid {
         self.process.pid()
@@ -668,7 +667,7 @@ impl<'a> CoreProcess<'a> {
     }
 }
 
-impl CoreBuilder {
+impl<TExt: Extrinsics> CoreBuilder<TExt> {
     /// Allocates a `Pid` that will not be used by any process.
     ///
     /// > **Note**: As of the writing of this comment, this feature is only ever used to allocate
@@ -683,7 +682,7 @@ impl CoreBuilder {
     }
 
     /// Turns the builder into a [`Core`].
-    pub fn build(mut self) -> Core {
+    pub fn build(mut self) -> Core<TExt> {
         self.reserved_pids.shrink_to_fit();
 
         Core {
@@ -700,18 +699,18 @@ impl CoreBuilder {
 /// resume said thread.
 ///
 /// Returns back the thread within an `Err` if it couldn't be resumed.
-fn try_resume_notification_wait_thread(
+fn try_resume_notification_wait_thread<TExt: Extrinsics>(
     mut thread: extrinsics::ProcessesCollectionExtrinsicsThreadWaitNotification<
         Process,
         (),
-        crate::extrinsics::wasi::WasiExtrinsics,
+        TExt,
     >,
 ) -> Result<
     (),
     extrinsics::ProcessesCollectionExtrinsicsThreadWaitNotification<
         Process,
         (),
-        crate::extrinsics::wasi::WasiExtrinsics,
+        TExt,
     >,
 > {
     // Note that the code below is a bit weird and unelegant, but this is to bypass spurious
