@@ -13,11 +13,48 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::id_pool::IdPool;
-use crate::module::Module;
-use crate::primitives::Signature;
-use crate::scheduler::vm;
-use crate::{Pid, ThreadId};
+//! Collection of VMs representing processes.
+//!
+//! This module contains most the of important logic related to parallelism in the scheduler.
+//!
+//! The [`ProcessesCollection`] struct contains a list of processes identified by [`Pid`]s and
+//! threads identified by [`ThreadId`]s. You can add new processes by calling
+//! [`ProcessesCollection::execute`].
+//!
+//! Call [`ProcessesCollection::run`] in order to run one of the threads in the collection and
+//! obtain an event describing what has just happened. The function is asynchronous, and if there
+//! is nothing to do then its corresponding `Future` will be pending.
+//!
+//! # Interrupted threads
+//!
+//! If [`RunOneOutcome::Interrupted`] is returned, that means that the given thread has just
+//! called (from within the VM) an external function and is now in an "interrupted" state waiting
+//! for the call to that external function to be finished.
+//!
+//! You can:
+//!
+//! - Either process the call immediately and call [`ProcessesCollectionThread::resume`], passing
+//! the return value of the call.
+//! - Or decide to resume the thread later. You can drop the [`ProcessesCollectionThread`] object,
+//! and later retrieve it by calling [`ProcessesCollection::interrupted_thread_by_id`].
+//!
+//! Keep in mind that only one instance of [`ProcessesCollectionThread`] for any given thread can
+//! exist simultaneously.
+//!
+//! # Locking processes
+//!
+//! One can access the state of a process through a [`ProcessesCollectionProc`]. This struct can
+//! be obtained through a [`ProcessesCollectionThread`], or by calling
+//! [`ProcessesCollection::process_by_id`] or [`ProcessesCollection::processes`].
+//!
+//! Contrary to threads, multiple instances of [`ProcessesCollectionProc`] can exist for the same
+//! process.
+//!
+//! If a process finishes (either by normal termination or because of a crash), the emission of
+//! the corresponding [`RunOneOutcome::ProcessFinished`] event will be delayed until no instance
+//! of [`ProcessesCollectionProc`] corresponding to that process exists anymore.
+
+use crate::{id_pool::IdPool, module::Module, primitives::Signature, scheduler::vm, Pid, ThreadId};
 
 use alloc::{
     borrow::Cow,
@@ -73,6 +110,7 @@ pub struct ProcessesCollection<TExtr, TPud, TTud> {
     /// Doesn't contain threads that are ready to run and threads that have been locked by the
     /// user with [`ProcessesCollection::interrupted_thread_by_id`].
     // TODO: find a solution for that mutex?
+    // TODO: call shrink_to_fit from time to time?
     interrupted_threads:
         Spinlock<HashMap<ThreadId, (TTud, Arc<Process<TPud, TTud>>), BuildNoHashHasher<u64>>>,
 
@@ -254,7 +292,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
         module: &Module,
         proc_user_data: TPud,
         main_thread_user_data: TTud,
-    ) -> Result<ProcessesCollectionProc<TExtr, TPud, TTud>, vm::NewErr> {
+    ) -> Result<(ProcessesCollectionProc<TExtr, TPud, TTud>, ThreadId), vm::NewErr> {
         let main_thread_id = self.pid_tid_pool.assign(); // TODO: check for duplicates?
 
         let state_machine = {
@@ -308,11 +346,13 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
         self.execution_queue.push(process.clone());
         self.wakers.notify_one();
 
-        Ok(ProcessesCollectionProc {
+        let proc_lock = ProcessesCollectionProc {
             collection: self,
             process: Some(process),
             pid_tid_pool: &self.pid_tid_pool,
-        })
+        };
+
+        Ok((proc_lock, main_thread_id))
     }
 
     /// Runs one thread amongst the collection.
@@ -326,7 +366,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
     ///
     /// This is equivalent to calling [`ProcessesCollection::process_by_id`] for each possible
     /// ID.
-    pub fn pids<'a>(
+    pub fn processes<'a>(
         &'a self,
     ) -> impl ExactSizeIterator<Item = ProcessesCollectionProc<'a, TExtr, TPud, TTud>> + 'a {
         let processes = self.processes.lock();
@@ -584,7 +624,7 @@ impl<'a, TExtr, TPud, TTud> Future for RunFuture<'a, TExtr, TPud, TTud> {
                     id,
                     params,
                 }) => {
-                    // TODO: check params against signature with a debug_assert
+                    // TODO: check params against signature with a debug_assert?
                     let extrinsic = match this.extrinsics.get(id) {
                         Some(e) => e,
                         None => unreachable!(),
@@ -649,8 +689,8 @@ impl<TExtr> ProcessesCollectionBuilder<TExtr> {
     /// >           method that frees such an allocated `Pid`. If there is ever a need to free
     /// >           these `Pid`s, such a method should be added.
     pub fn reserve_pid(&mut self) -> Pid {
-        // Note that we take `&mut self`. It could be `&self`, but that would expose
-        // implementation details.
+        // Note that this function accepts `&mut self`. It could be `&self`, but that would
+        // expose implementation details.
         self.pid_tid_pool.assign()
     }
 
@@ -730,7 +770,6 @@ impl<'a, TExtr, TPud, TTud> ProcessesCollectionProc<'a, TExtr, TPud, TTud> {
     /// > **Note**: The "function ID" is the index of the function in the WASM module. WASM
     /// >           doesn't have function pointers. Instead, all the functions are part of a single
     /// >           global array of functions.
-    // TODO: don't expose crate::WasmValue in the API
     pub fn start_thread(
         &self,
         fn_index: u32,
@@ -752,37 +791,17 @@ impl<'a, TExtr, TPud, TTud> ProcessesCollectionProc<'a, TExtr, TPud, TTud> {
 
         Ok(thread_id)
     }
-
-    // TODO: bad API because of unique lock system for threads
-    pub fn interrupted_threads(
-        &self,
-    ) -> impl Iterator<Item = ProcessesCollectionThread<'a, TExtr, TPud, TTud>> + 'a {
-        let mut interrupted_threads = self.collection.interrupted_threads.lock();
-
-        let list = interrupted_threads
-            .drain_filter(|_, (_, p)| Arc::ptr_eq(p, self.process.as_ref().unwrap()))
-            .collect::<Vec<_>>();
-
-        let collection = self.collection;
-        let pid_tid_pool = self.pid_tid_pool;
-        list.into_iter().map(
-            move |(tid, (user_data, process))| ProcessesCollectionThread {
-                collection,
-                process: Some(process),
-                tid,
-                pid_tid_pool,
-                user_data: Some(user_data),
-            },
-        )
-    }
 }
 
-impl<'a, TExtr, TPud, TTud> fmt::Debug for ProcessesCollectionProc<'a, TExtr, TPud, TTud> {
+impl<'a, TExtr, TPud, TTud> fmt::Debug for ProcessesCollectionProc<'a, TExtr, TPud, TTud>
+where
+    TPud: fmt::Debug,
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // TODO: threads user datas
+        // TODO: threads user datas?
         f.debug_struct("ProcessesCollectionProc")
             .field("pid", &self.pid())
-            //.field("user_data", self.user_data())     // TODO: requires &mut self :-/
+            .field("user_data", self.user_data())
             .finish()
     }
 }
@@ -818,9 +837,16 @@ impl<'a, TExtr, TPud, TTud> ProcessesCollectionThread<'a, TExtr, TPud, TTud> {
         }
     }
 
+    /// Write the data at the given memory location.
+    ///
+    /// Returns an error if the range is invalid or out of range.
+    ///
+    /// > **Important**: See also the remarks on [`ProcessesCollectionThread::write_memory`].
+    ///
     pub fn read_memory(&self, offset: u32, size: u32) -> Result<Vec<u8>, ()> {
-        // TODO: will block until any other thread to finish executing ; it isn't really possible
-        // right now to do otherwise, as the WASM memory model isn't properly defined
+        // TODO: if another thread of this process is running, this will block until it has
+        // finished executing ; it isn't really possible right now to do otherwise, as the WASM
+        // memory model isn't properly defined
         let lock = self.process.as_ref().unwrap().lock.lock();
         lock.vm.read_memory(offset, size)
     }
@@ -828,9 +854,29 @@ impl<'a, TExtr, TPud, TTud> ProcessesCollectionThread<'a, TExtr, TPud, TTud> {
     /// Write the data at the given memory location.
     ///
     /// Returns an error if the range is invalid or out of range.
-    pub fn write_memory(&self, offset: u32, value: &[u8]) -> Result<(), ()> {
-        // TODO: will block until any other thread to finish executing ; it isn't really possible
-        // right now to do otherwise, as the WASM memory model isn't properly defined
+    ///
+    /// # About concurrency
+    ///
+    /// Memory writes made using this method are guaranteed to be visible later by calling
+    /// [`read_memory`](ProcessesCollectionThread::read_memory) on the same thread.
+    ///
+    /// However, writes are not guaranteed to be visible by calling
+    /// [`read_memory`](ProcessesCollectionThread::read_memory) on a different thread, even when
+    /// they belong to the same process.
+    ///
+    /// It is only when the instance of [`ProcessesCollectionThread`] is
+    /// [resume](ProcessesCollectionThread::resume)d that the writes are guaranteed to be made
+    /// visible to the rest of the process. This means that it is legal, for example, for this
+    /// method to keep a cache of the changes and flush it later.
+    ///
+    /// As such, just like for "actual threads", writing and reading the same memory from multiple
+    /// different threads without any synchronization primitive (which resuming the thread
+    /// provides) will lead to a race condition.
+    ///
+    pub fn write_memory(&mut self, offset: u32, value: &[u8]) -> Result<(), ()> {
+        // TODO: if another thread of this process is running, this will block until it has
+        // finished executing ; it isn't really possible right now to do otherwise, as the WASM
+        // memory model isn't properly defined
         let mut lock = self.process.as_ref().unwrap().lock.lock();
         lock.vm.write_memory(offset, value)
     }
@@ -985,7 +1031,7 @@ mod tests {
         );
         let mut spawned_pids = HashSet::<_, fnv::FnvBuildHasher>::default();
         for _ in 0..num_processes {
-            let pid = processes.execute(&module, (), ()).unwrap().pid();
+            let pid = processes.execute(&module, (), ()).unwrap().0.pid();
             assert!(spawned_pids.insert(pid));
         }
 

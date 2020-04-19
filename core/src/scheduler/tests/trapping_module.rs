@@ -28,7 +28,7 @@ fn trapping_module() {
     );
 
     let core = Core::new().build();
-    let expected_pid = core.execute(&module).unwrap().pid();
+    let expected_pid = core.execute(&module).unwrap().0.pid();
 
     match core.run().now_or_never() {
         Some(CoreRunOutcome::ProgramFinished {
