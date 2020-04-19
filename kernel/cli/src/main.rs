@@ -13,8 +13,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use futures::{channel::mpsc, prelude::*};
 use redshirt_core::{build_wasm_module, module::ModuleHash};
-use std::{fs, path::PathBuf, process};
+use std::{fs, path::PathBuf, process, sync::Arc};
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
@@ -45,11 +46,8 @@ struct CliOptions {
     background_module_hash: Vec<ModuleHash>,
 }
 
-fn main() {
-    futures::executor::block_on(async_main());
-}
-
-async fn async_main() {
+#[async_std::main]
+async fn main() {
     let cli_opts = CliOptions::from_args();
 
     let mut cli_requested_processes = Vec::new();
@@ -97,9 +95,28 @@ async fn async_main() {
         return;
     }*/
 
-    loop {
-        let outcome = system.run().await;
-        match outcome {
+    // We now spawn background tasks that run the scheduler.
+    // Background tasks report all events to the main thread, which can then decide to stop
+    // everything.
+    let (tx, mut rx) = mpsc::channel(16);
+    let system = Arc::new(system);
+
+    for _ in 0..num_cpus::get() {
+        let mut tx = tx.clone();
+        let system = system.clone();
+        async_std::task::spawn(async move {
+            loop {
+                let outcome = system.run().await;
+                if tx.send(outcome).await.is_err() {
+                    break;
+                }
+            }
+        });
+    }
+
+    // All the background tasks events are grouped together and sent here.
+    while let Some(event) = rx.next().await {
+        match event {
             redshirt_core::system::SystemRunOutcome::ProgramFinished {
                 pid,
                 outcome: Err(err),
