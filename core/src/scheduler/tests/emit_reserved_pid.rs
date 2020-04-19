@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use crate::extrinsics::NoExtrinsics;
 use crate::scheduler::{Core, CoreRunOutcome};
 use crate::InterfaceHash;
 use futures::prelude::*;
@@ -102,7 +103,7 @@ fn emit_reserved_pid() {
         0x36, 0x37,
     ]);
 
-    let mut builder = Core::new();
+    let mut builder = Core::<NoExtrinsics>::new();
     let reserved_pid = builder.reserve_pid();
     let core = builder.build();
     core.set_interface_handler(interface.clone(), reserved_pid)
