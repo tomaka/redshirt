@@ -26,7 +26,7 @@
 //!
 
 use futures::{channel::mpsc, prelude::*};
-use glium::glutin::event::{Event, WindowEvent};
+use glium::glutin::event::{Event, StartCause, WindowEvent};
 use glium::glutin::event_loop::{ControlFlow, EventLoop, EventLoopProxy, EventLoopWindowTarget};
 use parking_lot::Mutex;
 use redshirt_core::native::{DummyMessageIdWrite, NativeProgramEvent, NativeProgramRef};
@@ -84,8 +84,19 @@ impl FramebufferContext {
     /// >           In particular, the `Future` is expected to produce a value as a way to shut
     /// >           down the entire program.
     pub fn run<T: 'static>(self, future: impl Future<Output = T> + 'static) -> T {
-        let proxy = self.event_loop.create_proxy();
-        proxy.send_event(()).unwrap();
+        // Futures waker that sends an event to the window when it is waken up.
+        let waker = {
+            let proxy = self.event_loop.create_proxy();
+
+            struct Waker(Mutex<EventLoopProxy<()>>);
+            impl futures::task::ArcWake for Waker {
+                fn wake_by_ref(arc_self: &Arc<Self>) {
+                    let _ = arc_self.0.lock().send_event(());
+                }
+            }
+
+            futures::task::waker(Arc::new(Waker(Mutex::new(proxy))))
+        };
 
         // Creates an implementation of the `Stream` trait that produces events.
         enum LocalEvent<T> {
@@ -94,9 +105,7 @@ impl FramebufferContext {
         }
         let mut stream = Box::pin({
             let main_future = stream::once(async move { LocalEvent::FutureFinished(future.await) });
-
             let receiver_events = self.messages_rx.map(LocalEvent::FromHandler);
-
             stream::select(main_future, receiver_events)
         });
 
@@ -125,18 +134,13 @@ impl FramebufferContext {
                         }
                     }
                     Event::RedrawEventsCleared => {
-                        // Waker that sends an event to the window when it is waken up.
-                        let waker = {
-                            struct Waker(Mutex<EventLoopProxy<()>>);
-                            impl futures::task::ArcWake for Waker {
-                                fn wake_by_ref(arc_self: &Arc<Self>) {
-                                    let _ = arc_self.0.lock().send_event(());
-                                }
-                            }
-                            futures::task::waker(Arc::new(Waker(Mutex::new(proxy.clone()))))
-                        };
+                        // The control flow is always set to `Wait`. What we want to achieve is
+                        // wake up the events loop whenever the stream is ready by sending a
+                        // dummy event to it.
+                        *control_flow = ControlFlow::Wait;
+                    }
+                    Event::NewEvents(StartCause::Init) | Event::UserEvent(()) => {
                         let mut context = Context::from_waker(&waker);
-
                         while let Poll::Ready(ev) = stream.poll_next_unpin(&mut context) {
                             let ev = match ev {
                                 Some(LocalEvent::FromHandler(ev)) => ev,
