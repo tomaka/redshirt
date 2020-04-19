@@ -63,11 +63,7 @@ pub struct Core<TExt: Extrinsics> {
     pending_events: SegQueue<CoreRunOutcome>,
 
     /// List of running processes.
-    processes: extrinsics::ProcessesCollectionExtrinsics<
-        Process,
-        (),
-        TExt,
-    >,
+    processes: extrinsics::ProcessesCollectionExtrinsics<Process, (), TExt>,
 
     /// List of [`Pid`]s that have been reserved during the construction.
     ///
@@ -155,12 +151,7 @@ struct Process {
 /// Access to a process within the core.
 pub struct CoreProcess<'a, TExt: Extrinsics> {
     /// Access to the process within the inner collection.
-    process: extrinsics::ProcessesCollectionExtrinsicsProc<
-        'a,
-        Process,
-        (),
-        TExt,
-    >,
+    process: extrinsics::ProcessesCollectionExtrinsicsProc<'a, Process, (), TExt>,
 }
 
 impl<TExt: Extrinsics> Core<TExt> {
@@ -617,11 +608,7 @@ impl<TExt: Extrinsics> Core<TExt> {
     /// Tries to resume all the threads of the process that are waiting for an notification.
     fn try_resume_notification_wait(
         &self,
-        process: extrinsics::ProcessesCollectionExtrinsicsProc<
-            Process,
-            (),
-            TExt,
-        >,
+        process: extrinsics::ProcessesCollectionExtrinsicsProc<Process, (), TExt>,
     ) {
         // The actual work being done here is actually quite complicated in order to ensure that
         // each `ThreadId` is only accessed once at a time, but the exposed API is very simple.
@@ -700,19 +687,9 @@ impl<TExt: Extrinsics> CoreBuilder<TExt> {
 ///
 /// Returns back the thread within an `Err` if it couldn't be resumed.
 fn try_resume_notification_wait_thread<TExt: Extrinsics>(
-    mut thread: extrinsics::ProcessesCollectionExtrinsicsThreadWaitNotification<
-        Process,
-        (),
-        TExt,
-    >,
-) -> Result<
-    (),
-    extrinsics::ProcessesCollectionExtrinsicsThreadWaitNotification<
-        Process,
-        (),
-        TExt,
-    >,
-> {
+    mut thread: extrinsics::ProcessesCollectionExtrinsicsThreadWaitNotification<Process, (), TExt>,
+) -> Result<(), extrinsics::ProcessesCollectionExtrinsicsThreadWaitNotification<Process, (), TExt>>
+{
     // Note that the code below is a bit weird and unelegant, but this is to bypass spurious
     // borrowing errors.
     let (entry_size, index_and_notif) = {
