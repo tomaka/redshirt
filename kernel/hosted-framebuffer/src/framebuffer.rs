@@ -171,7 +171,6 @@ impl Framebuffer {
         let window = window.window();
         window.set_visible(true);
         window.request_redraw();
-        println!("set visible");
     }
 
     /// Refreshes the framebuffer.
