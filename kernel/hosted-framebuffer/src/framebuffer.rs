@@ -48,6 +48,8 @@ impl Framebuffer {
                 height as f64,
             ))
             .with_resizable(false)
+            // Windows start invisible and become visible when the data is set for the first time.
+            .with_visible(false)
             .with_title(title);
 
         let ctxt = glium::glutin::ContextBuilder::new()
@@ -144,6 +146,7 @@ impl Framebuffer {
                 .saturating_mul(self.texture.width())
                 .saturating_mul(self.texture.height()))
         {
+            // TODO: log this?
             return;
         }
 
@@ -164,7 +167,11 @@ impl Framebuffer {
             },
         );
 
-        self.display.gl_window().window().request_redraw();
+        let window = self.display.gl_window();
+        let window = window.window();
+        window.set_visible(true);
+        window.request_redraw();
+        println!("set visible");
     }
 
     /// Refreshes the framebuffer.
