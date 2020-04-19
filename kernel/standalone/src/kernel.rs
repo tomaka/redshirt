@@ -25,16 +25,19 @@
 use crate::arch::PlatformSpecific;
 
 use alloc::sync::Arc;
-use core::pin::Pin;
-use core::sync::atomic::{AtomicBool, Ordering};
-use redshirt_core::build_wasm_module;
+use core::{
+    marker::PhantomData,
+    sync::atomic::{AtomicBool, Ordering},
+};
+use redshirt_core::{build_wasm_module, System};
 
 /// Main struct of this crate. Runs everything.
 pub struct Kernel<TPlat> {
+    system: System<'static>,
     /// If true, the kernel has started running from a different thread already.
     running: AtomicBool,
-    /// Platform-specific hooks.
-    platform_specific: Pin<Arc<TPlat>>,
+    /// Phantom data so that we can keep the platform specific generic parameter.
+    marker: PhantomData<TPlat>,
 }
 
 impl<TPlat> Kernel<TPlat>
@@ -43,33 +46,18 @@ where
 {
     /// Initializes a new `Kernel`.
     pub fn init(platform_specific: TPlat) -> Self {
-        Kernel {
-            running: AtomicBool::new(false),
-            platform_specific: Arc::pin(platform_specific),
-        }
-    }
-
-    /// Run the kernel. Must be called once per CPU.
-    pub async fn run(&self) -> ! {
-        // We only want a single CPU to run for now.
-        if self.running.swap(true, Ordering::SeqCst) {
-            loop {
-                futures::future::poll_fn(|_| core::task::Poll::Pending).await
-            }
-        }
+        let platform_specific = Arc::pin(platform_specific);
 
         let mut system_builder = redshirt_core::system::SystemBuilder::new()
             .with_native_program(crate::hardware::HardwareHandler::new(
-                self.platform_specific.clone(),
+                platform_specific.clone(),
             ))
-            .with_native_program(crate::time::TimeHandler::new(
-                self.platform_specific.clone(),
-            ))
+            .with_native_program(crate::time::TimeHandler::new(platform_specific.clone()))
             .with_native_program(crate::random::native::RandomNativeProgram::new(
-                self.platform_specific.clone(),
+                platform_specific.clone(),
             ))
             .with_native_program(crate::klog::KernelLogNativeProgram::new(
-                self.platform_specific.clone(),
+                platform_specific.clone(),
             ))
             .with_startup_process(build_wasm_module!(
                 "../../../modules/p2p-loader",
@@ -91,10 +79,24 @@ where
                 .with_startup_process(build_wasm_module!("../../../modules/rpi-framebuffer"))
         }
 
-        let system = system_builder.build().expect("Failed to start kernel");
+        Kernel {
+            system: system_builder.build().expect("failed to start kernel"),
+            running: AtomicBool::new(false),
+            marker: PhantomData,
+        }
+    }
+
+    /// Run the kernel. Must be called once per CPU.
+    pub async fn run(&self) -> ! {
+        // TODO: we only run on a single CPU for now, to be cautious
+        if self.running.swap(true, Ordering::SeqCst) {
+            loop {
+                futures::future::poll_fn(|_| core::task::Poll::Pending).await
+            }
+        }
 
         loop {
-            match system.run().await {
+            match self.system.run().await {
                 redshirt_core::system::SystemRunOutcome::ProgramFinished { .. } => {}
                 _ => panic!(),
             }
