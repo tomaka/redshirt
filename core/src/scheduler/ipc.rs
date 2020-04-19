@@ -601,7 +601,7 @@ impl Core {
     /// Start executing the module passed as parameter.
     ///
     /// Each import of the [`Module`](crate::module::Module) is resolved.
-    pub fn execute(&self, module: &Module) -> Result<CoreProcess, vm::NewErr> {
+    pub fn execute(&self, module: &Module) -> Result<(CoreProcess, ThreadId), vm::NewErr> {
         let proc_metadata = Process {
             notifications_queue: notifications_queue::NotificationsQueue::new(),
             registered_interfaces: Spinlock::new(SmallVec::new()),
@@ -610,9 +610,9 @@ impl Core {
             wait_notifications_threads: waiting_threads::WaitingThreads::new(),
         };
 
-        let process = self.processes.execute(module, proc_metadata, ())?;
+        let (process, main_tid) = self.processes.execute(module, proc_metadata, ())?;
 
-        Ok(CoreProcess { process })
+        Ok((CoreProcess { process }, main_tid))
     }
 
     /// Tries to resume all the threads of the process that are waiting for an notification.

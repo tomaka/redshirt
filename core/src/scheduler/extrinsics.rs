@@ -22,7 +22,7 @@ use crate::sig;
 use crate::{InterfaceHash, MessageId};
 
 use alloc::vec::Vec;
-use core::{cell::RefCell, convert::TryFrom as _, fmt, iter, mem, ops::Range};
+use core::{convert::TryFrom as _, fmt, iter, mem, ops::Range};
 use crossbeam_queue::SegQueue;
 use redshirt_syscalls::{EncodedMessage, Pid, ThreadId};
 
@@ -318,7 +318,13 @@ where
         module: &Module,
         proc_user_data: TPud,
         main_thread_user_data: TTud,
-    ) -> Result<ProcessesCollectionExtrinsicsProc<TPud, TTud, TExt>, vm::NewErr> {
+    ) -> Result<
+        (
+            ProcessesCollectionExtrinsicsProc<TPud, TTud, TExt>,
+            ThreadId,
+        ),
+        vm::NewErr,
+    > {
         let proc_user_data = LocalProcessUserData {
             extrinsics: Default::default(),
             external_user_data: proc_user_data,
@@ -327,12 +333,16 @@ where
             state: LocalThreadState::ReadyToRun,
             external_user_data: main_thread_user_data,
         };
-        Ok(ProcessesCollectionExtrinsicsProc {
-            parent: self,
-            inner: self
-                .inner
-                .execute(module, proc_user_data, main_thread_user_data)?,
-        })
+        let (inner, main_tid) =
+            self.inner
+                .execute(module, proc_user_data, main_thread_user_data)?;
+        Ok((
+            ProcessesCollectionExtrinsicsProc {
+                parent: self,
+                inner,
+            },
+            main_tid,
+        ))
     }
 
     /// Runs one thread amongst the collection.
@@ -554,7 +564,7 @@ where
                         thread_id,
                         ext_id,
                         params.iter().cloned(),
-                        &mut MemoryAccessImpl(RefCell::new(thread)),
+                        &mut MemoryAccessImpl(thread),
                     );
                 thread.user_data_mut().state =
                     LocalThreadState::OtherExtrinsicApplyAction { context, action };
@@ -751,7 +761,8 @@ where
 
 impl<'a, TPud, TTud, TExt> fmt::Debug for ProcessesCollectionExtrinsicsProc<'a, TPud, TTud, TExt>
 where
-    TExt: Extrinsics,
+    TExt: Extrinsics + fmt::Debug,
+    TPud: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(&self.inner, f)
@@ -910,7 +921,7 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
                         .inject_message_response(
                             &mut context,
                             None,
-                            &mut MemoryAccessImpl(RefCell::new(&mut self.inner)),
+                            &mut MemoryAccessImpl(&mut self.inner),
                         );
                     self.inner.user_data_mut().state =
                         LocalThreadState::OtherExtrinsicApplyAction { context, action };
@@ -1081,7 +1092,7 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
                     .inject_message_response(
                         &mut context,
                         Some(message),
-                        &mut MemoryAccessImpl(RefCell::new(&mut self.inner)),
+                        &mut MemoryAccessImpl(&mut self.inner),
                     );
                 self.inner.user_data_mut().state =
                     LocalThreadState::OtherExtrinsicApplyAction { context, action };
@@ -1170,10 +1181,7 @@ impl<TExtCtxt> LocalThreadState<TExtCtxt> {
 
 /// Implementation of the [`ExtrinsicsMemoryAccess`] trait for a process.
 struct MemoryAccessImpl<'a, 'b, TExtr, TPud, TTud>(
-    // TODO: we use a RefCell because the inner `read_memory` requires a `&mut self` while our
-    // public API accepts `&self`. Using a RefCell means we'll panic if `read_memory` is used
-    // concurrently.
-    RefCell<&'a mut processes::ProcessesCollectionThread<'b, TExtr, TPud, TTud>>,
+    &'a mut processes::ProcessesCollectionThread<'b, TExtr, TPud, TTud>,
 );
 
 impl<'a, 'b, TExtr, TPud, TTud> ExtrinsicsMemoryAccess
@@ -1181,14 +1189,12 @@ impl<'a, 'b, TExtr, TPud, TTud> ExtrinsicsMemoryAccess
 {
     fn read_memory(&self, range: Range<u32>) -> Result<Vec<u8>, ExtrinsicsMemoryAccessErr> {
         self.0
-            .borrow_mut()
             .read_memory(range.start, range.end.checked_sub(range.start).unwrap())
             .map_err(|()| ExtrinsicsMemoryAccessErr::OutOfRange)
     }
 
     fn write_memory(&mut self, offset: u32, data: &[u8]) -> Result<(), ExtrinsicsMemoryAccessErr> {
         self.0
-            .borrow_mut()
             .write_memory(offset, data)
             .map_err(|()| ExtrinsicsMemoryAccessErr::OutOfRange)
     }

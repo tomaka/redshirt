@@ -110,7 +110,7 @@ enum RunOnceOutcome {
 impl<'a> System<'a> {
     /// Start executing a program.
     pub fn execute(&self, program: &Module) -> Result<Pid, NewErr> {
-        Ok(self.core.execute(program)?.pid())
+        Ok(self.core.execute(program)?.0.pid())
     }
 
     /// Runs the [`System`] once and returns the outcome.
