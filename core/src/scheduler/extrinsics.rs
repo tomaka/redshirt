@@ -1018,9 +1018,10 @@ impl<'a, TPud, TTud, TExt: Extrinsics> fmt::Debug
 impl<'a, TPud, TTud, TExt: Extrinsics>
     ProcessesCollectionExtrinsicsThreadWaitNotification<'a, TPud, TTud, TExt>
 {
-    /// Returns the list of message IDs that the thread is waiting on. In order.
+    /// Returns the list of message IDs that the thread is waiting on. In order, and preserving
+    /// empty entries.
     // TODO: not great naming. we're waiting either for messages or an interface notif or a process cancelled notif
-    pub fn message_ids_iter<'b>(&'b mut self) -> impl Iterator<Item = MessageId> + 'b {
+    pub fn message_ids_iter<'b>(&'b mut self) -> impl Iterator<Item = Option<MessageId>> + 'b {
         match self.inner.user_data().state {
             LocalThreadState::NotificationWait(ref wait) => {
                 // TODO: annoying allocation
@@ -1033,7 +1034,7 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
                 either::Either::Left(iter)
             }
             LocalThreadState::OtherExtrinsicWait { message, .. } => {
-                either::Either::Right(iter::once(message))
+                either::Either::Right(iter::once(Some(message)))
             }
             _ => unreachable!(),
         }
@@ -1074,7 +1075,8 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
             LocalThreadState::Poisoned,
         ) {
             LocalThreadState::NotificationWait(wait) => {
-                assert!(index < wait.notifs_ids.len());
+                debug_assert!(index < wait.notifs_ids.len());
+                assert_ne!(wait.notifs_ids[index], None);
                 let notif_size_u32 = u32::try_from(notif.0.len()).unwrap();
                 assert!(wait.out_size >= notif_size_u32);
 

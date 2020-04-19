@@ -148,7 +148,6 @@ pub fn block_on<T>(future: impl Future<Output = T>) -> T {
         }
 
         let mut state = (&*STATE).lock();
-        debug_assert_eq!(state.message_ids.len(), state.wakers.len());
 
         // `block` indicates whether we should block the thread or just peek. Always `true` during
         // the first iteration, and `false` in further iterations.

@@ -18,7 +18,7 @@
 use crate::scheduler::processes;
 use crate::{InterfaceHash, MessageId};
 
-use alloc::{vec, vec::Vec};
+use alloc::vec::Vec;
 use core::{convert::TryFrom as _, num::NonZeroU64};
 use redshirt_syscalls::EncodedMessage;
 
@@ -62,9 +62,7 @@ pub fn parse_extrinsic_next_notification<TExtr, TPud, TTud>(
         let mut out = Vec::with_capacity(len_usize);
         for i in mem.chunks(8) {
             let id = u64::from_le_bytes(<[u8; 8]>::try_from(i).unwrap());
-            if let Some(id) = NonZeroU64::new(id) {
-                out.push(MessageId::from(id));
-            }
+            out.push(NonZeroU64::new(id).map(MessageId::from));
         }
         out
     };
@@ -100,7 +98,8 @@ pub fn parse_extrinsic_next_notification<TExtr, TPud, TTud>(
 pub struct NotificationWait {
     /// Identifiers of the notifications the process is waiting upon. Copy of what is in the
     /// process's memory.
-    pub notifs_ids: Vec<MessageId>,
+    // TODO: better typing; this can contain `1` for interfaces, which is not a message ID
+    pub notifs_ids: Vec<Option<MessageId>>,
     /// Offset within the memory of the process where the list of notifications to wait upon is
     /// located. This is required to zero that location.
     pub notifs_ids_ptr: u32,
