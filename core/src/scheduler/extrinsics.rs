@@ -45,7 +45,7 @@ pub struct ProcessesCollectionExtrinsics<TPud, TTud, TExt: Extrinsics> {
     /// have to process the external extrinsics for this thread.
     ///
     /// The threads here must always be in the [`LocalThreadState::OtherExtrinsicApplyAction`]
-    /// state.
+    /// or the [`LocalThreadState::OtherExtrinsicReportWait`] state.
     // TODO: we have to notify wakers when we push an element
     local_run_queue: SegQueue<ThreadId>,
 }
@@ -194,6 +194,15 @@ enum LocalThreadState<TExtCtxt> {
         message: EncodedMessage,
         /// True if a message is expected.
         response_expected: bool,
+    },
+
+    /// Thread must be reported as a waiting thread through the API, then transition to
+    /// [`LocalThreadState::OtherExtrinsicWait`].
+    OtherExtrinsicReportWait {
+        /// Abstract context used to drive the extrinsic call.
+        context: TExtCtxt,
+        /// Message for which we are awaiting a response.
+        message: MessageId,
     },
 
     /// Thread is running a non-hardcoded extrinsic waiting for a response.
@@ -366,6 +375,20 @@ where
                 &mut thread.user_data_mut().state,
                 LocalThreadState::Poisoned,
             ) {
+                LocalThreadState::OtherExtrinsicReportWait { context, message } => {
+                    thread.user_data_mut().state =
+                        LocalThreadState::OtherExtrinsicWait { context, message };
+                    let process = ProcessesCollectionExtrinsicsProc {
+                        parent: self,
+                        inner: thread.process(),
+                    };
+                    return Some(RunOneOutcome::ThreadWaitNotification(
+                        ProcessesCollectionExtrinsicsThreadWaitNotification {
+                            process,
+                            inner: thread,
+                        },
+                    ));
+                }
                 LocalThreadState::OtherExtrinsicApplyAction { context, action } => match action {
                     ExtrinsicsAction::ProgramCrash => unimplemented!(),
                     ExtrinsicsAction::Resume(value) => {
@@ -616,7 +639,10 @@ where
                 // TODO: I'm a bit tired while writing this and not sure that's correct
                 unreachable!()
             }
-            LocalThreadState::OtherExtrinsicApplyAction { .. } => Err(ThreadByIdErr::RunningOrDead),
+            LocalThreadState::OtherExtrinsicApplyAction { .. }
+            | LocalThreadState::OtherExtrinsicReportWait { .. } => {
+                Err(ThreadByIdErr::RunningOrDead)
+            }
             LocalThreadState::EmitMessage(_) | LocalThreadState::OtherExtrinsicEmit { .. } => {
                 let process = ProcessesCollectionExtrinsicsProc {
                     parent: self,
@@ -906,10 +932,11 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
             } => {
                 if response_expected {
                     let message_id = message_id.unwrap();
-                    self.inner.user_data_mut().state = LocalThreadState::OtherExtrinsicWait {
+                    self.inner.user_data_mut().state = LocalThreadState::OtherExtrinsicReportWait {
                         context,
                         message: message_id,
                     };
+                    self.process.parent.local_run_queue.push(self.inner.tid());
                 } else {
                     debug_assert!(message_id.is_none());
                     let action = self
