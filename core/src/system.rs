@@ -23,12 +23,13 @@
 //! - `interface`.
 //!
 
+use crate::extrinsics::wasi;
 use crate::module::{Module, ModuleHash};
 use crate::native::{self, NativeProgramMessageIdWrite as _};
 use crate::scheduler::{Core, CoreBuilder, CoreRunOutcome, NewErr};
 
 use alloc::vec::Vec;
-use core::{cell::RefCell, iter, num::NonZeroU64, task::Poll};
+use core::{iter, num::NonZeroU64, task::Poll};
 use crossbeam_queue::SegQueue;
 use futures::prelude::*;
 use hashbrown::HashSet;
@@ -42,7 +43,7 @@ use spinning_top::Spinlock;
 /// See [the module-level documentation](super) for more information.
 pub struct System<'a> {
     /// Inner system with inter-process communications.
-    core: Core,
+    core: Core<wasi::WasiExtrinsics>,
 
     /// Collection of programs. Each is assigned a `Pid` that is reserved within `core`.
     /// Can communicate with the WASM programs that are within `core`.
@@ -68,7 +69,7 @@ pub struct System<'a> {
 /// Prototype for a [`System`].
 pub struct SystemBuilder<'a> {
     /// Builder for the inner core.
-    core: CoreBuilder,
+    core: CoreBuilder<wasi::WasiExtrinsics>,
 
     /// Native programs.
     native_programs: native::NativeProgramsCollection<'a>,
