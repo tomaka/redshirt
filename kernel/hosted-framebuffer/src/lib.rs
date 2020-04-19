@@ -13,148 +13,68 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-//! Implements the framebuffer interface by showing the framebuffer in a window.
+//! Implements the framebuffer interface by displaying each framebuffer in a window.
+//!
+//! # Usage
+//!
+//! - Create a [`FramebufferContext`]. This represents a collection of all the windows and
+//! resources required to display the framebuffers.
+//! - Create a [`FramebufferHandler`], passing a reference to the context. This type can be used
+//! as a native process with the kernel.
+//! - Call [`FramebufferContext::run`] for it to take control of your application and start
+//! showing the framebuffers.
+//!
 
 use futures::{channel::mpsc, prelude::*};
-use glium::{
-    program,
-    texture::{ClientFormat, RawImage2d, Texture2d},
-    uniform, Surface as _,
-};
+use glium::glutin::event::{Event, WindowEvent};
+use glium::glutin::event_loop::{ControlFlow, EventLoop, EventLoopProxy, EventLoopWindowTarget};
 use parking_lot::Mutex;
 use redshirt_core::native::{DummyMessageIdWrite, NativeProgramEvent, NativeProgramRef};
 use redshirt_core::{Encode as _, EncodedMessage, InterfaceHash, MessageId, Pid};
 use redshirt_framebuffer_interface::ffi::INTERFACE;
 use std::{
-    borrow::Cow,
     collections::{hash_map::Entry, HashMap},
     convert::TryFrom as _,
     pin::Pin,
     sync::{atomic, Arc},
     task::{Context, Poll},
-    time::{Duration, Instant},
 };
 
-pub struct FramebufferContext {
-    event_loop: glium::glutin::event_loop::EventLoop<()>,
-    inner: FramebufferContextInner,
-}
+mod framebuffer;
 
-struct FramebufferContextInner {
-    messages_tx: mpsc::UnboundedSender<(Pid, EncodedMessage)>,
-    messages_rx: mpsc::UnboundedReceiver<(Pid, EncodedMessage)>,
-    display: glium::Display,
-    vertex_buffer: glium::VertexBuffer<Vertex>,
-    index_buffer: glium::IndexBuffer<u16>,
-    program: glium::Program,
-    /// Active list of framebuffers.
-    framebuffers: Mutex<HashMap<(Pid, u32), Framebuffer>>,
+/// Collection of all the resources required to display the framebuffers.
+pub struct FramebufferContext {
+    event_loop: EventLoop<()>,
+    messages_tx: mpsc::UnboundedSender<HandlerToContext>,
+    messages_rx: mpsc::UnboundedReceiver<HandlerToContext>,
 }
 
 /// Native program for `log` interface messages handling.
 pub struct FramebufferHandler {
     /// If true, we have sent the interface registration message.
     registered: atomic::AtomicBool,
-    messages_tx: mpsc::UnboundedSender<(Pid, EncodedMessage)>,
+    messages_tx: mpsc::UnboundedSender<HandlerToContext>,
 }
 
-#[derive(Debug)]
-struct Framebuffer {
-    texture: Texture2d,
+/// Message from the handler to the context.
+enum HandlerToContext {
+    InterfaceMessage {
+        emitter_pid: Pid,
+        message: EncodedMessage,
+    },
+    ProcessDestroyed(Pid),
 }
-
-#[derive(Copy, Clone)]
-struct Vertex {
-    position: [f32; 2],
-    tex_coords: [f32; 2],
-}
-
-glium::implement_vertex!(Vertex, position, tex_coords);
 
 impl FramebufferContext {
+    /// Creates a new context for the framebuffers.
     pub fn new() -> FramebufferContext {
-        let event_loop = glium::glutin::event_loop::EventLoop::new();
-        let display = {
-            let wb = glium::glutin::window::WindowBuilder::new()
-                .with_inner_size(glium::glutin::dpi::LogicalSize::new(640.0, 480.0))
-                .with_title("redshirt");
-            let cb = glium::glutin::ContextBuilder::new();
-            glium::Display::new(wb, cb, &event_loop).unwrap()
-        };
-
-        let vertex_buffer = {
-            glium::VertexBuffer::new(
-                &display,
-                &[
-                    // Since the framebuffer interface sends texture data from top to bottom,
-                    // we accept having an upside down texture and invert the image.
-                    Vertex {
-                        position: [-1.0, 1.0],
-                        tex_coords: [0.0, 0.0],
-                    },
-                    Vertex {
-                        position: [-1.0, -1.0],
-                        tex_coords: [0.0, 1.0],
-                    },
-                    Vertex {
-                        position: [1.0, -1.0],
-                        tex_coords: [1.0, 1.0],
-                    },
-                    Vertex {
-                        position: [1.0, 1.0],
-                        tex_coords: [1.0, 0.0],
-                    },
-                ],
-            )
-            .unwrap()
-        };
-
-        let index_buffer = glium::IndexBuffer::new(
-            &display,
-            glium::index::PrimitiveType::TriangleStrip,
-            &[1 as u16, 2, 0, 3],
-        )
-        .unwrap();
-
-        let program = program!(&display,
-            140 => {
-                vertex: "
-                    #version 140
-                    in vec2 position;
-                    in vec2 tex_coords;
-                    out vec2 v_tex_coords;
-                    void main() {
-                        gl_Position = vec4(position, 0.0, 1.0);
-                        v_tex_coords = tex_coords;
-                    }
-                ",
-
-                fragment: "
-                    #version 140
-                    uniform sampler2D tex;
-                    in vec2 v_tex_coords;
-                    out vec4 f_color;
-                    void main() {
-                        f_color = texture(tex, v_tex_coords);
-                    }
-                "
-            },
-        )
-        .unwrap();
-
+        let event_loop = EventLoop::new();
         let (messages_tx, messages_rx) = mpsc::unbounded();
 
         FramebufferContext {
             event_loop,
-            inner: FramebufferContextInner {
-                display,
-                vertex_buffer,
-                index_buffer,
-                program,
-                messages_tx,
-                messages_rx,
-                framebuffers: Mutex::new(HashMap::new()),
-            },
+            messages_tx,
+            messages_rx,
         }
     }
 
@@ -163,150 +83,147 @@ impl FramebufferContext {
     /// > **Note**: The idea behind this function is to take control of the entire application.
     /// >           In particular, the `Future` is expected to produce a value as a way to shut
     /// >           down the entire program.
-    pub fn run<T>(self, future: impl Future<Output = T> + 'static) -> T {
-        let mut inner = self.inner;
+    pub fn run<T: 'static>(self, future: impl Future<Output = T> + 'static) -> T {
         let proxy = self.event_loop.create_proxy();
+        proxy.send_event(()).unwrap();
 
-        let mut future = Box::pin(future);
+        // Creates an implementation of the `Stream` trait that produces events.
+        enum LocalEvent<T> {
+            FromHandler(HandlerToContext),
+            FutureFinished(T),
+        }
+        let mut stream = Box::pin({
+            let main_future = stream::once(async move { LocalEvent::FutureFinished(future.await) });
 
-        self.event_loop.run(move |event, _, control_flow| {
-            let run_callback = match event.to_static() {
-                Some(glium::glutin::event::Event::NewEvents(cause)) => match cause {
-                    glium::glutin::event::StartCause::ResumeTimeReached { .. }
-                    | glium::glutin::event::StartCause::Init => true,
-                    _ => false,
-                },
-                Some(event) => {
-                    //events_buffer.push(event);
-                    false
-                }
-                None => {
-                    // Ignore this event.
-                    false
-                }
-            };
+            let receiver_events = self.messages_rx.map(LocalEvent::FromHandler);
 
-            inner.process_messages();
-            inner.draw();
+            stream::select(main_future, receiver_events)
+        });
 
-            let next_frame_time = Instant::now() + Duration::from_nanos(16666667);
-            *control_flow = glium::glutin::event_loop::ControlFlow::WaitUntil(next_frame_time);
+        // Active list of framebuffers.
+        let mut framebuffers = HashMap::<(Pid, u32), framebuffer::Framebuffer>::new();
 
-            // Polling the future to make progress.
-            {
-                struct Waker(Mutex<glium::glutin::event_loop::EventLoopProxy<()>>);
-                impl futures::task::ArcWake for Waker {
-                    fn wake_by_ref(arc_self: &Arc<Self>) {
-                        let _ = arc_self.0.lock().send_event(());
+        self.event_loop
+            .run(move |event, window_target, control_flow| {
+                match event {
+                    Event::RedrawRequested(window_id) => {
+                        framebuffers
+                            .values_mut()
+                            .find(|fb| fb.window_id() == window_id)
+                            .unwrap()
+                            .draw();
                     }
+                    Event::WindowEvent {
+                        window_id: _,
+                        event,
+                    } => {
+                        match event {
+                            WindowEvent::CloseRequested | WindowEvent::Destroyed => {
+                                // TODO: kill process?
+                            }
+                            _ => {}
+                        }
+                    }
+                    Event::RedrawEventsCleared => {
+                        // Waker that sends an event to the window when it is waken up.
+                        let waker = {
+                            struct Waker(Mutex<EventLoopProxy<()>>);
+                            impl futures::task::ArcWake for Waker {
+                                fn wake_by_ref(arc_self: &Arc<Self>) {
+                                    let _ = arc_self.0.lock().send_event(());
+                                }
+                            }
+                            futures::task::waker(Arc::new(Waker(Mutex::new(proxy.clone()))))
+                        };
+                        let mut context = Context::from_waker(&waker);
+
+                        while let Poll::Ready(ev) = stream.poll_next_unpin(&mut context) {
+                            let ev = match ev {
+                                Some(LocalEvent::FromHandler(ev)) => ev,
+                                Some(LocalEvent::FutureFinished(_)) | None => {
+                                    *control_flow = ControlFlow::Exit;
+                                    return;
+                                }
+                            };
+
+                            match ev {
+                                HandlerToContext::InterfaceMessage {
+                                    emitter_pid,
+                                    message,
+                                } => {
+                                    process_message(
+                                        emitter_pid,
+                                        message,
+                                        &window_target,
+                                        &mut framebuffers,
+                                    );
+                                }
+                                HandlerToContext::ProcessDestroyed(pid) => {
+                                    framebuffers.retain(|(p, _), _| *p != pid)
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
                 }
-                let waker = futures::task::waker(Arc::new(Waker(Mutex::new(proxy.clone()))));
-                match future.poll_unpin(&mut Context::from_waker(&waker)) {
-                    Poll::Ready(val) => unimplemented!(), // TODO:
-                    Poll::Pending => {}
-                }
-            }
-        })
+            })
     }
 }
 
-impl FramebufferContextInner {
-    fn draw(&mut self) {
-        let mut target = self.display.draw();
-        target.clear_color(0.0, 0.0, 0.0, 0.0);
-        if let Some(fb) = self.framebuffers.lock().values().next() {
-            let uniforms = uniform! {
-                tex: &fb.texture,
-            };
-            target
-                .draw(
-                    &self.vertex_buffer,
-                    &self.index_buffer,
-                    &self.program,
-                    &uniforms,
-                    &Default::default(),
-                )
-                .unwrap();
-        }
-        target.finish().unwrap();
+fn process_message<T>(
+    emitter_pid: Pid,
+    message: EncodedMessage,
+    window_target: &EventLoopWindowTarget<T>,
+    framebuffers: &mut HashMap<(Pid, u32), framebuffer::Framebuffer>,
+) {
+    if message.0.len() < 1 {
+        return;
     }
 
-    fn process_messages(&mut self) {
-        while let Some(Some((emitter_pid, message))) = self.messages_rx.next().now_or_never() {
-            if message.0.len() < 1 {
-                continue;
+    match message.0[0] {
+        0 => {
+            // Create framebuffer message.
+            if message.0.len() != 13 {
+                return;
             }
 
-            match message.0[0] {
-                0 => {
-                    // Create framebuffer message.
-                    if message.0.len() != 13 {
-                        continue;
-                    }
-
-                    let fb_id = u32::from_le_bytes(<[u8; 4]>::try_from(&message.0[1..5]).unwrap());
-                    let width = u32::from_le_bytes(<[u8; 4]>::try_from(&message.0[5..9]).unwrap());
-                    let height =
-                        u32::from_le_bytes(<[u8; 4]>::try_from(&message.0[9..13]).unwrap());
-                    if let Entry::Vacant(entry) =
-                        self.framebuffers.lock().entry((emitter_pid, fb_id))
-                    {
-                        entry.insert(Framebuffer {
-                            texture: Texture2d::empty(&self.display, width, height).unwrap(),
-                        });
-                    }
-                }
-                1 => {
-                    // Destroy framebuffer message.
-                    if message.0.len() != 5 {
-                        continue;
-                    }
-
-                    let fb_id = u32::from_le_bytes(<[u8; 4]>::try_from(&message.0[1..5]).unwrap());
-                    self.framebuffers.lock().remove(&(emitter_pid, fb_id));
-                }
-                2 => {
-                    // Update framebuffer message.
-                    if message.0.len() < 5 {
-                        continue;
-                    }
-
-                    let fb_id = u32::from_le_bytes(<[u8; 4]>::try_from(&message.0[1..5]).unwrap());
-                    let framebuffers = self.framebuffers.lock();
-                    let framebuffer = match framebuffers.get(&(emitter_pid, fb_id)) {
-                        Some(fb) => fb,
-                        None => continue,
-                    };
-
-                    if u32::try_from(message.0.len())
-                        != Ok(5u32.saturating_add(
-                            3u32.saturating_mul(framebuffer.texture.width())
-                                .saturating_mul(framebuffer.texture.height()),
-                        ))
-                    {
-                        continue;
-                    }
-
-                    let rect = glium::Rect {
-                        left: 0,
-                        bottom: 0,
-                        width: framebuffer.texture.width(),
-                        height: framebuffer.texture.height(),
-                    };
-
-                    framebuffer.texture.write(
-                        rect,
-                        RawImage2d {
-                            data: Cow::Borrowed(&message.0[5..]),
-                            width: framebuffer.texture.width(),
-                            height: framebuffer.texture.height(),
-                            format: ClientFormat::U8U8U8,
-                        },
-                    );
-                }
-                _ => {}
+            let fb_id = u32::from_le_bytes(<[u8; 4]>::try_from(&message.0[1..5]).unwrap());
+            let width = u32::from_le_bytes(<[u8; 4]>::try_from(&message.0[5..9]).unwrap());
+            let height = u32::from_le_bytes(<[u8; 4]>::try_from(&message.0[9..13]).unwrap());
+            if let Entry::Vacant(entry) = framebuffers.entry((emitter_pid, fb_id)) {
+                let title = format!("redshirt - {:?} - framebuffer#{}", emitter_pid, fb_id);
+                entry.insert(framebuffer::Framebuffer::new(
+                    window_target,
+                    &title,
+                    width,
+                    height,
+                ));
             }
         }
+        1 => {
+            // Destroy framebuffer message.
+            if message.0.len() != 5 {
+                return;
+            }
+
+            let fb_id = u32::from_le_bytes(<[u8; 4]>::try_from(&message.0[1..5]).unwrap());
+            framebuffers.remove(&(emitter_pid, fb_id));
+        }
+        2 => {
+            // Update framebuffer message.
+            if message.0.len() < 5 {
+                return;
+            }
+
+            let fb_id = u32::from_le_bytes(<[u8; 4]>::try_from(&message.0[1..5]).unwrap());
+            let framebuffer = match framebuffers.get_mut(&(emitter_pid, fb_id)) {
+                Some(fb) => fb,
+                None => return,
+            };
+
+            framebuffer.set_data(&message.0[5..]);
+        }
+        _ => {}
     }
 }
 
@@ -316,7 +233,7 @@ impl FramebufferHandler {
     /// The framebuffers will be rendered to the context passed as parameter.
     pub fn new(ctxt: &FramebufferContext) -> Self {
         FramebufferHandler {
-            messages_tx: ctxt.inner.messages_tx.clone(),
+            messages_tx: ctxt.messages_tx.clone(),
             registered: atomic::AtomicBool::new(false),
         }
     }
@@ -355,12 +272,17 @@ impl<'a> NativeProgramRef<'a> for &'a FramebufferHandler {
     ) {
         debug_assert_eq!(interface, INTERFACE);
         self.messages_tx
-            .unbounded_send((emitter_pid, message))
+            .unbounded_send(HandlerToContext::InterfaceMessage {
+                emitter_pid,
+                message,
+            })
             .unwrap();
     }
 
     fn process_destroyed(self, pid: Pid) {
-        // TODO: inform the context
+        self.messages_tx
+            .unbounded_send(HandlerToContext::ProcessDestroyed(pid))
+            .unwrap();
     }
 
     fn message_response(self, _: MessageId, _: Result<EncodedMessage, ()>) {
