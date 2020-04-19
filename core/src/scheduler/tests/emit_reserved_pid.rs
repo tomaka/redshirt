@@ -108,7 +108,7 @@ fn emit_reserved_pid() {
     core.set_interface_handler(interface.clone(), reserved_pid)
         .unwrap();
 
-    let pid = core.execute(&module).unwrap().pid();
+    let pid = core.execute(&module).unwrap().0.pid();
 
     match core.run().now_or_never() {
         Some(CoreRunOutcome::ReservedPidInterfaceMessage {
