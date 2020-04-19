@@ -46,8 +46,7 @@ struct CliOptions {
     background_module_hash: Vec<ModuleHash>,
 }
 
-#[async_std::main]
-async fn main() {
+fn main() {
     let cli_opts = CliOptions::from_args();
 
     let mut cli_requested_processes = Vec::new();
@@ -66,10 +65,15 @@ async fn main() {
         cli_requested_processes.push((module_path, module, false));
     }
 
+    let framebuffer_context = redshirt_framebuffer_hosted::FramebufferContext::new();
+
     let system = redshirt_core::system::SystemBuilder::new()
         .with_native_program(redshirt_time_hosted::TimerHandler::new())
         .with_native_program(redshirt_tcp_hosted::TcpHandler::new())
         .with_native_program(redshirt_log_hosted::LogHandler::new())
+        .with_native_program(redshirt_framebuffer_hosted::FramebufferHandler::new(
+            &framebuffer_context,
+        ))
         .with_native_program(redshirt_random_hosted::RandomNativeProgram::new())
         .with_startup_process(build_wasm_module!(
             "../../../modules/p2p-loader",
@@ -115,25 +119,27 @@ async fn main() {
     }
 
     // All the background tasks events are grouped together and sent here.
-    while let Some(event) = rx.next().await {
-        match event {
-            redshirt_core::system::SystemRunOutcome::ProgramFinished {
-                pid,
-                outcome: Err(err),
-            } if cli_pids.iter().any(|p| *p == pid) => {
-                eprintln!("{:?}", err);
-                process::exit(1);
-            }
-            redshirt_core::system::SystemRunOutcome::ProgramFinished {
-                pid,
-                outcome: Ok(()),
-            } => {
-                cli_pids.retain(|p| *p != pid);
-                if cli_pids.is_empty() {
-                    process::exit(0);
+    framebuffer_context.run(async move {
+        while let Some(event) = rx.next().await {
+            match event {
+                redshirt_core::system::SystemRunOutcome::ProgramFinished {
+                    pid,
+                    outcome: Err(err),
+                } if cli_pids.iter().any(|p| *p == pid) => {
+                    eprintln!("{:?}", err);
+                    process::exit(1);
                 }
+                redshirt_core::system::SystemRunOutcome::ProgramFinished {
+                    pid,
+                    outcome: Ok(()),
+                } => {
+                    cli_pids.retain(|p| *p != pid);
+                    if cli_pids.is_empty() {
+                        process::exit(0);
+                    }
+                }
+                _ => panic!(),
             }
-            _ => panic!(),
         }
-    }
+    });
 }
