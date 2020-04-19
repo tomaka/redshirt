@@ -202,8 +202,8 @@ impl FramebufferContext {
                 }
                 let waker = futures::task::waker(Arc::new(Waker(Mutex::new(proxy.clone()))));
                 match future.poll_unpin(&mut Context::from_waker(&waker)) {
-                    Poll::Ready(val) => unimplemented!(),       // TODO:
-                    Poll::Pending => {},
+                    Poll::Ready(val) => unimplemented!(), // TODO:
+                    Poll::Pending => {}
                 }
             }
         })
