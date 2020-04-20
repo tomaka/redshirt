@@ -279,7 +279,6 @@ impl<TSockUd> NetInterfaceState<TSockUd> {
             }
 
             // Errors, other than `Unrecognized`, are meant to be logged and ignored.
-            //log::trace!("Polling smoltcp with {} sockets", self.sockets.iter().count());
             match self.ethernet.poll(&mut self.sockets, now().await) {
                 Ok(true) => log::trace!("Something changed!"), // TODO: remove this line
                 Ok(false) => {}
@@ -295,7 +294,11 @@ impl<TSockUd> NetInterfaceState<TSockUd> {
             // TODO: handle `next_poll`
             if let Some(dhcp_v4_client) = &mut self.dhcp_v4_client {
                 match dhcp_v4_client.poll(&mut self.ethernet, &mut self.sockets, now().await) {
-                    Err(err) => panic!("{:?}", err), // TODO:
+                    // TODO: is it normal to get Unrecognized packets here?
+                    Err(smoltcp::Error::Unrecognized) => {}
+                    Err(err) => {
+                        log::trace!("Error while polling DHCP client: {:?}", err);
+                    }
                     Ok(None) => {}
                     Ok(Some(config)) => panic!("got result: {:?}", config),
                 }

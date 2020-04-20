@@ -132,6 +132,7 @@ async fn async_main() {
                     network.unregister_interface(&(msg.emitter_pid, id));
                 }
                 net_ffi::NetworkMessage::InterfaceOnData(id, buf) => {
+                    //log::trace!("Incoming data: {:?}", buf);
                     network.inject_interface_data(&(msg.emitter_pid, id), buf);
                     if let Some(message_id) = msg.message_id {
                         redshirt_syscalls::emit_answer(message_id, &());
