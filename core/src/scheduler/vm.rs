@@ -13,7 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::module::Module;
+use crate::{module::Module, primitives::Signature, ValueType, WasmValue};
+
 use alloc::{
     borrow::{Cow, ToOwned as _},
     boxed::Box,
@@ -138,7 +139,7 @@ pub enum ExecOutcome<'a, T> {
         thread_index: usize,
 
         /// Return value of the thread function.
-        return_value: Option<wasmi::RuntimeValue>,
+        return_value: Option<WasmValue>,
 
         /// User data that was stored within the thread.
         user_data: T,
@@ -162,7 +163,7 @@ pub enum ExecOutcome<'a, T> {
         id: usize,
 
         /// Parameters of the function call.
-        params: Vec<wasmi::RuntimeValue>,
+        params: Vec<WasmValue>,
     },
 
     /// The currently-executed function has finished with an error. The state machine is now in a
@@ -213,9 +214,9 @@ pub enum RunErr {
     /// Passed a wrong value back.
     BadValueTy {
         /// Type of the value that was expected.
-        expected: Option<wasmi::ValueType>,
+        expected: Option<ValueType>,
         /// Type of the value that was actually passed.
-        obtained: Option<wasmi::ValueType>,
+        obtained: Option<ValueType>,
     },
 }
 
@@ -232,10 +233,10 @@ impl<T> ProcessStateMachine<T> {
     pub fn new(
         module: &Module,
         main_thread_user_data: T,
-        mut symbols: impl FnMut(&str, &str, &wasmi::Signature) -> Result<usize, ()>,
+        mut symbols: impl FnMut(&str, &str, &Signature) -> Result<usize, ()>,
     ) -> Result<Self, NewErr> {
         struct ImportResolve<'a>(
-            RefCell<&'a mut dyn FnMut(&str, &str, &wasmi::Signature) -> Result<usize, ()>>,
+            RefCell<&'a mut dyn FnMut(&str, &str, &Signature) -> Result<usize, ()>>,
         );
         impl<'a> wasmi::ImportResolver for ImportResolve<'a> {
             fn resolve_func(
@@ -245,7 +246,7 @@ impl<T> ProcessStateMachine<T> {
                 signature: &wasmi::Signature,
             ) -> Result<wasmi::FuncRef, wasmi::Error> {
                 let closure = &mut **self.0.borrow_mut();
-                let index = match closure(module_name, field_name, signature) {
+                let index = match closure(module_name, field_name, &From::from(signature)) {
                     Ok(i) => i,
                     Err(_) => {
                         return Err(wasmi::Error::Instantiation(format!(
@@ -332,21 +333,10 @@ impl<T> ProcessStateMachine<T> {
             threads: SmallVec::new(),
         };
 
-        // Try to start executing `_start` or `main`.
-        // TODO: executing `main` is a hack right now in order to support wasm32-unknown-unknown which doesn't have
-        // a `_start` function
+        // Try to start executing `_start`.
         match state_machine.start_thread_by_name("_start", &[][..], main_thread_user_data) {
             Ok(_) => {}
-            Err((StartErr::FunctionNotFound, user_data)) => {
-                static ARGC_ARGV: [wasmi::RuntimeValue; 2] =
-                    [wasmi::RuntimeValue::I32(0), wasmi::RuntimeValue::I32(0)];
-                match state_machine.start_thread_by_name("main", &ARGC_ARGV[..], user_data) {
-                    Ok(_) => {}
-                    Err((StartErr::FunctionNotFound, _)) => return Err(NewErr::StartNotFound),
-                    Err((StartErr::Poisoned, _)) => unreachable!(),
-                    Err((StartErr::NotAFunction, _)) => return Err(NewErr::StartIsntAFunction),
-                }
-            }
+            Err((StartErr::FunctionNotFound, _)) => return Err(NewErr::StartNotFound),
             Err((StartErr::Poisoned, _)) => unreachable!(),
             Err((StartErr::NotAFunction, _)) => return Err(NewErr::StartIsntAFunction),
         };
@@ -370,7 +360,7 @@ impl<T> ProcessStateMachine<T> {
     pub fn start_thread_by_id(
         &mut self,
         function_id: u32,
-        params: impl Into<Cow<'static, [wasmi::RuntimeValue]>>,
+        params: impl IntoIterator<Item = WasmValue>,
         user_data: T,
     ) -> Result<Thread<T>, StartErr> {
         if self.is_poisoned {
@@ -384,6 +374,11 @@ impl<T> ProcessStateMachine<T> {
             .and_then(|t| t.get(function_id).ok())
             .and_then(|f| f)
             .ok_or(StartErr::FunctionNotFound)?;
+
+        let params = params
+            .into_iter()
+            .map(wasmi::RuntimeValue::from)
+            .collect::<Vec<_>>();
 
         let execution = match wasmi::FuncInstance::invoke_resumable(&function, params) {
             Ok(e) => e,
@@ -526,7 +521,7 @@ impl<'a, T> Thread<'a, T> {
     /// a value of `None`.
     /// If, however, you call this function after a previous call to [`run`](Thread::run) that was
     /// interrupted by an external function call, then you must pass back the outcome of that call.
-    pub fn run(mut self, value: Option<wasmi::RuntimeValue>) -> Result<ExecOutcome<'a, T>, RunErr> {
+    pub fn run(mut self, value: Option<WasmValue>) -> Result<ExecOutcome<'a, T>, RunErr> {
         struct DummyExternals;
         impl wasmi::Externals for DummyExternals {
             fn invoke_index(
@@ -565,20 +560,20 @@ impl<'a, T> Thread<'a, T> {
             None => unreachable!(),
         };
         let result = if thread_state.interrupted {
-            let expected_ty = execution.resumable_value_type();
-            let obtained_ty = value.as_ref().map(|v| v.value_type());
+            let expected_ty = execution.resumable_value_type().map(ValueType::from);
+            let obtained_ty = value.as_ref().map(|v| v.ty());
             if expected_ty != obtained_ty {
                 return Err(RunErr::BadValueTy {
                     expected: expected_ty,
                     obtained: obtained_ty,
                 });
             }
-            execution.resume_execution(value, &mut DummyExternals)
+            execution.resume_execution(value.map(From::from), &mut DummyExternals)
         } else {
             if value.is_some() {
                 return Err(RunErr::BadValueTy {
                     expected: None,
-                    obtained: value.as_ref().map(|v| v.value_type()),
+                    obtained: value.as_ref().map(|v| v.ty()),
                 });
             }
             thread_state.interrupted = true;
@@ -594,7 +589,7 @@ impl<'a, T> Thread<'a, T> {
                 }
                 Ok(ExecOutcome::ThreadFinished {
                     thread_index: self.index,
-                    return_value,
+                    return_value: return_value.map(From::from),
                     user_data,
                 })
             }
@@ -612,7 +607,7 @@ impl<'a, T> Thread<'a, T> {
                 Ok(ExecOutcome::Interrupted {
                     thread: self,
                     id: interrupt.index,
-                    params: interrupt.args.clone(),
+                    params: interrupt.args.iter().map(|v| From::from(*v)).collect(),
                 })
             }
             Err(wasmi::ResumableError::Trap(trap)) => {
@@ -696,7 +691,7 @@ impl fmt::Display for RunErr {
 #[cfg(test)]
 mod tests {
     use super::{ExecOutcome, NewErr, ProcessStateMachine};
-    use crate::module::Module;
+    use crate::primitives::WasmValue;
 
     #[test]
     fn starts_if_main() {
@@ -745,7 +740,7 @@ mod tests {
             ProcessStateMachine::new(&module, (), |_, _, _| unreachable!()).unwrap();
         match state_machine.thread(0).unwrap().run(None) {
             Ok(ExecOutcome::ThreadFinished {
-                return_value: Some(wasmi::RuntimeValue::I32(5)),
+                return_value: Some(WasmValue::I32(5)),
                 ..
             }) => {}
             _ => panic!(),
@@ -778,10 +773,10 @@ mod tests {
         match state_machine
             .thread(0)
             .unwrap()
-            .run(Some(wasmi::RuntimeValue::I32(2227)))
+            .run(Some(WasmValue::I32(2227)))
         {
             Ok(ExecOutcome::ThreadFinished {
-                return_value: Some(wasmi::RuntimeValue::I32(2227)),
+                return_value: Some(WasmValue::I32(2227)),
                 ..
             }) => {}
             _ => panic!(),

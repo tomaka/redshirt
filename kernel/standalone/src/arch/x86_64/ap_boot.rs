@@ -30,9 +30,12 @@
 use crate::arch::x86_64::apic::{local::LocalApicsControl, timers::Timers, ApicId};
 use crate::arch::x86_64::{executor, interrupts};
 
-use alloc::{alloc::Layout, boxed::Box};
-use core::{convert::TryFrom as _, ops::Range, ptr, slice, time::Duration};
-use futures::channel::oneshot;
+use alloc::{
+    alloc::{AllocInit, Layout},
+    boxed::Box,
+};
+use core::{convert::TryFrom as _, fmt, ops::Range, ptr, slice, time::Duration};
+use futures::{channel::oneshot, prelude::*};
 
 /// Allocator required by the [`boot_associated_processor`] function.
 pub struct ApBootAlloc {
@@ -68,14 +71,8 @@ pub unsafe fn filter_build_ap_boot_alloc<'a>(
     // value from `_ap_boot_end - _ap_boot_start`.
     const WANTED: usize = 0x4000;
 
-    ranges.filter_map(move |mut range| {
+    ranges.filter_map(move |range| {
         if alloc.is_none() {
-            // FIXME: this is a hack because in practice our RAM starts at 0.
-            // FIXME: this should probably instead be fixed in the linked_list_allocator
-            if range.start == 0 {
-                range.start = 1;
-            }
-
             let range_size = range.end.checked_sub(range.start).unwrap();
             if range.start.saturating_add(WANTED) <= 0x100000 && range_size >= WANTED {
                 *alloc = Some(ApBootAlloc {
@@ -90,6 +87,21 @@ pub unsafe fn filter_build_ap_boot_alloc<'a>(
 
         Some(range)
     })
+}
+
+/// Error that can happen during initialization.
+#[derive(Debug, Clone)]
+pub enum Error {
+    /// Associated processor is unresponsive.
+    Timeout,
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Error::Timeout => write!(f, "associated processor is unresponsive"),
+        }
+    }
 }
 
 /// Bootstraps the given processor, making it execute `boot_code`.
@@ -121,7 +133,7 @@ pub unsafe fn boot_associated_processor(
     timers: &Timers,
     target: ApicId,
     boot_code: impl FnOnce() -> core::convert::Infallible + Send + 'static,
-) {
+) -> Result<(), Error> {
     // In order to boot an associated processor, we must send to it an inter-processor interrupt
     // (IPI) containing the offset of a 4kiB memory page containing the code that it must start
     // executing. The CS register of the target processor will take the value that we send, the
@@ -135,9 +147,6 @@ pub unsafe fn boot_associated_processor(
     // Instead, what we must do is allocate a buffer below that one megabyte limit, write some
     // x86 machine code in that buffer, and then we can ask the processor to run it. This is
     // implemented by copying a template code into that buffer and tweaking the constants.
-    //
-    // The template in question is located in the `ap_boot.S` file. See also the documentation
-    // there.
 
     // We start by allocating the buffer where to write the bootstrap code.
     let mut bootstrap_code_buf = {
@@ -153,7 +162,8 @@ pub unsafe fn boot_associated_processor(
     // Start by sending an INIT IPI to the target so that it reboots.
     local_apics.send_interprocessor_init(target);
 
-    let rdtsc = core::arch::x86_64::_rdtsc(); // TODO: crappy code
+    // Later we will wait for 10ms to have elapsed since the INIT.
+    let wait_after_init = timers.register_tsc_timer(Duration::from_millis(10));
 
     // Write the template code to the buffer.
     ptr::copy_nonoverlapping(
@@ -164,7 +174,7 @@ pub unsafe fn boot_associated_processor(
 
     // Later, we will want to wait until the AP has finished initializing. To do so, we create
     // a channel and modify `boot_code` to signal that channel before doing anything more.
-    let (boot_code, init_finished_future) = {
+    let (boot_code, mut init_finished_future) = {
         let (tx, rx) = oneshot::channel();
         let boot_code = move || {
             local_apics.init_local();
@@ -286,25 +296,157 @@ pub unsafe fn boot_associated_processor(
     }
 
     // Wait for 10ms to have elapsed since we sent the INIT IPI.
-    executor.block_on(timers.register_tsc_timer(Duration::from_millis(10)));
+    executor.block_on(wait_after_init);
 
-    // Send the SINIT IPI, pointing to the bootstrap code that we have carefully crafted.
-    local_apics.send_interprocessor_sipi(target, bootstrap_code_buf.as_mut_ptr() as *const _);
+    // Because the APIC doesn't automatically try submitting the SIPI in case the target CPU was
+    // busy, we might have to try multiple times.
+    let mut attempts = 0;
+    let result = loop {
+        // Failure to initialize.
+        if attempts >= 2 {
+            // Before returning an error, we free the closure that was destined to be run by
+            // the AP.
+            let param = ap_after_boot_param as ApAfterBootParam;
+            let _ = Box::from_raw(param);
+            break Err(Error::Timeout);
+        }
+        attempts += 1;
 
-    // TODO: the APIC doesn't automatically try resubmitting the SIPI in case the target CPU was
-    //       busy, so we should send a second SIPI if the first one timed out
-    //       (the Intel manual also recommends doing so)
-    //       this is however tricky, as we have to make sure we're not sending the second SIPI
-    //       if the first one succeeded
-    /*let rdtsc = unsafe { core::arch::x86_64::_rdtsc() };
-    executor::block_on(local_apics, timers.register_tsc_timer(rdtsc + 1_000_000_000));
-    local_apics.send_interprocessor_sipi(target, bootstrap_code_buf.as_mut_ptr() as *const _);*/
+        // Send the SINIT IPI, pointing to the bootstrap code that we have carefully crafted.
+        local_apics.send_interprocessor_sipi(target, bootstrap_code_buf.as_mut_ptr() as *const _);
 
-    // Wait for CPU initialization to finish.
-    executor.block_on(init_finished_future).unwrap();
+        // Wait for the processor initialization to finish, but with a timeout in order to not
+        // wait forever if nothing happens.
+        let ap_ready_timeout = timers.register_tsc_timer(Duration::from_secs(1));
+        futures::pin_mut!(ap_ready_timeout);
+        match executor.block_on(future::select(ap_ready_timeout, &mut init_finished_future)) {
+            future::Either::Left(_) => continue,
+            future::Either::Right(_) => break Ok(()),
+        }
+    };
 
     // Make sure the buffer is dropped at the end.
     drop(bootstrap_code_buf);
+
+    result
+}
+
+// The code here is the template in question. Just like any code, is included in the kernel and
+// will be loaded in memory. However, it is not actually meant be executed. Instead it is meant
+// to be used as a template.
+// Because the associated processor (AP) boot code must be in the first megabyte of memory, we
+// first copy this code somewhere in this first megabyte and adjust it.
+//
+// The `_ap_boot_start` and `_ap_boot_end` symbols encompass the template, so that `ap_boot.rs`
+// can copy it. There exist three other symbols `_ap_boot_marker1`, `_ap_boot_marker2` and
+// `_ap_boot_marker3` that point to instructions that must be adjusted before execution.
+//
+// Within this module, we must be careful to not use any absolute address referring to anything
+// between `_ap_boot_start` and `_ap_boot_end`, and to not use any relative address referring to
+// anything outside of this range, as the addresses will then be wrong when the code gets copied.
+global_asm! {r#"
+.code16
+.align 0x1000
+.global _ap_boot_start
+.type _ap_boot_start, @function
+_ap_boot_start:
+    // When we enter here, the CS register is set to the value that we passed through the SIPI,
+    // and the IP register is set to `0`.
+
+    movw %cs, %ax
+    movw %ax, %ds
+    movw %ax, %es
+    movw %ax, %fs
+    movw %ax, %gs
+    movw %ax, %ss
+
+    movl $0, %eax
+    or $(1 << 10), %eax             // Set SIMD floating point exceptions bit.
+    or $(1 << 9), %eax              // Set OSFXSR bit, which enables SIMD.
+    or $(1 << 5), %eax              // Set physical address extension (PAE) bit.
+    movl %eax, %cr4
+
+.global _ap_boot_marker3
+_ap_boot_marker3:
+    // The `0xff00badd` constant below is replaced with the address of a PML4 table when the
+    // template gets adjusted.
+    mov $0xff00badd, %edx
+    mov %edx, %cr3
+
+    // Enable the EFER.LMA bit, which enables compatibility mode and will make us switch to long
+    // mode when we update the CS register.
+    mov $0xc0000080, %ecx
+    rdmsr
+    or $(1 << 8), %eax
+    wrmsr
+
+    // Set the appropriate CR0 flags: Paging, Extension Type (math co-processor), and
+    // Protected Mode.
+    movl $((1 << 31) | (1 << 4) | (1 << 0)), %eax
+    movl %eax, %cr0
+
+    // Set up the GDT. Since the absolute address of `_ap_boot_start` is effectively 0 according
+    // to the CPU in this 16 bits context, we pass an "absolute" address to `_ap_gdt_ptr` by
+    // substracting `_ap_boot_start` from its 32 bits address.
+    lgdtl (_ap_gdt_ptr - _ap_boot_start)
+
+.global _ap_boot_marker1
+_ap_boot_marker1:
+    // A long jump is necessary in order to update the CS registry and properly switch to
+    // long mode.
+    // The `0xdeaddead` constant below is replaced with the location of `_ap_boot_marker2` when
+    // the template gets adjusted.
+    ljmpl $8, $0xdeaddead
+
+.code64
+.global _ap_boot_marker2
+.type _ap_boot_marker2, @function
+_ap_boot_marker2:
+    // The constants below are replaced with an actual stack location when the template gets
+    // adjusted.
+    // Set up the stack.
+    movq $0x1234567890abcdef, %rsp
+    // This is an opaque value for the purpose of this assembly code. It is the parameter that we
+    // pass to `ap_after_boot`
+    movq $0x9999cccc2222ffff, %rax
+
+    movw $0, %bx
+    movw %bx, %ds
+    movw %bx, %es
+    movw %bx, %fs
+    movw %bx, %gs
+    movw %bx, %ss
+
+    // In the x86-64 calling convention, the RDI register is used to store the value of the first
+    // parameter to pass to a function.
+    movq %rax, %rdi
+
+    // We do an indirect call in order to force the assembler to use the absolute address rather
+    // than a relative call.
+    mov $ap_after_boot, %rdx
+    call *%rdx
+
+    cli
+    hlt
+
+// Small structure whose location is passed to the CPU in order to load the GDT.
+.align 8
+_ap_gdt_ptr:
+    .short 15
+    .long gdt_table
+
+.global _ap_boot_end
+.type _ap_boot_end, @function
+_ap_boot_end:
+    nop
+"#}
+
+extern "C" {
+    fn _ap_boot_start();
+    fn _ap_boot_marker1();
+    fn _ap_boot_marker2();
+    fn _ap_boot_marker3();
+    fn _ap_boot_end();
 }
 
 /// Holds an allocation with the given layout.
@@ -319,13 +461,11 @@ struct Allocation<'a, T: alloc::alloc::AllocRef> {
 
 impl<'a, T: alloc::alloc::AllocRef> Allocation<'a, T> {
     fn new(alloc: &'a mut T, layout: Layout) -> Self {
-        unsafe {
-            let (buf, _) = alloc.alloc(layout).unwrap();
-            Allocation {
-                alloc,
-                inner: buf,
-                layout,
-            }
+        let block = alloc.alloc(layout, AllocInit::Uninitialized).unwrap();
+        Allocation {
+            alloc,
+            inner: block.ptr,
+            layout,
         }
     }
 
@@ -347,7 +487,7 @@ impl<'a, T: alloc::alloc::AllocRef> Drop for Allocation<'a, T> {
 /// Actual type of the parameter passed to `ap_after_boot`.
 type ApAfterBootParam = *mut Box<dyn FnOnce() -> core::convert::Infallible + Send + 'static>;
 
-/// Called by `ap_boot.S` after setup.
+/// Called by the template code after setup.
 ///
 /// When this function is called, the stack and paging have already been properly set up. The
 /// first parameter is gathered from the `rdi` register according to the x86_64 calling
@@ -357,17 +497,7 @@ extern "C" fn ap_after_boot(to_exec: usize) -> ! {
     unsafe {
         let to_exec = to_exec as ApAfterBootParam;
         let to_exec = Box::from_raw(to_exec);
-        let ret = (*to_exec)();
-        match ret {} // TODO: remove this `ret` thingy once `!` is stable
+        let _ret = (*to_exec)();
+        match _ret {} // TODO: remove this `ret` thingy once `!` is stable
     }
-}
-
-/// See the documentation in `ap_boot.S`.
-#[link(name = "apboot")]
-extern "C" {
-    fn _ap_boot_start();
-    fn _ap_boot_marker1();
-    fn _ap_boot_marker2();
-    fn _ap_boot_marker3();
-    fn _ap_boot_end();
 }

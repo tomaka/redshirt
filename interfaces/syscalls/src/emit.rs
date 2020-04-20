@@ -19,24 +19,25 @@ use core::{
     fmt,
     marker::PhantomData,
     mem::MaybeUninit,
+    num::NonZeroU64,
     pin::Pin,
     task::{Context, Poll},
 };
 use futures::prelude::*;
 use generic_array::{
     sequence::Concat as _,
-    typenum::consts::{U0, U8},
+    typenum::consts::{U0, U2},
     ArrayLength, GenericArray,
 };
 
 /// Prototype for a message in construction.
 ///
 /// Use this struct if you want to send out a message split between multiple slices.
-pub struct MessageBuilder<'a, TLen: ArrayLength<u8>> {
+pub struct MessageBuilder<'a, TLen: ArrayLength<u32>> {
     /// Parameter for the FFI function.
     allow_delay: bool,
     /// Array of slices, passed to the FFI function.
-    array: GenericArray<u8, TLen>,
+    array: GenericArray<u32, TLen>,
     /// Pin the lifetime. The lifetime corresponds to the lifetime of buffers pointer to
     /// within `array`.
     marker: PhantomData<&'a ()>,
@@ -55,7 +56,7 @@ impl<'a> MessageBuilder<'a, U0> {
 
 impl<'a, TLen> MessageBuilder<'a, TLen>
 where
-    TLen: ArrayLength<u8>,
+    TLen: ArrayLength<u32>,
 {
     /// If called, emitting the message will fail if no interface handler is available. Otherwise,
     /// emitting the message will block the thread until a handler is available.
@@ -70,8 +71,8 @@ where
     /// >           itself.
     pub fn add_data<TOutLen>(self, buffer: &'a EncodedMessage) -> MessageBuilder<'a, TOutLen>
     where
-        TLen: core::ops::Add<U8, Output = TOutLen>,
-        TOutLen: ArrayLength<u8>,
+        TLen: core::ops::Add<U2, Output = TOutLen>,
+        TOutLen: ArrayLength<u32>,
     {
         self.add_data_raw(&buffer.0)
     }
@@ -82,16 +83,12 @@ where
     /// >           itself.
     pub fn add_data_raw<TOutLen>(self, buffer: &'a [u8]) -> MessageBuilder<'a, TOutLen>
     where
-        TLen: core::ops::Add<U8, Output = TOutLen>,
-        TOutLen: ArrayLength<u8>,
+        TLen: core::ops::Add<U2, Output = TOutLen>,
+        TOutLen: ArrayLength<u32>,
     {
-        let mut new_pair = GenericArray::<u8, U8>::default();
-        new_pair[0..4].copy_from_slice(
-            &u32::try_from(buffer.as_ptr() as usize)
-                .unwrap()
-                .to_le_bytes(),
-        );
-        new_pair[4..8].copy_from_slice(&u32::try_from(buffer.len()).unwrap().to_le_bytes());
+        let mut new_pair = GenericArray::<u32, U2>::default();
+        new_pair[0] = u32::try_from(buffer.as_ptr() as usize).unwrap();
+        new_pair[1] = u32::try_from(buffer.len()).unwrap();
 
         MessageBuilder {
             allow_delay: self.allow_delay,
@@ -159,7 +156,7 @@ where
         let ret = crate::ffi::emit_message(
             interface as *const InterfaceHash as *const _,
             self.array.as_ptr(),
-            u32::try_from(self.array.len() / 8).unwrap(),
+            u32::try_from(self.array.len() / 2).unwrap(),
             needs_answer,
             self.allow_delay,
             message_id_out.as_mut_ptr(),
@@ -170,7 +167,9 @@ where
         }
 
         if needs_answer {
-            Ok(Some(MessageId::from(message_id_out.assume_init())))
+            Ok(Some(MessageId::from(NonZeroU64::new_unchecked(
+                message_id_out.assume_init(),
+            ))))
         } else {
             Ok(None)
         }
@@ -194,7 +193,7 @@ impl<'a> Default for MessageBuilder<'a, U0> {
 
 impl<'a, TLen> fmt::Debug for MessageBuilder<'a, TLen>
 where
-    TLen: ArrayLength<u8>,
+    TLen: ArrayLength<u32>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_tuple("MessageBuilder").finish()

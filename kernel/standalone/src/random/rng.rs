@@ -82,7 +82,6 @@ impl KernelRng {
             jitter.fill_bytes(&mut jitter_bytes);
             hasher.update(&jitter_bytes[..]);
             add_hardware_entropy(&mut hasher);
-            let mut chacha_seed = [0; 32];
             <[u8; 32]>::from(hasher.finalize())
         };
 

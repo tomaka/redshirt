@@ -16,6 +16,7 @@
 use crate::{EncodedMessage, InterfaceHash, MessageId, Pid};
 
 use alloc::vec::Vec;
+use core::num::NonZeroU64;
 
 #[cfg(target_arch = "wasm32")] // TODO: we should have a proper operating system name instead
 #[link(wasm_import_module = "redshirt")]
@@ -43,7 +44,7 @@ extern "C" {
     /// notifications for a notification that fits in `out_len`. It will however skip the
     /// notifications in the queue that do not match any entry in `to_poll`.
     ///
-    /// Messages written in `out` can be decoded into a [`Message`].
+    /// Messages written in `out` can be decoded into a [`DecodedNotification`].
     ///
     /// When this function is being called, a "lock" is being held on the memory pointed by
     /// `to_poll` and `out`. In particular, it is invalid to modify these buffers while the
@@ -68,8 +69,9 @@ extern "C" {
     /// >           `msg_bufs_ptrs` parameter is similar to the `iov` parameter of `writev`, and
     /// >           the `msg_bufs_num` parameter is similar to the `iovcnt` parameter of `writev`.
     ///
-    /// The message body is what will go into the [`actual_data`](Message::actual_data) field of
-    /// the [`Message`] that the target will receive.
+    /// The message body is what will go into the
+    /// [`actual_data`](DecodedInterfaceNotification::actual_data) field of the
+    /// [`DecodedInterfaceNotification`] that the target will receive.
     ///
     /// Returns `0` on success, and `1` in case of error.
     ///
@@ -87,7 +89,7 @@ extern "C" {
     // TODO: document error that can happen
     pub(crate) fn emit_message(
         interface_hash: *const u8,
-        msg_bufs_ptrs: *const u8,
+        msg_bufs_ptrs: *const u32,
         msg_bufs_num: u32,
         needs_answer: bool,
         allow_delay: bool,
@@ -96,12 +98,18 @@ extern "C" {
 
     /// Sends an answer back to the emitter of given `message_id`.
     ///
+    /// Has no effect if the message id is zero or refers to an invalid message. This can
+    /// legitimately happen if the process that emitted the message has crashed or stopped.
+    ///
     /// When this function is being called, a "lock" is being held on the memory pointed by
     /// `message_id` and `msg`. In particular, it is invalid to modify these buffers while the
     /// function is running.
     pub(crate) fn emit_answer(message_id: *const u64, msg: *const u8, msg_len: u32);
 
     /// Notifies the kernel that the given message is invalid and cannot reasonably be answered.
+    ///
+    /// Has no effect if the message id is zero or refers to an invalid message. This can
+    /// legitimately happen if the process that emitted the message has crashed or stopped.
     ///
     /// This should be used in situations where a message we receive fails to parse or is generally
     /// invalid. In other words, this should only be used in case of misbehaviour by the sender.
@@ -118,6 +126,8 @@ extern "C" {
     /// answer.
     ///
     /// After this function has been called, the passed `message_id` is no longer valid.
+    /// Has no effect if the message id is zero or refers to an invalid message. This can
+    /// legitimately happen if the process that emitted the message has crashed or stopped.
     ///
     /// When this function is being called, a "lock" is being held on the memory pointed by
     /// `message_id`. In particular, it is invalid to modify this buffer while the function is
@@ -194,6 +204,9 @@ pub enum DecodedNotification {
     ///
     /// Whenever a process that has emitted events on one of our interfaces stops, a
     /// `ProcessDestroyed` notification is sent.
+    ///
+    /// Note that this is done on a "best effort" basis. It is possible that these notifications
+    /// don't get immediately delivered, and that spurious notifications get emitted.
     ProcessDestroyed(DecodedProcessDestroyedNotification),
 }
 
@@ -255,6 +268,26 @@ impl InterfaceNotificationBuilder {
         self.data[49..53].copy_from_slice(&value.to_le_bytes());
     }
 
+    /// Returns the [`MessageId`] that was put in the builder.
+    pub fn message_id(&self) -> Option<MessageId> {
+        let id = u64::from_le_bytes([
+            self.data[33],
+            self.data[34],
+            self.data[35],
+            self.data[36],
+            self.data[37],
+            self.data[38],
+            self.data[39],
+            self.data[40],
+        ]);
+
+        if let Some(id) = NonZeroU64::new(id) {
+            Some(From::from(id))
+        } else {
+            None
+        }
+    }
+
     pub fn len(&self) -> usize {
         self.data.len()
     }
@@ -285,10 +318,10 @@ pub fn decode_interface_notification(buffer: &[u8]) -> Result<DecodedInterfaceNo
                 buffer[40],
             ]);
 
-            if id == 0 {
-                None
-            } else {
+            if let Some(id) = NonZeroU64::new(id) {
                 Some(From::from(id))
+            } else {
+                None
             }
         },
         emitter_pid: From::from(u64::from_le_bytes([
@@ -349,16 +382,19 @@ impl ResponseNotificationBuilder {
     }
 
     pub fn message_id(&self) -> MessageId {
-        From::from(u64::from_le_bytes([
-            self.data[1],
-            self.data[2],
-            self.data[3],
-            self.data[4],
-            self.data[5],
-            self.data[6],
-            self.data[7],
-            self.data[8],
-        ]))
+        From::from(
+            NonZeroU64::new(u64::from_le_bytes([
+                self.data[1],
+                self.data[2],
+                self.data[3],
+                self.data[4],
+                self.data[5],
+                self.data[6],
+                self.data[7],
+                self.data[8],
+            ]))
+            .unwrap(),
+        )
     }
 
     pub fn len(&self) -> usize {
@@ -385,9 +421,13 @@ pub fn decode_response_notification(buffer: &[u8]) -> Result<DecodedResponseNoti
     }
 
     Ok(DecodedResponseNotification {
-        message_id: From::from(u64::from_le_bytes([
-            buffer[1], buffer[2], buffer[3], buffer[4], buffer[5], buffer[6], buffer[7], buffer[8],
-        ])),
+        message_id: From::from({
+            let num = u64::from_le_bytes([
+                buffer[1], buffer[2], buffer[3], buffer[4], buffer[5], buffer[6], buffer[7],
+                buffer[8],
+            ]);
+            NonZeroU64::new(num).ok_or(())?
+        }),
         index_in_list: u32::from_le_bytes([buffer[9], buffer[10], buffer[11], buffer[12]]),
         actual_data: if success {
             Ok(EncodedMessage(buffer[14..].to_vec()))
@@ -477,11 +517,12 @@ pub struct DecodedProcessDestroyedNotification {
 mod tests {
     use super::*;
     use alloc::vec;
+    use core::num::NonZeroU64;
 
     #[test]
     fn interface_message_encode_decode() {
         let interface_hash = From::from([0xca; 32]);
-        let message_id = Some(From::from(0x0123456789abcdef));
+        let message_id = Some(From::from(NonZeroU64::new(0x0123456789abcdef).unwrap()));
         let pid = From::from(0xfedcba9876543210);
         let index_in_list = 0xdeadbeef;
         let message = EncodedMessage(vec![8, 7, 9]);
@@ -489,6 +530,7 @@ mod tests {
         let mut int_notif =
             build_interface_notification(&interface_hash, message_id, pid, 0xf00baa, &message);
         int_notif.set_index_in_list(index_in_list);
+        assert_eq!(int_notif.message_id(), message_id);
 
         let decoded = decode_interface_notification(&int_notif.into_bytes()).unwrap();
         assert_eq!(decoded.interface, interface_hash);
@@ -500,7 +542,7 @@ mod tests {
 
     #[test]
     fn response_message_encode_decode() {
-        let message_id = From::from(0x0123456789abcdef);
+        let message_id = From::from(NonZeroU64::new(0x0123456789abcdef).unwrap());
         let index_in_list = 0xdeadbeef;
         let message = EncodedMessage(vec![8, 7, 9]);
 
@@ -516,7 +558,7 @@ mod tests {
 
     #[test]
     fn response_message_err_encode_decode() {
-        let message_id = From::from(0xa123456789abcdef);
+        let message_id = From::from(NonZeroU64::new(0xa123456789abcdef).unwrap());
         let index_in_list = 0xdeadbeef;
 
         let mut resp_notif = build_response_notification(message_id, 0xf00baa, Err(()));

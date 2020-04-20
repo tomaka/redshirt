@@ -160,11 +160,6 @@ impl IoApicControl {
         }
     }
 
-    unsafe fn read_register(&mut self, reg_num: u8) -> u32 {
-        self.io_reg_sel_register.write_volatile(u32::from(reg_num));
-        self.io_win_register.read_volatile()
-    }
-
     unsafe fn write_register(&mut self, reg_num: u8, value: u32) {
         self.io_reg_sel_register.write_volatile(u32::from(reg_num));
         self.io_win_register.write_volatile(value)

@@ -15,18 +15,16 @@
 
 //! Generating cryptographically-secure random data.
 
-#![deny(intra_doc_link_resolution_failure)]
 #![cfg_attr(not(feature = "std"), no_std)]
 
 extern crate alloc;
 
-use byteorder::{ByteOrder as _, NativeEndian};
+use alloc::vec::Vec;
 use core::convert::TryFrom as _;
 
 pub mod ffi;
 
 /// Generate `len` bytes of random data and returns them.
-#[cfg(feature = "std")]
 pub async fn generate(len: usize) -> Vec<u8> {
     unsafe {
         let mut out = Vec::with_capacity(len);
@@ -37,7 +35,6 @@ pub async fn generate(len: usize) -> Vec<u8> {
 }
 
 /// Fills `out` with randomly-generated data.
-#[cfg(feature = "std")]
 pub async fn generate_in(out: &mut [u8]) {
     for chunk in out.chunks_mut(usize::from(u16::max_value())) {
         let msg = ffi::RandomMessage::Generate {
@@ -65,7 +62,7 @@ pub async fn generate_u8() -> u8 {
 pub async fn generate_u16() -> u16 {
     let mut buf = [0; 2];
     generate_in(&mut buf).await;
-    NativeEndian::read_u16(&buf)
+    u16::from_ne_bytes(buf)
 }
 
 /// Generates a random `u32`.
@@ -73,7 +70,7 @@ pub async fn generate_u16() -> u16 {
 pub async fn generate_u32() -> u32 {
     let mut buf = [0; 4];
     generate_in(&mut buf).await;
-    NativeEndian::read_u32(&buf)
+    u32::from_ne_bytes(buf)
 }
 
 /// Generates a random `u64`.
@@ -81,7 +78,7 @@ pub async fn generate_u32() -> u32 {
 pub async fn generate_u64() -> u64 {
     let mut buf = [0; 8];
     generate_in(&mut buf).await;
-    NativeEndian::read_u64(&buf)
+    u64::from_ne_bytes(buf)
 }
 
 /// Generates a random `u128`.
@@ -89,5 +86,5 @@ pub async fn generate_u64() -> u64 {
 pub async fn generate_u128() -> u128 {
     let mut buf = [0; 16];
     generate_in(&mut buf).await;
-    NativeEndian::read_u128(&buf)
+    u128::from_ne_bytes(buf)
 }

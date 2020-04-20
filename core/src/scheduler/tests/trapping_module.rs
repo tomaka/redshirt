@@ -13,29 +13,30 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use crate::extrinsics::NoExtrinsics;
 use crate::scheduler::{Core, CoreRunOutcome};
-use crate::InterfaceHash;
+use futures::prelude::*;
 
 #[test]
 fn trapping_module() {
     let module = from_wat!(
         local,
         r#"(module
-        (func $main (param $p0 i32) (param $p1 i32) (result i32)
+        (func $_start
             unreachable)
-        (export "main" (func $main)))
+        (export "_start" (func $_start)))
     "#
     );
 
-    let core = Core::new().build();
-    let expected_pid = core.execute(&module).unwrap().pid();
+    let core = Core::<NoExtrinsics>::new().build();
+    let expected_pid = core.execute(&module).unwrap().0.pid();
 
-    match core.run() {
-        CoreRunOutcome::ProgramFinished {
+    match core.run().now_or_never() {
+        Some(CoreRunOutcome::ProgramFinished {
             pid,
             outcome: Err(_),
             ..
-        } => {
+        }) => {
             assert_eq!(pid, expected_pid);
         }
         _ => panic!(),

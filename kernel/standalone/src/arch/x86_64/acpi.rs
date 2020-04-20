@@ -74,5 +74,5 @@ impl acpi::handler::AcpiHandler for DummyHandler {
         }
     }
 
-    fn unmap_physical_region<T>(&mut self, region: PhysicalMapping<T>) {}
+    fn unmap_physical_region<T>(&mut self, _: PhysicalMapping<T>) {}
 }

@@ -3,13 +3,16 @@ members = [
     "core",
     "core-proc-macros",
     "kernel/cli",
+    "kernel/hosted-framebuffer",
     "kernel/hosted-log",
     "kernel/hosted-random",
     "kernel/hosted-tcp",
     "kernel/hosted-time",
     "kernel/standalone",
+    "interfaces/framebuffer",
     "interfaces/hardware",
     "interfaces/interface",
+    "interfaces/kernel-log",
     "interfaces/loader",
     "interfaces/network",
     "interfaces/log",
@@ -40,3 +43,7 @@ opt-level = 3
 lto = true
 codegen-units = 1
 panic = 'abort'
+
+[patch.crates-io]
+# TODO: waiting for the release of https://github.com/paritytech/parity-scale-codec/pull/199
+parity-scale-codec = { git = "https://github.com/paritytech/parity-scale-codec" }

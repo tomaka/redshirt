@@ -48,15 +48,15 @@
 //! This can be done like this:
 //!
 //! ```norun
-//! let mut ptr = __bss_start;
-//! while ptr < __bss_end {
+//! let mut ptr = &mut __bss_start as *mut u8;
+//! while ptr < &mut __bss_end as *mut u8 {
 //!     ptr.write_volatile(0);
 //!     ptr = ptr.add(1);
 //! }
 //!
 //! extern "C" {
-//!     static mut __bss_start: *mut u8;
-//!     static mut __bss_end: *mut u8;
+//!     static mut __bss_start: u8;
+//!     static mut __bss_end: u8;
 //! }
 //! ```
 

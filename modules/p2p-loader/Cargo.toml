@@ -7,15 +7,10 @@ publish = false
 
 [dependencies]
 base64 = { version = "0.11.0", default-features = false, features = ["alloc"] }
-blake3 = { version = "0.1.1", default-features = false }
+blake3 = { version = "0.2.2", default-features = false }
 bs58 = "0.3.0"
 futures = "0.3"
-libp2p-core = { git = "https://github.com/libp2p/rust-libp2p", rev = "92ce5d6179c059c52a6c58c6c55ad69544ac2e93" }
-libp2p-kad = { git = "https://github.com/libp2p/rust-libp2p", rev = "92ce5d6179c059c52a6c58c6c55ad69544ac2e93" }
-libp2p-mplex = { git = "https://github.com/libp2p/rust-libp2p", rev = "92ce5d6179c059c52a6c58c6c55ad69544ac2e93" }
-#libp2p-noise = { git = "https://github.com/libp2p/rust-libp2p", rev = "92ce5d6179c059c52a6c58c6c55ad69544ac2e93" }
-libp2p-plaintext = { git = "https://github.com/libp2p/rust-libp2p", rev = "92ce5d6179c059c52a6c58c6c55ad69544ac2e93" }
-libp2p-swarm = { git = "https://github.com/libp2p/rust-libp2p", rev = "92ce5d6179c059c52a6c58c6c55ad69544ac2e93" }
+libp2p = { version = "0.18.0", default-features = false, features = ["kad", "mplex", "plaintext"] }
 log = "0.4"
 notify = { version = "4.0.15", optional = true }
 parity-scale-codec = "1.0.5"
@@ -24,7 +19,9 @@ walkdir = "2.3.1"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 env_logger = "0.7.1"
-libp2p-tcp = { git = "https://github.com/libp2p/rust-libp2p", rev = "92ce5d6179c059c52a6c58c6c55ad69544ac2e93" }
+libp2p-tcp = "0.18.0"
+# TODO: use the version below once cargo has fixed the associated bug
+#libp2p = { version = "0.18.0", default-features = false, features = ["tcp"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 redshirt-interface-interface = { path = "../../interfaces/interface" }

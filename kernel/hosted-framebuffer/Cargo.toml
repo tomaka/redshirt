@@ -1,5 +1,5 @@
 [package]
-name = "x86-log"
+name = "redshirt-framebuffer-hosted"
 version = "0.1.0"
 license = "GPL-3.0-or-later"
 authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
@@ -7,7 +7,9 @@ edition = "2018"
 publish = false
 
 [dependencies]
-redshirt-hardware-interface = { path = "../../interfaces/hardware", default-features = false }
+futures = "0.3.0"
+glium = "0.26.0"
+parking_lot = "0.10.0"
+redshirt-core = { path = "../../core" }
+redshirt-framebuffer-interface = { path = "../../interfaces/framebuffer" }
 redshirt-interface-interface = { path = "../../interfaces/interface" }
-redshirt-log-interface = { path = "../../interfaces/log" }
-redshirt-syscalls = { path = "../../interfaces/syscalls" }
