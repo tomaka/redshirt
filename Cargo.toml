@@ -26,6 +26,10 @@ members = [
 [profile.dev]
 opt-level = 1
 
+[profile.dev.package.cranelift-codegen]
+opt-level = 3
+[profile.dev.package.cranelift-native]
+opt-level = 3
 [profile.dev.package.hashbrown]
 opt-level = 3
 [profile.dev.package.rand_jitter]
@@ -33,6 +37,8 @@ opt-level = 3
 [profile.dev.package.wasmi]
 opt-level = 3
 [profile.dev.package.wasmi-validation]
+opt-level = 3
+[profile.dev.package.wasmtime-environ]
 opt-level = 3
 [profile.dev.package.wat]
 opt-level = 3

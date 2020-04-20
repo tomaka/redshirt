@@ -19,24 +19,27 @@ use super::{ExecOutcome, NewErr, RunErr, StartErr};
 use crate::{WasmValue, module::Module, primitives::Signature};
 
 use alloc::{
-    borrow::{Cow, ToOwned as _},
     boxed::Box,
     rc::Rc,
     vec::Vec,
 };
-use core::{cell::RefCell, convert::TryInto, fmt, iter};
-use smallvec::SmallVec;
+use core::{cell::RefCell, convert::TryFrom as _, fmt};
 
 mod coroutine;
 
 pub struct Jit<T> {
-    main_thread: coroutine::Coroutine<Box<dyn FnOnce() -> Result<Option<wasmtime::Val>, wasmtime::Trap>>, usize, Option<wasmtime::Val>>,
+    main_thread: coroutine::Coroutine<Box<dyn FnOnce() -> Result<Option<wasmtime::Val>, wasmtime::Trap>>, Interrupt, Option<WasmValue>>,
 
-    memory: Rc<RefCell<Option<wasmtime::Memory>>>,
-    indirect_table: Rc<RefCell<Option<wasmtime::Table>>>,
+    memory: Option<wasmtime::Memory>,
+    indirect_table: Option<wasmtime::Table>,
 
     /// We only support one thread. That's its user data.
     thread_user_data: Option<T>,
+}
+
+struct Interrupt {
+    function_index: usize,
+    parameters: Vec<WasmValue>,
 }
 
 /// Access to a thread within the virtual machine.
@@ -64,32 +67,47 @@ impl<T> Jit<T> {
         let store = wasmtime::Store::new(&engine);
         let module = wasmtime::Module::from_binary(&store, module.as_ref()).unwrap();
 
-        /*for import in module.imports() {
+        let builder = coroutine::CoroutineBuilder::new();
+
+        let mut imports = Vec::new();
+
+        for import in module.imports() {
             match import.ty() {
                 wasmtime::ExternType::Func(f) => {
-                    symbols(f.module(), f.name(), )
+                    // TODO: don't panic if not found
+                    let function_index = symbols(import.module(), import.name(), &From::from(f)).unwrap();
+                    let interrupter = builder.interrupter();
+                    imports.push(wasmtime::Extern::Func(wasmtime::Func::new(&store, f.clone(), move |_, params, ret_val| {
+                        let returned = interrupter.interrupt(Interrupt {
+                            function_index,
+                            parameters: params.iter().cloned().map(From::from).collect(),
+                        });
+                        if let Some(returned) = returned {
+                            assert_eq!(ret_val.len(), 1);
+                            ret_val[0] = From::from(returned);
+                        } else {
+                            assert!(ret_val.is_empty());
+                        }
+                        Ok(())
+                    })));
                 }
                 wasmtime::ExternType::Global(_) => unimplemented!(),
                 wasmtime::ExternType::Table(_) => unimplemented!(),
                 wasmtime::ExternType::Memory(_) => unimplemented!(),
-            }
-        }*/
-
+            };
+        }
 
         let memory = Rc::new(RefCell::new(None));
         let indirect_table = Rc::new(RefCell::new(None));
-        let imports = vec![];   // TODO:
 
-        let main_thread = {
-            let builder = coroutine::CoroutineBuilder::new();
-            let interrupter = builder.interrupter();
+        let mut main_thread = {
             let memory = memory.clone();
             let indirect_table = indirect_table.clone();
+            let interrupter = builder.interrupter();
             builder.build(Box::new(move || {
                 // TODO: don't unwrap
                 let instance = wasmtime::Instance::new(&module, &imports).unwrap();
 
-                // TODO: return errors instead of silently ignoring the problem
                 if let Some(mem) = instance.get_export("memory") {
                     if let Some(mem) = mem.memory() {
                         *memory.borrow_mut() = Some(mem.clone());
@@ -100,7 +118,7 @@ impl<T> Jit<T> {
                         *indirect_table.borrow_mut() = Some(tbl.clone());
                     }
                 }
-        
+
                 // Try to start executing `_start`.
                 let start_function = if let Some(f) = instance.get_export("_start") {
                     if let Some(f) = f.func() {
@@ -112,8 +130,12 @@ impl<T> Jit<T> {
                     unimplemented!() // TODO: return Err(NewErr::StartNotFound);
                 };
 
-                let reinjected: Option<wasmtime::Val> = interrupter.interrupt(0);
-                assert!(reinjected.is_none());
+                // TODO: dummy Interrupt
+                let _reinjected: Option<WasmValue> = interrupter.interrupt(Interrupt {
+                    function_index: 0,
+                    parameters: Vec::new(),
+                });
+                assert!(_reinjected.is_none());
 
                 let result = start_function.call(&[])?;
                 assert!(result.len() == 0 || result.len() == 1); // TODO: I don't know what multiple results means
@@ -124,6 +146,11 @@ impl<T> Jit<T> {
                 }
             }) as Box<_>)
         };
+
+        let _ = main_thread.run(None);
+
+        let memory = memory.borrow_mut().clone();
+        let indirect_table = indirect_table.borrow_mut().clone();
 
         Ok(Jit {
             memory,
@@ -168,27 +195,36 @@ impl<T> Jit<T> {
     ///
     /// Returns an error if the range is invalid or out of range.
     pub fn read_memory(&self, offset: u32, size: u32) -> Result<Vec<u8>, ()> {
-        let mem = self.memory.borrow();
-        let mem = match mem.as_ref() {
+        let mem = match self.memory.as_ref() {
             Some(m) => m,
-            None => unreachable!(),
+            None => return Err(()),
         };
 
-        unimplemented!()/*mem.get(offset, size.try_into().map_err(|_| ())?)
-            .map_err(|_| ())*/
+        let start = usize::try_from(offset).map_err(|_| ())?;
+        let end = start.checked_add(usize::try_from(size).map_err(|_| ())?).ok_or(())?;
+
+        unsafe {
+            Ok(mem.data_unchecked()[start..end].to_vec())
+        }
     }
 
     /// Write the data at the given memory location.
     ///
     /// Returns an error if the range is invalid or out of range.
     pub fn write_memory(&mut self, offset: u32, value: &[u8]) -> Result<(), ()> {
-        let mem = self.memory.borrow();
-        let mem = match mem.as_ref() {
+        let mem = match self.memory.as_ref() {
             Some(m) => m,
-            None => unreachable!(),
+            None => return Err(()),
         };
 
-        unimplemented!()//mem.set(offset, value).map_err(|_| ())
+        let start = usize::try_from(offset).map_err(|_| ())?;
+        let end = start.checked_add(value.len()).ok_or(())?;
+
+        unsafe {
+            mem.data_unchecked_mut()[start..end].copy_from_slice(value);
+        }
+
+        Ok(())
     }
 }
 
@@ -217,7 +253,7 @@ impl<'a, T> Thread<'a, T> {
 
         // TODO: check value type
 
-        match self.vm.main_thread.run(None) {      // TODO: correct value
+        match self.vm.main_thread.run(Some(value.map(From::from))) {
             coroutine::RunOut::Finished(Err(err)) => {
                 Ok(ExecOutcome::Errored {
                     thread: From::from(self),
@@ -231,11 +267,11 @@ impl<'a, T> Thread<'a, T> {
                     user_data: self.vm.thread_user_data.take().unwrap(),
                 })
             }
-            coroutine::RunOut::Interrupted(val) => {
+            coroutine::RunOut::Interrupted(int) => {
                 Ok(ExecOutcome::Interrupted {
                     thread: From::from(self),
-                    id: val,
-                    params: Vec::new(),     // FIXME:
+                    id: int.function_index,
+                    params: int.parameters,
                 })
             }
         }

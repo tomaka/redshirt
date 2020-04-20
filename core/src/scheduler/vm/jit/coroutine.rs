@@ -77,7 +77,8 @@ impl<TInt, TRes> CoroutineBuilder<TInt, TRes> {
     /// Starts a builder.
     pub fn new() -> Self {
         CoroutineBuilder {
-            stack_size: 4096,
+            // TODO: no stack protection :(
+            stack_size: 4 * 1024 * 1024,
             state: Rc::new(Shared {
                 coroutine_stack_pointer: Cell::new(0),
                 caller_stack_pointer: Cell::new(0),
