@@ -84,11 +84,3 @@ where
 }
 
 impl<T> Unpin for MessageResponseFuture<T> {}
-
-impl<T> Drop for MessageResponseFuture<T> {
-    fn drop(&mut self) {
-        if !self.finished {
-            crate::block_on::remove_message_waker(self.msg_id);
-        }
-    }
-}

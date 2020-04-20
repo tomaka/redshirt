@@ -278,7 +278,7 @@ impl fmt::Display for EmitErr {
 
 /// Future that drives [`emit_message_with_response`] to completion.
 #[must_use]
-#[pin_project::pin_project]
+#[pin_project::pin_project(PinnedDrop)]
 pub struct EmitMessageWithResponse<T> {
     #[pin]
     inner: Option<crate::MessageResponseFuture<T>>,
@@ -307,11 +307,11 @@ impl<T: Decode> Future for EmitMessageWithResponse<T> {
     }
 }
 
-/*#[pin_project::pinned_drop]
+#[pin_project::pinned_drop]
 impl<T> PinnedDrop for EmitMessageWithResponse<T> {
     fn drop(self: Pin<&mut Self>) {
         if self.inner.is_some() {
             let _ = cancel_message(self.msg_id);
         }
     }
-}*/
+}
