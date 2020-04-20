@@ -33,7 +33,10 @@ pub struct CoroutineBuilder<TInt, TRes> {
 pub struct Coroutine<TExec, TInt, TRes> {
     /// We use a `u128` because the stack must be 16-bytes-aligned.
     stack: Pin<Box<[u128]>>,
+    /// State shared between the coroutine and the interrupters.
     state: Rc<Shared<TInt, TRes>>,
+    /// True if the coroutine has been run at least once.
+    has_run_once: bool,
     /// True if the coroutine has finished. Trying to resume running will panic.
     has_finished: bool,
     marker: PhantomData<TExec>,
@@ -54,7 +57,6 @@ struct Shared<TInt, TRes> {
     /// order: r15, r14, r13, r12, rbp, rbx, rsi, rip
     ///
     /// In order to resume the coroutine, set `rsp` to this value then pop all the registers.
-    // TODO: add float registers and all that stuff; there's way more registers than that
     coroutine_stack_pointer: Cell<usize>,
 
     /// Stack pointer of the caller. Only valid if we are within the coroutine.
@@ -62,8 +64,12 @@ struct Shared<TInt, TRes> {
 
     /// Where to write the return value.
     potential_return_value_ptr: Cell<usize>,
-
+    /// Storage where to write the value yielded to outside the coroutine before jumping out,
+    /// or left to `None` if the coroutine has terminated.
     interrupt_val: Cell<Option<TInt>>,
+
+    /// Storage where to write the value yielded back *to* the coroutine before resuming
+    /// execution.
     resume_value: Cell<Option<TRes>>,
 }
 
@@ -98,6 +104,7 @@ impl<TInt, TRes> CoroutineBuilder<TInt, TRes> {
         }
     }
 
+    /// Builds the coroutine.
     pub fn build<TRet, TExec: FnOnce() -> TRet>(
         self,
         to_exec: TExec,
@@ -145,6 +152,7 @@ impl<TInt, TRes> CoroutineBuilder<TInt, TRes> {
         Coroutine {
             stack,
             state: self.state.clone(),
+            has_run_once: false,
             has_finished: false,
             marker: PhantomData,
         }
@@ -178,6 +186,13 @@ impl<TExec: FnOnce() -> TRet, TRet, TInt, TRes> Coroutine<TExec, TInt, TRes> {
     ///
     pub fn run(&mut self, resume: Option<TRes>) -> RunOut<TRet, TInt> {
         assert!(!self.has_finished);
+
+        if !self.has_run_once {
+            assert!(resume.is_none());
+            self.has_run_once = true;
+        } else {
+            assert!(resume.is_some());
+        }
 
         // Store the resume value for the coroutine to pick up.
         debug_assert!(self.state.resume_value.take().is_none());

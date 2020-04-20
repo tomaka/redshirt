@@ -37,9 +37,12 @@ pub struct Jit<T> {
     thread_user_data: Option<T>,
 }
 
-struct Interrupt {
-    function_index: usize,
-    parameters: Vec<WasmValue>,
+enum Interrupt {
+    Init(Result<(), NewErr>),
+    Interrupt {
+        function_index: usize,
+        parameters: Vec<WasmValue>,
+    },
 }
 
 /// Access to a thread within the virtual machine.
@@ -69,40 +72,49 @@ impl<T> Jit<T> {
 
         let builder = coroutine::CoroutineBuilder::new();
 
-        let mut imports = Vec::new();
+        // Building the list of symbols that the Wasm VM is able to use.
+        let imports = {
+            let mut imports = Vec::with_capacity(module.imports().len());
+            for import in module.imports() {
+                match import.ty() {
+                    wasmtime::ExternType::Func(f) => {
+                        // TODO: don't panic if not found
+                        let function_index = symbols(import.module(), import.name(), &From::from(f)).unwrap();
+                        let interrupter = builder.interrupter();
+                        imports.push(wasmtime::Extern::Func(wasmtime::Func::new(&store, f.clone(), move |_, params, ret_val| {
+                            // This closure is executed whenever the Wasm VM calls an external function.
+                            let returned = interrupter.interrupt(Interrupt::Interrupt {
+                                function_index,
+                                parameters: params.iter().cloned().map(From::from).collect(),
+                            });
+                            if let Some(returned) = returned {
+                                assert_eq!(ret_val.len(), 1);
+                                ret_val[0] = From::from(returned);
+                            } else {
+                                assert!(ret_val.is_empty());
+                            }
+                            Ok(())
+                        })));
+                    }
+                    wasmtime::ExternType::Global(_) => unimplemented!(),
+                    wasmtime::ExternType::Table(_) => unimplemented!(),
+                    wasmtime::ExternType::Memory(_) => unimplemented!(),
+                };
+            }
+            imports
+        };
 
-        for import in module.imports() {
-            match import.ty() {
-                wasmtime::ExternType::Func(f) => {
-                    // TODO: don't panic if not found
-                    let function_index = symbols(import.module(), import.name(), &From::from(f)).unwrap();
-                    let interrupter = builder.interrupter();
-                    imports.push(wasmtime::Extern::Func(wasmtime::Func::new(&store, f.clone(), move |_, params, ret_val| {
-                        let returned = interrupter.interrupt(Interrupt {
-                            function_index,
-                            parameters: params.iter().cloned().map(From::from).collect(),
-                        });
-                        if let Some(returned) = returned {
-                            assert_eq!(ret_val.len(), 1);
-                            ret_val[0] = From::from(returned);
-                        } else {
-                            assert!(ret_val.is_empty());
-                        }
-                        Ok(())
-                    })));
-                }
-                wasmtime::ExternType::Global(_) => unimplemented!(),
-                wasmtime::ExternType::Table(_) => unimplemented!(),
-                wasmtime::ExternType::Memory(_) => unimplemented!(),
-            };
-        }
-
+        // These objects will use
         let memory = Rc::new(RefCell::new(None));
         let indirect_table = Rc::new(RefCell::new(None));
 
+        // We now build the coroutine of the main thread.
+        //
+        // This coroutine will initialize the instance.
         let mut main_thread = {
             let memory = memory.clone();
             let indirect_table = indirect_table.clone();
+
             let interrupter = builder.interrupter();
             builder.build(Box::new(move || {
                 // TODO: don't unwrap
@@ -111,11 +123,19 @@ impl<T> Jit<T> {
                 if let Some(mem) = instance.get_export("memory") {
                     if let Some(mem) = mem.memory() {
                         *memory.borrow_mut() = Some(mem.clone());
+                    } else {
+                        let err = NewErr::MemoryIsntMemory;
+                        interrupter.interrupt(Interrupt::Init(Err(err)));
+                        return Ok(None);
                     }
                 }
                 if let Some(tbl) = instance.get_export("__indirect_function_table") {
                     if let Some(tbl) = tbl.table() {
                         *indirect_table.borrow_mut() = Some(tbl.clone());
+                    } else {
+                        let err = NewErr::IndirectTableIsntTable;
+                        interrupter.interrupt(Interrupt::Init(Err(err)));
+                        return Ok(None);
                     }
                 }
 
@@ -124,17 +144,17 @@ impl<T> Jit<T> {
                     if let Some(f) = f.func() {
                         f.clone()
                     } else {
-                        unimplemented!() // TODO: return Err(NewErr::StartIsntAFunction);
+                        let err = NewErr::StartIsntAFunction;
+                        interrupter.interrupt(Interrupt::Init(Err(err)));
+                        return Ok(None);
                     }
                 } else {
-                    unimplemented!() // TODO: return Err(NewErr::StartNotFound);
+                    let err = NewErr::StartNotFound;
+                    interrupter.interrupt(Interrupt::Init(Err(err)));
+                    return Ok(None);
                 };
 
-                // TODO: dummy Interrupt
-                let _reinjected: Option<WasmValue> = interrupter.interrupt(Interrupt {
-                    function_index: 0,
-                    parameters: Vec::new(),
-                });
+                let _reinjected: Option<WasmValue> = interrupter.interrupt(Interrupt::Init(Ok(())));
                 assert!(_reinjected.is_none());
 
                 let result = start_function.call(&[])?;
@@ -147,7 +167,11 @@ impl<T> Jit<T> {
             }) as Box<_>)
         };
 
-        let _ = main_thread.run(None);
+        match main_thread.run(None) {
+            coroutine::RunOut::Interrupted(Interrupt::Init(Err(err))) => return Err(err),
+            coroutine::RunOut::Interrupted(Interrupt::Init(Ok(()))) => {},
+            _ => unreachable!(),
+        }
 
         let memory = memory.borrow_mut().clone();
         let indirect_table = indirect_table.borrow_mut().clone();
@@ -267,13 +291,14 @@ impl<'a, T> Thread<'a, T> {
                     user_data: self.vm.thread_user_data.take().unwrap(),
                 })
             }
-            coroutine::RunOut::Interrupted(int) => {
+            coroutine::RunOut::Interrupted(Interrupt::Interrupt { function_index, parameters }) => {
                 Ok(ExecOutcome::Interrupted {
                     thread: From::from(self),
-                    id: int.function_index,
-                    params: int.parameters,
+                    id: function_index,
+                    params: parameters,
                 })
             }
+            coroutine::RunOut::Interrupted(_) => unreachable!(),
         }
     }
 
