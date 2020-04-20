@@ -16,19 +16,19 @@
 // TODO: everything here is unsafe and prototipal
 
 use super::{ExecOutcome, NewErr, RunErr, StartErr};
-use crate::{WasmValue, module::Module, primitives::Signature};
+use crate::{module::Module, primitives::Signature, WasmValue};
 
-use alloc::{
-    boxed::Box,
-    rc::Rc,
-    vec::Vec,
-};
+use alloc::{boxed::Box, rc::Rc, vec::Vec};
 use core::{cell::RefCell, convert::TryFrom as _, fmt};
 
 mod coroutine;
 
 pub struct Jit<T> {
-    main_thread: coroutine::Coroutine<Box<dyn FnOnce() -> Result<Option<wasmtime::Val>, wasmtime::Trap>>, Interrupt, Option<WasmValue>>,
+    main_thread: coroutine::Coroutine<
+        Box<dyn FnOnce() -> Result<Option<wasmtime::Val>, wasmtime::Trap>>,
+        Interrupt,
+        Option<WasmValue>,
+    >,
 
     memory: Option<wasmtime::Memory>,
     indirect_table: Option<wasmtime::Table>,
@@ -79,22 +79,27 @@ impl<T> Jit<T> {
                 match import.ty() {
                     wasmtime::ExternType::Func(f) => {
                         // TODO: don't panic if not found
-                        let function_index = symbols(import.module(), import.name(), &From::from(f)).unwrap();
+                        let function_index =
+                            symbols(import.module(), import.name(), &From::from(f)).unwrap();
                         let interrupter = builder.interrupter();
-                        imports.push(wasmtime::Extern::Func(wasmtime::Func::new(&store, f.clone(), move |_, params, ret_val| {
-                            // This closure is executed whenever the Wasm VM calls an external function.
-                            let returned = interrupter.interrupt(Interrupt::Interrupt {
-                                function_index,
-                                parameters: params.iter().cloned().map(From::from).collect(),
-                            });
-                            if let Some(returned) = returned {
-                                assert_eq!(ret_val.len(), 1);
-                                ret_val[0] = From::from(returned);
-                            } else {
-                                assert!(ret_val.is_empty());
-                            }
-                            Ok(())
-                        })));
+                        imports.push(wasmtime::Extern::Func(wasmtime::Func::new(
+                            &store,
+                            f.clone(),
+                            move |_, params, ret_val| {
+                                // This closure is executed whenever the Wasm VM calls an external function.
+                                let returned = interrupter.interrupt(Interrupt::Interrupt {
+                                    function_index,
+                                    parameters: params.iter().cloned().map(From::from).collect(),
+                                });
+                                if let Some(returned) = returned {
+                                    assert_eq!(ret_val.len(), 1);
+                                    ret_val[0] = From::from(returned);
+                                } else {
+                                    assert!(ret_val.is_empty());
+                                }
+                                Ok(())
+                            },
+                        )));
                     }
                     wasmtime::ExternType::Global(_) => unimplemented!(),
                     wasmtime::ExternType::Table(_) => unimplemented!(),
@@ -162,14 +167,14 @@ impl<T> Jit<T> {
                 if result.is_empty() {
                     Ok(None)
                 } else {
-                    Ok(Some(result[0].clone()))   // TODO: don't clone
+                    Ok(Some(result[0].clone())) // TODO: don't clone
                 }
             }) as Box<_>)
         };
 
         match main_thread.run(None) {
             coroutine::RunOut::Interrupted(Interrupt::Init(Err(err))) => return Err(err),
-            coroutine::RunOut::Interrupted(Interrupt::Init(Ok(()))) => {},
+            coroutine::RunOut::Interrupted(Interrupt::Init(Ok(()))) => {}
             _ => unreachable!(),
         }
 
@@ -225,11 +230,11 @@ impl<T> Jit<T> {
         };
 
         let start = usize::try_from(offset).map_err(|_| ())?;
-        let end = start.checked_add(usize::try_from(size).map_err(|_| ())?).ok_or(())?;
+        let end = start
+            .checked_add(usize::try_from(size).map_err(|_| ())?)
+            .ok_or(())?;
 
-        unsafe {
-            Ok(mem.data_unchecked()[start..end].to_vec())
-        }
+        unsafe { Ok(mem.data_unchecked()[start..end].to_vec()) }
     }
 
     /// Write the data at the given memory location.
@@ -272,7 +277,7 @@ impl<'a, T> Thread<'a, T> {
     /// interrupted by an external function call, then you must pass back the outcome of that call.
     pub fn run(mut self, value: Option<WasmValue>) -> Result<ExecOutcome<'a, T>, RunErr> {
         if self.vm.main_thread.is_finished() {
-            return Err(RunErr::Poisoned)
+            return Err(RunErr::Poisoned);
         }
 
         // TODO: check value type
@@ -291,13 +296,14 @@ impl<'a, T> Thread<'a, T> {
                     user_data: self.vm.thread_user_data.take().unwrap(),
                 })
             }
-            coroutine::RunOut::Interrupted(Interrupt::Interrupt { function_index, parameters }) => {
-                Ok(ExecOutcome::Interrupted {
-                    thread: From::from(self),
-                    id: function_index,
-                    params: parameters,
-                })
-            }
+            coroutine::RunOut::Interrupted(Interrupt::Interrupt {
+                function_index,
+                parameters,
+            }) => Ok(ExecOutcome::Interrupted {
+                thread: From::from(self),
+                id: function_index,
+                params: parameters,
+            }),
             coroutine::RunOut::Interrupted(_) => unreachable!(),
         }
     }

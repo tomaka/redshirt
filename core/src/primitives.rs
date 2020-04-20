@@ -249,7 +249,7 @@ impl From<wasmtime::ValType> for ValueType {
             wasmtime::ValType::I64 => ValueType::I64,
             wasmtime::ValType::F32 => ValueType::F32,
             wasmtime::ValType::F64 => ValueType::F64,
-            _ => unimplemented!(),  // TODO:
+            _ => unimplemented!(), // TODO:
         }
     }
 }
