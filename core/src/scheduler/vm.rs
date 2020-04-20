@@ -15,14 +15,8 @@
 
 use crate::{module::Module, primitives::Signature, ValueType, WasmValue};
 
-use alloc::{
-    borrow::{Cow, ToOwned as _},
-    boxed::Box,
-    format,
-    vec::Vec,
-};
-use core::{cell::RefCell, convert::TryInto, fmt};
-use smallvec::SmallVec;
+use alloc::vec::Vec;
+use core::fmt;
 
 #[cfg(target_arch = "x86_64")]
 mod jit;
@@ -198,7 +192,7 @@ impl<T> ProcessStateMachine<T> {
     pub fn new(
         module: &Module,
         main_thread_user_data: T,
-        mut symbols: impl FnMut(&str, &str, &Signature) -> Result<usize, ()>,
+        symbols: impl FnMut(&str, &str, &Signature) -> Result<usize, ()>,
     ) -> Result<Self, NewErr> {
         Ok(ProcessStateMachine(ImpStateMachine::new(
             module,
@@ -293,7 +287,7 @@ impl<'a, T> Thread<'a, T> {
     /// a value of `None`.
     /// If, however, you call this function after a previous call to [`run`](Thread::run) that was
     /// interrupted by an external function call, then you must pass back the outcome of that call.
-    pub fn run(mut self, value: Option<WasmValue>) -> Result<ExecOutcome<'a, T>, RunErr> {
+    pub fn run(self, value: Option<WasmValue>) -> Result<ExecOutcome<'a, T>, RunErr> {
         self.0.run(value)
     }
 

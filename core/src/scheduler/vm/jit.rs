@@ -13,8 +13,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-// TODO: everything here is unsafe and prototipal
-
 use super::{ExecOutcome, NewErr, RunErr, StartErr};
 use crate::{module::Module, primitives::Signature, WasmValue};
 
@@ -23,24 +21,37 @@ use core::{cell::RefCell, convert::TryFrom as _, fmt};
 
 mod coroutine;
 
+/// Wasm VM that uses JITted compilation.
 pub struct Jit<T> {
+    /// Coroutine that contains the Wasm execution stack.
     main_thread: coroutine::Coroutine<
         Box<dyn FnOnce() -> Result<Option<wasmtime::Val>, wasmtime::Trap>>,
         Interrupt,
         Option<WasmValue>,
     >,
 
+    /// Reference to the memory, in case we need to access it.
+    /// `None` if the module doesn't export its memory.
     memory: Option<wasmtime::Memory>,
+
+    /// Reference to the table of indirect functions, in case we need to access it.
+    /// `None` if the module doesn't export such table.
     indirect_table: Option<wasmtime::Table>,
 
-    /// We only support one thread. That's its user data.
+    /// We only support one thread. That's its user data. Contains `None` if the main thread
+    /// has terminated.
     thread_user_data: Option<T>,
 }
 
+/// Type yielded by a thread's coroutine.
 enum Interrupt {
+    /// Reports how well the initialization went. Must only be sent once, at initialization.
     Init(Result<(), NewErr>),
+    /// Execution of the Wasm code has been interrupted by a call.
     Interrupt {
+        /// Index of the function, to put in [`ExecOutcome::Interrupted::id`].
         function_index: usize,
+        /// Parameters of the function.
         parameters: Vec<WasmValue>,
     },
 }
@@ -109,13 +120,16 @@ impl<T> Jit<T> {
             imports
         };
 
-        // These objects will use
+        // These objects will be filled by the memory and indirect table during the first call to
+        // the coroutine below.
         let memory = Rc::new(RefCell::new(None));
         let indirect_table = Rc::new(RefCell::new(None));
 
         // We now build the coroutine of the main thread.
         //
-        // This coroutine will initialize the instance.
+        // After building the coroutine, we will execute it one time. During this initial
+        // execution, the instance is initialized and all the symbols exported. The coroutine
+        // must then yield an `Interrupted::Init` reporting if everything is ok.
         let mut main_thread = {
             let memory = memory.clone();
             let indirect_table = indirect_table.clone();
@@ -134,6 +148,7 @@ impl<T> Jit<T> {
                         return Ok(None);
                     }
                 }
+
                 if let Some(tbl) = instance.get_export("__indirect_function_table") {
                     if let Some(tbl) = tbl.table() {
                         *indirect_table.borrow_mut() = Some(tbl.clone());
@@ -159,25 +174,33 @@ impl<T> Jit<T> {
                     return Ok(None);
                 };
 
-                let _reinjected: Option<WasmValue> = interrupter.interrupt(Interrupt::Init(Ok(())));
-                assert!(_reinjected.is_none());
+                // Report back that everything went ok.
+                let reinjected: Option<WasmValue> = interrupter.interrupt(Interrupt::Init(Ok(())));
+                assert!(reinjected.is_none()); // First call to run must always be with `None`.
 
+                // Now running the `start` function of the Wasm code.
+                // This will interrupt the coroutine every time we reach an external function.
                 let result = start_function.call(&[])?;
+
+                // Execution resumes here when the Wasm code has gracefully finished.
                 assert!(result.len() == 0 || result.len() == 1); // TODO: I don't know what multiple results means
                 if result.is_empty() {
                     Ok(None)
                 } else {
-                    Ok(Some(result[0].clone())) // TODO: don't clone
+                    Ok(Some(result[0].clone())) // TODO: don't clone?
                 }
             }) as Box<_>)
         };
 
+        // Execute the coroutine once, as described above.
+        // The first yield must always be an `Interrupt::Init`.
         match main_thread.run(None) {
             coroutine::RunOut::Interrupted(Interrupt::Init(Err(err))) => return Err(err),
             coroutine::RunOut::Interrupted(Interrupt::Init(Ok(()))) => {}
             _ => unreachable!(),
         }
 
+        // The first execution has filled these objects.
         let memory = memory.borrow_mut().clone();
         let indirect_table = indirect_table.borrow_mut().clone();
 
@@ -224,16 +247,15 @@ impl<T> Jit<T> {
     ///
     /// Returns an error if the range is invalid or out of range.
     pub fn read_memory(&self, offset: u32, size: u32) -> Result<Vec<u8>, ()> {
-        let mem = match self.memory.as_ref() {
-            Some(m) => m,
-            None => return Err(()),
-        };
-
+        let mem = self.memory.as_ref().ok_or(())?;
         let start = usize::try_from(offset).map_err(|_| ())?;
         let end = start
             .checked_add(usize::try_from(size).map_err(|_| ())?)
             .ok_or(())?;
 
+        // Soundness: the documentation of wasmtime precisely explains what is safe or not.
+        // Basically, we are safe as long as we are sure that we don't potentially grow the
+        // buffer (which would invalidate the buffer pointer).
         unsafe { Ok(mem.data_unchecked()[start..end].to_vec()) }
     }
 
@@ -241,14 +263,13 @@ impl<T> Jit<T> {
     ///
     /// Returns an error if the range is invalid or out of range.
     pub fn write_memory(&mut self, offset: u32, value: &[u8]) -> Result<(), ()> {
-        let mem = match self.memory.as_ref() {
-            Some(m) => m,
-            None => return Err(()),
-        };
-
+        let mem = self.memory.as_ref().ok_or(())?;
         let start = usize::try_from(offset).map_err(|_| ())?;
         let end = start.checked_add(value.len()).ok_or(())?;
 
+        // Soundness: the documentation of wasmtime precisely explains what is safe or not.
+        // Basically, we are safe as long as we are sure that we don't potentially grow the
+        // buffer (which would invalidate the buffer pointer).
         unsafe {
             mem.data_unchecked_mut()[start..end].copy_from_slice(value);
         }
@@ -257,6 +278,7 @@ impl<T> Jit<T> {
     }
 }
 
+// TODO: explain how this is sound
 unsafe impl<T: Send> Send for Jit<T> {}
 
 impl<T> fmt::Debug for Jit<T>
@@ -275,13 +297,14 @@ impl<'a, T> Thread<'a, T> {
     /// a value of `None`.
     /// If, however, you call this function after a previous call to [`run`](Thread::run) that was
     /// interrupted by an external function call, then you must pass back the outcome of that call.
-    pub fn run(mut self, value: Option<WasmValue>) -> Result<ExecOutcome<'a, T>, RunErr> {
+    pub fn run(self, value: Option<WasmValue>) -> Result<ExecOutcome<'a, T>, RunErr> {
         if self.vm.main_thread.is_finished() {
             return Err(RunErr::Poisoned);
         }
 
         // TODO: check value type
 
+        // Resume the coroutine execution.
         match self.vm.main_thread.run(Some(value.map(From::from))) {
             coroutine::RunOut::Finished(Err(err)) => {
                 Ok(ExecOutcome::Errored {
@@ -289,13 +312,11 @@ impl<'a, T> Thread<'a, T> {
                     error: unimplemented!(), // TODO: err,
                 })
             }
-            coroutine::RunOut::Finished(Ok(val)) => {
-                Ok(ExecOutcome::ThreadFinished {
-                    thread_index: 0,
-                    return_value: unimplemented!(), // TODO: Ok(val),
-                    user_data: self.vm.thread_user_data.take().unwrap(),
-                })
-            }
+            coroutine::RunOut::Finished(Ok(val)) => Ok(ExecOutcome::ThreadFinished {
+                thread_index: 0,
+                return_value: val.map(From::from),
+                user_data: self.vm.thread_user_data.take().unwrap(),
+            }),
             coroutine::RunOut::Interrupted(Interrupt::Interrupt {
                 function_index,
                 parameters,
@@ -304,7 +325,9 @@ impl<'a, T> Thread<'a, T> {
                 id: function_index,
                 params: parameters,
             }),
-            coroutine::RunOut::Interrupted(_) => unreachable!(),
+
+            // `Init` must only be produced at initialization.
+            coroutine::RunOut::Interrupted(Interrupt::Init(_)) => unreachable!(),
         }
     }
 
