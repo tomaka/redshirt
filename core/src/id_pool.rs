@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use core::fmt;
+use core::{fmt, num::NonZeroU64};
 use crossbeam_queue::SegQueue;
 use rand::distributions::{Distribution as _, Uniform};
 use rand_chacha::ChaCha20Rng;
@@ -46,17 +46,17 @@ impl IdPool {
     pub fn new() -> Self {
         IdPool {
             rngs: SegQueue::new(),
-            distribution: Uniform::from(0..=u64::max_value()),
+            distribution: Uniform::from(1..=u64::max_value()),
             master_rng: Spinlock::new(Hc128Rng::from_seed([0; 32])), // FIXME: proper seed
         }
     }
 
     /// Assigns a new PID from this pool.
-    pub fn assign<T: From<u64>>(&self) -> T {
+    pub fn assign<T: From<NonZeroU64>>(&self) -> T {
         if let Ok(mut rng) = self.rngs.pop() {
             let id = self.distribution.sample(&mut rng);
             self.rngs.push(rng);
-            return T::from(id);
+            return T::from(NonZeroU64::new(id).unwrap());
         }
 
         let mut master_rng = self.master_rng.lock();
@@ -66,7 +66,7 @@ impl IdPool {
         };
         let id = self.distribution.sample(&mut new_rng);
         self.rngs.push(new_rng);
-        T::from(id)
+        T::from(NonZeroU64::new(id).unwrap())
     }
 }
 

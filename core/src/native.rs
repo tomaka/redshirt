@@ -13,6 +13,19 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+//! Native programs handling.
+//!
+//! A so-called "native program" is a piece of code that interfaces with the core system in the
+//! same way as a Wasm program.
+//! In other words, it is similar to a Wasm program but directly embedded in the kernel.
+//!
+//! This feature is useful in order to provide the primitive interfaces that couldn't otherwise be
+//! implemented from within a Wasm VM, such as a timers, randomness, access to physical memory,
+//! and so on.
+//!
+//! This module defines the [`NativeProgramRef`] trait that should be implemented on native
+//! programs.
+
 pub use self::collection::{
     NativeProgramsCollection, NativeProgramsCollectionEvent, NativeProgramsCollectionMessageIdWrite,
 };

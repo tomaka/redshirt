@@ -133,8 +133,6 @@ impl fmt::Display for FromBytesError {
 
 #[cfg(test)]
 mod tests {
-    use super::Module;
-
     #[test]
     fn empty_wat_works() {
         let _ = from_wat!(local, "(module)");

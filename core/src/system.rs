@@ -13,12 +13,23 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+//! Core system, alongside with support for native programs, and some predefined interfaces and
+//! features.
+//!
+//! Natively handles the following interfaces:
+//! TODO: indicate hashes
+//! TODO: more details
+//!
+//! - `interface`.
+//!
+
+use crate::extrinsics::wasi;
 use crate::module::{Module, ModuleHash};
 use crate::native::{self, NativeProgramMessageIdWrite as _};
 use crate::scheduler::{Core, CoreBuilder, CoreRunOutcome, NewErr};
 
 use alloc::vec::Vec;
-use core::{cell::RefCell, iter, num::NonZeroU64, task::Poll};
+use core::{iter, num::NonZeroU64, task::Poll};
 use crossbeam_queue::SegQueue;
 use futures::prelude::*;
 use hashbrown::HashSet;
@@ -29,10 +40,10 @@ use spinning_top::Spinlock;
 /// Main struct that handles a system, including the scheduler, program loader,
 /// inter-process communication, and so on.
 ///
-/// Natively handles the "interface" interface.  TODO: indicate hashes
+/// See [the module-level documentation](super) for more information.
 pub struct System<'a> {
     /// Inner system with inter-process communications.
-    core: Core,
+    core: Core<wasi::WasiExtrinsics>,
 
     /// Collection of programs. Each is assigned a `Pid` that is reserved within `core`.
     /// Can communicate with the WASM programs that are within `core`.
@@ -52,13 +63,13 @@ pub struct System<'a> {
     /// Set of messages that we emitted of requests to load a program from the loader interface.
     /// All these messages expect a `redshirt_loader_interface::ffi::LoadResponse` as answer.
     // TODO: call shink_to_fit from time to time
-    loading_programs: RefCell<HashSet<MessageId, BuildNoHashHasher<u64>>>,
+    loading_programs: Spinlock<HashSet<MessageId, BuildNoHashHasher<u64>>>,
 }
 
 /// Prototype for a [`System`].
 pub struct SystemBuilder<'a> {
     /// Builder for the inner core.
-    core: CoreBuilder,
+    core: CoreBuilder<wasi::WasiExtrinsics>,
 
     /// Native programs.
     native_programs: native::NativeProgramsCollection<'a>,
@@ -93,7 +104,6 @@ pub enum SystemRunOutcome {
 #[derive(Debug)]
 enum RunOnceOutcome {
     Report(SystemRunOutcome),
-    Idle,
     LoopAgain,
     LoopAgainNow,
 }
@@ -101,7 +111,7 @@ enum RunOnceOutcome {
 impl<'a> System<'a> {
     /// Start executing a program.
     pub fn execute(&self, program: &Module) -> Result<Pid, NewErr> {
-        Ok(self.core.execute(program)?.pid())
+        Ok(self.core.execute(program)?.0.pid())
     }
 
     /// Runs the [`System`] once and returns the outcome.
@@ -124,17 +134,22 @@ impl<'a> System<'a> {
                             redshirt_loader_interface::ffi::INTERFACE,
                             redshirt_loader_interface::ffi::LoaderMessage::Load(From::from(hash)),
                         );
-                        self.loading_programs.borrow_mut().insert(message_id);
+                        self.loading_programs.lock().insert(message_id);
                     }
                 }
 
-                let run_once_outcome = self.run_once();
+                // TODO: put an await here instead
+                let run_once_outcome = {
+                    let fut = self.run_once();
+                    futures::pin_mut!(fut);
+                    Future::poll(fut, cx)
+                };
 
-                if let RunOnceOutcome::Report(out) = run_once_outcome {
+                if let Poll::Ready(RunOnceOutcome::Report(out)) = run_once_outcome {
                     return Poll::Ready(out);
                 }
 
-                if let RunOnceOutcome::LoopAgainNow = run_once_outcome {
+                if let Poll::Ready(RunOnceOutcome::LoopAgainNow) = run_once_outcome {
                     continue;
                 }
 
@@ -143,7 +158,7 @@ impl<'a> System<'a> {
                 let event = match next_event.poll(cx) {
                     Poll::Ready(ev) => ev,
                     Poll::Pending => {
-                        if let RunOnceOutcome::LoopAgain = run_once_outcome {
+                        if let Poll::Ready(RunOnceOutcome::LoopAgain) = run_once_outcome {
                             continue;
                         }
                         return Poll::Pending;
@@ -185,10 +200,8 @@ impl<'a> System<'a> {
         })
     }
 
-    fn run_once(&self) -> RunOnceOutcome {
-        match self.core.run() {
-            CoreRunOutcome::Idle => return RunOnceOutcome::Idle,
-
+    async fn run_once(&self) -> RunOnceOutcome {
+        match self.core.run().await {
             CoreRunOutcome::ProgramFinished { pid, outcome, .. } => {
                 let mut loader_pid = self.loader_pid.lock();
                 if *loader_pid == NonZeroU64::new(u64::from(pid)) {
@@ -208,7 +221,7 @@ impl<'a> System<'a> {
                 response,
                 ..
             } => {
-                if self.loading_programs.borrow_mut().remove(&message_id) {
+                if self.loading_programs.lock().remove(&message_id) {
                     let redshirt_loader_interface::ffi::LoadResponse { result } =
                         Decode::decode(response.unwrap()).unwrap();
                     // TODO: don't unwrap
@@ -297,7 +310,7 @@ impl<'a> SystemBuilder<'a> {
     /// Registers native code that can communicate with the WASM programs.
     pub fn with_native_program<T>(mut self, program: T) -> Self
     where
-        T: Send + 'a,
+        T: Send + Sync + 'a,
         for<'r> &'r T: native::NativeProgramRef<'r>,
     {
         self.native_programs.push(self.core.reserve_pid(), program);
@@ -367,7 +380,7 @@ impl<'a> SystemBuilder<'a> {
             native_programs: self.native_programs,
             loader_pid: Spinlock::new(None),
             load_source_virtual_pid: self.load_source_virtual_pid,
-            loading_programs: RefCell::new(Default::default()),
+            loading_programs: Spinlock::new(Default::default()),
             programs_to_load: self.programs_to_load,
         })
     }
@@ -376,5 +389,14 @@ impl<'a> SystemBuilder<'a> {
 impl<'a> Default for SystemBuilder<'a> {
     fn default() -> Self {
         SystemBuilder::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn send_sync() {
+        fn is_send_sync<T: Send + Sync>() {}
+        is_send_sync::<super::System>()
     }
 }

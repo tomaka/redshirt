@@ -13,8 +13,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use futures::{channel::mpsc, prelude::*};
 use redshirt_core::{build_wasm_module, module::ModuleHash};
-use std::{fs, path::PathBuf, process};
+use std::{fs, path::PathBuf, process, sync::Arc};
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
@@ -46,10 +47,6 @@ struct CliOptions {
 }
 
 fn main() {
-    futures::executor::block_on(async_main());
-}
-
-async fn async_main() {
     let cli_opts = CliOptions::from_args();
 
     let mut cli_requested_processes = Vec::new();
@@ -68,10 +65,15 @@ async fn async_main() {
         cli_requested_processes.push((module_path, module, false));
     }
 
+    let framebuffer_context = redshirt_framebuffer_hosted::FramebufferContext::new();
+
     let system = redshirt_core::system::SystemBuilder::new()
         .with_native_program(redshirt_time_hosted::TimerHandler::new())
         .with_native_program(redshirt_tcp_hosted::TcpHandler::new())
         .with_native_program(redshirt_log_hosted::LogHandler::new())
+        .with_native_program(redshirt_framebuffer_hosted::FramebufferHandler::new(
+            &framebuffer_context,
+        ))
         .with_native_program(redshirt_random_hosted::RandomNativeProgram::new())
         .with_startup_process(build_wasm_module!(
             "../../../modules/p2p-loader",
@@ -97,26 +99,47 @@ async fn async_main() {
         return;
     }*/
 
-    loop {
-        let outcome = system.run().await;
-        match outcome {
-            redshirt_core::system::SystemRunOutcome::ProgramFinished {
-                pid,
-                outcome: Err(err),
-            } if cli_pids.iter().any(|p| *p == pid) => {
-                eprintln!("{:?}", err);
-                process::exit(1);
-            }
-            redshirt_core::system::SystemRunOutcome::ProgramFinished {
-                pid,
-                outcome: Ok(()),
-            } => {
-                cli_pids.retain(|p| *p != pid);
-                if cli_pids.is_empty() {
-                    process::exit(0);
+    // We now spawn background tasks that run the scheduler.
+    // Background tasks report all events to the main thread, which can then decide to stop
+    // everything.
+    let (tx, mut rx) = mpsc::channel(16);
+    let system = Arc::new(system);
+
+    for _ in 0..num_cpus::get() {
+        let mut tx = tx.clone();
+        let system = system.clone();
+        async_std::task::spawn(async move {
+            loop {
+                let outcome = system.run().await;
+                if tx.send(outcome).await.is_err() {
+                    break;
                 }
             }
-            _ => panic!(),
-        }
+        });
     }
+
+    // All the background tasks events are grouped together and sent here.
+    framebuffer_context.run(async move {
+        while let Some(event) = rx.next().await {
+            match event {
+                redshirt_core::system::SystemRunOutcome::ProgramFinished {
+                    pid,
+                    outcome: Err(err),
+                } if cli_pids.iter().any(|p| *p == pid) => {
+                    eprintln!("{:?}", err);
+                    process::exit(1);
+                }
+                redshirt_core::system::SystemRunOutcome::ProgramFinished {
+                    pid,
+                    outcome: Ok(()),
+                } => {
+                    cli_pids.retain(|p| *p != pid);
+                    if cli_pids.is_empty() {
+                        process::exit(0);
+                    }
+                }
+                _ => panic!(),
+            }
+        }
+    });
 }

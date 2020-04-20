@@ -16,7 +16,7 @@
 // TODO: everything here is unsafe and prototipal
 
 use super::{ExecOutcome, NewErr, RunErr, StartErr};
-use crate::{WasmValue, module::Module};
+use crate::{WasmValue, module::Module, primitives::Signature};
 
 use alloc::{
     borrow::{Cow, ToOwned as _},
@@ -58,7 +58,7 @@ impl<T> Jit<T> {
     pub fn new(
         module: &Module,
         main_thread_user_data: T,
-        mut symbols: impl FnMut(&str, &str, &wasmi::Signature) -> Result<usize, ()>,
+        mut symbols: impl FnMut(&str, &str, &Signature) -> Result<usize, ()>,
     ) -> Result<Self, NewErr> {
         let engine = wasmtime::Engine::new(&Default::default());
         let store = wasmtime::Store::new(&engine);

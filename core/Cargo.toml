@@ -32,6 +32,7 @@ rand = { version = "0.7", default-features = false }
 rand_chacha = { version = "0.2.1", default-features = false }
 rand_core = { version = "0.5.0", default-features = false }
 rand_hc = { version = "0.2.0", default-features = false }
+slab = { git = "https://github.com/baloo/slab", rev = "88b456131de20750e785655d1e62cd0b6e10d44b" }
 smallvec = { version = "1.0.0", default-features = false }
 spinning_top = "0.1.0"
 wasi = { version = "0.9.0", default-features = false }
@@ -40,7 +41,7 @@ wasmi = { git = "https://github.com/tomaka/wasmi", branch = "no-std", default-fe
 
 [dev-dependencies]
 criterion = "0.3"
-futures = "0.3.1"
+futures = { version = "0.3.1", default-features = false, features = ["executor"] }
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 wasmtime = { version = "0.13.0", default-features = false }

@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::{module::Module, ValueType, WasmValue};
+use crate::{module::Module, primitives::Signature, ValueType, WasmValue};
 
 use alloc::{
     borrow::{Cow, ToOwned as _},
@@ -198,7 +198,7 @@ impl<T> ProcessStateMachine<T> {
     pub fn new(
         module: &Module,
         main_thread_user_data: T,
-        mut symbols: impl FnMut(&str, &str, &wasmi::Signature) -> Result<usize, ()>,
+        mut symbols: impl FnMut(&str, &str, &Signature) -> Result<usize, ()>,
     ) -> Result<Self, NewErr> {
         Ok(ProcessStateMachine(ImpStateMachine::new(
             module,
@@ -374,7 +374,7 @@ impl fmt::Display for RunErr {
 #[cfg(test)]
 mod tests {
     use super::{ExecOutcome, NewErr, ProcessStateMachine};
-    use crate::WasmValue;
+    use crate::primitives::WasmValue;
 
     #[test]
     fn starts_if_main() {

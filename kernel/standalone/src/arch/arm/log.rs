@@ -17,8 +17,8 @@
 
 use crate::klog::KLogger;
 
-use alloc::sync::Arc;
-use core::fmt::Write as _;
+use alloc::string::String;
+use core::fmt::{self, Write};
 use redshirt_kernel_log_interface::ffi::{FramebufferFormat, FramebufferInfo, KernelLogMethod};
 use spinning_top::Spinlock;
 
@@ -56,9 +56,9 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
     }
 
     // Freeze forever.
-    loop {
-        unsafe {
-            asm!("wfi");
+    unsafe {
+        loop {
+            asm!(r#"wfe"#);
         }
     }
 }
