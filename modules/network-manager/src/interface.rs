@@ -198,7 +198,6 @@ impl<TSockUd> NetInterfaceState<TSockUd> {
 
         match self.next_event_static().await {
             NetInterfaceEventStatic::EthernetCableOut => {
-                log::trace!("Cable out");
                 let mut device_out_buffer = &mut self.ethernet.device_mut().device_out_buffer;
                 // TODO: wrong with reports
                 NetInterfaceEvent::EthernetCableOut(device_out_buffer)
@@ -295,7 +294,6 @@ impl<TSockUd> NetInterfaceState<TSockUd> {
             // Process the DHCPv4 client.
             // TODO: handle `next_poll`
             if let Some(dhcp_v4_client) = &mut self.dhcp_v4_client {
-                log::trace!("polling dhcp");
                 match dhcp_v4_client.poll(&mut self.ethernet, &mut self.sockets, now().await) {
                     Err(err) => panic!("{:?}", err), // TODO:
                     Ok(None) => {}

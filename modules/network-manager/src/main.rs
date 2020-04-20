@@ -61,6 +61,7 @@ async fn async_main() {
                 if let Some(msg_id) = msg_id.take() {
                     let data = mem::replace(buffer, Vec::new());
                     debug_assert!(!data.is_empty());
+                    log::trace!("Emitting {:?}", data);
                     redshirt_syscalls::emit_answer(msg_id, &data);
                 } else {
                     panic!("message_out but no message"); // TODO:
