@@ -42,6 +42,7 @@ spec:
       - name: passive-node
         # Note: `<TAG>` is replaced by a script before deployment
         image: tomaka/redshirt-passive-node:<TAG>
+        args: ["--git-watch", "https://github.com/tomaka/redshirt-packages"]
         env:
         - name: RUST_LOG
           value: p2p_loader=TRACE
