@@ -33,6 +33,7 @@ use libp2p::plaintext::PlainText2Config;
 use libp2p::swarm::{Swarm, SwarmEvent};
 use std::{collections::VecDeque, io, path::PathBuf, pin::Pin, time::Duration};
 
+mod git_clones;
 mod notifier;
 
 /// Active set of connections to the network.
@@ -42,6 +43,9 @@ pub struct Network<T> {
 
     /// Stream from the files watcher.
     notifications: stream::SelectAll<Pin<Box<dyn Stream<Item = notifier::NotifierEvent> + Send>>>,
+
+    /// Holds active git clones.
+    _git_clones_directories: git_clones::GitClones,
 
     /// List of keys that are currently being fetched.
     active_fetches: Vec<(Key, T)>,
@@ -77,20 +81,32 @@ pub struct NetworkConfig {
     /// All the files in this list of directories and children directories will be automatically
     /// pushed onto the DHT.
     ///
-    /// If `#[cfg(feature = "notify")]` isn't enabled, passing `Some` will panic at
+    /// If `#[cfg(feature = "notify")]` isn't enabled, passing a non-empty list will panic at
     /// initialization.
     // TODO: what happens if the same path is present multiple times? or if one element is a child
     // of another?
     pub watched_directories: Vec<PathBuf>,
+
+    /// URLs of git repositories whose Wasm files will be automatically pushed to the DHT.
+    ///
+    /// If `#[cfg(feature = "git")]` isn't enabled, passing a non-empty list will panic at
+    /// initialization.
+    pub watched_git_repositories: Vec<String>,
 }
 
 impl<T> Network<T> {
     /// Initializes the network.
     pub fn start(config: NetworkConfig) -> Result<Network<T>, io::Error> {
+        let git_clones_directories = git_clones::clone_git_repos(&config.watched_git_repositories)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+
         let notifications = {
             let mut list = stream::SelectAll::new();
             for directory in config.watched_directories {
                 list.push(notifier::start_notifier(directory)?.boxed());
+            }
+            for path in git_clones_directories.paths() {
+                list.push(notifier::start_notifier(path.to_owned())?.boxed());
             }
             // We have to push at least a pending stream, otherwise the `SelectAll` will produce
             // `None`.
@@ -172,6 +188,7 @@ impl<T> Network<T> {
         Ok(Network {
             swarm,
             notifications,
+            _git_clones_directories: git_clones_directories,
             active_fetches: Vec::new(),
             events_queue: VecDeque::new(),
         })
@@ -277,6 +294,7 @@ impl Default for NetworkConfig {
         NetworkConfig {
             private_key: None,
             watched_directories: Vec::new(),
+            watched_git_repositories: Vec::new(),
         }
     }
 }
