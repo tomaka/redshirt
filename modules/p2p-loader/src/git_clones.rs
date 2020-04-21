@@ -71,7 +71,11 @@ fn clone_git_repos_inner(
 
 #[cfg(not(feature = "git"))]
 fn clone_git_repos_inner(
-    _: impl IntoIterator<Item = impl AsRef<str>>,
+    iter: impl IntoIterator<Item = impl AsRef<str>>,
 ) -> Result<GitClones, Box<dyn error::Error + Send + Sync>> {
-    panic!("The git feature is not enabled")
+    let mut iter = iter.into_iter();
+    if iter.next().is_some() {
+        panic!("The git feature is not enabled")
+    }
+    Ok(GitClones { paths: Vec::new() })
 }
