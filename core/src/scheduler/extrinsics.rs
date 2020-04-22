@@ -77,7 +77,7 @@ pub struct ProcessesCollectionExtrinsicsBuilder<TExt: Extrinsics> {
 /// Access to a process within the collection.
 pub struct ProcessesCollectionExtrinsicsProc<'a, TPud, TTud, TExt: Extrinsics> {
     parent: &'a ProcessesCollectionExtrinsics<TPud, TTud, TExt>,
-    inner: processes::ProcessesCollectionProc<
+    inner: processes::ProcAccess<
         'a,
         Extrinsic<TExt::ExtrinsicId>,
         LocalProcessUserData<TPud, TExt>,
@@ -98,7 +98,7 @@ pub enum ProcessesCollectionExtrinsicsThread<'a, TPud, TTud, TExt: Extrinsics> {
 /// Implements the [`ProcessesCollectionExtrinsicsThreadAccess`] trait.
 pub struct ProcessesCollectionExtrinsicsThreadEmitMessage<'a, TPud, TTud, TExt: Extrinsics> {
     process: ProcessesCollectionExtrinsicsProc<'a, TPud, TTud, TExt>,
-    inner: processes::ProcessesCollectionThread<
+    inner: processes::ThreadAccess<
         'a,
         Extrinsic<TExt::ExtrinsicId>,
         LocalProcessUserData<TPud, TExt>,
@@ -111,7 +111,7 @@ pub struct ProcessesCollectionExtrinsicsThreadEmitMessage<'a, TPud, TTud, TExt: 
 /// Implements the [`ProcessesCollectionExtrinsicsThreadAccess`] trait.
 pub struct ProcessesCollectionExtrinsicsThreadWaitNotification<'a, TPud, TTud, TExt: Extrinsics> {
     process: ProcessesCollectionExtrinsicsProc<'a, TPud, TTud, TExt>,
-    inner: processes::ProcessesCollectionThread<
+    inner: processes::ThreadAccess<
         'a,
         Extrinsic<TExt::ExtrinsicId>,
         LocalProcessUserData<TPud, TExt>,
@@ -1255,7 +1255,7 @@ impl<TExtCtxt> LocalThreadState<TExtCtxt> {
 
 /// Implementation of the [`ExtrinsicsMemoryAccess`] trait for a process.
 struct MemoryAccessImpl<'a, 'b, TExtr, TPud, TTud>(
-    &'a mut processes::ProcessesCollectionThread<'b, TExtr, TPud, TTud>,
+    &'a mut processes::ThreadAccess<'b, TExtr, TPud, TTud>,
 );
 
 impl<'a, 'b, TExtr, TPud, TTud> ExtrinsicsMemoryAccess
