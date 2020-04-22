@@ -52,6 +52,26 @@ fn basic() {
 }
 
 #[test]
+fn aborting_works() {
+    let module = from_wat!(
+        local,
+        r#"(module
+        (func $_start (result i32)
+            i32.const 5)
+        (export "_start" (func $_start)))
+    "#
+    );
+    let processes = ProcessesCollectionBuilder::<()>::default().build();
+    processes.execute(&module, (), ()).unwrap().0.abort();
+    match futures::executor::block_on(processes.run()) {
+        RunOneOutcome::ProcessFinished {
+            outcome: Err(_), ..
+        } => {}
+        _ => panic!(),
+    };
+}
+
+#[test]
 fn many_processes() {
     let module = from_wat!(
         local,
