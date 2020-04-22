@@ -226,14 +226,14 @@ impl<T> Network<T> {
                 ))) => {
                     for record in result.records {
                         log::debug!("Successfully loaded record from DHT: {:?}", record.key);
-                        if let Some(pos) = self
+                        while let Some(pos) = self
                             .active_fetches
                             .iter()
                             .position(|(key, _)| *key == record.key)
                         {
                             let user_data = self.active_fetches.remove(pos).1;
                             self.events_queue.push_back(NetworkEvent::FetchSuccess {
-                                data: record.value,
+                                data: record.value.clone(),
                                 user_data,
                             });
                         }
@@ -244,7 +244,7 @@ impl<T> Network<T> {
                 ))) => {
                     log::info!("Failed to get record: {:?}", err);
                     let fetch_failed_key = err.into_key();
-                    if let Some(pos) = self
+                    while let Some(pos) = self
                         .active_fetches
                         .iter()
                         .position(|(key, _)| *key == fetch_failed_key)
