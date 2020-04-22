@@ -293,7 +293,7 @@ impl<'a> SystemBuilder<'a> {
     /// Starts a new builder.
     pub fn new() -> Self {
         // We handle some low-level interfaces here.
-        let mut core = Core::new();
+        let mut core = CoreBuilder::new();
         let interface_interface_pid = core.reserve_pid();
         let load_source_virtual_pid = core.reserve_pid();
 

@@ -14,7 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use crate::extrinsics::NoExtrinsics;
-use crate::scheduler::{Core, CoreRunOutcome};
+use crate::scheduler::{CoreBuilder, CoreRunOutcome};
 use futures::prelude::*;
 
 #[test]
@@ -28,7 +28,7 @@ fn trapping_module() {
     "#
     );
 
-    let core = Core::<NoExtrinsics>::new().build();
+    let core = CoreBuilder::<NoExtrinsics>::new().build();
     let expected_pid = core.execute(&module).unwrap().0.pid();
 
     match core.run().now_or_never() {

@@ -155,14 +155,6 @@ pub struct CoreProcess<'a, TExt: Extrinsics> {
 }
 
 impl<TExt: Extrinsics> Core<TExt> {
-    /// Initializes a new [`CoreBuilder`].
-    pub fn new() -> CoreBuilder<TExt> {
-        CoreBuilder {
-            reserved_pids: HashSet::with_hasher(Default::default()),
-            inner_builder: extrinsics::Builder::default(),
-        }
-    }
-
     /// Run the core once.
     pub async fn run(&self) -> CoreRunOutcome {
         loop {
@@ -649,6 +641,14 @@ impl<'a, TExt: Extrinsics> CoreProcess<'a, TExt> {
 }
 
 impl<TExt: Extrinsics> CoreBuilder<TExt> {
+    /// Initializes a new [`CoreBuilder`].
+    pub fn new() -> CoreBuilder<TExt> {
+        CoreBuilder {
+            reserved_pids: HashSet::with_hasher(Default::default()),
+            inner_builder: extrinsics::Builder::default(),
+        }
+    }
+
     /// Allocates a `Pid` that will not be used by any process.
     ///
     /// > **Note**: As of the writing of this comment, this feature is only ever used to allocate
