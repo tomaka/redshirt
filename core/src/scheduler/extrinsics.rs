@@ -13,6 +13,25 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+//! Collection of VMs representing processes.
+//!
+//! This module wraps around a [`processes::ProcessesCollection`]. The documentation of the
+//! [`processes`] module also applies to this module and it is strongly recommended it read it
+//! first.
+//!
+//! On top of the features of the [`processes`] module, this module also handles the logic related
+//! to extrinsics (in other words, functions that the Wasm modules can import and call).
+//!
+//! In terms of API, the changes compared to [`processes`] are:
+//!
+//! - The collection accepts an extra generic parameter that must implement the [`Extrinsics`]
+//! trait. Implementations of this trait can provide support for additional functions callable by
+//! the Wasm module by translating them into messages.
+//!
+//! - Interrupted threads are more strongly typed and are split into two categories: threads that
+//! are interrupted because they want to emit a message, and threads that are interrupted because
+//! they are waiting for a notification.
+
 use crate::extrinsics::{
     Extrinsics, ExtrinsicsAction, ExtrinsicsMemoryAccess, ExtrinsicsMemoryAccessErr,
 };
@@ -169,8 +188,8 @@ struct LocalThreadUserData<TTud, TExtCtxt> {
 /// State of a thread. Private. Stored within the [`processes::ProcessesCollection`].
 #[derive(Debug)]
 enum LocalThreadState<TExtCtxt> {
-    /// Thread is ready to run, running, or has just called an extrinsic and the call is being
-    /// processed.
+    /// Thread is ready to run, running, has just called an extrinsic and the call is being
+    /// processed, or has deliberately been put in limbo before the process is being aborted.
     ReadyToRun,
 
     /// Thread is in the middle of a non-hardcoded extrinsic. We now need to apply the given
@@ -365,8 +384,8 @@ where
         }
     }
 
-    /// Similar to [`run`](ProcessesCollectionExtrinsics::run). Should be called repeatidly as
-    /// long as it returns `None`.
+    /// Internal. Similar to [`run`](ProcessesCollectionExtrinsics::run). Should be called
+    /// repeatidly as long as it returns `None`.
     async fn run_once<'a>(&'a self) -> Option<RunOneOutcome<'a, TPud, TTud, TExt>> {
         while let Ok(tid) = self.local_run_queue.pop() {
             // It is possible that the thread no longer exists, for example if the process crashed.
@@ -464,21 +483,25 @@ where
                 params,
             } => {
                 debug_assert!(thread.user_data().state.is_ready_to_run());
-                let next_msg = match calls::parse_extrinsic_next_notification(&mut thread, params) {
-                    Ok(m) => m,
-                    Err(_) => panic!(), // TODO:
-                };
-                thread.user_data_mut().state = LocalThreadState::NotificationWait(next_msg);
-                let process = ProcessesCollectionExtrinsicsProc {
-                    parent: self,
-                    inner: thread.process(),
-                };
-                Some(RunOneOutcome::ThreadWaitNotification(
-                    ProcessesCollectionExtrinsicsThreadWaitNotification {
-                        process,
-                        inner: thread,
-                    },
-                ))
+                match calls::parse_extrinsic_next_notification(&mut thread, params) {
+                    Ok(next_msg) => {
+                        thread.user_data_mut().state = LocalThreadState::NotificationWait(next_msg);
+                        let process = ProcessesCollectionExtrinsicsProc {
+                            parent: self,
+                            inner: thread.process(),
+                        };
+                        Some(RunOneOutcome::ThreadWaitNotification(
+                            ProcessesCollectionExtrinsicsThreadWaitNotification {
+                                process,
+                                inner: thread,
+                            },
+                        ))
+                    }
+                    Err(_) => {
+                        thread.process().abort();
+                        None
+                    }
+                }
             }
 
             processes::RunOneOutcome::Interrupted {
@@ -487,21 +510,25 @@ where
                 params,
             } => {
                 debug_assert!(thread.user_data().state.is_ready_to_run());
-                let emit_msg = match calls::parse_extrinsic_emit_message(&mut thread, params) {
-                    Ok(m) => m,
-                    Err(_) => panic!(), // TODO:
-                };
-                thread.user_data_mut().state = LocalThreadState::EmitMessage(emit_msg);
-                let process = ProcessesCollectionExtrinsicsProc {
-                    parent: self,
-                    inner: thread.process(),
-                };
-                Some(RunOneOutcome::ThreadEmitMessage(
-                    ProcessesCollectionExtrinsicsThreadEmitMessage {
-                        process,
-                        inner: thread,
-                    },
-                ))
+                match calls::parse_extrinsic_emit_message(&mut thread, params) {
+                    Ok(emit_msg) => {
+                        thread.user_data_mut().state = LocalThreadState::EmitMessage(emit_msg);
+                        let process = ProcessesCollectionExtrinsicsProc {
+                            parent: self,
+                            inner: thread.process(),
+                        };
+                        Some(RunOneOutcome::ThreadEmitMessage(
+                            ProcessesCollectionExtrinsicsThreadEmitMessage {
+                                process,
+                                inner: thread,
+                            },
+                        ))
+                    }
+                    Err(_) => {
+                        thread.process().abort();
+                        None
+                    }
+                }
             }
 
             processes::RunOneOutcome::Interrupted {
@@ -510,22 +537,26 @@ where
                 params,
             } => {
                 debug_assert!(thread.user_data().state.is_ready_to_run());
-                let emit_resp = match calls::parse_extrinsic_emit_answer(&mut thread, params) {
-                    Ok(m) => m,
-                    Err(_) => panic!(), // TODO:
-                };
-                let process = thread.process();
-                let thread_id = thread.tid();
-                thread.resume(None);
-                Some(RunOneOutcome::ThreadEmitAnswer {
-                    process: ProcessesCollectionExtrinsicsProc {
-                        parent: self,
-                        inner: process,
-                    },
-                    thread_id,
-                    message_id: emit_resp.message_id,
-                    response: emit_resp.response,
-                })
+                match calls::parse_extrinsic_emit_answer(&mut thread, params) {
+                    Ok(emit_resp) => {
+                        let process = thread.process();
+                        let thread_id = thread.tid();
+                        thread.resume(None);
+                        Some(RunOneOutcome::ThreadEmitAnswer {
+                            process: ProcessesCollectionExtrinsicsProc {
+                                parent: self,
+                                inner: process,
+                            },
+                            thread_id,
+                            message_id: emit_resp.message_id,
+                            response: emit_resp.response,
+                        })
+                    }
+                    Err(_) => {
+                        thread.process().abort();
+                        None
+                    }
+                }
             }
 
             processes::RunOneOutcome::Interrupted {
@@ -534,22 +565,25 @@ where
                 params,
             } => {
                 debug_assert!(thread.user_data().state.is_ready_to_run());
-                let emit_msg_error =
-                    match calls::parse_extrinsic_emit_message_error(&mut thread, params) {
-                        Ok(m) => m,
-                        Err(_) => panic!(), // TODO:
-                    };
-                let process = thread.process();
-                let thread_id = thread.tid();
-                thread.resume(None);
-                Some(RunOneOutcome::ThreadEmitMessageError {
-                    process: ProcessesCollectionExtrinsicsProc {
-                        parent: self,
-                        inner: process,
-                    },
-                    thread_id,
-                    message_id: emit_msg_error,
-                })
+                match calls::parse_extrinsic_emit_message_error(&mut thread, params) {
+                    Ok(emit_msg_error) => {
+                        let process = thread.process();
+                        let thread_id = thread.tid();
+                        thread.resume(None);
+                        Some(RunOneOutcome::ThreadEmitMessageError {
+                            process: ProcessesCollectionExtrinsicsProc {
+                                parent: self,
+                                inner: process,
+                            },
+                            thread_id,
+                            message_id: emit_msg_error,
+                        })
+                    }
+                    Err(_) => {
+                        thread.process().abort();
+                        None
+                    }
+                }
             }
 
             processes::RunOneOutcome::Interrupted {
@@ -558,21 +592,25 @@ where
                 params,
             } => {
                 debug_assert!(thread.user_data().state.is_ready_to_run());
-                let emit_cancel = match calls::parse_extrinsic_cancel_message(&mut thread, params) {
-                    Ok(m) => m,
-                    Err(_) => panic!(), // TODO:
-                };
-                let process = thread.process();
-                let thread_id = thread.tid();
-                thread.resume(None);
-                Some(RunOneOutcome::ThreadCancelMessage {
-                    process: ProcessesCollectionExtrinsicsProc {
-                        parent: self,
-                        inner: process,
-                    },
-                    thread_id,
-                    message_id: emit_cancel,
-                })
+                match calls::parse_extrinsic_cancel_message(&mut thread, params) {
+                    Ok(emit_cancel) => {
+                        let process = thread.process();
+                        let thread_id = thread.tid();
+                        thread.resume(None);
+                        Some(RunOneOutcome::ThreadCancelMessage {
+                            process: ProcessesCollectionExtrinsicsProc {
+                                parent: self,
+                                inner: process,
+                            },
+                            thread_id,
+                            message_id: emit_cancel,
+                        })
+                    }
+                    Err(_) => {
+                        thread.process().abort();
+                        None
+                    }
+                }
             }
 
             processes::RunOneOutcome::Interrupted {
@@ -781,7 +819,7 @@ where
     /// Calling [`abort`](ProcessesCollectionExtrinsicsProc::abort) a second time or more has no
     /// effect.
     pub fn abort(&self) {
-        unimplemented!() // TODO:
+        self.inner.abort();
     }
 }
 
@@ -1080,10 +1118,15 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
                 let notif_size_u32 = u32::try_from(notif.0.len()).unwrap();
                 assert!(wait.out_size >= notif_size_u32);
 
+                self.inner.user_data_mut().state = LocalThreadState::ReadyToRun;
+
                 // Write the notification in the process's memory.
                 match self.inner.write_memory(wait.out_pointer, &notif.0) {
                     Ok(()) => {}
-                    Err(_) => panic!(), // TODO: can legit happen
+                    Err(_) => {
+                        self.inner.process().abort();
+                        return;
+                    }
                 };
 
                 // Zero the corresponding entry in the notifications to wait upon.
@@ -1092,10 +1135,12 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
                     &[0; 8],
                 ) {
                     Ok(()) => {}
-                    Err(_) => panic!(), // TODO: can legit happen
+                    Err(_) => {
+                        self.inner.process().abort();
+                        return;
+                    }
                 };
 
-                self.inner.user_data_mut().state = LocalThreadState::ReadyToRun;
                 self.inner.resume(Some(crate::WasmValue::I32(
                     i32::try_from(notif_size_u32).unwrap(),
                 )));

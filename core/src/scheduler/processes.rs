@@ -58,6 +58,7 @@ use crate::{id_pool::IdPool, module::Module, primitives::Signature, scheduler::v
 
 use alloc::{
     borrow::Cow,
+    boxed::Box,
     collections::VecDeque,
     sync::{Arc, Weak},
     vec,
@@ -166,15 +167,15 @@ struct Process<TPud, TTud> {
 
 /// Part of a process's state behind a mutex.
 struct ProcessLock<TTud> {
-    /// The actual Wasm virtual machine.
+    /// The actual Wasm virtual machine. Do not use if `dead` is `Some`.
     vm: vm::ProcessStateMachine<Thread>,
 
     /// Queue of threads that are ready to be resumed.
     threads_to_resume: VecDeque<(ThreadId, TTud, Option<crate::WasmValue>)>,
 
-    /// If `Some`, then the process is in a dead state, the virtual machine is in a poisoned
-    /// state, and we are in the process of collecting all the threads user datas into the
-    /// [`ProcessDeadState`] before notifying the user.
+    /// If `Some`, then the process has been marked for death. The virtual machine must no longer
+    /// be used (as it might be in a poisoned state), and we are in the process of collecting all
+    /// the threads user datas into the [`ProcessDeadState`] before notifying the user.
     dead: Option<ProcessDeadState<TTud>>,
 }
 
@@ -545,7 +546,6 @@ impl<'a, TExtr, TPud, TTud> Future for RunFuture<'a, TExtr, TPud, TTud> {
             // we can finalize the destruction.
             if let Some(proc_dead) = &mut proc_state.dead {
                 proc_dead.dead_threads.push((tid, thread_user_data));
-                debug_assert!(proc_state.vm.is_poisoned());
                 drop(proc_state); // Drop the lock.
                 this.try_report_process_death(process);
                 continue;
@@ -791,7 +791,54 @@ impl<'a, TExtr, TPud, TTud> ProcessesCollectionProc<'a, TExtr, TPud, TTud> {
             .threads_to_resume
             .push_back((thread_id, user_data, None));
 
+        self.collection
+            .execution_queue
+            .push(self.process.as_ref().unwrap().clone());
+        self.collection.wakers.notify_one();
+
         Ok(thread_id)
+    }
+
+    /// Marks the process as aborting.
+    ///
+    /// The termination will happen after all locks to this process have been released.
+    ///
+    /// Calling [`abort`](ProcessesCollectionProc::abort) a second time or more has no
+    /// effect.
+    pub fn abort(&self) {
+        let mut process_state = self.process.as_ref().unwrap().lock.lock();
+
+        if process_state.dead.is_some() {
+            return;
+        }
+
+        // TODO: possible deadlock?
+        let mut threads = self.collection.interrupted_threads.lock();
+        let mut dead_threads = Vec::new();
+        // TODO: O(n) complexity
+        while let Some(tid) = threads
+            .iter()
+            .find(|(_, (_, p))| Arc::ptr_eq(self.process.as_ref().unwrap(), p))
+            .map(|(k, _)| *k)
+        {
+            let (user_data, _) = threads.remove(&tid).unwrap();
+            dead_threads.push((tid, user_data));
+        }
+
+        // TODO: replace with better error once we no longer expose wasmi::Trap in the API
+        #[derive(Debug)]
+        struct HostErr;
+        impl wasmi::HostError for HostErr {}
+        impl fmt::Display for HostErr {
+            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                write!(f, "Aborted")
+            }
+        }
+
+        process_state.dead = Some(ProcessDeadState {
+            dead_threads,
+            outcome: Err(From::from(wasmi::TrapKind::Host(Box::new(HostErr)))),
+        });
     }
 }
 
