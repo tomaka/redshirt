@@ -125,7 +125,7 @@ impl<'a> System<'a> {
         future::poll_fn(move |cx| {
             loop {
                 // If we have a handler for the loader interface, start loading pending programs.
-                if let Some(_) = self.loader_pid.lock().clone() {
+                if self.loader_pid.lock().is_some() {
                     while let Ok(hash) = self.programs_to_load.pop() {
                         // TODO: can this not fail if the handler crashed in parallel in a
                         // multithreaded situation?

@@ -166,9 +166,8 @@ impl<TExt: Extrinsics> Core<TExt> {
     /// Run the core once.
     pub async fn run(&self) -> CoreRunOutcome {
         loop {
-            match self.run_inner().await {
-                Some(ev) => break ev,
-                None => {}
+            if let Some(ev) = self.run_inner().await {
+                break ev;
             }
         }
     }
@@ -464,7 +463,7 @@ impl<TExt: Extrinsics> Core<TExt> {
     ///
     /// The message doesn't expect any answer.
     // TODO: better API
-    pub fn emit_interface_message_no_answer<'a>(
+    pub fn emit_interface_message_no_answer(
         &self,
         emitter_pid: Pid,
         interface: InterfaceHash,
@@ -481,7 +480,7 @@ impl<TExt: Extrinsics> Core<TExt> {
     /// The message does expect an answer. The answer will be sent back as
     /// [`MessageResponse`](CoreRunOutcome::MessageResponse) event.
     // TODO: better API
-    pub fn emit_interface_message_answer<'a>(
+    pub fn emit_interface_message_answer(
         &self,
         emitter_pid: Pid,
         interface: InterfaceHash,
@@ -504,7 +503,7 @@ impl<TExt: Extrinsics> Core<TExt> {
     ///
     /// If `needs_answer` is true, then `Some` is always returned. If `needs_answer` is false
     /// then `None` is always returned.
-    fn emit_interface_message_inner<'a>(
+    fn emit_interface_message_inner(
         &self,
         interface: InterfaceHash,
         emitter_pid: Pid,

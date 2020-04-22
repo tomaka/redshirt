@@ -647,7 +647,7 @@ where
         &self,
         id: ThreadId,
     ) -> Result<ThreadAccess<TPud, TTud, TExt>, ThreadByIdErr> {
-        let mut inner = self
+        let inner = self
             .inner
             .interrupted_thread_by_id(id)
             .ok_or(ThreadByIdErr::RunningOrDead)?;
@@ -1027,12 +1027,7 @@ impl<'a, TPud, TTud, TExt: Extrinsics> ThreadWaitNotif<'a, TPud, TTud, TExt> {
         match self.inner.user_data().state {
             LocalThreadState::NotificationWait(ref wait) => {
                 // TODO: annoying allocation
-                let iter = wait
-                    .notifs_ids
-                    .iter()
-                    .cloned()
-                    .collect::<Vec<_>>()
-                    .into_iter();
+                let iter = wait.notifs_ids.to_vec().into_iter();
                 either::Either::Left(iter)
             }
             LocalThreadState::OtherExtrinsicWait { message, .. } => {
