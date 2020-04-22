@@ -16,7 +16,7 @@
 use crate::extrinsics::Extrinsics;
 use crate::module::Module;
 use crate::scheduler::{
-    extrinsics::{self, ProcessesCollectionExtrinsicsThreadAccess as _},
+    extrinsics::{self, ThreadAccessAccess as _},
     vm,
 };
 use crate::InterfaceHash;
@@ -82,7 +82,7 @@ pub struct CoreBuilder<TExt: Extrinsics> {
     /// See the corresponding field in `Core`.
     reserved_pids: HashSet<Pid, BuildNoHashHasher<u64>>,
     /// Builder for the [`processes`][Core::processes] field in `Core`.
-    inner_builder: extrinsics::ProcessesCollectionExtrinsicsBuilder<TExt>,
+    inner_builder: extrinsics::Builder<TExt>,
 }
 
 /// Outcome of calling [`run`](Core::run).
@@ -151,24 +151,15 @@ struct Process {
 /// Access to a process within the core.
 pub struct CoreProcess<'a, TExt: Extrinsics> {
     /// Access to the process within the inner collection.
-    process: extrinsics::ProcessesCollectionExtrinsicsProc<'a, Process, (), TExt>,
+    process: extrinsics::ProcAccess<'a, Process, (), TExt>,
 }
 
 impl<TExt: Extrinsics> Core<TExt> {
-    /// Initializes a new [`CoreBuilder`].
-    pub fn new() -> CoreBuilder<TExt> {
-        CoreBuilder {
-            reserved_pids: HashSet::with_hasher(Default::default()),
-            inner_builder: extrinsics::ProcessesCollectionExtrinsicsBuilder::default(),
-        }
-    }
-
     /// Run the core once.
     pub async fn run(&self) -> CoreRunOutcome {
         loop {
-            match self.run_inner().await {
-                Some(ev) => break ev,
-                None => {}
+            if let Some(ev) = self.run_inner().await {
+                break ev;
             }
         }
     }
@@ -386,7 +377,7 @@ impl<TExt: Extrinsics> Core<TExt> {
                 interface_handlers::WaitingForInterface::Thread(thread_id) => {
                     // Lock the thread that wants to deliver the message.
                     let mut thread = match self.processes.interrupted_thread_by_id(thread_id) {
-                        Ok(extrinsics::ProcessesCollectionExtrinsicsThread::EmitMessage(t)) => t,
+                        Ok(extrinsics::ThreadAccess::EmitMessage(t)) => t,
                         // It is possible for the process that owns the thread has crashed or
                         // terminated since then.
                         Err(extrinsics::ThreadByIdErr::RunningOrDead) => continue,
@@ -464,7 +455,7 @@ impl<TExt: Extrinsics> Core<TExt> {
     ///
     /// The message doesn't expect any answer.
     // TODO: better API
-    pub fn emit_interface_message_no_answer<'a>(
+    pub fn emit_interface_message_no_answer(
         &self,
         emitter_pid: Pid,
         interface: InterfaceHash,
@@ -481,7 +472,7 @@ impl<TExt: Extrinsics> Core<TExt> {
     /// The message does expect an answer. The answer will be sent back as
     /// [`MessageResponse`](CoreRunOutcome::MessageResponse) event.
     // TODO: better API
-    pub fn emit_interface_message_answer<'a>(
+    pub fn emit_interface_message_answer(
         &self,
         emitter_pid: Pid,
         interface: InterfaceHash,
@@ -504,7 +495,7 @@ impl<TExt: Extrinsics> Core<TExt> {
     ///
     /// If `needs_answer` is true, then `Some` is always returned. If `needs_answer` is false
     /// then `None` is always returned.
-    fn emit_interface_message_inner<'a>(
+    fn emit_interface_message_inner(
         &self,
         interface: InterfaceHash,
         emitter_pid: Pid,
@@ -606,10 +597,7 @@ impl<TExt: Extrinsics> Core<TExt> {
     }
 
     /// Tries to resume all the threads of the process that are waiting for an notification.
-    fn try_resume_notification_wait(
-        &self,
-        process: extrinsics::ProcessesCollectionExtrinsicsProc<Process, (), TExt>,
-    ) {
+    fn try_resume_notification_wait(&self, process: extrinsics::ProcAccess<Process, (), TExt>) {
         // The actual work being done here is actually quite complicated in order to ensure that
         // each `ThreadId` is only accessed once at a time, but the exposed API is very simple.
         for thread_access in process.user_data().wait_notifications_threads.access() {
@@ -617,9 +605,7 @@ impl<TExt: Extrinsics> Core<TExt> {
                 .processes
                 .interrupted_thread_by_id(thread_access.thread_id())
             {
-                Ok(extrinsics::ProcessesCollectionExtrinsicsThread::WaitNotification(thread)) => {
-                    thread
-                }
+                Ok(extrinsics::ThreadAccess::WaitNotification(thread)) => thread,
                 _ => unreachable!(),
             };
 
@@ -655,6 +641,14 @@ impl<'a, TExt: Extrinsics> CoreProcess<'a, TExt> {
 }
 
 impl<TExt: Extrinsics> CoreBuilder<TExt> {
+    /// Initializes a new [`CoreBuilder`].
+    pub fn new() -> CoreBuilder<TExt> {
+        CoreBuilder {
+            reserved_pids: HashSet::with_hasher(Default::default()),
+            inner_builder: extrinsics::Builder::default(),
+        }
+    }
+
     /// Allocates a `Pid` that will not be used by any process.
     ///
     /// > **Note**: As of the writing of this comment, this feature is only ever used to allocate
@@ -687,9 +681,8 @@ impl<TExt: Extrinsics> CoreBuilder<TExt> {
 ///
 /// Returns back the thread within an `Err` if it couldn't be resumed.
 fn try_resume_notification_wait_thread<TExt: Extrinsics>(
-    mut thread: extrinsics::ProcessesCollectionExtrinsicsThreadWaitNotification<Process, (), TExt>,
-) -> Result<(), extrinsics::ProcessesCollectionExtrinsicsThreadWaitNotification<Process, (), TExt>>
-{
+    mut thread: extrinsics::ThreadWaitNotif<Process, (), TExt>,
+) -> Result<(), extrinsics::ThreadWaitNotif<Process, (), TExt>> {
     // Note that the code below is a bit weird and unelegant, but this is to bypass spurious
     // borrowing errors.
     let (entry_size, index_and_notif) = {

@@ -70,14 +70,14 @@ pub struct ProcessesCollectionExtrinsics<TPud, TTud, TExt: Extrinsics> {
 }
 
 /// Prototype for a `ProcessesCollectionExtrinsics` under construction.
-pub struct ProcessesCollectionExtrinsicsBuilder<TExt: Extrinsics> {
+pub struct Builder<TExt: Extrinsics> {
     inner: processes::ProcessesCollectionBuilder<Extrinsic<TExt::ExtrinsicId>>,
 }
 
 /// Access to a process within the collection.
-pub struct ProcessesCollectionExtrinsicsProc<'a, TPud, TTud, TExt: Extrinsics> {
+pub struct ProcAccess<'a, TPud, TTud, TExt: Extrinsics> {
     parent: &'a ProcessesCollectionExtrinsics<TPud, TTud, TExt>,
-    inner: processes::ProcessesCollectionProc<
+    inner: processes::ProcAccess<
         'a,
         Extrinsic<TExt::ExtrinsicId>,
         LocalProcessUserData<TPud, TExt>,
@@ -87,18 +87,18 @@ pub struct ProcessesCollectionExtrinsicsProc<'a, TPud, TTud, TExt: Extrinsics> {
 
 /// Access to a thread within the collection that is in an interrupted state.
 ///
-/// Implements the [`ProcessesCollectionExtrinsicsThreadAccess`] trait.
-pub enum ProcessesCollectionExtrinsicsThread<'a, TPud, TTud, TExt: Extrinsics> {
-    EmitMessage(ProcessesCollectionExtrinsicsThreadEmitMessage<'a, TPud, TTud, TExt>),
-    WaitNotification(ProcessesCollectionExtrinsicsThreadWaitNotification<'a, TPud, TTud, TExt>),
+/// Implements the [`ThreadAccessAccess`] trait.
+pub enum ThreadAccess<'a, TPud, TTud, TExt: Extrinsics> {
+    EmitMessage(ThreadEmitMessage<'a, TPud, TTud, TExt>),
+    WaitNotification(ThreadWaitNotif<'a, TPud, TTud, TExt>),
 }
 
 /// Access to a thread within the collection.
 ///
-/// Implements the [`ProcessesCollectionExtrinsicsThreadAccess`] trait.
-pub struct ProcessesCollectionExtrinsicsThreadEmitMessage<'a, TPud, TTud, TExt: Extrinsics> {
-    process: ProcessesCollectionExtrinsicsProc<'a, TPud, TTud, TExt>,
-    inner: processes::ProcessesCollectionThread<
+/// Implements the [`ThreadAccessAccess`] trait.
+pub struct ThreadEmitMessage<'a, TPud, TTud, TExt: Extrinsics> {
+    process: ProcAccess<'a, TPud, TTud, TExt>,
+    inner: processes::ThreadAccess<
         'a,
         Extrinsic<TExt::ExtrinsicId>,
         LocalProcessUserData<TPud, TExt>,
@@ -108,10 +108,10 @@ pub struct ProcessesCollectionExtrinsicsThreadEmitMessage<'a, TPud, TTud, TExt: 
 
 /// Access to a thread within the collection.
 ///
-/// Implements the [`ProcessesCollectionExtrinsicsThreadAccess`] trait.
-pub struct ProcessesCollectionExtrinsicsThreadWaitNotification<'a, TPud, TTud, TExt: Extrinsics> {
-    process: ProcessesCollectionExtrinsicsProc<'a, TPud, TTud, TExt>,
-    inner: processes::ProcessesCollectionThread<
+/// Implements the [`ThreadAccessAccess`] trait.
+pub struct ThreadWaitNotif<'a, TPud, TTud, TExt: Extrinsics> {
+    process: ProcAccess<'a, TPud, TTud, TExt>,
+    inner: processes::ThreadAccess<
         'a,
         Extrinsic<TExt::ExtrinsicId>,
         LocalProcessUserData<TPud, TExt>,
@@ -120,7 +120,7 @@ pub struct ProcessesCollectionExtrinsicsThreadWaitNotification<'a, TPud, TTud, T
 }
 
 /// Common trait amongst all the thread accessor structs.
-pub trait ProcessesCollectionExtrinsicsThreadAccess<'a> {
+pub trait ThreadAccessAccess<'a> {
     type ProcessUserData;
     type ThreadUserData;
 
@@ -271,7 +271,7 @@ pub enum RunOneOutcome<'a, TPud, TTud, TExt: Extrinsics> {
         thread_id: ThreadId,
 
         /// Process whose thread has finished.
-        process: ProcessesCollectionExtrinsicsProc<'a, TPud, TTud, TExt>,
+        process: ProcAccess<'a, TPud, TTud, TExt>,
 
         /// User data of the thread.
         user_data: TTud,
@@ -281,12 +281,10 @@ pub enum RunOneOutcome<'a, TPud, TTud, TExt: Extrinsics> {
     },
 
     /// A thread in a process wants to emit a message.
-    ThreadEmitMessage(ProcessesCollectionExtrinsicsThreadEmitMessage<'a, TPud, TTud, TExt>),
+    ThreadEmitMessage(ThreadEmitMessage<'a, TPud, TTud, TExt>),
 
     /// A thread in a process is waiting for an incoming message.
-    ThreadWaitNotification(
-        ProcessesCollectionExtrinsicsThreadWaitNotification<'a, TPud, TTud, TExt>,
-    ),
+    ThreadWaitNotification(ThreadWaitNotif<'a, TPud, TTud, TExt>),
 
     /// A thread in a process wants to answer a message.
     ThreadEmitAnswer {
@@ -294,7 +292,7 @@ pub enum RunOneOutcome<'a, TPud, TTud, TExt: Extrinsics> {
         thread_id: ThreadId,
 
         /// Process that the thread belongs to.
-        process: ProcessesCollectionExtrinsicsProc<'a, TPud, TTud, TExt>,
+        process: ProcAccess<'a, TPud, TTud, TExt>,
 
         /// Message to answer.
         message_id: MessageId,
@@ -309,7 +307,7 @@ pub enum RunOneOutcome<'a, TPud, TTud, TExt: Extrinsics> {
         thread_id: ThreadId,
 
         /// Process that the thread belongs to.
-        process: ProcessesCollectionExtrinsicsProc<'a, TPud, TTud, TExt>,
+        process: ProcAccess<'a, TPud, TTud, TExt>,
 
         /// Message that is erroneous.
         message_id: MessageId,
@@ -321,7 +319,7 @@ pub enum RunOneOutcome<'a, TPud, TTud, TExt: Extrinsics> {
         thread_id: ThreadId,
 
         /// Process that the thread belongs to.
-        process: ProcessesCollectionExtrinsicsProc<'a, TPud, TTud, TExt>,
+        process: ProcAccess<'a, TPud, TTud, TExt>,
 
         /// Message that must be cancelled.
         message_id: MessageId,
@@ -346,13 +344,7 @@ where
         module: &Module,
         proc_user_data: TPud,
         main_thread_user_data: TTud,
-    ) -> Result<
-        (
-            ProcessesCollectionExtrinsicsProc<TPud, TTud, TExt>,
-            ThreadId,
-        ),
-        vm::NewErr,
-    > {
+    ) -> Result<(ProcAccess<TPud, TTud, TExt>, ThreadId), vm::NewErr> {
         let proc_user_data = LocalProcessUserData {
             extrinsics: Default::default(),
             external_user_data: proc_user_data,
@@ -365,7 +357,7 @@ where
             self.inner
                 .execute(module, proc_user_data, main_thread_user_data)?;
         Ok((
-            ProcessesCollectionExtrinsicsProc {
+            ProcAccess {
                 parent: self,
                 inner,
             },
@@ -397,16 +389,14 @@ where
                 LocalThreadState::OtherExtrinsicReportWait { context, message } => {
                     thread.user_data_mut().state =
                         LocalThreadState::OtherExtrinsicWait { context, message };
-                    let process = ProcessesCollectionExtrinsicsProc {
+                    let process = ProcAccess {
                         parent: self,
                         inner: thread.process(),
                     };
-                    return Some(RunOneOutcome::ThreadWaitNotification(
-                        ProcessesCollectionExtrinsicsThreadWaitNotification {
-                            process,
-                            inner: thread,
-                        },
-                    ));
+                    return Some(RunOneOutcome::ThreadWaitNotification(ThreadWaitNotif {
+                        process,
+                        inner: thread,
+                    }));
                 }
                 LocalThreadState::OtherExtrinsicApplyAction { context, action } => match action {
                     ExtrinsicsAction::ProgramCrash => unimplemented!(),
@@ -425,16 +415,14 @@ where
                             message,
                             response_expected,
                         };
-                        let process = ProcessesCollectionExtrinsicsProc {
+                        let process = ProcAccess {
                             parent: self,
                             inner: thread.process(),
                         };
-                        return Some(RunOneOutcome::ThreadEmitMessage(
-                            ProcessesCollectionExtrinsicsThreadEmitMessage {
-                                process,
-                                inner: thread,
-                            },
-                        ));
+                        return Some(RunOneOutcome::ThreadEmitMessage(ThreadEmitMessage {
+                            process,
+                            inner: thread,
+                        }));
                     }
                 },
                 _ => unreachable!(),
@@ -468,7 +456,7 @@ where
                 debug_assert!(user_data.state.is_ready_to_run());
                 Some(RunOneOutcome::ThreadFinished {
                     thread_id,
-                    process: ProcessesCollectionExtrinsicsProc {
+                    process: ProcAccess {
                         parent: self,
                         inner: process,
                     },
@@ -486,16 +474,14 @@ where
                 match calls::parse_extrinsic_next_notification(&mut thread, params) {
                     Ok(next_msg) => {
                         thread.user_data_mut().state = LocalThreadState::NotificationWait(next_msg);
-                        let process = ProcessesCollectionExtrinsicsProc {
+                        let process = ProcAccess {
                             parent: self,
                             inner: thread.process(),
                         };
-                        Some(RunOneOutcome::ThreadWaitNotification(
-                            ProcessesCollectionExtrinsicsThreadWaitNotification {
-                                process,
-                                inner: thread,
-                            },
-                        ))
+                        Some(RunOneOutcome::ThreadWaitNotification(ThreadWaitNotif {
+                            process,
+                            inner: thread,
+                        }))
                     }
                     Err(_) => {
                         thread.process().abort();
@@ -513,16 +499,14 @@ where
                 match calls::parse_extrinsic_emit_message(&mut thread, params) {
                     Ok(emit_msg) => {
                         thread.user_data_mut().state = LocalThreadState::EmitMessage(emit_msg);
-                        let process = ProcessesCollectionExtrinsicsProc {
+                        let process = ProcAccess {
                             parent: self,
                             inner: thread.process(),
                         };
-                        Some(RunOneOutcome::ThreadEmitMessage(
-                            ProcessesCollectionExtrinsicsThreadEmitMessage {
-                                process,
-                                inner: thread,
-                            },
-                        ))
+                        Some(RunOneOutcome::ThreadEmitMessage(ThreadEmitMessage {
+                            process,
+                            inner: thread,
+                        }))
                     }
                     Err(_) => {
                         thread.process().abort();
@@ -543,7 +527,7 @@ where
                         let thread_id = thread.tid();
                         thread.resume(None);
                         Some(RunOneOutcome::ThreadEmitAnswer {
-                            process: ProcessesCollectionExtrinsicsProc {
+                            process: ProcAccess {
                                 parent: self,
                                 inner: process,
                             },
@@ -571,7 +555,7 @@ where
                         let thread_id = thread.tid();
                         thread.resume(None);
                         Some(RunOneOutcome::ThreadEmitMessageError {
-                            process: ProcessesCollectionExtrinsicsProc {
+                            process: ProcAccess {
                                 parent: self,
                                 inner: process,
                             },
@@ -598,7 +582,7 @@ where
                         let thread_id = thread.tid();
                         thread.resume(None);
                         Some(RunOneOutcome::ThreadCancelMessage {
-                            process: ProcessesCollectionExtrinsicsProc {
+                            process: ProcAccess {
                                 parent: self,
                                 inner: process,
                             },
@@ -620,13 +604,12 @@ where
             } => {
                 debug_assert!(thread.user_data().state.is_ready_to_run());
                 let thread_id = thread.tid();
-                let (context, action) =
-                    thread.process().user_data().clone().extrinsics.new_context(
-                        thread_id,
-                        ext_id,
-                        params.iter().cloned(),
-                        &mut MemoryAccessImpl(thread),
-                    );
+                let (context, action) = thread.process().user_data().extrinsics.new_context(
+                    thread_id,
+                    ext_id,
+                    params.iter().cloned(),
+                    &mut MemoryAccessImpl(thread),
+                );
                 thread.user_data_mut().state =
                     LocalThreadState::OtherExtrinsicApplyAction { context, action };
                 self.local_run_queue.push(thread_id);
@@ -643,11 +626,8 @@ where
     ///
     /// If a program crashes or finishes while a lock is held, it is marked as dying and the
     /// termination is delayed until the point when all locks have been released.
-    pub fn process_by_id(
-        &self,
-        pid: Pid,
-    ) -> Option<ProcessesCollectionExtrinsicsProc<TPud, TTud, TExt>> {
-        Some(ProcessesCollectionExtrinsicsProc {
+    pub fn process_by_id(&self, pid: Pid) -> Option<ProcAccess<TPud, TTud, TExt>> {
+        Some(ProcAccess {
             parent: self,
             inner: self.inner.process_by_id(pid)?,
         })
@@ -666,8 +646,8 @@ where
     pub fn interrupted_thread_by_id(
         &self,
         id: ThreadId,
-    ) -> Result<ProcessesCollectionExtrinsicsThread<TPud, TTud, TExt>, ThreadByIdErr> {
-        let mut inner = self
+    ) -> Result<ThreadAccess<TPud, TTud, TExt>, ThreadByIdErr> {
+        let inner = self
             .inner
             .interrupted_thread_by_id(id)
             .ok_or(ThreadByIdErr::RunningOrDead)?;
@@ -682,30 +662,25 @@ where
                 Err(ThreadByIdErr::RunningOrDead)
             }
             LocalThreadState::EmitMessage(_) | LocalThreadState::OtherExtrinsicEmit { .. } => {
-                let process = ProcessesCollectionExtrinsicsProc {
+                let process = ProcAccess {
                     parent: self,
                     inner: inner.process(),
                 };
-                Ok(From::from(ProcessesCollectionExtrinsicsThreadEmitMessage {
-                    process,
-                    inner,
-                }))
+                Ok(From::from(ThreadEmitMessage { process, inner }))
             }
             LocalThreadState::NotificationWait(_) | LocalThreadState::OtherExtrinsicWait { .. } => {
-                let process = ProcessesCollectionExtrinsicsProc {
+                let process = ProcAccess {
                     parent: self,
                     inner: inner.process(),
                 };
-                Ok(From::from(
-                    ProcessesCollectionExtrinsicsThreadWaitNotification { process, inner },
-                ))
+                Ok(From::from(ThreadWaitNotif { process, inner }))
             }
             LocalThreadState::Poisoned => panic!(),
         }
     }
 }
 
-impl<TExt> Default for ProcessesCollectionExtrinsicsBuilder<TExt>
+impl<TExt> Default for Builder<TExt>
 where
     TExt: Extrinsics,
 {
@@ -751,11 +726,11 @@ where
             );
         }
 
-        ProcessesCollectionExtrinsicsBuilder { inner }
+        Builder { inner }
     }
 }
 
-impl<TExt: Extrinsics> ProcessesCollectionExtrinsicsBuilder<TExt> {
+impl<TExt: Extrinsics> Builder<TExt> {
     /// Allocates a `Pid` that will not be used by any process.
     ///
     /// > **Note**: As of the writing of this comment, this feature is only ever used to allocate
@@ -775,7 +750,7 @@ impl<TExt: Extrinsics> ProcessesCollectionExtrinsicsBuilder<TExt> {
     }
 }
 
-impl<'a, TPud, TTud, TExt> ProcessesCollectionExtrinsicsProc<'a, TPud, TTud, TExt>
+impl<'a, TPud, TTud, TExt> ProcAccess<'a, TPud, TTud, TExt>
 where
     TExt: Extrinsics,
 {
@@ -816,14 +791,14 @@ where
     ///
     /// The termination will happen after all locks to this process have been released.
     ///
-    /// Calling [`abort`](ProcessesCollectionExtrinsicsProc::abort) a second time or more has no
+    /// Calling [`abort`](ProcAccess::abort) a second time or more has no
     /// effect.
     pub fn abort(&self) {
         self.inner.abort();
     }
 }
 
-impl<'a, TPud, TTud, TExt> fmt::Debug for ProcessesCollectionExtrinsicsProc<'a, TPud, TTud, TExt>
+impl<'a, TPud, TTud, TExt> fmt::Debug for ProcAccess<'a, TPud, TTud, TExt>
 where
     TExt: Extrinsics + fmt::Debug,
     TPud: fmt::Debug,
@@ -833,76 +808,70 @@ where
     }
 }
 
-impl<'a, TPud, TTud, TExt: Extrinsics>
-    From<ProcessesCollectionExtrinsicsThreadEmitMessage<'a, TPud, TTud, TExt>>
-    for ProcessesCollectionExtrinsicsThread<'a, TPud, TTud, TExt>
+impl<'a, TPud, TTud, TExt: Extrinsics> From<ThreadEmitMessage<'a, TPud, TTud, TExt>>
+    for ThreadAccess<'a, TPud, TTud, TExt>
 {
-    fn from(thread: ProcessesCollectionExtrinsicsThreadEmitMessage<'a, TPud, TTud, TExt>) -> Self {
-        ProcessesCollectionExtrinsicsThread::EmitMessage(thread)
+    fn from(thread: ThreadEmitMessage<'a, TPud, TTud, TExt>) -> Self {
+        ThreadAccess::EmitMessage(thread)
     }
 }
 
-impl<'a, TPud, TTud, TExt: Extrinsics>
-    From<ProcessesCollectionExtrinsicsThreadWaitNotification<'a, TPud, TTud, TExt>>
-    for ProcessesCollectionExtrinsicsThread<'a, TPud, TTud, TExt>
+impl<'a, TPud, TTud, TExt: Extrinsics> From<ThreadWaitNotif<'a, TPud, TTud, TExt>>
+    for ThreadAccess<'a, TPud, TTud, TExt>
 {
-    fn from(
-        thread: ProcessesCollectionExtrinsicsThreadWaitNotification<'a, TPud, TTud, TExt>,
-    ) -> Self {
-        ProcessesCollectionExtrinsicsThread::WaitNotification(thread)
+    fn from(thread: ThreadWaitNotif<'a, TPud, TTud, TExt>) -> Self {
+        ThreadAccess::WaitNotification(thread)
     }
 }
 
-impl<'a, TPud, TTud, TExt: Extrinsics> ProcessesCollectionExtrinsicsThreadAccess<'a>
-    for ProcessesCollectionExtrinsicsThread<'a, TPud, TTud, TExt>
+impl<'a, TPud, TTud, TExt: Extrinsics> ThreadAccessAccess<'a>
+    for ThreadAccess<'a, TPud, TTud, TExt>
 {
     type ProcessUserData = TPud;
     type ThreadUserData = TTud;
 
     fn tid(&self) -> ThreadId {
         match self {
-            ProcessesCollectionExtrinsicsThread::EmitMessage(t) => t.tid(),
-            ProcessesCollectionExtrinsicsThread::WaitNotification(t) => t.tid(),
+            ThreadAccess::EmitMessage(t) => t.tid(),
+            ThreadAccess::WaitNotification(t) => t.tid(),
         }
     }
 
     fn pid(&self) -> Pid {
         match self {
-            ProcessesCollectionExtrinsicsThread::EmitMessage(t) => t.pid(),
-            ProcessesCollectionExtrinsicsThread::WaitNotification(t) => t.pid(),
+            ThreadAccess::EmitMessage(t) => t.pid(),
+            ThreadAccess::WaitNotification(t) => t.pid(),
         }
     }
 
     fn process_user_data(&self) -> &TPud {
         match self {
-            ProcessesCollectionExtrinsicsThread::EmitMessage(t) => t.process_user_data(),
-            ProcessesCollectionExtrinsicsThread::WaitNotification(t) => t.process_user_data(),
+            ThreadAccess::EmitMessage(t) => t.process_user_data(),
+            ThreadAccess::WaitNotification(t) => t.process_user_data(),
         }
     }
 
     fn user_data(&mut self) -> &mut TTud {
         match self {
-            ProcessesCollectionExtrinsicsThread::EmitMessage(t) => t.user_data(),
-            ProcessesCollectionExtrinsicsThread::WaitNotification(t) => t.user_data(),
+            ThreadAccess::EmitMessage(t) => t.user_data(),
+            ThreadAccess::WaitNotification(t) => t.user_data(),
         }
     }
 }
 
-impl<'a, TPud, TTud, TExt> fmt::Debug for ProcessesCollectionExtrinsicsThread<'a, TPud, TTud, TExt>
+impl<'a, TPud, TTud, TExt> fmt::Debug for ThreadAccess<'a, TPud, TTud, TExt>
 where
     TExt: Extrinsics,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ProcessesCollectionExtrinsicsThread::EmitMessage(t) => fmt::Debug::fmt(t, f),
-            ProcessesCollectionExtrinsicsThread::WaitNotification(t) => fmt::Debug::fmt(t, f),
+            ThreadAccess::EmitMessage(t) => fmt::Debug::fmt(t, f),
+            ThreadAccess::WaitNotification(t) => fmt::Debug::fmt(t, f),
         }
     }
 }
 
-impl<'a, TPud, TTud, TExt: Extrinsics>
-    ProcessesCollectionExtrinsicsThreadEmitMessage<'a, TPud, TTud, TExt>
-{
+impl<'a, TPud, TTud, TExt: Extrinsics> ThreadEmitMessage<'a, TPud, TTud, TExt> {
     /// Returns true if the caller wants an answer to the message.
     pub fn needs_answer(&mut self) -> bool {
         match self.inner.user_data().state {
@@ -981,7 +950,6 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
                         .inner
                         .process()
                         .user_data()
-                        .clone()
                         .extrinsics
                         .inject_message_response(
                             &mut context,
@@ -1022,8 +990,8 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
     }
 }
 
-impl<'a, TPud, TTud, TExt: Extrinsics> ProcessesCollectionExtrinsicsThreadAccess<'a>
-    for ProcessesCollectionExtrinsicsThreadEmitMessage<'a, TPud, TTud, TExt>
+impl<'a, TPud, TTud, TExt: Extrinsics> ThreadAccessAccess<'a>
+    for ThreadEmitMessage<'a, TPud, TTud, TExt>
 {
     type ProcessUserData = TPud;
     type ThreadUserData = TTud;
@@ -1045,17 +1013,13 @@ impl<'a, TPud, TTud, TExt: Extrinsics> ProcessesCollectionExtrinsicsThreadAccess
     }
 }
 
-impl<'a, TPud, TTud, TExt: Extrinsics> fmt::Debug
-    for ProcessesCollectionExtrinsicsThreadEmitMessage<'a, TPud, TTud, TExt>
-{
+impl<'a, TPud, TTud, TExt: Extrinsics> fmt::Debug for ThreadEmitMessage<'a, TPud, TTud, TExt> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(&self.inner, f)
     }
 }
 
-impl<'a, TPud, TTud, TExt: Extrinsics>
-    ProcessesCollectionExtrinsicsThreadWaitNotification<'a, TPud, TTud, TExt>
-{
+impl<'a, TPud, TTud, TExt: Extrinsics> ThreadWaitNotif<'a, TPud, TTud, TExt> {
     /// Returns the list of message IDs that the thread is waiting on. In order, and preserving
     /// empty entries.
     // TODO: not great naming. we're waiting either for messages or an interface notif or a process cancelled notif
@@ -1063,12 +1027,7 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
         match self.inner.user_data().state {
             LocalThreadState::NotificationWait(ref wait) => {
                 // TODO: annoying allocation
-                let iter = wait
-                    .notifs_ids
-                    .iter()
-                    .cloned()
-                    .collect::<Vec<_>>()
-                    .into_iter();
+                let iter = wait.notifs_ids.to_vec().into_iter();
                 either::Either::Left(iter)
             }
             LocalThreadState::OtherExtrinsicWait { message, .. } => {
@@ -1099,7 +1058,7 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
     /// Resume the thread, sending back a notification.
     ///
     /// `index` must be the index within the list returned by
-    /// [`message_ids_iter`](ProcessesCollectionExtrinsicsThreadWaitNotification::message_ids_iter).
+    /// [`message_ids_iter`](ThreadWaitNotif::message_ids_iter).
     ///
     /// # Panic
     ///
@@ -1161,7 +1120,6 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
                     .inner
                     .process()
                     .user_data()
-                    .clone()
                     .extrinsics
                     .inject_message_response(
                         &mut context,
@@ -1197,7 +1155,7 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
     ///
     /// # Panic
     ///
-    /// - Panics if [`block`](ProcessesCollectionExtrinsicsThreadWaitNotification::block) would
+    /// - Panics if [`block`](ThreadWaitNotif::block) would
     /// return `true`.
     ///
     pub fn resume_no_notification(mut self) {
@@ -1212,8 +1170,8 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
     }
 }
 
-impl<'a, TPud, TTud, TExt: Extrinsics> ProcessesCollectionExtrinsicsThreadAccess<'a>
-    for ProcessesCollectionExtrinsicsThreadWaitNotification<'a, TPud, TTud, TExt>
+impl<'a, TPud, TTud, TExt: Extrinsics> ThreadAccessAccess<'a>
+    for ThreadWaitNotif<'a, TPud, TTud, TExt>
 {
     type ProcessUserData = TPud;
     type ThreadUserData = TTud;
@@ -1235,9 +1193,7 @@ impl<'a, TPud, TTud, TExt: Extrinsics> ProcessesCollectionExtrinsicsThreadAccess
     }
 }
 
-impl<'a, TPud, TTud, TExt: Extrinsics> fmt::Debug
-    for ProcessesCollectionExtrinsicsThreadWaitNotification<'a, TPud, TTud, TExt>
-{
+impl<'a, TPud, TTud, TExt: Extrinsics> fmt::Debug for ThreadWaitNotif<'a, TPud, TTud, TExt> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(&self.inner, f)
     }
@@ -1255,7 +1211,7 @@ impl<TExtCtxt> LocalThreadState<TExtCtxt> {
 
 /// Implementation of the [`ExtrinsicsMemoryAccess`] trait for a process.
 struct MemoryAccessImpl<'a, 'b, TExtr, TPud, TTud>(
-    &'a mut processes::ProcessesCollectionThread<'b, TExtr, TPud, TTud>,
+    &'a mut processes::ThreadAccess<'b, TExtr, TPud, TTud>,
 );
 
 impl<'a, 'b, TExtr, TPud, TTud> ExtrinsicsMemoryAccess

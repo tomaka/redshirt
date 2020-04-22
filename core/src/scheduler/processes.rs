@@ -33,26 +33,26 @@
 //!
 //! You can:
 //!
-//! - Either process the call immediately and call [`ProcessesCollectionThread::resume`], passing
+//! - Either process the call immediately and call [`ThreadAccess::resume`], passing
 //! the return value of the call.
-//! - Or decide to resume the thread later. You can drop the [`ProcessesCollectionThread`] object,
+//! - Or decide to resume the thread later. You can drop the [`ThreadAccess`] object,
 //! and later retrieve it by calling [`ProcessesCollection::interrupted_thread_by_id`].
 //!
-//! Keep in mind that only one instance of [`ProcessesCollectionThread`] for any given thread can
+//! Keep in mind that only one instance of [`ThreadAccess`] for any given thread can
 //! exist simultaneously.
 //!
 //! # Locking processes
 //!
-//! One can access the state of a process through a [`ProcessesCollectionProc`]. This struct can
-//! be obtained through a [`ProcessesCollectionThread`], or by calling
+//! One can access the state of a process through a [`ProcAccess`]. This struct can
+//! be obtained through a [`ThreadAccess`], or by calling
 //! [`ProcessesCollection::process_by_id`] or [`ProcessesCollection::processes`].
 //!
-//! Contrary to threads, multiple instances of [`ProcessesCollectionProc`] can exist for the same
+//! Contrary to threads, multiple instances of [`ProcAccess`] can exist for the same
 //! process.
 //!
 //! If a process finishes (either by normal termination or because of a crash), the emission of
 //! the corresponding [`RunOneOutcome::ProcessFinished`] event will be delayed until no instance
-//! of [`ProcessesCollectionProc`] corresponding to that process exists anymore.
+//! of [`ProcAccess`] corresponding to that process exists anymore.
 
 use crate::{id_pool::IdPool, module::Module, primitives::Signature, scheduler::vm, Pid, ThreadId};
 
@@ -195,7 +195,7 @@ struct Thread {
 }
 
 /// Access to a process within the collection.
-pub struct ProcessesCollectionProc<'a, TExtr, TPud, TTud> {
+pub struct ProcAccess<'a, TExtr, TPud, TTud> {
     collection: &'a ProcessesCollection<TExtr, TPud, TTud>,
     process: Option<Arc<Process<TPud, TTud>>>,
 
@@ -204,7 +204,7 @@ pub struct ProcessesCollectionProc<'a, TExtr, TPud, TTud> {
 }
 
 /// Access to a thread within the collection.
-pub struct ProcessesCollectionThread<'a, TExtr, TPud, TTud> {
+pub struct ThreadAccess<'a, TExtr, TPud, TTud> {
     collection: &'a ProcessesCollection<TExtr, TPud, TTud>,
     process: Option<Arc<Process<TPud, TTud>>>,
 
@@ -247,7 +247,7 @@ pub enum RunOneOutcome<'a, TExtr, TPud, TTud> {
         thread_id: ThreadId,
 
         /// Process whose thread has finished.
-        process: ProcessesCollectionProc<'a, TExtr, TPud, TTud>,
+        process: ProcAccess<'a, TExtr, TPud, TTud>,
 
         /// User data of the thread.
         user_data: TTud,
@@ -259,11 +259,11 @@ pub enum RunOneOutcome<'a, TExtr, TPud, TTud> {
     /// The currently-executed function has been paused due to a call to an external function.
     ///
     /// This variant contains the identifier of the external function that is expected to be
-    /// called, and its parameters. When you call [`resume`](ProcessesCollectionThread::resume)
+    /// called, and its parameters. When you call [`resume`](ThreadAccess::resume)
     /// again, you must pass back the outcome of calling that function.
     Interrupted {
         /// Thread that has been interrupted.
-        thread: ProcessesCollectionThread<'a, TExtr, TPud, TTud>,
+        thread: ThreadAccess<'a, TExtr, TPud, TTud>,
 
         /// Identifier of the function to call. Corresponds to the value provided at
         /// initialization when resolving imports.
@@ -295,7 +295,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
         module: &Module,
         proc_user_data: TPud,
         main_thread_user_data: TTud,
-    ) -> Result<(ProcessesCollectionProc<TExtr, TPud, TTud>, ThreadId), vm::NewErr> {
+    ) -> Result<(ProcAccess<TExtr, TPud, TTud>, ThreadId), vm::NewErr> {
         let main_thread_id = self.pid_tid_pool.assign(); // TODO: check for duplicates?
 
         let state_machine = {
@@ -349,7 +349,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
         self.execution_queue.push(process.clone());
         self.wakers.notify_one();
 
-        let proc_lock = ProcessesCollectionProc {
+        let proc_lock = ProcAccess {
             collection: self,
             process: Some(process),
             pid_tid_pool: &self.pid_tid_pool,
@@ -371,7 +371,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
     /// ID.
     pub fn processes<'a>(
         &'a self,
-    ) -> impl ExactSizeIterator<Item = ProcessesCollectionProc<'a, TExtr, TPud, TTud>> + 'a {
+    ) -> impl ExactSizeIterator<Item = ProcAccess<'a, TExtr, TPud, TTud>> + 'a {
         let processes = self.processes.lock();
 
         processes
@@ -379,7 +379,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
             .cloned()
             .filter_map(|process| {
                 if let Some(process) = process.upgrade() {
-                    Some(ProcessesCollectionProc {
+                    Some(ProcAccess {
                         collection: self,
                         process: Some(process),
                         pid_tid_pool: &self.pid_tid_pool,
@@ -404,12 +404,12 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
     /// existing lock, or if you hold a lock to one of its threads. However, it can return `None`
     /// for a process that has crashed or finished before said crash or termination has been
     /// reported with the [`run`](ProcessesCollection::run) method.
-    pub fn process_by_id(&self, pid: Pid) -> Option<ProcessesCollectionProc<TExtr, TPud, TTud>> {
+    pub fn process_by_id(&self, pid: Pid) -> Option<ProcAccess<TExtr, TPud, TTud>> {
         let processes = self.processes.lock();
 
         if let Some(p) = processes.get(&pid)?.upgrade() {
             debug_assert_eq!(p.pid, pid);
-            Some(ProcessesCollectionProc {
+            Some(ProcAccess {
                 collection: self,
                 process: Some(p),
                 pid_tid_pool: &self.pid_tid_pool,
@@ -429,11 +429,11 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
     pub fn interrupted_thread_by_id(
         &self,
         id: ThreadId,
-    ) -> Option<ProcessesCollectionThread<TExtr, TPud, TTud>> {
+    ) -> Option<ThreadAccess<TExtr, TPud, TTud>> {
         let mut interrupted_threads = self.interrupted_threads.lock();
 
         if let Some((user_data, process)) = interrupted_threads.remove(&id) {
-            Some(ProcessesCollectionThread {
+            Some(ThreadAccess {
                 collection: self,
                 process: Some(process),
                 tid: id,
@@ -610,7 +610,7 @@ impl<'a, TExtr, TPud, TTud> Future for RunFuture<'a, TExtr, TPud, TTud> {
                     drop(proc_state);
                     return Poll::Ready(RunOneOutcome::ThreadFinished {
                         thread_id: user_data.thread_id,
-                        process: ProcessesCollectionProc {
+                        process: ProcAccess {
                             collection: this,
                             process: Some(process),
                             pid_tid_pool: &this.pid_tid_pool,
@@ -634,7 +634,7 @@ impl<'a, TExtr, TPud, TTud> Future for RunFuture<'a, TExtr, TPud, TTud> {
                     let tid = thread.user_data().thread_id;
                     drop(proc_state);
                     return Poll::Ready(RunOneOutcome::Interrupted {
-                        thread: ProcessesCollectionThread {
+                        thread: ThreadAccess {
                             collection: this,
                             process: Some(process),
                             tid,
@@ -754,7 +754,7 @@ impl<TExtr> ProcessesCollectionBuilder<TExtr> {
     }
 }
 
-impl<'a, TExtr, TPud, TTud> ProcessesCollectionProc<'a, TExtr, TPud, TTud> {
+impl<'a, TExtr, TPud, TTud> ProcAccess<'a, TExtr, TPud, TTud> {
     /// Returns the [`Pid`] of the process. Allows later retrieval by calling
     /// [`process_by_id`](ProcessesCollection::process_by_id).
     pub fn pid(&self) -> Pid {
@@ -803,8 +803,7 @@ impl<'a, TExtr, TPud, TTud> ProcessesCollectionProc<'a, TExtr, TPud, TTud> {
     ///
     /// The termination will happen after all locks to this process have been released.
     ///
-    /// Calling [`abort`](ProcessesCollectionProc::abort) a second time or more has no
-    /// effect.
+    /// Calling [`abort`](ProcAccess::abort) a second time or more has no effect.
     pub fn abort(&self) {
         let mut process_state = self.process.as_ref().unwrap().lock.lock();
 
@@ -842,27 +841,27 @@ impl<'a, TExtr, TPud, TTud> ProcessesCollectionProc<'a, TExtr, TPud, TTud> {
     }
 }
 
-impl<'a, TExtr, TPud, TTud> fmt::Debug for ProcessesCollectionProc<'a, TExtr, TPud, TTud>
+impl<'a, TExtr, TPud, TTud> fmt::Debug for ProcAccess<'a, TExtr, TPud, TTud>
 where
     TPud: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // TODO: threads user datas?
-        f.debug_struct("ProcessesCollectionProc")
+        f.debug_struct("ProcAccess")
             .field("pid", &self.pid())
             .field("user_data", self.user_data())
             .finish()
     }
 }
 
-impl<'a, TExtr, TPud, TTud> Drop for ProcessesCollectionProc<'a, TExtr, TPud, TTud> {
+impl<'a, TExtr, TPud, TTud> Drop for ProcAccess<'a, TExtr, TPud, TTud> {
     fn drop(&mut self) {
         self.collection
             .try_report_process_death(self.process.take().unwrap());
     }
 }
 
-impl<'a, TExtr, TPud, TTud> ProcessesCollectionThread<'a, TExtr, TPud, TTud> {
+impl<'a, TExtr, TPud, TTud> ThreadAccess<'a, TExtr, TPud, TTud> {
     /// Returns the id of the thread. Allows later retrieval by calling
     /// [`thread_by_id`](ProcessesCollection::interrupted_thread_by_id).
     ///
@@ -878,8 +877,8 @@ impl<'a, TExtr, TPud, TTud> ProcessesCollectionThread<'a, TExtr, TPud, TTud> {
     }
 
     /// Returns the process this thread belongs to.
-    pub fn process(&self) -> ProcessesCollectionProc<'a, TExtr, TPud, TTud> {
-        ProcessesCollectionProc {
+    pub fn process(&self) -> ProcAccess<'a, TExtr, TPud, TTud> {
+        ProcAccess {
             collection: self.collection,
             process: self.process.clone(),
             pid_tid_pool: self.pid_tid_pool,
@@ -890,7 +889,7 @@ impl<'a, TExtr, TPud, TTud> ProcessesCollectionThread<'a, TExtr, TPud, TTud> {
     ///
     /// Returns an error if the range is invalid or out of range.
     ///
-    /// > **Important**: See also the remarks on [`ProcessesCollectionThread::write_memory`].
+    /// > **Important**: See also the remarks on [`ThreadAccess::write_memory`].
     ///
     pub fn read_memory(&self, offset: u32, size: u32) -> Result<Vec<u8>, ()> {
         // TODO: if another thread of this process is running, this will block until it has
@@ -907,14 +906,14 @@ impl<'a, TExtr, TPud, TTud> ProcessesCollectionThread<'a, TExtr, TPud, TTud> {
     /// # About concurrency
     ///
     /// Memory writes made using this method are guaranteed to be visible later by calling
-    /// [`read_memory`](ProcessesCollectionThread::read_memory) on the same thread.
+    /// [`read_memory`](ThreadAccess::read_memory) on the same thread.
     ///
     /// However, writes are not guaranteed to be visible by calling
-    /// [`read_memory`](ProcessesCollectionThread::read_memory) on a different thread, even when
+    /// [`read_memory`](ThreadAccess::read_memory) on a different thread, even when
     /// they belong to the same process.
     ///
-    /// It is only when the instance of [`ProcessesCollectionThread`] is
-    /// [resume](ProcessesCollectionThread::resume)d that the writes are guaranteed to be made
+    /// It is only when the instance of [`ThreadAccess`] is
+    /// [resume](ThreadAccess::resume)d that the writes are guaranteed to be made
     /// visible to the rest of the process. This means that it is legal, for example, for this
     /// method to keep a cache of the changes and flush it later.
     ///
@@ -943,7 +942,7 @@ impl<'a, TExtr, TPud, TTud> ProcessesCollectionThread<'a, TExtr, TPud, TTud> {
     /// After [`RunOneOutcome::Interrupted`] is returned, use this function to feed back the value
     /// to use as the return type of the function that has been called.
     ///
-    /// This releases the [`ProcessesCollectionThread`]. The thread can now potentially be run by
+    /// This releases the [`ThreadAccess`]. The thread can now potentially be run by
     /// calling [`ProcessesCollection::run`].
     pub fn resume(mut self, value: Option<crate::WasmValue>) {
         let process = self.process.take().unwrap();
@@ -973,7 +972,7 @@ impl<'a, TExtr, TPud, TTud> ProcessesCollectionThread<'a, TExtr, TPud, TTud> {
     }
 }
 
-impl<'a, TExtr, TPud, TTud> Drop for ProcessesCollectionThread<'a, TExtr, TPud, TTud> {
+impl<'a, TExtr, TPud, TTud> Drop for ThreadAccess<'a, TExtr, TPud, TTud> {
     fn drop(&mut self) {
         let process = match self.process.take() {
             Some(p) => p,
@@ -1003,14 +1002,14 @@ impl<'a, TExtr, TPud, TTud> Drop for ProcessesCollectionThread<'a, TExtr, TPud, 
     }
 }
 
-impl<'a, TExtr, TPud, TTud> fmt::Debug for ProcessesCollectionThread<'a, TExtr, TPud, TTud> {
+impl<'a, TExtr, TPud, TTud> fmt::Debug for ThreadAccess<'a, TExtr, TPud, TTud> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         //let id = self.id();
         let pid = self.pid();
         // TODO: requires &mut self :-/
         //let ready_to_run = self.inner().into_user_data().value_back.is_some();
 
-        f.debug_struct("ProcessesCollectionThread")
+        f.debug_struct("ThreadAccess")
             .field("pid", &pid)
             //.field("thread_id", &id)
             //.field("user_data", self.user_data())
