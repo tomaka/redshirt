@@ -76,7 +76,7 @@ fn many_processes() {
         assert!(spawned_pids.insert(pid));
     }
 
-    let finished_pids = Arc::new(Mutex::new(Vec::new()));
+    let finished_pids = Arc::new(Mutex::new(HashSet::<_, fnv::FnvBuildHasher>::default()));
     let start_barrier = Arc::new(Barrier::new(num_threads));
     let end_barrier = Arc::new(Barrier::new(num_threads + 1));
 
@@ -108,13 +108,19 @@ fn many_processes() {
                 };
             }
 
-            finished_pids.lock().unwrap().extend(local_finished);
+            {
+                let mut finished_pids = finished_pids.lock().unwrap();
+                for local in local_finished {
+                    assert!(finished_pids.insert(local));
+                }
+            }
+
             end_barrier.wait();
         });
     }
 
     end_barrier.wait();
-    for pid in finished_pids.lock().unwrap().drain(..) {
+    for pid in finished_pids.lock().unwrap().drain() {
         assert!(spawned_pids.remove(&pid));
     }
     assert!(spawned_pids.is_empty());
