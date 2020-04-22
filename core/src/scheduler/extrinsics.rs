@@ -621,7 +621,7 @@ where
                 debug_assert!(thread.user_data().state.is_ready_to_run());
                 let thread_id = thread.tid();
                 let (context, action) =
-                    thread.process().user_data().clone().extrinsics.new_context(
+                    thread.process().user_data().extrinsics.new_context(
                         thread_id,
                         ext_id,
                         params.iter().cloned(),
@@ -981,7 +981,6 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
                         .inner
                         .process()
                         .user_data()
-                        .clone()
                         .extrinsics
                         .inject_message_response(
                             &mut context,
@@ -1161,7 +1160,6 @@ impl<'a, TPud, TTud, TExt: Extrinsics>
                     .inner
                     .process()
                     .user_data()
-                    .clone()
                     .extrinsics
                     .inject_message_response(
                         &mut context,
