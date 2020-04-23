@@ -19,6 +19,17 @@
 //!
 //! How these logs are handled is at the discretion of the rest of the system, but the intent is
 //! for them to be shown to a human being if desired.
+//!
+//! # The `log` crate
+//!
+//! This interface provides a backend for the `log` crate.
+//!
+//! Example usage:
+//!
+//! ```no_run
+//! redshirt_log_interface::init();
+//! log::debug!("debug log message here");
+//! ```
 
 #![no_std]
 
@@ -29,6 +40,7 @@ use alloc::format;
 pub mod ffi;
 
 pub use ffi::Level;
+pub use log;
 
 /// Appends a single string to the logs of the program.
 ///
@@ -40,7 +52,7 @@ pub use ffi::Level;
 /// In order to follow the Unix world, the character `\n` (LF, 0xA) means "new line". The
 /// character `\r` (CR, 0xD) is ignored.
 ///
-pub fn log(level: Level, msg: &str) {
+pub fn emit_log(level: Level, msg: &str) {
     unsafe {
         let level: [u8; 1] = [u8::from(level)];
         redshirt_syscalls::MessageBuilder::new()
@@ -96,7 +108,7 @@ impl log::Log for GlobalLogger {
         };
 
         let message = format!("{} -- {}", record.target(), record.args());
-        log(level, &message)
+        emit_log(level, &message)
     }
 
     fn flush(&self) {}

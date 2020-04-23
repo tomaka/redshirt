@@ -114,7 +114,7 @@ impl Device {
         };
 
         // TODO: remove
-        redshirt_log_interface::log(
+        redshirt_log_interface::emit_log(
             redshirt_log_interface::Level::Info,
             &format!(
                 "MAC: {:x} {:x} {:x} {:x} {:x} {:x}",
