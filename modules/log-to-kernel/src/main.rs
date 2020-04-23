@@ -46,10 +46,10 @@ async fn async_main() -> ! {
 
             let kernel_message =
                 format!("[{:?}] [{}] {}", msg.emitter_pid, level, message.message());
-            redshirt_kernel_log_interface::emit_log(kernel_message.as_bytes());
+            redshirt_kernel_log_interface::log(kernel_message.as_bytes());
         } else {
             let kernel_message = format!("[{:?}] Bad log message", msg.emitter_pid);
-            redshirt_kernel_log_interface::emit_log(kernel_message.as_bytes());
+            redshirt_kernel_log_interface::log(kernel_message.as_bytes());
         }
     }
 }
