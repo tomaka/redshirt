@@ -102,7 +102,7 @@ impl Device {
 
         // Wait for reset to be complete.
         {
-            let timeout = Delay::new(Duration::from_secs(5));
+            let timeout = future::pending::<()>(); // TODO: doesn't work Delay::new(Duration::from_secs(5));
             let try_reset = async move {
                 loop {
                     let val = redshirt_hardware_interface::port_read_u8(base_port + 7).await;
@@ -241,7 +241,7 @@ impl Device {
 
             // Read the register.
             let mut out = 0;
-            ops.port_read_u8(self.base.base_port + 16, &mut out);
+            ops.port_read_u8(self.base.base_port + 7, &mut out);
 
             // Registers to page 0. Abort/complete DMA and start.
             ops.port_write_u8(self.base.base_port + 0, (1 << 5) | (1 << 1));
