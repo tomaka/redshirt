@@ -103,6 +103,12 @@ struct MessageIdWriteAdapter<'col, T> {
     expected_responses: &'col Spinlock<HashSet<MessageId, BuildNoHashHasher<u64>>>,
 }
 
+impl<'ext> Default for NativeProgramsCollection<'ext> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<'ext> NativeProgramsCollection<'ext> {
     /// Builds an empty collection.
     ///

@@ -14,7 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use crate::extrinsics::NoExtrinsics;
-use crate::scheduler::{Core, CoreRunOutcome};
+use crate::scheduler::{CoreBuilder, CoreRunOutcome};
 use crate::InterfaceHash;
 use futures::prelude::*;
 
@@ -97,7 +97,7 @@ fn emit_not_available() {
     (data (i32.const 1048576) "\01\02\03\04\05\06\07\08"))"#
     );
 
-    let core = Core::<NoExtrinsics>::new().build();
+    let core = CoreBuilder::<NoExtrinsics>::new().build();
     core.execute(&module).unwrap();
 
     match core.run().now_or_never() {

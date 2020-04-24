@@ -62,7 +62,7 @@ async fn async_main() {
                     mac_address: device.mac_address(),
                 });
                 ne2k_devices.push((registration, device));
-                redshirt_log_interface::log(
+                redshirt_log_interface::emit_log(
                     redshirt_log_interface::Level::Info,
                     &format!("Initialized ne2000 at 0x{:x}", port_number),
                 );
