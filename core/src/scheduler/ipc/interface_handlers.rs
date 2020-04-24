@@ -69,7 +69,7 @@ impl InterfaceHandlers {
         let interfaces = self.interfaces.lock();
 
         if let Some(InterfaceState::Process(pid)) = interfaces.get(interface) {
-            return Interface::Registered(pid.clone());
+            return Interface::Registered(*pid);
         }
 
         Interface::Unregistered(UnregisteredInterface {
@@ -109,10 +109,11 @@ impl InterfaceHandlers {
         match interfaces.entry(interface) {
             Entry::Occupied(e) if matches!(e.get(), InterfaceState::Requested(_)) => {}
             Entry::Vacant(_) => {}
-            Entry::Occupied(e) => match e.remove_entry() {
-                (_, InterfaceState::Process(pid)) => return Some(pid),
-                _ => {}
-            },
+            Entry::Occupied(e) => {
+                if let (_, InterfaceState::Process(pid)) = e.remove_entry() {
+                    return Some(pid);
+                }
+            }
         };
         None
     }
