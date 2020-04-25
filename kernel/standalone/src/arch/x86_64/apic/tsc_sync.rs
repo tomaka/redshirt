@@ -23,13 +23,14 @@
 //! However, each CPU has a different TSC, which means that a value read on one CPU has no meaning
 //! on another one.
 //!
-//! In order to remedy this, whenever we start a new processor we synchronize its TSC to the one
-//! of the startup CPUs.
+//! In order to remedy to this, this module makes it possible to synchronize the value of the TSC
+//! between two processors. This is typically done whenever we start a new processor to
+//! synchronize its TSC to the one of the startup CPU.
 //!
 //! Keep in mind, however, that this synchronization is not perfect. It is possible to read the
-//! TSC on a CPU, move this value to another CPU, and observe the value being lesser than the TSC
+//! TSC on a CPU, move this value to another CPU, and observe the value being greater than the TSC
 //! of the new CPU. Code that uses the TSC must be aware of that and cannot assume that the TSC is
-//! strictly monotonic.
+//! strictly monotonic if moving values between threads is involved.
 //!
 //! # Usage
 //!
@@ -106,6 +107,7 @@ impl TscSyncSrc {
         self.shared
             .start_barrier
             .fetch_add(1, atomic::Ordering::SeqCst);
+        // TODO: add some guarantee that we don't spin forever? do something in the Drop impl?
         while self.shared.start_barrier.load(atomic::Ordering::SeqCst) != 2 {
             atomic::spin_loop_hint();
         }
@@ -129,6 +131,7 @@ impl TscSyncDst {
         self.shared
             .start_barrier
             .fetch_add(1, atomic::Ordering::SeqCst);
+        // TODO: add some guarantee that we don't spin forever? do something in the Drop impl?
         while self.shared.start_barrier.load(atomic::Ordering::SeqCst) != 2 {
             atomic::spin_loop_hint();
         }

@@ -46,8 +46,10 @@
 //! By using the TSC as the reference value, we can check at any time whether the timer has been
 //! fired. The local APIC's timer is use solely for its capability of waking up a halted CPU.
 //!
-//! Keep in mind, though, that each CPU has a different TSC value.
-// TODO: yeah that's actually a problem ^
+//! Keep in mind that each CPU has its own TSC value, which is why we try to keep the TSCs of all
+//! CPUs synchronized. It is however possible that moving a TSC value to a different CPU leads to
+//! this value being superior to the current value of the local TSC.
+// TODO: ^ somehow enforce that the TSC sync is indeed performed?
 //!
 //! ## Multiple timers
 //!
@@ -67,8 +69,8 @@
 //!      - If instead the currently-handled timer would fire later than the newly-created timer,
 //!        add the current timer to this shared list and configure the current CPU for the
 //!        newly-created timer.
-//!   - If the current CPU is not currently handling any timer, add the newly-created timer to
-//!     the shared list.
+//!   - If the current CPU is not currently handling any timer, configure the current CPU for the
+//!        newly-created timer.
 //! - When a timer interrupt is fired, the CPU that has been interrupted picks the next pending
 //!   timer from the shared list and configures itself for it.
 //! - To cancel a timer:
@@ -113,15 +115,19 @@ pub async fn init<'a>(
         after - before
     };
 
+    let monotonic_clock_zero = unsafe { core::arch::x86_64::_rdtsc() };
+
     Timers {
         local_apics,
         interrupt_vector: interrupts::reserve_any_vector(true).unwrap(),
-        monotonic_clock_zero: unsafe { core::arch::x86_64::_rdtsc() },
+        monotonic_clock_zero,
+        monotonic_clock_max: Spinlock::new(monotonic_clock_zero),
         rdtsc_ticks_per_sec,
         timers: Spinlock::new(VecDeque::with_capacity(32)), // TODO: capacity?
     }
 }
 
+/// Timers management for x86/x86_64.
 pub struct Timers<'a> {
     local_apics: &'a local::LocalApicsControl,
 
@@ -130,8 +136,17 @@ pub struct Timers<'a> {
     /// This is the interrupt that the timer will fire.
     interrupt_vector: interrupts::ReservedInterruptVector,
 
-    /// Number of RDTSC ticks when we initialized the struct.
+    /// Number of RDTSC ticks when we initialized the struct. Never modified.
     monotonic_clock_zero: u64,
+
+    /// Since each CPU has its own TSC register, it is possible that they are not always in sync.
+    /// If a user calls [`Timers::monotonic_clock`] from one CPU, then calls it again from a
+    /// different CPU, we want the value returned the second time to always be superior or equal
+    /// to the value returned the first time.
+    /// In order to guarantee this, we store here the last returned value of
+    /// [`Timers::monotonic_clock`] and make sure to never return a value inferior to this.
+    // TODO: consider using an AtomicU64 if it works on 32bits and fetch_max is stabilized
+    monotonic_clock_max: Spinlock<u64>,
 
     /// Approximate number of RDTSC ticks per second.
     rdtsc_ticks_per_sec: u64,
@@ -172,13 +187,23 @@ impl<'a> Timers<'a> {
         }
     }
 
+    /// Returns the time elapsed since the initialization of this struct.
+    ///
+    /// Guaranteed to always return a `Duration` greater or equal to the one returned the previous
+    /// time.
     pub fn monotonic_clock(&self) -> Duration {
-        let now = unsafe { core::arch::x86_64::_rdtsc() };
-        // TODO: is it correct to have monotonic_clock_zero determined from the main thread,
-        // then compared with the RDTSC of other CPUs?
+        let value = {
+            let local_val = unsafe { core::arch::x86_64::_rdtsc() };
+            let lock = self.monotonic_clock_max.lock();
+            if local_val > *lock {
+                *lock = local_val;
+            }
+            *lock
+        };
+
         // TODO: check all the math operations here
-        debug_assert!(now >= self.monotonic_clock_zero);
-        let diff_ticks = now - self.monotonic_clock_zero;
+        debug_assert!(value >= self.monotonic_clock_zero);
+        let diff_ticks = value - self.monotonic_clock_zero;
         let whole_secs = diff_ticks / self.rdtsc_ticks_per_sec;
         let nanos =
             1_000_000_000 * (diff_ticks % self.rdtsc_ticks_per_sec) / self.rdtsc_ticks_per_sec;
@@ -231,8 +256,6 @@ pub struct TimerFuture<'a> {
     /// If true, then we are in the list of timers of the `ApicControl`.
     in_timers_list: bool,
 }
-
-// TODO: there's some code duplication for updating the timer value in the APIC
 
 impl<'a> Future for TimerFuture<'a> {
     type Output = ();
