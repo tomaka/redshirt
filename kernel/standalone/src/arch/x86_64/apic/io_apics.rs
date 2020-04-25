@@ -116,7 +116,10 @@ impl IoApicsControl {
 
     /// Returns all the IRQs supported by the I/O APICs.
     pub fn irqs<'a>(&'a self) -> impl Iterator<Item = u8> + 'a {
-        self.io_apics.iter().map(io_apic::IoApicControl::irqs).flatten()
+        self.io_apics
+            .iter()
+            .map(io_apic::IoApicControl::irqs)
+            .flatten()
     }
 
     /// Gives access to an object designating the configuration of an IRQ.
