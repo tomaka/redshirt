@@ -163,8 +163,14 @@ impl LocalApicsControl {
                     let addr = usize::try_from(APIC_BASE_ADDR + 0x320).unwrap() as *mut u32;
                     addr.write_volatile(0x00010000);
                 }
-                Timer::Timer { value, value_multiplier, periodic, vector } => {
-                    let divide_config_addr = usize::try_from(APIC_BASE_ADDR + 0x3e0).unwrap() as *mut u32;
+                Timer::Timer {
+                    value,
+                    value_multiplier,
+                    periodic,
+                    vector,
+                } => {
+                    let divide_config_addr =
+                        usize::try_from(APIC_BASE_ADDR + 0x3e0).unwrap() as *mut u32;
                     divide_config_addr.write_volatile(match value_multiplier {
                         1 => 0b1011,
                         2 => 0b0000,

@@ -77,6 +77,10 @@
 //!    - If the timer is in the list, remove it.
 //!    - If the timer is being handled by a CPU, don't do anything.
 //!
+//! In order to make the code more simple, creating a timer doesn't actually do anything. It is
+//! only when a timer is polled for the first time that we properly initialize it. This guarantees
+//! that all timers in the list have a `Waker` associated to them.
+//!
 
 use crate::arch::x86_64::{apic::local, interrupts, pit};
 
@@ -89,6 +93,7 @@ use core::{
     time::Duration,
 };
 use futures::prelude::*;
+use hashbrown::HashMap;
 use spinning_top::Spinlock;
 
 /// Initializes the timers system for x86_64.
@@ -121,9 +126,11 @@ pub async fn init<'a>(
         local_apics,
         interrupt_vector: interrupts::reserve_any_vector(true).unwrap(),
         monotonic_clock_zero,
-        monotonic_clock_max: Spinlock::new(monotonic_clock_zero),
         rdtsc_ticks_per_sec,
-        timers: Spinlock::new(VecDeque::with_capacity(32)), // TODO: capacity?
+        shared: Spinlock::new(
+            monotonic_clock_max: Spinlock::new(monotonic_clock_zero),
+            timers: VecDeque::with_capacity(32), // TODO: which capacity?
+        ),
     }
 }
 
@@ -139,6 +146,15 @@ pub struct Timers<'a> {
     /// Number of RDTSC ticks when we initialized the struct. Never modified.
     monotonic_clock_zero: u64,
 
+    /// Approximate number of RDTSC ticks per second. Never modified.
+    rdtsc_ticks_per_sec: u64,
+
+    /// Everything behind a lock.
+    shared: Spinlock<Shared>,
+}
+
+/// Everything behind a lock.
+struct Shared {
     /// Since each CPU has its own TSC register, it is possible that they are not always in sync.
     /// If a user calls [`Timers::monotonic_clock`] from one CPU, then calls it again from a
     /// different CPU, we want the value returned the second time to always be superior or equal
@@ -146,26 +162,23 @@ pub struct Timers<'a> {
     /// In order to guarantee this, we store here the last returned value of
     /// [`Timers::monotonic_clock`] and make sure to never return a value inferior to this.
     // TODO: consider using an AtomicU64 if it works on 32bits and fetch_max is stabilized
-    monotonic_clock_max: Spinlock<u64>,
+    monotonic_clock_max: u64,
 
-    /// Approximate number of RDTSC ticks per second.
-    rdtsc_ticks_per_sec: u64,
+    /// For each CPU, the timer that is currently being configured in its APIC.
+    active_timers: HashMap<ApicId, (u64, Waker)>,
 
-    /// List of active timers, with the TSC value to reach and the waker to wake. Always ordered
-    /// by ascending TSC value.
+    /// Timers that aren't being processed by any CPU. Must be picked up.
     ///
-    /// The TSC value and the `Waker` stored in the first element of this list must always be
-    /// respectively the value that is present in the TSC deadline MSR, and the Waker in the IDT
-    /// for the timer's interrupt (with the exception of the interval between when a timer
-    /// interrupt has been triggered and when the awakened timer future is being polled).
-    // TODO: timers are processor-local, so this is probably wrong
+    /// Contains the target TSC value and the waker to wake up when it is reached. Always ordered
+    /// by ascending TSC value.
     // TODO: call shrink_to_fit from time to time?
-    timers: Spinlock<VecDeque<(u64, Waker)>>,
+    pending_timers: VecDeque<(u64, Waker)>,
 }
 
 impl<'a> Timers<'a> {
     /// Returns a `Future` that fires when the given amount of time has elapsed.
     pub fn register_timer(&self, duration: Duration) -> TimerFuture {
+        // Find out the TSC value corresponding to the requested `Duration`.
         // TODO: don't unwrap
         let tsc_value = duration
             .as_secs()
@@ -194,11 +207,11 @@ impl<'a> Timers<'a> {
     pub fn monotonic_clock(&self) -> Duration {
         let value = {
             let local_val = unsafe { core::arch::x86_64::_rdtsc() };
-            let lock = self.monotonic_clock_max.lock();
-            if local_val > *lock {
-                *lock = local_val;
+            let lock = self.shared.lock();
+            if local_val > lock.monotonic_clock_max {
+                lock.monotonic_clock_max = local_val;
             }
-            *lock
+            lock.monotonic_clock_max
         };
 
         // TODO: check all the math operations here
@@ -209,51 +222,16 @@ impl<'a> Timers<'a> {
             1_000_000_000 * (diff_ticks % self.rdtsc_ticks_per_sec) / self.rdtsc_ticks_per_sec;
         Duration::new(whole_secs, u32::try_from(nanos).unwrap())
     }
-
-    /// Update the state of the APIC with the front of the list.
-    fn update_apic_timer_state(
-        &self,
-        now: u64,
-        timers: &mut spinning_top::SpinlockGuard<VecDeque<(u64, Waker)>>,
-    ) {
-        if let Some((tsc, waker)) = timers.front() {
-            debug_assert!(*tsc > now);
-            self.interrupt_vector.register_waker(waker);
-            debug_assert_ne!(*tsc, 0); // 0 would disable the timer
-            if self.local_apics.is_tsc_deadline_supported() {
-                self.local_apics
-                    .set_local_tsc_deadline(Some(NonZeroU64::new(*tsc).unwrap()));
-            } else {
-                let ticks = match u32::try_from(1 + ((*tsc - now) / 128)) {
-                    Ok(t) => t,
-                    Err(_) => return, // FIXME: properly handle
-                };
-                self.local_apics
-                    .set_local_timer_value(Some(NonZeroU32::new(ticks).unwrap()));
-            }
-        }
-    }
 }
 
 /// Future that triggers when the TSC reaches a certain value.
-//
-// # Implementation information
-//
-// The way this `Future` works is that it inserts itself in the list of timers when first polled.
-// The head of the list of timers must always be in sync with the state of the APIC, and as such
-// we update the state of the APIC if we modify what the first element is.
-//
-// When a timer interrupt fires, we need to update the state of the APIC for the next timer. To
-// do so, the implementation assumes that the `TimerFuture` corresponding to timer that has
-// fired will either be polled or destroyed.
-//
 #[must_use]
 pub struct TimerFuture<'a> {
     /// Reference to the [`Timers`] struct.
     timers: &'a Timers<'a>,
     /// The TSC value after which the future will be ready.
     tsc_value: u64,
-    /// If true, then we are in the list of timers of the `ApicControl`.
+    /// If true, then we are in the list of timers of the [`Timers`].
     in_timers_list: bool,
 }
 
@@ -269,7 +247,7 @@ impl<'a> Future for TimerFuture<'a> {
                 return Poll::Ready(());
             }
 
-            let mut timers = this.timers.timers.lock();
+            let mut shared = this.timers.shared.lock();
 
             // If we were in the list, then we need to remove ourselves from it. We also remove
             // all the earlier timers. It is consequently also possible that a different timer has
