@@ -86,7 +86,7 @@ pub struct CoreBuilder<TExt: Extrinsics> {
 }
 
 /// Outcome of calling [`run`](Core::run).
-// TODO: #[derive(Debug)]
+#[derive(Debug)]
 pub enum CoreRunOutcome {
     /// A program has stopped, either because the main function has stopped or a problem has
     /// occurred.
