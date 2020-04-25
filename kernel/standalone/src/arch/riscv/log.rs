@@ -33,7 +33,7 @@ pub fn set_logger(logger: KLogger) {
 pub fn write_log(message: &str) {
     let logger = LOGGER.lock();
     if let Some(l) = &*logger {
-        let _ = l.log_printer().write_str(message);
+        let _ = writeln!(l.log_printer(), "{}", message);
     }
 }
 

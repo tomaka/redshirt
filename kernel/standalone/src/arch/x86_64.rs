@@ -49,7 +49,7 @@ const DEFAULT_LOG_METHOD: KernelLogMethod = KernelLogMethod {
     uart: None,
 };
 
-/// Called by `boot.S` after basic set up has been performed.
+/// Called by `boot.rs` after basic set up has been performed.
 ///
 /// When this function is called, a stack has been set up and as much memory space as possible has
 /// been identity-mapped (i.e. the virtual memory is equal to the physical memory).
@@ -128,6 +128,7 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
 
     // If a panic happens, we want it to use the logging system we just created.
     panic::set_logger(logger.clone());
+    writeln!(logger.log_printer(), "basic initialization ok").unwrap();
 
     // The first thing that gets executed when a x86 or x86_64 machine starts up is the
     // motherboard's firmware. Before giving control to the operating system, this firmware writes
@@ -135,9 +136,9 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
     // It then (indirectly) passes the memory address of this table to the operating system. This
     // is part of [the UEFI standard](https://en.wikipedia.org/wiki/UEFI).
     //
-    // However, this code is not loaded directly by the firmware but rather by a bootloader. This
-    // bootloader must save the information about the ACPI tables and propagate it as part of the
-    // multiboot2 header passed to the operating system.
+    // However, this code is not loaded directly by the operating system but rather by a
+    // bootloader. This bootloader must save the information about the ACPI tables and propagate it
+    // as part of the multiboot2 header passed to the operating system.
     // TODO: remove these tables from the memory ranges used as heap? `acpi_tables` is a copy of
     // the table, so once we are past this line there's no problem anymore. But in theory,
     // the `acpi_tables` variable might allocate over the actual ACPI tables.
@@ -186,7 +187,8 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
     let mut kernel_channels = Vec::with_capacity(acpi_tables.application_processors.len());
 
     writeln!(logger.log_printer(), "initializing associated processors").unwrap();
-    for ap in acpi_tables.application_processors.iter() {
+    // TODO: remove this `take(0)` after https://github.com/tomaka/redshirt/issues/379
+    for ap in acpi_tables.application_processors.iter().take(0) {
         debug_assert!(ap.is_ap);
         // It is possible for some associated processors to be in a disabled state, in which case
         // they **must not** be started. This is generally the case of defective processors.

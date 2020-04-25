@@ -23,6 +23,9 @@ struct CliOptions {
     /// Path to a directory containing Wasm files to automatically push to the DHT.
     #[structopt(long, parse(from_os_str))]
     watch: Vec<PathBuf>,
+    /// URL of a git repository whose Wasm files will be automatically pushed to the DHT.
+    #[structopt(long)]
+    git_watch: Vec<String>,
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -51,6 +54,7 @@ async fn async_main() {
         None
     };
     config.watched_directories = cli_opts.watch;
+    config.watched_git_repositories = cli_opts.git_watch;
 
     let mut network = Network::<std::convert::Infallible>::start(config).unwrap(); // TODO: use `!`
     loop {

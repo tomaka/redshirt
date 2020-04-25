@@ -23,12 +23,12 @@ use crate::{sig, Encode as _, EncodedMessage, ThreadId, WasmValue};
 
 use alloc::{
     borrow::Cow,
-    string::{String, ToString as _},
+    string::String,
     sync::Arc,
     vec,
     vec::{IntoIter, Vec},
 };
-use core::{cmp, convert::TryFrom as _, fmt, mem, slice};
+use core::{cmp, convert::TryFrom as _, fmt};
 use hashbrown::HashMap;
 use spinning_top::Spinlock;
 
@@ -115,7 +115,7 @@ impl Default for WasiExtrinsics {
                     file_cursor_pos: 0,
                 }),
             ]),
-            file_system: fs_root.clone(),
+            file_system: fs_root,
         }
     }
 }
@@ -384,8 +384,7 @@ impl Extrinsics for WasiExtrinsics {
                     };
 
                 assert!(
-                    u32::try_from(value.result.len()).unwrap_or(u32::max_value())
-                        <= u32::from(remaining_len)
+                    u32::try_from(value.result.len()).unwrap_or(u32::max_value()) <= remaining_len
                 );
                 mem_access.write_memory(out_ptr, &value.result).unwrap(); // TODO: don't unwrap
 
@@ -529,7 +528,7 @@ fn clock_time_get(
         }
         wasi::CLOCKID_PROCESS_CPUTIME_ID => unimplemented!(), // TODO:
         wasi::CLOCKID_THREAD_CPUTIME_ID => unimplemented!(),  // TODO:
-        _ => return Err(WasiCallErr),
+        _ => Err(WasiCallErr),
     }
 }
 
@@ -653,8 +652,8 @@ fn fd_fdstat_get(
         FileDescriptor::LogOut { .. } => wasi::Fdstat {
             fs_filetype: wasi::FILETYPE_CHARACTER_DEVICE,
             fs_flags: wasi::FDFLAGS_APPEND,
-            fs_rights_base: 0x820004a, // TODO: that's what wasmtime returns, don't know what it means
-            fs_rights_inheriting: 0x820004a, // TODO: that's what wasmtime returns, don't know what it means
+            fs_rights_base: 0x0820_004a, // TODO: that's what wasmtime returns, don't know what it means
+            fs_rights_inheriting: 0x0820_004a, // TODO: that's what wasmtime returns, don't know what it means
         },
         FileDescriptor::FilesystemEntry { inode, .. } => match **inode {
             Inode::Directory { .. } => wasi::Fdstat {
@@ -706,7 +705,7 @@ fn fd_fdstat_get(
 fn fd_filestat_get(
     state: &WasiExtrinsics,
     mut params: impl ExactSizeIterator<Item = WasmValue>,
-    mem_access: &mut impl ExtrinsicsMemoryAccess,
+    _mem_access: &mut impl ExtrinsicsMemoryAccess,
 ) -> Result<(ContextInner, ExtrinsicsAction), WasiCallErr> {
     let file_descriptors_lock = state.file_descriptors.lock();
 
@@ -1074,7 +1073,7 @@ fn fd_write(
                 Ok((context, action))
             } else {
                 let action = ExtrinsicsAction::Resume(Some(WasmValue::I32(0)));
-                return Ok((ContextInner::Finished, action));
+                Ok((ContextInner::Finished, action))
             }
         }
         FileDescriptor::FilesystemEntry { .. } => unimplemented!(), // TODO:

@@ -13,8 +13,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::scheduler::{Core, CoreRunOutcome};
+use crate::extrinsics::NoExtrinsics;
+use crate::scheduler::{CoreBuilder, CoreRunOutcome};
 use crate::InterfaceHash;
+use futures::prelude::*;
 
 #[test]
 fn emit_reserved_pid() {
@@ -101,21 +103,21 @@ fn emit_reserved_pid() {
         0x36, 0x37,
     ]);
 
-    let mut builder = Core::new();
+    let mut builder = CoreBuilder::<NoExtrinsics>::new();
     let reserved_pid = builder.reserve_pid();
     let core = builder.build();
     core.set_interface_handler(interface.clone(), reserved_pid)
         .unwrap();
 
-    let pid = core.execute(&module).unwrap().pid();
+    let pid = core.execute(&module).unwrap().0.pid();
 
-    match core.run() {
-        CoreRunOutcome::ReservedPidInterfaceMessage {
+    match core.run().now_or_never() {
+        Some(CoreRunOutcome::ReservedPidInterfaceMessage {
             pid: emitter_pid,
             message_id,
             interface: interface_obtained,
             message,
-        } => {
+        }) => {
             assert!(message_id.is_none());
             assert_eq!(emitter_pid, pid);
             assert_eq!(interface_obtained, interface);
@@ -124,20 +126,20 @@ fn emit_reserved_pid() {
         _ => panic!(),
     }
 
-    match core.run() {
-        CoreRunOutcome::ProgramFinished {
+    match core.run().now_or_never() {
+        Some(CoreRunOutcome::ProgramFinished {
             pid: finished_pid,
             outcome,
             ..
-        } => {
+        }) => {
             assert_eq!(finished_pid, pid);
             assert!(outcome.is_ok());
         }
         _ => panic!(),
     }
 
-    match core.run() {
-        CoreRunOutcome::Idle => {}
+    match core.run().now_or_never() {
+        None => {}
         _ => panic!(),
     }
 }

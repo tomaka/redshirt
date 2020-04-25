@@ -27,10 +27,13 @@
 //! - Call [`boot_associated_processor`] for each processor one by one.
 //!
 
-use crate::arch::x86_64::apic::{local::LocalApicsControl, timers::Timers, ApicId};
+use crate::arch::x86_64::apic::{local::LocalApicsControl, timers::Timers, tsc_sync, ApicId};
 use crate::arch::x86_64::{executor, interrupts};
 
-use alloc::{alloc::Layout, boxed::Box};
+use alloc::{
+    alloc::{AllocInit, Layout},
+    boxed::Box,
+};
 use core::{convert::TryFrom as _, fmt, ops::Range, ptr, slice, time::Duration};
 use futures::{channel::oneshot, prelude::*};
 
@@ -171,15 +174,18 @@ pub unsafe fn boot_associated_processor(
 
     // Later, we will want to wait until the AP has finished initializing. To do so, we create
     // a channel and modify `boot_code` to signal that channel before doing anything more.
-    let (boot_code, mut init_finished_future) = {
+    let (boot_code, mut init_finished_future, mut tsc_sync_src) = {
         let (tx, rx) = oneshot::channel();
+        // TODO: not great that the TSC sync is hidden in there
+        let (tsc_sync_src, mut tsc_sync_dst) = tsc_sync::tsc_sync();
         let boot_code = move || {
             local_apics.init_local();
             interrupts::load_idt();
             let _ = tx.send(());
+            tsc_sync_dst.sync();
             boot_code()
         };
-        (boot_code, rx)
+        (boot_code, rx, tsc_sync_src)
     };
 
     // We want the processor we bootstrap to call the `ap_after_boot` function defined below.
@@ -318,7 +324,10 @@ pub unsafe fn boot_associated_processor(
         futures::pin_mut!(ap_ready_timeout);
         match executor.block_on(future::select(ap_ready_timeout, &mut init_finished_future)) {
             future::Either::Left(_) => continue,
-            future::Either::Right(_) => break Ok(()),
+            future::Either::Right(_) => {
+                tsc_sync_src.sync();
+                break Ok(());
+            }
         }
     };
 
@@ -458,10 +467,10 @@ struct Allocation<'a, T: alloc::alloc::AllocRef> {
 
 impl<'a, T: alloc::alloc::AllocRef> Allocation<'a, T> {
     fn new(alloc: &'a mut T, layout: Layout) -> Self {
-        let (buf, _) = alloc.alloc(layout).unwrap();
+        let block = alloc.alloc(layout, AllocInit::Uninitialized).unwrap();
         Allocation {
             alloc,
-            inner: buf,
+            inner: block.ptr,
             layout,
         }
     }
