@@ -81,15 +81,14 @@ impl Default for WasiExtrinsics {
     fn default() -> WasiExtrinsics {
         let fs_root = Arc::new(Inode::Directory {
             entries: Spinlock::new({
-                use alloc::string::ToString;
                 let mut hashmap = HashMap::default();
-                // TODO: hack to toy with DOOM
+                /*// TODO: hack to toy with DOOM
                 hashmap.insert(
                     "doom1.wad".to_string(),
                     Arc::new(Inode::File {
                         content: include_bytes!("../../../../DOOM/doom1.wad").to_vec(),
                     }),
-                );
+                );*/
                 hashmap
             }),
         });
