@@ -84,6 +84,8 @@ impl Framebuffer {
                 .unwrap();
         }
     }
+
+    // TODO: next_event() method
 }
 
 impl Drop for Framebuffer {
