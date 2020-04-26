@@ -34,7 +34,7 @@ pub fn register_interface(
     hash: InterfaceHash,
 ) -> impl Future<Output = Result<(), InterfaceRegisterError>> {
     let msg = ffi::InterfaceMessage::Register(hash);
-    // TODO: we unwrap cause there's always something that handles interface registration; is that correct?
+    // We unwrap cause there's always something that handles interface registration.
     unsafe {
         redshirt_syscalls::emit_message_with_response(&ffi::INTERFACE, msg)
             .unwrap()

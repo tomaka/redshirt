@@ -1701,6 +1701,7 @@ dependencies = [
  "acpi",
  "blake3",
  "crossbeam-queue",
+ "crossbeam-utils",
  "futures",
  "hashbrown",
  "lazy_static",
