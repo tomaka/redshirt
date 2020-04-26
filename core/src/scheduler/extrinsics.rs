@@ -47,6 +47,8 @@ use redshirt_syscalls::{EncodedMessage, Pid, ThreadId};
 
 mod calls;
 
+pub use calls::WaitEntry;
+
 /// Wrapper around [`ProcessesCollection`](processes::ProcessesCollection), but that interprets
 /// the extrinsic calls and keeps track of the state in which pending threads are in.
 ///
@@ -1020,18 +1022,15 @@ impl<'a, TPud, TTud, TExt: Extrinsics> fmt::Debug for ThreadEmitMessage<'a, TPud
 }
 
 impl<'a, TPud, TTud, TExt: Extrinsics> ThreadWaitNotif<'a, TPud, TTud, TExt> {
-    /// Returns the list of message IDs that the thread is waiting on. In order, and preserving
+    /// Returns the list of notifications that the thread is waiting on. In order, and preserving
     /// empty entries.
-    // TODO: not great naming. we're waiting either for messages or an interface notif or a process cancelled notif
-    pub fn message_ids_iter<'b>(&'b mut self) -> impl Iterator<Item = Option<MessageId>> + 'b {
+    pub fn wait_entries<'b>(&'b mut self) -> impl Iterator<Item = WaitEntry> + 'b {
         match self.inner.user_data().state {
             LocalThreadState::NotificationWait(ref wait) => {
-                // TODO: annoying allocation
-                let iter = wait.notifs_ids.to_vec().into_iter();
-                either::Either::Left(iter)
+                either::Either::Left(wait.notifs_ids.iter().cloned())
             }
             LocalThreadState::OtherExtrinsicWait { message, .. } => {
-                either::Either::Right(iter::once(Some(message)))
+                either::Either::Right(iter::once(WaitEntry::Answer(message)))
             }
             _ => unreachable!(),
         }
@@ -1073,7 +1072,7 @@ impl<'a, TPud, TTud, TExt: Extrinsics> ThreadWaitNotif<'a, TPud, TTud, TExt> {
         ) {
             LocalThreadState::NotificationWait(wait) => {
                 debug_assert!(index < wait.notifs_ids.len());
-                assert_ne!(wait.notifs_ids[index], None);
+                assert_ne!(wait.notifs_ids[index], WaitEntry::Empty);
                 let notif_size_u32 = u32::try_from(notif.0.len()).unwrap();
                 assert!(wait.out_size >= notif_size_u32);
 

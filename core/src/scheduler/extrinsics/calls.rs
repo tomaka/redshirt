@@ -62,7 +62,11 @@ pub fn parse_extrinsic_next_notification<TExtr, TPud, TTud>(
         let mut out = Vec::with_capacity(len_usize);
         for i in mem.chunks(8) {
             let id = u64::from_le_bytes(<[u8; 8]>::try_from(i).unwrap());
-            out.push(NonZeroU64::new(id).map(MessageId::from));
+            out.push(match id {
+                0 => WaitEntry::Empty,
+                1 => WaitEntry::InterfaceOrProcDestroyed,
+                _ => WaitEntry::Answer(From::from(NonZeroU64::new(id).unwrap())),
+            });
         }
         out
     };
@@ -96,10 +100,8 @@ pub fn parse_extrinsic_next_notification<TExtr, TPud, TTud>(
 /// How a process is waiting for messages.
 #[derive(Debug, PartialEq, Eq)]
 pub struct NotificationWait {
-    /// Identifiers of the notifications the process is waiting upon. Copy of what is in the
-    /// process's memory.
-    // TODO: better typing; this can contain `1` for interfaces, which is not a message ID
-    pub notifs_ids: Vec<Option<MessageId>>,
+    /// List of notifications the thread is waiting upon. Copy of what is in the process's memory.
+    pub notifs_ids: Vec<WaitEntry>,
     /// Offset within the memory of the process where the list of notifications to wait upon is
     /// located. This is required to zero that location.
     pub notifs_ids_ptr: u32,
@@ -109,6 +111,19 @@ pub struct NotificationWait {
     pub out_size: u32,
     /// Whether to block the thread if no notification is available.
     pub block: bool,
+}
+
+/// What a thread is waiting upon.
+// TODO: would be cool if this representation of that was just a u64
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WaitEntry {
+    /// An empty entry. Serves no purpose but it might be convenient for the user of this call
+    /// to leave entries empty.
+    Empty,
+    /// Waiting for either an interface notification or a process destroyed notification.
+    InterfaceOrProcDestroyed,
+    /// Waiting for an answer to the given message.
+    Answer(MessageId),
 }
 
 /// Error that [`parse_extrinsic_next_notification`] can return.
