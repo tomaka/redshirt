@@ -1057,7 +1057,7 @@ impl<'a, TPud, TTud, TExt: Extrinsics> ThreadWaitNotif<'a, TPud, TTud, TExt> {
     /// Resume the thread, sending back a notification.
     ///
     /// `index` must be the index within the list returned by
-    /// [`message_ids_iter`](ThreadWaitNotif::message_ids_iter).
+    /// [`wait_entries`](ThreadWaitNotif::wait_entries).
     ///
     /// # Panic
     ///
