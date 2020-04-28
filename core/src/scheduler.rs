@@ -23,6 +23,5 @@ mod processes;
 mod tests;
 mod vm;
 
-// TODO: move definition?
 pub use self::ipc::{Core, CoreBuilder, CoreProcess, CoreRunOutcome};
 pub use self::vm::NewErr;

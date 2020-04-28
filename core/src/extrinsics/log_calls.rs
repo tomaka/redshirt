@@ -106,7 +106,6 @@ where
 
         let message_start = {
             let mut msg = vec![u8::from(self.log_level)];
-            // TODO: print thread_id?
             msg.extend(id.f_name.as_bytes());
             msg.extend(b"(");
             for (n, param) in params.iter().enumerate() {

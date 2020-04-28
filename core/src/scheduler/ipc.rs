@@ -86,7 +86,7 @@ pub struct CoreBuilder<TExt: Extrinsics> {
 }
 
 /// Outcome of calling [`run`](Core::run).
-// TODO: #[derive(Debug)]
+#[derive(Debug)]
 pub enum CoreRunOutcome {
     /// A program has stopped, either because the main function has stopped or a problem has
     /// occurred.
@@ -688,7 +688,7 @@ fn try_resume_notification_wait_thread<TExt: Extrinsics>(
     let (entry_size, index_and_notif) = {
         // Try to find a notification in the queue that matches something the user is waiting for.
         // TODO: don't alloc a Vec
-        let messages = thread.message_ids_iter().collect::<Vec<_>>();
+        let messages = thread.wait_entries().collect::<Vec<_>>();
 
         let entry = thread
             .process_user_data()
