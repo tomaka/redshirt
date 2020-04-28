@@ -25,9 +25,14 @@
 //! - 1: Destroys a framebuffer. Next 4 bytes are the framebuffer ID.
 //! - 2: Set framebuffer content. Next 4 bytes are the framebuffer ID. The rest is 3 * width *
 //! height values. The rest is RGB triplets.
+//! - 3: Send back the next input event. Next 4 bytes are the framebuffer ID. The answer consists
+//! in an input event whose format isn't properly defined yet. Sorry, it's kind of useless,
+//! but well 🤷
+// TODO: define input event
 
 use redshirt_syscalls::InterfaceHash;
 
+// TODO: split interface in two? one with inputs and one without?
 // TODO: this has been randomly generated; instead should be a hash or something
 pub const INTERFACE: InterfaceHash = InterfaceHash::from_raw_hash([
     0xfc, 0x60, 0x2e, 0x6e, 0xf2, 0x43, 0x9c, 0xa0, 0x40, 0x88, 0x81, 0x7d, 0xe5, 0xaf, 0xb6, 0x90,
