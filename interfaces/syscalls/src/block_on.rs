@@ -48,13 +48,21 @@ use nohash_hasher::BuildNoHashHasher;
 use slab::Slab;
 use spinning_top::Spinlock;
 
-/// Registers a message ID (or 1 for interface messages) and a waker. The `block_on` function will
-/// then ask the kernel for a message corresponding to this ID. If one is received, the `Waker`
-/// is called.
+/// Registers a message ID and an associated waker. The `block_on` function will then ask the
+/// kernel for a message corresponding to this ID. If one is received, the `Waker` is called.
 ///
-/// For non-interface messages, there can only ever be one registered `Waker`. Registering a
-/// `Waker` a second time overrides the one previously registered.
+/// Registering multiple wakers for the same message is a logic error.
 pub(crate) fn register_message_waker(message_id: MessageId, waker: Waker) -> WakerRegistration {
+    register_waker_inner(From::from(message_id), waker)
+}
+
+/// Registers a waker. The `block_on` function will then ask the kernel for an interface message.
+/// If one is received, the `Waker` is called.
+pub(crate) fn register_interface_message_waker(waker: Waker) -> WakerRegistration {
+    register_waker_inner(1, waker)
+}
+
+fn register_waker_inner(message_id: u64, waker: Waker) -> WakerRegistration {
     let mut state = (&*STATE).lock();
 
     let index = state.wakers.insert(Some(waker));
@@ -64,7 +72,7 @@ pub(crate) fn register_message_waker(message_id: MessageId, waker: Waker) -> Wak
     }
 
     debug_assert_eq!(state.message_ids[index], 0);
-    state.message_ids[index] = From::from(message_id);
+    state.message_ids[index] = message_id;
 
     WakerRegistration { index }
 }

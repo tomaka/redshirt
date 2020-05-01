@@ -82,8 +82,7 @@ impl Future for InterfaceMessageFuture {
             match &mut self.registration {
                 Some(r) => r.update(cx.waker()),
                 r @ None => {
-                    *r = Some(crate::block_on::register_message_waker(
-                        MessageId::try_from(1).unwrap(),
+                    *r = Some(crate::block_on::register_interface_message_waker(
                         cx.waker().clone(),
                     ))
                 }
