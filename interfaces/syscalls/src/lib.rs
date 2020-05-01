@@ -97,7 +97,7 @@ pub use interface_message::{
 pub use response::{message_response, message_response_sync_raw, MessageResponseFuture};
 pub use traits::{Decode, Encode, EncodedMessage};
 
-use core::{cmp::PartialEq, fmt, num::NonZeroU64};
+use core::{cmp::PartialEq, convert::TryFrom, fmt, num::NonZeroU64};
 
 mod block_on;
 mod emit;
@@ -173,15 +173,31 @@ impl fmt::Debug for ThreadId {
 
 /// Identifier of a message to answer.
 // TODO: move to a MessageId module?
-// TODO: the MessageId with value 1 is also invalid because of wait_notifications' API
 #[derive(
     Copy, Clone, PartialEq, Eq, Hash, parity_scale_codec::Encode, parity_scale_codec::Decode,
 )]
 pub struct MessageId(NonZeroU64);
 
-impl From<NonZeroU64> for MessageId {
-    fn from(id: NonZeroU64) -> MessageId {
-        MessageId(id)
+impl TryFrom<u64> for MessageId {
+    type Error = InvalidMessageIdErr;
+
+    fn try_from(id: u64) -> Result<Self, Self::Error> {
+        match id {
+            0 | 1 => Err(InvalidMessageIdErr),
+            n => Ok(MessageId(NonZeroU64::new(n).unwrap())),
+        }
+    }
+}
+
+impl TryFrom<NonZeroU64> for MessageId {
+    type Error = InvalidMessageIdErr;
+
+    fn try_from(id: NonZeroU64) -> Result<Self, Self::Error> {
+        if id.get() == 1 {
+            return Err(InvalidMessageIdErr);
+        }
+
+        Ok(MessageId(id))
     }
 }
 
@@ -200,6 +216,16 @@ impl From<MessageId> for u64 {
 impl fmt::Debug for MessageId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "#{:020}", self.0)
+    }
+}
+
+/// Error when trying to build a [`MessageId`] from a raw id.
+#[derive(Debug)]
+pub struct InvalidMessageIdErr;
+
+impl fmt::Display for InvalidMessageIdErr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Invalid message ID")
     }
 }
 
