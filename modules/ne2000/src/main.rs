@@ -26,9 +26,11 @@
 //! - http://www.ethernut.de/pdf/8019asds.pdf
 //!
 
-mod device;
-
+use futures::prelude::*;
+use redshirt_ethernet_interface::interface;
 use std::convert::TryFrom as _;
+
+mod device;
 
 fn main() {
     redshirt_syscalls::block_on(async_main());
@@ -54,13 +56,17 @@ async fn async_main() {
                 .next();
 
             if let Some(port_number) = port_number {
-                unsafe {
-                    ne2k_devices.push(device::Device::reset(port_number).await);
-                    redshirt_log_interface::emit_log(
-                        redshirt_log_interface::Level::Info,
-                        &format!("Initialized ne2000 at 0x{:x}", port_number),
-                    );
-                }
+                let device = unsafe { device::Device::reset(port_number) }.await;
+                let registered_device_id = redshirt_random_interface::generate_u64().await;
+                let registration = interface::register_interface(interface::InterfaceConfig {
+                    mac_address: device.mac_address(),
+                })
+                .await;
+                ne2k_devices.push((registration, device));
+                redshirt_log_interface::emit_log(
+                    redshirt_log_interface::Level::Info,
+                    &format!("Initialized ne2000 at 0x{:x}", port_number),
+                );
             }
         }
     }
@@ -71,26 +77,30 @@ async fn async_main() {
 
     ne2k_devices.shrink_to_fit();
 
-    loop {
-        //redshirt_log_interface::emit_log(redshirt_log_interface::Level::Info, "Polling");
-        let packet = match unsafe { ne2k_devices[0].read_one_incoming().await } {
-            Some(p) => p,
-            None => continue,
-        };
-
-        let (header, data) = etherparse::Ethernet2Header::read_from_slice(&packet).unwrap();
-        if header.ether_type == 0x86dd {
-            let (ip_header, ip_data) = etherparse::Ipv6Header::read_from_slice(&data).unwrap();
-            if ip_header.next_header == 0x11 {
-                let (udp_header, udp_data) =
-                    etherparse::UdpHeader::read_from_slice(&ip_data).unwrap();
-                redshirt_log_interface::emit_log(
-                    redshirt_log_interface::Level::Info,
-                    &format!("Headers: {:?} {:?}", ip_header, udp_header),
-                );
+    let mut tasks = stream::FuturesUnordered::new();
+    for (registration, device) in &ne2k_devices {
+        tasks.push(
+            async move {
+                let packet = registration.packet_to_send().await;
+                unsafe {
+                    device.send_packet(packet).unwrap();
+                } // TODO: unwrap?
             }
-        }
+            .boxed_local(),
+        );
 
-        //redshirt_log_interface::emit_log(redshirt_log_interface::Level::Info, &format!("Header: {:?}", header));
+        tasks.push(
+            async move {
+                // TODO: wake up only on interrupt
+                loop {
+                    if let Some(packet) = unsafe { device.read_one_incoming().await } {
+                        registration.packet_from_network().await.send(packet)
+                    }
+                }
+            }
+            .boxed_local(),
+        );
     }
+
+    while let Some(_) = tasks.next().await {}
 }
