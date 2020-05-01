@@ -16,7 +16,7 @@
 use crate::{EncodedMessage, InterfaceHash, MessageId, Pid};
 
 use alloc::vec::Vec;
-use core::num::NonZeroU64;
+use core::convert::TryFrom as _;
 
 #[cfg(target_arch = "wasm32")] // TODO: we should have a proper operating system name instead
 #[link(wasm_import_module = "redshirt")]
@@ -281,11 +281,7 @@ impl InterfaceNotificationBuilder {
             self.data[40],
         ]);
 
-        if let Some(id) = NonZeroU64::new(id) {
-            Some(From::from(id))
-        } else {
-            None
-        }
+        MessageId::try_from(id).ok()
     }
 
     pub fn len(&self) -> usize {
@@ -318,11 +314,7 @@ pub fn decode_interface_notification(buffer: &[u8]) -> Result<DecodedInterfaceNo
                 buffer[40],
             ]);
 
-            if let Some(id) = NonZeroU64::new(id) {
-                Some(From::from(id))
-            } else {
-                None
-            }
+            MessageId::try_from(id).ok()
         },
         emitter_pid: From::from(u64::from_le_bytes([
             buffer[41], buffer[42], buffer[43], buffer[44], buffer[45], buffer[46], buffer[47],
@@ -382,19 +374,17 @@ impl ResponseNotificationBuilder {
     }
 
     pub fn message_id(&self) -> MessageId {
-        From::from(
-            NonZeroU64::new(u64::from_le_bytes([
-                self.data[1],
-                self.data[2],
-                self.data[3],
-                self.data[4],
-                self.data[5],
-                self.data[6],
-                self.data[7],
-                self.data[8],
-            ]))
-            .unwrap(),
-        )
+        MessageId::try_from(u64::from_le_bytes([
+            self.data[1],
+            self.data[2],
+            self.data[3],
+            self.data[4],
+            self.data[5],
+            self.data[6],
+            self.data[7],
+            self.data[8],
+        ]))
+        .unwrap()
     }
 
     pub fn len(&self) -> usize {
@@ -421,13 +411,13 @@ pub fn decode_response_notification(buffer: &[u8]) -> Result<DecodedResponseNoti
     }
 
     Ok(DecodedResponseNotification {
-        message_id: From::from({
-            let num = u64::from_le_bytes([
+        message_id: MessageId::try_from({
+            u64::from_le_bytes([
                 buffer[1], buffer[2], buffer[3], buffer[4], buffer[5], buffer[6], buffer[7],
                 buffer[8],
-            ]);
-            NonZeroU64::new(num).ok_or(())?
-        }),
+            ])
+        })
+        .map_err(|_| ())?,
         index_in_list: u32::from_le_bytes([buffer[9], buffer[10], buffer[11], buffer[12]]),
         actual_data: if success {
             Ok(EncodedMessage(buffer[14..].to_vec()))
