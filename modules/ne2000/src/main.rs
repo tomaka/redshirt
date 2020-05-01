@@ -60,7 +60,8 @@ async fn async_main() {
                 let registered_device_id = redshirt_random_interface::generate_u64().await;
                 let registration = interface::register_interface(interface::InterfaceConfig {
                     mac_address: device.mac_address(),
-                }).await;
+                })
+                .await;
                 ne2k_devices.push((registration, device));
                 redshirt_log_interface::emit_log(
                     redshirt_log_interface::Level::Info,
