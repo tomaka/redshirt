@@ -55,6 +55,7 @@ This list contains human-friendly names, but remember that interfaces are define
 - `audio-playback`: Playing sounds.
 - `device-tree`: Accessing hardware devices described by a DeviceTree (if any).
 - `disks`: Registering disks potentially containing files.
+- `ethernet`: Registering Ethernet interfaces.
 - `files`: Opening/reading/writing files on a specific disk.
 - `framebuffer`: Drawing a RGB buffer to an unspecified location.
 - `hardware`: Accessing physical memory. Note: will most likely disappear to be superceded by `pci` and `device-tree`.
@@ -64,7 +65,6 @@ This list contains human-friendly names, but remember that interfaces are define
 - `kernel-log`: Indicating to the kernel how to write its logs.
 - `loader`: Loading content-addressed resources.
 - `log`: Sending out logs destined to the user.
-- `network`: Registering network interfaces.
 - `pci`: Accessing PCI devices (if any): reading/writing their memory-mapped memory/registers and waiting for interrupts.
 - `random`: Generating random values.
 - `system-time`: Managing the real time clock.
