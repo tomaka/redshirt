@@ -1323,11 +1323,15 @@ name = "ne2000"
 version = "0.1.0"
 dependencies = [
  "etherparse",
+ "futures",
  "redshirt-hardware-interface",
  "redshirt-interface-interface",
  "redshirt-log-interface",
+ "redshirt-network-interface",
  "redshirt-pci-interface",
+ "redshirt-random-interface",
  "redshirt-syscalls",
+ "redshirt-time-interface",
  "smallvec",
 ]
 
@@ -1825,10 +1829,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "redshirt-network-interface"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "parity-scale-codec",
+ "redshirt-syscalls",
+ "tokio",
+]
+
+[[package]]
 name = "redshirt-pci-interface"
 version = "0.1.0"
 dependencies = [
  "futures",
+ "parity-scale-codec",
+ "redshirt-syscalls",
+]
+
+[[package]]
+name = "redshirt-random-interface"
+version = "0.1.0"
+dependencies = [
  "parity-scale-codec",
  "redshirt-syscalls",
 ]

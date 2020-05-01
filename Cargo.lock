@@ -1657,6 +1657,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "redshirt-network-interface"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "parity-scale-codec",
+ "redshirt-syscalls",
+ "tokio",
+]
+
+[[package]]
 name = "redshirt-pci-interface"
 version = "0.1.0"
 dependencies = [
