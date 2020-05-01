@@ -16,7 +16,7 @@
 //! Helpers for parsing the hardcoded functions that can be called by the WASM program.
 
 use crate::scheduler::processes;
-use crate::{InterfaceHash, MessageId};
+use crate::{InterfaceHash, InvalidMessageIdErr, MessageId};
 
 use alloc::vec::Vec;
 use core::{convert::TryFrom as _, num::NonZeroU64};
@@ -65,7 +65,7 @@ pub fn parse_extrinsic_next_notification<TExtr, TPud, TTud>(
             out.push(match id {
                 0 => WaitEntry::Empty,
                 1 => WaitEntry::InterfaceOrProcDestroyed,
-                _ => WaitEntry::Answer(From::from(NonZeroU64::new(id).unwrap())),
+                _ => WaitEntry::Answer(MessageId::try_from(id).unwrap()),
             });
         }
         out
@@ -285,7 +285,7 @@ pub fn parse_extrinsic_emit_answer<TExtr, TPud, TTud>(
             .read_memory(addr, 8)
             .map_err(|_| ExtrinsicEmitAnswerErr::BadParameter)?;
         let id = u64::from_le_bytes(<[u8; 8]>::try_from(&buf[..]).unwrap());
-        MessageId::from(NonZeroU64::new(id).ok_or(ExtrinsicEmitAnswerErr::ZeroMessageId)?)
+        MessageId::try_from(id).map_err(ExtrinsicEmitAnswerErr::InvalidMessageId)?
     };
 
     let response = {
@@ -328,8 +328,8 @@ pub struct EmitAnswer {
 pub enum ExtrinsicEmitAnswerErr {
     /// Bad type or invalid value for a parameter.
     BadParameter,
-    /// The message id is zero.
-    ZeroMessageId,
+    /// The message id is invalid.
+    InvalidMessageId(InvalidMessageIdErr),
 }
 
 /// Analyzes a call to `emit_message_error` made by the given thread.
@@ -358,7 +358,7 @@ pub fn parse_extrinsic_emit_message_error<TExtr, TPud, TTud>(
             .read_memory(addr, 8)
             .map_err(|_| ExtrinsicEmitMessageErrorErr::BadParameter)?;
         let id = u64::from_le_bytes(<[u8; 8]>::try_from(&buf[..]).unwrap());
-        MessageId::from(NonZeroU64::new(id).ok_or(ExtrinsicEmitMessageErrorErr::ZeroMessageId)?)
+        MessageId::try_from(id).map_err(ExtrinsicEmitMessageErrorErr::InvalidMessageId)?
     };
 
     Ok(msg_id)
@@ -369,8 +369,8 @@ pub fn parse_extrinsic_emit_message_error<TExtr, TPud, TTud>(
 pub enum ExtrinsicEmitMessageErrorErr {
     /// Bad type or invalid value for a parameter.
     BadParameter,
-    /// The message id is zero.
-    ZeroMessageId,
+    /// The message id is invalid.
+    InvalidMessageId(InvalidMessageIdErr),
 }
 
 /// Analyzes a call to `cancel_message` made by the given thread.
@@ -399,7 +399,7 @@ pub fn parse_extrinsic_cancel_message<TExtr, TPud, TTud>(
             .read_memory(addr, 8)
             .map_err(|_| ExtrinsicCancelMessageErr::BadParameter)?;
         let id = u64::from_le_bytes(<[u8; 8]>::try_from(&buf[..]).unwrap());
-        MessageId::from(NonZeroU64::new(id).ok_or(ExtrinsicCancelMessageErr::ZeroMessageId)?)
+        MessageId::try_from(id).map_err(ExtrinsicCancelMessageErr::InvalidMessageId)?
     };
 
     Ok(msg_id)
@@ -410,6 +410,6 @@ pub fn parse_extrinsic_cancel_message<TExtr, TPud, TTud>(
 pub enum ExtrinsicCancelMessageErr {
     /// Bad type or invalid value for a parameter.
     BadParameter,
-    /// The message id is zero.
-    ZeroMessageId,
+    /// The message id is invalid.
+    InvalidMessageId(InvalidMessageIdErr),
 }

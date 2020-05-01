@@ -17,7 +17,7 @@ use crate::scheduler::extrinsics::WaitEntry;
 use crate::{EncodedMessage, InterfaceHash, MessageId, Pid};
 
 use alloc::collections::VecDeque;
-use core::{convert::TryFrom, num::NonZeroU64};
+use core::convert::TryFrom as _;
 use redshirt_syscalls::ffi::NotificationBuilder;
 use spinning_top::{Spinlock, SpinlockGuard};
 
