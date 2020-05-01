@@ -507,12 +507,12 @@ pub struct DecodedProcessDestroyedNotification {
 mod tests {
     use super::*;
     use alloc::vec;
-    use core::num::NonZeroU64;
+    use core::{convert::TryFrom, num::NonZeroU64};
 
     #[test]
     fn interface_message_encode_decode() {
         let interface_hash = From::from([0xca; 32]);
-        let message_id = Some(From::from(NonZeroU64::new(0x0123456789abcdef).unwrap()));
+        let message_id = Some(TryFrom::try_from(0x0123456789abcdef).unwrap());
         let pid = From::from(0xfedcba9876543210);
         let index_in_list = 0xdeadbeef;
         let message = EncodedMessage(vec![8, 7, 9]);
@@ -532,7 +532,7 @@ mod tests {
 
     #[test]
     fn response_message_encode_decode() {
-        let message_id = From::from(NonZeroU64::new(0x0123456789abcdef).unwrap());
+        let message_id = TryFrom::try_from(0x0123456789abcdef).unwrap();
         let index_in_list = 0xdeadbeef;
         let message = EncodedMessage(vec![8, 7, 9]);
 
@@ -548,7 +548,7 @@ mod tests {
 
     #[test]
     fn response_message_err_encode_decode() {
-        let message_id = From::from(NonZeroU64::new(0xa123456789abcdef).unwrap());
+        let message_id = TryFrom::try_from(0x0123456789abcdef).unwrap();
         let index_in_list = 0xdeadbeef;
 
         let mut resp_notif = build_response_notification(message_id, 0xf00baa, Err(()));
