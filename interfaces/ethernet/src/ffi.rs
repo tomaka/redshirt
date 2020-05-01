@@ -24,29 +24,27 @@ pub const INTERFACE: InterfaceHash = InterfaceHash::from_raw_hash([
 
 #[derive(Debug, Encode, Decode)]
 pub enum NetworkMessage {
+    /// Notify of the existence of a new Ethernet interface.
+    // TODO: what if this id was already registered?
     RegisterInterface {
+        /// Unique per-process identifier.
         id: u64,
+        /// MAC address of the interface.
         mac_address: [u8; 6],
     },
+
+    /// Removes a previously-registered interface.
     UnregisterInterface(u64),
-    /// Notify when an interface has received data (e.g. from the Internet). Must answer with a
-    /// `()` when the send is finished and we're ready to accept a new packet.
+
+    /// Notify when an interface has received data (e.g. from the outside world). Must answer with
+    /// a `()` when the send is finished and we're ready to accept a new packet.
     ///
     /// The packet must be an Ethernet frame without the CRC.
     InterfaceOnData(u64, Vec<u8>),
+
     /// Asks for the next packet of data to send out through this interface (e.g. going towards
-    /// the Internet). Must answer with a `Vec<u8>`.
+    /// the outside world). Must answer with a `Vec<u8>`.
     ///
     /// The packet must be an Ethernet frame without the CRC.
     InterfaceWaitData(u64),
-}
-
-#[derive(Debug, Encode, Decode)]
-pub struct InterfaceOnDataResponse {
-    pub result: Result<(), ()>,
-}
-
-#[derive(Debug, Encode, Decode)]
-pub struct InterfaceWaitDataResponse {
-    pub result: Result<Vec<u8>, ()>,
 }

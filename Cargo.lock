@@ -1582,6 +1582,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "redshirt-ethernet-interface"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "parity-scale-codec",
+ "redshirt-random-interface",
+ "redshirt-syscalls",
+ "tokio",
+]
+
+[[package]]
 name = "redshirt-framebuffer-hosted"
 version = "0.1.0"
 dependencies = [
@@ -1654,16 +1665,6 @@ version = "0.1.0"
 dependencies = [
  "log",
  "redshirt-syscalls",
-]
-
-[[package]]
-name = "redshirt-network-interface"
-version = "0.1.0"
-dependencies = [
- "futures",
- "parity-scale-codec",
- "redshirt-syscalls",
- "tokio",
 ]
 
 [[package]]

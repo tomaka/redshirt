@@ -13,20 +13,19 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-//! Registering network interfaces.
+//! Registering Ethernet interfaces.
 //!
-//! This module allows you to register your network interface. TCP and UDP sockets will then use
+//! This module allows you to register your Ethernet interface. TCP and UDP sockets will then use
 //! it to communicate with the outside.
 //!
 //! Use this if you're writing for example a networking driver or a VPN.
 //!
 //! # Usage
 //!
-//! - Call [`register_interface`] in order to notify the network manager of the existance of an
-//! interface.
+//! - Call [`register_interface`] in order to notify of the existence of an interface.
 //! - You obtain a [`NetInterfaceRegistration`] that you can use to report packets that came from
 //! the wire, and from which you can obtain packets to send to the wire.
-//! - Dropping the [`NetInterfaceRegistration`] automatically unregisters the interface.
+//! - Dropping the [`NetInterfaceRegistration`] unregisters the interface.
 //!
 
 use crate::ffi;
@@ -36,7 +35,6 @@ use redshirt_syscalls::Encode as _;
 
 /// Configuration of an interface to register.
 #[derive(Debug)]
-// TODO: #[non_exhaustive]
 pub struct InterfaceConfig {
     /// MAC address of the interface.
     ///
@@ -45,9 +43,9 @@ pub struct InterfaceConfig {
 }
 
 /// Registers a new network interface.
-pub fn register_interface(config: InterfaceConfig) -> NetInterfaceRegistration {
+pub async fn register_interface(config: InterfaceConfig) -> NetInterfaceRegistration {
     unsafe {
-        let id = 0xdeadbeef; // FIXME: generate randomly
+        let id = redshirt_random_interface::generate_u64().await;
 
         redshirt_syscalls::emit_message_without_response(&ffi::INTERFACE, &{
             ffi::NetworkMessage::RegisterInterface {
@@ -93,13 +91,14 @@ fn build_packet_to_net(interface_id: u64) -> redshirt_syscalls::MessageResponseF
     }
 }
 
-// TODO: refactor API so that we don't use Mutexes internally?
-// it is unfortunately quite hard to say what a convenient Futures API look like for now
-
 impl NetInterfaceRegistration {
     /// Wait until the network manager is ready to accept a packet coming from the network.
     ///
     /// Returns a [`PacketFromNetwork`] object that allows you to transmit the packet.
+    ///
+    /// > **Note**: It is possible to call this method multiple times on the same
+    /// >           [`NetInterfaceRegistration`]. If that is done, no guarantee exists as to which
+    /// >           `Future` finishes first.
     pub async fn packet_from_network<'a>(&'a self) -> PacketFromNetwork<'a> {
         // Wait for the previous send to be finished.
         let mut packet_from_net = self.packet_from_net.lock().await;
@@ -115,6 +114,10 @@ impl NetInterfaceRegistration {
     }
 
     /// Returns the next packet to send to the network.
+    ///
+    /// > **Note**: It is possible to call this method multiple times on the same
+    /// >           [`NetInterfaceRegistration`]. If that is done, no guarantee exists as to which
+    /// >           `Future` finishes first.
     pub async fn packet_to_send(&self) -> Vec<u8> {
         let mut packet_to_net = self.packet_to_net.lock().await;
         let data = (&mut *packet_to_net).await;

@@ -27,7 +27,7 @@
 //!
 
 use futures::prelude::*;
-use redshirt_network_interface::interface;
+use redshirt_ethernet_interface::interface;
 use std::convert::TryFrom as _;
 
 mod device;
@@ -60,7 +60,7 @@ async fn async_main() {
                 let registered_device_id = redshirt_random_interface::generate_u64().await;
                 let registration = interface::register_interface(interface::InterfaceConfig {
                     mac_address: device.mac_address(),
-                });
+                }).await;
                 ne2k_devices.push((registration, device));
                 redshirt_log_interface::emit_log(
                     redshirt_log_interface::Level::Info,
