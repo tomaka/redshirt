@@ -56,6 +56,9 @@ where
             .with_native_program(crate::random::native::RandomNativeProgram::new(
                 platform_specific.clone(),
             ))
+            .with_native_program(crate::pci::native::PciNativeProgram::new(
+                platform_specific.clone(),
+            ))
             .with_native_program(crate::klog::KernelLogNativeProgram::new(
                 platform_specific.clone(),
             ))
@@ -70,7 +73,6 @@ where
         #[cfg(target_arch = "x86_64")]
         {
             system_builder = system_builder
-                .with_startup_process(build_wasm_module!("../../../modules/x86-pci"))
                 .with_startup_process(build_wasm_module!("../../../modules/ne2000"))
         }
         #[cfg(any(target_arch = "arm", target_arch = "aarch64"))]

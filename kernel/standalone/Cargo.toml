@@ -24,6 +24,7 @@ redshirt-hardware-interface = { path = "../../interfaces/hardware", default-feat
 redshirt-interface-interface = { path = "../../interfaces/interface", default-features = false }
 redshirt-kernel-log-interface = { path = "../../interfaces/kernel-log", default-features = false }
 redshirt-log-interface = { path = "../../interfaces/log", default-features = false }
+redshirt-pci-interface = { path = "../../interfaces/pci", default-features = false }
 redshirt-random-interface = { path = "../../interfaces/random", default-features = false }
 redshirt-syscalls = { path = "../../interfaces/syscalls", default-features = false }
 redshirt-time-interface = { path = "../../interfaces/time", default-features = false }

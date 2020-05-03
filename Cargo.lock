@@ -1718,6 +1718,7 @@ dependencies = [
  "redshirt-interface-interface",
  "redshirt-kernel-log-interface",
  "redshirt-log-interface",
+ "redshirt-pci-interface",
  "redshirt-random-interface",
  "redshirt-syscalls",
  "redshirt-time-interface",
