@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "desktop",
     "hello-world",
     "http-server",
     "log-to-kernel",
