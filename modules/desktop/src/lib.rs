@@ -29,23 +29,22 @@ impl Desktop {
         imgui.io_mut().display_framebuffer_scale = [1.0, 1.0];
         imgui.io_mut().display_size = [dimensions[0] as f32, dimensions[1] as f32];
         imgui.io_mut().font_global_scale = 1.0;
-        imgui.fonts().add_font(&[
-            imgui::FontSource::DefaultFontData {
+        imgui
+            .fonts()
+            .add_font(&[imgui::FontSource::DefaultFontData {
                 config: Some(imgui::FontConfig {
                     size_pixels: 14.0,
                     ..Default::default()
                 }),
-            },
-        ]);
-    
-        imgui.set_renderer_name(Some(imgui::ImString::from(format!("imgui-software-renderer"))));
+            }]);
+
+        imgui.set_renderer_name(Some(imgui::ImString::from(format!(
+            "imgui-software-renderer"
+        ))));
         let texture_id = rasterizer.add_texture(&imgui.fonts().build_alpha8_texture());
         imgui.fonts().tex_id = texture_id;
 
-        Desktop {
-            imgui,
-            rasterizer,
-        }
+        Desktop { imgui, rasterizer }
     }
 
     /// Returns a buffer containing the RGB pixels.

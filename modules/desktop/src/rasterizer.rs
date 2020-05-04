@@ -74,24 +74,26 @@ impl Rasterizer {
 
         for cmd in draw_list.commands() {
             match cmd {
-                imgui::DrawCmd::Elements { count, 
+                imgui::DrawCmd::Elements {
+                    count,
                     cmd_params:
                         imgui::DrawCmdParams {
                             clip_rect,
                             texture_id,
                             ..
-                        }, } => {
+                        },
+                } => {
                     let index_range = {
                         let start = index_start;
                         index_start += count;
-                        start .. index_start
+                        start..index_start
                     };
 
                     for triangle in draw_list.idx_buffer()[index_range].chunks(3) {
                         let vertices = [
                             draw_list.vtx_buffer()[usize::from(triangle[0])],
                             draw_list.vtx_buffer()[usize::from(triangle[1])],
-                            draw_list.vtx_buffer()[usize::from(triangle[2])]
+                            draw_list.vtx_buffer()[usize::from(triangle[2])],
                         ];
 
                         self.draw_triangle(vertices, clip_rect, texture_id);
@@ -106,7 +108,12 @@ impl Rasterizer {
     }
 
     /// Draws a single triange made from the three given vertices on the surface.
-    fn draw_triangle(&mut self, vertices: [imgui::DrawVert; 3], clip_rect: [f32; 4], texture_id: imgui::TextureId) {
+    fn draw_triangle(
+        &mut self,
+        vertices: [imgui::DrawVert; 3],
+        clip_rect: [f32; 4],
+        texture_id: imgui::TextureId,
+    ) {
         // Turn the vertices into floating points.
         let screen_coords = [
             Vector2::new(vertices[0].pos[0], vertices[0].pos[1]),
@@ -123,31 +130,56 @@ impl Rasterizer {
 
         // Turn the colors into floating points.
         let colors = [
-            Vector4::new(vertices[0].col[0] as f32 / 255.0, vertices[0].col[1] as f32 / 255.0, vertices[0].col[2] as f32 / 255.0, vertices[0].col[3] as f32 / 255.0),
-            Vector4::new(vertices[1].col[0] as f32 / 255.0, vertices[1].col[1] as f32 / 255.0, vertices[1].col[2] as f32 / 255.0, vertices[1].col[3] as f32 / 255.0),
-            Vector4::new(vertices[2].col[0] as f32 / 255.0, vertices[2].col[1] as f32 / 255.0, vertices[2].col[2] as f32 / 255.0, vertices[2].col[3] as f32 / 255.0),
+            Vector4::new(
+                vertices[0].col[0] as f32 / 255.0,
+                vertices[0].col[1] as f32 / 255.0,
+                vertices[0].col[2] as f32 / 255.0,
+                vertices[0].col[3] as f32 / 255.0,
+            ),
+            Vector4::new(
+                vertices[1].col[0] as f32 / 255.0,
+                vertices[1].col[1] as f32 / 255.0,
+                vertices[1].col[2] as f32 / 255.0,
+                vertices[1].col[3] as f32 / 255.0,
+            ),
+            Vector4::new(
+                vertices[2].col[0] as f32 / 255.0,
+                vertices[2].col[1] as f32 / 255.0,
+                vertices[2].col[2] as f32 / 255.0,
+                vertices[2].col[3] as f32 / 255.0,
+            ),
         ];
 
         // Slope from vertices 2 to 0 and 1 to 0.
         let screen_coords_slope = [
             screen_coords[1] - screen_coords[0],
-            screen_coords[2] - screen_coords[0]
+            screen_coords[2] - screen_coords[0],
         ];
         let denominator = cross(screen_coords_slope[0], screen_coords_slope[1]);
-        let uv_slope = [
-            uv_coords[1] - uv_coords[0],
-            uv_coords[2] - uv_coords[0]
-        ];
-        let colors_slope = [
-            colors[1] - colors[0],
-            colors[2] - colors[0]
-        ];
+        let uv_slope = [uv_coords[1] - uv_coords[0], uv_coords[2] - uv_coords[0]];
+        let colors_slope = [colors[1] - colors[0], colors[2] - colors[0]];
 
         // Then determine the bounding box of our triangle, this time in integral pixels.
-        let min_x = screen_coords[0].x.min(screen_coords[1].x).min(screen_coords[2].x).floor();
-        let max_x = screen_coords[0].x.max(screen_coords[1].x).max(screen_coords[2].x).ceil();
-        let min_y = screen_coords[0].y.min(screen_coords[1].y).min(screen_coords[2].y).floor();
-        let max_y = screen_coords[0].y.max(screen_coords[1].y).max(screen_coords[2].y).ceil();
+        let min_x = screen_coords[0]
+            .x
+            .min(screen_coords[1].x)
+            .min(screen_coords[2].x)
+            .floor();
+        let max_x = screen_coords[0]
+            .x
+            .max(screen_coords[1].x)
+            .max(screen_coords[2].x)
+            .ceil();
+        let min_y = screen_coords[0]
+            .y
+            .min(screen_coords[1].y)
+            .min(screen_coords[2].y)
+            .floor();
+        let max_y = screen_coords[0]
+            .y
+            .max(screen_coords[1].y)
+            .max(screen_coords[2].y)
+            .ceil();
 
         // Adjust these values for the clip rectangle and framebuffer dimensions.
         let min_x = 0.0f32.max(clip_rect[0].max(min_x)) as i32;
@@ -169,12 +201,19 @@ impl Rasterizer {
 
                 // Check whether we are inside the triangle.
                 // TODO: do some MSAA here?
-                if barycentric_coords.x < 0.0 || barycentric_coords.y < 0.0 || (barycentric_coords.x + barycentric_coords.y) >= 1.0 {
+                if barycentric_coords.x < 0.0
+                    || barycentric_coords.y < 0.0
+                    || (barycentric_coords.x + barycentric_coords.y) >= 1.0
+                {
                     continue;
                 }
 
-                let color = colors[0] + colors_slope[0] * barycentric_coords.x + colors_slope[1] * barycentric_coords.y;
-                let uv = uv_coords[0] + uv_slope[0] * barycentric_coords.x + uv_slope[1] * barycentric_coords.y;
+                let color = colors[0]
+                    + colors_slope[0] * barycentric_coords.x
+                    + colors_slope[1] * barycentric_coords.y;
+                let uv = uv_coords[0]
+                    + uv_slope[0] * barycentric_coords.x
+                    + uv_slope[1] * barycentric_coords.y;
                 let texture_sample = self.texture_sample(texture_id, uv);
                 self.put_pixel(Vector2::new(x, y), color * texture_sample);
             }
@@ -185,7 +224,10 @@ impl Rasterizer {
     fn texture_sample(&self, texture_id: imgui::TextureId, uv_coords: Vector2<f32>) -> f32 {
         let texture = &self.textures[texture_id.id()];
 
-        let uv_pixels = Vector2::new(uv_coords.x * texture.dimensions_px.x, uv_coords.y * texture.dimensions_px.y);
+        let uv_pixels = Vector2::new(
+            uv_coords.x * texture.dimensions_px.x,
+            uv_coords.y * texture.dimensions_px.y,
+        );
 
         // Alright. Pixels are normally defined by their middle. For example, the top-left pixel
         // of the texture has coordinates `(0.5, 0.5)`. If `uv_coords` is `(0.5, 0.5)` we want to
@@ -197,10 +239,34 @@ impl Rasterizer {
         let uv_pixels_hack = uv_pixels - Vector2::new(0.5, 0.5);
 
         let adjacent_pixels = [
-            (Vector2::new(uv_pixels_hack.x.floor() as i32, uv_pixels_hack.y.floor() as i32), uv_pixels_hack.x.fract() * uv_pixels_hack.y.fract()),
-            (Vector2::new(uv_pixels_hack.x.floor() as i32, uv_pixels_hack.y.ceil() as i32), uv_pixels_hack.x.fract() * (1.0 - uv_pixels_hack.y.fract())),
-            (Vector2::new(uv_pixels_hack.x.ceil() as i32, uv_pixels_hack.y.floor() as i32), (1.0 - uv_pixels_hack.x.fract()) * uv_pixels_hack.y.fract()),
-            (Vector2::new(uv_pixels_hack.x.ceil() as i32, uv_pixels_hack.y.ceil() as i32), (1.0 - uv_pixels_hack.x.fract()) * (1.0 - uv_pixels_hack.y.fract())),
+            (
+                Vector2::new(
+                    uv_pixels_hack.x.floor() as i32,
+                    uv_pixels_hack.y.floor() as i32,
+                ),
+                uv_pixels_hack.x.fract() * uv_pixels_hack.y.fract(),
+            ),
+            (
+                Vector2::new(
+                    uv_pixels_hack.x.floor() as i32,
+                    uv_pixels_hack.y.ceil() as i32,
+                ),
+                uv_pixels_hack.x.fract() * (1.0 - uv_pixels_hack.y.fract()),
+            ),
+            (
+                Vector2::new(
+                    uv_pixels_hack.x.ceil() as i32,
+                    uv_pixels_hack.y.floor() as i32,
+                ),
+                (1.0 - uv_pixels_hack.x.fract()) * uv_pixels_hack.y.fract(),
+            ),
+            (
+                Vector2::new(
+                    uv_pixels_hack.x.ceil() as i32,
+                    uv_pixels_hack.y.ceil() as i32,
+                ),
+                (1.0 - uv_pixels_hack.x.fract()) * (1.0 - uv_pixels_hack.y.fract()),
+            ),
         ];
 
         let mut total = 0.0;
@@ -217,8 +283,9 @@ impl Rasterizer {
     fn put_pixel(&mut self, coords: Vector2<i32>, color: Vector4<f32>) {
         let rgb_out = {
             // TODO: proper try_from
-            let index = ((coords.x as u32 + coords.y as u32 * self.framebuffer_dimensions[0]) * 3) as usize;
-            &mut self.surface[index..index+3]
+            let index =
+                ((coords.x as u32 + coords.y as u32 * self.framebuffer_dimensions[0]) * 3) as usize;
+            &mut self.surface[index..index + 3]
         };
 
         if color.w >= 1.0 {
@@ -227,9 +294,12 @@ impl Rasterizer {
             rgb_out[2] = (color.z * 255.0).round() as u8;
         } else {
             let one_minus_alpha = 1.0 - color.w;
-            rgb_out[0] = (rgb_out[0] as f32 * one_minus_alpha) as u8 + (color.x * 255.0 * color.w).round() as u8;
-            rgb_out[1] = (rgb_out[0] as f32 * one_minus_alpha) as u8 + (color.y * 255.0 * color.w).round() as u8;
-            rgb_out[2] = (rgb_out[0] as f32 * one_minus_alpha) as u8 + (color.z * 255.0 * color.w).round() as u8;
+            rgb_out[0] = (rgb_out[0] as f32 * one_minus_alpha) as u8
+                + (color.x * 255.0 * color.w).round() as u8;
+            rgb_out[1] = (rgb_out[0] as f32 * one_minus_alpha) as u8
+                + (color.y * 255.0 * color.w).round() as u8;
+            rgb_out[2] = (rgb_out[0] as f32 * one_minus_alpha) as u8
+                + (color.z * 255.0 * color.w).round() as u8;
         }
     }
 }
