@@ -41,7 +41,7 @@ impl Desktop {
         imgui.set_renderer_name(Some(imgui::ImString::from(format!(
             "imgui-software-renderer"
         ))));
-        let texture_id = rasterizer.add_texture(&imgui.fonts().build_alpha8_texture());
+        let texture_id = rasterizer.add_texture(&imgui.fonts().build_rgba32_texture());
         imgui.fonts().tex_id = texture_id;
 
         Desktop { imgui, rasterizer }

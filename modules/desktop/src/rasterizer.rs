@@ -45,7 +45,7 @@ impl Rasterizer {
         &self.surface
     }
 
-    /// Adds a texture and returns a `TextureId` later passed by imgui when drawing.
+    /// Adds an RGBA texture and returns a `TextureId` later passed by imgui when drawing.
     pub fn add_texture(&mut self, texture: &imgui::FontAtlasTexture) -> imgui::TextureId {
         let new_id = From::from(self.textures.len());
         self.textures.push(Texture {
@@ -215,13 +215,23 @@ impl Rasterizer {
                     + uv_slope[0] * barycentric_coords.x
                     + uv_slope[1] * barycentric_coords.y;
                 let texture_sample = self.texture_sample(texture_id, uv);
-                self.put_pixel(Vector2::new(x, y), color * texture_sample);
+                let actual_color = Vector4::new(
+                    texture_sample.x * color.x,
+                    texture_sample.y * color.y,
+                    texture_sample.z * color.z,
+                    texture_sample.w * color.w,
+                );
+                self.put_pixel(Vector2::new(x, y), actual_color);
             }
         }
     }
 
     /// Returns the value of a texture at the given UV coords.
-    fn texture_sample(&self, texture_id: imgui::TextureId, uv_coords: Vector2<f32>) -> f32 {
+    fn texture_sample(
+        &self,
+        texture_id: imgui::TextureId,
+        uv_coords: Vector2<f32>,
+    ) -> Vector4<f32> {
         let texture = &self.textures[texture_id.id()];
 
         let uv_pixels = Vector2::new(
@@ -270,10 +280,20 @@ impl Rasterizer {
             ),
         ];
 
-        let mut total = 0.0;
+        let mut total = Vector4::new(0.0, 0.0, 0.0, 0.0);
         for (coords, weight) in &adjacent_pixels {
-            let tex_value = texture.data[(coords.x + coords.y * texture.width) as usize];
-            total += weight * (tex_value as f32) / 255.0;
+            let tex_slice = {
+                let idx = 4 * (coords.x + coords.y * texture.width) as usize;
+                &texture.data[idx..idx + 4]
+            };
+            total += *weight
+                * Vector4::new(
+                    tex_slice[0] as f32,
+                    tex_slice[1] as f32,
+                    tex_slice[2] as f32,
+                    tex_slice[3] as f32,
+                )
+                / 255.0;
         }
         total
     }
