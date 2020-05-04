@@ -190,7 +190,7 @@ impl Rasterizer {
         // Now iterate over each pixel within the bounding box and determine whether it is
         // inside the triangle.
         for y in min_y..max_y {
-            for x in min_x.max(0)..max_x {
+            for x in min_x..max_x {
                 let float_coords = Vector2::new(x as f32 + 0.5, y as f32 + 0.5);
                 let coords_rel_v0 = float_coords - screen_coords[0];
 
@@ -236,6 +236,7 @@ impl Rasterizer {
         // at rows 1,2, 2,1 and 2,2.
         // In order to make calculations easier, we shift all this machinery and defined pixels as
         // their top-left position by subtracting `(0.5, 0.5)` to the UV coords.
+        // TODO: this probably means that we get out of bounds at the bottom-right corner; fix this
         let uv_pixels_hack = uv_pixels - Vector2::new(0.5, 0.5);
 
         let adjacent_pixels = [
