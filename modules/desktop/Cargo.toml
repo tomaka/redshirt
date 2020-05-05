@@ -12,3 +12,10 @@ imgui = { git = "https://github.com/tomaka/imgui-rs", branch = "wasi" } # TODO: 
 redshirt-framebuffer-interface = { path = "../../interfaces/framebuffer" }
 redshirt-syscalls = { path = "../../interfaces/syscalls" }
 redshirt-time-interface = { path = "../../interfaces/time" }
+
+[dependencies.image]
+version = "0.23.4"
+# If you presume that `image` is a simple CPU-only decoding library, you'd be mistaken. The library
+# tries to spawn background threads, unless you disable some features.
+default-features = false
+features = ["jpeg"]
