@@ -317,9 +317,9 @@ impl Rasterizer {
             let one_minus_alpha = 1.0 - color.w;
             rgb_out[0] = (rgb_out[0] as f32 * one_minus_alpha) as u8
                 + (color.x * 255.0 * color.w).round() as u8;
-            rgb_out[1] = (rgb_out[0] as f32 * one_minus_alpha) as u8
+            rgb_out[1] = (rgb_out[1] as f32 * one_minus_alpha) as u8
                 + (color.y * 255.0 * color.w).round() as u8;
-            rgb_out[2] = (rgb_out[0] as f32 * one_minus_alpha) as u8
+            rgb_out[2] = (rgb_out[2] as f32 * one_minus_alpha) as u8
                 + (color.z * 255.0 * color.w).round() as u8;
         }
     }

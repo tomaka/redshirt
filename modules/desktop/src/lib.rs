@@ -54,20 +54,7 @@ impl Desktop {
 
     pub fn render(&mut self) {
         let ui = self.imgui.frame();
-
-        imgui::Window::new(imgui::im_str!("Hello world"))
-            .size([300.0, 110.0], imgui::Condition::FirstUseEver)
-            .build(&ui, || {
-                ui.text(imgui::im_str!("Hello world!"));
-                ui.text(imgui::im_str!("こんにちは世界！"));
-                ui.text(imgui::im_str!("This...is...imgui-rs!"));
-                ui.separator();
-                let mouse_pos = ui.io().mouse_pos;
-                ui.text(format!(
-                    "Mouse Position: ({:.1},{:.1})",
-                    mouse_pos[0], mouse_pos[1]
-                ));
-            });
+        ui.show_demo_window(&mut true);
 
         let draw_data = ui.render();
         self.rasterizer.draw(&draw_data);
