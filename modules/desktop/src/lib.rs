@@ -13,11 +13,14 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use std::time::Instant;
+
 mod rasterizer;
 
 pub struct Desktop {
     imgui: imgui::Context,
     rasterizer: rasterizer::Rasterizer,
+    last_rendering: Instant,
 }
 
 impl Desktop {
@@ -29,6 +32,7 @@ impl Desktop {
         imgui.io_mut().display_framebuffer_scale = [1.0, 1.0];
         imgui.io_mut().display_size = [dimensions[0] as f32, dimensions[1] as f32];
         imgui.io_mut().font_global_scale = 1.0;
+        imgui.io_mut().mouse_draw_cursor = true;
         imgui
             .fonts()
             .add_font(&[imgui::FontSource::DefaultFontData {
@@ -38,13 +42,18 @@ impl Desktop {
                 }),
             }]);
 
+        imgui.set_platform_name(Some(imgui::ImString::from(format!("redshirt"))));
         imgui.set_renderer_name(Some(imgui::ImString::from(format!(
             "imgui-software-renderer"
         ))));
         let texture_id = rasterizer.add_texture(&imgui.fonts().build_rgba32_texture());
         imgui.fonts().tex_id = texture_id;
 
-        Desktop { imgui, rasterizer }
+        Desktop {
+            imgui,
+            rasterizer,
+            last_rendering: Instant::now(),
+        }
     }
 
     /// Returns a buffer containing the RGB pixels.
@@ -53,8 +62,18 @@ impl Desktop {
     }
 
     pub fn render(&mut self) {
+        {
+            let now = Instant::now();
+            self.imgui.io_mut().delta_time = (now - self.last_rendering).as_secs_f32();
+            self.last_rendering = now;
+        }
+
+        self.imgui.io_mut().mouse_pos = [300.0, 200.0]; // TODO:
+
         let ui = self.imgui.frame();
         ui.show_demo_window(&mut true);
+        ui.show_metrics_window(&mut true);
+        ui.show_about_window(&mut true);
 
         let draw_data = ui.render();
         self.rasterizer.draw(&draw_data);
