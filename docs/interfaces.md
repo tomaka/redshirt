@@ -36,7 +36,7 @@ For example, in the Linux world, creating an OpenGL context requires passing an 
 
 If an equivalent of OpenGL+X11 had to be designed, one could create an interface that combines all of OpenGL and X11 together.
 
-There is no limit to the size or the number of messages in an interface. "Elegance", "minimalism" or "code reuse" are **not** valid reasons to split an interface in multiple parts.
+Keep in mind that there is no one-to-one relation between interfaces and messages. For example an interface can combine into one the messaages of multiple other interfaces. "Elegance", "minimalism" or "code reuse" are not valid reasons to split an interface in multiple parts.
 
 # Kernel-handled interfaces
 
