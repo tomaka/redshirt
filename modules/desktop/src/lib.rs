@@ -15,31 +15,23 @@
 
 use std::time::Instant;
 
+mod background;
+mod launch_bar;
 mod rasterizer;
 
 pub struct Desktop {
     imgui: imgui::Context,
     rasterizer: rasterizer::Rasterizer,
     last_rendering: Instant,
-    background_texture_id: imgui::TextureId,
+    background: background::Background,
+    launch_bar: launch_bar::LaunchBar,
 }
 
 impl Desktop {
     pub fn new(dimensions: [u32; 2]) -> Self {
         let mut rasterizer = rasterizer::Rasterizer::new(dimensions);
-
-        let background_texture_id = {
-            let texture = image::load_from_memory(include_bytes!("../res/desktop-background.jpg"))
-                .unwrap()
-                .into_rgba();
-            let width = texture.width();
-            let height = texture.height();
-            rasterizer.add_texture(&imgui::FontAtlasTexture {
-                width,
-                height,
-                data: &texture.into_raw(),
-            })
-        };
+        let background = background::Background::new(&mut rasterizer);
+        let launch_bar = launch_bar::LaunchBar::new(&mut rasterizer);
 
         let mut imgui = imgui::Context::create();
         // TODO: clipboard
@@ -67,7 +59,8 @@ impl Desktop {
             imgui,
             rasterizer,
             last_rendering: Instant::now(),
-            background_texture_id,
+            background,
+            launch_bar,
         }
     }
 
@@ -85,27 +78,12 @@ impl Desktop {
 
         self.imgui.io_mut().mouse_pos = [300.0, 200.0]; // TODO:
 
-        let background_texture_id = self.background_texture_id;
         let ui = self.imgui.frame();
-        let style = ui.push_style_vars(&[
-            imgui::StyleVar::WindowPadding([0.0, 0.0]),
-            imgui::StyleVar::WindowBorderSize(0.0),
-        ]);
-        imgui::Window::new(imgui::im_str!("background"))
-            .opened(&mut true)
-            .size([800.0, 600.0], imgui::Condition::FirstUseEver)
-            .position([0.0, 0.0], imgui::Condition::FirstUseEver)
-            .no_nav()
-            .no_decoration()
-            .no_inputs()
-            .draw_background(false)
-            .build(&ui, || {
-                imgui::Image::new(background_texture_id, [800.0, 600.0]).build(&ui);
-            });
-        style.pop(&ui);
+        self.background.draw(&ui);
         ui.show_demo_window(&mut true);
         ui.show_metrics_window(&mut true);
         ui.show_about_window(&mut true);
+        self.launch_bar.draw(&ui);
 
         let draw_data = ui.render();
         self.rasterizer.draw(&draw_data);
