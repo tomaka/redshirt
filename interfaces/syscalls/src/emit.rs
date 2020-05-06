@@ -167,9 +167,9 @@ where
         }
 
         if needs_answer {
-            Ok(Some(MessageId::from(NonZeroU64::new_unchecked(
-                message_id_out.assume_init(),
-            ))))
+            Ok(Some(
+                MessageId::try_from(message_id_out.assume_init()).unwrap(),
+            ))
         } else {
             Ok(None)
         }

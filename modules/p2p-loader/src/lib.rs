@@ -180,7 +180,7 @@ impl<T> Network<T> {
             &"Qmc25MQxSxbUpU49bZ7RVEqgBJPB3SrjG8WVycU3KC7xYP"
                 .parse()
                 .unwrap(),
-            "/ip4/138.68.126.243/tcp/30333".parse().unwrap(),
+            "/ip4/134.122.67.49/tcp/30333".parse().unwrap(),
         );
 
         swarm.bootstrap();
