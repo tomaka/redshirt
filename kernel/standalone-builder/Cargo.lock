@@ -44,9 +44,9 @@ checksum = "cf1de2fe8c75bc145a2f577add951f8134889b4795d47466a54a5c846d691693"
 
 [[package]]
 name = "bitvec"
-version = "0.16.2"
+version = "0.17.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f62134ef3d3f415729bdded77da1e0803af4409e7a7554ee486081c0cffbf82"
+checksum = "41262f11d771fd4a61aa3ce019fca363b4b6c282fca9da2a31186d3965a47a5c"
 dependencies = [
  "either",
  "radium",
@@ -200,8 +200,7 @@ dependencies = [
 [[package]]
 name = "mbrman"
 version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9c281b1a9bd567354bb536a3457be05a21e9c67de5a36bb5759a86292d7fdccb"
+source = "git+https://github.com/cecton/mbrman#61f296428a069c582ac3cfb60699e8747686eb2f"
 dependencies = [
  "bincode",
  "bitvec",
