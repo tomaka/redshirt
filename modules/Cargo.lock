@@ -1921,7 +1921,7 @@ dependencies = [
 [[package]]
 name = "ring"
 version = "0.16.13"
-source = "git+https://github.com/nhynes/ring?rev=fc8edaafce8d5e7a2b5e77983f4d66308ee5fd36#fc8edaafce8d5e7a2b5e77983f4d66308ee5fd36"
+source = "git+https://github.com/nhynes/ring?branch=wasi#fc8edaafce8d5e7a2b5e77983f4d66308ee5fd36"
 dependencies = [
  "cc",
  "libc",
