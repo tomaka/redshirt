@@ -73,8 +73,10 @@ impl<'a> NativeProgramRef<'a> for &'a PciNativeProgram {
             return Box::pin(future::ready(NativeProgramEvent::Emit {
                 interface: redshirt_interface_interface::ffi::INTERFACE,
                 message_id_write: None,
-                message: redshirt_interface_interface::ffi::InterfaceMessage::Register(ffi::INTERFACE)
-                    .encode(),
+                message: redshirt_interface_interface::ffi::InterfaceMessage::Register(
+                    ffi::INTERFACE,
+                )
+                .encode(),
             }));
         }
 
@@ -118,46 +120,58 @@ impl<'a> NativeProgramRef<'a> for &'a PciNativeProgram {
                             .push((message_id, Ok(Result::<_, ()>::Ok(()).encode())));
                     }
                 }
-            },
+            }
 
             Ok(ffi::PciMessage::UnlockDevice(bdf)) => {
                 let mut locked_devices = self.locked_devices.lock();
-                if let Some(pos) = locked_devices.iter_mut().position(|dev| dev.owner == emitter_pid && dev.bdf == bdf) {
+                if let Some(pos) = locked_devices
+                    .iter_mut()
+                    .position(|dev| dev.owner == emitter_pid && dev.bdf == bdf)
+                {
                     let locked_device = locked_devices.remove(pos);
                     for m in locked_device.next_interrupt_messages {
                         self.pending_messages
                             .push((m, Ok(ffi::NextInterruptResponse::Unlocked.encode())));
                     }
                 }
-            },
+            }
 
             Ok(ffi::PciMessage::NextInterrupt(bdf)) => {
                 if let Some(message_id) = message_id {
                     let mut locked_devices = self.locked_devices.lock();
-                    if let Some(dev) = locked_devices.iter_mut().find(|dev| dev.owner == emitter_pid && dev.bdf == bdf) {
+                    if let Some(dev) = locked_devices
+                        .iter_mut()
+                        .find(|dev| dev.owner == emitter_pid && dev.bdf == bdf)
+                    {
                         dev.next_interrupt_messages.push_back(message_id);
                     } else {
-                        self.pending_messages
-                            .push((message_id, Ok(ffi::NextInterruptResponse::BadDevice.encode())));
+                        self.pending_messages.push((
+                            message_id,
+                            Ok(ffi::NextInterruptResponse::BadDevice.encode()),
+                        ));
                     }
-                }  
-            },
+                }
+            }
 
             Ok(ffi::PciMessage::GetDevicesList) => {
                 if let Some(message_id) = message_id {
                     let response = ffi::GetDevicesListResponse {
-                        devices: self.devices.devices().map(|device| {
-                            ffi::PciDeviceInfo {
-                                location: ffi::PciDeviceBdf {
-                                    bus: device.bus(),
-                                    device: device.device(),
-                                    function: device.function(),
-                                },
-                                vendor_id: device.vendor_id(),
-                                device_id: device.device_id(),
-                                base_address_registers: Vec::new(),     // FIXME:
-                            }
-                        }).collect(),
+                        devices: self
+                            .devices
+                            .devices()
+                            .map(|device| {
+                                ffi::PciDeviceInfo {
+                                    location: ffi::PciDeviceBdf {
+                                        bus: device.bus(),
+                                        device: device.device(),
+                                        function: device.function(),
+                                    },
+                                    vendor_id: device.vendor_id(),
+                                    device_id: device.device_id(),
+                                    base_address_registers: Vec::new(), // FIXME:
+                                }
+                            })
+                            .collect(),
                     };
 
                     self.pending_messages
@@ -167,9 +181,11 @@ impl<'a> NativeProgramRef<'a> for &'a PciNativeProgram {
 
             Ok(_) => unimplemented!(),
 
-            Err(_) => if let Some(message_id) = message_id {
-                self.pending_messages.push((message_id, Err(())))
-            },
+            Err(_) => {
+                if let Some(message_id) = message_id {
+                    self.pending_messages.push((message_id, Err(())))
+                }
+            }
         }
     }
 

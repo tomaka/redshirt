@@ -135,12 +135,8 @@ pub struct PciDeviceInfo {
 // TODO: actually figure out PCI and adjust this
 #[derive(Debug, Clone, Encode, Decode)]
 pub enum PciBaseAddressRegister {
-    Memory {
-        base_address: u32,
-    },
-    Io {
-        base_address: u32,
-    },
+    Memory { base_address: u32 },
+    Io { base_address: u32 },
 }
 
 /// Request to perform accesses to memory-mapped memory.

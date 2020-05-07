@@ -47,9 +47,7 @@ where
     /// Initializes a new `Kernel`.
     pub fn init(platform_specific: TPlat) -> Self {
         let platform_specific = Arc::pin(platform_specific);
-        let pci_devices = unsafe {
-            crate::pci::pci::init_cam_pci()
-        };
+        let pci_devices = unsafe { crate::pci::pci::init_cam_pci() };
 
         let mut system_builder = redshirt_core::system::SystemBuilder::new()
             .with_native_program(crate::hardware::HardwareHandler::new(
@@ -59,9 +57,7 @@ where
             .with_native_program(crate::random::native::RandomNativeProgram::new(
                 platform_specific.clone(),
             ))
-            .with_native_program(crate::pci::native::PciNativeProgram::new(
-                pci_devices
-            ))
+            .with_native_program(crate::pci::native::PciNativeProgram::new(pci_devices))
             .with_native_program(crate::klog::KernelLogNativeProgram::new(
                 platform_specific.clone(),
             ))
@@ -75,8 +71,8 @@ where
         // TODO: use a better system than cfgs
         #[cfg(target_arch = "x86_64")]
         {
-            system_builder = system_builder
-                .with_startup_process(build_wasm_module!("../../../modules/ne2000"))
+            system_builder =
+                system_builder.with_startup_process(build_wasm_module!("../../../modules/ne2000"))
         }
         #[cfg(any(target_arch = "arm", target_arch = "aarch64"))]
         {

@@ -94,7 +94,7 @@ impl<'a> Device<'a> {
     }
 
     pub fn base_address_registers(&self) -> impl Iterator<Item = BaseAddressRegister> {
-        iter::empty()       // FIXME:
+        iter::empty() // FIXME:
     }
 }
 
@@ -154,7 +154,11 @@ fn scan_bus(bus: u8) -> impl Iterator<Item = ScanResult> {
 fn scan_device(bus: u8, device: u8) -> impl Iterator<Item = ScanResult> {
     assert!(device < 32);
 
-    let f0 = match scan_function(&DeviceBdf { bus, device, function: 0 }) {
+    let f0 = match scan_function(&DeviceBdf {
+        bus,
+        device,
+        function: 0,
+    }) {
         Some(f) => f,
         None => return either::Right(iter::empty()),
     };
@@ -164,12 +168,17 @@ fn scan_device(bus: u8, device: u8) -> impl Iterator<Item = ScanResult> {
         // scan all the other functions.
         ScanResult::Device(info) if (info.header_ty & 0x80) != 0 => {
             let iter = (1..=7).flat_map(move |func_idx| {
-                scan_function(&DeviceBdf { bus, device, function: func_idx }).into_iter()
+                scan_function(&DeviceBdf {
+                    bus,
+                    device,
+                    function: func_idx,
+                })
+                .into_iter()
             });
 
             either::Left(either::Right(iter))
         }
-        f0 => either::Left(either::Left(iter::once(f0)))
+        f0 => either::Left(either::Left(iter::once(f0))),
     }
 }
 
@@ -228,7 +237,7 @@ fn scan_function(bdf: &DeviceBdf) -> Option<ScanResult> {
         return Some(ScanResult::Bridge {
             bdf: *bdf,
             target_bus: sec_bus_num,
-        })
+        });
     }
 
     Some(ScanResult::Device(DeviceInfo {
