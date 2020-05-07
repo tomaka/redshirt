@@ -143,6 +143,28 @@ impl<'a> NativeProgramRef<'a> for &'a PciNativeProgram {
                 }  
             },
 
+            Ok(ffi::PciMessage::GetDevicesList) => {
+                if let Some(message_id) = message_id {
+                    let response = ffi::GetDevicesListResponse {
+                        devices: self.devices.devices().map(|device| {
+                            ffi::PciDeviceInfo {
+                                location: ffi::PciDeviceBdf {
+                                    bus: device.bus(),
+                                    device: device.device(),
+                                    function: device.function(),
+                                },
+                                vendor_id: device.vendor_id(),
+                                device_id: device.device_id(),
+                                base_address_registers: Vec::new(),     // FIXME:
+                            }
+                        }).collect(),
+                    };
+
+                    self.pending_messages
+                        .push((message_id, Ok(response.encode())));
+                }
+            }
+
             Ok(_) => unimplemented!(),
 
             Err(_) => if let Some(message_id) = message_id {

@@ -85,6 +85,14 @@ impl<'a> Device<'a> {
         self.parent.known_devices[self.index].bdf.function
     }
 
+    pub fn vendor_id(&self) -> u16 {
+        self.parent.known_devices[self.index].vendor_id
+    }
+
+    pub fn device_id(&self) -> u16 {
+        self.parent.known_devices[self.index].device_id
+    }
+
     pub fn base_address_registers(&self) -> impl Iterator<Item = BaseAddressRegister> {
         iter::empty()       // FIXME:
     }
