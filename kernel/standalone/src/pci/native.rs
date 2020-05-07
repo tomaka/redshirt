@@ -15,10 +15,10 @@
 
 //! Native program that handles the `pci` interface.
 
-use crate::{arch::PlatformSpecific, pci::pci::PciDevices};
+use crate::{arch::PlatformSpecific, pci::pci};
 
 use alloc::{boxed::Box, collections::VecDeque, sync::Arc, vec, vec::Vec};
-use core::{pin::Pin, sync::atomic};
+use core::{convert::TryFrom as _, pin::Pin, sync::atomic};
 use crossbeam_queue::SegQueue;
 use futures::prelude::*;
 use rand_core::RngCore as _;
@@ -30,7 +30,7 @@ use spinning_top::Spinlock;
 /// State machine for `pci` interface messages handling.
 pub struct PciNativeProgram {
     /// Devices manager. Does the actual work.
-    devices: PciDevices,
+    devices: pci::PciDevices,
     /// List of devices locked by processes.
     locked_devices: Spinlock<Vec<LockedDevice>>,
 
@@ -52,7 +52,7 @@ struct LockedDevice {
 
 impl PciNativeProgram {
     /// Initializes the new state machine for PCI messages handling.
-    pub fn new(devices: PciDevices) -> Self {
+    pub fn new(devices: pci::PciDevices) -> Self {
         PciNativeProgram {
             devices,
             locked_devices: Spinlock::new(Vec::new()),
@@ -168,7 +168,20 @@ impl<'a> NativeProgramRef<'a> for &'a PciNativeProgram {
                                     },
                                     vendor_id: device.vendor_id(),
                                     device_id: device.device_id(),
-                                    base_address_registers: Vec::new(), // FIXME:
+                                    base_address_registers: device.base_address_registers().map(|bar| {
+                                        match bar {
+                                            pci::BaseAddressRegister::Memory { base_address, .. } => {
+                                                ffi::PciBaseAddressRegister::Memory {
+                                                    base_address: u32::try_from(base_address).unwrap(),
+                                                }
+                                            }
+                                            pci::BaseAddressRegister::Io { base_address } => {
+                                                ffi::PciBaseAddressRegister::Io {
+                                                    base_address: u32::from(base_address),
+                                                }
+                                            }
+                                        }
+                                    }).collect(),
                                 }
                             })
                             .collect(),

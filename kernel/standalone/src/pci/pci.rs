@@ -54,6 +54,7 @@ struct DeviceInfo {
     vendor_id: u16,
     device_id: u16,
     header_ty: u8,
+    base_address_registers: Vec<BaseAddressRegister>,
 }
 
 impl PciDevices {
@@ -93,12 +94,12 @@ impl<'a> Device<'a> {
         self.parent.known_devices[self.index].device_id
     }
 
-    pub fn base_address_registers(&self) -> impl Iterator<Item = BaseAddressRegister> {
-        iter::empty() // FIXME:
+    pub fn base_address_registers(&self) -> impl Iterator<Item = BaseAddressRegister> + 'a {
+        self.parent.known_devices[self.index].base_address_registers.iter().cloned()
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum BaseAddressRegister {
     Memory {
         base_address: usize,
@@ -245,26 +246,25 @@ fn scan_function(bdf: &DeviceBdf) -> Option<ScanResult> {
         vendor_id,
         device_id,
         header_ty,
-        /*base_address_registers: {
+        base_address_registers: {
             let mut list = Vec::with_capacity(6);
             for bar_n in 0..6 {
                 let bar =
-                    pci_cfg_read_u32(bus_idx, device_idx, func_idx, 0x10 + bar_n * 0x4)
-                        .await;
+                    pci_cfg_read_u32(bdf, 0x10 + bar_n * 0x4);
                 list.push(if (bar & 0x1) == 0 {
                     let prefetchable = (bar & (1 << 3)) != 0;
-                    let base_address = bar & !0b1111;
-                    redshirt_pci_interface::PciBaseAddressRegister::Memory {
+                    let base_address = usize::try_from(bar & !0b1111).unwrap();
+                    BaseAddressRegister::Memory {
                         base_address,
                         prefetchable,
                     }
                 } else {
-                    let base_address = bar & !0b11;
-                    redshirt_pci_interface::PciBaseAddressRegister::Io { base_address }
+                    let base_address = u16::try_from(bar & !0b11).unwrap();
+                    BaseAddressRegister::Io { base_address }
                 });
             }
             list
-        },*/
+        },
     }))
 }
 
