@@ -95,7 +95,10 @@ impl<'a> Device<'a> {
     }
 
     pub fn base_address_registers(&self) -> impl Iterator<Item = BaseAddressRegister> + 'a {
-        self.parent.known_devices[self.index].base_address_registers.iter().cloned()
+        self.parent.known_devices[self.index]
+            .base_address_registers
+            .iter()
+            .cloned()
     }
 }
 
@@ -249,8 +252,7 @@ fn scan_function(bdf: &DeviceBdf) -> Option<ScanResult> {
         base_address_registers: {
             let mut list = Vec::with_capacity(6);
             for bar_n in 0..6 {
-                let bar =
-                    pci_cfg_read_u32(bdf, 0x10 + bar_n * 0x4);
+                let bar = pci_cfg_read_u32(bdf, 0x10 + bar_n * 0x4);
                 list.push(if (bar & 0x1) == 0 {
                     let prefetchable = (bar & (1 << 3)) != 0;
                     let base_address = usize::try_from(bar & !0b1111).unwrap();

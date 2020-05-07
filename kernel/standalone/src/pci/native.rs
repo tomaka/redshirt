@@ -159,30 +159,29 @@ impl<'a> NativeProgramRef<'a> for &'a PciNativeProgram {
                         devices: self
                             .devices
                             .devices()
-                            .map(|device| {
-                                ffi::PciDeviceInfo {
-                                    location: ffi::PciDeviceBdf {
-                                        bus: device.bus(),
-                                        device: device.device(),
-                                        function: device.function(),
-                                    },
-                                    vendor_id: device.vendor_id(),
-                                    device_id: device.device_id(),
-                                    base_address_registers: device.base_address_registers().map(|bar| {
-                                        match bar {
-                                            pci::BaseAddressRegister::Memory { base_address, .. } => {
-                                                ffi::PciBaseAddressRegister::Memory {
-                                                    base_address: u32::try_from(base_address).unwrap(),
-                                                }
-                                            }
-                                            pci::BaseAddressRegister::Io { base_address } => {
-                                                ffi::PciBaseAddressRegister::Io {
-                                                    base_address: u32::from(base_address),
-                                                }
+                            .map(|device| ffi::PciDeviceInfo {
+                                location: ffi::PciDeviceBdf {
+                                    bus: device.bus(),
+                                    device: device.device(),
+                                    function: device.function(),
+                                },
+                                vendor_id: device.vendor_id(),
+                                device_id: device.device_id(),
+                                base_address_registers: device
+                                    .base_address_registers()
+                                    .map(|bar| match bar {
+                                        pci::BaseAddressRegister::Memory {
+                                            base_address, ..
+                                        } => ffi::PciBaseAddressRegister::Memory {
+                                            base_address: u32::try_from(base_address).unwrap(),
+                                        },
+                                        pci::BaseAddressRegister::Io { base_address } => {
+                                            ffi::PciBaseAddressRegister::Io {
+                                                base_address: u32::from(base_address),
                                             }
                                         }
-                                    }).collect(),
-                                }
+                                    })
+                                    .collect(),
                             })
                             .collect(),
                     };
