@@ -17,7 +17,8 @@
 //!
 //! See https://en.wikipedia.org/wiki/PCI_configuration_space
 
-use core::{borrow::Cow, convert::TryFrom as _};
+use alloc::{borrow::Cow, collections::VecDeque, vec::Vec};
+use core::{convert::TryFrom as _, iter};
 use fnv::FnvBuildHasher;
 use x86_64::structures::port::{PortRead as _, PortWrite as _};
 
@@ -29,7 +30,7 @@ use x86_64::structures::port::{PortRead as _, PortWrite as _};
 // TODO: support Enhanced Configuration Access Mechanism (ECAM)
 pub unsafe fn init_cam_pci() -> PciDevices {
     PciDevices {
-        known_devices: Vec::new(),      // FIXME:
+        known_devices: scan_all_buses(),
     }
 }
 
@@ -40,46 +41,52 @@ pub struct PciDevices {
     known_devices: Vec<DeviceInfo>,
 }
 
+#[derive(Debug, Copy, Clone)]
 struct DeviceBdf {
     bus: u8,
     device: u8,
     function: u8,
 }
 
+#[derive(Debug)]
 struct DeviceInfo {
     bdf: DeviceBdf,
     vendor_id: u16,
     device_id: u16,
+    header_ty: u8,
 }
 
 impl PciDevices {
     // TODO:
     pub fn devices(&self) -> impl Iterator<Item = Device> {
-        self.known_devices.iter().map(|_| ())
+        (0..self.known_devices.len()).map(move |index| Device {
+            parent: self,
+            index,
+        })
     }
 }
 
 /// Access to a single device within the list.
 pub struct Device<'a> {
     parent: &'a PciDevices,
-    bdf: DeviceBdf,
+    index: usize,
 }
 
 impl<'a> Device<'a> {
     pub fn bus(&self) -> u8 {
-        self.bdf.bus
+        self.parent.known_devices[self.index].bdf.bus
     }
 
     pub fn device(&self) -> u8 {
-        self.bdf.device
+        self.parent.known_devices[self.index].bdf.device
     }
 
     pub fn function(&self) -> u8 {
-        self.bdf.function
+        self.parent.known_devices[self.index].bdf.function
     }
 
     pub fn base_address_registers(&self) -> impl Iterator<Item = BaseAddressRegister> {
-
+        iter::empty()       // FIXME:
     }
 }
 
@@ -94,38 +101,92 @@ pub enum BaseAddressRegister {
     },
 }
 
-unsafe fn read_bus_pci_devices(bus_idx: u8) -> Vec<DeviceInfo> {
-    let mut out = Vec::new();
+/// Scans all the PCI devices.
+fn scan_all_buses() -> Vec<DeviceInfo> {
+    // TODO: apparently it's possible to have multiple PCI controllers
+    //       see https://wiki.osdev.org/PCI#Recursive_Scan
 
-    for device_idx in 0..32 {
-        for func_idx in 0..8 {
-            // TODO: check function 0 only first
-            let bdf = DeviceBdf {
-                bus: bus_idx,
-                device: device_idx,
-                function: func_idx,
-            };
+    let mut checked = Vec::with_capacity(32);
+    let mut to_check = VecDeque::with_capacity(32);
+    to_check.push_back(0);
+    let mut out = Vec::with_capacity(64);
 
-            read_pci_slot(&bdf);
+    loop {
+        let next_bus = match to_check.pop_front() {
+            Some(b) => b,
+            None => return out,
+        };
+
+        debug_assert!(!checked.iter().any(|b| *b == next_bus));
+        checked.push(next_bus);
+
+        for scan_result in scan_bus(next_bus) {
+            match scan_result {
+                ScanResult::Device(dev) => out.push(dev),
+                ScanResult::Bridge { target_bus, .. } => {
+                    if !checked.iter().any(|b| *b == next_bus) {
+                        to_check.push_back(target_bus);
+                    }
+                }
+            }
         }
     }
 }
 
-/// Reads the information about a single PCI slot. Returns the list of devices that have been found.
+/// Scans all the devices on a certain PCI bus.
+fn scan_bus(bus: u8) -> impl Iterator<Item = ScanResult> {
+    (0..32).flat_map(move |device_idx| scan_device(bus, device_idx))
+}
+
+/// Reads the information about a single PCI device. Returns the list of devices that have been found.
 ///
 /// # Panic
 ///
 /// Panics if the device is out of range.
-fn scan_device(bus: u8, device: u8) -> Vec<DeviceInfo> {
+fn scan_device(bus: u8, device: u8) -> impl Iterator<Item = ScanResult> {
     assert!(device < 32);
 
-    let function0 = scan_function(bus, device, 0);
+    let f0 = match scan_function(&DeviceBdf { bus, device, function: 0 }) {
+        Some(f) => f,
+        None => return either::Right(iter::empty()),
+    };
+
+    match f0 {
+        // If the MSB of `header_ty` is 1, then this is a "multi-function" device and we need to
+        // scan all the other functions.
+        ScanResult::Device(info) if (info.header_ty & 0x80) != 0 => {
+            let iter = (1..=7).flat_map(move |func_idx| {
+                scan_function(&DeviceBdf { bus, device, function: func_idx }).into_iter()
+            });
+
+            either::Left(either::Right(iter))
+        }
+        f0 => either::Left(either::Left(iter::once(f0)))
+    }
 }
 
-/// Reads the information about a single PCI slot. Returns the list of devices that have been found.
-unsafe fn scan_function(bdf: &DeviceBdf) -> Vec<DeviceInfo> {
+/// Output of [`scan_function`].
+#[derive(Debug)]
+enum ScanResult {
+    /// Function is a device description.
+    Device(DeviceInfo),
+    /// Function is a bridge to a different bus.
+    Bridge {
+        /// Location of the function that we have scanned.
+        bdf: DeviceBdf,
+        /// Bus in question.
+        target_bus: u8,
+    },
+}
+
+/// Reads the information about a single PCI slot, or `None` if it is empty.
+///
+/// # Panic
+///
+/// Panics if the device is out of range.
+fn scan_function(bdf: &DeviceBdf) -> Option<ScanResult> {
     let (vendor_id, device_id) = {
-        let vendor_device = pci_cfg_read_u32(bus_idx, device_idx, func_idx, 0);
+        let vendor_device = pci_cfg_read_u32(bdf, 0);
         let vendor_id = u16::try_from(vendor_device & 0xffff).unwrap();
         let device_id = u16::try_from(vendor_device >> 16).unwrap();
         (vendor_id, device_id)
@@ -136,24 +197,38 @@ unsafe fn scan_function(bdf: &DeviceBdf) -> Vec<DeviceInfo> {
     }
 
     let (class_code, subclass, _prog_if, _revision_id) = {
-        let val = pci_cfg_read_u32(bus_idx, device_idx, func_idx, 0x8);
+        let val = pci_cfg_read_u32(bdf, 0x8);
         let bytes = val.to_be_bytes();
         (bytes[0], bytes[1], bytes[2], bytes[3])
     };
 
     let (_bist, header_ty, latency, cache_line) = {
-        let val = pci_cfg_read_u32(bus_idx, device_idx, func_idx, 0xc);
+        let val = pci_cfg_read_u32(bdf, 0xc);
         let bytes = val.to_be_bytes();
         (bytes[0], bytes[1], bytes[2], bytes[3])
     };
 
-    out.push(DeviceInfo {
-        bus: bus_idx,
-        device: device_idx,
-        function: func_idx,
+    // This class/subclass combination indicates a PCI-to-PCI bridge, for which we return
+    // something different.
+    if class_code == 0x7 && subclass == 0x4 {
+        let (_sec_latency_timer, _sub_bus_num, sec_bus_num, _prim_bus_num) = {
+            let val = pci_cfg_read_u32(bdf, 0x18);
+            let bytes = val.to_be_bytes();
+            (bytes[0], bytes[1], bytes[2], bytes[3])
+        };
+
+        return Some(ScanResult::Bridge {
+            bdf: *bdf,
+            target_bus: sec_bus_num,
+        })
+    }
+
+    Some(ScanResult::Device(DeviceInfo {
+        bdf: *bdf,
         vendor_id,
         device_id,
-        base_address_registers: {
+        header_ty,
+        /*base_address_registers: {
             let mut list = Vec::with_capacity(6);
             for bar_n in 0..6 {
                 let bar =
@@ -172,8 +247,8 @@ unsafe fn scan_function(bdf: &DeviceBdf) -> Vec<DeviceInfo> {
                 });
             }
             list
-        },
-    });
+        },*/
+    }))
 }
 
 /// Reads the configuration space of the given device.
@@ -185,7 +260,7 @@ unsafe fn scan_function(bdf: &DeviceBdf) -> Vec<DeviceInfo> {
 /// Panics if the device or function are out of range.
 /// Panics if `offset` is not 4-bytes aligned.
 ///
-unsafe fn pci_cfg_read_u32(bdf: &DeviceBdf, offset: u8) -> u32 {
+fn pci_cfg_read_u32(bdf: &DeviceBdf, offset: u8) -> u32 {
     assert!(bdf.device < 32);
     assert!(bdf.function < 8);
     assert_eq!(offset % 4, 0);
@@ -196,10 +271,12 @@ unsafe fn pci_cfg_read_u32(bdf: &DeviceBdf, offset: u8) -> u32 {
         | (u32::from(bdf.function) << 8)
         | u32::from(offset);
 
-    u32::write_to_port(0xcf8, addr);
-    if cfg!(target_endian = "little") {
-        u32::read_from_port(0xcfc)
-    } else {
-        u32::read_from_port(0xcfc).swap_bytes()
+    unsafe {
+        u32::write_to_port(0xcf8, addr);
+        if cfg!(target_endian = "little") {
+            u32::read_from_port(0xcfc)
+        } else {
+            u32::read_from_port(0xcfc).swap_bytes()
+        }
     }
 }

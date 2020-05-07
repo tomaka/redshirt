@@ -15,9 +15,9 @@
 
 //! Native program that handles the `pci` interface.
 
-use crate::arch::PlatformSpecific;
+use crate::{arch::PlatformSpecific, pci::pci::PciDevices};
 
-use alloc::{boxed::Box, collections::VecDeque, sync::Arc, vec};
+use alloc::{boxed::Box, collections::VecDeque, sync::Arc, vec, vec::Vec};
 use core::{pin::Pin, sync::atomic};
 use crossbeam_queue::SegQueue;
 use futures::prelude::*;
@@ -25,13 +25,14 @@ use rand_core::RngCore as _;
 use redshirt_core::native::{DummyMessageIdWrite, NativeProgramEvent, NativeProgramRef};
 use redshirt_core::{Decode as _, Encode as _, EncodedMessage, InterfaceHash, MessageId, Pid};
 use redshirt_pci_interface::ffi;
+use spinning_top::Spinlock;
 
 /// State machine for `pci` interface messages handling.
-pub struct PciNativeProgram<TPlat> {
+pub struct PciNativeProgram {
     /// Devices manager. Does the actual work.
     devices: PciDevices,
     /// List of devices locked by processes.
-    locked_devices: Vec<(Pid, ffi::PciDeviceBdf)>,
+    locked_devices: Spinlock<Vec<LockedDevice>>,
 
     /// If true, we have sent the interface registration message.
     registered: atomic::AtomicBool,
@@ -49,21 +50,19 @@ struct LockedDevice {
     next_interrupt_messages: VecDeque<MessageId>,
 }
 
-impl<TPlat> PciNativeProgram<TPlat> {
+impl PciNativeProgram {
     /// Initializes the new state machine for PCI messages handling.
     pub fn new(devices: PciDevices) -> Self {
         PciNativeProgram {
             devices,
+            locked_devices: Spinlock::new(Vec::new()),
             registered: atomic::AtomicBool::new(false),
             pending_messages: SegQueue::new(),
         }
     }
 }
 
-impl<'a, TPlat> NativeProgramRef<'a> for &'a PciNativeProgram<TPlat>
-where
-    TPlat: PlatformSpecific,
-{
+impl<'a> NativeProgramRef<'a> for &'a PciNativeProgram {
     type Future =
         Pin<Box<dyn Future<Output = NativeProgramEvent<Self::MessageIdWrite>> + Send + 'a>>;
     type MessageIdWrite = DummyMessageIdWrite;
@@ -99,15 +98,16 @@ where
         debug_assert_eq!(interface, ffi::INTERFACE);
 
         match ffi::PciMessage::decode(message) {
-            Ok(PciMessage::LockDevice(bdf)) => {
-                if self.locked_devices.iter().any(|(_, b)| b == bdf) {
+            Ok(ffi::PciMessage::LockDevice(bdf)) => {
+                let mut locked_devices = self.locked_devices.lock();
+                if locked_devices.iter().any(|dev| dev.bdf == bdf) {
                     if let Some(message_id) = message_id {
                         self.pending_messages
-                            .push((message_id, Ok(Err(())));
+                            .push((message_id, Ok(Result::<(), _>::Err(()).encode())));
                     }
                 } else {
                     // TODO: check device validity
-                    self.locked_devices.push(LockedDevice {
+                    locked_devices.push(LockedDevice {
                         owner: emitter_pid,
                         bdf,
                         next_interrupt_messages: VecDeque::new(),
@@ -115,28 +115,30 @@ where
 
                     if let Some(message_id) = message_id {
                         self.pending_messages
-                            .push((message_id, Ok(Ok(())));
+                            .push((message_id, Ok(Result::<_, ()>::Ok(()).encode())));
                     }
                 }
             },
 
-            Ok(PciMessage::UnlockDevice(bdf)) => {
-                if let Some(pos) = self.locked_devices.iter().position(|(p, b)| p == emitter_pid && b == bdf) {
-                    let locked_device = self.locked_devices.remove(pos);
+            Ok(ffi::PciMessage::UnlockDevice(bdf)) => {
+                let mut locked_devices = self.locked_devices.lock();
+                if let Some(pos) = locked_devices.iter_mut().position(|dev| dev.owner == emitter_pid && dev.bdf == bdf) {
+                    let locked_device = locked_devices.remove(pos);
                     for m in locked_device.next_interrupt_messages {
                         self.pending_messages
-                            .push((m, Ok(ffi::NextInterruptResponse::Unlocked));
+                            .push((m, Ok(ffi::NextInterruptResponse::Unlocked.encode())));
                     }
                 }
             },
 
-            Ok(PciMessage::NextInterrupt(bdf)) => {
+            Ok(ffi::PciMessage::NextInterrupt(bdf)) => {
                 if let Some(message_id) = message_id {
-                    if let Some(dev) = self.locked_devices.iter().find(|(p, b)| p == emitter_pid && b == bdf) {
+                    let mut locked_devices = self.locked_devices.lock();
+                    if let Some(dev) = locked_devices.iter_mut().find(|dev| dev.owner == emitter_pid && dev.bdf == bdf) {
                         dev.next_interrupt_messages.push_back(message_id);
                     } else {
                         self.pending_messages
-                            .push((message_id, Ok(ffi::NextInterruptResponse::BadDevice)));
+                            .push((message_id, Ok(ffi::NextInterruptResponse::BadDevice.encode())));
                     }
                 }  
             },
@@ -150,7 +152,7 @@ where
     }
 
     fn process_destroyed(self, pid: Pid) {
-        self.locked_devices.retain(|(p, _)| p != pid);
+        self.locked_devices.lock().retain(|dev| dev.owner != pid);
     }
 
     fn message_response(self, _: MessageId, _: Result<EncodedMessage, ()>) {

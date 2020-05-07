@@ -1731,6 +1731,8 @@ dependencies = [
  "blake3",
  "crossbeam-queue",
  "crossbeam-utils",
+ "either",
+ "fnv 1.0.6 (git+https://github.com/dflemstr/rust-fnv)",
  "futures",
  "hashbrown",
  "lazy_static",
