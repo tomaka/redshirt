@@ -137,6 +137,7 @@ impl<'a> NativeProgramRef<'a> for &'a PciNativeProgram {
             }
 
             Ok(ffi::PciMessage::NextInterrupt(bdf)) => {
+                // TODO: actually make these interrupts work
                 if let Some(message_id) = message_id {
                     let mut locked_devices = self.locked_devices.lock();
                     if let Some(dev) = locked_devices
