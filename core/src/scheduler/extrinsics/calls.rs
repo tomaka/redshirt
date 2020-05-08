@@ -77,6 +77,10 @@ pub fn parse_extrinsic_next_notification<TExtr, TPud, TTud>(
             .ok_or(ExtrinsicNextNotificationErr::BadParameter)?,
     )
     .map_err(|_| ExtrinsicNextNotificationErr::BadParameter)?;
+    if out_pointer % 8 != 0 {
+        return Err(ExtrinsicNextNotificationErr::BadOutAlignment);
+    }
+
     let out_size = u32::try_from(
         params[3]
             .into_i32()
@@ -133,6 +137,8 @@ pub enum ExtrinsicNextNotificationErr {
         /// Number of notification IDs that have been requested.
         requested: u32,
     },
+    /// The `out` pointer doesn't have the required alignment.
+    BadOutAlignment,
     /// Bad type or invalid value for a parameter.
     BadParameter,
 }

@@ -39,7 +39,7 @@ extern "C" {
     /// If the function returns a value larger than `out_len`, then a notification is available
     /// whose  length is the value that has been returned, but nothing has been written in `out`.
     /// If the function returns value inferior or equal to `out_len` (and different from 0), then
-    /// a notification has been written in `out`.
+    /// a notification has been written in `out`. `out` must be 8-bytes-aligned.
     ///
     /// Messages, amongst the set that matches `to_poll`, are always returned in the order they
     /// have been received. In particular, this function does **not** search the queue of
