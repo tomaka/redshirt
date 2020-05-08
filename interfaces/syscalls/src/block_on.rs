@@ -39,6 +39,7 @@ use crate::{
 };
 use alloc::{collections::VecDeque, sync::Arc, vec::Vec};
 use core::{
+    slice,
     sync::atomic::{AtomicBool, Ordering},
     task::{Context, Poll, Waker},
 };
@@ -256,24 +257,26 @@ pub(crate) fn next_notification(to_poll: &mut [u64], block: bool) -> Option<Deco
 #[cfg(target_arch = "wasm32")] // TODO: we should have a proper operating system name instead
 fn next_notification_impl(to_poll: &mut [u64], block: bool) -> Option<DecodedNotification> {
     unsafe {
-        let mut out = Vec::<u8>::with_capacity(32);
+        let flags = if block { 1 } else { 0 };
+
+        let mut out = Vec::<u64>::with_capacity(4);
         loop {
             let ret = crate::ffi::next_notification(
                 to_poll.as_mut_ptr(),
                 to_poll.len() as u32,
-                out.as_mut_ptr(),
-                out.capacity() as u32,
-                block,
+                out.as_mut_ptr() as *mut u8,
+                out.capacity() as u32 * 8,
+                flags,
             ) as usize;
             if ret == 0 {
                 return None;
             }
-            if ret > out.capacity() {
-                out.reserve(ret);
+            if ret > out.capacity() * 8 {
+                out.reserve(8 * (1 + (ret - 1) / 8));
                 continue;
             }
-            out.set_len(ret);
-            return Some(ffi::decode_notification(&out).unwrap());
+            let out_slice = slice::from_raw_parts(out.as_ptr() as *const u8, ret);
+            return Some(ffi::decode_notification(&out_slice).unwrap());
         }
     }
 }

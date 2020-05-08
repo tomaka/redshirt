@@ -151,14 +151,24 @@ where
         interface: &InterfaceHash,
         needs_answer: bool,
     ) -> Result<Option<MessageId>, EmitErr> {
+        let flags = {
+            let mut flags = 0;
+            if needs_answer {
+                flags |= 1 << 0;
+            }
+            if self.allow_delay {
+                flags |= 1 << 1;
+            }
+            flags
+        };
+
         let mut message_id_out = MaybeUninit::uninit();
 
         let ret = crate::ffi::emit_message(
             interface as *const InterfaceHash as *const _,
             self.array.as_ptr(),
             u32::try_from(self.array.len() / 2).unwrap(),
-            needs_answer,
-            self.allow_delay,
+            flags,
             message_id_out.as_mut_ptr(),
         );
 
@@ -167,9 +177,9 @@ where
         }
 
         if needs_answer {
-            Ok(Some(
-                MessageId::try_from(message_id_out.assume_init()).unwrap(),
-            ))
+            Ok(Some(MessageId::from_u64_unchecked(
+                message_id_out.assume_init(),
+            )))
         } else {
             Ok(None)
         }

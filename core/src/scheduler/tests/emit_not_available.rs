@@ -38,7 +38,7 @@ fn emit_not_available() {
         local,
         r#"
 (module
-    (type $t0 (func (param i32 i32 i32 i32 i32 i32) (result i32)))
+    (type $t0 (func (param i32 i32 i32 i64 i32) (result i32)))
     (import "redshirt" "emit_message" (func $_ZN27redshirt_syscalls3ffi12emit_message17h508280f1400e36efE (type $t0)))
     (func $_start (result i32)
         (local $l0 i32)
@@ -77,8 +77,7 @@ fn emit_not_available() {
         i32.const 1
         i32.or
         i32.const 1
-        i32.const 0
-        i32.const 1
+        i64.const 2
         get_local $l0
         i32.const 56
         i32.add
