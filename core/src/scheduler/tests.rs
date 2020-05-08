@@ -21,7 +21,6 @@ mod basic_module;
 mod emit_not_available;
 mod emit_reserved_pid;
 mod trapping_module;
-mod wasm_recv_interface_msg;
 
 #[test]
 fn send_sync() {
