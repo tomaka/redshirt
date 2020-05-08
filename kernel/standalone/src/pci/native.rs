@@ -167,6 +167,10 @@ impl<'a> NativeProgramRef<'a> for &'a PciNativeProgram {
                                 },
                                 vendor_id: device.vendor_id(),
                                 device_id: device.device_id(),
+                                class_code: device.class_code(),
+                                subclass: device.subclass(),
+                                prog_if: device.prog_if(),
+                                revision_id: device.revision_id(),
                                 base_address_registers: device
                                     .base_address_registers()
                                     .map(|bar| match bar {

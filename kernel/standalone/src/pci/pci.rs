@@ -54,6 +54,10 @@ struct DeviceInfo {
     vendor_id: u16,
     device_id: u16,
     header_ty: u8,
+    class_code: u8,
+    subclass: u8,
+    prog_if: u8,
+    revision_id: u8,
     base_address_registers: Vec<BaseAddressRegister>,
 }
 
@@ -92,6 +96,22 @@ impl<'a> Device<'a> {
 
     pub fn device_id(&self) -> u16 {
         self.parent.known_devices[self.index].device_id
+    }
+
+    pub fn class_code(&self) -> u8 {
+        self.parent.known_devices[self.index].class_code
+    }
+
+    pub fn subclass(&self) -> u8 {
+        self.parent.known_devices[self.index].subclass
+    }
+
+    pub fn prog_if(&self) -> u8 {
+        self.parent.known_devices[self.index].prog_if
+    }
+
+    pub fn revision_id(&self) -> u8 {
+        self.parent.known_devices[self.index].revision_id
     }
 
     pub fn base_address_registers(&self) -> impl Iterator<Item = BaseAddressRegister> + 'a {
@@ -217,7 +237,7 @@ fn scan_function(bdf: &DeviceBdf) -> Option<ScanResult> {
         return None;
     }
 
-    let (class_code, subclass, _prog_if, _revision_id) = {
+    let (class_code, subclass, prog_if, revision_id) = {
         let val = pci_cfg_read_u32(bdf, 0x8);
         let bytes = val.to_be_bytes();
         (bytes[0], bytes[1], bytes[2], bytes[3])
@@ -249,6 +269,10 @@ fn scan_function(bdf: &DeviceBdf) -> Option<ScanResult> {
         vendor_id,
         device_id,
         header_ty,
+        class_code,
+        subclass,
+        prog_if,
+        revision_id,
         base_address_registers: {
             let mut list = Vec::with_capacity(6);
             for bar_n in 0..6 {

@@ -127,6 +127,12 @@ pub struct PciDeviceInfo {
 
     pub vendor_id: u16,
     pub device_id: u16,
+
+    pub class_code: u8,
+    pub subclass: u8,
+    pub prog_if: u8,
+    pub revision_id: u8,
+
     pub base_address_registers: Vec<PciBaseAddressRegister>,
     // TODO: add more fields
 }
