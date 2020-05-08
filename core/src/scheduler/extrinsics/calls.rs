@@ -83,17 +83,16 @@ pub fn parse_extrinsic_next_notification<TExtr, TPud, TTud>(
             .ok_or(ExtrinsicNextNotificationErr::BadParameter)?,
     )
     .map_err(|_| ExtrinsicNextNotificationErr::BadParameter)?;
-    let block = params[4]
-        .into_i32()
-        .ok_or(ExtrinsicNextNotificationErr::BadParameter)?
-        != 0;
+    let flags = params[4]
+        .into_i64()
+        .ok_or(ExtrinsicNextNotificationErr::BadParameter)?;
 
     Ok(NotificationWait {
         notifs_ids,
         notifs_ids_ptr,
         out_pointer,
         out_size,
-        block,
+        block: (flags & 0x1) != 0,
     })
 }
 

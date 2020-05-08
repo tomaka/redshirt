@@ -28,12 +28,14 @@ extern "C" {
     /// mean "a message received on an interface or a process destroyed notification". If a
     /// notification is successfully pulled, the corresponding entry in `to_poll` is set to `0`.
     ///
-    /// If `block` is true, then this function puts the thread to sleep until a notification is
-    /// available. If `block` is false, then this function returns as soon as possible.
+    /// Flags is a bitfield, defined as:
+    ///
+    /// - Bit 0: the `block` flag. If set, then this function puts the thread to sleep until a
+    /// notification is available. Otherwise, this function returns as soon as possible.
     ///
     /// If the function returns 0, then there is no notification available and nothing has been
     /// written.
-    /// This function never returns 0 if `block` is `true`.
+    /// This function never returns 0 if the `block` flag is set.
     /// If the function returns a value larger than `out_len`, then a notification is available
     /// whose  length is the value that has been returned, but nothing has been written in `out`.
     /// If the function returns value inferior or equal to `out_len` (and different from 0), then
@@ -54,7 +56,7 @@ extern "C" {
         to_poll_len: u32,
         out: *mut u8,
         out_len: u32,
-        block: bool,
+        flags: u64,
     ) -> u32;
 
     /// Sends a message to the process that has registered the given interface.

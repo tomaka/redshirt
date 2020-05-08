@@ -256,6 +256,8 @@ pub(crate) fn next_notification(to_poll: &mut [u64], block: bool) -> Option<Deco
 #[cfg(target_arch = "wasm32")] // TODO: we should have a proper operating system name instead
 fn next_notification_impl(to_poll: &mut [u64], block: bool) -> Option<DecodedNotification> {
     unsafe {
+        let flags = if block { 1 } else { 0 };
+
         let mut out = Vec::<u8>::with_capacity(32);
         loop {
             let ret = crate::ffi::next_notification(
@@ -263,7 +265,7 @@ fn next_notification_impl(to_poll: &mut [u64], block: bool) -> Option<DecodedNot
                 to_poll.len() as u32,
                 out.as_mut_ptr(),
                 out.capacity() as u32,
-                block,
+                flags,
             ) as usize;
             if ret == 0 {
                 return None;
