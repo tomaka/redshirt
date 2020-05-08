@@ -29,7 +29,7 @@ impl PciDebug {
         PciDebug {
             // TODO: blocks forever
             // future::maybe_done(Box::pin(redshirt_pci_interface::get_pci_devices())),
-            devices: future::MaybeDone::Gone,
+            devices: future::MaybeDone::Done(Vec::new()),
         }
     }
 
