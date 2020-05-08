@@ -28,16 +28,18 @@ extern "C" {
     /// mean "a message received on an interface or a process destroyed notification". If a
     /// notification is successfully pulled, the corresponding entry in `to_poll` is set to `0`.
     ///
-    /// If `block` is true, then this function puts the thread to sleep until a notification is
-    /// available. If `block` is false, then this function returns as soon as possible.
+    /// Flags is a bitfield, defined as:
+    ///
+    /// - Bit 0: the `block` flag. If set, then this function puts the thread to sleep until a
+    /// notification is available. Otherwise, this function returns as soon as possible.
     ///
     /// If the function returns 0, then there is no notification available and nothing has been
     /// written.
-    /// This function never returns 0 if `block` is `true`.
+    /// This function never returns 0 if the `block` flag is set.
     /// If the function returns a value larger than `out_len`, then a notification is available
     /// whose  length is the value that has been returned, but nothing has been written in `out`.
     /// If the function returns value inferior or equal to `out_len` (and different from 0), then
-    /// a notification has been written in `out`.
+    /// a notification has been written in `out`. `out` must be 8-bytes-aligned.
     ///
     /// Messages, amongst the set that matches `to_poll`, are always returned in the order they
     /// have been received. In particular, this function does **not** search the queue of
@@ -54,7 +56,7 @@ extern "C" {
         to_poll_len: u32,
         out: *mut u8,
         out_len: u32,
-        block: bool,
+        flags: u64,
     ) -> u32;
 
     /// Sends a message to the process that has registered the given interface.
@@ -73,14 +75,17 @@ extern "C" {
     /// [`actual_data`](DecodedInterfaceNotification::actual_data) field of the
     /// [`DecodedInterfaceNotification`] that the target will receive.
     ///
+    /// Flags is a bitfield, defined as:
+    ///
+    /// - Bit 0: the `needs_answer` flag. If set, then this message expects an answer.
+    /// - Bit 1: the `allow_delay` flag. If set, the kernel is allowed to block the thread in
+    /// order to lazily-load a handler for that interface if necessary. If this flag is not set,
+    /// and no interface handler is available, then the function fails immediately.
+    ///
     /// Returns `0` on success, and `1` in case of error.
     ///
     /// On success, if `needs_answer` is true, will write the ID of new event into the memory
     /// pointed by `message_id_out`.
-    ///
-    /// If `allow_delay` is true, the kernel is allowed to block the thread in order to
-    /// lazily-load a handler for that interface if necessary. If `allow_delay` is false and no
-    /// interface handler is available, the function fails immediately.
     ///
     /// When this function is being called, a "lock" is being held on the memory pointed by
     /// `interface_hash`, `msg_bufs_ptrs`, `message_id_out`, and all the sub-buffers referred to
@@ -91,8 +96,7 @@ extern "C" {
         interface_hash: *const u8,
         msg_bufs_ptrs: *const u32,
         msg_bufs_num: u32,
-        needs_answer: bool,
-        allow_delay: bool,
+        flags: u64,
         message_id_out: *mut u64,
     ) -> u32;
 

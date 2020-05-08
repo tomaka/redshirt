@@ -178,6 +178,17 @@ impl fmt::Debug for ThreadId {
 )]
 pub struct MessageId(NonZeroU64);
 
+impl MessageId {
+    /// Turns a raw integer into a [`MessageId`] without checking its validity.
+    ///
+    /// # Safety
+    ///
+    /// `id` must not be equal to 0 or 1.
+    pub unsafe fn from_u64_unchecked(id: u64) -> Self {
+        MessageId(NonZeroU64::new_unchecked(id))
+    }
+}
+
 impl TryFrom<u64> for MessageId {
     type Error = InvalidMessageIdErr;
 

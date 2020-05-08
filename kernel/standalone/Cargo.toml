@@ -9,6 +9,8 @@ publish = false
 [dependencies]
 blake3 = { version = "0.2.2", default-features = false }
 crossbeam-queue = { version = "0.2.1", default-features = false, features = ["alloc"] }
+either = { version = "1.5.3", default-features = false }
+fnv = { git = "https://github.com/dflemstr/rust-fnv", default-features = false }    # TODO: https://github.com/servo/rust-fnv/pull/22
 futures = { version = "0.3.2", default-features = false, features = ["alloc"] }
 hashbrown = { version = "0.7.1", default-features = false }
 lazy_static = "1.4"
@@ -24,6 +26,7 @@ redshirt-hardware-interface = { path = "../../interfaces/hardware", default-feat
 redshirt-interface-interface = { path = "../../interfaces/interface", default-features = false }
 redshirt-kernel-log-interface = { path = "../../interfaces/kernel-log", default-features = false }
 redshirt-log-interface = { path = "../../interfaces/log", default-features = false }
+redshirt-pci-interface = { path = "../../interfaces/pci", default-features = false }
 redshirt-random-interface = { path = "../../interfaces/random", default-features = false }
 redshirt-syscalls = { path = "../../interfaces/syscalls", default-features = false }
 redshirt-time-interface = { path = "../../interfaces/time", default-features = false }

@@ -691,13 +691,13 @@ where
             .with_extrinsic(
                 "redshirt",
                 "next_notification",
-                sig!((I32, I32, I32, I32, I32) -> I32),
+                sig!((I32, I32, I32, I32, I64) -> I32),
                 Extrinsic::NextMessage,
             )
             .with_extrinsic(
                 "redshirt",
                 "emit_message",
-                sig!((I32, I32, I32, I32, I32, I32) -> I32),
+                sig!((I32, I32, I32, I64, I32) -> I32),
                 Extrinsic::EmitMessage,
             )
             .with_extrinsic(
