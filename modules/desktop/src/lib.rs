@@ -34,7 +34,7 @@ impl Desktop {
         let mut rasterizer = rasterizer::Rasterizer::new(dimensions);
         let background = background::Background::new(&mut rasterizer);
         let launch_bar = launch_bar::LaunchBar::new(&mut rasterizer);
-        let pci_debug = pci_debug::PciDebug::new(&mut rasterizer).await;
+        let pci_debug = pci_debug::PciDebug::new(&mut rasterizer);
 
         let mut imgui = imgui::Context::create();
         // TODO: clipboard

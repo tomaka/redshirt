@@ -15,16 +15,21 @@
 
 use crate::rasterizer::Rasterizer;
 
+use futures::prelude::*;
+use std::pin::Pin;
+
 /// PCI debug widget.
 pub struct PciDebug {
-    devices: Vec<redshirt_pci_interface::PciDeviceInfo>,
+    devices: future::MaybeDone<Pin<Box<dyn Future<Output = Vec<redshirt_pci_interface::PciDeviceInfo>>>>>,
 }
 
 impl PciDebug {
     /// Registers resources towards the rasterizer.
-    pub async fn new(rasterizer: &mut Rasterizer) -> Self {
+    pub fn new(_rasterizer: &mut Rasterizer) -> Self {
         PciDebug {
-            devices: redshirt_pci_interface::get_pci_devices().await,
+            // TODO: blocks forever
+            // future::maybe_done(Box::pin(redshirt_pci_interface::get_pci_devices())),
+            devices: future::MaybeDone::Gone,
         }
     }
 
@@ -32,10 +37,16 @@ impl PciDebug {
     ///
     /// Must then be rendered with the rasterized that was passed at initialization.
     pub fn draw(&mut self, ui: &imgui::Ui) {
+        (&mut self.devices).now_or_never();
+        let devices = match &self.devices {
+            future::MaybeDone::Done(d) => d,
+            _ => return
+        };
+
         imgui::Window::new(imgui::im_str!("pci-debug"))
             .opened(&mut true)
             .build(&ui, || {
-                for device in &self.devices {
+                for device in devices {
                     ui.bullet_text(imgui::im_str!("PCI device here"));
                 }
             });

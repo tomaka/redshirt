@@ -8,6 +8,7 @@ publish = false
 
 [dependencies]
 cgmath = "0.17.0"
+futures = "0.3"
 imgui = { git = "https://github.com/tomaka/imgui-rs", branch = "wasi" } # TODO: fork needed because of https://github.com/rust-lang/rust/issues/71871
 redshirt-framebuffer-interface = { path = "../../interfaces/framebuffer" }
 redshirt-pci-interface = { path = "../../interfaces/pci" }
