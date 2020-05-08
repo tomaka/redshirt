@@ -35,6 +35,7 @@ mod hardware;
 mod kernel;
 mod klog;
 mod mem_alloc;
+mod pci;
 mod random;
 mod time;
 
