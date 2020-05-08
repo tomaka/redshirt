@@ -405,6 +405,7 @@ dependencies = [
  "image",
  "imgui",
  "redshirt-framebuffer-interface",
+ "redshirt-pci-interface",
  "redshirt-syscalls",
  "redshirt-time-interface",
 ]

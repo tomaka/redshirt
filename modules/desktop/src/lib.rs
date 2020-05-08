@@ -17,6 +17,7 @@ use std::time::Instant;
 
 mod background;
 mod launch_bar;
+mod pci_debug;
 mod rasterizer;
 
 pub struct Desktop {
@@ -25,13 +26,15 @@ pub struct Desktop {
     last_rendering: Instant,
     background: background::Background,
     launch_bar: launch_bar::LaunchBar,
+    pci_debug: pci_debug::PciDebug,
 }
 
 impl Desktop {
-    pub fn new(dimensions: [u32; 2]) -> Self {
+    pub async fn new(dimensions: [u32; 2]) -> Self {
         let mut rasterizer = rasterizer::Rasterizer::new(dimensions);
         let background = background::Background::new(&mut rasterizer);
         let launch_bar = launch_bar::LaunchBar::new(&mut rasterizer);
+        let pci_debug = pci_debug::PciDebug::new(&mut rasterizer).await;
 
         let mut imgui = imgui::Context::create();
         // TODO: clipboard
@@ -61,6 +64,7 @@ impl Desktop {
             last_rendering: Instant::now(),
             background,
             launch_bar,
+            pci_debug,
         }
     }
 
@@ -83,6 +87,7 @@ impl Desktop {
         ui.show_demo_window(&mut true);
         ui.show_metrics_window(&mut true);
         ui.show_about_window(&mut true);
+        self.pci_debug.draw(&ui);
         self.launch_bar.draw(&ui);
 
         let draw_data = ui.render();

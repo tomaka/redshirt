@@ -23,7 +23,7 @@ fn main() {
 
 async fn async_main() {
     let fb = redshirt_framebuffer_interface::Framebuffer::new(800, 600).await;
-    let mut display = desktop::Desktop::new([800, 600]);
+    let mut display = desktop::Desktop::new([800, 600]).await;
 
     let mut next_draw = redshirt_time_interface::monotonic_wait(Duration::from_millis(0));
 
