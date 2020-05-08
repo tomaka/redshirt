@@ -75,14 +75,17 @@ extern "C" {
     /// [`actual_data`](DecodedInterfaceNotification::actual_data) field of the
     /// [`DecodedInterfaceNotification`] that the target will receive.
     ///
+    /// Flags is a bitfield, defined as:
+    ///
+    /// - Bit 0: the `needs_answer` flag. If set, then this message expects an answer.
+    /// - Bit 1: the `allow_delay` flag. If set, the kernel is allowed to block the thread in
+    /// order to lazily-load a handler for that interface if necessary. If this flag is not set,
+    /// and no interface handler is available, then the function fails immediately.
+    ///
     /// Returns `0` on success, and `1` in case of error.
     ///
     /// On success, if `needs_answer` is true, will write the ID of new event into the memory
     /// pointed by `message_id_out`.
-    ///
-    /// If `allow_delay` is true, the kernel is allowed to block the thread in order to
-    /// lazily-load a handler for that interface if necessary. If `allow_delay` is false and no
-    /// interface handler is available, the function fails immediately.
     ///
     /// When this function is being called, a "lock" is being held on the memory pointed by
     /// `interface_hash`, `msg_bufs_ptrs`, `message_id_out`, and all the sub-buffers referred to
@@ -93,8 +96,7 @@ extern "C" {
         interface_hash: *const u8,
         msg_bufs_ptrs: *const u32,
         msg_bufs_num: u32,
-        needs_answer: bool,
-        allow_delay: bool,
+        flags: u64,
         message_id_out: *mut u64,
     ) -> u32;
 

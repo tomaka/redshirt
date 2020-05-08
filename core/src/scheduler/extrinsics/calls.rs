@@ -149,7 +149,7 @@ pub fn parse_extrinsic_emit_message<TExtr, TPud, TTud>(
 ) -> Result<EmitMessage, ExtrinsicEmitMessageErr> {
     // We use an assert here rather than a runtime check because the WASM VM (rather than us) is
     // supposed to check the function signature.
-    assert_eq!(params.len(), 6);
+    assert_eq!(params.len(), 5);
 
     let interface: InterfaceHash = {
         let addr = u32::try_from(
@@ -208,18 +208,15 @@ pub fn parse_extrinsic_emit_message<TExtr, TPud, TTud>(
         EncodedMessage(out_msg)
     };
 
-    let needs_answer = params[3]
-        .into_i32()
-        .ok_or(ExtrinsicEmitMessageErr::BadParameter)?
-        != 0;
-    let allow_delay = params[4]
-        .into_i32()
-        .ok_or(ExtrinsicEmitMessageErr::BadParameter)?
-        != 0;
+    let flags = params[3]
+        .into_i64()
+        .ok_or(ExtrinsicEmitMessageErr::BadParameter)?;
+    let needs_answer = (flags & 0x1) != 0;
+
     let message_id_write = if needs_answer {
         Some(
             u32::try_from(
-                params[5]
+                params[4]
                     .into_i32()
                     .ok_or(ExtrinsicEmitMessageErr::BadParameter)?,
             )
@@ -233,7 +230,7 @@ pub fn parse_extrinsic_emit_message<TExtr, TPud, TTud>(
         interface,
         message_id_write,
         message,
-        allow_delay,
+        allow_delay: (flags & 0x2) != 0,
     })
 }
 
