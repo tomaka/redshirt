@@ -366,6 +366,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "11c0346158a19b3627234e15596f5e465c360fcdb97d817bcb255e0510f5a788"
 
 [[package]]
+name = "derive_more"
+version = "0.99.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e2323f3f47db9a0e77ce7a300605d8d2098597fc451ed1a97bb1f6411bb550a7"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "digest"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2369,6 +2380,21 @@ dependencies = [
  "idna",
  "matches",
  "percent-encoding",
+]
+
+[[package]]
+name = "usb-controller-driver"
+version = "0.1.0"
+dependencies = [
+ "derive_more",
+ "futures",
+ "lazy_static",
+ "log",
+ "parity-scale-codec",
+ "redshirt-hardware-interface",
+ "redshirt-log-interface",
+ "redshirt-pci-interface",
+ "redshirt-syscalls",
 ]
 
 [[package]]

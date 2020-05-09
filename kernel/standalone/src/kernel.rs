@@ -65,7 +65,9 @@ where
                 "../../../modules/p2p-loader",
                 "passive-node"
             ))
-            .with_startup_process(build_wasm_module!("../../../modules/pci-printer"))
+            .with_startup_process(build_wasm_module!("../../../modules/usb-controller-driver"))
+            // TODO: commented out because it is too verbose ; restore
+            //.with_startup_process(build_wasm_module!("../../../modules/pci-printer"))
             .with_startup_process(build_wasm_module!("../../../modules/log-to-kernel"))
             .with_startup_process(build_wasm_module!("../../../modules/hello-world"));
 
