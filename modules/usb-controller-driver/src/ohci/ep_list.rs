@@ -72,7 +72,6 @@ where
             hardware_access,
             dummy_descriptor,
             descriptors: Vec::new(),
-            next_transfer_descriptor,
         }
     }
 

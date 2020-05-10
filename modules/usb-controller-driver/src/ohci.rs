@@ -16,7 +16,7 @@
 //! OHCI handler.
 
 use crate::HwAccessRef;
-use core::convert::TryFrom as _;
+use core::{convert::TryFrom as _, num::NonZeroU8};
 
 pub use init::init_ohci_device;
 
@@ -36,7 +36,9 @@ where
     bulk_list: ep_list::EndpointList<TAcc>,
     control_list: ep_list::EndpointList<TAcc>,
     hc_control_value: u32,
-    num_hub_ports: u8,
+
+    /// Number of ports on the root hub.
+    num_hub_ports: NonZeroU8,
 }
 
 /// Information about the suspended device.
@@ -206,7 +208,7 @@ where
                     &mut out,
                 )
                 .await;
-            u8::try_from(out[0] & 0xff).unwrap()
+            NonZeroU8::new(u8::try_from(out[0] & 0xff).unwrap()).unwrap()
         };
 
         // TODO: remove this
@@ -220,5 +222,75 @@ where
             hc_control_value,
             num_hub_ports,
         }
+    }
+
+    /// Access a port of the root hub.
+    ///
+    /// Just like regular USB hubs, ports indexing starts from 1.
+    pub fn root_hub_port(&mut self, port: NonZeroU8) -> Option<RootHubPort<TAcc>> {
+        if port >= self.num_hub_ports {
+            return None;
+        }
+
+        Some(RootHubPort {
+            controller: self,
+            port,
+        })
+    }
+
+    /*/// Access a specific endpoint at an address.
+    pub fn entry(&mut self, function_address: u8, endpoint_number: u8) -> Entry<'a, TAcc> {
+        // TODO: stronger typing?
+        assert!(function_address < 128);
+        assert!(endpoint_number < 16);
+    }*/
+}
+
+/*pub enum Entry<'a, TAcc> {
+    Unknown(UnknownEntry<'a, TAcc>),
+    Known(KnownEntry<'a, TAcc>),
+}*/
+
+/// Access to a port of the root hub of the controller.
+pub struct RootHubPort<'a, TAcc>
+where
+    for<'r> &'r TAcc: HwAccessRef<'r>,
+{
+    controller: &'a mut OhciDevice<TAcc>,
+    port: NonZeroU8,
+}
+
+impl<'a, TAcc> RootHubPort<'a, TAcc>
+where
+    for<'r> &'r TAcc: HwAccessRef<'r>,
+{
+    /// Reads the `RhPortStatus` register for this port.
+    async fn status_dword(&self) -> u32 {
+        unsafe {
+            let mut out = [0];
+            let addr = self.controller.regs_loc
+                + definitions::HC_RH_PORT_STATUS_1_OFFSET
+                + u64::from(self.port.get() - 1) * 4;
+            self.controller
+                .hardware_access
+                .read_memory_u32_be(addr, &mut out)
+                .await;
+            out[0]
+        }
+    }
+
+    /// Returns true if a device is connected to this port.
+    pub async fn is_connected(&self) -> bool {
+        self.status_dword().await & (1 << 0) != 0
+    }
+
+    /// Returns true if this port is enabled.
+    pub async fn is_enabled(&self) -> bool {
+        self.status_dword().await & (1 << 1) != 0
+    }
+
+    /// Returns true if this port is suspended.
+    pub async fn is_suspended(&self) -> bool {
+        self.status_dword().await & (1 << 2) != 0
     }
 }

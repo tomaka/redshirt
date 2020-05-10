@@ -110,10 +110,10 @@ where
                 .write_memory_u32_be(
                     u64::from(buffer.pointer().get()),
                     &[
-                        header.encode(),                    // Header
-                        next_transfer_descriptor.pointer(), // Transfer descriptor tail
-                        next_transfer_descriptor.pointer(), // Transfer descriptor head
-                        0x0,                                // Next endpoint descriptor
+                        header.encode(),                          // Header
+                        next_transfer_descriptor.pointer().get(), // Transfer descriptor tail
+                        next_transfer_descriptor.pointer().get(), // Transfer descriptor head
+                        0x0,                                      // Next endpoint descriptor
                     ],
                 )
                 .await;
@@ -122,6 +122,7 @@ where
         EndpointDescriptor {
             hardware_access,
             buffer,
+            next_transfer_descriptor,
         }
     }
 
