@@ -31,9 +31,12 @@ pub struct Hcca<TAcc>
 where
     for<'r> &'r TAcc: HwAccessRef<'r>,
 {
+    hardware_access: TAcc,
     buffer: Buffer32<TAcc>,
     interrupt_lists: ArrayVec<[ep_list::EndpointList<TAcc>; 32]>,
     isochronous_list: ep_list::EndpointList<TAcc>,
+    /// Latest known value of the `DoneHead` field. Used to check whether it has been updated.
+    latest_known_done_head: u32,
 }
 
 impl<TAcc> Hcca<TAcc>
@@ -79,9 +82,11 @@ where
         }
 
         Hcca {
+            hardware_access,
             buffer,
             interrupt_lists,
             isochronous_list,
+            latest_known_done_head: 0,
         }
     }
 
@@ -90,5 +95,31 @@ where
     /// This value never changes and is valid until the [`Hcca`] is destroyed.
     pub fn pointer(&self) -> NonZeroU32 {
         self.buffer.pointer()
+    }
+
+    /// Extracts the transfer descriptors from the done queue.
+    ///
+    /// Transfer descriptors that are finished execution are moved to the done queue.
+    pub async fn extract_done_queue(&mut self) {
+        unsafe {
+            // Read the value of the `DoneHead` field.
+            let done_head = {
+                let mut out = [0];
+                self.hardware_access
+                    .read_memory_u32_be(u64::from(self.buffer.pointer().get() + 0x84), &mut out)
+                    .await;
+                out[0]
+            };
+
+            // If this value if the same as last time, we immediately return.
+            // This pointer is stale, as it would be undefined behaviour to read it.
+            if done_head == self.latest_known_done_head {
+                return;
+            }
+            self.latest_known_done_head = done_head;
+
+            // TODO: finish
+            unimplemented!()
+        }
     }
 }

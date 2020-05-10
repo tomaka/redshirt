@@ -166,6 +166,8 @@ where
                 )
                 .await;
         }
+
+        // TODO: must mem::forget(current_placeholder) or something similar
     }
 
     /// Returns the value of the next endpoint descriptor in the linked list.

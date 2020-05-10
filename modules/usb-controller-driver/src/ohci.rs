@@ -33,6 +33,7 @@ where
 {
     hardware_access: TAcc,
     regs_loc: u64,
+    hcca: hcca::Hcca<TAcc>,
     bulk_list: ep_list::EndpointList<TAcc>,
     control_list: ep_list::EndpointList<TAcc>,
     hc_control_value: u32,
@@ -232,6 +233,7 @@ where
         Self {
             hardware_access,
             regs_loc: config.registers_location,
+            hcca,
             bulk_list,
             control_list,
             hc_control_value,
@@ -240,7 +242,10 @@ where
     }
 
     /// Must be called whenever an interrupt is received.
+    /// Alternatively, can also be called periodically.
+    // TODO: expand on that ^
     pub async fn on_interrupt(&mut self) {
+        // Read the `InterruptStatus` register, indicating if something has happened recently.
         let interrupt_status = unsafe {
             let mut out = [0];
             self.hardware_access
@@ -252,8 +257,33 @@ where
             out[0]
         };
 
-        log::info!("interrupt status = 0x{:x}", interrupt_status);
-        unimplemented!() // TODO:
+        // WriteBackDoneHead
+        // The controller has updated the done queue in the HCCA.
+        if interrupt_status & (1 << 1) != 0 {
+            self.hcca.extract_done_queue();
+        }
+
+        // RootHubStatusChange
+        // One or more devices in the root hub have changed status.
+        if interrupt_status & (1 << 6) != 0 {
+            // TODO:
+        }
+
+        // UnrecoverableError
+        // A system error not related to USB has been detected.
+        if interrupt_status & (1 << 4) != 0 {
+            panic!() // TODO:
+        }
+
+        // Clear all interrupt status flags.
+        unsafe {
+            self.hardware_access
+                .write_memory_u32_be(
+                    self.regs_loc + definitions::HC_INTERRUPT_STATUS_OFFSET,
+                    &[interrupt_status],
+                )
+                .await;
+        }
     }
 
     /// Access a port of the root hub.
