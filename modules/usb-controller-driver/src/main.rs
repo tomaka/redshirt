@@ -82,7 +82,11 @@ unsafe impl<'a> usb_controller_driver::HwAccessRef<'a> for &'a HwAccess {
         builder.send().boxed()
     }
 
-    unsafe fn read_memory_u32_be(self, address: u64, dest: &'a mut [u32]) -> Self::ReadMemFutureU32 {
+    unsafe fn read_memory_u32_be(
+        self,
+        address: u64,
+        dest: &'a mut [u32],
+    ) -> Self::ReadMemFutureU32 {
         assert_eq!(address % 4, 0); // TODO: turn into debug_assert
         let mut builder = redshirt_hardware_interface::HardwareOperationsBuilder::new();
         builder.read_u32(address, dest);

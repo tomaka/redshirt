@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::{Buffer32, HwAccessRef};
+use crate::{ohci::transfer_descriptor, Buffer32, HwAccessRef};
 
 use alloc::alloc::handle_alloc_error;
 use core::{alloc::Layout, marker::PhantomData, num::NonZeroU32};
@@ -26,6 +26,22 @@ use core::{alloc::Layout, marker::PhantomData, num::NonZeroU32};
 ///
 /// Since this list might be accessed by the controller, appropriate thread-safety measures have
 /// to be taken.
+///
+/// # Queueing a new transfer descriptor
+///
+/// The endpoint descriptor points to the head and tail of a linked list of transfer descriptors.
+/// Each transfer descriptor points to the next one in the list.
+///
+/// In order to avoid synchronization issues, the controller never processes the last element in
+/// the list. In other words, if it reaches the transfer descriptor pointed to by the tail, it
+/// doesn't process it.
+/// This means that this last transfer descriptor can be used as a place-holder for the next actual
+/// transfer descriptor. Once this placeholder has been filled with actual value, we push a
+/// follow-up dummy descriptor and update the tail.
+///
+/// Removing pending transfer descriptors, however, can only be done by pausing execution and
+/// making sure the controller is done accessing the transfer descriptor.
+///
 pub struct EndpointDescriptor<TAcc>
 where
     for<'r> &'r TAcc: HwAccessRef<'r>,
@@ -34,6 +50,8 @@ where
     hardware_access: TAcc,
     /// Physical memory buffer containing the endpoint descriptor.
     buffer: Buffer32<TAcc>,
+    /// Placeholder for the next transfer descriptor.
+    next_transfer_descriptor: transfer_descriptor::TransferDescriptor<TAcc>,
 }
 
 /// Configuration when initialization an [`EndpointDescriptor`].
@@ -84,14 +102,20 @@ where
             function_address: config.function_address,
         };
 
+        let next_transfer_descriptor =
+            transfer_descriptor::TransferDescriptor::new(hardware_access.clone()).await;
+
         unsafe {
             hardware_access
-                .write_memory_u32_be(u64::from(buffer.pointer().get()), &[
-                    header.encode(),    // Header
-                    0x0,    // Transfer descriptor tail
-                    0x0,    // Transfer descriptor head
-                    0x0,    // Next endpoint descriptor
-                ])
+                .write_memory_u32_be(
+                    u64::from(buffer.pointer().get()),
+                    &[
+                        header.encode(),                    // Header
+                        next_transfer_descriptor.pointer(), // Transfer descriptor tail
+                        next_transfer_descriptor.pointer(), // Transfer descriptor head
+                        0x0,                                // Next endpoint descriptor
+                    ],
+                )
                 .await;
         }
 

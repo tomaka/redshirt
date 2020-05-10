@@ -51,7 +51,8 @@ pub unsafe trait HwAccessRef<'a>: Copy + Clone {
     /// the case for x86), you should call `swap_bytes` after the read.
     ///
     /// `address` must be a multiple of 4.
-    unsafe fn read_memory_u32_be(self, address: u64, dest: &'a mut [u32]) -> Self::ReadMemFutureU32;
+    unsafe fn read_memory_u32_be(self, address: u64, dest: &'a mut [u32])
+        -> Self::ReadMemFutureU32;
     /// Performs a serie of atomic physical memory writes starting at the given address.
     unsafe fn write_memory_u8(self, address: u64, data: &[u8]) -> Self::WriteMemFutureU8;
     /// Performs a serie of atomic physical memory writes starting at the given address.

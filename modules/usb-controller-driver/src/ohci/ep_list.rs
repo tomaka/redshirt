@@ -72,6 +72,7 @@ where
             hardware_access,
             dummy_descriptor,
             descriptors: Vec::new(),
+            next_transfer_descriptor,
         }
     }
 
@@ -118,7 +119,9 @@ where
             // The order here is important. First make the new descriptor pointer to the current
             // location, then only pointer to that new descriptor. This ensures that the
             // controller doesn't jump to the new descriptor before it's ready.
-            new_descriptor.set_next_raw(current_last.get_next_raw().await).await;
+            new_descriptor
+                .set_next_raw(current_last.get_next_raw().await)
+                .await;
             current_last.set_next(&new_descriptor).await;
         }
 

@@ -57,18 +57,26 @@ where
 
         let data_buffer = {
             // TODO: too strict alignment; a single page boundary is allowed
-            let layout = Layout::from_size_align(usize::try_from(data_buffer_len).unwrap(), 4096).unwrap();
+            let layout =
+                Layout::from_size_align(usize::try_from(data_buffer_len).unwrap(), 4096).unwrap();
             Buffer32::new(hardware_access.clone(), layout).await
         };
 
         unsafe {
             hardware_access
-                .write_memory_u32_be(u64::from(descriptor.pointer().get()), &[
-                    0x0,    // Header
-                    data_buffer.pointer().get(),
-                    0x0,    // Next transfer descriptor
-                    data_buffer.pointer().get().checked_add(data_buffer_len.checked_sub(1).unwrap()).unwrap(),
-                ])
+                .write_memory_u32_be(
+                    u64::from(descriptor.pointer().get()),
+                    &[
+                        0x0, // Header
+                        data_buffer.pointer().get(),
+                        0x0, // Next transfer descriptor
+                        data_buffer
+                            .pointer()
+                            .get()
+                            .checked_add(data_buffer_len.checked_sub(1).unwrap())
+                            .unwrap(),
+                    ],
+                )
                 .await;
         }
 

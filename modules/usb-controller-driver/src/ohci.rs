@@ -36,6 +36,7 @@ where
     bulk_list: ep_list::EndpointList<TAcc>,
     control_list: ep_list::EndpointList<TAcc>,
     hc_control_value: u32,
+    num_hub_ports: u8,
 }
 
 /// Information about the suspended device.
@@ -75,18 +76,6 @@ where
                 &[config.fm_interval_value],
             )
             .await;
-
-        // TODO: move somewhere else
-        let num_hub_ports = {
-            let mut out = [0];
-            hardware_access
-                .read_memory_u32_be(
-                    config.registers_location + definitions::HC_RH_DESCRIPTOR_A_OFFSET,
-                    &mut out,
-                )
-                .await;
-            u8::try_from(out[0] & 0xff).unwrap()
-        };
 
         // Allocate the bulk and control lists, and set the appropriate registers.
         let control_list = ep_list::EndpointList::new(hardware_access.clone()).await;
@@ -208,6 +197,18 @@ where
             )
             .await;
 
+        // Grab the number of ports on the root hub.
+        let num_hub_ports = {
+            let mut out = [0];
+            hardware_access
+                .read_memory_u32_be(
+                    config.registers_location + definitions::HC_RH_DESCRIPTOR_A_OFFSET,
+                    &mut out,
+                )
+                .await;
+            u8::try_from(out[0] & 0xff).unwrap()
+        };
+
         // TODO: remove this
         log::info!("initialized");
 
@@ -217,6 +218,7 @@ where
             bulk_list,
             control_list,
             hc_control_value,
+            num_hub_ports,
         }
     }
 }
