@@ -25,6 +25,7 @@ mod ep_descriptor;
 mod ep_list;
 mod hcca;
 mod init;
+mod transfer_descriptor;
 
 pub struct OhciDevice<TAcc>
 where
@@ -69,7 +70,7 @@ where
 
         // Set the `FmInterval` register.
         hardware_access
-            .write_memory_u32(
+            .write_memory_u32_be(
                 config.registers_location + definitions::HC_FM_INTERVAL_OFFSET,
                 &[config.fm_interval_value],
             )
@@ -79,7 +80,7 @@ where
         let num_hub_ports = {
             let mut out = [0];
             hardware_access
-                .read_memory_u32(
+                .read_memory_u32_be(
                     config.registers_location + definitions::HC_RH_DESCRIPTOR_A_OFFSET,
                     &mut out,
                 )
@@ -93,25 +94,25 @@ where
         assert_eq!(control_list.head_pointer().get() % 16, 0);
         assert_eq!(bulk_list.head_pointer().get() % 16, 0);
         hardware_access
-            .write_memory_u32(
+            .write_memory_u32_be(
                 config.registers_location + definitions::HC_CONTROL_HEAD_ED_OFFSET,
                 &[control_list.head_pointer().get()],
             )
             .await;
         hardware_access
-            .write_memory_u32(
+            .write_memory_u32_be(
                 config.registers_location + definitions::HC_CONTROL_CURRENT_ED_OFFSET,
                 &[control_list.head_pointer().get()],
             )
             .await;
         hardware_access
-            .write_memory_u32(
+            .write_memory_u32_be(
                 config.registers_location + definitions::HC_BULK_HEAD_ED_OFFSET,
                 &[bulk_list.head_pointer().get()],
             )
             .await;
         hardware_access
-            .write_memory_u32(
+            .write_memory_u32_be(
                 config.registers_location + definitions::HC_BULK_CURRENT_ED_OFFSET,
                 &[bulk_list.head_pointer().get()],
             )
@@ -123,14 +124,14 @@ where
             let req_alignment = {
                 // See section 7.2.1. We write all 1s to the HcHCCA register and read the value back.
                 hardware_access
-                    .write_memory_u32(
+                    .write_memory_u32_be(
                         config.registers_location + definitions::HC_HCCA_OFFSET,
                         &[0xffffffff],
                     )
                     .await;
                 let mut out = [0];
                 hardware_access
-                    .read_memory_u32(
+                    .read_memory_u32_be(
                         config.registers_location + definitions::HC_HCCA_OFFSET,
                         &mut out,
                     )
@@ -148,7 +149,7 @@ where
         };
         assert_eq!(hcca.pointer().get() % 16, 0);
         hardware_access
-            .write_memory_u32(
+            .write_memory_u32_be(
                 config.registers_location + definitions::HC_HCCA_OFFSET,
                 &[hcca.pointer().get()],
             )
@@ -160,7 +161,7 @@ where
             let frame_interval = config.fm_interval_value & ((1 << 14) - 1);
             let periodic_start = (9 * frame_interval) / 10;
             hardware_access
-                .write_memory_u32(
+                .write_memory_u32_be(
                     config.registers_location + definitions::HC_PERIODIC_START_OFFSET,
                     &[periodic_start],
                 )
@@ -172,7 +173,7 @@ where
         let mut hc_control_value = {
             let mut out = [0];
             hardware_access
-                .read_memory_u32(
+                .read_memory_u32_be(
                     config.registers_location + definitions::HC_CONTROL_OFFSET,
                     &mut out,
                 )
@@ -192,7 +193,7 @@ where
         // write below, but the example in the specs does it in two steps, so we do it in two
         // steps as well.
         hardware_access
-            .write_memory_u32(
+            .write_memory_u32_be(
                 config.registers_location + definitions::HC_CONTROL_OFFSET,
                 &[hc_control_value],
             )
@@ -201,7 +202,7 @@ where
         // Now set it to UsbOperational.
         hc_control_value = (hc_control_value & !(0b11 << 6)) | (0b10 << 6);
         hardware_access
-            .write_memory_u32(
+            .write_memory_u32_be(
                 config.registers_location + definitions::HC_CONTROL_OFFSET,
                 &[hc_control_value],
             )

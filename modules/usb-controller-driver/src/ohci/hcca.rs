@@ -25,6 +25,8 @@ use crate::{ohci::ep_list, Buffer32, HwAccessRef};
 use alloc::vec::Vec;
 use core::{alloc::Layout, num::NonZeroU32};
 
+// TODO: implement the Done queue stuff
+
 pub struct Hcca<TAcc>
 where
     for<'r> &'r TAcc: HwAccessRef<'r>,
@@ -47,17 +49,17 @@ where
         )
         .await;
 
-        // TODO: put the isochronous list at the end of the interrupt lists
         let isochronous_list = ep_list::EndpointList::new(hardware_access.clone()).await;
 
         // Initialize one endpoint list for each interrupt list.
         let interrupt_lists = {
             let mut interrupt_lists = Vec::with_capacity(32);
             for n in 0..32 {
-                let list = ep_list::EndpointList::new(hardware_access.clone()).await;
+                let mut list = ep_list::EndpointList::new(hardware_access.clone()).await;
                 unsafe {
+                    list.set_next(&isochronous_list);
                     hardware_access
-                        .write_memory_u32(
+                        .write_memory_u32_be(
                             u64::from(buffer.pointer().get()) + 4 * n,
                             &[list.head_pointer().get()],
                         )

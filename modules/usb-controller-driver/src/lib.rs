@@ -46,11 +46,21 @@ pub unsafe trait HwAccessRef<'a>: Copy + Clone {
     /// Performs a serie of atomic physical memory reads starting at the given address.
     unsafe fn read_memory_u8(self, address: u64, dest: &'a mut [u8]) -> Self::ReadMemFutureU8;
     /// Performs a serie of atomic physical memory reads starting at the given address.
-    unsafe fn read_memory_u32(self, address: u64, dest: &'a mut [u32]) -> Self::ReadMemFutureU32;
+    ///
+    /// The data must be read in big endian. If the current platform is little endian (which is
+    /// the case for x86), you should call `swap_bytes` after the read.
+    ///
+    /// `address` must be a multiple of 4.
+    unsafe fn read_memory_u32_be(self, address: u64, dest: &'a mut [u32]) -> Self::ReadMemFutureU32;
     /// Performs a serie of atomic physical memory writes starting at the given address.
     unsafe fn write_memory_u8(self, address: u64, data: &[u8]) -> Self::WriteMemFutureU8;
     /// Performs a serie of atomic physical memory writes starting at the given address.
-    unsafe fn write_memory_u32(self, address: u64, data: &[u32]) -> Self::WriteMemFutureU32;
+    ///
+    /// The data must be written in big endian. If the current platform is little endian (which is
+    /// the case for x86), you should call `swap_bytes` beforehand.
+    ///
+    /// `address` must be a multiple of 4.
+    unsafe fn write_memory_u32_be(self, address: u64, data: &[u32]) -> Self::WriteMemFutureU32;
 
     /// Allocate a memory buffer in physical memory. Does not need to be cleared with 0s.
     ///
@@ -78,6 +88,49 @@ pub unsafe trait HwAccessRef<'a>: Copy + Clone {
     /// match the layout that was passed to `alloc`.
     unsafe fn dealloc(self, address: u64, alloc32: bool, layout: Layout);
 }
+
+// TODO: finish this
+/*/// Dummy marker. Implements the [`HwAccessRef`] trait and directly performs memory reads/writes
+/// on the current memory.
+#[derive(Copy, Clone)]
+pub struct DirectAccess;
+
+unsafe impl<'a> HwAccessRef<'a> for &'a DirectAccess {
+    type ReadMemFutureU8 = futures::future::Ready<()>;
+    type ReadMemFutureU32 = futures::future::Ready<()>;
+    type WriteMemFutureU8 = futures::future::Ready<()>;
+    type WriteMemFutureU32 = futures::future::Ready<()>;
+    type Alloc64 = futures::future::Ready<Result<NonZeroU64, ()>>;
+    type Alloc32 = futures::future::Ready<Result<NonZeroU32, ()>>;
+
+    unsafe fn read_memory_u8(self, address: u64, dest: &'a mut [u8]) -> Self::ReadMemFutureU8 {
+        for (n, d) in dest.iter_mut().enumerate() {
+            *d = (address as *const u8).add(n).volatile_read();
+        }
+
+        futures::future::ready(())
+    }
+
+    unsafe fn read_memory_u32_be(self, address: u64, dest: &'a mut [u32]) -> Self::ReadMemFutureU32 {
+        debug_assert_eq!(address % 4, 0);
+        for (n, d) in dest.iter_mut().enumerate() {
+            *d = (address as *const u32).add(n).volatile_read();
+        }
+
+        futures::future::ready(())
+    }
+
+    unsafe fn write_memory_u8(self, address: u64, data: &[u8]) -> Self::WriteMemFutureU8;
+    unsafe fn write_memory_u32_be(self, address: u64, data: &[u32]) -> Self::WriteMemFutureU32;
+
+    fn alloc64(self, layout: Layout) -> Self::Alloc64 {
+        let ptr = alloc::alloc::alloc(layout);
+    }
+
+    fn alloc32(self, layout: Layout) -> Self::Alloc32;
+
+    unsafe fn dealloc(self, address: u64, _alloc32: bool, layout: Layout);
+}*/
 
 // TODO: move to different module
 pub struct Buffer32<TAcc>

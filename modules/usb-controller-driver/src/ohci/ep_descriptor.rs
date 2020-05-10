@@ -86,10 +86,12 @@ where
 
         unsafe {
             hardware_access
-                .write_memory_u8(u64::from(buffer.pointer().get()), &header.encode())
-                .await;
-            hardware_access
-                .write_memory_u32(u64::from(buffer.pointer().get() + 12), &[0])
+                .write_memory_u32_be(u64::from(buffer.pointer().get()), &[
+                    header.encode(),    // Header
+                    0x0,    // Transfer descriptor tail
+                    0x0,    // Transfer descriptor head
+                    0x0,    // Next endpoint descriptor
+                ])
                 .await;
         }
 
@@ -115,7 +117,7 @@ where
         unsafe {
             let mut out = [0];
             self.hardware_access
-                .read_memory_u32(u64::from(self.buffer.pointer().get() + 12), &mut out)
+                .read_memory_u32_be(u64::from(self.buffer.pointer().get() + 12), &mut out)
                 .await;
             out[0]
         }
@@ -131,7 +133,7 @@ where
     /// `next` must remain valid until the next time [`EndpointDescriptor::clear_next`],
     /// [`EndpointDescriptor::set_next`] or [`EndpointDescriptor::set_next_raw`] is called, or
     /// until this [`EndpointDescriptor`] is destroyed.
-    pub async unsafe fn set_next<UAcc>(&self, next: &EndpointDescriptor<UAcc>)
+    pub async unsafe fn set_next<UAcc>(&mut self, next: &EndpointDescriptor<UAcc>)
     where
         UAcc: Clone,
         for<'r> &'r UAcc: HwAccessRef<'r>,
@@ -149,16 +151,16 @@ where
     /// remain valid until the next time [`EndpointDescriptor::clear_next`],
     /// [`EndpointDescriptor::set_next`] or [`EndpointDescriptor::set_next_raw`] is called, or
     /// until this [`EndpointDescriptor`] is destroyed.
-    pub async unsafe fn set_next_raw(&self, next: u32) {
+    pub async unsafe fn set_next_raw(&mut self, next: u32) {
         self.hardware_access
-            .write_memory_u32(u64::from(self.buffer.pointer().get() + 12), &[next])
+            .write_memory_u32_be(u64::from(self.buffer.pointer().get() + 12), &[next])
             .await;
     }
 
     /// Sets the next endpoint descriptor in the linked list to nothing.
-    pub async fn clear_next(&self) {
+    pub async fn clear_next(&mut self) {
         unsafe {
-            self.set_next_raw(0);
+            self.set_next_raw(0).await;
         }
     }
 }
@@ -183,7 +185,7 @@ struct EndpointControlDecoded {
 }
 
 impl EndpointControlDecoded {
-    pub fn encode(&self) -> [u8; 4] {
+    fn encode(&self) -> u32 {
         assert!(self.maximum_packet_size < (1 << 12));
         assert!(self.endpoint_number < (1 << 5));
         assert!(self.function_address < (1 << 7));
@@ -194,14 +196,12 @@ impl EndpointControlDecoded {
             Direction::FromTd => 0b00,
         };
 
-        let val = u32::from(self.maximum_packet_size) << 16
+        u32::from(self.maximum_packet_size) << 16
             | if self.format { 1 } else { 0 } << 15
             | if self.skip { 1 } else { 0 } << 14
             | if self.low_speed { 1 } else { 0 } << 13
             | direction << 11
             | u32::from(self.endpoint_number) << 7
-            | u32::from(self.function_address);
-
-        val.to_be_bytes()
+            | u32::from(self.function_address)
     }
 }

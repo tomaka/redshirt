@@ -75,6 +75,28 @@ where
         }
     }
 
+    /// Sets the next endpoint list in the linked list.
+    ///
+    /// Endpoint lists are always part of a linked list, where each list points to the
+    /// next one, or to nothing.
+    ///
+    /// # Safety
+    ///
+    /// `next` must remain valid until the next time [`EndpointList::clear_next`] or
+    /// [`EndpointDescriptor::EndpointList`] is called, or until this [`EndpointList`] is
+    /// destroyed.
+    pub async unsafe fn set_next<UAcc>(&mut self, next: &EndpointList<UAcc>)
+    where
+        UAcc: Clone,
+        for<'r> &'r UAcc: HwAccessRef<'r>,
+    {
+        let current_last = self
+            .descriptors
+            .last_mut()
+            .unwrap_or(&mut self.dummy_descriptor);
+        current_last.set_next_raw(next.head_pointer().get()).await;
+    }
+
     /// Returns the physical memory address of the head of the list.
     ///
     /// This value never changes and is valid until the [`EndpointList`] is destroyed.

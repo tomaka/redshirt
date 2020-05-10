@@ -65,7 +65,7 @@ where
     let revision = {
         let mut out = [0];
         access
-            .read_memory_u32(regs_loc + definitions::HC_REVISION_OFFSET, &mut out)
+            .read_memory_u32_be(regs_loc + definitions::HC_REVISION_OFFSET, &mut out)
             .await;
         u8::try_from(out[0] & 0xff).unwrap()
     };
@@ -78,7 +78,7 @@ where
     let (functional_state, interrupt_routing) = {
         let mut out = [0];
         access
-            .read_memory_u32(regs_loc + definitions::HC_CONTROL_OFFSET, &mut out)
+            .read_memory_u32_be(regs_loc + definitions::HC_CONTROL_OFFSET, &mut out)
             .await;
         let interrupt_routing = (out[0] & (1 << 8)) != 0;
         let functional_state = u8::try_from((out[0] >> 6) & 0b11).unwrap();
@@ -93,7 +93,7 @@ where
             // We write 1 to the `OwnershipChangerRequest` flag of the command register to ask
             // the SMM to stop using the controller.
             access
-                .write_memory_u32(
+                .write_memory_u32_be(
                     regs_loc + definitions::HC_COMMAND_STATUS_OFFSET,
                     &[1u32 << 3u32],
                 )
@@ -105,7 +105,7 @@ where
 
                 let mut out = [0];
                 access
-                    .read_memory_u32(regs_loc + definitions::HC_CONTROL_OFFSET, &mut out)
+                    .read_memory_u32_be(regs_loc + definitions::HC_CONTROL_OFFSET, &mut out)
                     .await;
                 let interrupt_routing = (out[0] & (1 << 8)) != 0;
                 if !interrupt_routing {
@@ -142,7 +142,7 @@ where
     let fm_interval_value = {
         let mut out = [0];
         access
-            .read_memory_u32(regs_loc + definitions::HC_FM_INTERVAL_OFFSET, &mut out)
+            .read_memory_u32_be(regs_loc + definitions::HC_FM_INTERVAL_OFFSET, &mut out)
             .await;
         out[0]
     };
@@ -151,7 +151,7 @@ where
     // controller. This register is a "write on set" type of register, so we don't actually
     // overwrite anything by writing just one bit.
     access
-        .write_memory_u32(
+        .write_memory_u32_be(
             regs_loc + definitions::HC_COMMAND_STATUS_OFFSET,
             &[1u32 << 0u32],
         )
