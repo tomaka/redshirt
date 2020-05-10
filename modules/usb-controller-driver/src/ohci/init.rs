@@ -39,7 +39,7 @@ use crate::{
     ohci::{registers, FromSuspendedConfig, OhciDevice},
     HwAccessRef,
 };
-use core::convert::TryFrom as _;
+use core::{convert::TryFrom as _, time::Duration};
 
 /// Error that can happen during initialization.
 #[derive(Debug, derive_more::Display)]
@@ -101,8 +101,6 @@ where
 
             // Now looping until `interrupt_routing` is 1.
             loop {
-                // TODO: put a small sleep here to not spinloop
-
                 let mut out = [0];
                 access
                     .read_memory_u32_be(regs_loc + registers::HC_CONTROL_OFFSET, &mut out)
@@ -111,12 +109,17 @@ where
                 if !interrupt_routing {
                     break;
                 }
+
+                // Sleep a bit in order to not spinloop.
+                access.delay(Duration::from_micros(10)).await;
             }
         }
         (0b00, false) => {
             // Controller is in `UsbReset` mode and isn't initialized yet.
             // See section 5.1.1.3.5.
-            // TODO: wait some time, as described in the specs
+            // Since we don't know for how long the controller has been in this state, we wait a
+            // bit in order to be sure that devices know that a reset has happened.
+            access.delay(Duration::from_millis(50)).await;
         }
         (0b10, false) => {
             // Controller is in `UsbOperational` mode. It was in use by the BIOS or a previous
@@ -129,7 +132,24 @@ where
             // Controller is not in `UsbReset` mode and was in use by the BIOS or a previous
             // driver.
             // See section 5.1.1.3.4.
-            unimplemented!() // TODO: do the thing the specs say
+            // We switch to `UsbResume` mode, then wait to be sure that devices know about the
+            // resuming.
+            let mut out = [0];
+            access
+                .read_memory_u32_be(regs_loc + registers::HC_CONTROL_OFFSET, &mut out)
+                .await;
+            // Clear the list processing bits.
+            out[0] &= !(1 << 2);
+            out[0] &= !(1 << 3);
+            out[0] &= !(1 << 4);
+            out[0] &= !(1 << 5);
+            // Set functional state to Resume.
+            out[0] &= !(0b11 << 6);
+            out[0] |= 0b01 << 6;
+            access
+                .write_memory_u32_be(regs_loc + registers::HC_CONTROL_OFFSET, &out)
+                .await;
+            access.delay(Duration::from_millis(50)).await;
         }
         (_, _) => unreachable!(),
     }
@@ -158,7 +178,7 @@ where
         .await;
 
     // The reset lasts for a maximum of 10µs, as described in specs.
-    // TODO: wait for 10µs
+    access.delay(Duration::from_micros(10)).await;
 
     Ok({
         let cfg = FromSuspendedConfig {

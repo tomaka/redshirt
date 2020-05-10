@@ -260,7 +260,7 @@ where
         // WriteBackDoneHead
         // The controller has updated the done queue in the HCCA.
         if interrupt_status & (1 << 1) != 0 {
-            self.hcca.extract_done_queue();
+            self.hcca.extract_done_queue().await;
         }
 
         // RootHubStatusChange

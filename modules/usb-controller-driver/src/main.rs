@@ -19,10 +19,13 @@
 //! USB interface.
 // TODO: only OHCI is implemented lol
 
-use core::num::{NonZeroU32, NonZeroU64, NonZeroU8};
+use core::{alloc::Layout, convert::TryFrom as _};
+use core::{
+    num::{NonZeroU32, NonZeroU64, NonZeroU8},
+    time::Duration,
+};
 use futures::prelude::*;
 use parity_scale_codec::DecodeAll;
-use std::{alloc::Layout, convert::TryFrom as _};
 
 fn main() {
     redshirt_log_interface::init();
@@ -81,6 +84,7 @@ async fn async_main() {
 #[derive(Debug, Copy, Clone)]
 struct HwAccess;
 unsafe impl<'a> usb_controller_driver::HwAccessRef<'a> for &'a HwAccess {
+    type Delay = redshirt_time_interface::Delay;
     type ReadMemFutureU8 = future::BoxFuture<'a, ()>;
     type ReadMemFutureU32 = future::BoxFuture<'a, ()>;
     type WriteMemFutureU8 = future::Ready<()>;
@@ -141,5 +145,9 @@ unsafe impl<'a> usb_controller_driver::HwAccessRef<'a> for &'a HwAccess {
 
     unsafe fn dealloc(self, address: u64, _: bool, _: Layout) {
         redshirt_hardware_interface::malloc::free(address);
+    }
+
+    fn delay(self, duration: Duration) -> Self::Delay {
+        redshirt_time_interface::Delay::new(duration)
     }
 }
