@@ -190,6 +190,21 @@ where
             )
             .await;
 
+        // Disable all non-reserved interrupts.
+        hardware_access
+            .write_memory_u32_be(
+                config.registers_location + definitions::HC_INTERRUPT_DISABLE_OFFSET,
+                &[(1 << 30) | 0b1111111],
+            )
+            .await;
+        // Enable the master interrupt.
+        hardware_access
+            .write_memory_u32_be(
+                config.registers_location + definitions::HC_INTERRUPT_ENABLE_OFFSET,
+                &[1 << 31],
+            )
+            .await;
+
         // Now set it to UsbOperational.
         hc_control_value = (hc_control_value & !(0b11 << 6)) | (0b10 << 6);
         hardware_access
@@ -224,7 +239,26 @@ where
         }
     }
 
+    /// Must be called whenever an interrupt is received.
+    pub async fn on_interrupt(&mut self) {
+        let interrupt_status = unsafe {
+            let mut out = [0];
+            self.hardware_access
+                .read_memory_u32_be(
+                    self.regs_loc + definitions::HC_INTERRUPT_STATUS_OFFSET,
+                    &mut out,
+                )
+                .await;
+            out[0]
+        };
+
+        log::info!("interrupt status = 0x{:x}", interrupt_status);
+        unimplemented!() // TODO:
+    }
+
     /// Access a port of the root hub.
+    ///
+    /// Returns `None` if `port` is out of range.
     ///
     /// Just like regular USB hubs, ports indexing starts from 1.
     pub fn root_hub_port(&mut self, port: NonZeroU8) -> Option<RootHubPort<TAcc>> {
@@ -236,6 +270,11 @@ where
             controller: self,
             port,
         })
+    }
+
+    /// Returns the number of ports in the root hub. Never changes.
+    pub fn root_hub_num_ports(&self) -> NonZeroU8 {
+        self.num_hub_ports
     }
 
     /*/// Access a specific endpoint at an address.

@@ -19,7 +19,7 @@
 //! USB interface.
 // TODO: only OHCI is implemented lol
 
-use core::num::{NonZeroU32, NonZeroU64};
+use core::num::{NonZeroU8, NonZeroU32, NonZeroU64};
 use futures::prelude::*;
 use parity_scale_codec::DecodeAll;
 use std::{alloc::Layout, convert::TryFrom as _};
@@ -38,7 +38,7 @@ async fn async_main() {
             }
             (0xc, 0x3, 0x10) => {
                 // OHCI
-                // TODO: should probably write to LATENCY_TIMER
+                // TODO: should probably write to LATENCY_TIMER in the PCI config space, as the specs mention
                 let addr = match device.base_address_registers[0] {
                     redshirt_pci_interface::PciBaseAddressRegister::Memory { base_address } => {
                         u64::from(base_address)
@@ -47,10 +47,15 @@ async fn async_main() {
                 };
 
                 log::info!("Initializing OHCI device at 0x{:x}", addr);
-                unsafe {
+                let mut device = unsafe {
                     usb_controller_driver::ohci::init_ohci_device(HwAccess, addr)
                         .await
-                        .unwrap();
+                        .unwrap()
+                };
+
+                for n in 1..device.root_hub_num_ports().get() {
+                    let port = device.root_hub_port(NonZeroU8::new(n).unwrap()).unwrap();
+                    log::info!("{:?}", port.is_connected().await);
                 }
             }
             (0xc, 0x3, 0x20) => {
