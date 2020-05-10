@@ -15,9 +15,9 @@
 
 //! Endpoint List management.
 //!
-//! One of the most important part of the OHCI specs is the "endpoint lists processing". This
-//! library maintains a certain number of **endpoint lists** in memory that the USB controller
-//! will read and process.
+//! One of the most important part of the OHCI specs is the "endpoint lists processing". The host
+//! must maintain a certain number of **endpoint lists** in memory that the USB controller will
+//! read and process.
 //!
 //! Each endpoint list is a linked list of **endpoint descriptors**. Each endpoint descriptor
 //! is specific to one USB endpoint. A USB endpoint is a functionality on a USB device.
@@ -29,7 +29,7 @@ use crate::{ohci::ep_descriptor, HwAccessRef};
 
 use alloc::vec::Vec;
 
-pub use ep_descriptor::Config;
+pub use ep_descriptor::{Config, Direction};
 
 /// Linked list of endpoint descriptors.
 pub struct EndpointList<TAcc>
@@ -38,6 +38,10 @@ where
 {
     /// Hardware abstraction layer.
     hardware_access: TAcc,
+    /// The list always starts with a dummy descriptor, allowing us to have a constant start.
+    /// This not something enforced by the specs, but it is recommended by the specs for ease of
+    /// implementation.
+    dummy_descriptor: ep_descriptor::EndpointDescriptor<TAcc>,
     /// List of descriptors linked to each other.
     descriptors: Vec<ep_descriptor::EndpointDescriptor<TAcc>>,
 }
@@ -48,8 +52,22 @@ where
     for<'r> &'r TAcc: HwAccessRef<'r>,
 {
     pub async fn new(hardware_access: TAcc) -> EndpointList<TAcc> {
+        let dummy_descriptor = {
+            let config = Config {
+                maximum_packet_size: 0,
+                function_address: 0,
+                endpoint_number: 0,
+                isochronous: false,  // TODO: must be correct I guess
+                low_speed: false,
+                direction: Direction::FromTd,
+            };
+
+            ep_descriptor::EndpointDescriptor::new(hardware_access.clone(), config).await
+        };
+
         EndpointList {
             hardware_access,
+            dummy_descriptor,
             descriptors: Vec::new(),
         }
     }

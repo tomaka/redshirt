@@ -34,10 +34,18 @@ pub unsafe trait HwAccessRef<'a>: Copy + Clone {
     type ReadMemFutureU32: Future<Output = ()> + 'a;
     type WriteMemFutureU8: Future<Output = ()> + 'a;
     type WriteMemFutureU32: Future<Output = ()> + 'a;
+    // TODO: the error type should be core::alloc::AllocErr once it's stable
+    type Alloc64: Future<Output = Result<u64, ()>> + 'a;
+    // TODO: the error type should be core::alloc::AllocErr once it's stable
+    type Alloc32: Future<Output = Result<u32, ()>> + 'a;
 
+    /// Performs a serie of atomic physical memory reads starting at the given address.
     unsafe fn read_memory_u8(self, address: u64, dest: &'a mut [u8]) -> Self::ReadMemFutureU8;
+    /// Performs a serie of atomic physical memory reads starting at the given address.
     unsafe fn read_memory_u32(self, address: u64, dest: &'a mut [u32]) -> Self::ReadMemFutureU32;
+    /// Performs a serie of atomic physical memory writes starting at the given address.
     unsafe fn write_memory_u8(self, address: u64, data: &[u8]) -> Self::WriteMemFutureU8;
+    /// Performs a serie of atomic physical memory writes starting at the given address.
     unsafe fn write_memory_u32(self, address: u64, data: &[u32]) -> Self::WriteMemFutureU32;
 
     /// Allocate a memory buffer in physical memory. Does not need to be cleared with 0s.
@@ -48,14 +56,21 @@ pub unsafe trait HwAccessRef<'a>: Copy + Clone {
     /// > **Note**: The value returned is a `u64` and not a pointer, as the buffer is not
     /// >           necessarily directly accessible. All accesses to the buffer must be performed
     /// >           through the other methods of this trait.
-    // TODO: the error type should be core::alloc::AllocErr once it's stable
-    fn alloc(self, layout: Layout) -> Result<u64, ()>;
+    fn alloc64(self, layout: Layout) -> Self::Alloc64;
+
+    /// Same as [`HwAccessRef::alloc64`], except that the returned buffer must fit within the
+    /// first four gigabytes of physical memory.
+    // TODO: is this distinction with alloc64? I did it because USB 1 only allows 32bits addresses
+    //       while I suspect that USB 3 accepts 64bits addresses
+    fn alloc32(self, layout: Layout) -> Self::Alloc32;
 
     /// Deallocates a previously-allocated block of physical memory.
+    ///
+    /// If `alloc32` is true, then this buffer was allocated using [`HwAccessRef::alloc32`].
     ///
     /// # Safety
     ///
     /// `address` must be a value previously-returned by a call to `alloc`, and `layout` must
     /// match the layout that was passed to `alloc`.
-    unsafe fn dealloc(self, address: u64, layout: Layout);
+    unsafe fn dealloc(self, address: u64, alloc32: bool, layout: Layout);
 }

@@ -33,7 +33,7 @@ where
     /// Hardware abstraction layer.
     hardware_access: TAcc,
     /// Physical memory buffer containing the endpoint descriptor.
-    buffer: u64,
+    buffer: u32,
 }
 
 /// Configuration when initialization an [`EndpointDescriptor`].
@@ -67,7 +67,7 @@ where
 {
     /// Allocates a new endpoint descriptor buffer in physical memory.
     pub async fn new(hardware_access: TAcc, config: Config) -> EndpointDescriptor<TAcc> {
-        let buffer = match hardware_access.alloc(ENDPOINT_DESCRIPTOR_LAYOUT) {
+        let buffer = match hardware_access.alloc32(ENDPOINT_DESCRIPTOR_LAYOUT).await {
             Ok(b) => b,
             Err(_) => handle_alloc_error(ENDPOINT_DESCRIPTOR_LAYOUT), // TODO: return error instead
         };
@@ -84,9 +84,9 @@ where
 
         unsafe {
             hardware_access
-                .write_memory_u8(buffer, &header.encode())
+                .write_memory_u8(u64::from(buffer), &header.encode())
                 .await;
-            hardware_access.write_memory_u32(buffer + 12, &[0]).await;
+            hardware_access.write_memory_u32(u64::from(buffer + 12), &[0]).await;
         }
 
         EndpointDescriptor {
@@ -110,7 +110,7 @@ where
     pub async fn clear_next(&self) {
         unsafe {
             self.hardware_access
-                .write_memory_u32(self.buffer + 12, &[0])
+                .write_memory_u32(u64::from(self.buffer + 12), &[0])
                 .await;
         }
     }
@@ -123,7 +123,7 @@ where
     fn drop(&mut self) {
         unsafe {
             self.hardware_access
-                .dealloc(self.buffer, ENDPOINT_DESCRIPTOR_LAYOUT);
+                .dealloc(u64::from(self.buffer), true, ENDPOINT_DESCRIPTOR_LAYOUT);
         }
     }
 }

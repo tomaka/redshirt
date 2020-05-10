@@ -122,12 +122,16 @@ where
                     Ok(s) => s,
                     Err(_) => panic!(),
                 };
-                let buffer = Vec::with_capacity(size + usize::from(alignment) - 1);
+                let align = match usize::try_from(alignment) {
+                    Ok(s) => s,
+                    Err(_) => panic!(),
+                };
+                let buffer = Vec::with_capacity(size + align - 1);
                 let mut ptr = match u64::try_from(buffer.as_ptr() as usize) {
                     Ok(p) => p,
                     Err(_) => panic!(),
                 };
-                while ptr % u64::from(alignment) != 0 {
+                while ptr % alignment != 0 {
                     ptr += 1;
                 }
 

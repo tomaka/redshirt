@@ -72,6 +72,8 @@ unsafe impl<'a> usb_controller_driver::HwAccessRef<'a> for &'a HwAccess {
     type ReadMemFutureU32 = future::BoxFuture<'a, ()>;
     type WriteMemFutureU8 = future::Ready<()>;
     type WriteMemFutureU32 = future::Ready<()>;
+    type Alloc64 = future::BoxFuture<'a, Result<u64, ()>>;
+    type Alloc32 = future::BoxFuture<'a, Result<u32, ()>>;
 
     unsafe fn read_memory_u8(self, address: u64, dest: &'a mut [u8]) -> Self::ReadMemFutureU8 {
         let mut builder = redshirt_hardware_interface::HardwareOperationsBuilder::new();
@@ -100,11 +102,19 @@ unsafe impl<'a> usb_controller_driver::HwAccessRef<'a> for &'a HwAccess {
         future::ready(())
     }
 
-    fn alloc(self, layout: Layout) -> Result<u64, ()> {
-        unimplemented!()
+    fn alloc64(self, layout: Layout) -> Self::Alloc64 {
+        redshirt_hardware_interface::malloc::malloc(u64::try_from(layout.size()).unwrap(), u64::try_from(layout.align()).unwrap())
+            .map(Ok)
+            .boxed()
     }
 
-    unsafe fn dealloc(self, address: u64, layout: Layout) {
-        unimplemented!()
+    fn alloc32(self, layout: Layout) -> Self::Alloc32 {
+        redshirt_hardware_interface::malloc::malloc(u64::try_from(layout.size()).unwrap(), u64::try_from(layout.align()).unwrap())
+            .map(|v| Ok(u32::try_from(v).unwrap())) // TODO: hardware interface has no way to force 32bits allocation
+            .boxed()
+    }
+
+    unsafe fn dealloc(self, address: u64, _: bool, _: Layout) {
+        redshirt_hardware_interface::malloc::free(address);
     }
 }

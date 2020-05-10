@@ -25,9 +25,14 @@ mod ep_descriptor;
 mod ep_list;
 mod init;
 
-pub struct OhciDevice<TAcc> {
+pub struct OhciDevice<TAcc>
+where
+    for<'r> &'r TAcc: HwAccessRef<'r>,
+{
     hardware_access: TAcc,
     regs_loc: u64,
+    bulk_list: ep_list::EndpointList<TAcc>,
+    control_list: ep_list::EndpointList<TAcc>,
 }
 
 /// Information about the suspended device.
@@ -44,6 +49,7 @@ pub(crate) struct FromSuspendedConfig {
 
 impl<TAcc> OhciDevice<TAcc>
 where
+    TAcc: Clone,
     for<'r> &'r TAcc: HwAccessRef<'r>,
 {
     /// Initializes an [`OhciDevice`] that is in a suspended state.
@@ -103,9 +109,17 @@ where
             };
         };
 
+        let bulk_list = ep_list::EndpointList::new(hardware_access.clone()).await;
+        let control_list = ep_list::EndpointList::new(hardware_access.clone()).await;
+
+        // TODO: remove this
+        log::info!("initialized");
+
         Self {
             hardware_access,
             regs_loc: config.registers_location,
+            bulk_list,
+            control_list,
         }
     }
 }

@@ -58,6 +58,7 @@ pub async unsafe fn init_ohci_device<TAcc>(
     regs_loc: u64,
 ) -> Result<OhciDevice<TAcc>, InitError>
 where
+    TAcc: Clone,
     for<'r> &'r TAcc: HwAccessRef<'r>,
 {
     // See section 5.1.1.2. We start by checking whether the revision is one we know.
