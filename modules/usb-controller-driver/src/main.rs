@@ -21,7 +21,7 @@
 
 use futures::prelude::*;
 use parity_scale_codec::DecodeAll;
-use std::{borrow::Cow, convert::TryFrom as _};
+use std::{alloc::Layout, borrow::Cow, convert::TryFrom as _};
 
 fn main() {
     redshirt_log_interface::init();
@@ -37,6 +37,7 @@ async fn async_main() {
             }
             (0xc, 0x3, 0x10) => {
                 // OHCI
+                // TODO: should probably write to LATENCY_TIMER
                 let addr = match device.base_address_registers[0] {
                     redshirt_pci_interface::PciBaseAddressRegister::Memory { base_address } => {
                         u64::from(base_address)
@@ -97,5 +98,13 @@ unsafe impl<'a> usb_controller_driver::HwAccessRef<'a> for &'a HwAccess {
         }
         builder.send();
         future::ready(())
+    }
+
+    fn alloc(self, layout: Layout) -> Result<u64, ()> {
+        unimplemented!()
+    }
+
+    unsafe fn dealloc(self, address: u64, layout: Layout) {
+        unimplemented!()
     }
 }
