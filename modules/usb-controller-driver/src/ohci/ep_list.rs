@@ -25,20 +25,38 @@
 //! Each endpoint descriptor contains, in turn, a linked list of **transfer descriptors** (TD).
 //! Each transfer descriptor represents one transfer to be performed from or to a USB device.
 
-use crate::{HwAccessRef, ohci::ep_descriptor};
+use crate::{ohci::ep_descriptor, HwAccessRef};
 
 use alloc::vec::Vec;
 
+pub use ep_descriptor::Config;
+
 /// Linked list of endpoint descriptors.
-pub struct EndpointList<'a, TAcc: HwAccessRef<'a>> {
+pub struct EndpointList<TAcc>
+where
+    for<'r> &'r TAcc: HwAccessRef<'r>,
+{
+    /// Hardware abstraction layer.
+    hardware_access: TAcc,
     /// List of descriptors linked to each other.
-    descriptors: Vec<ep_descriptor::EndpointDescriptor<'a, TAcc>>,
+    descriptors: Vec<ep_descriptor::EndpointDescriptor<TAcc>>,
 }
 
-impl<'a, TAcc: HwAccessRef<'a>> EndpointList<'a, TAcc> {
-    pub async fn new() -> EndpointList<'a, TAcc> {
+impl<TAcc> EndpointList<TAcc>
+where
+    TAcc: Clone,
+    for<'r> &'r TAcc: HwAccessRef<'r>,
+{
+    pub async fn new(hardware_access: TAcc) -> EndpointList<TAcc> {
         EndpointList {
+            hardware_access,
             descriptors: Vec::new(),
         }
+    }
+
+    pub async fn push(&mut self, config: Config) {
+        let new_descriptor =
+            ep_descriptor::EndpointDescriptor::new(self.hardware_access.clone(), config).await;
+        self.descriptors.push(new_descriptor);
     }
 }

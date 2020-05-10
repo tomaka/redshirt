@@ -58,7 +58,7 @@ where
         // TODO: somehow deal with this "should not stay in this state more than 2ms" requirement?
         //       If this function takes more than 2ms, then all devices will think that the hub
         //       is gone and will switch to sleep mode, which would be bad. See section 5.1.2.3.
-    
+
         // Set the `FmInterval` register.
         hardware_access
             .write_memory_u32(

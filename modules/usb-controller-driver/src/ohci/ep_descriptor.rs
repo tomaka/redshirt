@@ -26,15 +26,14 @@ use core::{alloc::Layout, marker::PhantomData};
 ///
 /// Since this list might be accessed by the controller, appropriate thread-safety measures have
 /// to be taken.
-pub struct EndpointDescriptor<'a, TAcc>
+pub struct EndpointDescriptor<TAcc>
 where
-    TAcc: HwAccessRef<'a>
+    for<'r> &'r TAcc: HwAccessRef<'r>,
 {
     /// Hardware abstraction layer.
     hardware_access: TAcc,
     /// Physical memory buffer containing the endpoint descriptor.
     buffer: u64,
-    marker: PhantomData<&'a ()>,
 }
 
 /// Configuration when initialization an [`EndpointDescriptor`].
@@ -62,12 +61,12 @@ pub enum Direction {
     FromTd,
 }
 
-impl<'a, TAcc> EndpointDescriptor<'a, TAcc>
+impl<TAcc> EndpointDescriptor<TAcc>
 where
-    TAcc: HwAccessRef<'a>,
+    for<'r> &'r TAcc: HwAccessRef<'r>,
 {
     /// Allocates a new endpoint descriptor buffer in physical memory.
-    pub async fn new(hardware_access: TAcc, config: Config) -> EndpointDescriptor<'a, TAcc> {
+    pub async fn new(hardware_access: TAcc, config: Config) -> EndpointDescriptor<TAcc> {
         let buffer = match hardware_access.alloc(ENDPOINT_DESCRIPTOR_LAYOUT) {
             Ok(b) => b,
             Err(_) => handle_alloc_error(ENDPOINT_DESCRIPTOR_LAYOUT), // TODO: return error instead
@@ -84,14 +83,15 @@ where
         };
 
         unsafe {
-            hardware_access.write_memory_u8(buffer, &header.encode()).await;
+            hardware_access
+                .write_memory_u8(buffer, &header.encode())
+                .await;
             hardware_access.write_memory_u32(buffer + 12, &[0]).await;
         }
 
         EndpointDescriptor {
             hardware_access,
             buffer,
-            marker: PhantomData,
         }
     }
 
@@ -99,32 +99,36 @@ where
     ///
     /// Endpoint descriptors are always part of a linked list, where each descriptor points to the
     /// next one, or to nothing.
-    pub async unsafe fn set_next<'b, U: HwAccessRef<'b>>(&self, next: &EndpointDescriptor<'b, U>) {
+    pub async unsafe fn set_next<UAcc>(&self, next: &EndpointDescriptor<UAcc>)
+    where
+        for<'r> &'r UAcc: HwAccessRef<'r>,
+    {
         unimplemented!()
     }
 
     /// Sets the next endpoint descriptor in the linked list to nothing.
     pub async fn clear_next(&self) {
         unsafe {
-            self.hardware_access.write_memory_u32(self.buffer + 12, &[0]).await;
+            self.hardware_access
+                .write_memory_u32(self.buffer + 12, &[0])
+                .await;
         }
     }
 }
 
-impl<'a, TAcc> EndpointDescriptor<'a, TAcc>
+impl<TAcc> EndpointDescriptor<TAcc>
 where
-    TAcc: HwAccessRef<'a>,
+    for<'r> &'r TAcc: HwAccessRef<'r>,
 {
     fn drop(&mut self) {
         unsafe {
-            self.hardware_access.dealloc(self.buffer, ENDPOINT_DESCRIPTOR_LAYOUT);
+            self.hardware_access
+                .dealloc(self.buffer, ENDPOINT_DESCRIPTOR_LAYOUT);
         }
     }
 }
 
-const ENDPOINT_DESCRIPTOR_LAYOUT: Layout = unsafe {
-    Layout::from_size_align_unchecked(16, 16)
-};
+const ENDPOINT_DESCRIPTOR_LAYOUT: Layout = unsafe { Layout::from_size_align_unchecked(16, 16) };
 
 #[derive(Debug)]
 struct EndpointControlDecoded {
@@ -157,13 +161,13 @@ impl EndpointControlDecoded {
             Direction::FromTd => 0b00,
         };
 
-        let val = u32::from(self.maximum_packet_size) << 16 |
-            if self.format { 1 } else { 0 } << 15 |
-            if self.skip { 1 } else { 0 } << 14 |
-            if self.low_speed { 1 } else { 0 } << 13 |
-            direction << 11 |
-            u32::from(self.endpoint_number) << 7 |
-            u32::from(self.function_address);
+        let val = u32::from(self.maximum_packet_size) << 16
+            | if self.format { 1 } else { 0 } << 15
+            | if self.skip { 1 } else { 0 } << 14
+            | if self.low_speed { 1 } else { 0 } << 13
+            | direction << 11
+            | u32::from(self.endpoint_number) << 7
+            | u32::from(self.function_address);
 
         val.to_be_bytes()
     }

@@ -40,7 +40,6 @@ pub const HC_RH_STATUS_OFFSET: u64 = 0x50;
 /// the status of port 3 (if it exists) is at 0x5c, and so on.
 pub const HC_RH_PORT_STATUS_1_OFFSET: u64 = 0x54;
 
-
 #[repr(C, align(16))]
 pub struct EndpointDescriptor([u8; 16]);
 
@@ -75,13 +74,13 @@ impl EndpointControlDecoded {
             Direction::FromTd => 0b00,
         };
 
-        let val = u32::from(self.maximum_packet_size) << 16 |
-            if self.format { 1 } else { 0 } << 15 |
-            if self.skip { 1 } else { 0 } << 14 |
-            if self.low_speed { 1 } else { 0 } << 13 |
-            direction << 11 |
-            u32::from(self.endpoint_number) << 7 |
-            u32::from(self.function_address);
+        let val = u32::from(self.maximum_packet_size) << 16
+            | if self.format { 1 } else { 0 } << 15
+            | if self.skip { 1 } else { 0 } << 14
+            | if self.low_speed { 1 } else { 0 } << 13
+            | direction << 11
+            | u32::from(self.endpoint_number) << 7
+            | u32::from(self.function_address);
 
         val.to_be_bytes()
     }
