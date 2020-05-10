@@ -55,8 +55,15 @@ async fn async_main() {
 
                 for n in 1..device.root_hub_num_ports().get() {
                     let port = device.root_hub_port(NonZeroU8::new(n).unwrap()).unwrap();
-                    log::info!("{:?}", port.is_connected().await);
+                    log::info!(
+                        "{:?} {:?} {:?}",
+                        port.is_connected().await,
+                        port.is_enabled().await,
+                        port.is_suspended().await
+                    );
                 }
+
+                device.on_interrupt().await;
             }
             (0xc, 0x3, 0x20) => {
                 // EHCI
