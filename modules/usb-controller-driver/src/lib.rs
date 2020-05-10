@@ -21,7 +21,11 @@
 // allocations
 extern crate alloc;
 
-use core::{alloc::Layout, future::Future};
+use core::{
+    alloc::Layout,
+    future::Future,
+    num::{NonZeroU32, NonZeroU64},
+};
 
 pub mod ohci; // TODO: private
 
@@ -35,9 +39,9 @@ pub unsafe trait HwAccessRef<'a>: Copy + Clone {
     type WriteMemFutureU8: Future<Output = ()> + 'a;
     type WriteMemFutureU32: Future<Output = ()> + 'a;
     // TODO: the error type should be core::alloc::AllocErr once it's stable
-    type Alloc64: Future<Output = Result<u64, ()>> + 'a;
+    type Alloc64: Future<Output = Result<NonZeroU64, ()>> + 'a;
     // TODO: the error type should be core::alloc::AllocErr once it's stable
-    type Alloc32: Future<Output = Result<u32, ()>> + 'a;
+    type Alloc32: Future<Output = Result<NonZeroU32, ()>> + 'a;
 
     /// Performs a serie of atomic physical memory reads starting at the given address.
     unsafe fn read_memory_u8(self, address: u64, dest: &'a mut [u8]) -> Self::ReadMemFutureU8;
@@ -75,12 +79,13 @@ pub unsafe trait HwAccessRef<'a>: Copy + Clone {
     unsafe fn dealloc(self, address: u64, alloc32: bool, layout: Layout);
 }
 
+// TODO: move to different module
 pub struct Buffer32<TAcc>
 where
     for<'r> &'r TAcc: HwAccessRef<'r>,
 {
     hardware_access: TAcc,
-    buffer: u32,
+    buffer: NonZeroU32,
     layout: Layout,
 }
 
@@ -104,19 +109,19 @@ where
     /// Returns the physical memory address of the buffer.
     ///
     /// This value never changes and is valid until the [`Buffer32`] is destroyed.
-    pub fn pointer(&self) -> u32 {
+    pub fn pointer(&self) -> NonZeroU32 {
         self.buffer
     }
 }
 
-impl<TAcc> Buffer32<TAcc>
+impl<TAcc> Drop for Buffer32<TAcc>
 where
     for<'r> &'r TAcc: HwAccessRef<'r>,
 {
     fn drop(&mut self) {
         unsafe {
             self.hardware_access
-                .dealloc(u64::from(self.buffer), true, self.layout);
+                .dealloc(u64::from(self.buffer.get()), true, self.layout);
         }
     }
 }

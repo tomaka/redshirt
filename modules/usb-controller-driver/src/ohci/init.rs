@@ -32,8 +32,8 @@
 //!
 //! See also section 5.1.1.3 of the specs.
 //!
-//! This module performs all the necessary resets and switches the OHCI controller to.
-// TODO: finish stating in which mode we switch to
+//! This module performs a software reset and switches the OHCI controller to the "suspended"
+//! state, after which it pass control to another part of the code.
 
 use crate::{
     ohci::{definitions, FromSuspendedConfig, OhciDevice},
@@ -101,7 +101,7 @@ where
 
             // Now looping until `interrupt_routing` is 1.
             loop {
-                // TODO: put a sleep here
+                // TODO: put a small sleep here to not spinloop
 
                 let mut out = [0];
                 access
@@ -148,13 +148,15 @@ where
     };
 
     // We write 1 to the `HostControllerReset` flag of the command register to reset the
-    // controller.
+    // controller. This register is a "write on set" type of register, so we don't actually
+    // overwrite anything by writing just one bit.
     access
         .write_memory_u32(
             regs_loc + definitions::HC_COMMAND_STATUS_OFFSET,
             &[1u32 << 0u32],
         )
         .await;
+
     // The reset lasts for a maximum of 10µs, as described in specs.
     // TODO: wait for 10µs
 

@@ -23,7 +23,7 @@
 use crate::{ohci::ep_list, Buffer32, HwAccessRef};
 
 use alloc::vec::Vec;
-use core::alloc::Layout;
+use core::{alloc::Layout, num::NonZeroU32};
 
 pub struct Hcca<TAcc>
 where
@@ -58,8 +58,8 @@ where
                 unsafe {
                     hardware_access
                         .write_memory_u32(
-                            u64::from(buffer.pointer()) + 4 * n,
-                            &[list.head_pointer()],
+                            u64::from(buffer.pointer().get()) + 4 * n,
+                            &[list.head_pointer().get()],
                         )
                         .await;
                 }
@@ -72,7 +72,7 @@ where
         // in case.
         unsafe {
             hardware_access
-                .write_memory_u8(u64::from(buffer.pointer()) + 0x80, &[0; 0x80])
+                .write_memory_u8(u64::from(buffer.pointer().get()) + 0x80, &[0; 0x80])
                 .await;
         }
 
@@ -86,7 +86,7 @@ where
     /// Returns the physical memory address of the HCCA.
     ///
     /// This value never changes and is valid until the [`Hcca`] is destroyed.
-    pub fn pointer(&self) -> u32 {
+    pub fn pointer(&self) -> NonZeroU32 {
         self.buffer.pointer()
     }
 }

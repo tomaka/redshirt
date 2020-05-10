@@ -19,6 +19,7 @@
 //! USB interface.
 // TODO: only OHCI is implemented lol
 
+use core::num::{NonZeroU32, NonZeroU64};
 use futures::prelude::*;
 use parity_scale_codec::DecodeAll;
 use std::{alloc::Layout, convert::TryFrom as _};
@@ -72,8 +73,8 @@ unsafe impl<'a> usb_controller_driver::HwAccessRef<'a> for &'a HwAccess {
     type ReadMemFutureU32 = future::BoxFuture<'a, ()>;
     type WriteMemFutureU8 = future::Ready<()>;
     type WriteMemFutureU32 = future::Ready<()>;
-    type Alloc64 = future::BoxFuture<'a, Result<u64, ()>>;
-    type Alloc32 = future::BoxFuture<'a, Result<u32, ()>>;
+    type Alloc64 = future::BoxFuture<'a, Result<NonZeroU64, ()>>;
+    type Alloc32 = future::BoxFuture<'a, Result<NonZeroU32, ()>>;
 
     unsafe fn read_memory_u8(self, address: u64, dest: &'a mut [u8]) -> Self::ReadMemFutureU8 {
         let mut builder = redshirt_hardware_interface::HardwareOperationsBuilder::new();
@@ -107,7 +108,7 @@ unsafe impl<'a> usb_controller_driver::HwAccessRef<'a> for &'a HwAccess {
             u64::try_from(layout.size()).unwrap(),
             u64::try_from(layout.align()).unwrap(),
         )
-        .map(Ok)
+        .map(|v| Ok(NonZeroU64::new(v).unwrap()))
         .boxed()
     }
 
@@ -116,7 +117,7 @@ unsafe impl<'a> usb_controller_driver::HwAccessRef<'a> for &'a HwAccess {
             u64::try_from(layout.size()).unwrap(),
             u64::try_from(layout.align()).unwrap(),
         )
-        .map(|v| Ok(u32::try_from(v).unwrap())) // TODO: hardware interface has no way to force 32bits allocation
+        .map(|v| Ok(NonZeroU32::new(u32::try_from(v).unwrap()).unwrap())) // TODO: hardware interface has no way to force 32bits allocation
         .boxed()
     }
 

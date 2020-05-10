@@ -16,7 +16,7 @@
 use crate::{Buffer32, HwAccessRef};
 
 use alloc::alloc::handle_alloc_error;
-use core::{alloc::Layout, marker::PhantomData};
+use core::{alloc::Layout, marker::PhantomData, num::NonZeroU32};
 
 /// A single endpoint descriptor.
 ///
@@ -68,7 +68,11 @@ where
 {
     /// Allocates a new endpoint descriptor buffer in physical memory.
     pub async fn new(hardware_access: TAcc, config: Config) -> EndpointDescriptor<TAcc> {
-        let buffer = Buffer32::new(hardware_access.clone(), ENDPOINT_DESCRIPTOR_LAYOUT).await;
+        let buffer = {
+            const ENDPOINT_DESCRIPTOR_LAYOUT: Layout =
+                unsafe { Layout::from_size_align_unchecked(16, 16) };
+            Buffer32::new(hardware_access.clone(), ENDPOINT_DESCRIPTOR_LAYOUT).await
+        };
 
         let header = EndpointControlDecoded {
             maximum_packet_size: config.maximum_packet_size,
@@ -82,10 +86,10 @@ where
 
         unsafe {
             hardware_access
-                .write_memory_u8(u64::from(buffer.pointer()), &header.encode())
+                .write_memory_u8(u64::from(buffer.pointer().get()), &header.encode())
                 .await;
             hardware_access
-                .write_memory_u32(u64::from(buffer.pointer() + 12), &[0])
+                .write_memory_u32(u64::from(buffer.pointer().get() + 12), &[0])
                 .await;
         }
 
@@ -98,32 +102,66 @@ where
     /// Returns the physical memory address of the descriptor.
     ///
     /// This value never changes and is valid until the [`EndpointDescriptor`] is destroyed.
-    pub fn pointer(&self) -> u32 {
+    pub fn pointer(&self) -> NonZeroU32 {
         self.buffer.pointer()
+    }
+
+    /// Returns the value of the next endpoint descriptor in the linked list.
+    ///
+    /// If [`EndpointDescriptor::set_next`] or [`EndpointDescriptor::set_next_raw`] was previously
+    /// called, returns the corresponding physical memory pointer. If
+    /// [`EndpointDescriptor::clear_next`]
+    pub async fn get_next_raw(&self) -> u32 {
+        unsafe {
+            let mut out = [0];
+            self.hardware_access
+                .read_memory_u32(u64::from(self.buffer.pointer().get() + 12), &mut out)
+                .await;
+            out[0]
+        }
     }
 
     /// Sets the next endpoint descriptor in the linked list.
     ///
     /// Endpoint descriptors are always part of a linked list, where each descriptor points to the
     /// next one, or to nothing.
+    ///
+    /// # Safety
+    ///
+    /// `next` must remain valid until the next time [`EndpointDescriptor::clear_next`],
+    /// [`EndpointDescriptor::set_next`] or [`EndpointDescriptor::set_next_raw`] is called, or
+    /// until this [`EndpointDescriptor`] is destroyed.
     pub async unsafe fn set_next<UAcc>(&self, next: &EndpointDescriptor<UAcc>)
     where
+        UAcc: Clone,
         for<'r> &'r UAcc: HwAccessRef<'r>,
     {
-        unimplemented!()
+        self.set_next_raw(next.pointer().get()).await;
+    }
+
+    /// Sets the next endpoint descriptor in the linked list.
+    ///
+    /// If 0 is passed, has the same effect as [`EndpointDescriptor::clear_next`].
+    ///
+    /// # Safety
+    ///
+    /// If not 0, `next` must be the physical memory address of an endpoint descriptor. It must
+    /// remain valid until the next time [`EndpointDescriptor::clear_next`],
+    /// [`EndpointDescriptor::set_next`] or [`EndpointDescriptor::set_next_raw`] is called, or
+    /// until this [`EndpointDescriptor`] is destroyed.
+    pub async unsafe fn set_next_raw(&self, next: u32) {
+        self.hardware_access
+            .write_memory_u32(u64::from(self.buffer.pointer().get() + 12), &[next])
+            .await;
     }
 
     /// Sets the next endpoint descriptor in the linked list to nothing.
     pub async fn clear_next(&self) {
         unsafe {
-            self.hardware_access
-                .write_memory_u32(u64::from(self.buffer.pointer() + 12), &[0])
-                .await;
+            self.set_next_raw(0);
         }
     }
 }
-
-const ENDPOINT_DESCRIPTOR_LAYOUT: Layout = unsafe { Layout::from_size_align_unchecked(16, 16) };
 
 #[derive(Debug)]
 struct EndpointControlDecoded {

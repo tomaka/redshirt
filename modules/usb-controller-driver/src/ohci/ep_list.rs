@@ -17,17 +17,19 @@
 //!
 //! One of the most important part of the OHCI specs is the "endpoint lists processing". The host
 //! must maintain a certain number of **endpoint lists** in memory that the USB controller will
-//! read and process.
+//! read and process. This module represents one such lists.
 //!
 //! Each endpoint list is a linked list of **endpoint descriptors**. Each endpoint descriptor
 //! is specific to one USB endpoint. A USB endpoint is a functionality on a USB device.
 //!
 //! Each endpoint descriptor contains, in turn, a linked list of **transfer descriptors** (TD).
-//! Each transfer descriptor represents one transfer to be performed from or to a USB device.
+//! Each transfer descriptor represents one transfer to be performed from or to the USB endpoint
+//! referred to by the endpoint descriptor.
 
 use crate::{ohci::ep_descriptor, HwAccessRef};
 
 use alloc::vec::Vec;
+use core::num::NonZeroU32;
 
 pub use ep_descriptor::{Config, Direction};
 
@@ -51,6 +53,7 @@ where
     TAcc: Clone,
     for<'r> &'r TAcc: HwAccessRef<'r>,
 {
+    /// Initializes a new endpoint descriptors list.
     pub async fn new(hardware_access: TAcc) -> EndpointList<TAcc> {
         let dummy_descriptor = {
             let config = Config {
@@ -75,13 +78,28 @@ where
     /// Returns the physical memory address of the head of the list.
     ///
     /// This value never changes and is valid until the [`EndpointList`] is destroyed.
-    pub fn head_pointer(&self) -> u32 {
+    pub fn head_pointer(&self) -> NonZeroU32 {
         self.dummy_descriptor.pointer()
     }
 
+    /// Adds a new endpoint descriptor to the list.
     pub async fn push(&mut self, config: Config) {
-        let new_descriptor =
+        let current_last = self
+            .descriptors
+            .last_mut()
+            .unwrap_or(&mut self.dummy_descriptor);
+
+        let mut new_descriptor =
             ep_descriptor::EndpointDescriptor::new(self.hardware_access.clone(), config).await;
+
+        unsafe {
+            // The order here is important. First make the new descriptor pointer to the current
+            // location, then only pointer to that new descriptor. This ensures that the
+            // controller doesn't jump to the new descriptor before it's ready.
+            new_descriptor.set_next_raw(current_last.get_next_raw().await).await;
+            current_last.set_next(&new_descriptor).await;
+        }
+
         self.descriptors.push(new_descriptor);
     }
 }

@@ -90,30 +90,30 @@ where
         // Allocate the bulk and control lists, and set the appropriate registers.
         let control_list = ep_list::EndpointList::new(hardware_access.clone()).await;
         let bulk_list = ep_list::EndpointList::new(hardware_access.clone()).await;
-        assert_eq!(control_list.head_pointer() % 16, 0);
-        assert_eq!(bulk_list.head_pointer() % 16, 0);
+        assert_eq!(control_list.head_pointer().get() % 16, 0);
+        assert_eq!(bulk_list.head_pointer().get() % 16, 0);
         hardware_access
             .write_memory_u32(
                 config.registers_location + definitions::HC_CONTROL_HEAD_ED_OFFSET,
-                &[control_list.head_pointer()],
+                &[control_list.head_pointer().get()],
             )
             .await;
         hardware_access
             .write_memory_u32(
                 config.registers_location + definitions::HC_CONTROL_CURRENT_ED_OFFSET,
-                &[control_list.head_pointer()],
+                &[control_list.head_pointer().get()],
             )
             .await;
         hardware_access
             .write_memory_u32(
                 config.registers_location + definitions::HC_BULK_HEAD_ED_OFFSET,
-                &[bulk_list.head_pointer()],
+                &[bulk_list.head_pointer().get()],
             )
             .await;
         hardware_access
             .write_memory_u32(
                 config.registers_location + definitions::HC_BULK_CURRENT_ED_OFFSET,
-                &[bulk_list.head_pointer()],
+                &[bulk_list.head_pointer().get()],
             )
             .await;
 
@@ -146,11 +146,11 @@ where
             )
             .await
         };
-        assert_eq!(hcca.pointer() % 16, 0);
+        assert_eq!(hcca.pointer().get() % 16, 0);
         hardware_access
             .write_memory_u32(
                 config.registers_location + definitions::HC_HCCA_OFFSET,
-                &[hcca.pointer()],
+                &[hcca.pointer().get()],
             )
             .await;
 
