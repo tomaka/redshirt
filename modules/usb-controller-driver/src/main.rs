@@ -21,7 +21,7 @@
 
 use futures::prelude::*;
 use parity_scale_codec::DecodeAll;
-use std::{alloc::Layout, borrow::Cow, convert::TryFrom as _};
+use std::{alloc::Layout, convert::TryFrom as _};
 
 fn main() {
     redshirt_log_interface::init();
@@ -103,15 +103,21 @@ unsafe impl<'a> usb_controller_driver::HwAccessRef<'a> for &'a HwAccess {
     }
 
     fn alloc64(self, layout: Layout) -> Self::Alloc64 {
-        redshirt_hardware_interface::malloc::malloc(u64::try_from(layout.size()).unwrap(), u64::try_from(layout.align()).unwrap())
-            .map(Ok)
-            .boxed()
+        redshirt_hardware_interface::malloc::malloc(
+            u64::try_from(layout.size()).unwrap(),
+            u64::try_from(layout.align()).unwrap(),
+        )
+        .map(Ok)
+        .boxed()
     }
 
     fn alloc32(self, layout: Layout) -> Self::Alloc32 {
-        redshirt_hardware_interface::malloc::malloc(u64::try_from(layout.size()).unwrap(), u64::try_from(layout.align()).unwrap())
-            .map(|v| Ok(u32::try_from(v).unwrap())) // TODO: hardware interface has no way to force 32bits allocation
-            .boxed()
+        redshirt_hardware_interface::malloc::malloc(
+            u64::try_from(layout.size()).unwrap(),
+            u64::try_from(layout.align()).unwrap(),
+        )
+        .map(|v| Ok(u32::try_from(v).unwrap())) // TODO: hardware interface has no way to force 32bits allocation
+        .boxed()
     }
 
     unsafe fn dealloc(self, address: u64, _: bool, _: Layout) {

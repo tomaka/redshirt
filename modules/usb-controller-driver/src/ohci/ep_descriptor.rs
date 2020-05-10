@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::HwAccessRef;
+use crate::{Buffer32, HwAccessRef};
 
 use alloc::alloc::handle_alloc_error;
 use core::{alloc::Layout, marker::PhantomData};
@@ -33,7 +33,7 @@ where
     /// Hardware abstraction layer.
     hardware_access: TAcc,
     /// Physical memory buffer containing the endpoint descriptor.
-    buffer: u32,
+    buffer: Buffer32<TAcc>,
 }
 
 /// Configuration when initialization an [`EndpointDescriptor`].
@@ -63,14 +63,12 @@ pub enum Direction {
 
 impl<TAcc> EndpointDescriptor<TAcc>
 where
+    TAcc: Clone,
     for<'r> &'r TAcc: HwAccessRef<'r>,
 {
     /// Allocates a new endpoint descriptor buffer in physical memory.
     pub async fn new(hardware_access: TAcc, config: Config) -> EndpointDescriptor<TAcc> {
-        let buffer = match hardware_access.alloc32(ENDPOINT_DESCRIPTOR_LAYOUT).await {
-            Ok(b) => b,
-            Err(_) => handle_alloc_error(ENDPOINT_DESCRIPTOR_LAYOUT), // TODO: return error instead
-        };
+        let buffer = Buffer32::new(hardware_access.clone(), ENDPOINT_DESCRIPTOR_LAYOUT).await;
 
         let header = EndpointControlDecoded {
             maximum_packet_size: config.maximum_packet_size,
@@ -84,15 +82,24 @@ where
 
         unsafe {
             hardware_access
-                .write_memory_u8(u64::from(buffer), &header.encode())
+                .write_memory_u8(u64::from(buffer.pointer()), &header.encode())
                 .await;
-            hardware_access.write_memory_u32(u64::from(buffer + 12), &[0]).await;
+            hardware_access
+                .write_memory_u32(u64::from(buffer.pointer() + 12), &[0])
+                .await;
         }
 
         EndpointDescriptor {
             hardware_access,
             buffer,
         }
+    }
+
+    /// Returns the physical memory address of the descriptor.
+    ///
+    /// This value never changes and is valid until the [`EndpointDescriptor`] is destroyed.
+    pub fn pointer(&self) -> u32 {
+        self.buffer.pointer()
     }
 
     /// Sets the next endpoint descriptor in the linked list.
@@ -110,20 +117,8 @@ where
     pub async fn clear_next(&self) {
         unsafe {
             self.hardware_access
-                .write_memory_u32(u64::from(self.buffer + 12), &[0])
+                .write_memory_u32(u64::from(self.buffer.pointer() + 12), &[0])
                 .await;
-        }
-    }
-}
-
-impl<TAcc> EndpointDescriptor<TAcc>
-where
-    for<'r> &'r TAcc: HwAccessRef<'r>,
-{
-    fn drop(&mut self) {
-        unsafe {
-            self.hardware_access
-                .dealloc(u64::from(self.buffer), true, ENDPOINT_DESCRIPTOR_LAYOUT);
         }
     }
 }

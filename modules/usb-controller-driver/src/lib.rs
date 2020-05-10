@@ -74,3 +74,49 @@ pub unsafe trait HwAccessRef<'a>: Copy + Clone {
     /// match the layout that was passed to `alloc`.
     unsafe fn dealloc(self, address: u64, alloc32: bool, layout: Layout);
 }
+
+pub struct Buffer32<TAcc>
+where
+    for<'r> &'r TAcc: HwAccessRef<'r>,
+{
+    hardware_access: TAcc,
+    buffer: u32,
+    layout: Layout,
+}
+
+impl<TAcc> Buffer32<TAcc>
+where
+    for<'r> &'r TAcc: HwAccessRef<'r>,
+{
+    pub async fn new(hardware_access: TAcc, layout: Layout) -> Buffer32<TAcc> {
+        let buffer = match hardware_access.alloc32(layout).await {
+            Ok(b) => b,
+            Err(_) => alloc::alloc::handle_alloc_error(layout), // TODO: return error instead
+        };
+
+        Buffer32 {
+            hardware_access,
+            buffer,
+            layout,
+        }
+    }
+
+    /// Returns the physical memory address of the buffer.
+    ///
+    /// This value never changes and is valid until the [`Buffer32`] is destroyed.
+    pub fn pointer(&self) -> u32 {
+        self.buffer
+    }
+}
+
+impl<TAcc> Buffer32<TAcc>
+where
+    for<'r> &'r TAcc: HwAccessRef<'r>,
+{
+    fn drop(&mut self) {
+        unsafe {
+            self.hardware_access
+                .dealloc(u64::from(self.buffer), true, self.layout);
+        }
+    }
+}

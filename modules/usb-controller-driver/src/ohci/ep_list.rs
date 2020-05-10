@@ -57,7 +57,7 @@ where
                 maximum_packet_size: 0,
                 function_address: 0,
                 endpoint_number: 0,
-                isochronous: false,  // TODO: must be correct I guess
+                isochronous: false, // TODO: must be correct I guess
                 low_speed: false,
                 direction: Direction::FromTd,
             };
@@ -70,6 +70,13 @@ where
             dummy_descriptor,
             descriptors: Vec::new(),
         }
+    }
+
+    /// Returns the physical memory address of the head of the list.
+    ///
+    /// This value never changes and is valid until the [`EndpointList`] is destroyed.
+    pub fn head_pointer(&self) -> u32 {
+        self.dummy_descriptor.pointer()
     }
 
     pub async fn push(&mut self, config: Config) {
