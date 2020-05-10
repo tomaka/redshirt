@@ -49,13 +49,13 @@ where
         )
         .await;
 
-        let isochronous_list = ep_list::EndpointList::new(hardware_access.clone()).await;
+        let isochronous_list = ep_list::EndpointList::new(hardware_access.clone(), true).await;
 
         // Initialize one endpoint list for each interrupt list.
         let interrupt_lists = {
             let mut interrupt_lists = ArrayVec::new();
             for n in 0..32 {
-                let mut list = ep_list::EndpointList::new(hardware_access.clone()).await;
+                let mut list = ep_list::EndpointList::new(hardware_access.clone(), false).await;
                 unsafe {
                     list.set_next(&isochronous_list).await;
                     hardware_access

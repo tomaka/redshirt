@@ -40,6 +40,8 @@ where
 {
     /// Hardware abstraction layer.
     hardware_access: TAcc,
+    /// True if this is a list of isochronous transfers.
+    isochronous: bool,
     /// The list always starts with a dummy descriptor, allowing us to have a constant start.
     /// This not something enforced by the specs, but it is recommended by the specs for ease of
     /// implementation.
@@ -54,13 +56,13 @@ where
     for<'r> &'r TAcc: HwAccessRef<'r>,
 {
     /// Initializes a new endpoint descriptors list.
-    pub async fn new(hardware_access: TAcc) -> EndpointList<TAcc> {
+    pub async fn new(hardware_access: TAcc, isochronous: bool) -> EndpointList<TAcc> {
         let dummy_descriptor = {
             let config = Config {
                 maximum_packet_size: 0,
                 function_address: 0,
                 endpoint_number: 0,
-                isochronous: false, // TODO: must be correct I guess
+                isochronous,
                 low_speed: false,
                 direction: Direction::FromTd,
             };
@@ -70,6 +72,7 @@ where
 
         EndpointList {
             hardware_access,
+            isochronous,
             dummy_descriptor,
             descriptors: Vec::new(),
         }
@@ -105,7 +108,13 @@ where
     }
 
     /// Adds a new endpoint descriptor to the list.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `config.isochronous` is not the same value as what was passed to `new`.
     pub async fn push(&mut self, config: Config) {
+        assert_eq!(config.isochronous, self.isochronous);
+
         let current_last = self
             .descriptors
             .last_mut()

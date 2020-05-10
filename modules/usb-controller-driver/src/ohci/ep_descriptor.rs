@@ -16,7 +16,7 @@
 use crate::{ohci::transfer_descriptor, Buffer32, HwAccessRef};
 
 use alloc::alloc::handle_alloc_error;
-use core::{alloc::Layout, marker::PhantomData, num::NonZeroU32};
+use core::{alloc::Layout, marker::PhantomData, mem, num::NonZeroU32};
 
 /// A single endpoint descriptor.
 ///
@@ -51,7 +51,11 @@ where
     /// Physical memory buffer containing the endpoint descriptor.
     buffer: Buffer32<TAcc>,
     /// Placeholder for the next transfer descriptor.
-    next_transfer_descriptor: transfer_descriptor::TransferDescriptor<TAcc>,
+    next_transfer_descriptor: transfer_descriptor::TransferDescriptorPlaceholder<TAcc>,
+    /// Value that was passed to `new`. Never modified.
+    isochronous: bool,
+    /// Direction value that was passed to `new`. Never modified.
+    direction: Direction,
 }
 
 /// Configuration when initialization an [`EndpointDescriptor`].
@@ -72,7 +76,7 @@ pub struct Config {
     pub direction: Direction,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub enum Direction {
     In,
     Out,
@@ -102,8 +106,11 @@ where
             function_address: config.function_address,
         };
 
-        let next_transfer_descriptor =
-            transfer_descriptor::TransferDescriptor::new(hardware_access.clone()).await;
+        let next_transfer_descriptor = transfer_descriptor::TransferDescriptorPlaceholder::new(
+            hardware_access.clone(),
+            config.isochronous,
+        )
+        .await;
 
         unsafe {
             hardware_access
@@ -123,6 +130,8 @@ where
             hardware_access,
             buffer,
             next_transfer_descriptor,
+            isochronous: config.isochronous,
+            direction: config.direction,
         }
     }
 
@@ -131,6 +140,32 @@ where
     /// This value never changes and is valid until the [`EndpointDescriptor`] is destroyed.
     pub fn pointer(&self) -> NonZeroU32 {
         self.buffer.pointer()
+    }
+
+    // TODO: docs
+    pub async fn push_setup(&mut self) {
+        // Replace self.next_transfer_descriptor with a new placeholder.
+        let current_placeholder = {
+            let new_placeholder = transfer_descriptor::TransferDescriptorPlaceholder::new(
+                self.hardware_access.clone(),
+                self.isochronous,
+            )
+            .await;
+            mem::replace(&mut self.next_transfer_descriptor, new_placeholder)
+        };
+
+        // Set `current_placeholder` to the appropriate value.
+        //current_placeholder.set_next(new_placeholder);
+
+        // Update the tail to the new placeholder.
+        unsafe {
+            self.hardware_access
+                .write_memory_u32_be(
+                    u64::from(self.buffer.pointer().get() + 4),
+                    &[self.next_transfer_descriptor.pointer().get()],
+                )
+                .await;
+        }
     }
 
     /// Returns the value of the next endpoint descriptor in the linked list.

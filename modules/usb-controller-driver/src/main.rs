@@ -19,7 +19,7 @@
 //! USB interface.
 // TODO: only OHCI is implemented lol
 
-use core::num::{NonZeroU8, NonZeroU32, NonZeroU64};
+use core::num::{NonZeroU32, NonZeroU64, NonZeroU8};
 use futures::prelude::*;
 use parity_scale_codec::DecodeAll;
 use std::{alloc::Layout, convert::TryFrom as _};

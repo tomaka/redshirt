@@ -80,8 +80,8 @@ where
             .await;
 
         // Allocate the bulk and control lists, and set the appropriate registers.
-        let control_list = ep_list::EndpointList::new(hardware_access.clone()).await;
-        let bulk_list = ep_list::EndpointList::new(hardware_access.clone()).await;
+        let control_list = ep_list::EndpointList::new(hardware_access.clone(), false).await;
+        let bulk_list = ep_list::EndpointList::new(hardware_access.clone(), false).await;
         assert_eq!(control_list.head_pointer().get() % 16, 0);
         assert_eq!(bulk_list.head_pointer().get() % 16, 0);
         hardware_access

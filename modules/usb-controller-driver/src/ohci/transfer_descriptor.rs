@@ -18,6 +18,63 @@ use crate::{Buffer32, HwAccessRef};
 use alloc::alloc::handle_alloc_error;
 use core::{alloc::Layout, convert::TryFrom as _, marker::PhantomData, num::NonZeroU32};
 
+/// Placeholder for a future transfer descriptor.
+///
+/// Contains a physical buffer allocation but without any meaning.
+pub struct TransferDescriptorPlaceholder<TAcc>
+where
+    for<'r> &'r TAcc: HwAccessRef<'r>,
+{
+    /// Hardware abstraction layer.
+    hardware_access: TAcc,
+    /// True if this is an isochronous descriptor.
+    isochronous: bool,
+    /// Physical memory buffer containing the transfer descriptor.
+    descriptor: Buffer32<TAcc>,
+}
+
+impl<TAcc> TransferDescriptorPlaceholder<TAcc>
+where
+    TAcc: Clone,
+    for<'r> &'r TAcc: HwAccessRef<'r>,
+{
+    /// Allocates a new transfer descriptor buffer in physical memory.
+    pub async fn new(
+        hardware_access: TAcc,
+        isochronous: bool,
+    ) -> TransferDescriptorPlaceholder<TAcc> {
+        let descriptor = {
+            const GENERIC_LAYOUT: Layout = unsafe { Layout::from_size_align_unchecked(16, 16) };
+            const ISOCHRONOUS_LAYOUT: Layout = unsafe { Layout::from_size_align_unchecked(32, 32) };
+            let layout = if isochronous {
+                ISOCHRONOUS_LAYOUT
+            } else {
+                GENERIC_LAYOUT
+            };
+
+            Buffer32::new(hardware_access.clone(), layout).await
+        };
+
+        TransferDescriptorPlaceholder {
+            hardware_access,
+            isochronous,
+            descriptor,
+        }
+    }
+
+    /// Returns the physical memory address of the descriptor.
+    ///
+    /// This value never changes and is valid until the [`TransferDescriptor`] is destroyed.
+    pub fn pointer(&self) -> NonZeroU32 {
+        self.descriptor.pointer()
+    }
+
+    /// Turns the prototype into an actual descriptor.
+    pub fn build(self) -> TransferDescriptor<TAcc> {
+        unimplemented!()
+    }
+}
+
 /// A single transfer descriptor, either general or isochronous.
 ///
 /// This structure can be seen as a transfer that the USB controller must perform with a specific
