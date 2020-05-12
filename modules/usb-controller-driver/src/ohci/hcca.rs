@@ -23,7 +23,7 @@
 use crate::{ohci::ep_list, Buffer32, HwAccessRef};
 
 use arrayvec::ArrayVec;
-use core::{alloc::Layout, num::NonZeroU32};
+use core::{alloc::Layout, convert::TryFrom as _, num::NonZeroU32};
 
 // TODO: implement the Done queue stuff
 
@@ -97,29 +97,45 @@ where
         self.buffer.pointer()
     }
 
+    // TODO: docs
+    pub async fn frame_number(&self) -> u16 {
+        unsafe {
+            // The frame number is actually a 16bits number at offset 0x80. We read 32bits, then
+            // keep the most significant bits.
+            let mut out = [0];
+            self.hardware_access
+                .read_memory_u32_be(u64::from(self.buffer.pointer().get() + 0x80), &mut out)
+                .await;
+            u16::try_from(out[0] >> 16).unwrap()
+        }
+    }
+
     /// Extracts the transfer descriptors from the done queue.
     ///
     /// Transfer descriptors that are finished execution are moved to the done queue.
-    pub async fn extract_done_queue(&mut self) {
-        unsafe {
-            // Read the value of the `DoneHead` field.
-            let done_head = {
-                let mut out = [0];
-                self.hardware_access
-                    .read_memory_u32_be(u64::from(self.buffer.pointer().get() + 0x84), &mut out)
-                    .await;
-                out[0]
-            };
+    ///
+    /// # Safety
+    ///
+    /// To avoid race conditions, you must only call this function while the `WritebackDoneHead`
+    /// bit of `InterruptStatus` is set. You can then clear the bit.
+    pub async unsafe fn extract_done_queue(&mut self) {
+        // Read the value of the `DoneHead` field.
+        let done_head = {
+            let mut out = [0];
+            self.hardware_access
+                .read_memory_u32_be(u64::from(self.buffer.pointer().get() + 0x84), &mut out)
+                .await;
+            out[0]
+        };
 
-            // If this value if the same as last time, we immediately return.
-            // This pointer is stale, as it would be undefined behaviour to read it.
-            if done_head == self.latest_known_done_head {
-                return;
-            }
-            self.latest_known_done_head = done_head;
-
-            // TODO: finish
-            unimplemented!()
+        // If this value if the same as last time, we immediately return.
+        // This pointer is stale, as it would be undefined behaviour to read it.
+        if done_head == self.latest_known_done_head {
+            return;
         }
+        self.latest_known_done_head = done_head;
+
+        // TODO: finish
+        unimplemented!()
     }
 }

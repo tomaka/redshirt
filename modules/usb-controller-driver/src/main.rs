@@ -67,9 +67,15 @@ async fn async_main() {
                         port.is_enabled().await,
                         port.is_suspended().await
                     );
+
+                    device
+                        .push_control(&[0x80, 0x6, 0x1, 0x0, 0x0, 0x0, 0x0, 0x12])
+                        .await;
                 }
 
-                device.on_interrupt().await;
+                loop {
+                    device.on_interrupt().await;
+                }
             }
             (0xc, 0x3, 0x20) => {
                 // EHCI

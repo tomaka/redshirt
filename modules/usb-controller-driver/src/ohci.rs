@@ -80,7 +80,7 @@ where
             .await;
 
         // Allocate the bulk and control lists, and set the appropriate registers.
-        let control_list = ep_list::EndpointList::new(hardware_access.clone(), false).await;
+        let mut control_list = ep_list::EndpointList::new(hardware_access.clone(), false).await;
         let bulk_list = ep_list::EndpointList::new(hardware_access.clone(), false).await;
         assert_eq!(control_list.head_pointer().get() % 16, 0);
         assert_eq!(bulk_list.head_pointer().get() % 16, 0);
@@ -107,6 +107,18 @@ where
                 config.registers_location + registers::HC_BULK_CURRENT_ED_OFFSET,
                 &[bulk_list.head_pointer().get()],
             )
+            .await;
+
+        // TODO: remove this hack
+        control_list
+            .push(ep_list::Config {
+                maximum_packet_size: 4095,
+                function_address: 0,
+                endpoint_number: 0,
+                isochronous: false,
+                low_speed: true,
+                direction: ep_list::Direction::FromTd,
+            })
             .await;
 
         // Allocate the HCCA and set the appropriate register.
@@ -259,6 +271,23 @@ where
         }
     }
 
+    // TODO: remove hack
+    pub async fn push_control(&mut self, data: &[u8]) {
+        self.control_list
+            .get_mut(0)
+            .unwrap()
+            .push_packet(
+                ep_list::TransferDescriptorConfig::GeneralOut {
+                    data,
+                    setup: true,
+                    delay_interrupt: 0,
+                },
+                (),
+            )
+            .await;
+        self.inform_list_filled(true, false).await;
+    }
+
     /// Must be called whenever an interrupt is received.
     /// Alternatively, can also be called periodically.
     // TODO: expand on that ^
@@ -275,10 +304,15 @@ where
             out[0]
         };
 
+        log::info!("frame = 0x{:x}", self.hcca.frame_number().await);
+
         // WriteBackDoneHead
         // The controller has updated the done queue in the HCCA.
         if interrupt_status & (1 << 1) != 0 {
-            self.hcca.extract_done_queue().await;
+            panic!("success"); // TODO: remove:
+            unsafe {
+                self.hcca.extract_done_queue().await;
+            }
         }
 
         // RootHubStatusChange

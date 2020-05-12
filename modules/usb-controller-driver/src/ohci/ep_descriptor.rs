@@ -18,6 +18,8 @@ use crate::{ohci::transfer_descriptor, Buffer32, HwAccessRef};
 use alloc::alloc::handle_alloc_error;
 use core::{alloc::Layout, marker::PhantomData, mem, num::NonZeroU32};
 
+pub use transfer_descriptor::TransferDescriptorConfig;
+
 /// A single endpoint descriptor.
 ///
 /// This structure can be seen as a list of transfers that the USB controller must perform with
@@ -97,10 +99,11 @@ where
             Buffer32::new(hardware_access.clone(), ENDPOINT_DESCRIPTOR_LAYOUT).await
         };
 
+        // TODO: just inline this, don't bother with fanciness
         let header = EndpointControlDecoded {
             maximum_packet_size: config.maximum_packet_size,
             format: config.isochronous,
-            skip: true,
+            skip: false,
             low_speed: config.low_speed,
             direction: config.direction,
             endpoint_number: config.endpoint_number,
@@ -150,32 +153,16 @@ where
     // TODO: should add a method to destroy the endpoint descriptor without leaking unprocessed transfer descriptors?
     pub async fn push_packet<'a, TUd>(
         &mut self,
-        cfg: transfer_descriptor::TransferDescriptorConfig<'a>,
+        cfg: TransferDescriptorConfig<'a>,
         user_data: TUd,
     ) {
         // Check correctness of the operation.
         match (&cfg, self.isochronous, self.direction) {
-            (
-                transfer_descriptor::TransferDescriptorConfig::GeneralOut { .. },
-                false,
-                Direction::FromTd,
-            )
-            | (
-                transfer_descriptor::TransferDescriptorConfig::GeneralOut { .. },
-                false,
-                Direction::Out,
-            )
-            | (
-                transfer_descriptor::TransferDescriptorConfig::GeneralIn { .. },
-                false,
-                Direction::FromTd,
-            )
-            | (
-                transfer_descriptor::TransferDescriptorConfig::GeneralIn { .. },
-                false,
-                Direction::In,
-            )
-            | (transfer_descriptor::TransferDescriptorConfig::Isochronous { .. }, true, _) => {}
+            (TransferDescriptorConfig::GeneralOut { .. }, false, Direction::FromTd)
+            | (TransferDescriptorConfig::GeneralOut { .. }, false, Direction::Out)
+            | (TransferDescriptorConfig::GeneralIn { .. }, false, Direction::FromTd)
+            | (TransferDescriptorConfig::GeneralIn { .. }, false, Direction::In)
+            | (TransferDescriptorConfig::Isochronous { .. }, true, _) => {}
             _ => panic!(),
         }
 

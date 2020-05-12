@@ -31,7 +31,7 @@ use crate::{ohci::ep_descriptor, HwAccessRef};
 use alloc::vec::Vec;
 use core::num::NonZeroU32;
 
-pub use ep_descriptor::{Config, Direction};
+pub use ep_descriptor::{Config, Direction, TransferDescriptorConfig};
 
 /// Linked list of endpoint descriptors.
 pub struct EndpointList<TAcc>
@@ -57,6 +57,7 @@ where
 {
     /// Initializes a new endpoint descriptors list.
     pub async fn new(hardware_access: TAcc, isochronous: bool) -> EndpointList<TAcc> {
+        // TODO: force the dummy to have the skip flag?
         let dummy_descriptor = {
             let config = Config {
                 maximum_packet_size: 0,
@@ -134,5 +135,43 @@ where
         }
 
         self.descriptors.push(new_descriptor);
+    }
+
+    /// Returns the Nth endpoint in the list. Returns `None` if out of range.
+    pub fn get_mut(&mut self, index: usize) -> Option<Endpoint<TAcc>> {
+        if index >= self.descriptors.len() {
+            return None;
+        }
+
+        Some(Endpoint { list: self, index })
+    }
+}
+
+/// Access to a single endpoint.
+pub struct Endpoint<'a, TAcc>
+where
+    for<'r> &'r TAcc: HwAccessRef<'r>,
+{
+    list: &'a mut EndpointList<TAcc>,
+    index: usize,
+}
+
+impl<'a, TAcc> Endpoint<'a, TAcc>
+where
+    TAcc: Clone,
+    for<'r> &'r TAcc: HwAccessRef<'r>,
+{
+    /// Pushes a new packet at the end of the list of transfer descriptors.
+    ///
+    /// After this packet has been processed by the controller, it will be moved to the "done
+    /// queue" of the HCCA where you will be able to figure out whether the transfer worked.
+    pub async fn push_packet<'b, TUd>(
+        &mut self,
+        cfg: TransferDescriptorConfig<'b>,
+        user_data: TUd,
+    ) {
+        self.list.descriptors[self.index]
+            .push_packet(cfg, user_data)
+            .await
     }
 }
