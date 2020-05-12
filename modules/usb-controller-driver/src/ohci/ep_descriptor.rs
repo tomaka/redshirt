@@ -50,8 +50,9 @@ where
     hardware_access: TAcc,
     /// Physical memory buffer containing the endpoint descriptor.
     buffer: Buffer32<TAcc>,
-    /// Placeholder for the next transfer descriptor.
-    next_transfer_descriptor: transfer_descriptor::TransferDescriptorPlaceholder<TAcc>,
+    /// Placeholder for the next transfer descriptor. Should always be `Some`. Moved out only
+    /// temporarily.
+    next_transfer_descriptor: Option<transfer_descriptor::TransferDescriptorPlaceholder<TAcc>>,
     /// Value that was passed to `new`. Never modified.
     isochronous: bool,
     /// Direction value that was passed to `new`. Never modified.
@@ -129,7 +130,7 @@ where
         EndpointDescriptor {
             hardware_access,
             buffer,
-            next_transfer_descriptor,
+            next_transfer_descriptor: Some(next_transfer_descriptor),
             isochronous: config.isochronous,
             direction: config.direction,
         }
@@ -142,32 +143,63 @@ where
         self.buffer.pointer()
     }
 
-    // TODO: docs
-    pub async fn push_setup(&mut self) {
-        // Replace self.next_transfer_descriptor with a new placeholder.
-        let current_placeholder = {
-            let new_placeholder = transfer_descriptor::TransferDescriptorPlaceholder::new(
-                self.hardware_access.clone(),
-                self.isochronous,
+    /// Pushes a new packet at the end of the list of transfer descriptors.
+    ///
+    /// After this packet has been processed by the controller, it will be moved to the "done
+    /// queue" of the HCCA where you will be able to figure out whether the transfer worked.
+    // TODO: should add a method to destroy the endpoint descriptor without leaking unprocessed transfer descriptors?
+    pub async fn push_packet<'a, TUd>(
+        &mut self,
+        cfg: transfer_descriptor::TransferDescriptorConfig<'a>,
+        user_data: TUd,
+    ) {
+        // Check correctness of the operation.
+        match (&cfg, self.isochronous, self.direction) {
+            (
+                transfer_descriptor::TransferDescriptorConfig::GeneralOut { .. },
+                false,
+                Direction::FromTd,
             )
-            .await;
-            mem::replace(&mut self.next_transfer_descriptor, new_placeholder)
-        };
+            | (
+                transfer_descriptor::TransferDescriptorConfig::GeneralOut { .. },
+                false,
+                Direction::Out,
+            )
+            | (
+                transfer_descriptor::TransferDescriptorConfig::GeneralIn { .. },
+                false,
+                Direction::FromTd,
+            )
+            | (
+                transfer_descriptor::TransferDescriptorConfig::GeneralIn { .. },
+                false,
+                Direction::In,
+            )
+            | (transfer_descriptor::TransferDescriptorConfig::Isochronous { .. }, true, _) => {}
+            _ => panic!(),
+        }
 
-        // Set `current_placeholder` to the appropriate value.
-        //current_placeholder.set_next(new_placeholder);
+        // TODO: also check validity of maximum packet size
+
+        // Write `cfg` over `next_transfer_descriptor` and return the new queue tail.
+        let new_placeholder = self
+            .next_transfer_descriptor
+            .take()
+            .unwrap()
+            .build_and_leak(cfg, user_data)
+            .await;
 
         // Update the tail to the new placeholder.
         unsafe {
             self.hardware_access
                 .write_memory_u32_be(
                     u64::from(self.buffer.pointer().get() + 4),
-                    &[self.next_transfer_descriptor.pointer().get()],
+                    &[new_placeholder.pointer().get()],
                 )
                 .await;
         }
 
-        // TODO: must mem::forget(current_placeholder) or something similar
+        self.next_transfer_descriptor = Some(new_placeholder);
     }
 
     /// Returns the value of the next endpoint descriptor in the linked list.

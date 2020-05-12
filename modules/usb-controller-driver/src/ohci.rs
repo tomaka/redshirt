@@ -36,7 +36,6 @@ where
     hcca: hcca::Hcca<TAcc>,
     bulk_list: ep_list::EndpointList<TAcc>,
     control_list: ep_list::EndpointList<TAcc>,
-    hc_control_value: u32,
 
     /// Number of ports on the root hub.
     num_hub_ports: NonZeroU8,
@@ -236,7 +235,6 @@ where
             hcca,
             bulk_list,
             control_list,
-            hc_control_value,
             num_hub_ports,
         }
     }
@@ -348,6 +346,18 @@ where
         }
     }
 
+    async fn write_status(&self, dword: u32) {
+        unsafe {
+            let addr = self.controller.regs_loc
+                + registers::HC_RH_PORT_STATUS_1_OFFSET
+                + u64::from(self.port.get() - 1) * 4;
+            self.controller
+                .hardware_access
+                .write_memory_u32_be(addr, &[dword])
+                .await;
+        }
+    }
+
     /// Returns true if a device is connected to this port.
     pub async fn is_connected(&self) -> bool {
         self.status_dword().await & (1 << 0) != 0
@@ -358,8 +368,18 @@ where
         self.status_dword().await & (1 << 1) != 0
     }
 
+    /// Sets whether this port is enabled.
+    pub async fn set_enabled(&self, enabled: bool) {
+        self.write_status(if enabled { 1 << 1 } else { 1 << 0 }).await
+    }
+
     /// Returns true if this port is suspended.
     pub async fn is_suspended(&self) -> bool {
         self.status_dword().await & (1 << 2) != 0
+    }
+
+    /// Sets whether this port is suspended.
+    pub async fn set_suspended(&self, suspended: bool) {
+        self.write_status(if suspended { 1 << 2 } else { 1 << 3 }).await
     }
 }

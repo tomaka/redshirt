@@ -58,6 +58,9 @@ async fn async_main() {
 
                 for n in 1..device.root_hub_num_ports().get() {
                     let port = device.root_hub_port(NonZeroU8::new(n).unwrap()).unwrap();
+                    if port.is_connected().await {
+                        port.set_enabled(true).await;
+                    }
                     log::info!(
                         "{:?} {:?} {:?}",
                         port.is_connected().await,
