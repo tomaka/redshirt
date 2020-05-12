@@ -260,5 +260,3 @@ pub enum TransferDescriptorConfig<'a> {
         // TODO: not finished
     },
 }
-
-

@@ -239,6 +239,26 @@ where
         }
     }
 
+    /// Informs the controller that we have added new elements to either the control list, bulk
+    /// list, or both.
+    async fn inform_list_filled(&mut self, control_list: bool, bulk_list: bool) {
+        // The `HcCommandStatus` register is a "write to set" kind of register. Writing a 1
+        // activates the bit, and writing a 0 has no effect.
+        let dword = if control_list { 1 << 1 } else { 0 } | if bulk_list { 1 << 2 } else { 0 };
+        if dword == 0 {
+            return;
+        }
+
+        unsafe {
+            self.hardware_access
+                .write_memory_u32_be(
+                    self.regs_loc + registers::HC_COMMAND_STATUS_OFFSET,
+                    &[dword],
+                )
+                .await;
+        }
+    }
+
     /// Must be called whenever an interrupt is received.
     /// Alternatively, can also be called periodically.
     // TODO: expand on that ^
@@ -370,7 +390,8 @@ where
 
     /// Sets whether this port is enabled.
     pub async fn set_enabled(&self, enabled: bool) {
-        self.write_status(if enabled { 1 << 1 } else { 1 << 0 }).await
+        self.write_status(if enabled { 1 << 1 } else { 1 << 0 })
+            .await
     }
 
     /// Returns true if this port is suspended.
@@ -380,6 +401,7 @@ where
 
     /// Sets whether this port is suspended.
     pub async fn set_suspended(&self, suspended: bool) {
-        self.write_status(if suspended { 1 << 2 } else { 1 << 3 }).await
+        self.write_status(if suspended { 1 << 2 } else { 1 << 3 })
+            .await
     }
 }
