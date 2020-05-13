@@ -28,6 +28,8 @@ use core::{
     time::Duration,
 };
 
+mod device;
+
 pub mod ohci; // TODO: private
 
 /// Abstraction over the hardware.

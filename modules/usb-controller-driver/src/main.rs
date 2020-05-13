@@ -72,6 +72,8 @@ async fn async_main() {
                         port.is_enabled().await,
                         port.is_suspended().await
                     );
+                    port.reset().await;
+                    redshirt_time_interface::Delay::new(Duration::from_millis(10)).await;
 
                     device
                         .push_control(&[0x80, 0x6, 0x1, 0x0, 0x0, 0x0, 0x0, 0x12])

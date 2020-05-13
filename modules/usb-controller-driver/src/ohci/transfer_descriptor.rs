@@ -15,7 +15,7 @@
 
 use crate::{Buffer32, HwAccessRef};
 
-use alloc::{alloc::handle_alloc_error, vec};
+use alloc::{alloc::handle_alloc_error, vec, vec::Vec};
 use core::{alloc::Layout, convert::TryFrom as _, marker::PhantomData, mem, num::NonZeroU32, ptr};
 
 /// Placeholder for a future transfer descriptor.
@@ -44,12 +44,10 @@ where
         isochronous: bool,
     ) -> TransferDescriptorPlaceholder<TAcc> {
         let descriptor = {
-            const GENERIC_LAYOUT: Layout = unsafe { Layout::from_size_align_unchecked(16, 16) };
-            const ISOCHRONOUS_LAYOUT: Layout = unsafe { Layout::from_size_align_unchecked(32, 32) };
             let layout = if isochronous {
-                ISOCHRONOUS_LAYOUT
+                ISOCHRONOUS_DESCRIPTOR_LAYOUT
             } else {
-                GENERIC_LAYOUT
+                GENERIC_DESCRIPTOR_LAYOUT
             };
 
             Buffer32::new(hardware_access.clone(), layout).await
@@ -82,8 +80,7 @@ where
     /// This function assumes that `self` is the tail of the linked list. The value returned
     /// corresponds to the new tail of the queue, while `self` is "leaked" with a `mem::forget`.
     ///
-    /// The "leaked" descriptor can later be retreived by calling .
-    // TODO: calling what?
+    /// The "leaked" descriptor can later be retreived by calling [`extract_leaked`].
     pub async fn build_and_leak<'a, TUd>(
         self,
         config: TransferDescriptorConfig<'a>,
@@ -216,6 +213,9 @@ where
     }
 }
 
+const GENERIC_DESCRIPTOR_LAYOUT: Layout = unsafe { Layout::from_size_align_unchecked(16, 16) };
+const ISOCHRONOUS_DESCRIPTOR_LAYOUT: Layout = unsafe { Layout::from_size_align_unchecked(32, 32) };
+
 /// We append the following trailer after each buffer containing data, for later identification.
 #[repr(packed)]
 struct Trailer<TUd> {
@@ -259,4 +259,124 @@ pub enum TransferDescriptorConfig<'a> {
         delay_interrupt: u8,
         // TODO: not finished
     },
+}
+
+/// Assumes that the parameter points to a linked list of [`TransferDescriptorPlaceholder`]s and
+/// retreieves them.
+///
+/// # Safety
+///
+/// The pointer must be valid.
+/// The user data type must match the one used when building the descriptor.
+///
+pub async unsafe fn extract_leaked<TAcc, TUd>(
+    hardware_access: TAcc,
+    mut head_pointer: u32,
+) -> Vec<CompletedTransferDescriptor<TUd>>
+where
+    TAcc: Clone,
+    for<'r> &'r TAcc: HwAccessRef<'r>,
+{
+    let mut list = Vec::new();
+
+    loop {
+        if head_pointer == 0 {
+            return list;
+        }
+
+        let (desc, new_ptr) = extract_next(hardware_access.clone(), head_pointer).await;
+        list.push(desc);
+        head_pointer = new_ptr;
+    }
+}
+
+async unsafe fn extract_next<TAcc, TUd>(
+    hardware_access: TAcc,
+    pointer: u32,
+) -> (CompletedTransferDescriptor<TUd>, u32)
+where
+    for<'r> &'r TAcc: HwAccessRef<'r>,
+{
+    assert_ne!(pointer, 0);
+
+    // Read the first four bytes of the descriptor.
+    let descriptor_four_bytes = {
+        let mut out = [0, 0, 0, 0];
+        hardware_access
+            .read_memory_u32_le(u64::from(pointer), &mut out)
+            .await;
+        out
+    };
+
+    let completion_code = {
+        let num = u8::try_from(descriptor_four_bytes[0] >> 28).unwrap();
+        match num {
+            0b0000 => CompletionCode::NoError,
+            0b0001 => CompletionCode::Crc,
+            0b0010 => CompletionCode::BitStuffing,
+            0b0011 => CompletionCode::DataToggleMismatch,
+            0b0100 => CompletionCode::Stall,
+            0b0101 => CompletionCode::DeviceNotResponding,
+            0b0110 => CompletionCode::PIDCheckFailure,
+            0b0111 => CompletionCode::UnexpectedPID,
+            0b1000 => CompletionCode::DataOverrun,
+            0b1001 => CompletionCode::DataUnderrun,
+            0b1100 => CompletionCode::BufferOverrun,
+            0b1101 => CompletionCode::BufferUnderrun,
+            0b1110 => CompletionCode::NotAccessed,
+            0b1111 => CompletionCode::NotAccessed,
+            _ => panic!(),
+        }
+    };
+
+    log::info!("completion code = {:?}", completion_code);
+
+    // From that, we read the `Trailer` struct.
+    let trailer: Trailer<TUd> = {
+        let mut trailer_bytes = vec![0; mem::size_of::<Trailer<TUd>>()];
+        hardware_access
+            .read_memory_u8(u64::from(descriptor_four_bytes[3] + 1), &mut trailer_bytes)
+            .await;
+        ptr::read_unaligned(trailer_bytes.as_ptr() as *const _)
+    };
+
+    // Free the descriptor's buffer.
+    unsafe {
+        let layout = if trailer.isochronous {
+            ISOCHRONOUS_DESCRIPTOR_LAYOUT
+        } else {
+            GENERIC_DESCRIPTOR_LAYOUT
+        };
+        hardware_access.dealloc(u64::from(pointer), true, layout);
+    }
+
+    let result = CompletedTransferDescriptor {
+        completion_code,
+        user_data: trailer.user_data,
+    };
+    (result, descriptor_four_bytes[2])
+}
+
+#[derive(Debug)]
+pub struct CompletedTransferDescriptor<TUd> {
+    pub completion_code: CompletionCode,
+    pub user_data: TUd,
+}
+
+/// Possible completion code produced by the controller.
+#[derive(Debug, PartialEq, Eq)]
+pub enum CompletionCode {
+    NoError,
+    Crc,
+    BitStuffing,
+    DataToggleMismatch,
+    Stall,
+    DeviceNotResponding,
+    PIDCheckFailure,
+    UnexpectedPID,
+    DataOverrun,
+    DataUnderrun,
+    BufferOverrun,
+    BufferUnderrun,
+    NotAccessed,
 }

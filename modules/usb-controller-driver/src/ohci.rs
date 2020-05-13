@@ -304,15 +304,12 @@ where
             out[0]
         };
 
-        log::info!("frame = 0x{:x}", self.hcca.frame_number().await);
-
         // WriteBackDoneHead
         // The controller has updated the done queue in the HCCA.
         if interrupt_status & (1 << 1) != 0 {
-            //panic!("success"); // TODO: remove:
-            //unsafe {
-            //self.hcca.extract_done_queue().await;
-            //}
+            let list = unsafe { self.hcca.extract_done_queue::<()>().await };
+
+            log::info!("completed: {:?}", list);
         }
 
         // RootHubStatusChange
@@ -437,5 +434,10 @@ where
     pub async fn set_suspended(&self, suspended: bool) {
         self.write_status(if suspended { 1 << 2 } else { 1 << 3 })
             .await
+    }
+
+    /// Resets this port.
+    pub async fn reset(&self) {
+        self.write_status(1 << 4).await
     }
 }

@@ -20,10 +20,16 @@
 //! The HCCA is a data structure in system memory that contains various information in destination
 //! to the host controller.
 
-use crate::{ohci::ep_list, Buffer32, HwAccessRef};
+use crate::{
+    ohci::{ep_list, transfer_descriptor},
+    Buffer32, HwAccessRef,
+};
 
+use alloc::vec::Vec;
 use arrayvec::ArrayVec;
 use core::{alloc::Layout, convert::TryFrom as _, num::NonZeroU32};
+
+pub use transfer_descriptor::{CompletedTransferDescriptor, CompletionCode};
 
 // TODO: implement the Done queue stuff
 
@@ -116,24 +122,30 @@ where
     ///
     /// To avoid race conditions, you must only call this function while the `WritebackDoneHead`
     /// bit of `InterruptStatus` is set. You can then clear the bit.
-    pub async unsafe fn extract_done_queue(&mut self) {
+    ///
+    /// The user data must match the one that is used when pushing descriptors.
+    ///
+    pub async unsafe fn extract_done_queue<TUd>(
+        &mut self,
+    ) -> Vec<CompletedTransferDescriptor<TUd>> {
         // Read the value of the `DoneHead` field.
-        let done_head = {
+        let (done_head, _lsb_set) = {
             let mut out = [0];
             self.hardware_access
                 .read_memory_u32_le(u64::from(self.buffer.pointer().get() + 0x84), &mut out)
                 .await;
-            out[0]
+            let lsb_set = (out[0] & 0x1) == 1;
+            out[0] &= !0x1;
+            (out[0], lsb_set)
         };
 
         // If this value if the same as last time, we immediately return.
         // This pointer is stale, as it would be undefined behaviour to read it.
         if done_head == self.latest_known_done_head {
-            return;
+            return Vec::new();
         }
         self.latest_known_done_head = done_head;
 
-        // TODO: finish
-        unimplemented!()
+        transfer_descriptor::extract_leaked(self.hardware_access.clone(), done_head).await
     }
 }
