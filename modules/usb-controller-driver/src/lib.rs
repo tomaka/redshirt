@@ -49,21 +49,21 @@ pub unsafe trait HwAccessRef<'a>: Copy + Clone {
     unsafe fn read_memory_u8(self, address: u64, dest: &'a mut [u8]) -> Self::ReadMemFutureU8;
     /// Performs a serie of atomic physical memory reads starting at the given address.
     ///
-    /// The data must be read in big endian. If the current platform is little endian (which is
-    /// the case for x86), you should call `swap_bytes` after the read.
+    /// The data must be read in little endian. If the current platform is big endian, you should
+    /// call `swap_bytes` beforehand.
     ///
     /// `address` must be a multiple of 4.
-    unsafe fn read_memory_u32_be(self, address: u64, dest: &'a mut [u32])
+    unsafe fn read_memory_u32_le(self, address: u64, dest: &'a mut [u32])
         -> Self::ReadMemFutureU32;
     /// Performs a serie of atomic physical memory writes starting at the given address.
     unsafe fn write_memory_u8(self, address: u64, data: &[u8]) -> Self::WriteMemFutureU8;
     /// Performs a serie of atomic physical memory writes starting at the given address.
     ///
-    /// The data must be written in big endian. If the current platform is little endian (which is
-    /// the case for x86), you should call `swap_bytes` beforehand.
+    /// The data must be written in little endian. If the current platform is big endian, you
+    /// should call `swap_bytes` beforehand.
     ///
     /// `address` must be a multiple of 4.
-    unsafe fn write_memory_u32_be(self, address: u64, data: &[u32]) -> Self::WriteMemFutureU32;
+    unsafe fn write_memory_u32_le(self, address: u64, data: &[u32]) -> Self::WriteMemFutureU32;
 
     /// Allocate a memory buffer in physical memory. Does not need to be cleared with 0s.
     ///

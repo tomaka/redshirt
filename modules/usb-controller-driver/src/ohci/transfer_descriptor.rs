@@ -193,7 +193,7 @@ where
         // Write the actual descriptor.
         unsafe {
             self.hardware_access
-                .write_memory_u32_be(
+                .write_memory_u32_le(
                     u64::from(self.descriptor.pointer().get()),
                     &[
                         header,

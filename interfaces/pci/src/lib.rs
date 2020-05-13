@@ -21,7 +21,7 @@
 
 extern crate alloc;
 
-pub use self::ffi::{PciBaseAddressRegister, PciDeviceInfo};
+pub use self::ffi::{PciBaseAddressRegister, PciDeviceBdf, PciDeviceInfo};
 
 use alloc::vec::Vec;
 use futures::prelude::*;
@@ -36,5 +36,46 @@ pub fn get_pci_devices() -> impl Future<Output = Vec<PciDeviceInfo>> {
         redshirt_syscalls::emit_message_with_response(&ffi::INTERFACE, msg)
             .unwrap()
             .map(|response: ffi::GetDevicesListResponse| response.devices)
+    }
+}
+
+pub struct DeviceLock(ffi::PciDeviceBdf);
+
+impl DeviceLock {
+    pub async fn new(location: PciDeviceBdf) -> Result<Self, ()> {
+        unsafe {
+            let msg = ffi::PciMessage::LockDevice(location.clone());
+            let r: Result<(), ()> =
+                redshirt_syscalls::emit_message_with_response(&ffi::INTERFACE, msg)
+                    .unwrap()
+                    .await;
+            r?;
+            Ok(DeviceLock(location))
+        }
+    }
+
+    pub fn set_command(&self, bus_master: bool, memory_space: bool, io_space: bool) {
+        unsafe {
+            redshirt_syscalls::emit_message_without_response(&ffi::INTERFACE, &{
+                ffi::PciMessage::SetCommand {
+                    location: self.0.clone(),
+                    bus_master,
+                    memory_space,
+                    io_space,
+                }
+            })
+            .unwrap();
+        }
+    }
+}
+
+impl Drop for DeviceLock {
+    fn drop(&mut self) {
+        unsafe {
+            redshirt_syscalls::emit_message_without_response(&ffi::INTERFACE, &{
+                ffi::PciMessage::UnlockDevice(self.0.clone())
+            })
+            .unwrap();
+        }
     }
 }

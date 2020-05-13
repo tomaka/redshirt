@@ -73,7 +73,7 @@ where
 
         // Set the `FmInterval` register.
         hardware_access
-            .write_memory_u32_be(
+            .write_memory_u32_le(
                 config.registers_location + registers::HC_FM_INTERVAL_OFFSET,
                 &[config.fm_interval_value],
             )
@@ -85,25 +85,25 @@ where
         assert_eq!(control_list.head_pointer().get() % 16, 0);
         assert_eq!(bulk_list.head_pointer().get() % 16, 0);
         hardware_access
-            .write_memory_u32_be(
+            .write_memory_u32_le(
                 config.registers_location + registers::HC_CONTROL_HEAD_ED_OFFSET,
                 &[control_list.head_pointer().get()],
             )
             .await;
         hardware_access
-            .write_memory_u32_be(
+            .write_memory_u32_le(
                 config.registers_location + registers::HC_CONTROL_CURRENT_ED_OFFSET,
                 &[control_list.head_pointer().get()],
             )
             .await;
         hardware_access
-            .write_memory_u32_be(
+            .write_memory_u32_le(
                 config.registers_location + registers::HC_BULK_HEAD_ED_OFFSET,
                 &[bulk_list.head_pointer().get()],
             )
             .await;
         hardware_access
-            .write_memory_u32_be(
+            .write_memory_u32_le(
                 config.registers_location + registers::HC_BULK_CURRENT_ED_OFFSET,
                 &[bulk_list.head_pointer().get()],
             )
@@ -127,14 +127,14 @@ where
             let req_alignment = {
                 // See section 7.2.1. We write all 1s to the HcHCCA register and read the value back.
                 hardware_access
-                    .write_memory_u32_be(
+                    .write_memory_u32_le(
                         config.registers_location + registers::HC_HCCA_OFFSET,
                         &[0xffffffff],
                     )
                     .await;
                 let mut out = [0];
                 hardware_access
-                    .read_memory_u32_be(
+                    .read_memory_u32_le(
                         config.registers_location + registers::HC_HCCA_OFFSET,
                         &mut out,
                     )
@@ -152,7 +152,7 @@ where
         };
         assert_eq!(hcca.pointer().get() % 16, 0);
         hardware_access
-            .write_memory_u32_be(
+            .write_memory_u32_le(
                 config.registers_location + registers::HC_HCCA_OFFSET,
                 &[hcca.pointer().get()],
             )
@@ -164,7 +164,7 @@ where
             let frame_interval = config.fm_interval_value & ((1 << 14) - 1);
             let periodic_start = (9 * frame_interval) / 10;
             hardware_access
-                .write_memory_u32_be(
+                .write_memory_u32_le(
                     config.registers_location + registers::HC_PERIODIC_START_OFFSET,
                     &[periodic_start],
                 )
@@ -176,7 +176,7 @@ where
         let mut hc_control_value = {
             let mut out = [0];
             hardware_access
-                .read_memory_u32_be(
+                .read_memory_u32_le(
                     config.registers_location + registers::HC_CONTROL_OFFSET,
                     &mut out,
                 )
@@ -196,7 +196,7 @@ where
         // write below, but the example in the specs does it in two steps, so we do it in two
         // steps as well.
         hardware_access
-            .write_memory_u32_be(
+            .write_memory_u32_le(
                 config.registers_location + registers::HC_CONTROL_OFFSET,
                 &[hc_control_value],
             )
@@ -204,14 +204,14 @@ where
 
         // Disable all non-reserved interrupts.
         hardware_access
-            .write_memory_u32_be(
+            .write_memory_u32_le(
                 config.registers_location + registers::HC_INTERRUPT_DISABLE_OFFSET,
                 &[(1 << 30) | 0b1111111],
             )
             .await;
         // Enable the master interrupt.
         hardware_access
-            .write_memory_u32_be(
+            .write_memory_u32_le(
                 config.registers_location + registers::HC_INTERRUPT_ENABLE_OFFSET,
                 &[1 << 31],
             )
@@ -220,7 +220,7 @@ where
         // Now set it to UsbOperational.
         hc_control_value = (hc_control_value & !(0b11 << 6)) | (0b10 << 6);
         hardware_access
-            .write_memory_u32_be(
+            .write_memory_u32_le(
                 config.registers_location + registers::HC_CONTROL_OFFSET,
                 &[hc_control_value],
             )
@@ -230,7 +230,7 @@ where
         let num_hub_ports = {
             let mut out = [0];
             hardware_access
-                .read_memory_u32_be(
+                .read_memory_u32_le(
                     config.registers_location + registers::HC_RH_DESCRIPTOR_A_OFFSET,
                     &mut out,
                 )
@@ -263,7 +263,7 @@ where
 
         unsafe {
             self.hardware_access
-                .write_memory_u32_be(
+                .write_memory_u32_le(
                     self.regs_loc + registers::HC_COMMAND_STATUS_OFFSET,
                     &[dword],
                 )
@@ -296,7 +296,7 @@ where
         let interrupt_status = unsafe {
             let mut out = [0];
             self.hardware_access
-                .read_memory_u32_be(
+                .read_memory_u32_le(
                     self.regs_loc + registers::HC_INTERRUPT_STATUS_OFFSET,
                     &mut out,
                 )
@@ -309,10 +309,10 @@ where
         // WriteBackDoneHead
         // The controller has updated the done queue in the HCCA.
         if interrupt_status & (1 << 1) != 0 {
-            panic!("success"); // TODO: remove:
-            unsafe {
-                self.hcca.extract_done_queue().await;
-            }
+            //panic!("success"); // TODO: remove:
+            //unsafe {
+            //self.hcca.extract_done_queue().await;
+            //}
         }
 
         // RootHubStatusChange
@@ -330,7 +330,7 @@ where
         // Clear all interrupt status flags.
         unsafe {
             self.hardware_access
-                .write_memory_u32_be(
+                .write_memory_u32_le(
                     self.regs_loc + registers::HC_INTERRUPT_STATUS_OFFSET,
                     &[interrupt_status],
                 )
@@ -394,7 +394,7 @@ where
                 + u64::from(self.port.get() - 1) * 4;
             self.controller
                 .hardware_access
-                .read_memory_u32_be(addr, &mut out)
+                .read_memory_u32_le(addr, &mut out)
                 .await;
             out[0]
         }
@@ -407,7 +407,7 @@ where
                 + u64::from(self.port.get() - 1) * 4;
             self.controller
                 .hardware_access
-                .write_memory_u32_be(addr, &[dword])
+                .write_memory_u32_le(addr, &[dword])
                 .await;
         }
     }

@@ -136,6 +136,29 @@ impl<'a> NativeProgramRef<'a> for &'a PciNativeProgram {
                 }
             }
 
+            Ok(ffi::PciMessage::SetCommand {
+                location,
+                io_space,
+                memory_space,
+                bus_master,
+            }) => {
+                let mut locked_devices = self.locked_devices.lock();
+                if let Some(dev) = locked_devices
+                    .iter_mut()
+                    .find(|dev| dev.owner == emitter_pid && dev.bdf == location)
+                {
+                    self.devices
+                        .devices()
+                        .find(|d| {
+                            d.bus() == location.bus
+                                && d.device() == location.device
+                                && d.function() == location.function
+                        })
+                        .unwrap()
+                        .set_command(bus_master, memory_space, io_space);
+                }
+            }
+
             Ok(ffi::PciMessage::NextInterrupt(bdf)) => {
                 // TODO: actually make these interrupts work
                 if let Some(message_id) = message_id {

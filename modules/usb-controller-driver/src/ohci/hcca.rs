@@ -62,7 +62,7 @@ where
                 unsafe {
                     list.set_next(&isochronous_list).await;
                     hardware_access
-                        .write_memory_u32_be(
+                        .write_memory_u32_le(
                             u64::from(buffer.pointer().get()) + 4 * n,
                             &[list.head_pointer().get()],
                         )
@@ -100,13 +100,11 @@ where
     // TODO: docs
     pub async fn frame_number(&self) -> u16 {
         unsafe {
-            // The frame number is actually a 16bits number at offset 0x80. We read 32bits, then
-            // keep the most significant bits.
-            let mut out = [0];
+            let mut out = [0, 0];
             self.hardware_access
-                .read_memory_u32_be(u64::from(self.buffer.pointer().get() + 0x80), &mut out)
+                .read_memory_u8(u64::from(self.buffer.pointer().get() + 0x80), &mut out)
                 .await;
-            u16::try_from(out[0] >> 16).unwrap()
+            u16::from_le_bytes(out)
         }
     }
 
@@ -123,7 +121,7 @@ where
         let done_head = {
             let mut out = [0];
             self.hardware_access
-                .read_memory_u32_be(u64::from(self.buffer.pointer().get() + 0x84), &mut out)
+                .read_memory_u32_le(u64::from(self.buffer.pointer().get() + 0x84), &mut out)
                 .await;
             out[0]
         };

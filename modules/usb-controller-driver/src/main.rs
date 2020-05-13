@@ -41,13 +41,18 @@ async fn async_main() {
             }
             (0xc, 0x3, 0x10) => {
                 // OHCI
-                // TODO: should probably write to LATENCY_TIMER in the PCI config space, as the specs mention
                 let addr = match device.base_address_registers[0] {
                     redshirt_pci_interface::PciBaseAddressRegister::Memory { base_address } => {
                         u64::from(base_address)
                     }
                     _ => unreachable!(), // TODO: don't panic
                 };
+
+                let lock = redshirt_pci_interface::DeviceLock::new(device.location)
+                    .await
+                    .unwrap();
+                // TODO: should probably write to LATENCY_TIMER in the PCI config space, as the specs mention
+                lock.set_command(true, true, false);
 
                 log::info!("Initializing OHCI device at 0x{:x}", addr);
                 let mut device = unsafe {
@@ -107,7 +112,8 @@ unsafe impl<'a> usb_controller_driver::HwAccessRef<'a> for &'a HwAccess {
         builder.send().boxed()
     }
 
-    unsafe fn read_memory_u32_be(
+    // TODO: enforce the endianess
+    unsafe fn read_memory_u32_le(
         self,
         address: u64,
         dest: &'a mut [u32],
@@ -123,7 +129,8 @@ unsafe impl<'a> usb_controller_driver::HwAccessRef<'a> for &'a HwAccess {
         future::ready(())
     }
 
-    unsafe fn write_memory_u32_be(self, address: u64, data: &[u32]) -> Self::WriteMemFutureU32 {
+    // TODO: enforce the endianess
+    unsafe fn write_memory_u32_le(self, address: u64, data: &[u32]) -> Self::WriteMemFutureU32 {
         assert_eq!(address % 4, 0); // TODO: turn into debug_assert
         let mut builder = redshirt_hardware_interface::HardwareWriteOperationsBuilder::new();
         // TODO: optimize

@@ -118,7 +118,7 @@ where
 
         unsafe {
             hardware_access
-                .write_memory_u32_be(
+                .write_memory_u32_le(
                     u64::from(buffer.pointer().get()),
                     &[
                         header.encode(),                          // Header
@@ -179,7 +179,7 @@ where
         // Update the tail to the new placeholder.
         unsafe {
             self.hardware_access
-                .write_memory_u32_be(
+                .write_memory_u32_le(
                     u64::from(self.buffer.pointer().get() + 4),
                     &[new_placeholder.pointer().get()],
                 )
@@ -198,7 +198,7 @@ where
         unsafe {
             let mut out = [0];
             self.hardware_access
-                .read_memory_u32_be(u64::from(self.buffer.pointer().get() + 12), &mut out)
+                .read_memory_u32_le(u64::from(self.buffer.pointer().get() + 12), &mut out)
                 .await;
             out[0]
         }
@@ -234,7 +234,7 @@ where
     /// until this [`EndpointDescriptor`] is destroyed.
     pub async unsafe fn set_next_raw(&mut self, next: u32) {
         self.hardware_access
-            .write_memory_u32_be(u64::from(self.buffer.pointer().get() + 12), &[next])
+            .write_memory_u32_le(u64::from(self.buffer.pointer().get() + 12), &[next])
             .await;
     }
 
