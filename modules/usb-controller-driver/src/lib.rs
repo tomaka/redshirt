@@ -28,9 +28,12 @@ use core::{
     time::Duration,
 };
 
-mod device;
+mod devices;
+mod ohci;
+mod usb;
 
-pub mod ohci; // TODO: private
+pub use ohci::InitError;
+pub use usb::Usb;
 
 /// Abstraction over the hardware.
 ///

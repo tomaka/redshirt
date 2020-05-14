@@ -139,6 +139,8 @@ where
         }
     }
 
+    // TODO: add method to clear the halted bit
+
     /// Returns the physical memory address of the descriptor.
     ///
     /// This value never changes and is valid until the [`EndpointDescriptor`] is destroyed.

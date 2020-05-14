@@ -31,8 +31,6 @@ use core::{alloc::Layout, convert::TryFrom as _, num::NonZeroU32};
 
 pub use transfer_descriptor::{CompletedTransferDescriptor, CompletionCode};
 
-// TODO: implement the Done queue stuff
-
 pub struct Hcca<TAcc>
 where
     for<'r> &'r TAcc: HwAccessRef<'r>,
@@ -103,7 +101,10 @@ where
         self.buffer.pointer()
     }
 
-    // TODO: docs
+    /// Returns the low 16 bits of the frame number.
+    ///
+    /// The host controller periodically writes this value in the HCCA. This function retrieves
+    /// it.
     pub async fn frame_number(&self) -> u16 {
         unsafe {
             let mut out = [0, 0];
@@ -116,7 +117,8 @@ where
 
     /// Extracts the transfer descriptors from the done queue.
     ///
-    /// Transfer descriptors that are finished execution are moved to the done queue.
+    /// Transfer descriptors that are finished execution are moved to the done queue. The returned
+    /// descriptors are in the opposite order from the one in which they have completed.
     ///
     /// # Safety
     ///
@@ -138,6 +140,8 @@ where
             out[0] &= !0x1;
             (out[0], lsb_set)
         };
+
+        // TODO: do this lsb_set thing
 
         // If this value if the same as last time, we immediately return.
         // This pointer is stale, as it would be undefined behaviour to read it.

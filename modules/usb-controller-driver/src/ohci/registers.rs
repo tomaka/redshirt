@@ -13,7 +13,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-//! Struct definitions and constants, as translated from the specs.
+//! Registers definitions, as translated from the specs.
+
+#![allow(unused)]
 
 pub const HC_REVISION_OFFSET: u64 = 0x0;
 pub const HC_CONTROL_OFFSET: u64 = 0x4;

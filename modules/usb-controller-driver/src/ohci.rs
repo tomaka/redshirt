@@ -18,7 +18,7 @@
 use crate::HwAccessRef;
 use core::{convert::TryFrom as _, num::NonZeroU8};
 
-pub use init::init_ohci_device;
+pub use init::{init_ohci_device, InitError};
 
 mod ep_descriptor;
 mod ep_list;

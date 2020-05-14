@@ -21,7 +21,7 @@
 
 use core::{alloc::Layout, convert::TryFrom as _};
 use core::{
-    num::{NonZeroU32, NonZeroU64, NonZeroU8},
+    num::{NonZeroU32, NonZeroU64},
     time::Duration,
 };
 use futures::prelude::*;
@@ -33,6 +33,8 @@ fn main() {
 }
 
 async fn async_main() {
+    let mut usb_state = usb_controller_driver::Usb::new(HwAccess);
+
     for device in redshirt_pci_interface::get_pci_devices().await {
         match (device.class_code, device.subclass, device.prog_if) {
             (0xc, 0x3, 0x0) => {
@@ -55,33 +57,8 @@ async fn async_main() {
                 lock.set_command(true, true, false);
 
                 log::info!("Initializing OHCI device at 0x{:x}", addr);
-                let mut device = unsafe {
-                    usb_controller_driver::ohci::init_ohci_device(HwAccess, addr)
-                        .await
-                        .unwrap()
-                };
-
-                for n in 1..device.root_hub_num_ports().get() {
-                    let port = device.root_hub_port(NonZeroU8::new(n).unwrap()).unwrap();
-                    if port.is_connected().await {
-                        port.set_enabled(true).await;
-                    }
-                    log::info!(
-                        "{:?} {:?} {:?}",
-                        port.is_connected().await,
-                        port.is_enabled().await,
-                        port.is_suspended().await
-                    );
-                    port.reset().await;
-                    redshirt_time_interface::Delay::new(Duration::from_millis(10)).await;
-
-                    device
-                        .push_control(&[0x80, 0x6, 0x1, 0x0, 0x0, 0x0, 0x0, 0x12])
-                        .await;
-                }
-
-                loop {
-                    device.on_interrupt().await;
+                unsafe {
+                    usb_state.add_ohci(addr).await.unwrap();
                 }
             }
             (0xc, 0x3, 0x20) => {

@@ -2388,7 +2388,9 @@ version = "0.1.0"
 dependencies = [
  "arrayvec",
  "derive_more",
+ "fnv 1.0.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures",
+ "hashbrown",
  "lazy_static",
  "log",
  "parity-scale-codec",
@@ -2397,6 +2399,7 @@ dependencies = [
  "redshirt-pci-interface",
  "redshirt-syscalls",
  "redshirt-time-interface",
+ "smallvec",
 ]
 
 [[package]]
