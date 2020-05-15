@@ -55,6 +55,7 @@ async fn async_main() {
                     .unwrap();
                 // TODO: should probably write to LATENCY_TIMER in the PCI config space, as the specs mention
                 lock.set_command(true, true, false);
+                // TODO: lock should be kept alive
 
                 log::info!("Initializing OHCI device at 0x{:x}", addr);
                 unsafe {
