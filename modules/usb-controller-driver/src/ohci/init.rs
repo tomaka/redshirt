@@ -21,12 +21,14 @@
 //! system starts:
 //!
 //! - Used by the System Management Mode driver (SMM). The SMM driver is one of the first
-//! components that starts at system initialization, and redirects the legacy PS/2 ports to the
-//! USB controller. If the SMM driver has ownership of the OHCI controller, the `InterruptRouting`
-//! bit is set in the `HcControl` register.
+//! components that starts at system initialization, and redirects the legacy PS/2 I/O ports to
+//! the USB controller. If the SMM driver has ownership of the OHCI controller, the
+//! `InterruptRouting` bit is set in the `HcControl` register.
+//!
 //! - Used by the BIOS, or by a previous operating system driver. If the BIOS has ownership of the
 //! OCHI controller, the `InterruptRouting` bit is not set and the `HostControllerFunctionalState`
 //! is not `UsbReset`.
+//!
 //! - Not powered up. The `InterruptRouting` bit is not set and `HostControllerFunctionalState` is
 //! `UsbReset`.
 //!
@@ -111,7 +113,7 @@ where
                 }
 
                 // Sleep a bit in order to not spinloop.
-                access.delay(Duration::from_micros(10)).await;
+                access.delay(Duration::from_micros(500)).await;
             }
         }
         (0b00, false) => {

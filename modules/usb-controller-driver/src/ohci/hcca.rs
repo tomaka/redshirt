@@ -19,6 +19,21 @@
 //!
 //! The HCCA is a data structure in system memory that contains various information in destination
 //! to the host controller.
+//!
+//! The HCCA contains three things:
+//!
+//! - 32 endpoint lists. At each USB frame, the interrupt list whose index is `frame_number % 32`
+//! is executed. These endpoint lists must contain only interrupt transfer descriptors, and end
+//! with another endpoint list with only isochronous descriptors.
+//!
+//! - A frame number field written by the controller at the end of of each frame.
+//!
+//! - A "done queue" where all the transfer descriptors that have completed (successfully or not)
+//! are pushed by the controller.
+//!
+//! After you have created an [`Hcca`], call [`Hcca::pointer`] and put the value in the `HcHcca`
+//! register.
+//!
 
 use crate::{
     ohci::{ep_list, transfer_descriptor},
@@ -31,15 +46,21 @@ use core::{alloc::Layout, convert::TryFrom as _, num::NonZeroU32};
 
 pub use transfer_descriptor::{CompletedTransferDescriptor, CompletionCode};
 
+/// Manages the HCCA. See the module-level documentation.
 pub struct Hcca<TAcc>
 where
     for<'r> &'r TAcc: HwAccessRef<'r>,
 {
+    /// Access to the physical memory.
     hardware_access: TAcc,
+    /// Contains the HCCA itself.
     buffer: Buffer32<TAcc>,
+    /// The 32 interrupt lists. They all point to `isochronous_list`.
     interrupt_lists: ArrayVec<[ep_list::EndpointList<TAcc>; 32]>,
+    /// Pointed by the interrupt lists. Must contain only isochronous descriptors.
     isochronous_list: ep_list::EndpointList<TAcc>,
-    /// Latest known value of the `DoneHead` field. Used to check whether it has been updated.
+    /// Latest known value of the `DoneHead` field. Compared against the actual value to
+    /// determine whether it has been updated.
     latest_known_done_head: u32,
 }
 
@@ -48,6 +69,9 @@ where
     TAcc: Clone,
     for<'r> &'r TAcc: HwAccessRef<'r>,
 {
+    /// Allocates a new [`Hcca`]. The `req_alignment` represents the memory alignment of the HCCA
+    /// as required by the controller. It can be determined by writing all 1s to the `HcHCCA`
+    /// register then reading the value back, as explained in section 7.2.1 of the specs.
     pub async fn new(hardware_access: TAcc, req_alignment: usize) -> Hcca<TAcc> {
         assert!(req_alignment >= 256);
         let buffer = Buffer32::new(
@@ -56,6 +80,7 @@ where
         )
         .await;
 
+        // List of endpoints and the isochronous transfer descriptors attached to them.
         let isochronous_list = ep_list::EndpointList::new(hardware_access.clone(), true).await;
 
         // Initialize one endpoint list for each interrupt list.
@@ -123,10 +148,9 @@ where
     /// # Safety
     ///
     /// To avoid race conditions, you must only call this function while the `WritebackDoneHead`
-    /// bit of `InterruptStatus` is set. You can then clear the bit.
+    /// bit of `InterruptStatus` is set. You can clear the bit after this function returns.
     ///
     /// The user data must match the one that is used when pushing descriptors.
-    ///
     pub async unsafe fn extract_done_queue<TUd>(
         &mut self,
     ) -> Vec<CompletedTransferDescriptor<TUd>> {
@@ -141,10 +165,10 @@ where
             (out[0], lsb_set)
         };
 
-        // TODO: do this lsb_set thing
+        // TODO: do something with this lsb_set thing
 
         // If this value if the same as last time, we immediately return.
-        // This pointer is stale, as it would be undefined behaviour to read it.
+        // This pointer is stale, and it would be an undefined behaviour to read it.
         if done_head == self.latest_known_done_head {
             return Vec::new();
         }

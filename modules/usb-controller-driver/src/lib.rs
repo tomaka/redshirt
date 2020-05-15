@@ -15,6 +15,45 @@
 
 // TODO: all this code should be moved to a separate repo
 
+//! USB host controller driver and devices manager.
+//!
+//! This library allows interacting with USB host controller and interacting with the USB devices
+//! that are connected to them.
+//!
+//! # What you need
+//!
+//! - You must implement the [`HwAccessRef`] trait, which allows the library to communicate with
+//! the physical memory. This implementation must be aware of concerns regarding virtual memory
+//! and caching. See the documentation of the trait for more detail.
+//!
+//! - The primary way USB host controllers interact with the operating system is through
+//! memory-mapped registers. However, be aware that finding the location of these memory-mapped
+//! registers is out of scope of this library. On x86 platforms, a USB host controller is normally
+//! a PCI device and can be found by enumerating PCI devices.
+//!
+//! - Detecting interrupts is also out of scope of this library. When a USB host controller fires
+//! an interrupt, you must call [`Usb::on_interrupt`] as soon as possible in response. This
+//! function checks the state of the controllers to determine what has happened since the last
+//! time it has been called. There is no drawback in calling [`Usb::on_interrupt`] even if no
+//! interrupt has actually been triggered (except for the performance cost of calling the
+//! function), so you don't need to worry too much about interrupts colliding. If multiple
+//! interrupts happen before you had the chance to call this function, you only have to call it
+//! once.
+//!
+//! # Usage
+//!
+//! Create a [`Usb`] state machine, passing an implementation of [`HwAccessRef`]. This state
+//! machine will have exclusive ownership of all the host controllers and all the USB devices.
+//! It manages sending and receiving packets, enabling/disabling devices, assigning addresses,
+//! hubs, and so on.
+//!
+//! Finding where USB host controllers are mapped in memory if out of scope of this library. Call
+//! [`Usb::add_ohci`] once you have found an OHCI controller.
+//!
+//! > **Note**: At the time of this writing, only OHCI (one of the two USB 1.1 controllers
+//!             standards) is supported.
+//!
+
 #![no_std]
 
 // TODO: change everything to accept an `AllocRef` trait implementation, instead of doing implicit
@@ -39,6 +78,21 @@ pub use usb::Usb;
 ///
 /// The code of this library doesn't assume that it can directly access physical memory. Instead,
 /// any access to physical memory is done through this trait.
+///
+/// This trait is designed to be implemented on references, and not on plain types. For instance,
+/// if you define a type `Foo`, you are encouraged to implement this trait on `&Foo`.
+///
+/// This trait is used in order to write data in memory that a USB controller will later read, or
+/// to read data from memory that a USB controller has written. As such, reads and writes should
+/// bypass processor caches. Pointers returned by [`HwAccessRef::alloc32`] and
+/// [`HwAccessRef::alloc64`] will be passed to USB controllers and must therefore refer to actual
+/// physical memory addresses.
+///
+/// # Safety
+///
+/// Code that uses this trait relies on the fact that the various methods are implemented in a
+/// correct way. For example, allocating multiple buffers must not yield overlapping buffers.
+///
 pub unsafe trait HwAccessRef<'a>: Copy + Clone {
     type Delay: Future<Output = ()> + 'a;
     type ReadMemFutureU8: Future<Output = ()> + 'a;
@@ -52,6 +106,7 @@ pub unsafe trait HwAccessRef<'a>: Copy + Clone {
 
     /// Performs a serie of atomic physical memory reads starting at the given address.
     unsafe fn read_memory_u8(self, address: u64, dest: &'a mut [u8]) -> Self::ReadMemFutureU8;
+
     /// Performs a serie of atomic physical memory reads starting at the given address.
     ///
     /// The data must be read in little endian. If the current platform is big endian, you should
@@ -60,8 +115,10 @@ pub unsafe trait HwAccessRef<'a>: Copy + Clone {
     /// `address` must be a multiple of 4.
     unsafe fn read_memory_u32_le(self, address: u64, dest: &'a mut [u32])
         -> Self::ReadMemFutureU32;
+
     /// Performs a serie of atomic physical memory writes starting at the given address.
     unsafe fn write_memory_u8(self, address: u64, data: &[u8]) -> Self::WriteMemFutureU8;
+
     /// Performs a serie of atomic physical memory writes starting at the given address.
     ///
     /// The data must be written in little endian. If the current platform is big endian, you
