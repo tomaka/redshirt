@@ -13,6 +13,33 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+//! Manages the state of a collection of USB devices connected to a specific controller.
+//!
+//! Also manages the ports of said controller.
+//!
+//! # Overview of USB
+//!
+//! A USB host controller features a list of ports, to each of which a USB device can potentially
+//! be connected.
+//!
+//! The role of the USB host controller is to allow sending to or receiving packets from these
+//! USB devices.
+//!
+//! When you send or receive a packet, you must specify the *address* of the USB device that must
+//! receive or send this packet.
+//! USB devices, when they connect, are by default assigned to address 0. This address must then
+//! be reconfigured must by the operating system during the initialization process of the device.
+//! At any given time, no two devices must be assigned to the same address. In order to enforce
+//! this, devices must be enabled one by one and assigned an address one by one.
+//!
+//! Similar to an Ethernet hub, when you send or receive packet on a USB host controller, this
+//! packet.is broadcasted to all the ports of the controller and the only device whose address
+//! corresponds to the one in the packet processes it.
+//!
+//! Once a device has been assigned an address, it must be configured. TODO: finish
+
+use crate::PortState;
+
 use alloc::vec::Vec;
 use core::{
     convert::TryFrom as _,
@@ -28,7 +55,7 @@ pub struct UsbDevices {
     devices: HashMap<NonZeroU32, Device, FnvBuildHasher>,
 
     /// State of the root ports. Port 1 is at index 0, port 2 at index 1, and so on.
-    root_hub_ports: Vec<PortState>,
+    root_hub_ports: Vec<LocalPortState>,
 }
 
 #[derive(Debug)]
@@ -39,21 +66,23 @@ struct Device {
 }
 
 /// State of a port.
+// TODO: redundant with PortState at the root? unfortunately not because of the address
 #[derive(Debug)]
-enum PortState {
-    Vacant,
-    Connected,
+enum LocalPortState {
+    Disconnected,
+    /// Port is connected to a device but is disabled.
+    Disabled,
     Resetting,
-    ResetFinished,
-    Enabling,
+    /// Port is enabled and is connected to a device for which no address has been assigned yet.
+    EnabledDefaultAddress,
+    /// Port contains a device with the given address.
+    Address(NonZeroU32),
 }
 
 /// Action that should be performed by the controller.
 #[derive(Debug)]
 pub enum Action {
-    ResetRootHubPort { port: NonZeroU8 },
-    EnableRootHubPort { port: NonZeroU8 },
-    DisableRootHubPort { port: NonZeroU8 },
+    SetRootHubPortState { port: NonZeroU8, state: PortState },
 }
 
 impl UsbDevices {
@@ -64,18 +93,36 @@ impl UsbDevices {
                 Default::default(),
             ),
             root_hub_ports: (0..root_hub_ports.get())
-                .map(|_| PortState::Vacant)
+                .map(|_| LocalPortState::Disconnected)
                 .collect(),
         }
     }
 
-    /// Sets whether there is a device connected to a root hub port.
-    pub fn set_root_hub_connected(&mut self, root_hub_port: NonZeroU8, connected: bool) {
+    /// Updates the [`UsbDevices`] with the state of a root hub port.
+    ///
+    /// # Panic
+    ///
+    /// Panics if the new state doesn't make sense when compared to the old state. In particular,
+    /// the state machine of the [`UsbDevices`] assumes that it has exclusive control over the
+    /// port (by generation [`Action::SetRootHubPortState`]). Shared ownership isn't (and can't
+    /// be) supported.
+    pub fn set_root_hub_port_state(&mut self, root_hub_port: NonZeroU8, new_state: PortState) {
         let mut state = &mut self.root_hub_ports[usize::from(root_hub_port.get() - 1)];
-        match (&mut state, connected) {
-            (PortState::Vacant, true) => *state = PortState::Connected,
-            (PortState::Connected, false) => *state = PortState::Vacant,
-            _ => {}
+        match (&mut state, new_state) {
+            (LocalPortState::Disconnected, PortState::Disabled) => {
+                *state = LocalPortState::Disabled
+            }
+            (LocalPortState::Disabled, PortState::Disconnected)
+            | (LocalPortState::Disabled, PortState::NotPowered)
+            | (LocalPortState::Resetting, PortState::Disconnected)
+            | (LocalPortState::Resetting, PortState::NotPowered) => {
+                *state = LocalPortState::Disconnected
+            }
+            (LocalPortState::Resetting, PortState::Enabled) => {
+                // Resetting the port has completed.
+                *state = LocalPortState::EnabledDefaultAddress;
+            }
+            _ => panic!(),
         }
     }
 
@@ -85,28 +132,14 @@ impl UsbDevices {
         if let Some(p) = self
             .root_hub_ports
             .iter()
-            .position(|p| matches!(p, PortState::Connected))
+            .position(|p| matches!(p, LocalPortState::Disabled))
         {
-            self.root_hub_ports[p] = PortState::Resetting;
+            self.root_hub_ports[p] = LocalPortState::Resetting;
             let port = NonZeroU8::new(u8::try_from(p + 1).unwrap()).unwrap();
-            return Some(Action::ResetRootHubPort { port });
-        }
-
-        // Start enabling a port, if possible.
-        if let Some(p) = self
-            .root_hub_ports
-            .iter()
-            .position(|p| matches!(p, PortState::Connected))
-        {
-            let ready_to_enable = !self
-                .root_hub_ports
-                .iter()
-                .any(|p| matches!(p, PortState::Enabling));
-            if ready_to_enable {
-                self.root_hub_ports[p] = PortState::Enabling;
-                let port = NonZeroU8::new(u8::try_from(p + 1).unwrap()).unwrap();
-                return Some(Action::EnableRootHubPort { port });
-            }
+            return Some(Action::SetRootHubPortState {
+                port,
+                state: PortState::Resetting,
+            });
         }
 
         None

@@ -17,7 +17,10 @@
 
 //! USB host controller driver and devices manager.
 //!
-//! This library allows interacting with USB host controller and interacting with the USB devices
+//! This library is meant to be used in the context of operating system development and works on
+//! bare metal.
+//!
+//! This library allows interacting with USB host controllers and interacting with the USB devices
 //! that are connected to them.
 //!
 //! # What you need
@@ -67,6 +70,7 @@ use core::{
     time::Duration,
 };
 
+mod control_packets;
 mod devices;
 mod ohci;
 mod usb;
@@ -155,6 +159,32 @@ pub unsafe trait HwAccessRef<'a>: Copy + Clone {
 
     /// Returns a future that is ready after the given duration has passed.
     fn delay(self, duration: Duration) -> Self::Delay;
+}
+
+/// Status of a port of a hub.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+// TODO: move somewhere?
+pub enum PortState {
+    /// No electricity on the port.
+    NotPowered,
+    /// Port is powered but no device is connected. If a device connects, the port switches to
+    /// `Disabled`.
+    Disconnected,
+    /// Port is connected to a device, but disabled. No data transferts are possible. Must be
+    /// followed by a reset of the port.
+    Disabled,
+    /// Port is connected to a device and is currently emitting a "reset" signal to the device
+    /// for the device to reset its state. Normally followed with `Enabled`.
+    Resetting,
+    /// Normal state. Connected to a device. Transferts go through.
+    Enabled,
+    /// Port is normally enabled but temporarily disabled. No data transferts are possible. This
+    /// state can only be entered if asking the hub to suspend a port. Neither devices or the hub
+    /// itself can ask for a port to be suspended.
+    Suspended,
+    /// Port was suspended and is currently emitting a "resume" signal. Will be followed by
+    /// `Enabled` if everything goes well.
+    Resuming,
 }
 
 // TODO: move to different module

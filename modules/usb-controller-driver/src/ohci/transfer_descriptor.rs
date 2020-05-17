@@ -88,6 +88,12 @@ where
     ) -> TransferDescriptorPlaceholder<TAcc> {
         // Check correct type of descriptor.
         match (&config, self.isochronous) {
+            (
+                TransferDescriptorConfig::GeneralOut {
+                    setup: true, data, ..
+                },
+                false,
+            ) => assert_eq!(data.len(), 8),
             (TransferDescriptorConfig::GeneralOut { .. }, false) => (),
             (TransferDescriptorConfig::GeneralIn { .. }, false) => (),
             (TransferDescriptorConfig::Isochronous { .. }, true) => (),
@@ -232,7 +238,7 @@ pub enum TransferDescriptorConfig<'a> {
     GeneralOut {
         /// Data to send out.
         data: &'a [u8],
-        /// Use a `SETUP` PID rather than `OUT`.
+        /// Use a `SETUP` PID rather than `OUT`. If `true`, the data length must always be 8.
         setup: bool,
         /// Number of frames between the end of the transmission and the interrupt triggering.
         delay_interrupt: u8,
@@ -329,6 +335,7 @@ where
         }
     };
 
+    // TODO: remove this line
     log::info!("completion code = {:?}", completion_code);
 
     // From that, we read the `Trailer` struct.

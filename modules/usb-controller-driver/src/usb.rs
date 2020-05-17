@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::{devices, ohci, HwAccessRef};
+use crate::{devices, ohci, HwAccessRef, PortState};
 
 use smallvec::SmallVec;
 
@@ -51,6 +51,21 @@ where
         }
     }
 
+    /// Reads the latest updates from the controllers.
+    ///
+    /// Host controllers will generate an interrupt when something noteworthy happened, and this
+    /// method should therefore be called as a result.
+    // TODO: pass some sort of index for the controller that has interrupted?
+    pub async fn on_interrupt(&mut self) {
+        for (ctrl, usb_devices) in &mut self.controllers {
+            match ctrl {
+                Controller::Ohci(ctrl) => ctrl.on_interrupt().await,
+            }
+
+            unimplemented!() // TODO: notify of port status updates
+        }
+    }
+
     /// Registers a new OHCI controller.
     pub async unsafe fn add_ohci(&mut self, registers: u64) -> Result<(), ohci::InitError> {
         // TODO: do the initialization in the background, otherwise we freeze all the controllers
@@ -64,14 +79,11 @@ where
     async fn process(&mut self, ctrl_index: usize) {
         while let Some(action) = self.controllers[ctrl_index].1.next_action() {
             match (&mut self.controllers[ctrl_index].0, action) {
-                (Controller::Ohci(ref mut ctrl), devices::Action::ResetRootHubPort { port }) => {
-                    ctrl.root_hub_port(port).unwrap().reset().await;
-                }
-                (Controller::Ohci(ref mut ctrl), devices::Action::EnableRootHubPort { port }) => {
-                    ctrl.root_hub_port(port).unwrap().set_enabled(true).await;
-                }
-                (Controller::Ohci(ref mut ctrl), devices::Action::DisableRootHubPort { port }) => {
-                    ctrl.root_hub_port(port).unwrap().set_enabled(false).await;
+                (
+                    Controller::Ohci(ref mut ctrl),
+                    devices::Action::SetRootHubPortState { port, state },
+                ) => {
+                    ctrl.root_hub_port(port).unwrap().set_state(state).await;
                 }
             }
         }
