@@ -259,17 +259,14 @@ where
                 )
                 .await;
             for n in 0..num_hub_ports {
-                unsafe {
-                    let addr = config.registers_location
-                        + registers::HC_RH_PORT_STATUS_1_OFFSET
-                        + u64::from(n) * 4;
-                    // We write these bits to reset the status change bits.
-                    let status_reset_cmd =
-                        (1 << 20) | (1 << 19) | (1 << 18) | (1 << 17) | (1 << 16);
-                    hardware_access
-                        .write_memory_u32_le(addr, &[status_reset_cmd])
-                        .await;
-                }
+                let addr = config.registers_location
+                    + registers::HC_RH_PORT_STATUS_1_OFFSET
+                    + u64::from(n) * 4;
+                // We write these bits to reset the status change bits.
+                let status_reset_cmd = (1 << 20) | (1 << 19) | (1 << 18) | (1 << 17) | (1 << 16);
+                hardware_access
+                    .write_memory_u32_le(addr, &[status_reset_cmd])
+                    .await;
             }
             statuses
         };
@@ -326,7 +323,12 @@ where
     ///
     /// The host controller will generate an interrupt when something noteworthy happened, and
     /// this method should therefore be called as a result.
-    pub async fn on_interrupt(&mut self) {
+    pub async fn on_interrupt(&mut self) -> OnInterruptOutcome {
+        // Value to be returned at the end of this function.
+        let mut outcome = OnInterruptOutcome {
+            root_hub_ports_changed: false,
+        };
+
         // Read the `InterruptStatus` register, indicating what has happened since the last read.
         let interrupt_status = unsafe {
             let mut out = [0];
@@ -351,7 +353,9 @@ where
         // RootHubStatusChange
         // One or more devices in the root hub have changed status.
         if interrupt_status & (1 << 6) != 0 {
-            // TODO: this doesn't clear the status change bits
+            outcome.root_hub_ports_changed = true;
+
+            // TODO: this doesn't clear the status change bits; do we care?
             // Refresh `root_hub_ports_status`.
             unsafe {
                 self.hardware_access
@@ -379,6 +383,8 @@ where
                 )
                 .await;
         }
+
+        outcome
     }
 
     /// Access a port of the root hub.
@@ -408,6 +414,14 @@ where
         assert!(function_address < 128);
         assert!(endpoint_number < 16);
     }*/
+}
+
+/// Outcome of calling [`OhciDevice::on_interrupt`].
+#[derive(Debug)]
+#[must_use]
+pub struct OnInterruptOutcome {
+    /// True if any of the root hub ports status has changed.
+    pub root_hub_ports_changed: bool,
 }
 
 /*pub enum Entry<'a, TAcc> {

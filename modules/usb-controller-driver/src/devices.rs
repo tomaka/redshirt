@@ -66,9 +66,10 @@ struct Device {
 }
 
 /// State of a port.
-// TODO: redundant with PortState at the root? unfortunately not because of the address
+// TODO: redundant with PortState at the root? unfortunately not, because of the address
 #[derive(Debug)]
 enum LocalPortState {
+    /// Corresponds to both [`PortState::NotPowered`] and [`PortState::Disconnected`].
     Disconnected,
     /// Port is connected to a device but is disabled.
     Disabled,
@@ -79,13 +80,53 @@ enum LocalPortState {
     Address(NonZeroU32),
 }
 
+/// Opaque packet identifier. Assigned by the [`UsbDevices`]. Identifies a packet that has been
+/// emitted or requested through an [`Action`].
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct PacketId(pub u64);
+
 /// Action that should be performed by the controller.
 #[derive(Debug)]
 pub enum Action {
-    SetRootHubPortState { port: NonZeroU8, state: PortState },
+    /// Change the state of a port of the root hub.
+    SetRootHubPortState {
+        /// Port number.
+        port: NonZeroU8,
+        /// State to transition to. Guaranteed to be valid based on the latest call to
+        /// [`UsbDevices::set_root_hub_port_state`].
+        state: PortState,
+    },
+    /// Requests data from a device.
+    EmitInPacket {
+        /// Identifier assigned by the [`UsbDevices`]. Must be passed back later when calling
+        /// [`UsbDevices::in_packet_result`].
+        id: PacketId,
+        /// Length of the buffer that the device is allowed to write to.
+        buffer_len: u16,
+    },
+    /// Emits a packet to a device.
+    EmitOutPacket {
+        /// Identifier assigned by the [`UsbDevices`]. Must be passed back later when calling
+        /// [`UsbDevices::out_packet_result`].
+        id: PacketId,
+        /// Data to be sent to the device.
+        data: Vec<u8>,
+    },
+    /// Emits a `SETUP` packet to a device.
+    EmitSetupPacket {
+        /// Identifier assigned by the [`UsbDevices`]. Must be passed back later when calling
+        /// [`UsbDevices::out_packet_result`].
+        id: PacketId,
+        /// Data to be sent to the device.
+        data: [u8; 8],
+    },
 }
 
 impl UsbDevices {
+    /// Initializes the state machine. Must be passed the number of ports on the root hub.
+    ///
+    /// All the ports are assumed to be either [`PortState::NotPowered`] or
+    /// [`PortState::Disconnected`].
     pub fn new(root_hub_ports: NonZeroU8) -> Self {
         UsbDevices {
             devices: HashMap::with_capacity_and_hasher(
@@ -102,6 +143,9 @@ impl UsbDevices {
     ///
     /// # Panic
     ///
+    /// Panics if the port number is out of range compared to what was passed to
+    /// [`UsbDevices::new`].
+    ///
     /// Panics if the new state doesn't make sense when compared to the old state. In particular,
     /// the state machine of the [`UsbDevices`] assumes that it has exclusive control over the
     /// port (by generation [`Action::SetRootHubPortState`]). Shared ownership isn't (and can't
@@ -109,6 +153,11 @@ impl UsbDevices {
     pub fn set_root_hub_port_state(&mut self, root_hub_port: NonZeroU8, new_state: PortState) {
         let mut state = &mut self.root_hub_ports[usize::from(root_hub_port.get() - 1)];
         match (&mut state, new_state) {
+            // No update.
+            (LocalPortState::Disconnected, PortState::NotPowered)
+            | (LocalPortState::Disconnected, PortState::Disconnected)
+            | (LocalPortState::Disabled, PortState::Disabled) => {}
+
             (LocalPortState::Disconnected, PortState::Disabled) => {
                 *state = LocalPortState::Disabled
             }
@@ -122,8 +171,22 @@ impl UsbDevices {
                 // Resetting the port has completed.
                 *state = LocalPortState::EnabledDefaultAddress;
             }
-            _ => panic!(),
+            (from, to) => panic!("can't switch port state from {:?} to {:?}", from, to),
         }
+    }
+
+    /// Must be called as a response to [`Action::EmitInPacket`]. Contains the outcome of the
+    /// packet.
+    // TODO: error type?
+    pub fn in_packet_result(&mut self, id: PacketId, result: Result<&[u8], ()>) {
+        unimplemented!()
+    }
+
+    /// Must be called as a response to [`Action::EmitOutPacket`] or [`Action::EmitSetupPacket`].
+    /// Contains the outcome of the packet emission.
+    // TODO: error type?
+    pub fn out_packet_result(&mut self, id: PacketId, result: Result<(), ()>) {
+        unimplemented!()
     }
 
     /// Asks the [`UsbDevices`] which action to perform next.
@@ -141,6 +204,8 @@ impl UsbDevices {
                 state: PortState::Resetting,
             });
         }
+
+        // TODO: continue implementation here
 
         None
     }

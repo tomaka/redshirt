@@ -348,7 +348,7 @@ where
     };
 
     // Free the descriptor's buffer.
-    unsafe {
+    {
         let layout = if trailer.isochronous {
             ISOCHRONOUS_DESCRIPTOR_LAYOUT
         } else {

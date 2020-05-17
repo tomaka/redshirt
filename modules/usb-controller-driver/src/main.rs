@@ -25,7 +25,6 @@ use core::{
     time::Duration,
 };
 use futures::prelude::*;
-use parity_scale_codec::DecodeAll;
 
 fn main() {
     redshirt_log_interface::init();
@@ -34,7 +33,9 @@ fn main() {
 
 async fn async_main() {
     let mut usb_state = usb_controller_driver::Usb::new(HwAccess);
+    let mut pci_devices_locks = Vec::new();
 
+    // Try to find USB host controllers in the list of PCI devices.
     for device in redshirt_pci_interface::get_pci_devices().await {
         match (device.class_code, device.subclass, device.prog_if) {
             (0xc, 0x3, 0x0) => {
@@ -47,20 +48,32 @@ async fn async_main() {
                     redshirt_pci_interface::PciBaseAddressRegister::Memory { base_address } => {
                         u64::from(base_address)
                     }
-                    _ => unreachable!(), // TODO: don't panic
+                    _ => {
+                        log::error!("Found OHCI PCI controller with non-memory BAR0.");
+                        continue;
+                    }
                 };
 
-                let lock = redshirt_pci_interface::DeviceLock::new(device.location)
-                    .await
-                    .unwrap();
-                // TODO: should probably write to LATENCY_TIMER in the PCI config space, as the specs mention
+                // Try to lock the given PCI device. Can fail if there is another USB controller
+                // drive that is already handling the device.
+                let lock = match redshirt_pci_interface::DeviceLock::new(device.location).await {
+                    Ok(l) => l,
+                    Err(_) => continue,
+                };
+                // TODO: should write to LATENCY_TIMER in the PCI config space, as the specs mention
                 lock.set_command(true, true, false);
-                // TODO: lock should be kept alive
 
-                log::info!("Initializing OHCI device at 0x{:x}", addr);
-                unsafe {
-                    usb_state.add_ohci(addr).await.unwrap();
+                if let Err(err) = unsafe { usb_state.add_ohci(addr).await } {
+                    log::error!(
+                        "Failed to initialize OHCI host controller at 0x{:x}: {}",
+                        addr,
+                        err
+                    );
+                    continue;
                 }
+
+                log::info!("Initialized OHCI device at 0x{:x}", addr);
+                pci_devices_locks.push(lock);
             }
             (0xc, 0x3, 0x20) => {
                 // EHCI
@@ -73,10 +86,24 @@ async fn async_main() {
             _ => {}
         }
     }
+
+    // If no device has been found, exit the program now. The list of PCI devices can never change.
+    if pci_devices_locks.is_empty() {
+        return;
+    }
+
+    // TODO: as a hack before interrupts are supported, we just periodically call `on_interrupt`
+    loop {
+        redshirt_time_interface::Delay::new(Duration::from_millis(1)).await;
+        usb_state.on_interrupt().await;
+    }
 }
 
+/// Implementation of [`usb_controller_driver::HwAccessRef`]. Makes it possible for the library to
+/// communicate with redshirt.
 #[derive(Debug, Copy, Clone)]
 struct HwAccess;
+
 unsafe impl<'a> usb_controller_driver::HwAccessRef<'a> for &'a HwAccess {
     type Delay = redshirt_time_interface::Delay;
     type ReadMemFutureU8 = future::BoxFuture<'a, ()>;
@@ -98,7 +125,7 @@ unsafe impl<'a> usb_controller_driver::HwAccessRef<'a> for &'a HwAccess {
         address: u64,
         dest: &'a mut [u32],
     ) -> Self::ReadMemFutureU32 {
-        assert_eq!(address % 4, 0); // TODO: turn into debug_assert
+        debug_assert_eq!(address % 4, 0);
         let mut builder = redshirt_hardware_interface::HardwareOperationsBuilder::new();
         builder.read_u32(address, dest);
         builder.send().boxed()
@@ -111,7 +138,7 @@ unsafe impl<'a> usb_controller_driver::HwAccessRef<'a> for &'a HwAccess {
 
     // TODO: enforce the endianess
     unsafe fn write_memory_u32_le(self, address: u64, data: &[u32]) -> Self::WriteMemFutureU32 {
-        assert_eq!(address % 4, 0); // TODO: turn into debug_assert
+        debug_assert_eq!(address % 4, 0);
         let mut builder = redshirt_hardware_interface::HardwareWriteOperationsBuilder::new();
         // TODO: optimize
         for (off, elem) in data.iter().enumerate() {
@@ -131,11 +158,12 @@ unsafe impl<'a> usb_controller_driver::HwAccessRef<'a> for &'a HwAccess {
     }
 
     fn alloc32(self, layout: Layout) -> Self::Alloc32 {
+        // TODO: hardware interface has no way to force 32bits allocation
         redshirt_hardware_interface::malloc::malloc(
             u64::try_from(layout.size()).unwrap(),
             u64::try_from(layout.align()).unwrap(),
         )
-        .map(|v| Ok(NonZeroU32::new(u32::try_from(v).unwrap()).unwrap())) // TODO: hardware interface has no way to force 32bits allocation
+        .map(|v| Ok(NonZeroU32::new(u32::try_from(v).unwrap()).unwrap()))
         .boxed()
     }
 

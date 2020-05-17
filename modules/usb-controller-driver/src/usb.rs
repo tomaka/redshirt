@@ -15,6 +15,7 @@
 
 use crate::{devices, ohci, HwAccessRef, PortState};
 
+use core::num::NonZeroU8;
 use smallvec::SmallVec;
 
 /// Manages the state of all USB host controllers and their devices.
@@ -55,22 +56,41 @@ where
     ///
     /// Host controllers will generate an interrupt when something noteworthy happened, and this
     /// method should therefore be called as a result.
-    // TODO: pass some sort of index for the controller that has interrupted?
+    // TODO: pass as parameter some sort of identifier for the controller that has interrupted?
     pub async fn on_interrupt(&mut self) {
-        for (ctrl, usb_devices) in &mut self.controllers {
-            match ctrl {
-                Controller::Ohci(ctrl) => ctrl.on_interrupt().await,
-            }
+        let mut updated_controllers = SmallVec::<[_; 4]>::new();
 
-            unimplemented!() // TODO: notify of port status updates
+        for (ctrl_index, (ctrl, usb_devices)) in self.controllers.iter_mut().enumerate() {
+            match ctrl {
+                Controller::Ohci(ctrl) => {
+                    let outcome = ctrl.on_interrupt().await;
+                    if outcome.root_hub_ports_changed {
+                        for port_num in 0..ctrl.root_hub_num_ports().get() {
+                            let port_num = NonZeroU8::new(port_num + 1).unwrap();
+                            let port = ctrl.root_hub_port(port_num).unwrap();
+                            usb_devices.set_root_hub_port_state(port_num, port.state());
+                        }
+                        updated_controllers.push(ctrl_index);
+                    }
+                }
+            }
+        }
+
+        for ctrl_index in updated_controllers {
+            self.process(ctrl_index).await;
         }
     }
 
     /// Registers a new OHCI controller.
     pub async unsafe fn add_ohci(&mut self, registers: u64) -> Result<(), ohci::InitError> {
         // TODO: do the initialization in the background, otherwise we freeze all the controllers
-        let ctrl = ohci::init_ohci_device(self.hardware_access.clone(), registers).await?;
-        let devices = devices::UsbDevices::new(ctrl.root_hub_num_ports());
+        let mut ctrl = ohci::init_ohci_device(self.hardware_access.clone(), registers).await?;
+        let mut devices = devices::UsbDevices::new(ctrl.root_hub_num_ports());
+        for port_num in 0..ctrl.root_hub_num_ports().get() {
+            let port_num = NonZeroU8::new(port_num + 1).unwrap();
+            let port = ctrl.root_hub_port(port_num).unwrap();
+            devices.set_root_hub_port_state(port_num, port.state());
+        }
         self.controllers.push((Controller::Ohci(ctrl), devices));
         self.process(self.controllers.len() - 1).await;
         Ok(())
@@ -84,6 +104,15 @@ where
                     devices::Action::SetRootHubPortState { port, state },
                 ) => {
                     ctrl.root_hub_port(port).unwrap().set_state(state).await;
+                }
+                (Controller::Ohci(ref mut ctrl), devices::Action::EmitInPacket { .. }) => {
+                    unimplemented!()
+                }
+                (Controller::Ohci(ref mut ctrl), devices::Action::EmitOutPacket { .. }) => {
+                    unimplemented!()
+                }
+                (Controller::Ohci(ref mut ctrl), devices::Action::EmitSetupPacket { .. }) => {
+                    unimplemented!()
                 }
             }
         }

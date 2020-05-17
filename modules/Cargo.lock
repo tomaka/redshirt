@@ -2393,7 +2393,6 @@ dependencies = [
  "hashbrown",
  "lazy_static",
  "log",
- "parity-scale-codec",
  "redshirt-hardware-interface",
  "redshirt-log-interface",
  "redshirt-pci-interface",

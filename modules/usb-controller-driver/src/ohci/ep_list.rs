@@ -84,11 +84,13 @@ where
     /// Endpoint lists are always part of a linked list, where each list points to the
     /// next one, or to nothing.
     ///
+    /// > **Note**: There is no method to set the next list to nothing, as this isn't useful in
+    /// >           practice.
+    ///
     /// # Safety
     ///
-    /// `next` must remain valid until the next time [`EndpointList::clear_next`] or
-    /// [`EndpointDescriptor::EndpointList`] is called, or until this [`EndpointList`] is
-    /// destroyed.
+    /// `next` must remain valid until the next time [`EndpointList::set_next`] or is called, or
+    /// until this [`EndpointList`] is destroyed.
     pub async unsafe fn set_next<UAcc>(&mut self, next: &EndpointList<UAcc>)
     where
         UAcc: Clone,
