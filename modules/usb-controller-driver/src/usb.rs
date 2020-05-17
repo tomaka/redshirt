@@ -105,6 +105,12 @@ where
                 ) => {
                     ctrl.root_hub_port(port).unwrap().set_state(state).await;
                 }
+                (Controller::Ohci(ref mut ctrl), devices::Action::AllocateNewEndpoint { .. }) => {
+                    unimplemented!()
+                }
+                (Controller::Ohci(ref mut ctrl), devices::Action::FreeEndpoint { .. }) => {
+                    unimplemented!()
+                }
                 (Controller::Ohci(ref mut ctrl), devices::Action::EmitInPacket { .. }) => {
                     unimplemented!()
                 }

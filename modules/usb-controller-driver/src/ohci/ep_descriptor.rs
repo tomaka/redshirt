@@ -67,9 +67,9 @@ pub struct Config {
     /// Maximum number of bytes that can be sent or received in a single data packet. Only used
     /// when the direction is `OUT` or `SETUP`. Must be inferior or equal to 4095.
     pub maximum_packet_size: u16,
-    /// Value between 0 and 128. The USB address of the function containing the endpoint.
+    /// Value between 0 and 127. The USB address of the function containing the endpoint.
     pub function_address: u8,
-    /// Value between 0 and 16. The USB address of the endpoint within the function.
+    /// Value between 0 and 15. The index of the endpoint within the function.
     pub endpoint_number: u8,
     /// If true, isochronous TD format. If false, general TD format.
     pub isochronous: bool,

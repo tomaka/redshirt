@@ -25,12 +25,17 @@
 //! The role of the USB host controller is to allow sending to or receiving packets from these
 //! USB devices.
 //!
-//! When you send or receive a packet, you must specify the *address* of the USB device that must
-//! receive or send this packet.
+//! When you send or receive a packet, you must specify the *address* of the USB device (also
+//! called a "function") that must receive or send this packet.
 //! USB devices, when they connect, are by default assigned to address 0. This address must then
 //! be reconfigured must by the operating system during the initialization process of the device.
 //! At any given time, no two devices must be assigned to the same address. In order to enforce
 //! this, devices must be enabled one by one and assigned an address one by one.
+//!
+//! In addition to the address, you msut also specify an *endpoint* number. Each USB
+//! device/function consists of one or more endpoints. Endpoint zero is hardcoded to be the
+//! *default control pipe* and is always available. The other endpoints depend on the way the
+//! device is configured (see below).
 //!
 //! Similar to an Ethernet hub, when you send or receive packet on a USB host controller, this
 //! packet.is broadcasted to all the ports of the controller and the only device whose address
@@ -38,7 +43,7 @@
 //!
 //! Once a device has been assigned an address, it must be configured. TODO: finish
 
-use crate::PortState;
+use crate::{EndpointTy, PortState};
 
 use alloc::vec::Vec;
 use core::{
@@ -51,6 +56,10 @@ use hashbrown::HashMap;
 /// Manages the state of a collection of USB devices connected to a specific controller.
 #[derive(Debug)]
 pub struct UsbDevices {
+    /// If false, we have to report an action that allocates the default control pipe on the
+    /// default address.
+    allocated_default_endpoint: bool,
+
     /// List of devices, sorted by address.
     devices: HashMap<NonZeroU32, Device, FnvBuildHasher>,
 
@@ -75,7 +84,11 @@ enum LocalPortState {
     Disabled,
     Resetting,
     /// Port is enabled and is connected to a device for which no address has been assigned yet.
-    EnabledDefaultAddress,
+    EnabledDefaultAddress {
+        /// If `Some`, we have sent a packet to the device asking to switch to the specified
+        /// address.
+        address_sent: Option<(PacketId, NonZeroU32)>,
+    },
     /// Port contains a device with the given address.
     Address(NonZeroU32),
 }
@@ -96,27 +109,76 @@ pub enum Action {
         /// [`UsbDevices::set_root_hub_port_state`].
         state: PortState,
     },
-    /// Requests data from a device.
+
+    /// Signals that the given endpoint on the given address will start being used.
+    AllocateNewEndpoint {
+        /// Value between 0 and 127. The USB address of the function containing the endpoint.
+        ///
+        /// > **Note**: The word "function" is synonymous with "device".
+        function_address: u8,
+        /// Value between 0 and 16. The index of the endpoint within the function.
+        endpoint_number: u8,
+        /// Type of the endpoint.
+        ty: EndpointTy,
+    },
+
+    /// Signals that the given endpoint on the given address will no longer be used.
+    FreeEndpoint {
+        /// Value between 0 and 127. The USB address of the function containing the endpoint.
+        ///
+        /// > **Note**: The word "function" is synonymous with "device".
+        function_address: u8,
+        /// Value between 0 and 16. The index of the endpoint within the function.
+        endpoint_number: u8,
+    },
+
+    /// Requests data from an endpoint.
+    ///
+    /// The endpoint will first have been reported with an [`Action::AllocateNewEndpoint`].
     EmitInPacket {
         /// Identifier assigned by the [`UsbDevices`]. Must be passed back later when calling
         /// [`UsbDevices::in_packet_result`].
         id: PacketId,
+        /// Value between 0 and 127. The USB address of the function containing the endpoint.
+        ///
+        /// > **Note**: The word "function" is synonymous with "device".
+        function_address: u8,
+        /// Value between 0 and 16. The index of the endpoint within the function.
+        endpoint_number: u8,
         /// Length of the buffer that the device is allowed to write to.
         buffer_len: u16,
     },
-    /// Emits a packet to a device.
+
+    /// Emits a packet to an endpoint.
+    ///
+    /// The endpoint will first have been reported with an [`Action::AllocateNewEndpoint`].
     EmitOutPacket {
         /// Identifier assigned by the [`UsbDevices`]. Must be passed back later when calling
         /// [`UsbDevices::out_packet_result`].
         id: PacketId,
+        /// Value between 0 and 127. The USB address of the function containing the endpoint.
+        ///
+        /// > **Note**: The word "function" is synonymous with "device".
+        function_address: u8,
+        /// Value between 0 and 16. The index of the endpoint within the function.
+        endpoint_number: u8,
         /// Data to be sent to the device.
         data: Vec<u8>,
     },
-    /// Emits a `SETUP` packet to a device.
+
+    /// Emits a `SETUP` packet to an endpoint. The endpoint must be of type [`EndpointTy::Control`].
+    ///
+    /// The endpoint will first have been reported with an [`Action::AllocateNewEndpoint`].
     EmitSetupPacket {
         /// Identifier assigned by the [`UsbDevices`]. Must be passed back later when calling
         /// [`UsbDevices::out_packet_result`].
         id: PacketId,
+        /// Value between 0 and 127. The USB address of the function containing the endpoint.
+        ///
+        /// > **Note**: The word "function" is synonymous with "device".
+        function_address: u8,
+        /// Value between 0 and 16. The index of the endpoint within the function.
+        endpoint_number: u8,
         /// Data to be sent to the device.
         data: [u8; 8],
     },
@@ -129,6 +191,7 @@ impl UsbDevices {
     /// [`PortState::Disconnected`].
     pub fn new(root_hub_ports: NonZeroU8) -> Self {
         UsbDevices {
+            allocated_default_endpoint: false,
             devices: HashMap::with_capacity_and_hasher(
                 root_hub_ports.get().into(),
                 Default::default(),
@@ -169,7 +232,7 @@ impl UsbDevices {
             }
             (LocalPortState::Resetting, PortState::Enabled) => {
                 // Resetting the port has completed.
-                *state = LocalPortState::EnabledDefaultAddress;
+                *state = LocalPortState::EnabledDefaultAddress { address_sent: None };
             }
             (from, to) => panic!("can't switch port state from {:?} to {:?}", from, to),
         }
@@ -191,17 +254,59 @@ impl UsbDevices {
 
     /// Asks the [`UsbDevices`] which action to perform next.
     pub fn next_action(&mut self) -> Option<Action> {
+        // Allocating the default endpoint is a one-time event.
+        if !self.allocated_default_endpoint {
+            self.allocated_default_endpoint = true;
+            return Some(Action::AllocateNewEndpoint {
+                function_address: 0,
+                endpoint_number: 0,
+                ty: EndpointTy::Control,
+            });
+        }
+
         // Start resetting a port, if possible.
         if let Some(p) = self
             .root_hub_ports
             .iter()
             .position(|p| matches!(p, LocalPortState::Disabled))
         {
-            self.root_hub_ports[p] = LocalPortState::Resetting;
-            let port = NonZeroU8::new(u8::try_from(p + 1).unwrap()).unwrap();
-            return Some(Action::SetRootHubPortState {
-                port,
-                state: PortState::Resetting,
+            // We only want to enable another port if no other port is currently resetting or on
+            // the default address. No two ports must use the default address at a given time.
+            let ready_to_enable = !self.root_hub_ports.iter().any(|p| {
+                matches!(
+                    p,
+                    LocalPortState::Resetting | LocalPortState::EnabledDefaultAddress { .. }
+                )
+            });
+
+            if ready_to_enable {
+                self.root_hub_ports[p] = LocalPortState::Resetting;
+                let port = NonZeroU8::new(u8::try_from(p + 1).unwrap()).unwrap();
+                return Some(Action::SetRootHubPortState {
+                    port,
+                    state: PortState::Resetting,
+                });
+            }
+        }
+
+        // Send address packet to newly-enabled devices.
+        if let Some(p) = self.root_hub_ports.iter().position(|p| {
+            matches!(
+                p,
+                LocalPortState::EnabledDefaultAddress { address_sent: None }
+            )
+        }) {
+            // TODO: do that properly
+            let packet_id = PacketId(1234);
+            let new_address = NonZeroU32::new(1).unwrap();
+            self.root_hub_ports[p] = LocalPortState::EnabledDefaultAddress {
+                address_sent: Some((packet_id, new_address)),
+            };
+            return Some(Action::EmitSetupPacket {
+                id: packet_id,
+                function_address: 0,
+                endpoint_number: 0,
+                data: [0; 8],
             });
         }
 

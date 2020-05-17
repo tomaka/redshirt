@@ -187,6 +187,16 @@ pub enum PortState {
     Resuming,
 }
 
+/// Type of data transfers supported by an endpoint. Each endpoint only supports one kind of data
+/// transfers.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub enum EndpointTy {
+    Control,
+    Bulk,
+    Interrupt,
+    Isochronous,
+}
+
 // TODO: move to different module
 pub struct Buffer32<TAcc>
 where
