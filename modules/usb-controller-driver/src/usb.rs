@@ -36,7 +36,7 @@ where
     TAcc: Clone,
     for<'r> &'r TAcc: HwAccessRef<'r>,
 {
-    Ohci(ohci::OhciDevice<TAcc>),
+    Ohci(ohci::OhciDevice<TAcc, ()>),
 }
 
 impl<TAcc> Usb<TAcc>
@@ -105,12 +105,21 @@ where
                 ) => {
                     ctrl.root_hub_port(port).unwrap().set_state(state).await;
                 }
-                (Controller::Ohci(ref mut ctrl), devices::Action::AllocateNewEndpoint { .. }) => {
-                    unimplemented!()
-                }
-                (Controller::Ohci(ref mut ctrl), devices::Action::FreeEndpoint { .. }) => {
-                    unimplemented!()
-                }
+                (
+                    Controller::Ohci(ref mut ctrl),
+                    devices::Action::AllocateNewEndpoint {
+                        function_address,
+                        endpoint_number,
+                        ty,
+                    },
+                ) => unimplemented!(),
+                (
+                    Controller::Ohci(ref mut ctrl),
+                    devices::Action::FreeEndpoint {
+                        function_address,
+                        endpoint_number,
+                    },
+                ) => unimplemented!(),
                 (Controller::Ohci(ref mut ctrl), devices::Action::EmitInPacket { .. }) => {
                     unimplemented!()
                 }

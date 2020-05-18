@@ -81,7 +81,7 @@ where
     /// corresponds to the new tail of the queue, while `self` is "leaked" with a `mem::forget`.
     ///
     /// The "leaked" descriptor can later be retreived by calling [`extract_leaked`].
-    pub async fn build_and_leak<'a, TUd>(
+    pub async fn build_and_leak<'a, TUd: 'static>(
         self,
         config: TransferDescriptorConfig<'a>,
         user_data: TUd,

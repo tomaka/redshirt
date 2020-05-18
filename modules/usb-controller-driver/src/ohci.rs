@@ -15,9 +15,11 @@
 
 //! OHCI handler.
 
-use crate::{HwAccessRef, PortState};
+use crate::{EndpointTy, HwAccessRef, PortState};
 use alloc::vec::Vec;
-use core::{convert::TryFrom as _, num::NonZeroU8};
+use core::{convert::TryFrom as _, marker::PhantomData, num::NonZeroU8};
+use fnv::FnvBuildHasher;
+use hashbrown::HashMap;
 
 pub use init::{init_ohci_device, InitError};
 
@@ -28,7 +30,7 @@ mod init;
 mod registers;
 mod transfer_descriptor;
 
-pub struct OhciDevice<TAcc>
+pub struct OhciDevice<TAcc, TUd>
 where
     for<'r> &'r TAcc: HwAccessRef<'r>,
 {
@@ -38,12 +40,19 @@ where
     bulk_list: ep_list::EndpointList<TAcc>,
     control_list: ep_list::EndpointList<TAcc>,
 
+    /// List of endpoints that have been registered.
+    /// The keys are a tuple of `function_address` and `endpoint_number`.
+    endpoints: HashMap<(u8, u8), EndpointTy, FnvBuildHasher>,
+
     /// For each root hub port, the latest known status dword.
     /// In order to avoid race conditions in the API of this struct, we don't directly read the
     /// port status from the memory-mapped registers. Instead, the status is cached in this fields
     /// and refreshed after the corresponding interrupt has triggered, or after the user manually
     /// asks for a refresh.
     root_hub_ports_status: Vec<u32>,
+
+    /// Phantom marker to pin `TUd`.
+    marker: PhantomData<TUd>,
 }
 
 /// Information about the suspended device.
@@ -58,7 +67,7 @@ pub(crate) struct FromSuspendedConfig {
     pub fm_interval_value: u32,
 }
 
-impl<TAcc> OhciDevice<TAcc>
+impl<TAcc, TUd> OhciDevice<TAcc, TUd>
 where
     TAcc: Clone,
     for<'r> &'r TAcc: HwAccessRef<'r>,
@@ -112,18 +121,6 @@ where
                 config.registers_location + registers::HC_BULK_CURRENT_ED_OFFSET,
                 &[bulk_list.head_pointer().get()],
             )
-            .await;
-
-        // TODO: remove this hack
-        control_list
-            .push(ep_list::Config {
-                maximum_packet_size: 4095,
-                function_address: 0,
-                endpoint_number: 0,
-                isochronous: false,
-                low_speed: true,
-                direction: ep_list::Direction::FromTd,
-            })
             .await;
 
         // Allocate the HCCA and set the appropriate register.
@@ -277,7 +274,9 @@ where
             hcca,
             bulk_list,
             control_list,
+            endpoints: Default::default(),
             root_hub_ports_status,
+            marker: PhantomData,
         }
     }
 
@@ -299,23 +298,6 @@ where
                 )
                 .await;
         }
-    }
-
-    // TODO: remove hack
-    pub async fn push_control(&mut self, data: &[u8]) {
-        self.control_list
-            .get_mut(0)
-            .unwrap()
-            .push_packet(
-                ep_list::TransferDescriptorConfig::GeneralOut {
-                    data,
-                    setup: true,
-                    delay_interrupt: 0,
-                },
-                (),
-            )
-            .await;
-        self.inform_list_filled(true, false).await;
     }
 
     /// Reads the latest updates from the controller and returns what has happened since the last
@@ -392,7 +374,7 @@ where
     /// Returns `None` if `port` is out of range.
     ///
     /// Just like regular USB hubs, ports indexing starts from 1.
-    pub fn root_hub_port(&mut self, port: NonZeroU8) -> Option<RootHubPort<TAcc>> {
+    pub fn root_hub_port(&mut self, port: NonZeroU8) -> Option<RootHubPort<TAcc, TUd>> {
         if usize::from(port.get()) >= self.root_hub_ports_status.len() + 1 {
             return None;
         }
@@ -408,12 +390,33 @@ where
         NonZeroU8::new(u8::try_from(self.root_hub_ports_status.len()).unwrap()).unwrap()
     }
 
-    /*/// Access a specific endpoint at an address.
-    pub fn entry(&mut self, function_address: u8, endpoint_number: u8) -> Entry<'a, TAcc> {
+    /// Access a specific endpoint at an address.
+    pub fn endpoint<'a>(
+        &'a mut self,
+        function_address: u8,
+        endpoint_number: u8,
+    ) -> Endpoint<'a, TAcc, TUd> {
         // TODO: stronger typing?
         assert!(function_address < 128);
         assert!(endpoint_number < 16);
-    }*/
+
+        if self
+            .endpoints
+            .contains_key(&(function_address, endpoint_number))
+        {
+            Endpoint::Known(KnownEndpoint {
+                controller: self,
+                function_address,
+                endpoint_number,
+            })
+        } else {
+            Endpoint::Unknown(UnknownEndpoint {
+                controller: self,
+                function_address,
+                endpoint_number,
+            })
+        }
+    }
 }
 
 /// Outcome of calling [`OhciDevice::on_interrupt`].
@@ -424,21 +427,98 @@ pub struct OnInterruptOutcome {
     pub root_hub_ports_changed: bool,
 }
 
-/*pub enum Entry<'a, TAcc> {
-    Unknown(UnknownEntry<'a, TAcc>),
-    Known(KnownEntry<'a, TAcc>),
-}*/
-
-/// Access to a port of the root hub of the controller.
-pub struct RootHubPort<'a, TAcc>
+pub enum Endpoint<'a, TAcc, TUd>
 where
     for<'r> &'r TAcc: HwAccessRef<'r>,
 {
-    controller: &'a mut OhciDevice<TAcc>,
+    Unknown(UnknownEndpoint<'a, TAcc, TUd>),
+    Known(KnownEndpoint<'a, TAcc, TUd>),
+}
+
+pub struct UnknownEndpoint<'a, TAcc, TUd>
+where
+    for<'r> &'r TAcc: HwAccessRef<'r>,
+{
+    controller: &'a mut OhciDevice<TAcc, TUd>,
+    function_address: u8,
+    endpoint_number: u8,
+}
+
+impl<'a, TAcc, TUd> UnknownEndpoint<'a, TAcc, TUd>
+where
+    for<'r> &'r TAcc: HwAccessRef<'r>,
+{
+    /// Inserts the endpoint in the list of endpoints.
+    pub fn insert(self, ty: EndpointTy) -> KnownEndpoint<'a, TAcc, TUd> {
+        let config = ep_list::Config {
+            maximum_packet_size: 4095,
+            function_address: self.function_address,
+            endpoint_number: self.endpoint_number,
+            isochronous: matches!(ty, EndpointTy::Isochronous),
+            low_speed: true,
+            direction: ep_list::Direction::FromTd,
+        };
+
+        match ty {
+            EndpointTy::Bulk => unimplemented!(),
+            EndpointTy::Control => unimplemented!(),
+            EndpointTy::Isochronous => unimplemented!(),
+            EndpointTy::Interrupt => unimplemented!(),
+        }
+    }
+}
+
+pub struct KnownEndpoint<'a, TAcc, TUd>
+where
+    for<'r> &'r TAcc: HwAccessRef<'r>,
+{
+    controller: &'a mut OhciDevice<TAcc, TUd>,
+    function_address: u8,
+    endpoint_number: u8,
+}
+
+impl<'a, TAcc, TUd> KnownEndpoint<'a, TAcc, TUd>
+where
+    for<'r> &'r TAcc: HwAccessRef<'r>,
+    TUd: 'static,
+{
+    /// Removes the endpoint from the list. We're not going to use it anymore.
+    pub fn remove(self) {
+        unimplemented!()
+    }
+
+    pub async fn send(&mut self, data: &[u8], user_data: TUd) {
+        self.controller
+            .control_list
+            .get_mut(0)
+            .unwrap()
+            .push_packet(
+                ep_list::TransferDescriptorConfig::GeneralOut {
+                    data,
+                    setup: true,
+                    delay_interrupt: 0,
+                },
+                user_data,
+            )
+            .await;
+        self.inform_list_filled(true, false).await;
+    }
+
+    /// Adds a new "IN" transfer descriptor to the queue, meaning that we wait for a packet from
+    /// the endpoint.
+    pub async fn receive(&mut self, buffer_size: u16, user_data: TUd) {}
+}
+
+/// Access to a port of the root hub of the controller.
+pub struct RootHubPort<'a, TAcc, TUd>
+where
+    for<'r> &'r TAcc: HwAccessRef<'r>,
+{
+    controller: &'a mut OhciDevice<TAcc, TUd>,
     port: NonZeroU8,
 }
 
-impl<'a, TAcc> RootHubPort<'a, TAcc>
+impl<'a, TAcc, TUd> RootHubPort<'a, TAcc, TUd>
 where
     for<'r> &'r TAcc: HwAccessRef<'r>,
 {
