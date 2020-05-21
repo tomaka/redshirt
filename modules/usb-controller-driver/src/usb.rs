@@ -36,7 +36,7 @@ where
     TAcc: Clone,
     for<'r> &'r TAcc: HwAccessRef<'r>,
 {
-    Ohci(ohci::OhciDevice<TAcc, ()>),
+    Ohci(ohci::OhciDevice<TAcc, devices::PacketId>),
 }
 
 impl<TAcc> Usb<TAcc>
@@ -105,6 +105,7 @@ where
                 ) => {
                     ctrl.root_hub_port(port).unwrap().set_state(state).await;
                 }
+
                 (
                     Controller::Ohci(ref mut ctrl),
                     devices::Action::AllocateNewEndpoint {
@@ -112,22 +113,74 @@ where
                         endpoint_number,
                         ty,
                     },
-                ) => unimplemented!(),
+                ) => {
+                    ctrl.endpoint(function_address, endpoint_number)
+                        .into_unknown()
+                        .unwrap()
+                        .insert(ty)
+                        .await;
+                }
+
                 (
                     Controller::Ohci(ref mut ctrl),
                     devices::Action::FreeEndpoint {
                         function_address,
                         endpoint_number,
                     },
-                ) => unimplemented!(),
-                (Controller::Ohci(ref mut ctrl), devices::Action::EmitInPacket { .. }) => {
-                    unimplemented!()
+                ) => {
+                    ctrl.endpoint(function_address, endpoint_number)
+                        .into_known()
+                        .unwrap()
+                        .remove()
+                        .await;
                 }
-                (Controller::Ohci(ref mut ctrl), devices::Action::EmitOutPacket { .. }) => {
-                    unimplemented!()
+
+                (
+                    Controller::Ohci(ref mut ctrl),
+                    devices::Action::EmitInPacket {
+                        id,
+                        function_address,
+                        endpoint_number,
+                        buffer_len,
+                    },
+                ) => {
+                    ctrl.endpoint(function_address, endpoint_number)
+                        .into_known()
+                        .unwrap()
+                        .receive(buffer_len, id)
+                        .await;
                 }
-                (Controller::Ohci(ref mut ctrl), devices::Action::EmitSetupPacket { .. }) => {
-                    unimplemented!()
+
+                (
+                    Controller::Ohci(ref mut ctrl),
+                    devices::Action::EmitOutPacket {
+                        id,
+                        function_address,
+                        endpoint_number,
+                        ref data,
+                    },
+                ) => {
+                    ctrl.endpoint(function_address, endpoint_number)
+                        .into_known()
+                        .unwrap()
+                        .send(data, id)
+                        .await;
+                }
+
+                (
+                    Controller::Ohci(ref mut ctrl),
+                    devices::Action::EmitSetupPacket {
+                        id,
+                        function_address,
+                        endpoint_number,
+                        data,
+                    },
+                ) => {
+                    ctrl.endpoint(function_address, endpoint_number)
+                        .into_known()
+                        .unwrap()
+                        .send_setup(&data, id)
+                        .await;
                 }
             }
         }

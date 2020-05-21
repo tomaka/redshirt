@@ -40,10 +40,6 @@ where
     bulk_list: ep_list::EndpointList<TAcc, (u8, u8)>,
     control_list: ep_list::EndpointList<TAcc, (u8, u8)>,
 
-    /// List of endpoints that have been registered.
-    /// The keys are a tuple of `function_address` and `endpoint_number`.
-    endpoints: HashMap<(u8, u8), EndpointTy, FnvBuildHasher>,
-
     /// For each root hub port, the latest known status dword.
     /// In order to avoid race conditions in the API of this struct, we don't directly read the
     /// port status from the memory-mapped registers. Instead, the status is cached in this fields
@@ -274,7 +270,6 @@ where
             hcca,
             bulk_list,
             control_list,
-            endpoints: Default::default(),
             root_hub_ports_status,
             marker: PhantomData,
         }
@@ -401,21 +396,38 @@ where
         assert!(endpoint_number < 16);
 
         if self
-            .endpoints
-            .contains_key(&(function_address, endpoint_number))
+            .bulk_list
+            .find_by_user_data(|d| *d == (function_address, endpoint_number))
+            .is_some()
         {
-            Endpoint::Known(KnownEndpoint {
+            return Endpoint::Known(KnownEndpoint {
                 controller: self,
                 function_address,
                 endpoint_number,
-            })
-        } else {
-            Endpoint::Unknown(UnknownEndpoint {
-                controller: self,
-                function_address,
-                endpoint_number,
-            })
+                ty: EndpointTy::Bulk,
+            });
         }
+
+        if self
+            .control_list
+            .find_by_user_data(|d| *d == (function_address, endpoint_number))
+            .is_some()
+        {
+            return Endpoint::Known(KnownEndpoint {
+                controller: self,
+                function_address,
+                endpoint_number,
+                ty: EndpointTy::Control,
+            });
+        }
+
+        // TODO: isochronous and interrupt too
+
+        Endpoint::Unknown(UnknownEndpoint {
+            controller: self,
+            function_address,
+            endpoint_number,
+        })
     }
 }
 
@@ -435,6 +447,28 @@ where
     Known(KnownEndpoint<'a, TAcc, TUd>),
 }
 
+impl<'a, TAcc, TUd> Endpoint<'a, TAcc, TUd>
+where
+    TAcc: Clone,
+    for<'r> &'r TAcc: HwAccessRef<'r>,
+{
+    /// Returns a [`KnownEndpoint`] if this endpoint is known.
+    pub fn into_known(self) -> Option<KnownEndpoint<'a, TAcc, TUd>> {
+        match self {
+            Endpoint::Known(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    /// Returns an [`UnknownEndpoint`] if this endpoint is unknown.
+    pub fn into_unknown(self) -> Option<UnknownEndpoint<'a, TAcc, TUd>> {
+        match self {
+            Endpoint::Unknown(v) => Some(v),
+            _ => None,
+        }
+    }
+}
+
 pub struct UnknownEndpoint<'a, TAcc, TUd>
 where
     for<'r> &'r TAcc: HwAccessRef<'r>,
@@ -451,17 +485,13 @@ where
 {
     /// Inserts the endpoint in the list of endpoints.
     pub async fn insert(self, ty: EndpointTy) -> KnownEndpoint<'a, TAcc, TUd> {
-        self.controller
-            .endpoints
-            .insert((self.function_address, self.endpoint_number), ty);
-
         let config = ep_list::Config {
-            maximum_packet_size: 4095,
+            maximum_packet_size: 4095, // TODO: ?
             function_address: self.function_address,
             endpoint_number: self.endpoint_number,
             isochronous: matches!(ty, EndpointTy::Isochronous),
-            low_speed: true,
-            direction: ep_list::Direction::FromTd,
+            low_speed: true,                       // TODO: ?
+            direction: ep_list::Direction::FromTd, // TODO: ?
         };
 
         match ty {
@@ -481,7 +511,12 @@ where
             EndpointTy::Interrupt => unimplemented!(),
         };
 
-        unimplemented!()
+        KnownEndpoint {
+            controller: self.controller,
+            function_address: self.function_address,
+            endpoint_number: self.endpoint_number,
+            ty,
+        }
     }
 }
 
@@ -492,6 +527,7 @@ where
     controller: &'a mut OhciDevice<TAcc, TUd>,
     function_address: u8,
     endpoint_number: u8,
+    ty: EndpointTy,
 }
 
 impl<'a, TAcc, TUd> KnownEndpoint<'a, TAcc, TUd>
@@ -501,12 +537,21 @@ where
     TUd: 'static,
 {
     /// Removes the endpoint from the list. We're not going to use it anymore.
-    pub fn remove(self) {
+    pub async fn remove(self) {
         unimplemented!()
     }
 
     pub async fn send(&mut self, data: &[u8], user_data: TUd) {
+        self.send_inner(false, data, user_data).await
+    }
+
+    pub async fn send_setup(&mut self, data: &[u8], user_data: TUd) {
+        self.send_inner(true, data, user_data).await
+    }
+
+    async fn send_inner(&mut self, setup: bool, data: &[u8], user_data: TUd) {
         let expected_ud = (self.function_address, self.endpoint_number);
+        assert_eq!(self.ty, EndpointTy::Control); // TODO: not implemented otherwise
         self.controller
             .control_list
             .find_by_user_data(|d| *d == expected_ud)
@@ -514,7 +559,7 @@ where
             .push_packet(
                 ep_list::TransferDescriptorConfig::GeneralOut {
                     data,
-                    setup: true,
+                    setup,
                     delay_interrupt: 0,
                 },
                 user_data,
@@ -525,7 +570,9 @@ where
 
     /// Adds a new "IN" transfer descriptor to the queue, meaning that we wait for a packet from
     /// the endpoint.
-    pub async fn receive(&mut self, buffer_size: u16, user_data: TUd) {}
+    pub async fn receive(&mut self, buffer_size: u16, user_data: TUd) {
+        unimplemented!()
+    }
 }
 
 /// Access to a port of the root hub of the controller.

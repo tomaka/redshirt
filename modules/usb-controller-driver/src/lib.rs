@@ -99,13 +99,20 @@ pub use usb::Usb;
 /// correct way. For example, allocating multiple buffers must not yield overlapping buffers.
 ///
 pub unsafe trait HwAccessRef<'a>: Copy + Clone {
+    /// Future returned by [`HwAccessRef::delay`].
     type Delay: Future<Output = ()> + 'a;
+    /// Future returned by [`HwAccessRef::read_memory_u8`].
     type ReadMemFutureU8: Future<Output = ()> + 'a;
+    /// Future returned by [`HwAccessRef::read_memory_u32_le`].
     type ReadMemFutureU32: Future<Output = ()> + 'a;
+    /// Future returned by [`HwAccessRef::write_memory_u8`].
     type WriteMemFutureU8: Future<Output = ()> + 'a;
+    /// Future returned by [`HwAccessRef::write_memory_u32_le`].
     type WriteMemFutureU32: Future<Output = ()> + 'a;
+    /// Future returned by [`HwAccessRef::alloc64`].
     // TODO: the error type should be core::alloc::AllocErr once it's stable
     type Alloc64: Future<Output = Result<NonZeroU64, ()>> + 'a;
+    /// Future returned by [`HwAccessRef::alloc32`].
     // TODO: the error type should be core::alloc::AllocErr once it's stable
     type Alloc32: Future<Output = Result<NonZeroU32, ()>> + 'a;
 
