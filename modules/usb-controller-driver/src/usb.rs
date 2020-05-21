@@ -16,6 +16,8 @@
 use crate::{devices, ohci, HwAccessRef, PortState};
 
 use core::num::NonZeroU8;
+use fnv::FnvBuildHasher;
+use hashbrown::HashSet;
 use smallvec::SmallVec;
 
 /// Manages the state of all USB host controllers and their devices.
@@ -36,7 +38,7 @@ where
     TAcc: Clone,
     for<'r> &'r TAcc: HwAccessRef<'r>,
 {
-    Ohci(ohci::OhciDevice<TAcc, devices::PacketId>),
+    Ohci(ohci::OhciDevice<TAcc, Option<devices::PacketId>>),
 }
 
 impl<TAcc> Usb<TAcc>
@@ -58,7 +60,7 @@ where
     /// method should therefore be called as a result.
     // TODO: pass as parameter some sort of identifier for the controller that has interrupted?
     pub async fn on_interrupt(&mut self) {
-        let mut updated_controllers = SmallVec::<[_; 4]>::new();
+        let mut updated_controllers = HashSet::<_, FnvBuildHasher>::default();
 
         for (ctrl_index, (ctrl, usb_devices)) in self.controllers.iter_mut().enumerate() {
             match ctrl {
@@ -70,7 +72,19 @@ where
                             let port = ctrl.root_hub_port(port_num).unwrap();
                             usb_devices.set_root_hub_port_state(port_num, port.state());
                         }
-                        updated_controllers.push(ctrl_index);
+                        updated_controllers.insert(ctrl_index);
+                    }
+                    for transfer in outcome.completed_transfers {
+                        if let Some(packet_id) = transfer.user_data {
+                            if let Some(buffer_back) = transfer.buffer_back {
+                                // TODO: result
+                                usb_devices.in_packet_result(packet_id, Ok(&buffer_back));
+                            } else {
+                                // TODO: result
+                                usb_devices.out_packet_result(packet_id, Ok(()));
+                            }
+                            updated_controllers.insert(ctrl_index);
+                        }
                     }
                 }
             }
@@ -147,7 +161,7 @@ where
                     ctrl.endpoint(function_address, endpoint_number)
                         .into_known()
                         .unwrap()
-                        .receive(buffer_len, id)
+                        .receive(buffer_len, Some(id))
                         .await;
                 }
 
@@ -163,24 +177,48 @@ where
                     ctrl.endpoint(function_address, endpoint_number)
                         .into_known()
                         .unwrap()
-                        .send(data, id)
+                        .send(data, Some(id))
                         .await;
                 }
 
                 (
                     Controller::Ohci(ref mut ctrl),
-                    devices::Action::EmitSetupPacket {
+                    devices::Action::EmitInSetupPacket {
                         id,
                         function_address,
                         endpoint_number,
-                        data,
+                        ref setup_packet,
+                        buffer_len,
                     },
                 ) => {
-                    ctrl.endpoint(function_address, endpoint_number)
+                    let mut endpoint = ctrl
+                        .endpoint(function_address, endpoint_number)
                         .into_known()
-                        .unwrap()
-                        .send_setup(&data, id)
-                        .await;
+                        .unwrap();
+                    endpoint.send_setup(setup_packet, None).await;
+                    endpoint.receive(buffer_len, Some(id)).await;
+                }
+
+                (
+                    Controller::Ohci(ref mut ctrl),
+                    devices::Action::EmitOutSetupPacket {
+                        id,
+                        function_address,
+                        endpoint_number,
+                        ref setup_packet,
+                        ref data,
+                    },
+                ) => {
+                    let mut endpoint = ctrl
+                        .endpoint(function_address, endpoint_number)
+                        .into_known()
+                        .unwrap();
+                    if !data.is_empty() {
+                        endpoint.send_setup(setup_packet, None).await;
+                        endpoint.send(data, Some(id)).await;
+                    } else {
+                        endpoint.send_setup(setup_packet, Some(id)).await;
+                    }
                 }
             }
         }

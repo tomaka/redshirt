@@ -301,6 +301,7 @@ async unsafe fn extract_next<TAcc, TUd>(
     pointer: u32,
 ) -> (CompletedTransferDescriptor<TUd>, u32)
 where
+    TAcc: Clone,
     for<'r> &'r TAcc: HwAccessRef<'r>,
 {
     assert_ne!(pointer, 0);
@@ -335,9 +336,6 @@ where
         }
     };
 
-    // TODO: remove this line
-    log::info!("completion code = {:?}", completion_code);
-
     // From that, we read the `Trailer` struct.
     let trailer: Trailer<TUd> = {
         let mut trailer_bytes = vec![0; mem::size_of::<Trailer<TUd>>()];
@@ -345,6 +343,46 @@ where
             .read_memory_u8(u64::from(descriptor_four_bytes[3] + 1), &mut trailer_bytes)
             .await;
         ptr::read_unaligned(trailer_bytes.as_ptr() as *const _)
+    };
+
+    let buffer_len = {
+        let start = trailer.data_buffer_start;
+        let end =
+            usize::try_from(descriptor_four_bytes[3]).unwrap() + 1 + mem::size_of::<Trailer<TUd>>();
+        end - usize::try_from(start).unwrap()
+    };
+
+    // Grab the buffer pointed to by the descriptor.
+    let buffer = {
+        let layout = Layout::from_size_align(buffer_len, 1).unwrap();
+        let start = trailer.data_buffer_start;
+        Buffer32::from_existing(
+            hardware_access.clone(),
+            NonZeroU32::new(start).unwrap(),
+            layout,
+        )
+    };
+
+    // Find the direction of the transfer.
+    let goes_in = if trailer.isochronous {
+        unimplemented!() // TODO: no idea if in or out
+    } else {
+        let val = (descriptor_four_bytes[0] >> 19) & 0b11;
+        match val {
+            0b00 | 0b01 => false,
+            0b10 => true,
+            _ => unreachable!(),
+        }
+    };
+
+    let buffer_back = if goes_in {
+        let mut out = vec![0u8; buffer_len];
+        hardware_access
+            .read_memory_u8(buffer.pointer().get().into(), &mut out)
+            .await;
+        Some(out)
+    } else {
+        None
     };
 
     // Free the descriptor's buffer.
@@ -360,6 +398,7 @@ where
     let result = CompletedTransferDescriptor {
         completion_code,
         user_data: trailer.user_data,
+        buffer_back,
     };
     (result, descriptor_four_bytes[2])
 }
@@ -368,10 +407,12 @@ where
 pub struct CompletedTransferDescriptor<TUd> {
     pub completion_code: CompletionCode,
     pub user_data: TUd,
+    /// Data sent back by the device, for inbound transfers.
+    pub buffer_back: Option<Vec<u8>>,
 }
 
 /// Possible completion code produced by the controller.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CompletionCode {
     NoError,
     Crc,

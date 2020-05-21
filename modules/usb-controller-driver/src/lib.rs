@@ -232,6 +232,18 @@ where
         }
     }
 
+    pub unsafe fn from_existing(
+        hardware_access: TAcc,
+        pointer: NonZeroU32,
+        layout: Layout,
+    ) -> Self {
+        Buffer32 {
+            hardware_access,
+            buffer: pointer,
+            layout,
+        }
+    }
+
     /// Returns the physical memory address of the buffer.
     ///
     /// This value never changes and is valid until the [`Buffer32`] is destroyed.

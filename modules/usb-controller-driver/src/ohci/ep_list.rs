@@ -125,6 +125,7 @@ where
     ///
     /// The user data must match the one that was used when pushing descriptors.
     pub async unsafe fn finish_removal<TUd>(&mut self) -> Vec<CompletedTransferDescriptor<TUd>> {
+        // TODO:
         unimplemented!()
     }
 
@@ -202,6 +203,7 @@ where
 
     /// Removes the endpoint from the list.
     pub async fn remove(self) {
+        // TODO:
         unimplemented!()
     }
 }

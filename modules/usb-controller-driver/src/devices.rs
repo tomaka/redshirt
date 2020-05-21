@@ -43,7 +43,7 @@
 //!
 //! Once a device has been assigned an address, it must be configured. TODO: finish
 
-use crate::{EndpointTy, PortState};
+use crate::{control_packets, EndpointTy, PortState};
 
 use alloc::vec::Vec;
 use core::{
@@ -53,15 +53,19 @@ use core::{
 use fnv::FnvBuildHasher;
 use hashbrown::HashMap;
 
-/// Manages the state of a collection of USB devices connected to a specific controller.
+/// Manages a collection of USB devices connected to a specific controller.
 #[derive(Debug)]
 pub struct UsbDevices {
     /// If false, we have to report an action that allocates the default control pipe on the
     /// default address.
     allocated_default_endpoint: bool,
 
+    /// Packet ID of the next packet.
+    /// This is an internal identifier that is never communicated to USB devices.
+    next_packet_id: PacketId,
+
     /// List of devices, sorted by address.
-    devices: HashMap<NonZeroU32, Device, FnvBuildHasher>,
+    devices: HashMap<NonZeroU8, Device, FnvBuildHasher>,
 
     /// State of the root ports. Port 1 is at index 0, port 2 at index 1, and so on.
     root_hub_ports: Vec<LocalPortState>,
@@ -69,9 +73,20 @@ pub struct UsbDevices {
 
 #[derive(Debug)]
 struct Device {
+    configuration_state: ConfigurationState,
+
     /// Address of the hub this device is connected to, or `None` if it is connected to the
     /// root hub.
-    hub_address: Option<NonZeroU32>,
+    hub_address: Option<NonZeroU8>,
+}
+
+#[derive(Debug)]
+enum ConfigurationState {
+    EndpointNotAllocated,
+    NotConfigured,
+    /// We have sent a request to the device asking for its device descriptor.
+    DeviceDescriptorRequested(PacketId),
+    Configured,
 }
 
 /// State of a port.
@@ -87,10 +102,10 @@ enum LocalPortState {
     EnabledDefaultAddress {
         /// If `Some`, we have sent a packet to the device asking to switch to the specified
         /// address.
-        address_sent: Option<(PacketId, NonZeroU32)>,
+        address_sent: Option<(PacketId, NonZeroU8)>,
     },
     /// Port contains a device with the given address.
-    Address(NonZeroU32),
+    Address(NonZeroU8),
 }
 
 /// Opaque packet identifier. Assigned by the [`UsbDevices`]. Identifies a packet that has been
@@ -166,10 +181,31 @@ pub enum Action {
         data: Vec<u8>,
     },
 
-    /// Emits a `SETUP` packet to an endpoint. The endpoint must be of type [`EndpointTy::Control`].
+    /// Emits a `SETUP` packet followed with an incoming `DATA` packet to an endpoint. The
+    /// endpoint must be of type [`EndpointTy::Control`].
     ///
     /// The endpoint will first have been reported with an [`Action::AllocateNewEndpoint`].
-    EmitSetupPacket {
+    EmitInSetupPacket {
+        /// Identifier assigned by the [`UsbDevices`]. Must be passed back later when calling
+        /// [`UsbDevices::in_packet_result`].
+        id: PacketId,
+        /// Value between 0 and 127. The USB address of the function containing the endpoint.
+        ///
+        /// > **Note**: The word "function" is synonymous with "device".
+        function_address: u8,
+        /// Value between 0 and 16. The index of the endpoint within the function.
+        endpoint_number: u8,
+        /// The `SETUP` packet to send first.
+        setup_packet: [u8; 8],
+        /// Length of the buffer that the device is allowed to write to.
+        buffer_len: u16,
+    },
+
+    /// Emits a `SETUP` packet optionally followed with an outgoing `DATA` packet to an endpoint.
+    /// The endpoint must be of type [`EndpointTy::Control`].
+    ///
+    /// The endpoint will first have been reported with an [`Action::AllocateNewEndpoint`].
+    EmitOutSetupPacket {
         /// Identifier assigned by the [`UsbDevices`]. Must be passed back later when calling
         /// [`UsbDevices::out_packet_result`].
         id: PacketId,
@@ -179,8 +215,11 @@ pub enum Action {
         function_address: u8,
         /// Value between 0 and 16. The index of the endpoint within the function.
         endpoint_number: u8,
-        /// Data to be sent to the device.
-        data: [u8; 8],
+        /// The `SETUP` packet to send first.
+        setup_packet: [u8; 8],
+        /// Data to be sent to the device in a `DATA` packet afterwards, or an empty `Vec` if
+        /// no data packet has to be sent.
+        data: Vec<u8>,
     },
 }
 
@@ -192,6 +231,7 @@ impl UsbDevices {
     pub fn new(root_hub_ports: NonZeroU8) -> Self {
         UsbDevices {
             allocated_default_endpoint: false,
+            next_packet_id: PacketId(1),
             devices: HashMap::with_capacity_and_hasher(
                 root_hub_ports.get().into(),
                 Default::default(),
@@ -238,18 +278,53 @@ impl UsbDevices {
         }
     }
 
-    /// Must be called as a response to [`Action::EmitInPacket`]. Contains the outcome of the
-    /// packet.
+    /// Must be called as a response to [`Action::EmitInPacket`] or [`Action::EmitInSetupPacket`].
+    /// Contains the outcome of the packet.
+    ///
+    /// # Panic
+    ///
+    /// Panics if the [`PacketId`] is invalid or has already been responded to.
     // TODO: error type?
     pub fn in_packet_result(&mut self, id: PacketId, result: Result<&[u8], ()>) {
-        unimplemented!()
+        assert!(id.0 < self.next_packet_id.0);
+
+        unimplemented!("in result")
     }
 
-    /// Must be called as a response to [`Action::EmitOutPacket`] or [`Action::EmitSetupPacket`].
-    /// Contains the outcome of the packet emission.
+    /// Must be called as a response to [`Action::EmitOutPacket`] or
+    /// [`Action::EmitOutSetupPacket`]. Contains the outcome of the packet emission.
+    ///
+    /// # Panic
+    ///
+    /// Panics if the [`PacketId`] is invalid or has already been responded to.
     // TODO: error type?
     pub fn out_packet_result(&mut self, id: PacketId, result: Result<(), ()>) {
-        unimplemented!()
+        assert!(id.0 < self.next_packet_id.0);
+
+        // Check if this is a `SetAddress` packet.
+        for port in &mut self.root_hub_ports {
+            let addr = match port {
+                LocalPortState::EnabledDefaultAddress {
+                    address_sent: Some(sent),
+                } if sent.0 == id => sent.1,
+                _ => continue,
+            };
+
+            assert!(result.is_ok()); // TODO: not implemented otherwise
+
+            *port = LocalPortState::Address(addr);
+            log::info!("assigned address {:?}", addr); // TODO: remove
+            self.devices.insert(
+                addr,
+                Device {
+                    configuration_state: ConfigurationState::EndpointNotAllocated,
+                    hub_address: None,
+                },
+            );
+            return;
+        }
+
+        unimplemented!("out result")
     }
 
     /// Asks the [`UsbDevices`] which action to perform next.
@@ -296,18 +371,60 @@ impl UsbDevices {
                 LocalPortState::EnabledDefaultAddress { address_sent: None }
             )
         }) {
-            // TODO: do that properly
-            let packet_id = PacketId(1234);
-            let new_address = NonZeroU32::new(1).unwrap();
+            let packet_id = self.next_packet_id;
+            self.next_packet_id.0 = self.next_packet_id.0.checked_add(1).unwrap();
+            // TODO: proper address attribution
+            let new_address = NonZeroU8::new(1).unwrap();
             self.root_hub_ports[p] = LocalPortState::EnabledDefaultAddress {
                 address_sent: Some((packet_id, new_address)),
             };
-            return Some(Action::EmitSetupPacket {
+            let (header, data) =
+                control_packets::encode_request(control_packets::Request::set_address(new_address));
+            let data = data.into_out_data().unwrap().to_vec();
+            assert!(data.is_empty());
+            // TODO: must give 2ms of rest for the device to listen on the new address
+            return Some(Action::EmitOutSetupPacket {
                 id: packet_id,
                 function_address: 0,
                 endpoint_number: 0,
-                data: [0; 8],
+                setup_packet: header,
+                data,
             });
+        }
+
+        // Try to find non-configured devices.
+        for (function_address, device) in self.devices.iter_mut() {
+            if matches!(
+                device.configuration_state,
+                ConfigurationState::EndpointNotAllocated
+            ) {
+                device.configuration_state = ConfigurationState::NotConfigured;
+                return Some(Action::AllocateNewEndpoint {
+                    function_address: function_address.get(),
+                    endpoint_number: 0,
+                    ty: EndpointTy::Control,
+                });
+            }
+
+            if matches!(
+                device.configuration_state,
+                ConfigurationState::NotConfigured
+            ) {
+                let packet_id = self.next_packet_id;
+                self.next_packet_id.0 = self.next_packet_id.0.checked_add(1).unwrap();
+                let (header, data) =
+                    control_packets::encode_request(control_packets::Request::get_descriptor(0));
+                device.configuration_state =
+                    ConfigurationState::DeviceDescriptorRequested(packet_id);
+                let buffer_len = data.into_in_buffer_len().unwrap();
+                return Some(Action::EmitInSetupPacket {
+                    id: packet_id,
+                    function_address: function_address.get(),
+                    endpoint_number: 0,
+                    setup_packet: header,
+                    buffer_len,
+                });
+            }
         }
 
         // TODO: continue implementation here

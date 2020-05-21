@@ -22,6 +22,7 @@ use fnv::FnvBuildHasher;
 use hashbrown::HashMap;
 
 pub use init::{init_ohci_device, InitError};
+pub use transfer_descriptor::{CompletedTransferDescriptor, CompletionCode};
 
 mod ep_descriptor;
 mod ep_list;
@@ -300,10 +301,11 @@ where
     ///
     /// The host controller will generate an interrupt when something noteworthy happened, and
     /// this method should therefore be called as a result.
-    pub async fn on_interrupt(&mut self) -> OnInterruptOutcome {
+    pub async fn on_interrupt(&mut self) -> OnInterruptOutcome<TUd> {
         // Value to be returned at the end of this function.
         let mut outcome = OnInterruptOutcome {
             root_hub_ports_changed: false,
+            completed_transfers: Default::default(),
         };
 
         // Read the `InterruptStatus` register, indicating what has happened since the last read.
@@ -321,10 +323,22 @@ where
         // WriteBackDoneHead
         // The controller has updated the done queue in the HCCA.
         if interrupt_status & (1 << 1) != 0 {
-            let list = unsafe { self.hcca.extract_done_queue::<()>().await };
-
-            // TODO: remove that
-            log::info!("completed: {:?}", list);
+            let list = unsafe { self.hcca.extract_done_queue::<TUd>().await };
+            // TODO: need to handle the possible Halted bit
+            // TODO: remove these debug things
+            log::info!(
+                "completed: {:?}",
+                list.iter()
+                    .map(|l| l.completion_code.clone())
+                    .collect::<Vec<_>>()
+            );
+            log::info!(
+                "completed: {:?}",
+                list.iter()
+                    .map(|l| l.buffer_back.clone())
+                    .collect::<Vec<_>>()
+            );
+            outcome.completed_transfers.extend(list);
         }
 
         // RootHubStatusChange
@@ -434,9 +448,12 @@ where
 /// Outcome of calling [`OhciDevice::on_interrupt`].
 #[derive(Debug)]
 #[must_use]
-pub struct OnInterruptOutcome {
+pub struct OnInterruptOutcome<TUd> {
     /// True if any of the root hub ports status has changed.
     pub root_hub_ports_changed: bool,
+
+    /// List of transfers that have finished.
+    pub completed_transfers: Vec<CompletedTransferDescriptor<TUd>>,
 }
 
 pub enum Endpoint<'a, TAcc, TUd>
@@ -570,8 +587,23 @@ where
 
     /// Adds a new "IN" transfer descriptor to the queue, meaning that we wait for a packet from
     /// the endpoint.
-    pub async fn receive(&mut self, buffer_size: u16, user_data: TUd) {
-        unimplemented!()
+    pub async fn receive(&mut self, buffer_len: u16, user_data: TUd) {
+        let expected_ud = (self.function_address, self.endpoint_number);
+        assert_eq!(self.ty, EndpointTy::Control); // TODO: not implemented otherwise
+        self.controller
+            .control_list
+            .find_by_user_data(|d| *d == expected_ud)
+            .unwrap()
+            .push_packet(
+                ep_list::TransferDescriptorConfig::GeneralIn {
+                    buffer_len: usize::from(buffer_len),
+                    buffer_rounding: false, // TODO: ?
+                    delay_interrupt: 0,
+                },
+                user_data,
+            )
+            .await;
+        self.controller.inform_list_filled(true, false).await;
     }
 }
 
