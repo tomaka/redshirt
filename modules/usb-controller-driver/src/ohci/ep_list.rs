@@ -31,10 +31,10 @@ use crate::{ohci::ep_descriptor, HwAccessRef};
 use alloc::vec::Vec;
 use core::num::NonZeroU32;
 
-pub use ep_descriptor::{Config, Direction, TransferDescriptorConfig};
+pub use ep_descriptor::{CompletedTransferDescriptor, Config, Direction, TransferDescriptorConfig};
 
 /// Linked list of endpoint descriptors.
-pub struct EndpointList<TAcc>
+pub struct EndpointList<TAcc, TEpUd>
 where
     for<'r> &'r TAcc: HwAccessRef<'r>,
 {
@@ -47,18 +47,18 @@ where
     /// implementation.
     dummy_descriptor: ep_descriptor::EndpointDescriptor<TAcc>,
     /// List of descriptors linked to each other.
-    descriptors: Vec<ep_descriptor::EndpointDescriptor<TAcc>>,
+    descriptors: Vec<(ep_descriptor::EndpointDescriptor<TAcc>, TEpUd)>,
 }
 
-impl<TAcc> EndpointList<TAcc>
+impl<TAcc, TEpUd> EndpointList<TAcc, TEpUd>
 where
     TAcc: Clone,
     for<'r> &'r TAcc: HwAccessRef<'r>,
 {
     /// Initializes a new endpoint descriptors list.
-    pub async fn new(hardware_access: TAcc, isochronous: bool) -> EndpointList<TAcc> {
-        // TODO: force the dummy to have the skip flag?
+    pub async fn new(hardware_access: TAcc, isochronous: bool) -> EndpointList<TAcc, TEpUd> {
         let dummy_descriptor = {
+            // Pass a dummy configuration. None of these fields matter.
             let config = Config {
                 maximum_packet_size: 0,
                 function_address: 0,
@@ -68,7 +68,10 @@ where
                 direction: Direction::FromTd,
             };
 
-            ep_descriptor::EndpointDescriptor::new(hardware_access.clone(), config).await
+            let mut d =
+                ep_descriptor::EndpointDescriptor::new(hardware_access.clone(), config).await;
+            d.set_skip(true).await;
+            d
         };
 
         EndpointList {
@@ -91,7 +94,7 @@ where
     ///
     /// `next` must remain valid until the next time [`EndpointList::set_next`] or is called, or
     /// until this [`EndpointList`] is destroyed.
-    pub async unsafe fn set_next<UAcc>(&mut self, next: &EndpointList<UAcc>)
+    pub async unsafe fn set_next<UAcc, UEpUd>(&mut self, next: &EndpointList<UAcc, UEpUd>)
     where
         UAcc: Clone,
         for<'r> &'r UAcc: HwAccessRef<'r>,
@@ -99,6 +102,7 @@ where
         let current_last = self
             .descriptors
             .last_mut()
+            .map(|v| &mut v.0)
             .unwrap_or(&mut self.dummy_descriptor);
         current_last.set_next_raw(next.head_pointer().get()).await;
     }
@@ -110,17 +114,32 @@ where
         self.dummy_descriptor.pointer()
     }
 
+    /// Finish destroying the endpoints that have been scheduled for removal, and returns the
+    /// transfer descriptors that haven't been processed.
+    ///
+    /// # Safety
+    ///
+    /// You must only call this function when the frame number is different from what it was when
+    /// you last called [`Endpoint::remove`]. This guarantees that the controller is no longer
+    /// accessing the endpoint descriptors that this function finishes destroying.
+    ///
+    /// The user data must match the one that was used when pushing descriptors.
+    pub async unsafe fn finish_removal<TUd>(&mut self) -> Vec<CompletedTransferDescriptor<TUd>> {
+        unimplemented!()
+    }
+
     /// Adds a new endpoint descriptor to the list.
     ///
     /// # Panic
     ///
     /// Panics if `config.isochronous` is not the same value as what was passed to `new`.
-    pub async fn push(&mut self, config: Config) {
+    pub async fn push(&mut self, config: Config, user_data: TEpUd) {
         assert_eq!(config.isochronous, self.isochronous);
 
         let current_last = self
             .descriptors
             .last_mut()
+            .map(|v| &mut v.0)
             .unwrap_or(&mut self.dummy_descriptor);
 
         let mut new_descriptor =
@@ -136,29 +155,32 @@ where
             current_last.set_next(&new_descriptor).await;
         }
 
-        self.descriptors.push(new_descriptor);
+        self.descriptors.push((new_descriptor, user_data));
     }
 
-    /// Returns the Nth endpoint in the list. Returns `None` if out of range.
-    pub fn get_mut(&mut self, index: usize) -> Option<Endpoint<TAcc>> {
-        if index >= self.descriptors.len() {
-            return None;
-        }
-
+    /// Returns the first endpoint in the list whose user data matches the given condition.
+    pub fn find_by_user_data(
+        &mut self,
+        mut condition: impl FnMut(&TEpUd) -> bool,
+    ) -> Option<Endpoint<TAcc, TEpUd>> {
+        let index = self
+            .descriptors
+            .iter()
+            .position(move |(_, ud)| condition(ud))?;
         Some(Endpoint { list: self, index })
     }
 }
 
 /// Access to a single endpoint.
-pub struct Endpoint<'a, TAcc>
+pub struct Endpoint<'a, TAcc, TEpUd>
 where
     for<'r> &'r TAcc: HwAccessRef<'r>,
 {
-    list: &'a mut EndpointList<TAcc>,
+    list: &'a mut EndpointList<TAcc, TEpUd>,
     index: usize,
 }
 
-impl<'a, TAcc> Endpoint<'a, TAcc>
+impl<'a, TAcc, TEpUd> Endpoint<'a, TAcc, TEpUd>
 where
     TAcc: Clone,
     for<'r> &'r TAcc: HwAccessRef<'r>,
@@ -167,13 +189,19 @@ where
     ///
     /// After this packet has been processed by the controller, it will be moved to the "done
     /// queue" of the HCCA where you will be able to figure out whether the transfer worked.
-    pub async fn push_packet<'b, TUd>(
+    pub async fn push_packet<'b, TUd: 'static>(
         &mut self,
         cfg: TransferDescriptorConfig<'b>,
         user_data: TUd,
     ) {
         self.list.descriptors[self.index]
+            .0
             .push_packet(cfg, user_data)
             .await
+    }
+
+    /// Removes the endpoint from the list.
+    pub async fn remove(self) {
+        unimplemented!()
     }
 }

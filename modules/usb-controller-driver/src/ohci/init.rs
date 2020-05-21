@@ -55,10 +55,10 @@ pub enum InitError {
 }
 
 /// Initializes an OHCI device whose registers are memory-mapped at the given location.
-pub async unsafe fn init_ohci_device<TAcc>(
+pub async unsafe fn init_ohci_device<TAcc, TUd>(
     access: TAcc,
     regs_loc: u64,
-) -> Result<OhciDevice<TAcc>, InitError>
+) -> Result<OhciDevice<TAcc, TUd>, InitError>
 where
     TAcc: Clone,
     for<'r> &'r TAcc: HwAccessRef<'r>,

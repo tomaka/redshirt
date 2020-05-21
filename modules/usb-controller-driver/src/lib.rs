@@ -58,6 +58,7 @@
 //!
 
 #![no_std]
+#![warn(missing_docs)]
 
 // TODO: change everything to accept an `AllocRef` trait implementation, instead of doing implicit
 // allocations

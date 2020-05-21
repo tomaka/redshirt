@@ -47,7 +47,7 @@ use core::{alloc::Layout, convert::TryFrom as _, num::NonZeroU32};
 pub use transfer_descriptor::{CompletedTransferDescriptor, CompletionCode};
 
 /// Manages the HCCA. See the module-level documentation.
-pub struct Hcca<TAcc>
+pub struct Hcca<TAcc, TEpUd>
 where
     for<'r> &'r TAcc: HwAccessRef<'r>,
 {
@@ -56,15 +56,15 @@ where
     /// Contains the HCCA itself.
     buffer: Buffer32<TAcc>,
     /// The 32 interrupt lists. They all point to `isochronous_list`.
-    interrupt_lists: ArrayVec<[ep_list::EndpointList<TAcc>; 32]>,
+    interrupt_lists: ArrayVec<[ep_list::EndpointList<TAcc, TEpUd>; 32]>,
     /// Pointed by the interrupt lists. Must contain only isochronous descriptors.
-    isochronous_list: ep_list::EndpointList<TAcc>,
+    isochronous_list: ep_list::EndpointList<TAcc, TEpUd>,
     /// Latest known value of the `DoneHead` field. Compared against the actual value to
     /// determine whether it has been updated.
     latest_known_done_head: u32,
 }
 
-impl<TAcc> Hcca<TAcc>
+impl<TAcc, TEpUd> Hcca<TAcc, TEpUd>
 where
     TAcc: Clone,
     for<'r> &'r TAcc: HwAccessRef<'r>,
@@ -72,7 +72,7 @@ where
     /// Allocates a new [`Hcca`]. The `req_alignment` represents the memory alignment of the HCCA
     /// as required by the controller. It can be determined by writing all 1s to the `HcHCCA`
     /// register then reading the value back, as explained in section 7.2.1 of the specs.
-    pub async fn new(hardware_access: TAcc, req_alignment: usize) -> Hcca<TAcc> {
+    pub async fn new(hardware_access: TAcc, req_alignment: usize) -> Hcca<TAcc, TEpUd> {
         assert!(req_alignment >= 256);
         let buffer = Buffer32::new(
             hardware_access.clone(),

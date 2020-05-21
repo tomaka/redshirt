@@ -36,9 +36,9 @@ where
 {
     hardware_access: TAcc,
     regs_loc: u64,
-    hcca: hcca::Hcca<TAcc>,
-    bulk_list: ep_list::EndpointList<TAcc>,
-    control_list: ep_list::EndpointList<TAcc>,
+    hcca: hcca::Hcca<TAcc, (u8, u8)>,
+    bulk_list: ep_list::EndpointList<TAcc, (u8, u8)>,
+    control_list: ep_list::EndpointList<TAcc, (u8, u8)>,
 
     /// List of endpoints that have been registered.
     /// The keys are a tuple of `function_address` and `endpoint_number`.
@@ -446,10 +446,15 @@ where
 
 impl<'a, TAcc, TUd> UnknownEndpoint<'a, TAcc, TUd>
 where
+    TAcc: Clone,
     for<'r> &'r TAcc: HwAccessRef<'r>,
 {
     /// Inserts the endpoint in the list of endpoints.
-    pub fn insert(self, ty: EndpointTy) -> KnownEndpoint<'a, TAcc, TUd> {
+    pub async fn insert(self, ty: EndpointTy) -> KnownEndpoint<'a, TAcc, TUd> {
+        self.controller
+            .endpoints
+            .insert((self.function_address, self.endpoint_number), ty);
+
         let config = ep_list::Config {
             maximum_packet_size: 4095,
             function_address: self.function_address,
@@ -460,11 +465,23 @@ where
         };
 
         match ty {
-            EndpointTy::Bulk => unimplemented!(),
-            EndpointTy::Control => unimplemented!(),
+            EndpointTy::Bulk => {
+                self.controller
+                    .bulk_list
+                    .push(config, (self.function_address, self.endpoint_number))
+                    .await
+            }
+            EndpointTy::Control => {
+                self.controller
+                    .control_list
+                    .push(config, (self.function_address, self.endpoint_number))
+                    .await
+            }
             EndpointTy::Isochronous => unimplemented!(),
             EndpointTy::Interrupt => unimplemented!(),
-        }
+        };
+
+        unimplemented!()
     }
 }
 
@@ -479,6 +496,7 @@ where
 
 impl<'a, TAcc, TUd> KnownEndpoint<'a, TAcc, TUd>
 where
+    TAcc: Clone,
     for<'r> &'r TAcc: HwAccessRef<'r>,
     TUd: 'static,
 {
@@ -488,9 +506,10 @@ where
     }
 
     pub async fn send(&mut self, data: &[u8], user_data: TUd) {
+        let expected_ud = (self.function_address, self.endpoint_number);
         self.controller
             .control_list
-            .get_mut(0)
+            .find_by_user_data(|d| *d == expected_ud)
             .unwrap()
             .push_packet(
                 ep_list::TransferDescriptorConfig::GeneralOut {
@@ -501,7 +520,7 @@ where
                 user_data,
             )
             .await;
-        self.inform_list_filled(true, false).await;
+        self.controller.inform_list_filled(true, false).await;
     }
 
     /// Adds a new "IN" transfer descriptor to the queue, meaning that we wait for a packet from
