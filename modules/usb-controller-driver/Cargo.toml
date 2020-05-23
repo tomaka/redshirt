@@ -10,7 +10,7 @@ publish = false
 arrayvec = { version = "0.5.1", default-features = false }
 derive_more = "0.99.5"
 fnv = { version = "1.0", default-features = false }
-futures = "0.3"
+futures = { version = "0.3", default-features = false, features = ["alloc"] }
 hashbrown = { version = "0.7.2", default-features = false }
 lazy_static = "1"
 log = "0.4"

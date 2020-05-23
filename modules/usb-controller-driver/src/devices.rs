@@ -49,6 +49,7 @@ use alloc::vec::Vec;
 use core::{
     convert::TryFrom as _,
     num::{NonZeroU32, NonZeroU8},
+    time::Duration,
 };
 use fnv::FnvBuildHasher;
 use hashbrown::HashMap;
@@ -82,6 +83,12 @@ struct Device {
 
 #[derive(Debug)]
 enum ConfigurationState {
+    /// We have sent a `SET_ADDRESS` packet to the device, and we are now waiting a bit of time
+    /// for it to start responding on the new address.
+    WaitingAddressResponsive {
+        /// Identifier for the wait for IP purposes. `None` if we haven't sent it out yet.
+        wait: Option<PacketId>,
+    },
     EndpointNotAllocated,
     NotConfigured,
     /// We have sent a request to the device asking for its device descriptor.
@@ -221,6 +228,14 @@ pub enum Action {
         /// no data packet has to be sent.
         data: Vec<u8>,
     },
+
+    /// Start a wait. You must later call [`UsbDevices::wait_finished`].
+    WaitStart {
+        /// We use a [`PacketId`] to identify waits as well.
+        id: PacketId,
+        /// How long to wait.
+        duration: Duration,
+    },
 }
 
 impl UsbDevices {
@@ -278,8 +293,29 @@ impl UsbDevices {
         }
     }
 
+    /// Must be called as a response to [`Action::StartWait`].
+    ///
+    /// You are encouraged to call [`UsbDevices::next_action`] after this has returned.
+    pub fn wait_finished(&mut self, id: PacketId) {
+        assert!(id.0 < self.next_packet_id.0);
+
+        for device in self.devices.values_mut() {
+            match device.configuration_state {
+                ConfigurationState::WaitingAddressResponsive { wait } if wait == Some(id) => {
+                    device.configuration_state = ConfigurationState::EndpointNotAllocated;
+                    return;
+                }
+                _ => {}
+            }
+        }
+
+        panic!("unknown id in wait_finished()")
+    }
+
     /// Must be called as a response to [`Action::EmitInPacket`] or [`Action::EmitInSetupPacket`].
     /// Contains the outcome of the packet.
+    ///
+    /// You are encouraged to call [`UsbDevices::next_action`] after this has returned.
     ///
     /// # Panic
     ///
@@ -293,6 +329,8 @@ impl UsbDevices {
 
     /// Must be called as a response to [`Action::EmitOutPacket`] or
     /// [`Action::EmitOutSetupPacket`]. Contains the outcome of the packet emission.
+    ///
+    /// You are encouraged to call [`UsbDevices::next_action`] after this has returned.
     ///
     /// # Panic
     ///
@@ -317,7 +355,9 @@ impl UsbDevices {
             self.devices.insert(
                 addr,
                 Device {
-                    configuration_state: ConfigurationState::EndpointNotAllocated,
+                    configuration_state: ConfigurationState::WaitingAddressResponsive {
+                        wait: None,
+                    },
                     hub_address: None,
                 },
             );
@@ -328,6 +368,8 @@ impl UsbDevices {
     }
 
     /// Asks the [`UsbDevices`] which action to perform next.
+    ///
+    /// You should call this method in a loop as long as it returns `Some`.
     pub fn next_action(&mut self) -> Option<Action> {
         // Allocating the default endpoint is a one-time event.
         if !self.allocated_default_endpoint {
@@ -392,42 +434,50 @@ impl UsbDevices {
             });
         }
 
-        // Try to find non-configured devices.
         for (function_address, device) in self.devices.iter_mut() {
-            if matches!(
-                device.configuration_state,
-                ConfigurationState::EndpointNotAllocated
-            ) {
-                device.configuration_state = ConfigurationState::NotConfigured;
-                return Some(Action::AllocateNewEndpoint {
-                    function_address: function_address.get(),
-                    endpoint_number: 0,
-                    ty: EndpointTy::Control,
-                });
-            }
+            match device.configuration_state {
+                ConfigurationState::EndpointNotAllocated => {
+                    device.configuration_state = ConfigurationState::NotConfigured;
+                    return Some(Action::AllocateNewEndpoint {
+                        function_address: function_address.get(),
+                        endpoint_number: 0,
+                        ty: EndpointTy::Control,
+                    });
+                }
 
-            if matches!(
-                device.configuration_state,
-                ConfigurationState::NotConfigured
-            ) {
-                let packet_id = self.next_packet_id;
-                self.next_packet_id.0 = self.next_packet_id.0.checked_add(1).unwrap();
-                let (header, data) =
-                    control_packets::encode_request(control_packets::Request::get_descriptor(0));
-                device.configuration_state =
-                    ConfigurationState::DeviceDescriptorRequested(packet_id);
-                let buffer_len = data.into_in_buffer_len().unwrap();
-                return Some(Action::EmitInSetupPacket {
-                    id: packet_id,
-                    function_address: function_address.get(),
-                    endpoint_number: 0,
-                    setup_packet: header,
-                    buffer_len,
-                });
+                ConfigurationState::NotConfigured => {
+                    let packet_id = self.next_packet_id;
+                    self.next_packet_id.0 = self.next_packet_id.0.checked_add(1).unwrap();
+                    let (header, data) = control_packets::encode_request(
+                        control_packets::Request::get_descriptor(0),
+                    );
+                    device.configuration_state =
+                        ConfigurationState::DeviceDescriptorRequested(packet_id);
+                    let buffer_len = data.into_in_buffer_len().unwrap();
+                    return Some(Action::EmitInSetupPacket {
+                        id: packet_id,
+                        function_address: function_address.get(),
+                        endpoint_number: 0,
+                        setup_packet: header,
+                        buffer_len,
+                    });
+                }
+
+                ConfigurationState::WaitingAddressResponsive { wait: None } => {
+                    let packet_id = self.next_packet_id;
+                    self.next_packet_id.0 = self.next_packet_id.0.checked_add(1).unwrap();
+                    device.configuration_state = ConfigurationState::WaitingAddressResponsive {
+                        wait: Some(packet_id),
+                    };
+                    return Some(Action::WaitStart {
+                        id: packet_id,
+                        duration: Duration::from_millis(2),
+                    });
+                }
+
+                _ => {}
             }
         }
-
-        // TODO: continue implementation here
 
         None
     }

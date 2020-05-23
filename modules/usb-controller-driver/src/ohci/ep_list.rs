@@ -147,9 +147,10 @@ where
             ep_descriptor::EndpointDescriptor::new(self.hardware_access.clone(), config).await;
 
         unsafe {
-            // The order here is important. First make the new descriptor pointer to the current
-            // location, then only pointer to that new descriptor. This ensures that the
-            // controller doesn't jump to the new descriptor before it's ready.
+            // The order here is important. First make the new descriptor point to the correct
+            // location, then only point to that new descriptor. This ensures that the
+            // controller doesn't jump to the new descriptor before it's ready, and also that
+            // we don't get an inconsistent state if an `await` gets interrupted.
             new_descriptor
                 .set_next_raw(current_last.get_next_raw().await)
                 .await;

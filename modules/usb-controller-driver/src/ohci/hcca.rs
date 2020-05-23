@@ -172,8 +172,12 @@ where
         if done_head == self.latest_known_done_head {
             return Vec::new();
         }
-        self.latest_known_done_head = done_head;
 
-        transfer_descriptor::extract_leaked(self.hardware_access.clone(), done_head).await
+        // Note that we update `self.latest_known_done_head` only we know that the extraction
+        // has finished.
+        let list =
+            transfer_descriptor::extract_leaked(self.hardware_access.clone(), done_head).await;
+        self.latest_known_done_head = done_head;
+        list
     }
 }

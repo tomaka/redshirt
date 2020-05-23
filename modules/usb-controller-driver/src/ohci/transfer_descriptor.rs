@@ -296,6 +296,8 @@ where
     }
 }
 
+// TODO: DANGEROUS /!\ if future gets cancelled, buffers will have been be free'd and we can't
+// call this function with the same values again
 async unsafe fn extract_next<TAcc, TUd>(
     hardware_access: TAcc,
     pointer: u32,

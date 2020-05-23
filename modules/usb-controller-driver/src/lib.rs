@@ -74,7 +74,8 @@ use core::{
 mod control_packets;
 mod devices;
 mod ohci;
-mod usb;
+
+pub mod usb;
 
 pub use ohci::InitError;
 pub use usb::Usb;
@@ -129,7 +130,25 @@ pub unsafe trait HwAccessRef<'a>: Copy + Clone {
         -> Self::ReadMemFutureU32;
 
     /// Performs a serie of atomic physical memory writes starting at the given address.
-    unsafe fn write_memory_u8(self, address: u64, data: &[u8]) -> Self::WriteMemFutureU8;
+    ///
+    /// # About Futures cancellation
+    ///
+    /// The actual memory write must be performed atomically, and must only be performed when the
+    /// returned `Future` is polled and is about to return `Poll::Ready`.
+    ///
+    /// In other words, this code **must** have no effect:
+    ///
+    /// ```
+    /// # fn foo(bar: impl usb_controller_driver::HwAccessRef<'static>) {
+    /// # let pointer = 0;
+    /// let future = bar.write_memory_u8(pointer, &[1, 2, 3, 4]);
+    /// drop(future);
+    /// // Memory must be left unchanged here.
+    /// # }
+    /// ```
+    ///
+    /// Failure to implement this behaviour might lead to undefined behaviours.
+    unsafe fn write_memory_u8(self, address: u64, data: &'a [u8]) -> Self::WriteMemFutureU8;
 
     /// Performs a serie of atomic physical memory writes starting at the given address.
     ///
@@ -137,7 +156,9 @@ pub unsafe trait HwAccessRef<'a>: Copy + Clone {
     /// should call `swap_bytes` beforehand.
     ///
     /// `address` must be a multiple of 4.
-    unsafe fn write_memory_u32_le(self, address: u64, data: &[u32]) -> Self::WriteMemFutureU32;
+    ///
+    /// See also the remark about futures cancellation in [`HwAccessRef::write_memory_u8`].
+    unsafe fn write_memory_u32_le(self, address: u64, data: &'a [u32]) -> Self::WriteMemFutureU32;
 
     /// Allocate a memory buffer in physical memory. Does not need to be cleared with 0s.
     ///

@@ -279,6 +279,9 @@ where
             _ => panic!(),
         }
 
+        // TODO: the code below is not "futures-cancellation-safe" and will panic if one of the
+        // awaits gets interrupted
+
         // Write `cfg` over `next_transfer_descriptor` and return the new queue tail.
         let new_placeholder = self
             .next_transfer_descriptor

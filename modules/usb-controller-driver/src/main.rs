@@ -19,9 +19,12 @@
 //! USB interface.
 // TODO: only OHCI is implemented lol
 
-use core::{alloc::Layout, convert::TryFrom as _};
 use core::{
+    alloc::Layout,
+    convert::TryFrom as _,
     num::{NonZeroU32, NonZeroU64},
+    pin::Pin,
+    task::{Context, Poll},
     time::Duration,
 };
 use futures::prelude::*;
@@ -94,7 +97,18 @@ async fn async_main() {
 
     // TODO: as a hack before interrupts are supported, we just periodically call `on_interrupt`
     loop {
-        redshirt_time_interface::Delay::new(Duration::from_millis(1)).await;
+        {
+            let interrupt = redshirt_time_interface::Delay::new(Duration::from_millis(1));
+            let next_event = usb_state.next_event();
+            futures::pin_mut!(interrupt, next_event);
+            match future::select(interrupt, next_event).await {
+                future::Either::Left(((), _)) => {}
+                future::Either::Right((
+                    usb_controller_driver::usb::Event::ProcessingRequired(p),
+                    _,
+                )) => p.process().await,
+            }
+        }
         usb_state.on_interrupt().await;
     }
 }
@@ -108,8 +122,8 @@ unsafe impl<'a> usb_controller_driver::HwAccessRef<'a> for &'a HwAccess {
     type Delay = redshirt_time_interface::Delay;
     type ReadMemFutureU8 = future::BoxFuture<'a, ()>;
     type ReadMemFutureU32 = future::BoxFuture<'a, ()>;
-    type WriteMemFutureU8 = future::Ready<()>;
-    type WriteMemFutureU32 = future::Ready<()>;
+    type WriteMemFutureU8 = WriteMemoryFutureU8<'a>;
+    type WriteMemFutureU32 = WriteMemoryFutureU32<'a>;
     type Alloc64 = future::BoxFuture<'a, Result<NonZeroU64, ()>>;
     type Alloc32 = future::BoxFuture<'a, Result<NonZeroU32, ()>>;
 
@@ -131,24 +145,18 @@ unsafe impl<'a> usb_controller_driver::HwAccessRef<'a> for &'a HwAccess {
         builder.send().boxed()
     }
 
-    unsafe fn write_memory_u8(self, address: u64, data: &[u8]) -> Self::WriteMemFutureU8 {
-        redshirt_hardware_interface::write(address, data.to_vec());
-        future::ready(())
+    unsafe fn write_memory_u8(self, address: u64, data: &'a [u8]) -> Self::WriteMemFutureU8 {
+        WriteMemoryFutureU8 { address, data }
     }
 
     // TODO: enforce the endianess
-    unsafe fn write_memory_u32_le(self, address: u64, data: &[u32]) -> Self::WriteMemFutureU32 {
+    unsafe fn write_memory_u32_le(self, address: u64, data: &'a [u32]) -> Self::WriteMemFutureU32 {
         debug_assert_eq!(address % 4, 0);
-        let mut builder = redshirt_hardware_interface::HardwareWriteOperationsBuilder::new();
-        // TODO: optimize
-        for (off, elem) in data.iter().enumerate() {
-            builder.write_one_u32(address + (off as u64) * 4, *elem);
-        }
-        builder.send();
-        future::ready(())
+        WriteMemoryFutureU32 { address, data }
     }
 
     fn alloc64(self, layout: Layout) -> Self::Alloc64 {
+        // TODO: leaks if future is cancelled
         redshirt_hardware_interface::malloc::malloc(
             u64::try_from(layout.size()).unwrap(),
             u64::try_from(layout.align()).unwrap(),
@@ -158,6 +166,7 @@ unsafe impl<'a> usb_controller_driver::HwAccessRef<'a> for &'a HwAccess {
     }
 
     fn alloc32(self, layout: Layout) -> Self::Alloc32 {
+        // TODO: leaks if future is cancelled
         // TODO: hardware interface has no way to force 32bits allocation
         redshirt_hardware_interface::malloc::malloc(
             u64::try_from(layout.size()).unwrap(),
@@ -173,5 +182,42 @@ unsafe impl<'a> usb_controller_driver::HwAccessRef<'a> for &'a HwAccess {
 
     fn delay(self, duration: Duration) -> Self::Delay {
         redshirt_time_interface::Delay::new(duration)
+    }
+}
+
+struct WriteMemoryFutureU8<'a> {
+    address: u64,
+    data: &'a [u8],
+}
+
+impl<'a> Future for WriteMemoryFutureU8<'a> {
+    type Output = ();
+
+    fn poll(self: Pin<&mut Self>, _: &mut Context) -> Poll<Self::Output> {
+        unsafe {
+            redshirt_hardware_interface::write(self.address, self.data.to_vec());
+            Poll::Ready(())
+        }
+    }
+}
+
+struct WriteMemoryFutureU32<'a> {
+    address: u64,
+    data: &'a [u32],
+}
+
+impl<'a> Future for WriteMemoryFutureU32<'a> {
+    type Output = ();
+
+    fn poll(self: Pin<&mut Self>, _: &mut Context) -> Poll<Self::Output> {
+        unsafe {
+            let mut builder = redshirt_hardware_interface::HardwareWriteOperationsBuilder::new();
+            // TODO: optimize
+            for (off, elem) in self.data.iter().enumerate() {
+                builder.write_one_u32(self.address + (off as u64) * 4, *elem);
+            }
+            builder.send();
+            Poll::Ready(())
+        }
     }
 }
