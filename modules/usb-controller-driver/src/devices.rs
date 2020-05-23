@@ -106,10 +106,11 @@ enum LocalPortState {
     Disabled,
     Resetting,
     /// Port is enabled and is connected to a device for which no address has been assigned yet.
-    EnabledDefaultAddress {
-        /// If `Some`, we have sent a packet to the device asking to switch to the specified
-        /// address.
-        address_sent: Option<(PacketId, NonZeroU8)>,
+    EnabledDefaultAddress,
+    /// Port is enabled and is connected to a device for which no address has been assigned yet.
+    EnabledSendingAddress {
+        packet_id: PacketId,
+        address: NonZeroU8,
     },
     /// Port contains a device with the given address.
     Address(NonZeroU8),
@@ -188,11 +189,15 @@ pub enum Action {
         data: Vec<u8>,
     },
 
-    /// Emits a `SETUP` packet followed with an incoming `DATA` packet to an endpoint. The
-    /// endpoint must be of type [`EndpointTy::Control`].
+    /// Emits a `SETUP` packet followed with an incoming `DATA` packet to an endpoint. The endpoint
+    /// must be of type [`EndpointTy::Control`].
     ///
     /// The endpoint will first have been reported with an [`Action::AllocateNewEndpoint`].
-    EmitInSetupPacket {
+    ///
+    /// > **Note**: This corresponds to the start of a device-to-host control transfer. After
+    /// >           receiving the data, the [`UsbDevices`] will emit an [`Action::EmitOutPacket`]
+    /// >           for the status packet.
+    EmitSetupInPacket {
         /// Identifier assigned by the [`UsbDevices`]. Must be passed back later when calling
         /// [`UsbDevices::in_packet_result`].
         id: PacketId,
@@ -208,11 +213,14 @@ pub enum Action {
         buffer_len: u16,
     },
 
-    /// Emits a `SETUP` packet optionally followed with an outgoing `DATA` packet to an endpoint.
+    /// Emits a `SETUP` packet optionally followed with an outgoing `DATA` packet to an endpoint
+    /// followed with an ingoing `DATA` packet of zero bytes.
     /// The endpoint must be of type [`EndpointTy::Control`].
     ///
     /// The endpoint will first have been reported with an [`Action::AllocateNewEndpoint`].
-    EmitOutSetupPacket {
+    ///
+    /// > **Note**: This corresponds to a full host-to-device control transfer.
+    EmitSetupOutInPacket {
         /// Identifier assigned by the [`UsbDevices`]. Must be passed back later when calling
         /// [`UsbDevices::out_packet_result`].
         id: PacketId,
@@ -287,7 +295,7 @@ impl UsbDevices {
             }
             (LocalPortState::Resetting, PortState::Enabled) => {
                 // Resetting the port has completed.
-                *state = LocalPortState::EnabledDefaultAddress { address_sent: None };
+                *state = LocalPortState::EnabledDefaultAddress;
             }
             (from, to) => panic!("can't switch port state from {:?} to {:?}", from, to),
         }
@@ -312,8 +320,8 @@ impl UsbDevices {
         panic!("unknown id in wait_finished()")
     }
 
-    /// Must be called as a response to [`Action::EmitInPacket`] or [`Action::EmitInSetupPacket`].
-    /// Contains the outcome of the packet.
+    /// Must be called as a response to [`Action::EmitInPacket`], [`Action::EmitSetupInPacket`]
+    /// or [`Action::EmitSetupOutInPacket`]. Contains the outcome of the packet.
     ///
     /// You are encouraged to call [`UsbDevices::next_action`] after this has returned.
     ///
@@ -324,27 +332,14 @@ impl UsbDevices {
     pub fn in_packet_result(&mut self, id: PacketId, result: Result<&[u8], ()>) {
         assert!(id.0 < self.next_packet_id.0);
 
-        unimplemented!("in result")
-    }
-
-    /// Must be called as a response to [`Action::EmitOutPacket`] or
-    /// [`Action::EmitOutSetupPacket`]. Contains the outcome of the packet emission.
-    ///
-    /// You are encouraged to call [`UsbDevices::next_action`] after this has returned.
-    ///
-    /// # Panic
-    ///
-    /// Panics if the [`PacketId`] is invalid or has already been responded to.
-    // TODO: error type?
-    pub fn out_packet_result(&mut self, id: PacketId, result: Result<(), ()>) {
-        assert!(id.0 < self.next_packet_id.0);
-
         // Check if this is a `SetAddress` packet.
         for port in &mut self.root_hub_ports {
             let addr = match port {
-                LocalPortState::EnabledDefaultAddress {
-                    address_sent: Some(sent),
-                } if sent.0 == id => sent.1,
+                LocalPortState::EnabledSendingAddress { packet_id, address }
+                    if *packet_id == id =>
+                {
+                    *address
+                }
                 _ => continue,
             };
 
@@ -363,6 +358,21 @@ impl UsbDevices {
             );
             return;
         }
+
+        unimplemented!("in result")
+    }
+
+    /// Must be called as a response to [`Action::EmitOutPacket`]. Contains the outcome of the
+    /// packet emission.
+    ///
+    /// You are encouraged to call [`UsbDevices::next_action`] after this has returned.
+    ///
+    /// # Panic
+    ///
+    /// Panics if the [`PacketId`] is invalid or has already been responded to.
+    // TODO: error type?
+    pub fn out_packet_result(&mut self, id: PacketId, result: Result<(), ()>) {
+        assert!(id.0 < self.next_packet_id.0);
 
         unimplemented!("out result")
     }
@@ -407,25 +417,25 @@ impl UsbDevices {
         }
 
         // Send address packet to newly-enabled devices.
-        if let Some(p) = self.root_hub_ports.iter().position(|p| {
-            matches!(
-                p,
-                LocalPortState::EnabledDefaultAddress { address_sent: None }
-            )
-        }) {
+        if let Some(p) = self
+            .root_hub_ports
+            .iter()
+            .position(|p| matches!(p, LocalPortState::EnabledDefaultAddress))
+        {
             let packet_id = self.next_packet_id;
             self.next_packet_id.0 = self.next_packet_id.0.checked_add(1).unwrap();
             // TODO: proper address attribution
             let new_address = NonZeroU8::new(1).unwrap();
-            self.root_hub_ports[p] = LocalPortState::EnabledDefaultAddress {
-                address_sent: Some((packet_id, new_address)),
+            self.root_hub_ports[p] = LocalPortState::EnabledSendingAddress {
+                packet_id,
+                address: new_address,
             };
             let (header, data) =
                 control_packets::encode_request(control_packets::Request::set_address(new_address));
             let data = data.into_out_data().unwrap().to_vec();
             assert!(data.is_empty());
             // TODO: must give 2ms of rest for the device to listen on the new address
-            return Some(Action::EmitOutSetupPacket {
+            return Some(Action::EmitSetupOutInPacket {
                 id: packet_id,
                 function_address: 0,
                 endpoint_number: 0,
@@ -454,7 +464,7 @@ impl UsbDevices {
                     device.configuration_state =
                         ConfigurationState::DeviceDescriptorRequested(packet_id);
                     let buffer_len = data.into_in_buffer_len().unwrap();
-                    return Some(Action::EmitInSetupPacket {
+                    return Some(Action::EmitSetupInPacket {
                         id: packet_id,
                         function_address: function_address.get(),
                         endpoint_number: 0,

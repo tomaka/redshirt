@@ -117,7 +117,7 @@ impl<'a> Request<'a> {
             ty: RequestTy::Standard,
             recipient: RequestRecipient::Device,
             b_request: 0x6,
-            w_value: 0,
+            w_value: 1 << 8,
             w_index: 0,
         }
     }

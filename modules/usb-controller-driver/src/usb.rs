@@ -266,7 +266,7 @@ where
 
                 (
                     ControllerTy::Ohci(ref mut ctrl),
-                    devices::Action::EmitInSetupPacket {
+                    devices::Action::EmitSetupInPacket {
                         id,
                         function_address,
                         endpoint_number,
@@ -284,7 +284,7 @@ where
 
                 (
                     ControllerTy::Ohci(ref mut ctrl),
-                    devices::Action::EmitOutSetupPacket {
+                    devices::Action::EmitSetupOutInPacket {
                         id,
                         function_address,
                         endpoint_number,
@@ -298,9 +298,11 @@ where
                         .unwrap();
                     if !data.is_empty() {
                         endpoint.send_setup(setup_packet, None).await;
-                        endpoint.send(data, Some(id)).await;
+                        endpoint.send(data, None).await;
+                        endpoint.receive(1, Some(id)).await; // TODO: must be 0 sized
                     } else {
-                        endpoint.send_setup(setup_packet, Some(id)).await;
+                        endpoint.send_setup(setup_packet, None).await;
+                        endpoint.receive(1, Some(id)).await; // TODO: must be 0 sized
                     }
                 }
             }

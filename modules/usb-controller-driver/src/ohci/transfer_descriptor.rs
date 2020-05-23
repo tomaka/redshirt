@@ -108,7 +108,7 @@ where
         };
 
         assert!(base_buffer_len < 4096);
-        assert!(base_buffer_len >= 1);
+        assert!(base_buffer_len >= 1); // TODO: no; 0 is allowed by setting buffer pointer to 0
         let base_buffer_len_u32 = u32::try_from(base_buffer_len).unwrap();
 
         // We allocate a buffer of data containing the request space or the data to send, plus a
@@ -378,7 +378,11 @@ where
     };
 
     let buffer_back = if goes_in {
-        let mut out = vec![0u8; buffer_len];
+        let transferred = match descriptor_four_bytes[1] {
+            0 => 0, // TODO: docs mention "...or that all data has been transferred" for the CBP; check this
+            n => usize::try_from(n - trailer.data_buffer_start).unwrap(),
+        };
+        let mut out = vec![0u8; transferred];
         hardware_access
             .read_memory_u8(buffer.pointer().get().into(), &mut out)
             .await;
