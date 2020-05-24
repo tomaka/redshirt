@@ -96,6 +96,7 @@ async fn async_main() {
                     if let Some(packet) = unsafe { device.read_one_incoming().await } {
                         registration.packet_from_network().await.send(packet)
                     }
+                    redshirt_time_interface::monotonic_wait(core::time::Duration::from_millis(500)).await;
                 }
             }
             .boxed_local(),

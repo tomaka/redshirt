@@ -80,7 +80,7 @@ pub enum NetworkManagerEvent<'a, TIfId, TIfUser> {
     TcpWriteFinished(TcpSocket<'a, TIfId>),
 }
 
-/// Reference to a socket within the manager.
+/// Access to a socket within the manager.
 pub struct TcpSocket<'a, TIfId> {
     id: u64,
     inner: TcpSocketInner<'a, TIfId>,

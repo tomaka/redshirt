@@ -451,9 +451,9 @@ source = "git+https://github.com/dflemstr/rust-fnv#bfc842cc68cd3a2628915f46d3bff
 
 [[package]]
 name = "fnv"
-version = "1.0.6"
+version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2fad85553e09a6f881f739c29f0b00b0f01357c743266d478b68951ce23285f3"
+checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
 
 [[package]]
 name = "fsevent"
@@ -691,7 +691,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "377038bf3c89d18d6ca1431e7a5027194fbd724ca10592b9487ede5e8e144f42"
 dependencies = [
  "bytes",
- "fnv 1.0.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "fnv 1.0.7",
  "futures-core",
  "futures-sink",
  "futures-util",
@@ -771,7 +771,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "28d569972648b2c512421b5f2a405ad6ac9666547189d0c5477a3f200f3e02f9"
 dependencies = [
  "bytes",
- "fnv 1.0.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "fnv 1.0.7",
  "itoa",
 ]
 
@@ -1016,7 +1016,7 @@ dependencies = [
  "bs58",
  "ed25519-dalek",
  "either",
- "fnv 1.0.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "fnv 1.0.7",
  "futures",
  "futures-timer 3.0.2",
  "lazy_static",
@@ -1059,7 +1059,7 @@ dependencies = [
  "arrayvec",
  "bytes",
  "either",
- "fnv 1.0.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "fnv 1.0.7",
  "futures",
  "futures_codec",
  "libp2p-core",
@@ -1084,7 +1084,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0832882b06619b2e81d74e71447753ea3c068164a0bca67847d272e856a04a02"
 dependencies = [
  "bytes",
- "fnv 1.0.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "fnv 1.0.7",
  "futures",
  "futures_codec",
  "libp2p-core",
@@ -1371,7 +1371,7 @@ dependencies = [
 name = "network-manager"
 version = "0.1.0"
 dependencies = [
- "fnv 1.0.6 (git+https://github.com/dflemstr/rust-fnv)",
+ "fnv 1.0.7",
  "futures",
  "hashbrown 0.6.3",
  "log",
@@ -1557,7 +1557,7 @@ dependencies = [
 name = "pci-printer"
 version = "0.1.0"
 dependencies = [
- "fnv 1.0.6 (git+https://github.com/dflemstr/rust-fnv)",
+ "fnv 1.0.6",
  "hashbrown 0.7.2",
  "lazy_static",
  "log",
@@ -2300,7 +2300,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "05c1d570eb1a36f0345a5ce9c6c6e665b70b73d11236912c0b477616aeec47b1"
 dependencies = [
  "bytes",
- "fnv 1.0.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "fnv 1.0.7",
  "futures-core",
  "memchr",
  "pin-project-lite",
