@@ -17,7 +17,7 @@ use fnv::FnvBuildHasher;
 use futures::prelude::*;
 use hashbrown::HashMap;
 use network_manager::{NetworkManager, NetworkManagerEvent};
-use redshirt_network_interface::ffi as net_ffi;
+use redshirt_ethernet_interface::ffi as net_ffi;
 use redshirt_syscalls::ffi::DecodedInterfaceOrDestroyed;
 use redshirt_syscalls::{Decode as _, MessageId};
 use redshirt_tcp_interface::ffi as tcp_ffi;

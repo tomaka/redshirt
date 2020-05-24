@@ -1376,9 +1376,9 @@ dependencies = [
  "hashbrown 0.6.3",
  "log",
  "parity-scale-codec",
+ "redshirt-ethernet-interface",
  "redshirt-interface-interface",
  "redshirt-log-interface",
- "redshirt-network-interface",
  "redshirt-syscalls",
  "redshirt-tcp-interface",
  "redshirt-time-interface",
@@ -1892,16 +1892,6 @@ version = "0.1.0"
 dependencies = [
  "log",
  "redshirt-syscalls",
-]
-
-[[package]]
-name = "redshirt-network-interface"
-version = "0.1.0"
-dependencies = [
- "futures",
- "parity-scale-codec",
- "redshirt-syscalls",
- "tokio",
 ]
 
 [[package]]

@@ -12,9 +12,9 @@ futures = "0.3"
 hashbrown = { version = "0.6.3", default-features = false }
 log = "0.4"
 parity-scale-codec = "1.0.5"
+redshirt-ethernet-interface = { path = "../../interfaces/ethernet" }
 redshirt-interface-interface = { path = "../../interfaces/interface" }
 redshirt-log-interface = { path = "../../interfaces/log" } # TODO: remove
-redshirt-network-interface = { path = "../../interfaces/network" }
 redshirt-syscalls = { path = "../../interfaces/syscalls" }
 redshirt-tcp-interface = { path = "../../interfaces/tcp" }
 redshirt-time-interface = { path = "../../interfaces/time" }

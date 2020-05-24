@@ -15,7 +15,6 @@ members = [
     "interfaces/interface",
     "interfaces/kernel-log",
     "interfaces/loader",
-    "interfaces/network",
     "interfaces/log",
     "interfaces/pci",
     "interfaces/random",
