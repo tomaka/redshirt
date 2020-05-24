@@ -13,10 +13,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use crate::scheduler::extrinsics::WaitEntry;
 use crate::{EncodedMessage, InterfaceHash, MessageId, Pid};
 
 use alloc::collections::VecDeque;
-use core::{convert::TryFrom, num::NonZeroU64};
+use core::convert::TryFrom as _;
 use redshirt_syscalls::ffi::NotificationBuilder;
 use spinning_top::{Spinlock, SpinlockGuard};
 
@@ -114,8 +115,8 @@ impl NotificationsQueue {
     ///
     /// If an entry is found, its corresponding index within `indices` is stored in the returned
     /// `Entry`.
-    // TODO: better param type
-    pub fn find(&self, indices: &[Option<MessageId>]) -> Option<Entry> {
+    // TODO: something better than a slice as parameter?
+    pub fn find(&self, indices: &[WaitEntry]) -> Option<Entry> {
         let notifications_queue = self.notifications_queue.lock();
 
         let mut index_in_queue = 0;
@@ -125,19 +126,19 @@ impl NotificationsQueue {
                 return None;
             }
 
-            // For that notification in queue, grab the value that must be in `msg_ids` in order to match.
-            let msg_id = match &notifications_queue[index_in_queue] {
-                NotificationBuilder::Interface(_) => MessageId::from(NonZeroU64::new(1).unwrap()),
-                NotificationBuilder::ProcessDestroyed(_) => {
-                    MessageId::from(NonZeroU64::new(1).unwrap())
+            // For that notification in queue, build the value that must be in `msg_ids` in order
+            // to match.
+            let wait_entry = match &notifications_queue[index_in_queue] {
+                NotificationBuilder::Interface(_) | NotificationBuilder::ProcessDestroyed(_) => {
+                    WaitEntry::InterfaceOrProcDestroyed
                 }
                 NotificationBuilder::Response(response) => {
                     debug_assert!(u64::from(response.message_id()) >= 2);
-                    response.message_id()
+                    WaitEntry::Answer(response.message_id())
                 }
             };
 
-            if let Some(p) = indices.iter().position(|id| *id == Some(msg_id)) {
+            if let Some(p) = indices.iter().position(|id| *id == wait_entry) {
                 break p;
             }
 

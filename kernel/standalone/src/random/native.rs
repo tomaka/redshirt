@@ -34,6 +34,7 @@ pub struct RandomNativeProgram<TPlat> {
     /// Queue of random number generators. If it is empty, we generate a new one.
     rngs: SegQueue<KernelRng>,
     /// Message responses waiting to be emitted.
+    // TODO: must notify the next_event future
     pending_messages: SegQueue<(MessageId, Result<EncodedMessage, ()>)>,
     /// Platform-specific hooks.
     platform_specific: Pin<Arc<TPlat>>,

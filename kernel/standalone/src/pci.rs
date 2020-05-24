@@ -13,17 +13,5 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#![cfg(test)]
-
-use crate::extrinsics::NoExtrinsics;
-
-mod basic_module;
-mod emit_not_available;
-mod emit_reserved_pid;
-mod trapping_module;
-
-#[test]
-fn send_sync() {
-    fn is_send_sync<T: Send + Sync>() {}
-    is_send_sync::<super::Core<NoExtrinsics>>()
-}
+pub mod native;
+pub mod pci;

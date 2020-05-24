@@ -16,7 +16,7 @@
 use crate::{ffi::DecodedInterfaceOrDestroyed, Encode, MessageId};
 
 use core::{
-    num::NonZeroU64,
+    convert::TryFrom as _,
     pin::Pin,
     task::{Context, Poll},
 };
@@ -82,8 +82,7 @@ impl Future for InterfaceMessageFuture {
             match &mut self.registration {
                 Some(r) => r.update(cx.waker()),
                 r @ None => {
-                    *r = Some(crate::block_on::register_message_waker(
-                        From::from(NonZeroU64::new(1).unwrap()),
+                    *r = Some(crate::block_on::register_interface_message_waker(
                         cx.waker().clone(),
                     ))
                 }
