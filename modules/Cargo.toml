@@ -5,11 +5,11 @@ members = [
     "log-to-kernel",
     "ne2000",
     "p2p-loader",
+    "pci-printer",
     "rpi-framebuffer",
     "stub",
     "third-party/time",
     "third-party/wasm-timer",
-    "x86-pci",
 ]
 
 [profile.dev]
