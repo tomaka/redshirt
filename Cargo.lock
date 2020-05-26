@@ -1636,6 +1636,8 @@ dependencies = [
 name = "redshirt-framebuffer-interface"
 version = "0.1.0"
 dependencies = [
+ "futures",
+ "parity-scale-codec",
  "redshirt-random-interface",
  "redshirt-syscalls",
 ]
