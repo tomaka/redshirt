@@ -31,7 +31,7 @@ use glium::glutin::event_loop::{ControlFlow, EventLoop, EventLoopProxy, EventLoo
 use parking_lot::Mutex;
 use redshirt_core::native::{DummyMessageIdWrite, NativeProgramEvent, NativeProgramRef};
 use redshirt_core::{Encode as _, EncodedMessage, InterfaceHash, MessageId, Pid};
-use redshirt_framebuffer_interface::ffi::INTERFACE;
+use redshirt_framebuffer_interface::ffi;
 use std::{
     collections::{hash_map::Entry, HashMap, VecDeque},
     convert::TryFrom as _,
@@ -307,7 +307,7 @@ impl<'a> NativeProgramRef<'a> for &'a FramebufferHandler {
                     interface: redshirt_interface_interface::ffi::INTERFACE,
                     message_id_write: None,
                     message: redshirt_interface_interface::ffi::InterfaceMessage::Register(
-                        INTERFACE,
+                        ffi::INTERFACE_WITH_EVENTS,
                     )
                     .encode(),
                 };
@@ -332,7 +332,7 @@ impl<'a> NativeProgramRef<'a> for &'a FramebufferHandler {
         emitter_pid: Pid,
         message: EncodedMessage,
     ) {
-        debug_assert_eq!(interface, INTERFACE);
+        debug_assert_eq!(interface, ffi::INTERFACE_WITH_EVENTS);
         self.to_context
             .unbounded_send(HandlerToContext::InterfaceMessage {
                 emitter_pid,
@@ -357,16 +357,19 @@ impl<'a> NativeProgramRef<'a> for &'a FramebufferHandler {
 fn host_event_to_guest(ev: &WindowEvent) -> Option<EncodedMessage> {
     match ev {
         WindowEvent::KeyboardInput { input, .. } => {
-            if let Some(keycode) = input.virtual_keycode {
-                let first_byte = match input.state {
-                    ElementState::Pressed => 1,
-                    ElementState::Released => 0,
+            if let Ok(scancode) = u16::try_from(input.scancode) {
+                let new_state = match input.state {
+                    ElementState::Pressed => ffi::Keystate::Pressed,
+                    ElementState::Released => ffi::Keystate::Released,
                 };
 
-                let rest = (keycode as u32).to_le_bytes();
-                Some(EncodedMessage(vec![
-                    first_byte, rest[0], rest[1], rest[2], rest[3],
-                ]))
+                Some(
+                    ffi::Event::KeyboardChange {
+                        scancode,
+                        new_state,
+                    }
+                    .encode(),
+                )
             } else {
                 None
             }
