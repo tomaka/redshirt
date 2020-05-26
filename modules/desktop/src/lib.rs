@@ -68,6 +68,12 @@ impl Desktop {
         }
     }
 
+    /// Sets the position of the cursor inside of the desktop, in pixels from the top-left hand
+    /// corner.
+    pub fn set_cursor_position(&mut self, position: Option<[f32; 2]>) {
+        self.imgui.io_mut().mouse_pos = position.unwrap_or([f32::MAX, f32::MAX]);
+    }
+
     /// Returns a buffer containing the RGB pixels.
     pub fn pixels(&self) -> &[u8] {
         self.rasterizer.pixels()
@@ -79,8 +85,6 @@ impl Desktop {
             self.imgui.io_mut().delta_time = (now - self.last_rendering).as_secs_f32();
             self.last_rendering = now;
         }
-
-        self.imgui.io_mut().mouse_pos = [300.0, 200.0]; // TODO:
 
         let ui = self.imgui.frame();
         self.background.draw(&ui);

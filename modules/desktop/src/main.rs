@@ -15,23 +15,46 @@
 
 //! Desktop environment.
 
-use std::time::Duration;
+use futures::prelude::*;
+use redshirt_framebuffer_interface::ffi;
 
 fn main() {
     redshirt_syscalls::block_on(async_main())
 }
 
 async fn async_main() {
-    let fb = redshirt_framebuffer_interface::Framebuffer::new(800, 600).await;
+    let mut fb = redshirt_framebuffer_interface::Framebuffer::new(true, 800, 600).await;
     let mut display = desktop::Desktop::new([800, 600]).await;
 
-    let mut next_draw = redshirt_time_interface::monotonic_wait(Duration::from_millis(0));
-
     loop {
-        (&mut next_draw).await;
-        next_draw = redshirt_time_interface::monotonic_wait(Duration::from_millis(100));
-
         display.render();
         fb.set_data(display.pixels());
+
+        let events = {
+            let mut events = vec![fb.next_event().await];
+            // TODO: use now_or_never after https://github.com/tomaka/redshirt/issues/447 is fixed
+            loop {
+                let ev = fb.next_event();
+                futures::pin_mut!(ev);
+                match future::select(ev, future::ready(())).await {
+                    future::Either::Left((ev, _)) => events.push(ev),
+                    future::Either::Right(((), _)) => break,
+                }
+            }
+            events
+        };
+        println!("received events: {:?}", events);
+
+        for event in events {
+            match event {
+                ffi::Event::CursorMoved { new_position: Some(pos) } => {
+                    display.set_cursor_position(Some([pos.0 as f32 / 1000.0, pos.1 as f32 / 1000.0]));
+                }
+                ffi::Event::CursorMoved { new_position: None } => {
+                    display.set_cursor_position(None);
+                }
+                _ => {}
+            }
+        }
     }
 }
