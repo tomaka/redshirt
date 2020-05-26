@@ -51,6 +51,7 @@ pub const INTERFACE_WITHOUT_EVENTS: InterfaceHash = InterfaceHash::from_raw_hash
 /// >           lost. This can happen if the recipient queues messages too slowly.
 #[derive(Debug, Clone, parity_scale_codec::Encode, parity_scale_codec::Decode)]
 pub enum Event {
+    /// A keyboard key has been pressed or released.
     KeyboardChange {
         /// Scancode as defined in the USB HID Usage tables.
         ///
@@ -59,12 +60,39 @@ pub enum Event {
         scancode: u16,
 
         /// New state of the given key.
-        new_state: Keystate,
+        new_state: ElementState,
+    },
+
+    /// The cursor has moved over the framebuffer.
+    CursorMoved {
+        /// New position of the cursor in millipixels relative to the top-left hand corner of the
+        /// framebuffer. `None` if the cursor is not on the framebuffer.
+        ///
+        /// Please note that these are millipixels. As such, you have to divide them by 1000 to
+        /// obtain a value in pixels.
+        new_position: Option<(u64, u64)>,
+    },
+
+    /// A mouse button has been pressed or released.
+    MouseButtonChange {
+        /// Which mouse button is concerned.
+        button: MouseButton,
+
+        /// New state of the given button.
+        new_state: ElementState,
     },
 }
 
 #[derive(Debug, Clone, parity_scale_codec::Encode, parity_scale_codec::Decode)]
-pub enum Keystate {
+pub enum MouseButton {
+    /// Typically but not necessarily the left mouse button.
+    Main,
+    /// Typically but not necessarily the right mouse button.
+    Secondary,
+}
+
+#[derive(Debug, Clone, parity_scale_codec::Encode, parity_scale_codec::Decode)]
+pub enum ElementState {
     Pressed,
     Released,
 }

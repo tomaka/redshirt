@@ -26,7 +26,7 @@
 //!
 
 use futures::{channel::mpsc, lock::Mutex as FutureMutex, prelude::*};
-use glium::glutin::event::{ElementState, Event, StartCause, WindowEvent};
+use glium::glutin::event::{ElementState, Event, MouseButton, StartCause, WindowEvent};
 use glium::glutin::event_loop::{ControlFlow, EventLoop, EventLoopProxy, EventLoopWindowTarget};
 use parking_lot::Mutex;
 use redshirt_core::native::{DummyMessageIdWrite, NativeProgramEvent, NativeProgramRef};
@@ -357,10 +357,11 @@ impl<'a> NativeProgramRef<'a> for &'a FramebufferHandler {
 fn host_event_to_guest(ev: &WindowEvent) -> Option<EncodedMessage> {
     match ev {
         WindowEvent::KeyboardInput { input, .. } => {
+            // TODO: is input.scancode the USB-conforming scancode?
             if let Ok(scancode) = u16::try_from(input.scancode) {
                 let new_state = match input.state {
-                    ElementState::Pressed => ffi::Keystate::Pressed,
-                    ElementState::Released => ffi::Keystate::Released,
+                    ElementState::Pressed => ffi::ElementState::Pressed,
+                    ElementState::Released => ffi::ElementState::Released,
                 };
 
                 Some(
@@ -370,6 +371,39 @@ fn host_event_to_guest(ev: &WindowEvent) -> Option<EncodedMessage> {
                     }
                     .encode(),
                 )
+            } else {
+                None
+            }
+        }
+        WindowEvent::CursorLeft { .. } => {
+            Some(ffi::Event::CursorMoved { new_position: None }.encode())
+        }
+        WindowEvent::CursorMoved { position, .. } => {
+            assert!(position.x.is_normal());
+            assert!(position.y.is_normal());
+            let x = (position.x * 1000.0) as u64; // TODO: check conversion correctness?
+            let y = (position.y * 1000.0) as u64; // TODO: check conversion correctness?
+            Some(
+                ffi::Event::CursorMoved {
+                    new_position: Some((x, y)),
+                }
+                .encode(),
+            )
+        }
+        WindowEvent::MouseInput { state, button, .. } => {
+            let new_state = match state {
+                ElementState::Pressed => ffi::ElementState::Pressed,
+                ElementState::Released => ffi::ElementState::Released,
+            };
+
+            let button = match button {
+                MouseButton::Left => Some(ffi::MouseButton::Main),
+                MouseButton::Right => Some(ffi::MouseButton::Secondary),
+                _ => None,
+            };
+
+            if let Some(button) = button {
+                Some(ffi::Event::MouseButtonChange { button, new_state }.encode())
             } else {
                 None
             }
