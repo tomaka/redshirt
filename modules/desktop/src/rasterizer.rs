@@ -100,6 +100,8 @@ impl Rasterizer {
                     }
                 }
                 imgui::DrawCmd::ResetRenderState => (),
+
+                // The `imgui` library requires one to call this unsafe callback.
                 imgui::DrawCmd::RawCallback { callback, raw_cmd } => unsafe {
                     callback(draw_list.raw(), raw_cmd)
                 },
@@ -107,7 +109,7 @@ impl Rasterizer {
         }
     }
 
-    /// Draws a single triange made from the three given vertices on the surface.
+    /// Draws a single triangle made from the three given vertices on the surface.
     fn draw_triangle(
         &mut self,
         vertices: [imgui::DrawVert; 3],
