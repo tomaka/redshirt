@@ -428,12 +428,12 @@ extern "x86-interrupt" fn int1(_frame: &mut idt::InterruptStackFrame) {
     let dr7: u64;
 
     unsafe {
-        asm!("mov %dr0, $0" : "=r"(dr0));
-        asm!("mov %dr1, $0" : "=r"(dr1));
-        asm!("mov %dr2, $0" : "=r"(dr2));
-        asm!("mov %dr3, $0" : "=r"(dr3));
-        asm!("mov %dr6, $0" : "=r"(dr6));
-        asm!("mov %dr7, $0" : "=r"(dr7));
+        llvm_asm!("mov %dr0, $0" : "=r"(dr0));
+        llvm_asm!("mov %dr1, $0" : "=r"(dr1));
+        llvm_asm!("mov %dr2, $0" : "=r"(dr2));
+        llvm_asm!("mov %dr3, $0" : "=r"(dr3));
+        llvm_asm!("mov %dr6, $0" : "=r"(dr6));
+        llvm_asm!("mov %dr7, $0" : "=r"(dr7));
     }
 
     panic!(
