@@ -52,7 +52,7 @@ pub fn block_on<R>(future: impl Future<Output = R>) -> R {
             // TODO: can an interrupt happen between `local_wake` and here?
             // contrary to other platforms, the manual doesn't mention anything about enabling
             // instructions having a delay
-            unsafe { asm!("wfi" :::: "volatile") }
+            unsafe { llvm_asm!("wfi" :::: "volatile") }
         }
     }
 }
