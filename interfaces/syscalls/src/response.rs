@@ -72,7 +72,8 @@ where
 
         if let Some(response) = crate::block_on::peek_response(self.msg_id) {
             self.finished = true;
-            return Poll::Ready(Decode::decode(response.actual_data.unwrap()).unwrap()) // TODO: don't unwrap here?
+            return Poll::Ready(Decode::decode(response.actual_data.unwrap()).unwrap());
+            // TODO: don't unwrap here?
         }
 
         if let Some(r) = &mut self.registration {
@@ -86,14 +87,15 @@ where
         if let Some(notif) = crate::block_on::next_notification(&mut [self.msg_id.into()], false) {
             let response = match notif {
                 DecodedNotification::Response(response) => response,
-                _ => unreachable!()
+                _ => unreachable!(),
             };
 
             debug_assert_eq!(response.index_in_list, 0);
             debug_assert_eq!(response.message_id, self.msg_id);
 
             self.finished = true;
-            return Poll::Ready(Decode::decode(response.actual_data.unwrap()).unwrap()) // TODO: don't unwrap here?
+            return Poll::Ready(Decode::decode(response.actual_data.unwrap()).unwrap());
+            // TODO: don't unwrap here?
         }
 
         self.registration = Some(crate::block_on::register_message_waker(
