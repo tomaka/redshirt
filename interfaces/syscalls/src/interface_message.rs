@@ -82,7 +82,6 @@ impl Future for InterfaceMessageFuture {
         if let Some(message) = crate::block_on::peek_interface_message() {
             self.finished = true;
             return Poll::Ready(message);
-            // TODO: don't unwrap here?
         }
 
         if let Some(r) = &mut self.registration {
@@ -104,7 +103,6 @@ impl Future for InterfaceMessageFuture {
 
             self.finished = true;
             return Poll::Ready(msg);
-            // TODO: don't unwrap here?
         }
 
         self.registration = Some(crate::block_on::register_interface_message_waker(
