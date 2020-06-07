@@ -13,7 +13,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::{ffi::DecodedInterfaceOrDestroyed, Encode, MessageId};
+use crate::{
+    ffi::{DecodedInterfaceOrDestroyed, DecodedNotification},
+    Encode, MessageId,
+};
 
 use core::{
     convert::TryFrom as _,
@@ -75,21 +78,39 @@ impl Future for InterfaceMessageFuture {
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         assert!(!self.finished);
+
         if let Some(message) = crate::block_on::peek_interface_message() {
             self.finished = true;
-            Poll::Ready(message)
-        } else {
-            match &mut self.registration {
-                Some(r) => r.update(cx.waker()),
-                r @ None => {
-                    *r = Some(crate::block_on::register_interface_message_waker(
-                        cx.waker().clone(),
-                    ))
+            return Poll::Ready(message);
+            // TODO: don't unwrap here?
+        }
+
+        if let Some(r) = &mut self.registration {
+            r.update(cx.waker());
+            return Poll::Pending;
+        }
+
+        // The first time `poll` is called, we normally register the message towards the `block_on`
+        // module. But before doing that, we do a peeking syscall to see if a response has already
+        // arrived. This makes it possible for code such as `future.now_or_never()` to work.
+        if let Some(notif) = crate::block_on::next_notification(&mut [1], false) {
+            let msg = match notif {
+                DecodedNotification::Interface(msg) => DecodedInterfaceOrDestroyed::Interface(msg),
+                DecodedNotification::ProcessDestroyed(msg) => {
+                    DecodedInterfaceOrDestroyed::ProcessDestroyed(msg)
                 }
+                _ => unreachable!(),
             };
 
-            Poll::Pending
+            self.finished = true;
+            return Poll::Ready(msg);
+            // TODO: don't unwrap here?
         }
+
+        self.registration = Some(crate::block_on::register_interface_message_waker(
+            cx.waker().clone(),
+        ));
+        Poll::Pending
     }
 }
 
