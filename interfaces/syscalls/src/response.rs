@@ -69,22 +69,38 @@ where
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         assert!(!self.finished);
+
         if let Some(response) = crate::block_on::peek_response(self.msg_id) {
             self.finished = true;
-            Poll::Ready(Decode::decode(response.actual_data.unwrap()).unwrap()) // TODO: don't unwrap here?
-        } else {
-            let msg_id = self.msg_id;
-            match &mut self.registration {
-                Some(r) => r.update(cx.waker()),
-                r @ None => {
-                    *r = Some(crate::block_on::register_message_waker(
-                        msg_id,
-                        cx.waker().clone(),
-                    ))
-                }
-            };
-            Poll::Pending
+            return Poll::Ready(Decode::decode(response.actual_data.unwrap()).unwrap()) // TODO: don't unwrap here?
         }
+
+        if let Some(r) = &mut self.registration {
+            r.update(cx.waker());
+            return Poll::Pending;
+        }
+
+        // The first time `poll` is called, we normally register the message towards the `block_on`
+        // module. But before doing that, we do a peeking syscall to see if a response has already
+        // arrived. This makes it possible for code such as `future.now_or_never()` to work.
+        if let Some(notif) = crate::block_on::next_notification(&mut [self.msg_id.into()], false) {
+            let response = match notif {
+                DecodedNotification::Response(response) => response,
+                _ => unreachable!()
+            };
+
+            debug_assert_eq!(response.index_in_list, 0);
+            debug_assert_eq!(response.message_id, self.msg_id);
+
+            self.finished = true;
+            return Poll::Ready(Decode::decode(response.actual_data.unwrap()).unwrap()) // TODO: don't unwrap here?
+        }
+
+        self.registration = Some(crate::block_on::register_message_waker(
+            self.msg_id,
+            cx.waker().clone(),
+        ));
+        Poll::Pending
     }
 }
 
