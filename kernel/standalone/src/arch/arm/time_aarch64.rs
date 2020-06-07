@@ -38,7 +38,7 @@ impl TimeControl {
         unsafe {
             // TODO: stub
             let val: u64;
-            asm!("mrs $0, CNTPCT_EL0": "=r"(val) ::: "volatile");
+            llvm_asm!("mrs $0, CNTPCT_EL0": "=r"(val) ::: "volatile");
             u128::from(val)
         }
     }

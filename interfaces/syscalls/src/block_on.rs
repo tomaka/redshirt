@@ -269,6 +269,7 @@ fn next_notification_impl(to_poll: &mut [u64], block: bool) -> Option<DecodedNot
                 flags,
             ) as usize;
             if ret == 0 {
+                debug_assert!(!block);
                 return None;
             }
             if ret > out.capacity() * 8 {

@@ -1636,6 +1636,8 @@ dependencies = [
 name = "redshirt-framebuffer-interface"
 version = "0.1.0"
 dependencies = [
+ "futures",
+ "parity-scale-codec",
  "redshirt-random-interface",
  "redshirt-syscalls",
 ]
@@ -2455,13 +2457,12 @@ dependencies = [
 
 [[package]]
 name = "x86_64"
-version = "0.8.3"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d9e3e26fcb51976eafa310e8f2b7a5a83ae8c185443efe50cbc6534a4fffa0d"
+checksum = "365de37eb7c6da582cbb510dd0f3f1235d24ff6309a8a96e8a9909cc9bfd608f"
 dependencies = [
  "bit_field 0.9.0",
  "bitflags",
- "cast",
 ]
 
 [[package]]
