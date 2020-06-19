@@ -69,11 +69,15 @@ impl Executor {
             }
 
             loop {
+                // As documented in the [`../interrupts`] module, we have to manually wake up the
+                // `Future`s that were waiting for an interrupt to happen.
+                interrupts::process_wakers();
+
                 debug_assert!(x86_64::instructions::interrupts::are_enabled());
                 x86_64::instructions::interrupts::disable();
 
-                // We store `true` in `need_ipi` before checking `woken_up`, otherwise there could be
-                // a state where `need_ipi` is `false` but we've already checked `woken_up`.
+                // We store `true` in `need_ipi` before checking `woken_up`, otherwise there could
+                // be a state where `need_ipi` is `false` but we've already checked `woken_up`.
                 local_wake.need_ipi.store(true, atomic::Ordering::SeqCst);
 
                 if local_wake
