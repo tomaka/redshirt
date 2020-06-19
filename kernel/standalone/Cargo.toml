@@ -9,6 +9,7 @@ publish = false
 [dependencies]
 blake3 = { version = "0.2.2", default-features = false }
 crossbeam-queue = { version = "0.2.1", default-features = false, features = ["alloc"] }
+derive_more = "0.99.8"
 either = { version = "1.5.3", default-features = false }
 fnv = { git = "https://github.com/dflemstr/rust-fnv", default-features = false }    # TODO: https://github.com/servo/rust-fnv/pull/22
 futures = { version = "0.3.2", default-features = false, features = ["alloc"] }

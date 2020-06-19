@@ -60,6 +60,9 @@ pub trait PlatformSpecific: Send + Sync + 'static {
     /// >           necessarily exact (it is, in fact, rarely exact).
     fn monotonic_clock(self: Pin<&Self>) -> u128;
     /// Returns a `Future` that fires when the monotonic clock reaches the given value.
+    ///
+    /// > **Important**: The returned future is not guaranteed to function properly with an
+    /// >                executor other than the ones in the platform-specific code.
     fn timer(self: Pin<&Self>, clock_value: u128) -> Self::TimerFuture;
 
     /// Writes a `u8` on a port. Returns an error if the operation is not supported or if the port
