@@ -9,6 +9,7 @@ members = [
     "kernel/hosted-tcp",
     "kernel/hosted-time",
     "kernel/standalone",
+    "interfaces/ethernet",
     "interfaces/framebuffer",
     "interfaces/hardware",
     "interfaces/interface",
@@ -26,15 +27,10 @@ members = [
 [profile.dev]
 opt-level = 1
 
-[profile.dev.package.hashbrown]
+[profile.dev.package."*"]
 opt-level = 3
-[profile.dev.package.rand_jitter]
-opt-level = 3
-[profile.dev.package.wasmi]
-opt-level = 3
-[profile.dev.package.wasmi-validation]
-opt-level = 3
-[profile.dev.package.wat]
+
+[profile.test.package."*"]
 opt-level = 3
 
 [profile.release]

@@ -16,7 +16,7 @@
 //! Helpers for parsing the hardcoded functions that can be called by the WASM program.
 
 use crate::scheduler::processes;
-use crate::{InterfaceHash, MessageId};
+use crate::{InterfaceHash, InvalidMessageIdErr, MessageId};
 
 use alloc::vec::Vec;
 use core::{convert::TryFrom as _, num::NonZeroU64};
@@ -65,7 +65,7 @@ pub fn parse_extrinsic_next_notification<TExtr, TPud, TTud>(
             out.push(match id {
                 0 => WaitEntry::Empty,
                 1 => WaitEntry::InterfaceOrProcDestroyed,
-                _ => WaitEntry::Answer(From::from(NonZeroU64::new(id).unwrap())),
+                _ => WaitEntry::Answer(MessageId::try_from(id).unwrap()),
             });
         }
         out
@@ -77,23 +77,26 @@ pub fn parse_extrinsic_next_notification<TExtr, TPud, TTud>(
             .ok_or(ExtrinsicNextNotificationErr::BadParameter)?,
     )
     .map_err(|_| ExtrinsicNextNotificationErr::BadParameter)?;
+    if out_pointer % 8 != 0 {
+        return Err(ExtrinsicNextNotificationErr::BadOutAlignment);
+    }
+
     let out_size = u32::try_from(
         params[3]
             .into_i32()
             .ok_or(ExtrinsicNextNotificationErr::BadParameter)?,
     )
     .map_err(|_| ExtrinsicNextNotificationErr::BadParameter)?;
-    let block = params[4]
-        .into_i32()
-        .ok_or(ExtrinsicNextNotificationErr::BadParameter)?
-        != 0;
+    let flags = params[4]
+        .into_i64()
+        .ok_or(ExtrinsicNextNotificationErr::BadParameter)?;
 
     Ok(NotificationWait {
         notifs_ids,
         notifs_ids_ptr,
         out_pointer,
         out_size,
-        block,
+        block: (flags & 0x1) != 0,
     })
 }
 
@@ -134,6 +137,8 @@ pub enum ExtrinsicNextNotificationErr {
         /// Number of notification IDs that have been requested.
         requested: u32,
     },
+    /// The `out` pointer doesn't have the required alignment.
+    BadOutAlignment,
     /// Bad type or invalid value for a parameter.
     BadParameter,
 }
@@ -150,7 +155,7 @@ pub fn parse_extrinsic_emit_message<TExtr, TPud, TTud>(
 ) -> Result<EmitMessage, ExtrinsicEmitMessageErr> {
     // We use an assert here rather than a runtime check because the WASM VM (rather than us) is
     // supposed to check the function signature.
-    assert_eq!(params.len(), 6);
+    assert_eq!(params.len(), 5);
 
     let interface: InterfaceHash = {
         let addr = u32::try_from(
@@ -209,18 +214,15 @@ pub fn parse_extrinsic_emit_message<TExtr, TPud, TTud>(
         EncodedMessage(out_msg)
     };
 
-    let needs_answer = params[3]
-        .into_i32()
-        .ok_or(ExtrinsicEmitMessageErr::BadParameter)?
-        != 0;
-    let allow_delay = params[4]
-        .into_i32()
-        .ok_or(ExtrinsicEmitMessageErr::BadParameter)?
-        != 0;
+    let flags = params[3]
+        .into_i64()
+        .ok_or(ExtrinsicEmitMessageErr::BadParameter)?;
+    let needs_answer = (flags & 0x1) != 0;
+
     let message_id_write = if needs_answer {
         Some(
             u32::try_from(
-                params[5]
+                params[4]
                     .into_i32()
                     .ok_or(ExtrinsicEmitMessageErr::BadParameter)?,
             )
@@ -234,7 +236,7 @@ pub fn parse_extrinsic_emit_message<TExtr, TPud, TTud>(
         interface,
         message_id_write,
         message,
-        allow_delay,
+        allow_delay: (flags & 0x2) != 0,
     })
 }
 
@@ -285,7 +287,7 @@ pub fn parse_extrinsic_emit_answer<TExtr, TPud, TTud>(
             .read_memory(addr, 8)
             .map_err(|_| ExtrinsicEmitAnswerErr::BadParameter)?;
         let id = u64::from_le_bytes(<[u8; 8]>::try_from(&buf[..]).unwrap());
-        MessageId::from(NonZeroU64::new(id).ok_or(ExtrinsicEmitAnswerErr::ZeroMessageId)?)
+        MessageId::try_from(id).map_err(ExtrinsicEmitAnswerErr::InvalidMessageId)?
     };
 
     let response = {
@@ -328,8 +330,8 @@ pub struct EmitAnswer {
 pub enum ExtrinsicEmitAnswerErr {
     /// Bad type or invalid value for a parameter.
     BadParameter,
-    /// The message id is zero.
-    ZeroMessageId,
+    /// The message id is invalid.
+    InvalidMessageId(InvalidMessageIdErr),
 }
 
 /// Analyzes a call to `emit_message_error` made by the given thread.
@@ -358,7 +360,7 @@ pub fn parse_extrinsic_emit_message_error<TExtr, TPud, TTud>(
             .read_memory(addr, 8)
             .map_err(|_| ExtrinsicEmitMessageErrorErr::BadParameter)?;
         let id = u64::from_le_bytes(<[u8; 8]>::try_from(&buf[..]).unwrap());
-        MessageId::from(NonZeroU64::new(id).ok_or(ExtrinsicEmitMessageErrorErr::ZeroMessageId)?)
+        MessageId::try_from(id).map_err(ExtrinsicEmitMessageErrorErr::InvalidMessageId)?
     };
 
     Ok(msg_id)
@@ -369,8 +371,8 @@ pub fn parse_extrinsic_emit_message_error<TExtr, TPud, TTud>(
 pub enum ExtrinsicEmitMessageErrorErr {
     /// Bad type or invalid value for a parameter.
     BadParameter,
-    /// The message id is zero.
-    ZeroMessageId,
+    /// The message id is invalid.
+    InvalidMessageId(InvalidMessageIdErr),
 }
 
 /// Analyzes a call to `cancel_message` made by the given thread.
@@ -399,7 +401,7 @@ pub fn parse_extrinsic_cancel_message<TExtr, TPud, TTud>(
             .read_memory(addr, 8)
             .map_err(|_| ExtrinsicCancelMessageErr::BadParameter)?;
         let id = u64::from_le_bytes(<[u8; 8]>::try_from(&buf[..]).unwrap());
-        MessageId::from(NonZeroU64::new(id).ok_or(ExtrinsicCancelMessageErr::ZeroMessageId)?)
+        MessageId::try_from(id).map_err(ExtrinsicCancelMessageErr::InvalidMessageId)?
     };
 
     Ok(msg_id)
@@ -410,6 +412,6 @@ pub fn parse_extrinsic_cancel_message<TExtr, TPud, TTud>(
 pub enum ExtrinsicCancelMessageErr {
     /// Bad type or invalid value for a parameter.
     BadParameter,
-    /// The message id is zero.
-    ZeroMessageId,
+    /// The message id is invalid.
+    InvalidMessageId(InvalidMessageIdErr),
 }

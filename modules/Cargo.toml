@@ -5,15 +5,21 @@ members = [
     "log-to-kernel",
     "ne2000",
     "p2p-loader",
+    "pci-printer",
     "rpi-framebuffer",
     "stub",
     "third-party/time",
     "third-party/wasm-timer",
-    "x86-pci",
 ]
 
 [profile.dev]
 opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.test.package."*"]
+opt-level = 3
 
 [profile.release]
 opt-level = 3

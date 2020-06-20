@@ -61,6 +61,8 @@ pub unsafe fn init() -> LocalApicsControl {
 
 // TODO: bad API ; should be a method on LocalApisControl, and a &'static ref passed when
 // initializing the IDT
+// TODO: document that no mutex is being locked; important because it's called from within an
+// interrupt handler
 pub unsafe fn end_of_interrupt() {
     let addr = usize::try_from(APIC_BASE_ADDR + 0xB0).unwrap() as *mut u32;
     addr.write_volatile(0x0);

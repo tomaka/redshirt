@@ -26,15 +26,73 @@
 //! - 2: Set framebuffer content. Next 4 bytes are the framebuffer ID. The rest is 3 * width *
 //! height values. The rest is RGB triplets.
 //! - 3: Send back the next input event. Next 4 bytes are the framebuffer ID. The answer consists
-//! in an input event whose format isn't properly defined yet. Sorry, it's kind of useless,
-//! but well 🤷
-// TODO: define input event
+//! in an input event whose format is a SCALE-encoding of the [`Event`] struct below.
+//!
+//! There actually exists two interfaces that use the same messages format: with events, or without
+//! events. Messages whose first byte is `3` are invalid in the "without events" interface.
 
 use redshirt_syscalls::InterfaceHash;
 
-// TODO: split interface in two? one with inputs and one without?
 // TODO: this has been randomly generated; instead should be a hash or something
-pub const INTERFACE: InterfaceHash = InterfaceHash::from_raw_hash([
+pub const INTERFACE_WITH_EVENTS: InterfaceHash = InterfaceHash::from_raw_hash([
     0xfc, 0x60, 0x2e, 0x6e, 0xf2, 0x43, 0x9c, 0xa0, 0x40, 0x88, 0x81, 0x7d, 0xe5, 0xaf, 0xb6, 0x90,
     0x9e, 0x57, 0xc6, 0xc2, 0x5e, 0xbf, 0x02, 0x5b, 0x87, 0x7f, 0xaa, 0xae, 0xbe, 0xd5, 0x19, 0x9c,
 ]);
+
+// TODO: this has been randomly generated; instead should be a hash or something
+pub const INTERFACE_WITHOUT_EVENTS: InterfaceHash = InterfaceHash::from_raw_hash([
+    0xdf, 0x67, 0x74, 0x34, 0xd8, 0x0d, 0xc5, 0x9e, 0xf0, 0x6e, 0xb9, 0x44, 0xce, 0xaa, 0xc4, 0xde,
+    0x8d, 0x2f, 0xdf, 0x39, 0x0a, 0xe6, 0xa8, 0x29, 0x3c, 0x8f, 0x88, 0x76, 0x5b, 0xe9, 0x1c, 0x70,
+]);
+
+/// Event that can be reported by a framebuffer.
+///
+/// > **Note**: These events are designed to take into account the possibility that some events are
+/// >           lost. This can happen if the recipient queues messages too slowly.
+#[derive(Debug, Clone, parity_scale_codec::Encode, parity_scale_codec::Decode)]
+pub enum Event {
+    /// A keyboard key has been pressed or released.
+    KeyboardChange {
+        /// Scancode as defined in the USB HID Usage tables.
+        ///
+        /// See table 12 on page 53:
+        /// https://www.usb.org/sites/default/files/documents/hut1_12v2.pdf
+        scancode: u16,
+
+        /// New state of the given key.
+        new_state: ElementState,
+    },
+
+    /// The cursor has moved over the framebuffer.
+    CursorMoved {
+        /// New position of the cursor in millipixels relative to the top-left hand corner of the
+        /// framebuffer. `None` if the cursor is not on the framebuffer.
+        ///
+        /// Please note that these are millipixels. As such, you have to divide them by 1000 to
+        /// obtain a value in pixels.
+        new_position: Option<(u64, u64)>,
+    },
+
+    /// A mouse button has been pressed or released.
+    MouseButtonChange {
+        /// Which mouse button is concerned.
+        button: MouseButton,
+
+        /// New state of the given button.
+        new_state: ElementState,
+    },
+}
+
+#[derive(Debug, Clone, parity_scale_codec::Encode, parity_scale_codec::Decode)]
+pub enum MouseButton {
+    /// Typically but not necessarily the left mouse button.
+    Main,
+    /// Typically but not necessarily the right mouse button.
+    Secondary,
+}
+
+#[derive(Debug, Clone, parity_scale_codec::Encode, parity_scale_codec::Decode)]
+pub enum ElementState {
+    Pressed,
+    Released,
+}

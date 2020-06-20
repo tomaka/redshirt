@@ -26,7 +26,7 @@ use libp2p::core::{identity, muxing::StreamMuxerBox, upgrade};
 use libp2p::kad::{
     record::store::{MemoryStore, MemoryStoreConfig},
     record::Key,
-    Kademlia, KademliaConfig, KademliaEvent, Quorum,
+    Kademlia, KademliaConfig, KademliaEvent, QueryResult, Quorum,
 };
 use libp2p::mplex::MplexConfig;
 use libp2p::plaintext::PlainText2Config;
@@ -180,10 +180,11 @@ impl<T> Network<T> {
             &"Qmc25MQxSxbUpU49bZ7RVEqgBJPB3SrjG8WVycU3KC7xYP"
                 .parse()
                 .unwrap(),
-            "/ip4/138.68.126.243/tcp/30333".parse().unwrap(),
+            "/ip4/134.122.67.49/tcp/30333".parse().unwrap(),
         );
 
-        swarm.bootstrap();
+        // Bootstrapping returns an error if we don't know of any peer.
+        swarm.bootstrap().unwrap();
 
         Ok(Network {
             swarm,
@@ -221,9 +222,10 @@ impl<T> Network<T> {
             };
 
             match next_event {
-                future::Either::Left(SwarmEvent::Behaviour(KademliaEvent::GetRecordResult(
-                    Ok(result),
-                ))) => {
+                future::Either::Left(SwarmEvent::Behaviour(KademliaEvent::QueryResult {
+                    result: QueryResult::GetRecord(Ok(result)),
+                    ..
+                })) => {
                     for record in result.records {
                         log::debug!("Successfully loaded record from DHT: {:?}", record.key);
                         while let Some(pos) = self
@@ -239,9 +241,10 @@ impl<T> Network<T> {
                         }
                     }
                 }
-                future::Either::Left(SwarmEvent::Behaviour(KademliaEvent::GetRecordResult(
-                    Err(err),
-                ))) => {
+                future::Either::Left(SwarmEvent::Behaviour(KademliaEvent::QueryResult {
+                    result: QueryResult::GetRecord(Err(err)),
+                    ..
+                })) => {
                     log::info!("Failed to get record: {:?}", err);
                     let fetch_failed_key = err.into_key();
                     while let Some(pos) = self
@@ -278,10 +281,12 @@ impl<T> Network<T> {
                 future::Either::Right(Some(notifier::NotifierEvent::InjectDht { hash, data })) => {
                     // TODO: use Quorum::Majority when network is large enough
                     // TODO: is republication automatic?
-                    self.swarm.put_record(
-                        libp2p::kad::Record::new(hash.to_vec(), data),
-                        libp2p::kad::Quorum::One,
-                    );
+                    self.swarm
+                        .put_record(
+                            libp2p::kad::Record::new(hash.to_vec(), data),
+                            libp2p::kad::Quorum::One,
+                        )
+                        .unwrap();
                 }
                 future::Either::Right(None) => panic!(),
             }

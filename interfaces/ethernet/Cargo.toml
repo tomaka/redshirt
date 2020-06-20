@@ -1,12 +1,13 @@
 [package]
-name = "redshirt-framebuffer-interface"
+name = "redshirt-ethernet-interface"
 version = "0.1.0"
 license = "GPL-3.0-or-later"
 authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-futures = "0.3"
+futures = "0.3.1"
+redshirt-random-interface = { path = "../random" }
+redshirt-syscalls = { path = "../syscalls" }
 parity-scale-codec = { version = "1.0.5", features = ["derive"] }
-redshirt-random-interface = { path = "../random", default-features = false }
-redshirt-syscalls = { path = "../syscalls", default-features = false }
+tokio = { version = "0.2.0", default-features = false }
