@@ -23,13 +23,14 @@
 //! However, each CPU has a different TSC, which means that a value read on one CPU has no meaning
 //! on another one.
 //!
-//! In order to remedy this, whenever we start a new processor we synchronize its TSC to the one
-//! of the startup CPUs.
+//! In order to remedy to this, this module makes it possible to synchronize the value of the TSC
+//! between two processors. This is typically done whenever we start a new processor to
+//! synchronize its TSC to the one of the startup CPU.
 //!
 //! Keep in mind, however, that this synchronization is not perfect. It is possible to read the
-//! TSC on a CPU, move this value to another CPU, and observe the value being lesser than the TSC
+//! TSC on a CPU, move this value to another CPU, and observe the value being greater than the TSC
 //! of the new CPU. Code that uses the TSC must be aware of that and cannot assume that the TSC is
-//! strictly monotonic.
+//! strictly monotonic if moving values between threads is involved.
 //!
 //! # Usage
 //!
@@ -52,7 +53,7 @@
 // value and the source value, and updates its own value accordingly.
 
 use alloc::sync::Arc;
-use core::sync::atomic;
+use core::{fmt, sync::atomic};
 use crossbeam_utils::CachePadded;
 use spinning_top::Spinlock;
 use x86_64::registers::model_specific::Msr;
@@ -106,14 +107,24 @@ impl TscSyncSrc {
         self.shared
             .start_barrier
             .fetch_add(1, atomic::Ordering::SeqCst);
+        // TODO: add some guarantee that we don't spin forever? do something in the Drop impl?
         while self.shared.start_barrier.load(atomic::Ordering::SeqCst) != 2 {
             atomic::spin_loop_hint();
         }
 
         for _ in 0..100000 {
             let mut lock = self.shared.src_rdtsc_storage.lock();
+            // We grab the local RDTSC value *after* grabbing the lock.
             *lock = volatile_rdtsc();
         }
+    }
+}
+
+impl fmt::Debug for TscSyncSrc {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_tuple("TscSyncSrc")
+            .field(&Arc::as_ptr(&self.shared))
+            .finish()
     }
 }
 
@@ -129,24 +140,32 @@ impl TscSyncDst {
         self.shared
             .start_barrier
             .fetch_add(1, atomic::Ordering::SeqCst);
+        // TODO: add some guarantee that we don't spin forever? do something in the Drop impl?
         while self.shared.start_barrier.load(atomic::Ordering::SeqCst) != 2 {
             atomic::spin_loop_hint();
         }
 
-        // Maximum value for `local - remote`
+        // Maximum value for `local - remote`.
         let mut max_over = 0;
-        // Maximum value for `remote - local`
+        // Maximum value for `remote - local`.
         let mut max_under = 0;
 
         for _ in 0..100000 {
             let lock = self.shared.src_rdtsc_storage.lock();
+            // We grab the local RDTSC value *after* grabbing the lock.
             let local_value = volatile_rdtsc();
             let remote_value = *lock;
             drop(lock);
 
             if remote_value == 0 {
+                // Source hasn't written its value yet.
                 continue;
             }
+
+            // Because of the way this is implemented, there is inevitably a small delay between
+            // the moment the other CPU writes its RDTSC and the moment when we read this value.
+            // We do a slight adjustment of the remote CPU's value to compensate for that.
+            let remote_value = remote_value.saturating_add(20);
 
             if let Some(over) = local_value.checked_sub(remote_value) {
                 if over > max_over {
@@ -173,10 +192,18 @@ impl TscSyncDst {
     }
 }
 
+impl fmt::Debug for TscSyncDst {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_tuple("TscSyncDst")
+            .field(&Arc::as_ptr(&self.shared))
+            .finish()
+    }
+}
+
 /// Reads the TSC value of the current CPU while trying to force the CPU to not re-order the
 /// execution of the `rdtsc` opcode.
 // TODO: preferably use `rdtscp` instead if supported, which has this property by default
-fn volatile_rdtsc() -> u64 {
+pub fn volatile_rdtsc() -> u64 {
     #[cfg(target_arch = "x86")]
     fn inner() -> u64 {
         unsafe {

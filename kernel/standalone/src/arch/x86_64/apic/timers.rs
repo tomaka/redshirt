@@ -13,234 +13,403 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::arch::x86_64::{apic::local, executor, interrupts, pit};
+//! Timers handling on x86/x86_64.
+//!
+//! # Overview
+//!
+//! When it comes to monotonic time (as opposed to a real-life time clock), multiple mechanisms
+//! exist:
+//!
+//! - The PIT (Programmable Interrupt Timer) is a legacy way of triggering an interrupt after a
+//! certain amount of timer has elapsed. The PIT is unique on the system and is shared between
+//! all the CPUs.
+//! - x86/x86_64 CPUs optionally provide a register named TSC (TimeStamp Counter) whose value is
+//! accessible using the `RDTSC` instruction. The value is increased at a uniform rate, even if
+//! the processor is halted (`hlt` instruction). Each CPU on the system has a separate TSC value.
+//! - Each CPU also has a local APIC that can trigger an interrupt after a certain number of
+//! timer cycles has passed, or, if supported, when the TSC reaches a certain value. Each CPU has
+//! its own local APIC, and the interrupt will only concern this CPU in particular.
+//! - The HPET is a more recent version of the PIT. Like the PIT, there only exists at most one
+//! HPET per machine.
+//!
+//! # Timers management
+//!
+//! ## One timer at a time
+//!
+//! In order to fire a single timer after a certain duration, we use the TSC as a reference point.
+//! As part of the initialization process, we measure the rate at which the TSC increases, and
+//! thus can determine at which TSC value the requested duration will have elapsed.
+//!
+//! We then use the local APIC in TSC deadline value mode if supported, or regular mode if not, to
+//! fire an interrupt.
+//!
+//! In regular mode, considering that the timer value is 32bits, it might be necessary to chain
+//! multiple timers before the desired TSC value is reached.
+//!
+//! By using the TSC as the reference value, we can check at any time whether the timer has been
+//! fired. The local APIC's timer is use solely for its capability to wake up a halted CPU.
+//!
+//! Keep in mind that each CPU has its own TSC value, which is why we try to keep the TSCs of all
+//! CPUs synchronized (see the [`../tsc_sync`] module). It is however possible that moving a TSC
+//! value to a different CPU leads to this value being slightly superior to the current value of
+//! the local TSC.
+// TODO: ^ somehow enforce in the API that the TSC sync is indeed performed?
+//!
+//! ## Multiple timers
+//!
+//! In a perfect world we would like to either distribute timers uniformly amongst the multiple
+//! CPUs, so that the overhead of handling interrupts is distributed uniformly, or alternatively
+//! we would like to setup a timer directly on the CPU that is actually waiting for the timer to
+//! be fired.
+//!
+//! In practice, though, we cannot directly configure the local APICs of other CPUs, and for the
+//! sake of simplicity we employ the following strategy:
+//!
+//! - There exists a list of timers shared between all CPUs.
+//! - When a timer is created:
+//!   - If the current CPU is already handling a timer:
+//!      - If the currently-handled timer will fire sooner than the newly-created timer, add the
+//!        newly-created timer to this shared list.
+//!      - If instead the currently-handled timer would fire later than the newly-created timer,
+//!        add the current timer to this shared list and configure the current CPU for the
+//!        newly-created timer.
+//!   - If the current CPU is not currently handling any timer, configure the current CPU for the
+//!        newly-created timer.
+//! - When a timer interrupt is fired, the CPU that has been interrupted picks the next pending
+//!   timer from the shared list and configures itself for it.
+//!
+//! In other words, we only ever configure the current CPU, and, after a timer has fired, CPUs try
+//! to steal work from others.
+//!
+//! In order to make the code more simple, creating a timer doesn't actually do anything. It is
+//! only when a timer is polled for the first time that we properly initialize it. This guarantees
+//! that all timers in the list have a [`core::task::Waker`] associated to them.
+//!
 
-use alloc::collections::VecDeque;
+// TODO: this entire module should be audited for race conditions (good luck!)
+
+use crate::arch::x86_64::{
+    apic::{local, tsc_sync},
+    interrupts, pit,
+};
+
+use alloc::{collections::VecDeque, sync::Arc};
 use core::{
+    cmp,
     convert::TryFrom as _,
     num::{NonZeroU32, NonZeroU64},
     pin::Pin,
+    sync::atomic,
     task::{Context, Poll, Waker},
     time::Duration,
 };
 use futures::prelude::*;
+use hashbrown::{hash_map::Entry, HashMap};
 use spinning_top::Spinlock;
 
-// TODO: rewrite this code to be cleaner
-
-pub fn init<'a>(
-    local_apics: &'a local::LocalApicsControl,
-    executor: &executor::Executor,
+/// Initializes the timers system for x86_64.
+pub async fn init(
+    local_apics: &'static local::LocalApicsControl,
     pit: &mut pit::PitControl,
-) -> Timers<'a> {
-    // TODO: check whether CPUID is supported at all?
-    // TODO: check whether RDTSC is supported
+) -> Arc<Timers> {
+    // TODO: check if TSC is supported somewhere with CPUID.1:EDX.TSC[bit 4] == 1
 
     // We use the PIT to figure out approximately how many RDTSC ticks happen per second.
-    // TODO: on some CPUs, the RDTSC goes at a slower rate when the CPU goes to sleep, which happens here with the
-    // executor
+    // TODO: instead of using the PIT, we can use CPUID[EAX=0x15] to find the frequency, but that
+    // might not be available and does AMD support it?
     let rdtsc_ticks_per_sec = unsafe {
+        // We use fences in order to guarantee that the RDTSC instructions don't get moved around.
+        // TODO: not sure about these Ordering values
+        // TODO: are the fences the same as core::arch::x86_64::_mm_mfence()?
         let before = core::arch::x86_64::_rdtsc();
-        // TODO: once async functions are available in no_std contexts, turn this function into an
-        // async function, and put an `await` here instead of blocking
-        executor.block_on(pit.timer(Duration::from_secs(1)));
+        atomic::fence(atomic::Ordering::Release);
+        pit.timer(Duration::from_secs(1)).await;
+        atomic::fence(atomic::Ordering::Acquire);
         let after = core::arch::x86_64::_rdtsc();
-        assert_ne!(after, before);
-        after - before
+
+        assert!(after > before);
+        NonZeroU64::new(after - before).unwrap()
     };
 
-    let interrupt_vector = interrupts::reserve_any_vector(true).unwrap();
+    let monotonic_clock_zero = NonZeroU64::new(unsafe { core::arch::x86_64::_rdtsc() }).unwrap();
 
-    // Configure the timer.
-    if local_apics.is_tsc_deadline_supported() {
-        local_apics.enable_local_timer_interrupt_tsc_deadline(interrupt_vector.interrupt_num());
-    } else {
-        local_apics.enable_local_timer_interrupt(false, interrupt_vector.interrupt_num());
-    }
-
-    Timers {
+    Arc::new(Timers {
         local_apics,
-        interrupt_vector,
-        monotonic_clock_zero: unsafe { core::arch::x86_64::_rdtsc() },
+        interrupt_vector: interrupts::reserve_any_vector(true).unwrap(),
+        monotonic_clock_zero,
         rdtsc_ticks_per_sec,
-        timers: Spinlock::new(VecDeque::with_capacity(32)), // TODO: capacity?
-    }
+        next_unique_timer_id: atomic::AtomicU64::new(0),
+        monotonic_clock_max: atomic::AtomicU64::new(monotonic_clock_zero.get()),
+        shared: Spinlock::new(Shared {
+            active_timers: HashMap::with_capacity_and_hasher(16, Default::default()), // TODO: set to number of CPUs
+            pending_timers: VecDeque::with_capacity(32), // TODO: which capacity?
+        }),
+    })
 }
 
-pub struct Timers<'a> {
-    local_apics: &'a local::LocalApicsControl,
+/// Timers management for x86/x86_64.
+pub struct Timers {
+    local_apics: &'static local::LocalApicsControl,
 
     /// Reservation for an interrupt vector in the interrupts table.
     ///
     /// This is the interrupt that the timer will fire.
     interrupt_vector: interrupts::ReservedInterruptVector,
 
-    /// Number of RDTSC ticks when we initialized the struct.
-    monotonic_clock_zero: u64,
+    /// Number of RDTSC ticks when we initialized the struct. Never modified.
+    monotonic_clock_zero: NonZeroU64,
 
-    /// Approximate number of RDTSC ticks per second.
-    rdtsc_ticks_per_sec: u64,
+    /// Approximate number of RDTSC ticks per second. Never modified.
+    rdtsc_ticks_per_sec: NonZeroU64,
 
-    /// List of active timers, with the TSC value to reach and the waker to wake. Always ordered
-    /// by ascending TSC value.
-    ///
-    /// The TSC value and the `Waker` stored in the first element of this list must always be
-    /// respectively the value that is present in the TSC deadline MSR, and the Waker in the IDT
-    /// for the timer's interrupt (with the exception of the interval between when a timer
-    /// interrupt has been triggered and when the awakened timer future is being polled).
-    // TODO: timers are processor-local, so this is probably wrong
-    // TODO: call shrink_to_fit from time to time?
-    timers: Spinlock<VecDeque<(u64, Waker)>>,
+    /// Each spawned timer has a unique identifier to identify it. This is the identifier of the
+    /// next timer to spawn.
+    next_unique_timer_id: atomic::AtomicU64,
+
+    /// Since each CPU has its own TSC register, it is possible that they are not always in sync.
+    /// If a user calls [`Timers::monotonic_clock`] from one CPU, then calls it again from a
+    /// different CPU, we want the value returned the second time to always be superior or equal
+    /// to the value returned the first time.
+    /// In order to guarantee this, we store here the last returned value of
+    /// [`Timers::monotonic_clock`] and make sure to never return a value inferior to this.
+    monotonic_clock_max: atomic::AtomicU64,
+
+    /// Everything behind a lock.
+    shared: Spinlock<Shared>,
 }
 
-impl<'a> Timers<'a> {
+/// Everything behind a lock.
+struct Shared {
+    /// For each CPU, the timer that is currently being configured in its APIC.
+    active_timers: HashMap<local::ApicId, ActiveTimerEntry, fnv::FnvBuildHasher>,
+
+    /// Timers that aren't being processed by any CPU. Must be picked up.
+    ///
+    /// Always ordered by ascending `target_tsc_value` value.
+    pending_timers: VecDeque<TimerEntry>,
+}
+
+/// Timer registered in [`Shared::active_timers`].
+struct ActiveTimerEntry {
+    /// Fields in common with [`TimerEntry`].
+    timer: TimerEntry,
+
+    /// TSC value at which the APIC timer will fire. This is normally always equal to
+    /// `target_tsc_value` if the APIC supports TSC-deadline-mode timers. Otherwise, this is
+    /// inferior or equal to `target_tsc_value`.
+    /// After this TSC value has been reached, we need to refresh the APIC timer.
+    apic_timer_firing_tsc_value: NonZeroU64,
+}
+
+/// Timer registered in [`Shared`].
+struct TimerEntry {
+    /// Identifier of the [`TimerFuture`].
+    timer_id: u64,
+    /// TSC value to reach before waking up the [`Waker`].
+    target_tsc_value: NonZeroU64,
+    /// Waker for when the timer fires.
+    waker: Waker,
+}
+
+impl Timers {
     /// Returns a `Future` that fires when the given amount of time has elapsed.
-    pub fn register_tsc_timer(&self, duration: Duration) -> TimerFuture {
-        // TODO: don't unwrap
+    pub fn register_timer(self: &Arc<Self>, duration: Duration) -> TimerFuture {
+        let now = {
+            let local_val = tsc_sync::volatile_rdtsc();
+            self.monotonic_clock_max
+                .fetch_max(local_val, atomic::Ordering::AcqRel)
+                .max(local_val)
+        };
+
+        // Find out the TSC value corresponding to the requested `Duration`.
         let tsc_value = duration
             .as_secs()
-            .checked_mul(self.rdtsc_ticks_per_sec)
+            .checked_mul(self.rdtsc_ticks_per_sec.get())
             .unwrap()
             .checked_add(
                 u64::from(duration.subsec_nanos())
-                    .checked_mul(self.rdtsc_ticks_per_sec)
+                    .checked_mul(self.rdtsc_ticks_per_sec.get())
                     .unwrap()
                     .checked_div(1_000_000_000)
                     .unwrap(),
             )
+            .unwrap()
+            .checked_add(now)
             .unwrap();
 
         TimerFuture {
-            timers: self,
-            tsc_value,
-            in_timers_list: false,
+            timers: self.clone(),
+            tsc_value: NonZeroU64::new(tsc_value).unwrap(),
+            timer_id: None,
         }
     }
 
+    /// Returns the time elapsed since the initialization of this struct.
+    ///
+    /// Guaranteed to always return a `Duration` greater or equal to the one returned the previous
+    /// time.
     pub fn monotonic_clock(&self) -> Duration {
-        let now = unsafe { core::arch::x86_64::_rdtsc() };
-        // TODO: is it correct to have monotonic_clock_zero determined from the main thread,
-        // then compared with the RDTSC of other CPUs?
-        // TODO: check all the math operations here
-        debug_assert!(now >= self.monotonic_clock_zero);
-        let diff_ticks = now - self.monotonic_clock_zero;
-        let whole_secs = diff_ticks / self.rdtsc_ticks_per_sec;
-        let nanos =
-            1_000_000_000 * (diff_ticks % self.rdtsc_ticks_per_sec) / self.rdtsc_ticks_per_sec;
-        Duration::new(whole_secs, u32::try_from(nanos).unwrap())
-    }
+        let rdtsc_value = {
+            let local_val = tsc_sync::volatile_rdtsc();
+            self.monotonic_clock_max
+                .fetch_max(local_val, atomic::Ordering::AcqRel)
+                .max(local_val)
+        };
 
-    /// Update the state of the APIC with the front of the list.
-    fn update_apic_timer_state(
-        &self,
-        now: u64,
-        timers: &mut spinning_top::SpinlockGuard<VecDeque<(u64, Waker)>>,
-    ) {
-        if let Some((tsc, waker)) = timers.front() {
-            debug_assert!(*tsc > now);
-            self.interrupt_vector.register_waker(waker);
-            debug_assert_ne!(*tsc, 0); // 0 would disable the timer
-            if self.local_apics.is_tsc_deadline_supported() {
-                self.local_apics
-                    .set_local_tsc_deadline(Some(NonZeroU64::new(*tsc).unwrap()));
-            } else {
-                let ticks = match u32::try_from(1 + ((*tsc - now) / 128)) {
-                    Ok(t) => t,
-                    Err(_) => return, // FIXME: properly handle
-                };
-                self.local_apics
-                    .set_local_timer_value(Some(NonZeroU32::new(ticks).unwrap()));
-            }
-        }
+        debug_assert!(rdtsc_value >= self.monotonic_clock_zero.get());
+        let diff_ticks = rdtsc_value - self.monotonic_clock_zero.get();
+        let whole_secs = diff_ticks / self.rdtsc_ticks_per_sec.get();
+        // TODO: The multiplication below can realistically panic if `rdtsc_ticks_per_sec` is a
+        // very large value. A 16 GHz CPU for example might overflow here.
+        let nanos = 1_000_000_000u64
+            .checked_mul(diff_ticks % self.rdtsc_ticks_per_sec.get())
+            .unwrap()
+            / self.rdtsc_ticks_per_sec.get();
+        Duration::new(whole_secs, u32::try_from(nanos).unwrap())
     }
 }
 
 /// Future that triggers when the TSC reaches a certain value.
-//
-// # Implementation information
-//
-// The way this `Future` works is that it inserts itself in the list of timers when first polled.
-// The head of the list of timers must always be in sync with the state of the APIC, and as such
-// we update the state of the APIC if we modify what the first element is.
-//
-// When a timer interrupt fires, we need to update the state of the APIC for the next timer. To
-// do so, the implementation assumes that the `TimerFuture` corresponding to timer that has
-// fired will either be polled or destroyed.
-//
 #[must_use]
-pub struct TimerFuture<'a> {
-    /// Reference to the [`Timers`] struct.
-    timers: &'a Timers<'a>,
+pub struct TimerFuture {
+    /// Reference to the [`Timers`] struct that has created this timer.
+    timers: Arc<Timers>,
     /// The TSC value after which the future will be ready.
-    tsc_value: u64,
-    /// If true, then we are in the list of timers of the `ApicControl`.
-    in_timers_list: bool,
+    tsc_value: NonZeroU64,
+    /// Unique identifier of the timer within the [`Timers`]. `None` if it hasn't been put in the
+    /// list yet.
+    timer_id: Option<u64>,
 }
 
-// TODO: there's some code duplication for updating the timer value in the APIC
-// TODO: is it actually correct to write `desired_tsc - rdtsc` in the one-shot timer register? is the speed matching?
-
-impl<'a> Future for TimerFuture<'a> {
+impl Future for TimerFuture {
     type Output = ();
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<()> {
         let this = &mut *self;
 
-        let rdtsc = unsafe { core::arch::x86_64::_rdtsc() };
-        if rdtsc >= this.tsc_value {
-            if !this.in_timers_list {
-                return Poll::Ready(());
-            }
+        // Grab the current RDTSC value, after adjustment.
+        let now: u64 = {
+            let local_val = unsafe { core::arch::x86_64::_rdtsc() };
+            this.timers
+                .monotonic_clock_max
+                .fetch_max(local_val, atomic::Ordering::AcqRel)
+                .max(local_val)
+        };
 
-            let mut timers = this.timers.timers.lock();
-
-            // If we were in the list, then we need to remove ourselves from it. We also remove
-            // all the earlier timers. It is consequently also possible that a different timer has
-            // already removed ourselves.
-            let mut removed_any = false;
-            while timers
-                .front()
-                .map(|(tsc, _)| *tsc <= rdtsc)
-                .unwrap_or(false)
-            {
-                let (_, waker) = timers.pop_front().unwrap();
-                removed_any = true;
-                if !waker.will_wake(cx.waker()) {
-                    waker.wake();
-                }
-            }
-
-            // It is important that we update this, for the Drop implementation.
-            this.in_timers_list = false;
-
-            // If we updated the head of the timers list, we need to update the MSR and waker.
-            if removed_any {
-                this.timers.update_apic_timer_state(rdtsc, &mut timers);
-            }
-
+        if now >= this.tsc_value.get() {
             return Poll::Ready(());
         }
 
-        // We haven't reached the target timestamp yet.
-        debug_assert!(rdtsc < this.tsc_value);
+        // We need either to register the timer in the lists, or update the current registration
+        // with the waker passed as parameter.
+        let mut shared = this.timers.shared.lock();
+        let shared = &mut *shared;
 
-        if !this.in_timers_list {
-            let mut timers = this.timers.timers.lock();
+        // Timer is already somewhere in a list.
+        if let Some(timer_id) = this.timer_id {
+            for active_timer in shared
+                .active_timers
+                .values_mut()
+                .map(|t| &mut t.timer)
+                .chain(shared.pending_timers.iter_mut())
+            {
+                if active_timer.timer_id == timer_id {
+                    debug_assert_eq!(this.tsc_value, active_timer.target_tsc_value);
+                    active_timer.waker = cx.waker().clone();
+                    return Poll::Pending;
+                }
+            }
 
-            // Position where to insert the new timer in the list.
-            // We use `>` rather than `>=` so that `insert_position` is not 0 if the first element
-            // has the same value.
-            let insert_position = timers
-                .iter()
-                .position(|(v, _)| *v > this.tsc_value)
-                .unwrap_or(0);
+            // Here is a subtle corner case. It is possible that the target TSC value gets reached
+            // while we're waiting to lock `shared` (see above), and that another CPU has detected
+            // that and removed the timer from the list as a result.
+            // Note that this `assert!` should rather be a `debug_assert!`, but considering the
+            // complexity of the whole machinery, we prefer to always detect bugs here.
+            assert!(
+                this.timers
+                    .monotonic_clock_max
+                    .load(atomic::Ordering::SeqCst)
+                    >= this.tsc_value.get()
+            );
+            return Poll::Ready(());
+        }
 
-            timers.insert(insert_position, (this.tsc_value, cx.waker().clone()));
-            this.in_timers_list = true;
+        // Timer has never been registered within `shared`.
+        // Allocate a new identifier.
+        let timer_id = this
+            .timers
+            .next_unique_timer_id
+            .fetch_add(1, atomic::Ordering::Relaxed);
+        assert_ne!(timer_id, u64::max_value()); // Check for overflow.
+        this.timer_id = Some(timer_id);
 
-            // If we update the head of the timers list, we need to update the MSR and waker.
-            if insert_position == 0 {
-                this.timers.update_apic_timer_state(rdtsc, &mut timers);
+        let to_insert = TimerEntry {
+            timer_id,
+            target_tsc_value: this.tsc_value,
+            waker: cx.waker().clone(),
+        };
+
+        // Try to insert in `active_timers`.
+        match shared
+            .active_timers
+            .entry(this.timers.local_apics.current_apic_id())
+        {
+            Entry::Occupied(e) if e.get().timer.target_tsc_value <= to_insert.target_tsc_value => {
+                // `active_timers` is already busy with a shorter timer. Add as pending.
+                // Reminder: `pending_timers` is always ordered by ascending `target_tsc_value`.
+                if let Some(pos) = shared
+                    .pending_timers
+                    .iter()
+                    .position(|t| t.target_tsc_value >= to_insert.target_tsc_value)
+                {
+                    shared.pending_timers.insert(pos, to_insert);
+                } else {
+                    shared.pending_timers.push_back(to_insert);
+                }
+            }
+
+            Entry::Occupied(mut e) => {
+                // The currently active timer should fire later than the one to insert, so we
+                // modify the current configuration.
+                // We don't need to call `register_waker` to update the waker, as it is already
+                // registered.
+                debug_assert!(e.get().timer.target_tsc_value > to_insert.target_tsc_value);
+
+                let previous_timer = e
+                    .insert(configure_apic(
+                        now,
+                        &this.timers.local_apics,
+                        this.timers.interrupt_vector.interrupt_num(),
+                        to_insert,
+                    ))
+                    .timer;
+
+                // Reminder: `pending_timers` is always ordered by ascending `target_tsc_value`.
+                if let Some(pos) = shared
+                    .pending_timers
+                    .iter()
+                    .position(|t| t.target_tsc_value >= previous_timer.target_tsc_value)
+                {
+                    shared.pending_timers.insert(pos, previous_timer);
+                } else {
+                    shared.pending_timers.push_back(previous_timer);
+                }
+            }
+
+            Entry::Vacant(e) => {
+                // Important: we register the waker before configuring the APIC, otherwise the
+                // interrupt could fire in-between the two operations.
+                this.timers
+                    .interrupt_vector
+                    .register_waker(&futures::task::waker(Arc::new(TimerWaker {
+                        timers: this.timers.clone(),
+                    })));
+                e.insert(configure_apic(
+                    now,
+                    &this.timers.local_apics,
+                    this.timers.interrupt_vector.interrupt_num(),
+                    to_insert,
+                ));
             }
         }
 
@@ -248,36 +417,166 @@ impl<'a> Future for TimerFuture<'a> {
     }
 }
 
-impl<'a> Drop for TimerFuture<'a> {
-    fn drop(&mut self) {
-        if !self.in_timers_list {
-            return;
-        }
+/// Waker that is woken up as the outcome of an interrupt.
+struct TimerWaker {
+    /// [`Timers`] struct this waker belongs to.
+    timers: Arc<Timers>,
+}
 
-        // We need to unregister ourselves. It is possible that a different timer has already
-        // removed us from the list.
-        let mut timers = self.timers.timers.lock();
-        let my_position = match timers.iter().position(|(v, _)| *v == self.tsc_value) {
-            Some(p) => p,
-            None => return,
+impl futures::task::ArcWake for TimerWaker {
+    fn wake_by_ref(arc_self: &Arc<Self>) {
+        // Note: week in mind that there in guarantee that this method gets called from a specific
+        // CPU. It is possible for a timer interrupt to happen on CPU A, then this function gets
+        // called on CPU B.
+
+        let mut shared = arc_self.timers.shared.lock();
+        let shared = &mut *shared;
+
+        // Grab the current RDTSC value, after adjustment.
+        let now: u64 = {
+            let local_val = unsafe { core::arch::x86_64::_rdtsc() };
+            arc_self
+                .timers
+                .monotonic_clock_max
+                .fetch_max(local_val, atomic::Ordering::AcqRel)
+                .max(local_val)
         };
 
-        // In the unlikely event that there are multiple timers with the same value in a row,
-        // we prefer to not do anything and let other timers do the clean up later.
-        if timers
-            .get(my_position + 1)
-            .map(|(v, _)| *v == self.tsc_value)
-            .unwrap_or(false)
+        // Remove from `active_timers` all the timers that have fired.
+        for (_, timer) in shared
+            .active_timers
+            .drain_filter(|_, timer| timer.apic_timer_firing_tsc_value.get() <= now)
         {
-            return;
+            if timer.timer.target_tsc_value.get() <= now {
+                timer.timer.waker.wake();
+                continue;
+            }
+
+            // If we reach this point, we have reached `apic_timer_firing_tsc_value` but not yet
+            // `target_tsc_value`. Add the timer back in the pending queue that we process below.
+            if let Some(pos) = shared
+                .pending_timers
+                .iter()
+                .position(|t| t.target_tsc_value >= timer.timer.target_tsc_value)
+            {
+                shared.pending_timers.insert(pos, timer.timer);
+            } else {
+                shared.pending_timers.push_back(timer.timer);
+            }
         }
 
-        timers.remove(my_position);
+        let current_apic_id = arc_self.timers.local_apics.current_apic_id();
 
-        // If we update the head of the timers list, we need to update the MSR and waker.
-        if my_position == 0 {
-            let rdtsc = unsafe { core::arch::x86_64::_rdtsc() };
-            self.timers.update_apic_timer_state(rdtsc, &mut timers);
+        // Now process the pending timers.
+        loop {
+            let next_timer = match shared.pending_timers.pop_front() {
+                Some(t) => t,
+                None => break,
+            };
+
+            // Checking the correct ascending ordering.
+            debug_assert!(shared
+                .pending_timers
+                .front()
+                .map_or(true, |second_next| second_next.target_tsc_value
+                    >= next_timer.target_tsc_value));
+
+            if next_timer.target_tsc_value.get() <= now {
+                next_timer.waker.wake();
+                continue;
+            }
+
+            // Try to register the next timer as the current one of the local CPU.
+            if let Entry::Vacant(e) = shared.active_timers.entry(current_apic_id) {
+                // Important: we register the waker before configuring the APIC, otherwise the
+                // interrupt could fire in-between the two operations.
+                arc_self
+                    .timers
+                    .interrupt_vector
+                    .register_waker(&futures::task::waker_ref(arc_self));
+                e.insert(configure_apic(
+                    now,
+                    &arc_self.timers.local_apics,
+                    arc_self.timers.interrupt_vector.interrupt_num(),
+                    next_timer,
+                ));
+            } else {
+                // If the current CPU is already processing a timer, re-add the one we extracted
+                // back in the queue.
+                shared.pending_timers.push_front(next_timer);
+                break;
+            }
         }
+
+        // Some memory footprint reduction.
+        if shared.pending_timers.is_empty() && shared.pending_timers.capacity() >= 32 {
+            // TODO: use shrink_to once stable and use a minimum capacity
+            shared.pending_timers.shrink_to_fit();
+        }
+    }
+}
+
+/// Configures the timer of the local CPU, and turns a [`TimerEntry`] into an [`ActiveTimerEntry`].
+fn configure_apic(
+    tsc_now: u64,
+    local_apic: &local::LocalApicsControl,
+    interrupt_vector: u8,
+    entry: TimerEntry,
+) -> ActiveTimerEntry {
+    // Sanity check.
+    debug_assert!(entry.target_tsc_value.get() > tsc_now);
+
+    // If TSC deadline mode is supported, then it's easy: pass the target TSC value to the APIC
+    // and return.
+    if local_apic.is_tsc_deadline_supported() {
+        local_apic.set_local_timer(local::Timer::TscDeadline {
+            threshold: entry.target_tsc_value,
+            vector: interrupt_vector,
+        });
+        let apic_timer_firing_tsc_value = entry.target_tsc_value;
+        return ActiveTimerEntry {
+            apic_timer_firing_tsc_value,
+            timer: entry,
+        };
+    }
+
+    // If TSC deadline mode is not supported, then the timer requires a number of ticks as a
+    // 32-bits number, and `entry.target_tsc_value - tsc_now` might be too large to be accepted.
+
+    // Calculate `target_tsc_value - tsc_now`, but cap it to the maximum value that can fit the
+    // timer.
+    let ticks_to_timer = cmp::min(
+        entry.target_tsc_value.get().checked_sub(tsc_now).unwrap(),
+        u64::from(u32::max_value()) * 128,
+    );
+
+    // The timer accepts a value and a multiplier. The timer will fire after `value * multiplier`
+    // ticks. The larger the multiplier, the more imprecise the timer is.
+    // We try to find the smallest multiplier that is acceptable for `ticks_to_timer` to still
+    // fit into a 32-bits value.
+    let (ticks, multiplier) = (0..7)
+        .filter_map(|multiplier| {
+            let ticks = ticks_to_timer / (2 << multiplier);
+            if let Ok(ticks) = u32::try_from(ticks) {
+                Some((ticks, 2 << multiplier))
+            } else {
+                None
+            }
+        })
+        .next()
+        .unwrap();
+
+    // Success.
+    local_apic.set_local_timer(local::Timer::Timer {
+        value: NonZeroU32::new(ticks).unwrap(),
+        value_multiplier: multiplier,
+        periodic: false,
+        vector: interrupt_vector,
+    });
+
+    ActiveTimerEntry {
+        apic_timer_firing_tsc_value: NonZeroU64::new(tsc_now.checked_add(ticks_to_timer).unwrap())
+            .unwrap(),
+        timer: entry,
     }
 }

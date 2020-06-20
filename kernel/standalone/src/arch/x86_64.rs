@@ -173,11 +173,7 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
 
     // Initialize the timers state machine.
     // This allows us to create `Future`s that resolve after a certain amount of time has passed.
-    let timers = Box::leak(Box::new(apic::timers::init(
-        local_apics,
-        &*executor,
-        &mut pit,
-    )));
+    let timers = executor.block_on(apic::timers::init(local_apics, &mut pit));
 
     // This code is only executed by the main processor of the machine, called the **boot
     // processor**. The other processors are called the **associated processors** and must be
@@ -204,7 +200,7 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
             &mut ap_boot_alloc,
             &*executor,
             &*local_apics,
-            timers,
+            &timers,
             apic::ApicId::from_unchecked(ap.local_apic_id),
             {
                 let executor = &*executor;
@@ -362,13 +358,13 @@ fn find_free_memory_ranges<'a>(
 
 /// Implementation of [`PlatformSpecific`].
 struct PlatformSpecificImpl {
-    timers: &'static apic::timers::Timers<'static>,
+    timers: Arc<apic::timers::Timers>,
     num_cpus: NonZeroU32,
     logger: Arc<KLogger>,
 }
 
 impl PlatformSpecific for PlatformSpecificImpl {
-    type TimerFuture = apic::timers::TimerFuture<'static>;
+    type TimerFuture = apic::timers::TimerFuture;
 
     fn num_cpus(self: Pin<&Self>) -> NonZeroU32 {
         self.num_cpus
@@ -379,7 +375,7 @@ impl PlatformSpecific for PlatformSpecificImpl {
     }
 
     fn timer(self: Pin<&Self>, clock_value: u128) -> Self::TimerFuture {
-        self.timers.register_tsc_timer({
+        self.timers.register_timer({
             let secs = u64::try_from(clock_value / 1_000_000_000).unwrap_or(u64::max_value());
             let nanos = u32::try_from(clock_value % 1_000_000_000).unwrap();
             Duration::new(secs, nanos)
