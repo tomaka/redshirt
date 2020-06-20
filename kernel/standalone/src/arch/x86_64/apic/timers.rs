@@ -86,6 +86,8 @@
 //! that all timers in the list have a [`core::task::Waker`] associated to them.
 //!
 
+// TODO: this entire module should be audited for race conditions (good luck!)
+
 use crate::arch::x86_64::{
     apic::{local, tsc_sync},
     interrupts, pit,
@@ -220,7 +222,6 @@ impl Timers {
         };
 
         // Find out the TSC value corresponding to the requested `Duration`.
-        // TODO: don't unwrap
         let tsc_value = duration
             .as_secs()
             .checked_mul(self.rdtsc_ticks_per_sec.get())
@@ -349,35 +350,67 @@ impl Future for TimerFuture {
         };
 
         // Try to insert in `active_timers`.
-        // TODO: what if the timer in `active_timers` is after the new one?
-        let current_apic_id = this.timers.local_apics.current_apic_id();
-        if let Entry::Vacant(e) = shared.active_timers.entry(current_apic_id) {
-            // Important: we register the waker before configuring the APIC, otherwise the
-            // interrupt could fire in-between the two operations.
-            this.timers
-                .interrupt_vector
-                .register_waker(&futures::task::waker(Arc::new(TimerWaker {
-                    timers: this.timers.clone(),
-                })));
-            e.insert(configure_apic(
-                now,
-                &this.timers.local_apics,
-                this.timers.interrupt_vector.interrupt_num(),
-                to_insert,
-            ));
-            return Poll::Pending;
-        }
-
-        // Otherwise, add as pending.
-        // Reminder: `pending_timers` is always ordered by ascending `apic_timer_firing_tsc_value`.
-        if let Some(pos) = shared
-            .pending_timers
-            .iter()
-            .position(|t| t.target_tsc_value >= to_insert.target_tsc_value)
+        match shared
+            .active_timers
+            .entry(this.timers.local_apics.current_apic_id())
         {
-            shared.pending_timers.insert(pos, to_insert);
-        } else {
-            shared.pending_timers.push_back(to_insert);
+            Entry::Occupied(e) if e.get().timer.target_tsc_value <= to_insert.target_tsc_value => {
+                // `active_timers` is already busy with a shorter timer. Add as pending.
+                // Reminder: `pending_timers` is always ordered by ascending `target_tsc_value`.
+                if let Some(pos) = shared
+                    .pending_timers
+                    .iter()
+                    .position(|t| t.target_tsc_value >= to_insert.target_tsc_value)
+                {
+                    shared.pending_timers.insert(pos, to_insert);
+                } else {
+                    shared.pending_timers.push_back(to_insert);
+                }
+            }
+
+            Entry::Occupied(mut e) => {
+                // The currently active timer should fire later than the one to insert, so we
+                // modify the current configuration.
+                // We don't need to call `register_waker` to update the waker, as it is already
+                // registered.
+                debug_assert!(e.get().timer.target_tsc_value > to_insert.target_tsc_value);
+
+                let previous_timer = e
+                    .insert(configure_apic(
+                        now,
+                        &this.timers.local_apics,
+                        this.timers.interrupt_vector.interrupt_num(),
+                        to_insert,
+                    ))
+                    .timer;
+
+                // Reminder: `pending_timers` is always ordered by ascending `target_tsc_value`.
+                if let Some(pos) = shared
+                    .pending_timers
+                    .iter()
+                    .position(|t| t.target_tsc_value >= previous_timer.target_tsc_value)
+                {
+                    shared.pending_timers.insert(pos, previous_timer);
+                } else {
+                    shared.pending_timers.push_back(previous_timer);
+                }
+            }
+
+            Entry::Vacant(e) => {
+                // Important: we register the waker before configuring the APIC, otherwise the
+                // interrupt could fire in-between the two operations.
+                this.timers
+                    .interrupt_vector
+                    .register_waker(&futures::task::waker(Arc::new(TimerWaker {
+                        timers: this.timers.clone(),
+                    })));
+                e.insert(configure_apic(
+                    now,
+                    &this.timers.local_apics,
+                    this.timers.interrupt_vector.interrupt_num(),
+                    to_insert,
+                ));
+            }
         }
 
         Poll::Pending
@@ -396,7 +429,6 @@ impl futures::task::ArcWake for TimerWaker {
         // CPU. It is possible for a timer interrupt to happen on CPU A, then this function gets
         // called on CPU B.
 
-        // TODO: think about the importance of locking here; is it possibly racy?
         let mut shared = arc_self.timers.shared.lock();
         let shared = &mut *shared;
 
