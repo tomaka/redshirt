@@ -117,12 +117,15 @@ fn add_hardware_entropy(hasher: &mut blake3::Hasher) {
         let mut buf = [0; 64];
         if rdseed.try_fill_bytes(&mut buf).is_ok() {
             hasher.update(&buf);
+            return;
         }
+    }
 
-    } else if let Ok(mut rdrand) = rdrand::RdRand::new() {
+    if let Ok(mut rdrand) = rdrand::RdRand::new() {
         let mut buf = [0; 64];
         if rdrand.try_fill_bytes(&mut buf).is_ok() {
             hasher.update(&buf);
+            return;
         }
     }
 }
