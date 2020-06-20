@@ -97,6 +97,7 @@ use alloc::{collections::VecDeque, sync::Arc};
 use core::{
     cmp,
     convert::TryFrom as _,
+    fmt,
     num::{NonZeroU32, NonZeroU64},
     pin::Pin,
     sync::atomic,
@@ -139,7 +140,7 @@ pub async fn init(
         monotonic_clock_zero,
         rdtsc_ticks_per_sec,
         next_unique_timer_id: atomic::AtomicU64::new(0),
-        monotonic_clock_max: atomic::AtomicU64::new(monotonic_clock_zero.get()),
+        monotonic_clock_min: atomic::AtomicU64::new(monotonic_clock_zero.get()),
         shared: Spinlock::new(Shared {
             active_timers: HashMap::with_capacity_and_hasher(16, Default::default()), // TODO: set to number of CPUs
             pending_timers: VecDeque::with_capacity(32), // TODO: which capacity?
@@ -172,13 +173,18 @@ pub struct Timers {
     /// to the value returned the first time.
     /// In order to guarantee this, we store here the last returned value of
     /// [`Timers::monotonic_clock`] and make sure to never return a value inferior to this.
-    monotonic_clock_max: atomic::AtomicU64,
+    ///
+    /// This mechanism is also necessary in order to avoid the situation where CPU A wakes up a
+    /// task because a certain TSC value has been reached, only for the woken up CPU to think that
+    /// the same TSC value has not being reached yet.
+    monotonic_clock_min: atomic::AtomicU64,
 
     /// Everything behind a lock.
     shared: Spinlock<Shared>,
 }
 
 /// Everything behind a lock.
+#[derive(Debug)]
 struct Shared {
     /// For each CPU, the timer that is currently being configured in its APIC.
     active_timers: HashMap<local::ApicId, ActiveTimerEntry, fnv::FnvBuildHasher>,
@@ -190,6 +196,7 @@ struct Shared {
 }
 
 /// Timer registered in [`Shared::active_timers`].
+#[derive(Debug)]
 struct ActiveTimerEntry {
     /// Fields in common with [`TimerEntry`].
     timer: TimerEntry,
@@ -202,6 +209,7 @@ struct ActiveTimerEntry {
 }
 
 /// Timer registered in [`Shared`].
+#[derive(Debug)]
 struct TimerEntry {
     /// Identifier of the [`TimerFuture`].
     timer_id: u64,
@@ -216,7 +224,7 @@ impl Timers {
     pub fn register_timer(self: &Arc<Self>, duration: Duration) -> TimerFuture {
         let now = {
             let local_val = tsc_sync::volatile_rdtsc();
-            self.monotonic_clock_max
+            self.monotonic_clock_min
                 .fetch_max(local_val, atomic::Ordering::AcqRel)
                 .max(local_val)
         };
@@ -251,7 +259,7 @@ impl Timers {
     pub fn monotonic_clock(&self) -> Duration {
         let rdtsc_value = {
             let local_val = tsc_sync::volatile_rdtsc();
-            self.monotonic_clock_max
+            self.monotonic_clock_min
                 .fetch_max(local_val, atomic::Ordering::AcqRel)
                 .max(local_val)
         };
@@ -266,6 +274,14 @@ impl Timers {
             .unwrap()
             / self.rdtsc_ticks_per_sec.get();
         Duration::new(whole_secs, u32::try_from(nanos).unwrap())
+    }
+}
+
+impl fmt::Debug for Timers {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("Timers")
+            .field("rdtsc_ticks_per_sec", &self.rdtsc_ticks_per_sec)
+            .finish()
     }
 }
 
@@ -291,7 +307,7 @@ impl Future for TimerFuture {
         let now: u64 = {
             let local_val = unsafe { core::arch::x86_64::_rdtsc() };
             this.timers
-                .monotonic_clock_max
+                .monotonic_clock_min
                 .fetch_max(local_val, atomic::Ordering::AcqRel)
                 .max(local_val)
         };
@@ -327,7 +343,7 @@ impl Future for TimerFuture {
             // complexity of the whole machinery, we prefer to always detect bugs here.
             assert!(
                 this.timers
-                    .monotonic_clock_max
+                    .monotonic_clock_min
                     .load(atomic::Ordering::SeqCst)
                     >= this.tsc_value.get()
             );
@@ -417,6 +433,14 @@ impl Future for TimerFuture {
     }
 }
 
+impl fmt::Debug for TimerFuture {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("TimerFuture")
+            .field("tsc_value", &self.tsc_value)
+            .finish()
+    }
+}
+
 /// Waker that is woken up as the outcome of an interrupt.
 struct TimerWaker {
     /// [`Timers`] struct this waker belongs to.
@@ -425,7 +449,7 @@ struct TimerWaker {
 
 impl futures::task::ArcWake for TimerWaker {
     fn wake_by_ref(arc_self: &Arc<Self>) {
-        // Note: week in mind that there in guarantee that this method gets called from a specific
+        // Note: keep in mind that there no guarantee that this method gets called from a specific
         // CPU. It is possible for a timer interrupt to happen on CPU A, then this function gets
         // called on CPU B.
 
@@ -437,7 +461,7 @@ impl futures::task::ArcWake for TimerWaker {
             let local_val = unsafe { core::arch::x86_64::_rdtsc() };
             arc_self
                 .timers
-                .monotonic_clock_max
+                .monotonic_clock_min
                 .fetch_max(local_val, atomic::Ordering::AcqRel)
                 .max(local_val)
         };
@@ -445,8 +469,9 @@ impl futures::task::ArcWake for TimerWaker {
         // Remove from `active_timers` all the timers that have fired.
         for (_, timer) in shared
             .active_timers
-            .drain_filter(|_, timer| timer.apic_timer_firing_tsc_value.get() <= now)
+            .drain_filter(|_, timer| timer.apic_timer_firing_tsc_value.get() > now)
         {
+            debug_assert!(timer.apic_timer_firing_tsc_value.get() <= now);
             if timer.timer.target_tsc_value.get() <= now {
                 timer.timer.waker.wake();
                 continue;
@@ -547,7 +572,7 @@ fn configure_apic(
     // timer.
     let ticks_to_timer = cmp::min(
         entry.target_tsc_value.get().checked_sub(tsc_now).unwrap(),
-        u64::from(u32::max_value()) * 128,
+        u64::from(u32::max_value()) * 127,
     );
 
     // The timer accepts a value and a multiplier. The timer will fire after `value * multiplier`
@@ -556,7 +581,8 @@ fn configure_apic(
     // fit into a 32-bits value.
     let (ticks, multiplier) = (0..7)
         .filter_map(|multiplier| {
-            let ticks = ticks_to_timer / (2 << multiplier);
+            // Adding `1` to round up.
+            let ticks = 1 + (ticks_to_timer / (2 << multiplier));
             if let Ok(ticks) = u32::try_from(ticks) {
                 Some((ticks, 2 << multiplier))
             } else {
@@ -565,6 +591,7 @@ fn configure_apic(
         })
         .next()
         .unwrap();
+    debug_assert!(u64::from(ticks) * u64::from(multiplier) >= ticks_to_timer);
 
     // Success.
     local_apic.set_local_timer(local::Timer::Timer {
