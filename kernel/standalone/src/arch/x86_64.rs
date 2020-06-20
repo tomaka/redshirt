@@ -185,8 +185,7 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
     let mut kernel_channels = Vec::with_capacity(acpi_tables.application_processors.len());
 
     writeln!(logger.log_printer(), "initializing associated processors").unwrap();
-    // TODO: remove this `take(0)` after https://github.com/tomaka/redshirt/issues/379
-    for ap in acpi_tables.application_processors.iter().take(0) {
+    for ap in acpi_tables.application_processors.iter() {
         debug_assert!(ap.is_ap);
         // It is possible for some associated processors to be in a disabled state, in which case
         // they **must not** be started. This is generally the case of defective processors.
