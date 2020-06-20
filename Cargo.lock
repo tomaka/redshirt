@@ -1572,6 +1572,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rdrand"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fd1906cddd9702301a60db95e6e752f74028866c4dea818267709be31747b360"
+dependencies = [
+ "rand_core",
+]
+
+[[package]]
 name = "redox_syscall"
 version = "0.1.56"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1779,6 +1788,7 @@ dependencies = [
  "rand_chacha",
  "rand_core",
  "rand_jitter",
+ "rdrand",
  "redshirt-core",
  "redshirt-hardware-interface",
  "redshirt-interface-interface",
