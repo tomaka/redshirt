@@ -33,6 +33,7 @@ use crate::arch::x86_64::{executor, interrupts};
 use alloc::{
     alloc::{AllocInit, Layout},
     boxed::Box,
+    sync::Arc,
 };
 use core::{convert::TryFrom as _, fmt, ops::Range, ptr, slice, time::Duration};
 use futures::{channel::oneshot, prelude::*};
@@ -130,7 +131,7 @@ pub unsafe fn boot_associated_processor(
     alloc: &mut ApBootAlloc,
     executor: &executor::Executor,
     local_apics: &'static LocalApicsControl,
-    timers: &Timers,
+    timers: &Arc<Timers>,
     target: ApicId,
     boot_code: impl FnOnce() -> core::convert::Infallible + Send + 'static,
 ) -> Result<(), Error> {
