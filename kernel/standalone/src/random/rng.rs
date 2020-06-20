@@ -24,8 +24,8 @@
 //!
 //! In order to generate entropy, we can rely on:
 //!
-//! - Hardware random number generators, such as `rdrand` on x86/x64. This is however generally
-//! widely untrusted.
+//! - Hardware random number generators, such as `rdseed`/`rdrand` on x86/x64. This is however
+//! generally widely untrusted.
 //! - Unpredictable events coming from the hardware, such as time between keyboard presses or
 //! network packets.
 //! - CPU execution time jitter. The time it takes for a CPU to execute instructions is very hard
@@ -33,8 +33,8 @@
 //!
 //! # Implementation in redshirt
 //!
-//! The current implementation relies on ChaCha20 seeded by a JitterRng and RdRand if it is
-//! available.
+//! The current implementation relies on ChaCha20 seeded by a JitterRng and RdSeed/RdRand if they
+//! are available.
 //!
 
 // TODO: I'm not a cryptographer nor a mathematician, but I guess that a ChaCha alone is a bit naive?
