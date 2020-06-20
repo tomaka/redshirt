@@ -113,18 +113,17 @@ impl RngCore for KernelRng {
 
 #[cfg(target_arch = "x86_64")]
 fn add_hardware_entropy(hasher: &mut blake3::Hasher) {
-    if let Some(rdrand) = x86_64::instructions::random::RdRand::new() {
+    if let Ok(mut rdseed) = rdrand::RdSeed::new() {
         let mut buf = [0; 64];
-        let mut entropy_bytes = 0;
-        for chunk in buf.chunks_mut(8) {
-            if let Some(val) = rdrand.get_u64() {
-                chunk.copy_from_slice(&val.to_ne_bytes());
-                entropy_bytes += 8;
-            } else {
-                break;
-            }
+        if rdseed.try_fill_bytes(&mut buf).is_ok() {
+            hasher.update(&buf);
         }
-        hasher.update(&buf[..entropy_bytes]);
+
+    } else if let Ok(mut rdrand) = rdrand::RdRand::new() {
+        let mut buf = [0; 64];
+        if rdrand.try_fill_bytes(&mut buf).is_ok() {
+            hasher.update(&buf);
+        }
     }
 }
 
