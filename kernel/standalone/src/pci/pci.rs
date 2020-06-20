@@ -285,7 +285,9 @@ fn scan_function(bdf: &DeviceBdf) -> Option<ScanResult> {
                         prefetchable,
                     }
                 } else {
-                    let base_address = u16::try_from(bar & !0b11).unwrap();
+                    // TODO: this extra ` & 0xffff` is here because real-life machines seem to
+                    // give values larger than 16 bits?
+                    let base_address = u16::try_from((bar & !0b11) & 0xffff).unwrap();
                     BaseAddressRegister::Io { base_address }
                 });
             }
