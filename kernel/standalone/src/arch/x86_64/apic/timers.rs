@@ -568,7 +568,7 @@ fn configure_apic(
     // timer.
     let ticks_to_timer = cmp::min(
         entry.target_tsc_value.get().checked_sub(tsc_now).unwrap(),
-        u64::from(u32::max_value()) * 128,
+        u64::from(u32::max_value()) * 127,
     );
 
     // The timer accepts a value and a multiplier. The timer will fire after `value * multiplier`
