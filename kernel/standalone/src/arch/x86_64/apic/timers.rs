@@ -279,7 +279,9 @@ impl Timers {
 
 impl fmt::Debug for Timers {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("Timers").field("rdtsc_ticks_per_sec", &self.rdtsc_ticks_per_sec).finish()
+        f.debug_struct("Timers")
+            .field("rdtsc_ticks_per_sec", &self.rdtsc_ticks_per_sec)
+            .finish()
     }
 }
 
@@ -433,7 +435,9 @@ impl Future for TimerFuture {
 
 impl fmt::Debug for TimerFuture {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("TimerFuture").field("tsc_value", &self.tsc_value).finish()
+        f.debug_struct("TimerFuture")
+            .field("tsc_value", &self.tsc_value)
+            .finish()
     }
 }
 
