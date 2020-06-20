@@ -93,6 +93,7 @@ use crate::arch::x86_64::{
 
 use alloc::{collections::VecDeque, sync::Arc};
 use core::{
+    cmp,
     convert::TryFrom as _,
     num::{NonZeroU32, NonZeroU64},
     pin::Pin,
@@ -178,13 +179,24 @@ pub struct Timers {
 /// Everything behind a lock.
 struct Shared {
     /// For each CPU, the timer that is currently being configured in its APIC.
-    active_timers: HashMap<local::ApicId, TimerEntry, fnv::FnvBuildHasher>,
+    active_timers: HashMap<local::ApicId, ActiveTimerEntry, fnv::FnvBuildHasher>,
 
     /// Timers that aren't being processed by any CPU. Must be picked up.
     ///
-    /// Contains the target TSC value and the waker to wake up when it is reached. Always ordered
-    /// by ascending TSC value.
+    /// Always ordered by ascending `target_tsc_value` value.
     pending_timers: VecDeque<TimerEntry>,
+}
+
+/// Timer registered in [`Shared::active_timers`].
+struct ActiveTimerEntry {
+    /// Fields in common with [`TimerEntry`].
+    timer: TimerEntry,
+
+    /// TSC value at which the APIC timer will fire. This is normally always equal to
+    /// `target_tsc_value` if the APIC supports TSC-deadline-mode timers. Otherwise, this is
+    /// inferior or equal to `target_tsc_value`.
+    /// After this TSC value has been reached, we need to refresh the APIC timer.
+    apic_timer_firing_tsc_value: NonZeroU64,
 }
 
 /// Timer registered in [`Shared`].
@@ -246,7 +258,8 @@ impl Timers {
         debug_assert!(rdtsc_value >= self.monotonic_clock_zero.get());
         let diff_ticks = rdtsc_value - self.monotonic_clock_zero.get();
         let whole_secs = diff_ticks / self.rdtsc_ticks_per_sec.get();
-        // TODO: the multiplication below can realistically panic if `rdtsc_ticks_per_sec` is a very large value
+        // TODO: The multiplication below can realistically panic if `rdtsc_ticks_per_sec` is a
+        // very large value. A 16 GHz CPU for example might overflow here.
         let nanos = 1_000_000_000u64
             .checked_mul(diff_ticks % self.rdtsc_ticks_per_sec.get())
             .unwrap()
@@ -296,6 +309,7 @@ impl Future for TimerFuture {
             for active_timer in shared
                 .active_timers
                 .values_mut()
+                .map(|t| &mut t.timer)
                 .chain(shared.pending_timers.iter_mut())
             {
                 if active_timer.timer_id == timer_id {
@@ -335,6 +349,7 @@ impl Future for TimerFuture {
         };
 
         // Try to insert in `active_timers`.
+        // TODO: what if the timer in `active_timers` is after the new one?
         let current_apic_id = this.timers.local_apics.current_apic_id();
         if let Entry::Vacant(e) = shared.active_timers.entry(current_apic_id) {
             // Important: we register the waker before configuring the APIC, otherwise the
@@ -344,19 +359,27 @@ impl Future for TimerFuture {
                 .register_waker(&futures::task::waker(Arc::new(TimerWaker {
                     timers: this.timers.clone(),
                 })));
-            // TODO: support non-tsc-deadline mode
-            this.timers
-                .local_apics
-                .set_local_timer(local::Timer::TscDeadline {
-                    threshold: this.tsc_value,
-                    vector: this.timers.interrupt_vector.interrupt_num(),
-                });
-            e.insert(to_insert);
+            e.insert(configure_apic(
+                now,
+                &this.timers.local_apics,
+                this.timers.interrupt_vector.interrupt_num(),
+                to_insert,
+            ));
             return Poll::Pending;
         }
 
         // Otherwise, add as pending.
-        shared.pending_timers.push_back(to_insert);
+        // Reminder: `pending_timers` is always ordered by ascending `apic_timer_firing_tsc_value`.
+        if let Some(pos) = shared
+            .pending_timers
+            .iter()
+            .position(|t| t.target_tsc_value >= to_insert.target_tsc_value)
+        {
+            shared.pending_timers.insert(pos, to_insert);
+        } else {
+            shared.pending_timers.push_back(to_insert);
+        }
+
         Poll::Pending
     }
 }
@@ -375,6 +398,7 @@ impl futures::task::ArcWake for TimerWaker {
 
         // TODO: think about the importance of locking here; is it possibly racy?
         let mut shared = arc_self.timers.shared.lock();
+        let shared = &mut *shared;
 
         // Grab the current RDTSC value, after adjustment.
         let now: u64 = {
@@ -389,9 +413,24 @@ impl futures::task::ArcWake for TimerWaker {
         // Remove from `active_timers` all the timers that have fired.
         for (_, timer) in shared
             .active_timers
-            .drain_filter(|_, timer| timer.target_tsc_value.get() <= now)
+            .drain_filter(|_, timer| timer.apic_timer_firing_tsc_value.get() <= now)
         {
-            timer.waker.wake();
+            if timer.timer.target_tsc_value.get() <= now {
+                timer.timer.waker.wake();
+                continue;
+            }
+
+            // If we reach this point, we have reached `apic_timer_firing_tsc_value` but not yet
+            // `target_tsc_value`. Add the timer back in the pending queue that we process below.
+            if let Some(pos) = shared
+                .pending_timers
+                .iter()
+                .position(|t| t.target_tsc_value >= timer.timer.target_tsc_value)
+            {
+                shared.pending_timers.insert(pos, timer.timer);
+            } else {
+                shared.pending_timers.push_back(timer.timer);
+            }
         }
 
         let current_apic_id = arc_self.timers.local_apics.current_apic_id();
@@ -402,6 +441,13 @@ impl futures::task::ArcWake for TimerWaker {
                 Some(t) => t,
                 None => break,
             };
+
+            // Checking the correct ascending ordering.
+            debug_assert!(shared
+                .pending_timers
+                .front()
+                .map_or(true, |second_next| second_next.target_tsc_value
+                    >= next_timer.target_tsc_value));
 
             if next_timer.target_tsc_value.get() <= now {
                 next_timer.waker.wake();
@@ -416,15 +462,12 @@ impl futures::task::ArcWake for TimerWaker {
                     .timers
                     .interrupt_vector
                     .register_waker(&futures::task::waker_ref(arc_self));
-                // TODO: support non-tsc-deadline mode
-                arc_self
-                    .timers
-                    .local_apics
-                    .set_local_timer(local::Timer::TscDeadline {
-                        threshold: next_timer.target_tsc_value,
-                        vector: arc_self.timers.interrupt_vector.interrupt_num(),
-                    });
-                e.insert(next_timer);
+                e.insert(configure_apic(
+                    now,
+                    &arc_self.timers.local_apics,
+                    arc_self.timers.interrupt_vector.interrupt_num(),
+                    next_timer,
+                ));
             } else {
                 // If the current CPU is already processing a timer, re-add the one we extracted
                 // back in the queue.
@@ -438,5 +481,70 @@ impl futures::task::ArcWake for TimerWaker {
             // TODO: use shrink_to once stable and use a minimum capacity
             shared.pending_timers.shrink_to_fit();
         }
+    }
+}
+
+/// Configures the timer of the local CPU, and turns a [`TimerEntry`] into an [`ActiveTimerEntry`].
+fn configure_apic(
+    tsc_now: u64,
+    local_apic: &local::LocalApicsControl,
+    interrupt_vector: u8,
+    entry: TimerEntry,
+) -> ActiveTimerEntry {
+    // Sanity check.
+    debug_assert!(entry.target_tsc_value.get() > tsc_now);
+
+    // If TSC deadline mode is supported, then it's easy: pass the target TSC value to the APIC
+    // and return.
+    if local_apic.is_tsc_deadline_supported() {
+        local_apic.set_local_timer(local::Timer::TscDeadline {
+            threshold: entry.target_tsc_value,
+            vector: interrupt_vector,
+        });
+        let apic_timer_firing_tsc_value = entry.target_tsc_value;
+        return ActiveTimerEntry {
+            apic_timer_firing_tsc_value,
+            timer: entry,
+        };
+    }
+
+    // If TSC deadline mode is not supported, then the timer requires a number of ticks as a
+    // 32-bits number, and `entry.target_tsc_value - tsc_now` might be too large to be accepted.
+
+    // Calculate `target_tsc_value - tsc_now`, but cap it to the maximum value that can fit the
+    // timer.
+    let ticks_to_timer = cmp::min(
+        entry.target_tsc_value.get().checked_sub(tsc_now).unwrap(),
+        u64::from(u32::max_value() * 128),
+    );
+
+    // The timer accepts a value and a multiplier. The timer will fire after `value * multiplier`
+    // ticks. The larger the multiplier, the more imprecise the timer is.
+    // We try to find the smallest multiplier that is acceptable for `ticks_to_timer` to still
+    // fit into a 32-bits value.
+    let (ticks, multiplier) = (0..7)
+        .filter_map(|multiplier| {
+            let ticks = ticks_to_timer / (2 << multiplier);
+            if let Ok(ticks) = u32::try_from(ticks) {
+                Some((ticks, 2 << multiplier))
+            } else {
+                None
+            }
+        })
+        .next()
+        .unwrap();
+
+    // Success.
+    local_apic.set_local_timer(local::Timer::Timer {
+        value: NonZeroU32::new(ticks).unwrap(),
+        value_multiplier: multiplier,
+        periodic: false,
+        vector: interrupt_vector,
+    });
+
+    ActiveTimerEntry {
+        apic_timer_firing_tsc_value: NonZeroU64::new(tsc_now.checked_add(ticks_to_timer).unwrap())
+            .unwrap(),
+        timer: entry,
     }
 }
