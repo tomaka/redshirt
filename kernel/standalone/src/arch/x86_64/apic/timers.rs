@@ -128,7 +128,7 @@ pub async fn init(
         NonZeroU64::new(after - before).unwrap()
     };
 
-    let monotonic_clock_zero = unsafe { core::arch::x86_64::_rdtsc() };
+    let monotonic_clock_zero = NonZeroU64::new(unsafe { core::arch::x86_64::_rdtsc() }).unwrap();
 
     Arc::new(Timers {
         local_apics,
@@ -136,7 +136,7 @@ pub async fn init(
         monotonic_clock_zero,
         rdtsc_ticks_per_sec,
         next_unique_timer_id: atomic::AtomicU64::new(0),
-        monotonic_clock_max: atomic::AtomicU64::new(monotonic_clock_zero),
+        monotonic_clock_max: atomic::AtomicU64::new(monotonic_clock_zero.get()),
         shared: Spinlock::new(Shared {
             active_timers: HashMap::with_capacity_and_hasher(16, Default::default()), // TODO: set to number of CPUs
             pending_timers: VecDeque::with_capacity(32), // TODO: which capacity?
@@ -154,7 +154,7 @@ pub struct Timers {
     interrupt_vector: interrupts::ReservedInterruptVector,
 
     /// Number of RDTSC ticks when we initialized the struct. Never modified.
-    monotonic_clock_zero: u64,
+    monotonic_clock_zero: NonZeroU64,
 
     /// Approximate number of RDTSC ticks per second. Never modified.
     rdtsc_ticks_per_sec: NonZeroU64,
@@ -192,7 +192,7 @@ struct TimerEntry {
     /// Identifier of the [`TimerFuture`].
     timer_id: u64,
     /// TSC value to reach before waking up the [`Waker`].
-    target_tsc_value: u64,
+    target_tsc_value: NonZeroU64,
     /// Waker for when the timer fires.
     waker: Waker,
 }
@@ -200,6 +200,13 @@ struct TimerEntry {
 impl Timers {
     /// Returns a `Future` that fires when the given amount of time has elapsed.
     pub fn register_timer(self: &Arc<Self>, duration: Duration) -> TimerFuture {
+        let now = {
+            let local_val = tsc_sync::volatile_rdtsc();
+            self.monotonic_clock_max
+                .fetch_max(local_val, atomic::Ordering::AcqRel)
+                .max(local_val)
+        };
+
         // Find out the TSC value corresponding to the requested `Duration`.
         // TODO: don't unwrap
         let tsc_value = duration
@@ -213,11 +220,13 @@ impl Timers {
                     .checked_div(1_000_000_000)
                     .unwrap(),
             )
+            .unwrap()
+            .checked_add(now)
             .unwrap();
 
         TimerFuture {
             timers: self.clone(),
-            tsc_value,
+            tsc_value: NonZeroU64::new(tsc_value).unwrap(),
             timer_id: None,
         }
     }
@@ -234,8 +243,8 @@ impl Timers {
                 .max(local_val)
         };
 
-        debug_assert!(rdtsc_value >= self.monotonic_clock_zero);
-        let diff_ticks = rdtsc_value - self.monotonic_clock_zero;
+        debug_assert!(rdtsc_value >= self.monotonic_clock_zero.get());
+        let diff_ticks = rdtsc_value - self.monotonic_clock_zero.get();
         let whole_secs = diff_ticks / self.rdtsc_ticks_per_sec.get();
         // TODO: the multiplication below can realistically panic if `rdtsc_ticks_per_sec` is a very large value
         let nanos = 1_000_000_000u64
@@ -252,7 +261,7 @@ pub struct TimerFuture {
     /// Reference to the [`Timers`] struct that has created this timer.
     timers: Arc<Timers>,
     /// The TSC value after which the future will be ready.
-    tsc_value: u64,
+    tsc_value: NonZeroU64,
     /// Unique identifier of the timer within the [`Timers`]. `None` if it hasn't been put in the
     /// list yet.
     timer_id: Option<u64>,
@@ -273,7 +282,7 @@ impl Future for TimerFuture {
                 .max(local_val)
         };
 
-        if now >= this.tsc_value {
+        if now >= this.tsc_value.get() {
             return Poll::Ready(());
         }
 
@@ -305,7 +314,7 @@ impl Future for TimerFuture {
                 this.timers
                     .monotonic_clock_max
                     .load(atomic::Ordering::SeqCst)
-                    >= this.tsc_value
+                    >= this.tsc_value.get()
             );
             return Poll::Ready(());
         }
@@ -339,7 +348,7 @@ impl Future for TimerFuture {
             this.timers
                 .local_apics
                 .set_local_timer(local::Timer::TscDeadline {
-                    threshold: NonZeroU64::new(this.tsc_value).unwrap(), // TODO: put this is NonZero in the first place
+                    threshold: this.tsc_value,
                     vector: this.timers.interrupt_vector.interrupt_num(),
                 });
             e.insert(to_insert);
@@ -380,7 +389,7 @@ impl futures::task::ArcWake for TimerWaker {
         // Remove from `active_timers` all the timers that have fired.
         for (_, timer) in shared
             .active_timers
-            .drain_filter(|_, timer| timer.target_tsc_value <= now)
+            .drain_filter(|_, timer| timer.target_tsc_value.get() <= now)
         {
             timer.waker.wake();
         }
@@ -394,7 +403,7 @@ impl futures::task::ArcWake for TimerWaker {
                 None => break,
             };
 
-            if next_timer.target_tsc_value <= now {
+            if next_timer.target_tsc_value.get() <= now {
                 next_timer.waker.wake();
                 continue;
             }
@@ -412,7 +421,7 @@ impl futures::task::ArcWake for TimerWaker {
                     .timers
                     .local_apics
                     .set_local_timer(local::Timer::TscDeadline {
-                        threshold: NonZeroU64::new(next_timer.target_tsc_value).unwrap(), // TODO: put this is NonZero in the first place
+                        threshold: next_timer.target_tsc_value,
                         vector: arc_self.timers.interrupt_vector.interrupt_num(),
                     });
                 e.insert(next_timer);
@@ -426,6 +435,7 @@ impl futures::task::ArcWake for TimerWaker {
 
         // Some memory footprint reduction.
         if shared.pending_timers.is_empty() && shared.pending_timers.capacity() >= 32 {
+            // TODO: use shrink_to once stable and use a minimum capacity
             shared.pending_timers.shrink_to_fit();
         }
     }
