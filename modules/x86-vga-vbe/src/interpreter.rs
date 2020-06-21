@@ -284,7 +284,7 @@ impl Interpreter {
                 self.flags_set_zero_from_val(temp);
                 self.flags_set_parity_from_val(temp);
                 self.flags_set_carry(overflow);
-                self.flags_set_overflow(overflow != temp.left_most_bit());
+                self.flags_set_overflow(overflow != temp.most_significant_bit());
                 // TODO: the adjust flag
             }
 
@@ -354,14 +354,17 @@ impl Interpreter {
             }
 
             iced_x86::Mnemonic::Cwd => {
-                if self.register(iced_x86::Register::AX).left_most_bit() {
+                if self.register(iced_x86::Register::AX).most_significant_bit() {
                     self.store_in_register(iced_x86::Register::DX, Value::U16(0xffff))
                 } else {
                     self.store_in_register(iced_x86::Register::DX, Value::U16(0x0000))
                 }
             }
             iced_x86::Mnemonic::Cdq => {
-                if self.register(iced_x86::Register::EAX).left_most_bit() {
+                if self
+                    .register(iced_x86::Register::EAX)
+                    .most_significant_bit()
+                {
                     self.store_in_register(iced_x86::Register::EDX, Value::U32(0xffffffff))
                 } else {
                     self.store_in_register(iced_x86::Register::EDX, Value::U32(0x00000000))
@@ -396,7 +399,7 @@ impl Interpreter {
                 self.flags_set_zero_from_val(temp);
                 self.flags_set_parity_from_val(temp);
                 self.flags_set_carry(overflow);
-                self.flags_set_overflow(overflow != temp.left_most_bit());
+                self.flags_set_overflow(overflow != temp.most_significant_bit());
                 // TODO: the adjust flag
             }
 
@@ -423,7 +426,7 @@ impl Interpreter {
                 self.flags_set_sign_from_val(temp);
                 self.flags_set_zero_from_val(temp);
                 self.flags_set_parity_from_val(temp);
-                self.flags_set_overflow(overflow != temp.left_most_bit());
+                self.flags_set_overflow(overflow != temp.most_significant_bit());
                 // TODO: the adjust flag
                 // Carry flag is not affected.
             }
@@ -609,7 +612,7 @@ impl Interpreter {
                 self.flags_set_sign_from_val(temp);
                 self.flags_set_zero_from_val(temp);
                 self.flags_set_parity_from_val(temp);
-                self.flags_set_overflow(overflow != temp.left_most_bit());
+                self.flags_set_overflow(overflow != temp.most_significant_bit());
                 // TODO: the adjust flag
                 // Carry flag is not affected.
             }
@@ -725,7 +728,7 @@ impl Interpreter {
 
             iced_x86::Mnemonic::Loop | iced_x86::Mnemonic::Loope | iced_x86::Mnemonic::Loopne => {
                 let cx = self.register(iced_x86::Register::CX);
-                let cx = cx.dec();
+                let cx = cx.wrapping_dec();
                 self.store_in_register(iced_x86::Register::CX, cx);
                 let could_jump = match instruction.mnemonic() {
                     iced_x86::Mnemonic::Loop => true,
@@ -748,23 +751,20 @@ impl Interpreter {
             iced_x86::Mnemonic::Movsx => {
                 let value = self.fetch_operand_value(&instruction, 1);
 
-                // We need to figure out the size of the destination.
-                // We implement this in a very lazy and inefficient way by reading its value
-                // in order to determine its size.
-                match (self.fetch_operand_value(&instruction, 0), value) {
-                    (Value::U16(_), Value::U8(v)) => {
+                match (self.operand_size(&instruction, 0), value) {
+                    (2, Value::U8(v)) => {
                         let out = u16::from_ne_bytes(
                             i16::from(i8::from_ne_bytes(v.to_ne_bytes())).to_ne_bytes(),
                         );
                         self.store_in_operand(&instruction, 0, Value::U16(out))
                     }
-                    (Value::U32(_), Value::U8(v)) => {
+                    (4, Value::U8(v)) => {
                         let out = u32::from_ne_bytes(
                             i32::from(i8::from_ne_bytes(v.to_ne_bytes())).to_ne_bytes(),
                         );
                         self.store_in_operand(&instruction, 0, Value::U32(out))
                     }
-                    (Value::U32(_), Value::U16(v)) => {
+                    (4, Value::U16(v)) => {
                         let out = u32::from_ne_bytes(
                             i32::from(i16::from_ne_bytes(v.to_ne_bytes())).to_ne_bytes(),
                         );
@@ -777,17 +777,14 @@ impl Interpreter {
             iced_x86::Mnemonic::Movzx => {
                 let value = self.fetch_operand_value(&instruction, 1);
 
-                // We need to figure out the size of the destination.
-                // We implement this in a very lazy and inefficient way by reading its value
-                // in order to determine its size.
-                match (self.fetch_operand_value(&instruction, 0), value) {
-                    (Value::U16(_), Value::U8(v)) => {
+                match (self.operand_size(&instruction, 0), value) {
+                    (2, Value::U8(v)) => {
                         self.store_in_operand(&instruction, 0, Value::U16(u16::from(v)))
                     }
-                    (Value::U32(_), Value::U8(v)) => {
+                    (4, Value::U8(v)) => {
                         self.store_in_operand(&instruction, 0, Value::U32(u32::from(v)))
                     }
-                    (Value::U32(_), Value::U16(v)) => {
+                    (4, Value::U16(v)) => {
                         self.store_in_operand(&instruction, 0, Value::U32(u32::from(v)))
                     }
                     _ => unreachable!(),
@@ -799,9 +796,9 @@ impl Interpreter {
             iced_x86::Mnemonic::Not => {
                 let value = self.fetch_operand_value(&instruction, 0);
                 let result = match value {
-                    Value::U8(value) => Value::U8(value ^ 0xff),
-                    Value::U16(value) => Value::U16(value ^ 0xffff),
-                    Value::U32(value) => Value::U32(value ^ 0xffffffff),
+                    Value::U8(value) => Value::U8(!value),
+                    Value::U16(value) => Value::U16(!value),
+                    Value::U32(value) => Value::U32(!value),
                     _ => unreachable!(),
                 };
                 self.store_in_operand(&instruction, 0, result);
@@ -845,25 +842,21 @@ impl Interpreter {
                 }
             }
 
-            iced_x86::Mnemonic::Pop => {
-                // We need to figure out how much data to pop.
-                // We implement this in a very lazy and inefficient way by reading the
-                // location where we will pop to in order to determine its size.
-                match self.fetch_operand_value(&instruction, 0) {
-                    Value::U8(_) => {
-                        let val = Value::U8(self.stack_pop_u8());
-                        self.store_in_operand(&instruction, 0, val);
-                    }
-                    Value::U16(_) => {
-                        let val = Value::U16(self.stack_pop_u16());
-                        self.store_in_operand(&instruction, 0, val);
-                    }
-                    Value::U32(_) => {
-                        let val = Value::U32(self.stack_pop_u32());
-                        self.store_in_operand(&instruction, 0, val);
-                    }
+            iced_x86::Mnemonic::Pop => match self.operand_size(&instruction, 0) {
+                1 => {
+                    let val = Value::U8(self.stack_pop_u8());
+                    self.store_in_operand(&instruction, 0, val);
                 }
-            }
+                2 => {
+                    let val = Value::U16(self.stack_pop_u16());
+                    self.store_in_operand(&instruction, 0, val);
+                }
+                4 => {
+                    let val = Value::U32(self.stack_pop_u32());
+                    self.store_in_operand(&instruction, 0, val);
+                }
+                _ => unreachable!(),
+            },
             iced_x86::Mnemonic::Popa => match instruction.code() {
                 iced_x86::Code::Popaw => {
                     let val = Value::U16(self.stack_pop_u16());
@@ -913,6 +906,7 @@ impl Interpreter {
                 let value = self.fetch_operand_value(&instruction, 0);
                 self.stack_push_value(value);
             }
+
             iced_x86::Mnemonic::Pusha => match instruction.code() {
                 iced_x86::Code::Pushaw => {
                     let sp = self.register(iced_x86::Register::SP);
@@ -938,6 +932,7 @@ impl Interpreter {
                 }
                 _ => unreachable!(),
             },
+
             iced_x86::Mnemonic::Pushf => match instruction.code() {
                 iced_x86::Code::Pushfw => {
                     self.stack_push_value(Value::U16(self.regs.flags));
@@ -946,8 +941,11 @@ impl Interpreter {
             },
 
             iced_x86::Mnemonic::Ret => {
+                // The `ret` opcode can be followed by a number of bytes to pop from the stack
+                // on top of `cs`/`ip`/`eip`.
                 let num_to_pop = if instruction.op_count() == 1 {
-                    self.fetch_operand_value(&instruction, 0).extend_to_u32()
+                    self.fetch_operand_value(&instruction, 0)
+                        .zero_extend_to_u32()
                 } else {
                     0
                 };
@@ -983,8 +981,8 @@ impl Interpreter {
                 let mut value0 = self.fetch_operand_value(&instruction, 0);
                 let value1 = self.fetch_operand_value(&instruction, 1);
 
-                for _ in 0..value1.extend_to_u32() {
-                    let shifted_bit = value0.left_most_bit();
+                for _ in 0..value1.zero_extend_to_u32() {
+                    let shifted_bit = value0.most_significant_bit();
 
                     value0 = match value0 {
                         Value::U8(v) => Value::U8(v.wrapping_shl(1)),
@@ -996,7 +994,7 @@ impl Interpreter {
                     self.flags_set_zero_from_val(value0);
                     self.flags_set_parity_from_val(value0);
                     self.flags_set_carry(shifted_bit);
-                    self.flags_set_overflow(shifted_bit != value0.left_most_bit());
+                    self.flags_set_overflow(shifted_bit != value0.most_significant_bit());
                     // The adjust flag is undefined
                 }
 
@@ -1008,7 +1006,7 @@ impl Interpreter {
                 let value1 = self.fetch_operand_value(&instruction, 1);
 
                 let sign_extension = if let iced_x86::Mnemonic::Sar = instruction.mnemonic() {
-                    if value0.left_most_bit() {
+                    if value0.most_significant_bit() {
                         1u8
                     } else {
                         0u8
@@ -1017,9 +1015,9 @@ impl Interpreter {
                     0u8
                 };
 
-                for _ in 0..value1.extend_to_u32() {
-                    let shifted_bit = (value0.extend_to_u32() & 0x1) != 0;
-                    let sign_bit = value0.left_most_bit();
+                for _ in 0..value1.zero_extend_to_u32() {
+                    let shifted_bit = (value0.zero_extend_to_u32() & 0x1) != 0;
+                    let sign_bit = value0.most_significant_bit();
 
                     value0 = match value0 {
                         Value::U8(v) => {
@@ -1037,7 +1035,7 @@ impl Interpreter {
                     self.flags_set_zero_from_val(value0);
                     self.flags_set_parity_from_val(value0);
                     self.flags_set_carry(shifted_bit);
-                    self.flags_set_overflow(sign_bit != value0.left_most_bit());
+                    self.flags_set_overflow(sign_bit != value0.most_significant_bit());
                     // The adjust flag is undefined
                 }
 
@@ -1073,7 +1071,7 @@ impl Interpreter {
                 self.flags_set_zero_from_val(temp);
                 self.flags_set_parity_from_val(temp);
                 self.flags_set_carry(overflow);
-                self.flags_set_overflow(overflow != temp.left_most_bit());
+                self.flags_set_overflow(overflow != temp.most_significant_bit());
                 // TODO: the adjust flag
             }
 
@@ -1116,7 +1114,7 @@ impl Interpreter {
                     self.flags_set_zero_from_val(temp);
                     self.flags_set_parity_from_val(temp);
                     self.flags_set_carry(overflow);
-                    self.flags_set_overflow(overflow != temp.left_most_bit());
+                    self.flags_set_overflow(overflow != temp.most_significant_bit());
                     // TODO: the adjust flag
 
                     if self.flags_is_direction() {
@@ -1127,7 +1125,7 @@ impl Interpreter {
 
                     if instruction.has_repe_prefix() || instruction.has_repne_prefix() {
                         let ecx = self.register(counter_reg);
-                        self.store_in_register(counter_reg, ecx.dec());
+                        self.store_in_register(counter_reg, ecx.wrapping_dec());
                     }
 
                     if instruction.has_repe_prefix() {
@@ -1278,7 +1276,7 @@ impl Interpreter {
                 self.flags_set_zero_from_val(temp);
                 self.flags_set_parity_from_val(temp);
                 self.flags_set_carry(overflow);
-                self.flags_set_overflow(overflow != temp.left_most_bit());
+                self.flags_set_overflow(overflow != temp.most_significant_bit());
                 // TODO: the adjust flag
             }
 
@@ -1341,7 +1339,6 @@ impl Interpreter {
 
     fn apply_rel_jump(&mut self, instruction: &iced_x86::Instruction) {
         // TODO: check segment bounds
-        // TODO: this function's usefulness is debatable; it exists because I didn't realize that near_branch16() automatically calculated the target
         self.regs.eip = u32::from(instruction.near_branch16());
     }
 
@@ -1353,18 +1350,13 @@ impl Interpreter {
 
         let vector = u32::from(vector);
 
-        let mut seg = [0; 2];
-        let mut ptr = [0; 2];
-        self.read_memory((vector * 4) + 2, &mut seg);
-        self.read_memory(vector * 4, &mut ptr);
-
-        self.regs.cs = u16::from_le_bytes(seg);
-        self.regs.eip = u32::from(u16::from_le_bytes(ptr));
+        self.regs.cs = self.read_memory_u16((vector * 4) + 2);
+        self.regs.eip = u32::from(self.read_memory_u16(vector * 4));
     }
 
     /// Pushes data on the stack.
     fn stack_push(&mut self, data: &[u8]) {
-        // TODO: don't panic; handle overflows, but also respect segment
+        // TODO: don't panic; handle overflows by generating a SS exception
         self.regs.esp = self
             .regs
             .esp
@@ -1487,7 +1479,7 @@ impl Interpreter {
     }
 
     fn flags_set_sign_from_val(&mut self, val: Value) {
-        self.flags_set_sign(val.left_most_bit())
+        self.flags_set_sign(val.most_significant_bit())
     }
 
     fn flags_set_sign(&mut self, val: bool) {
@@ -1572,6 +1564,11 @@ impl Interpreter {
 
     /// Assumes that operand `op_n` of `instruction` is of type `Memory`, and loads the pointer
     /// value without the segment.
+    ///
+    /// # Panic
+    ///
+    /// Panics if the operand is not of type `Memory`.
+    ///
     fn memory_operand_pointer(&self, instruction: &iced_x86::Instruction, op_n: u32) -> u16 {
         assert!(matches!(
             instruction.op_kind(op_n),
@@ -1603,6 +1600,40 @@ impl Interpreter {
         base_and_index.wrapping_add(disp)
     }
 
+    /// Returns the size in bytes of the value designated by the given operand of the given
+    /// instruction. This is equal to what [`Interpreter::fetch_operand_value`] would return
+    /// for that operand.
+    ///
+    /// For example if the operand is the register `AX`, returns 2.
+    ///
+    /// # Panic
+    ///
+    /// Panics if the operand index is out of range of the instruction.
+    ///
+    fn operand_size(&mut self, instruction: &iced_x86::Instruction, op_n: u32) -> u8 {
+        match instruction.op_kind(op_n) {
+            // TODO: lazy way to implement this
+            iced_x86::OpKind::Register => self.register(instruction.op_register(op_n)).size(),
+            iced_x86::OpKind::Immediate8 => 1,
+            iced_x86::OpKind::Immediate16 => 2,
+            iced_x86::OpKind::Immediate32 => 2,
+            iced_x86::OpKind::Immediate8to16 => 2,
+            iced_x86::OpKind::Immediate8to32 => 4,
+            iced_x86::OpKind::MemorySegSI
+            | iced_x86::OpKind::MemoryESDI
+            | iced_x86::OpKind::Memory => u8::try_from(instruction.memory_size().size()).unwrap(),
+            ty => unimplemented!("{:?}", ty),
+        }
+    }
+
+    /// Returns the value of the given operand of the given instruction.
+    ///
+    /// For example if the operand is the register `AX`, returns the current value of `AX`.
+    ///
+    /// # Panic
+    ///
+    /// Panics if the operand index is out of range of the instruction.
+    ///
     fn fetch_operand_value(&mut self, instruction: &iced_x86::Instruction, op_n: u32) -> Value {
         let (segment, pointer) = match instruction.op_kind(op_n) {
             iced_x86::OpKind::Register => return self.register(instruction.op_register(op_n)),
@@ -1660,6 +1691,7 @@ impl Interpreter {
         }
     }
 
+    /// Returns the value of the given register.
     fn register(&self, register: iced_x86::Register) -> Value {
         match register {
             iced_x86::Register::AL => Value::U8(u8::try_from(self.regs.eax & 0xff).unwrap()),
@@ -1873,7 +1905,7 @@ impl Value {
         }
     }
 
-    fn dec(&self) -> Value {
+    fn wrapping_dec(&self) -> Value {
         match *self {
             Value::U8(val) => Value::U8(val.wrapping_sub(1)),
             Value::U16(val) => Value::U16(val.wrapping_sub(1)),
@@ -1881,7 +1913,7 @@ impl Value {
         }
     }
 
-    fn left_most_bit(&self) -> bool {
+    fn most_significant_bit(&self) -> bool {
         match *self {
             Value::U8(val) => (val & 0x80) != 0,
             Value::U16(val) => (val & 0x8000) != 0,
@@ -1889,7 +1921,7 @@ impl Value {
         }
     }
 
-    fn extend_to_u32(&self) -> u32 {
+    fn zero_extend_to_u32(&self) -> u32 {
         match *self {
             Value::U8(val) => u32::from(val),
             Value::U16(val) => u32::from(val),
