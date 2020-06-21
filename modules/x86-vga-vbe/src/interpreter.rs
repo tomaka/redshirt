@@ -199,6 +199,10 @@ impl Interpreter {
         self.regs.ecx |= u32::from(value);
     }
 
+    pub fn dx(&mut self) -> u16 {
+        u16::try_from(self.regs.edx & 0xffff).unwrap()
+    }
+
     pub fn set_es_di(&mut self, es: u16, di: u16) {
         self.regs.es = es;
         self.regs.edi &= 0xffff0000;
@@ -517,57 +521,71 @@ impl Interpreter {
                 }
             }
 
-            // TODO: doesn't account for sign; probably wrong
             iced_x86::Mnemonic::Idiv => {
                 // TODO: no check for division by zero
                 match self.fetch_operand_value(&instruction, 0) {
                     Value::U8(divisor) => {
-                        let dividend = u16::try_from(self.regs.eax & 0xffff).unwrap();
-                        let divisor = u16::from(divisor);
-                        let quotient = u8::try_from((dividend / divisor) & 0xff).unwrap();
-                        let remainder = u8::try_from(dividend % divisor).unwrap();
+                        let dividend = i16::from_ne_bytes(self.ax().to_ne_bytes());
+                        let divisor = i16::from_ne_bytes(
+                            (i16::from(i8::from_ne_bytes(divisor.to_ne_bytes()))).to_ne_bytes(),
+                        );
+                        let quotient = u16::from_ne_bytes((dividend / divisor).to_ne_bytes());
+                        let quotient = u8::try_from(quotient & 0xff).unwrap();
+                        let remainder = u16::from_ne_bytes((dividend % divisor).to_ne_bytes());
+                        let remainder = u8::try_from(remainder & 0xff).unwrap();
                         self.store_in_register(iced_x86::Register::AL, Value::U8(quotient));
                         self.store_in_register(iced_x86::Register::AH, Value::U8(remainder));
                     }
                     Value::U16(divisor) => {
-                        let dividend = u32::try_from(
-                            ((self.regs.edx & 0xffff) << 16) | (self.regs.eax & 0xffff),
-                        )
-                        .unwrap();
-                        let divisor = u32::from(divisor);
-                        let quotient = u16::try_from((dividend / divisor) & 0xffff).unwrap();
-                        let remainder = u16::try_from(dividend % divisor).unwrap();
+                        let dividend = i32::from_ne_bytes(
+                            ((u32::from(self.dx()) << 16) | u32::from(self.ax())).to_ne_bytes(),
+                        );
+                        let divisor = i32::from(i16::from_ne_bytes(divisor.to_ne_bytes()));
+                        let quotient = u32::from_ne_bytes((dividend / divisor).to_ne_bytes());
+                        let quotient = u16::try_from(quotient & 0xffff).unwrap();
+                        let remainder = u32::from_ne_bytes((dividend % divisor).to_ne_bytes());
+                        let remainder = u16::try_from(remainder & 0xffff).unwrap();
                         self.store_in_register(iced_x86::Register::AX, Value::U16(quotient));
                         self.store_in_register(iced_x86::Register::DX, Value::U16(remainder));
                     }
                     Value::U32(divisor) => {
-                        let dividend = (u64::from(self.regs.edx) << 32) | u64::from(self.regs.eax);
-                        let divisor = u64::from(divisor);
-                        let quotient = u32::try_from((dividend / divisor) & 0xffffffff).unwrap();
-                        let remainder = u32::try_from(dividend % divisor).unwrap();
+                        let dividend = i64::from_ne_bytes(
+                            ((u64::from(self.regs.edx) << 32) | u64::from(self.regs.eax))
+                                .to_ne_bytes(),
+                        );
+                        let divisor = i64::from(i32::from_ne_bytes(divisor.to_ne_bytes()));
+                        let quotient = u64::from_ne_bytes((dividend / divisor).to_ne_bytes());
+                        let quotient = u32::try_from(quotient & 0xffffffff).unwrap();
+                        let remainder = u64::from_ne_bytes((dividend % divisor).to_ne_bytes());
+                        let remainder = u32::try_from(remainder & 0xffffffff).unwrap();
                         self.regs.eax = quotient;
                         self.regs.edx = remainder;
                     }
                 }
             }
 
-            // TODO: doesn't account for sign; probably wrong
             iced_x86::Mnemonic::Imul if matches!(instruction.op_count(), 1 | 2) => {
                 let value0 = self.fetch_operand_value(&instruction, 0);
                 let value1 = self.fetch_operand_value(&instruction, 1);
 
                 let (temp, overflow) = match (value0, value1) {
                     (Value::U8(value0), Value::U8(value1)) => {
+                        let value0 = i8::from_ne_bytes(value0.to_ne_bytes());
+                        let value1 = i8::from_ne_bytes(value1.to_ne_bytes());
                         let (v, o) = value0.overflowing_mul(value1);
-                        (Value::U8(v), o)
+                        (Value::U8(u8::from_ne_bytes(v.to_ne_bytes())), o)
                     }
                     (Value::U16(value0), Value::U16(value1)) => {
+                        let value0 = i16::from_ne_bytes(value0.to_ne_bytes());
+                        let value1 = i16::from_ne_bytes(value1.to_ne_bytes());
                         let (v, o) = value0.overflowing_mul(value1);
-                        (Value::U16(v), o)
+                        (Value::U16(u16::from_ne_bytes(v.to_ne_bytes())), o)
                     }
                     (Value::U32(value0), Value::U32(value1)) => {
+                        let value0 = i32::from_ne_bytes(value0.to_ne_bytes());
+                        let value1 = i32::from_ne_bytes(value1.to_ne_bytes());
                         let (v, o) = value0.overflowing_mul(value1);
-                        (Value::U32(v), o)
+                        (Value::U32(u32::from_ne_bytes(v.to_ne_bytes())), o)
                     }
                     _ => unreachable!(),
                 };
@@ -587,16 +605,22 @@ impl Interpreter {
 
                 let (temp, overflow) = match (value1, value2) {
                     (Value::U8(value1), Value::U8(value2)) => {
+                        let value1 = i8::from_ne_bytes(value1.to_ne_bytes());
+                        let value2 = i8::from_ne_bytes(value2.to_ne_bytes());
                         let (v, o) = value1.overflowing_mul(value2);
-                        (Value::U8(v), o)
+                        (Value::U8(u8::from_ne_bytes(v.to_ne_bytes())), o)
                     }
                     (Value::U16(value1), Value::U16(value2)) => {
+                        let value1 = i16::from_ne_bytes(value1.to_ne_bytes());
+                        let value2 = i16::from_ne_bytes(value2.to_ne_bytes());
                         let (v, o) = value1.overflowing_mul(value2);
-                        (Value::U16(v), o)
+                        (Value::U16(u16::from_ne_bytes(v.to_ne_bytes())), o)
                     }
                     (Value::U32(value1), Value::U32(value2)) => {
+                        let value1 = i32::from_ne_bytes(value1.to_ne_bytes());
+                        let value2 = i32::from_ne_bytes(value2.to_ne_bytes());
                         let (v, o) = value1.overflowing_mul(value2);
-                        (Value::U32(v), o)
+                        (Value::U32(u32::from_ne_bytes(v.to_ne_bytes())), o)
                     }
                     _ => unreachable!(),
                 };
@@ -1685,7 +1709,13 @@ impl Interpreter {
     fn fetch_operand_value(&mut self, instruction: &iced_x86::Instruction, op_n: u32) -> Value {
         let (segment, pointer) = match instruction.op_kind(op_n) {
             iced_x86::OpKind::Register => return self.register(instruction.op_register(op_n)),
-            iced_x86::OpKind::Immediate8 => return Value::U8(instruction.immediate8()),
+            iced_x86::OpKind::Immediate8 => {
+                if (0..op_n).any(|n| instruction.op_kind(n) == iced_x86::OpKind::Immediate8) {
+                    return Value::U8(instruction.immediate8_2nd());
+                } else {
+                    return Value::U8(instruction.immediate8());
+                }
+            }
             iced_x86::OpKind::Immediate16 => return Value::U16(instruction.immediate16()),
             iced_x86::OpKind::Immediate32 => return Value::U32(instruction.immediate32()),
             iced_x86::OpKind::Immediate8to16 => {
