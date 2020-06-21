@@ -897,6 +897,33 @@ impl Interpreter {
                 self.store_in_operand(&instruction, 0, Value::U16(ptr));
             }
 
+            iced_x86::Mnemonic::Lodsb => {
+                // TODO: review this
+                let val = self.fetch_operand_value(&instruction, 1);
+
+                let use_esi = match instruction.op_kind(1) {
+                    iced_x86::OpKind::MemorySegSI => false,
+                    iced_x86::OpKind::MemorySegESI => true,
+                    _ => unreachable!(),
+                };
+
+                self.store_in_operand(&instruction, 0, val);
+
+                if use_esi {
+                    if self.flags_is_direction() {
+                        self.regs.esi = self.regs.esi.wrapping_sub(u32::from(val.size()));
+                    } else {
+                        self.regs.esi = self.regs.esi.wrapping_add(u32::from(val.size()));
+                    }
+                } else {
+                    if self.flags_is_direction() {
+                        self.sub_si(u16::from(val.size()));
+                    } else {
+                        self.add_si(u16::from(val.size()));
+                    }
+                }
+            }
+
             iced_x86::Mnemonic::Loop | iced_x86::Mnemonic::Loope | iced_x86::Mnemonic::Loopne => {
                 let use_ecx = match instruction.code() {
                     iced_x86::Code::Loop_rel8_16_CX => false,
@@ -1007,31 +1034,29 @@ impl Interpreter {
             }
 
             iced_x86::Mnemonic::Mul => {
-                let to_mul1 = self.fetch_operand_value(&instruction, 0);
-                let to_mul2 = self.fetch_operand_value(&instruction, 1);
+                let value = self.fetch_operand_value(&instruction, 0);
 
-                // Unsigned multiplication of `to_mul1` and `to_mul2`. The highest and lowest
-                // half of the result are put in `result_hi` and `result_lo`.
-                let (result_hi, result_lo) = match (to_mul1, to_mul2) {
-                    (Value::U8(to_mul1), Value::U8(to_mul2)) => {
+                let (result_hi, result_lo) = match value {
+                    Value::U8(to_mul1) => {
                         let to_mul1 = u16::from(to_mul1);
-                        let to_mul2 = u16::from(to_mul2);
+                        let to_mul2 =
+                            u16::from(u8::try_from(self.register(iced_x86::Register::AL)).unwrap());
                         let result = to_mul1.checked_mul(to_mul2).unwrap();
                         let result_lo = u8::try_from(result & 0xff).unwrap();
                         let result_hi = u8::try_from(result >> 8).unwrap();
                         (Value::U8(result_hi), Value::U8(result_lo))
                     }
-                    (Value::U16(to_mul1), Value::U16(to_mul2)) => {
+                    Value::U16(to_mul1) => {
                         let to_mul1 = u32::from(to_mul1);
-                        let to_mul2 = u32::from(to_mul2);
+                        let to_mul2 = u32::from(self.ax());
                         let result = to_mul1.checked_mul(to_mul2).unwrap();
                         let result_lo = u16::try_from(result & 0xffff).unwrap();
                         let result_hi = u16::try_from(result >> 16).unwrap();
                         (Value::U16(result_hi), Value::U16(result_lo))
                     }
-                    (Value::U32(to_mul1), Value::U32(to_mul2)) => {
+                    Value::U32(to_mul1) => {
                         let to_mul1 = u64::from(to_mul1);
-                        let to_mul2 = u64::from(to_mul2);
+                        let to_mul2 = u64::from(self.regs.eax);
                         let result = to_mul1.checked_mul(to_mul2).unwrap();
                         let result_lo = u32::try_from(result & 0xffffffff).unwrap();
                         let result_hi = u32::try_from(result >> 32).unwrap();
@@ -1914,6 +1939,20 @@ impl Interpreter {
         self.regs.esi |= u32::from(new_si);
     }
 
+    fn sub_si(&mut self, n: u16) {
+        let si = u16::try_from(self.regs.esi & 0xffff).unwrap();
+        let new_si = si.wrapping_sub(n);
+        self.regs.esi &= 0xffff0000;
+        self.regs.esi |= u32::from(new_si);
+    }
+
+    fn add_si(&mut self, n: u16) {
+        let si = u16::try_from(self.regs.esi & 0xffff).unwrap();
+        let new_si = si.wrapping_add(n);
+        self.regs.esi &= 0xffff0000;
+        self.regs.esi |= u32::from(new_si);
+    }
+
     fn sub_di(&mut self, n: u16) {
         let di = u16::try_from(self.regs.edi & 0xffff).unwrap();
         let new_di = di.wrapping_sub(n);
@@ -1979,7 +2018,14 @@ impl Interpreter {
     fn operand_size(&mut self, instruction: &iced_x86::Instruction, op_n: u32) -> u8 {
         match instruction.op_kind(op_n) {
             // TODO: lazy way to implement this
-            iced_x86::OpKind::Register => self.register(instruction.op_register(op_n)).size(),
+            iced_x86::OpKind::Register => {
+                // TODO: debug_assert!
+                assert!(!matches!(
+                    instruction.op_register(op_n),
+                    iced_x86::Register::None
+                ));
+                self.register(instruction.op_register(op_n)).size()
+            }
             iced_x86::OpKind::Immediate8 => 1,
             iced_x86::OpKind::Immediate16 => 2,
             iced_x86::OpKind::Immediate32 => 2,
@@ -2002,7 +2048,16 @@ impl Interpreter {
     ///
     fn fetch_operand_value(&mut self, instruction: &iced_x86::Instruction, op_n: u32) -> Value {
         let (segment, pointer) = match instruction.op_kind(op_n) {
-            iced_x86::OpKind::Register => return self.register(instruction.op_register(op_n)),
+            iced_x86::OpKind::Register => {
+                // TODO: debug_assert!
+                assert!(
+                    !matches!(instruction.op_register(op_n), iced_x86::Register::None),
+                    "{:?} with {:?}",
+                    instruction.code(),
+                    op_n
+                );
+                return self.register(instruction.op_register(op_n));
+            }
             iced_x86::OpKind::Immediate8 => {
                 if (0..op_n).any(|n| instruction.op_kind(n) == iced_x86::OpKind::Immediate8) {
                     return Value::U8(instruction.immediate8_2nd());
@@ -2023,7 +2078,14 @@ impl Interpreter {
                 ))
             }
             iced_x86::OpKind::MemorySegSI => {
-                let segment = u16::try_from(self.register(instruction.memory_segment())).unwrap();
+                let segment = {
+                    // TODO: debug_assert! instead
+                    assert!(!matches!(
+                        instruction.memory_segment(),
+                        iced_x86::Register::None
+                    ));
+                    u16::try_from(self.register(instruction.memory_segment())).unwrap()
+                };
                 let pointer = u16::try_from(self.regs.esi & 0xffff).unwrap();
                 (segment, pointer)
             }
@@ -2033,7 +2095,14 @@ impl Interpreter {
                 (segment, pointer)
             }
             iced_x86::OpKind::Memory => {
-                let segment = u16::try_from(self.register(instruction.memory_segment())).unwrap();
+                let segment = {
+                    // TODO: debug_assert! instead
+                    assert!(!matches!(
+                        instruction.memory_segment(),
+                        iced_x86::Register::None
+                    ));
+                    u16::try_from(self.register(instruction.memory_segment())).unwrap()
+                };
                 let pointer = self.memory_operand_pointer(instruction, op_n);
                 (segment, pointer)
             }
@@ -2117,6 +2186,11 @@ impl Interpreter {
                 (self.regs.es, u16::try_from(self.regs.edi & 0xffff).unwrap())
             }
             iced_x86::OpKind::Memory => {
+                // TODO: debug_assert! instead
+                assert!(!matches!(
+                    instruction.memory_segment(),
+                    iced_x86::Register::None
+                ));
                 let segment = u16::try_from(self.register(instruction.memory_segment())).unwrap();
                 let pointer = self.memory_operand_pointer(instruction, op_n);
                 (segment, pointer)
