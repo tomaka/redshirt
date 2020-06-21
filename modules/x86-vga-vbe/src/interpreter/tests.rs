@@ -20,6 +20,7 @@ fn basic_entry_point_works() {
     futures::executor::block_on(async move {
         let mut interpreter =
             Interpreter::from_memory(include_bytes!("test-mem.bin").to_vec()).await;
+        interpreter.disable_io_ports();
         interpreter.set_ax(0x4f00);
         interpreter.set_es_di(0x50, 0x0);
         interpreter.write_memory(0x500, &b"VBE2"[..]);

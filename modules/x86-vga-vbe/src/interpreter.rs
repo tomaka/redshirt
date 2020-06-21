@@ -22,6 +22,9 @@ pub struct Interpreter {
     regs: Registers,
     /// Cache of the first megabyte of memory of the actual machine.
     local_memory: Vec<u8>,
+    /// If true, perform I/O ports operations on the actual machine. Otherwise, reading a port
+    /// returns 0 and writing a port is a no-op.
+    enable_io_ports: bool,
 }
 
 #[derive(Debug)]
@@ -66,7 +69,14 @@ impl Interpreter {
                 gs: 0,
                 flags: 0b1011000000000010,
             },
+            enable_io_ports: true,
         }
+    }
+
+    /// After this is called, I/O ports operations will not be propagated on the actual machine.
+    /// Reading a port always returns 0, and writing a port becomes a no-op.
+    pub fn disable_io_ports(&mut self) {
+        self.enable_io_ports = false;
     }
 
     pub fn read_memory(&mut self, addr: u32, out: &mut [u8]) {
@@ -490,23 +500,32 @@ impl Interpreter {
 
                 iced_x86::Mnemonic::In => {
                     let port = u16::try_from(self.fetch_operand_value(&instruction, 1)).unwrap();
-                    let data = match self.fetch_operand_value(&instruction, 0) {
-                        Value::U8(_) => Value::U8(unsafe {
-                            redshirt_syscalls::block_on(redshirt_hardware_interface::port_read_u8(
-                                u32::from(port),
-                            ))
-                        }),
-                        Value::U16(_) => Value::U16(unsafe {
-                            redshirt_syscalls::block_on(redshirt_hardware_interface::port_read_u16(
-                                u32::from(port),
-                            ))
-                        }),
-                        Value::U32(_) => Value::U32(unsafe {
-                            redshirt_syscalls::block_on(redshirt_hardware_interface::port_read_u32(
-                                u32::from(port),
-                            ))
-                        }),
+                    let data = if self.enable_io_ports {
+                        match self.fetch_operand_value(&instruction, 0) {
+                            Value::U8(_) => Value::U8(unsafe {
+                                redshirt_syscalls::block_on(redshirt_hardware_interface::port_read_u8(
+                                    u32::from(port),
+                                ))
+                            }),
+                            Value::U16(_) => Value::U16(unsafe {
+                                redshirt_syscalls::block_on(redshirt_hardware_interface::port_read_u16(
+                                    u32::from(port),
+                                ))
+                            }),
+                            Value::U32(_) => Value::U32(unsafe {
+                                redshirt_syscalls::block_on(redshirt_hardware_interface::port_read_u32(
+                                    u32::from(port),
+                                ))
+                            }),
+                        }
+                    } else {
+                        match self.fetch_operand_value(&instruction, 0) {
+                            Value::U8(_) => Value::U8(0),
+                            Value::U16(_) => Value::U16(0),
+                            Value::U32(_) => Value::U32(0),
+                        }
                     };
+
                     self.store_in_operand(&instruction, 0, data);
                 }
 
@@ -756,16 +775,18 @@ impl Interpreter {
 
                 iced_x86::Mnemonic::Out => {
                     let port = u16::try_from(self.fetch_operand_value(&instruction, 0)).unwrap();
-                    match self.fetch_operand_value(&instruction, 1) {
-                        Value::U8(data) => unsafe {
-                            redshirt_hardware_interface::port_write_u8(u32::from(port), data);
-                        },
-                        Value::U16(data) => unsafe {
-                            redshirt_hardware_interface::port_write_u16(u32::from(port), data);
-                        },
-                        Value::U32(data) => unsafe {
-                            redshirt_hardware_interface::port_write_u32(u32::from(port), data);
-                        },
+                    if self.enable_io_ports {
+                        match self.fetch_operand_value(&instruction, 1) {
+                            Value::U8(data) => unsafe {
+                                redshirt_hardware_interface::port_write_u8(u32::from(port), data);
+                            },
+                            Value::U16(data) => unsafe {
+                                redshirt_hardware_interface::port_write_u16(u32::from(port), data);
+                            },
+                            Value::U32(data) => unsafe {
+                                redshirt_hardware_interface::port_write_u32(u32::from(port), data);
+                            },
+                        }
                     }
                 }
 
