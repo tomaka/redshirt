@@ -287,6 +287,61 @@ impl Interpreter {
 
     /// Apply the given instruction on the current state of the machine.
     fn run_one(&mut self, instruction: &iced_x86::Instruction) -> Result<(), Error> {
+        if !instruction.has_rep_prefix()
+            && !instruction.has_repe_prefix()
+            && !instruction.has_repne_prefix()
+        {
+            return self.run_one_no_rep(instruction);
+        }
+
+        let use_ecx = match instruction.memory_size().size() {
+            2 => false,
+            4 => true,
+            _ => unreachable!(),
+        };
+
+        loop {
+            if (use_ecx && self.regs.ecx == 0) || (!use_ecx && self.cx() == 0) {
+                break;
+            }
+
+            self.run_one_no_rep(instruction)?;
+
+            if use_ecx {
+                self.regs.ecx = self.regs.ecx.wrapping_sub(1);
+            } else {
+                self.dec_cx();
+            }
+
+            if instruction.has_repne_prefix() && !self.flags_is_zero() {
+                break;
+            }
+
+            if let iced_x86::Mnemonic::Cmpsb
+            | iced_x86::Mnemonic::Cmpsd
+            | iced_x86::Mnemonic::Cmpsq
+            | iced_x86::Mnemonic::Cmpss
+            | iced_x86::Mnemonic::Cmpsw
+            | iced_x86::Mnemonic::Scasb
+            | iced_x86::Mnemonic::Scasd
+            | iced_x86::Mnemonic::Scasq
+            | iced_x86::Mnemonic::Scasw = instruction.mnemonic()
+            {
+                if self.flags_is_zero() {
+                    break;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Same as [`Interpreter::run_one`] but doesn't care about any `REP`/`REPE`/`REPNE` prefix.
+    fn run_one_no_rep(&mut self, instruction: &iced_x86::Instruction) -> Result<(), Error> {
+        if instruction.is_protected_mode() {
+            return Err(Error::InvalidInstruction);
+        }
+
         // List here: https://en.wikipedia.org/wiki/X86_instruction_listings#Original_8086/8088_instructions
         // The objective is to implement up to and including the x386.
         match instruction.mnemonic() {
@@ -1211,72 +1266,54 @@ impl Interpreter {
             }
 
             iced_x86::Mnemonic::Scasb | iced_x86::Mnemonic::Scasw | iced_x86::Mnemonic::Scasd => {
-                // TODO: this should really be simplified?
                 let value0 = self.fetch_operand_value(&instruction, 0);
+                let value1 = self.fetch_operand_value(&instruction, 1);
 
-                let counter_reg = match value0 {
-                    Value::U8(_) => iced_x86::Register::CX,
-                    Value::U16(_) => iced_x86::Register::CX,
-                    Value::U32(_) => iced_x86::Register::ECX,
+                let (temp, overflow) = match (value0, value1) {
+                    (Value::U8(value0), Value::U8(value1)) => {
+                        let (v, o) = value0.overflowing_sub(value1);
+                        (Value::U8(v), o)
+                    }
+                    (Value::U16(value0), Value::U16(value1)) => {
+                        let (v, o) = value0.overflowing_sub(value1);
+                        (Value::U16(v), o)
+                    }
+                    (Value::U32(value0), Value::U32(value1)) => {
+                        let (v, o) = value0.overflowing_sub(value1);
+                        (Value::U32(v), o)
+                    }
+                    _ => unreachable!(),
                 };
 
-                loop {
-                    if instruction.has_repe_prefix() || instruction.has_repne_prefix() {
-                        if self.register(counter_reg).is_zero() {
-                            break;
-                        }
-                    }
+                self.flags_set_sign_from_val(temp);
+                self.flags_set_zero_from_val(temp);
+                self.flags_set_parity_from_val(temp);
+                self.flags_set_carry(overflow);
+                self.flags_set_overflow(overflow != temp.most_significant_bit());
+                // TODO: the adjust flag
 
-                    let value1 = self.fetch_operand_value(&instruction, 1);
+                let use_edi = match instruction.memory_size().size() {
+                    2 => false,
+                    4 => true,
+                    _ => unreachable!(),
+                };
 
-                    let (temp, overflow) = match (value0, value1) {
-                        (Value::U8(value0), Value::U8(value1)) => {
-                            let (v, o) = value0.overflowing_sub(value1);
-                            (Value::U8(v), o)
-                        }
-                        (Value::U16(value0), Value::U16(value1)) => {
-                            let (v, o) = value0.overflowing_sub(value1);
-                            (Value::U16(v), o)
-                        }
-                        (Value::U32(value0), Value::U32(value1)) => {
-                            let (v, o) = value0.overflowing_sub(value1);
-                            (Value::U32(v), o)
-                        }
-                        _ => unreachable!(),
-                    };
-
-                    self.flags_set_sign_from_val(temp);
-                    self.flags_set_zero_from_val(temp);
-                    self.flags_set_parity_from_val(temp);
-                    self.flags_set_carry(overflow);
-                    self.flags_set_overflow(overflow != temp.most_significant_bit());
-                    // TODO: the adjust flag
-
+                if use_edi {
                     if self.flags_is_direction() {
-                        self.sub_di(u16::from(value0.size()));
+                        self.regs.edi.wrapping_sub(u32::from(temp.size()));
                     } else {
-                        self.add_di(u16::from(value0.size()));
+                        self.regs.edi.wrapping_add(u32::from(temp.size()));
                     }
-
-                    if instruction.has_repe_prefix() || instruction.has_repne_prefix() {
-                        let ecx = self.register(counter_reg);
-                        self.store_in_register(counter_reg, ecx.wrapping_dec());
-                    }
-
-                    if instruction.has_repe_prefix() {
-                        if !self.flags_is_zero() {
-                            break;
-                        }
-                    } else if instruction.has_repne_prefix() {
-                        if self.flags_is_zero() {
-                            break;
-                        }
+                } else {
+                    if self.flags_is_direction() {
+                        self.sub_di(u16::from(temp.size()));
                     } else {
-                        break;
+                        self.add_di(u16::from(temp.size()));
                     }
                 }
             }
 
+            // TODO: use Instruction::condition_code instead of manually defining stuff here
             iced_x86::Mnemonic::Seta => {
                 let value = Value::U8(if !self.flags_is_carry() && !self.flags_is_zero() {
                     1
@@ -1365,18 +1402,21 @@ impl Interpreter {
             iced_x86::Mnemonic::Stosb => {
                 let val = self.fetch_operand_value(&instruction, 1);
 
-                if instruction.has_rep_prefix() {
-                    while self.cx() != 0 {
-                        self.store_in_operand(&instruction, 0, val);
-                        if self.flags_is_direction() {
-                            self.sub_di(u16::from(val.size()));
-                        } else {
-                            self.add_di(u16::from(val.size()));
-                        }
-                        self.dec_cx();
+                let use_edi = match instruction.memory_size().size() {
+                    2 => false,
+                    4 => true,
+                    _ => unreachable!(),
+                };
+
+                self.store_in_operand(&instruction, 0, val);
+
+                if use_edi {
+                    if self.flags_is_direction() {
+                        self.regs.edi.wrapping_sub(u32::from(val.size()));
+                    } else {
+                        self.regs.edi.wrapping_add(u32::from(val.size()));
                     }
                 } else {
-                    self.store_in_operand(&instruction, 0, val);
                     if self.flags_is_direction() {
                         self.sub_di(u16::from(val.size()));
                     } else {
