@@ -1136,6 +1136,116 @@ impl Interpreter {
                 _ => unimplemented!(),
             },
 
+            iced_x86::Mnemonic::Rcl
+            | iced_x86::Mnemonic::Rcr
+            | iced_x86::Mnemonic::Rol
+            | iced_x86::Mnemonic::Ror => {
+                let mut value = self.fetch_operand_value(&instruction, 0);
+                let count =
+                    u8::try_from(self.fetch_operand_value(&instruction, 1)).unwrap() & 0b11111;
+                let use_carry = matches!(
+                    instruction.mnemonic(),
+                    iced_x86::Mnemonic::Rcl | iced_x86::Mnemonic::Rcr
+                );
+                let dir_right = matches!(
+                    instruction.mnemonic(),
+                    iced_x86::Mnemonic::Rcr | iced_x86::Mnemonic::Ror
+                );
+
+                for _ in 0..count {
+                    match (&mut value, dir_right) {
+                        (Value::U8(v), false) => {
+                            let bit = (*v >> 7) != 0;
+                            *v = v.wrapping_mul(2);
+                            let rotated = if use_carry {
+                                self.flags_is_carry()
+                            } else {
+                                bit
+                            };
+                            *v |= if rotated { 1 } else { 0 };
+                            self.flags_set_overflow(bit != (((*v >> 7) & 0x1) != 0));
+                            self.flags_set_carry(bit);
+                        }
+                        (Value::U8(v), true) => {
+                            let bit = (*v & 0x1) != 0;
+                            *v = *v / 2;
+                            let rotated = if use_carry {
+                                self.flags_is_carry()
+                            } else {
+                                bit
+                            };
+                            *v |= if rotated { 1 } else { 0 } << 7;
+                            self.flags_set_overflow(if use_carry {
+                                self.flags_is_carry() != bit
+                            } else {
+                                bit != (((*v >> 6) & 0x1) != 0)
+                            });
+                            self.flags_set_carry(bit);
+                        }
+                        (Value::U16(v), false) => {
+                            let bit = (*v >> 15) != 0;
+                            *v = v.wrapping_mul(2);
+                            let rotated = if use_carry {
+                                self.flags_is_carry()
+                            } else {
+                                bit
+                            };
+                            *v |= if rotated { 1 } else { 0 };
+                            self.flags_set_overflow(bit != (((*v >> 15) & 0x1) != 0));
+                            self.flags_set_carry(bit);
+                        }
+                        (Value::U16(v), true) => {
+                            let bit = (*v & 0x1) != 0;
+                            *v = *v / 2;
+                            let rotated = if use_carry {
+                                self.flags_is_carry()
+                            } else {
+                                bit
+                            };
+                            *v |= if rotated { 1 } else { 0 } << 15;
+                            self.flags_set_overflow(if use_carry {
+                                self.flags_is_carry() != bit
+                            } else {
+                                bit != (((*v >> 14) & 0x1) != 0)
+                            });
+                            self.flags_set_carry(bit);
+                        }
+                        (Value::U32(v), false) => {
+                            let bit = (*v >> 31) != 0;
+                            *v = v.wrapping_mul(2);
+                            let rotated = if use_carry {
+                                self.flags_is_carry()
+                            } else {
+                                bit
+                            };
+                            *v |= if rotated { 1 } else { 0 };
+                            self.flags_set_overflow(bit != (((*v >> 31) & 0x1) != 0));
+                            self.flags_set_carry(bit);
+                        }
+                        (Value::U32(v), true) => {
+                            let bit = (*v & 0x1) != 0;
+                            *v = *v / 2;
+                            let rotated = if use_carry {
+                                self.flags_is_carry()
+                            } else {
+                                bit
+                            };
+                            *v |= if rotated { 1 } else { 0 } << 31;
+                            self.flags_set_overflow(if use_carry {
+                                self.flags_is_carry() != bit
+                            } else {
+                                bit != (((*v >> 30) & 0x1) != 0)
+                            });
+                            self.flags_set_carry(bit);
+                        }
+                        _ => unimplemented!(),
+                    }
+                }
+
+                // OF is defined for some variants and undefined for others, so we don't
+                // distinguish between these.
+            }
+
             iced_x86::Mnemonic::Ret => {
                 // The `ret` opcode can be followed by a number of bytes to pop from the stack
                 // on top of `cs`/`ip`/`eip`.
