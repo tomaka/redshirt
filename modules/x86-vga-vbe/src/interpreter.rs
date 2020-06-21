@@ -218,7 +218,7 @@ impl Interpreter {
     /// will not cause this function to finish.
     fn run_until_iret(&mut self) -> Result<(), Error> {
         let mut instr_counter: u32 = 0;
-        let mut nested_ints = 0;
+        let mut nested_ints: u32 = 0;
 
         loop {
             instr_counter = instr_counter.wrapping_add(1);
@@ -233,7 +233,7 @@ impl Interpreter {
 
                 // We recreate a `Decoder` at each iteration because we need to be able to modify
                 // the memory during the processing of the instruction. While it is unlikely to
-                // actually happen, we need to support self-modifying programs.
+                // actually happen, we do need to support self-modifying programs.
                 let mut decoder =
                     iced_x86::Decoder::new(16, &self.memory_cache, iced_x86::DecoderOptions::NONE);
                 decoder.set_position(usize::try_from(rip).unwrap());
@@ -296,14 +296,38 @@ impl Interpreter {
                 // TODO: the adjust flag
             }
 
-            iced_x86::Mnemonic::And => {
+            iced_x86::Mnemonic::And | iced_x86::Mnemonic::Or | iced_x86::Mnemonic::Xor => {
                 let value0 = self.fetch_operand_value(&instruction, 0);
                 let value1 = self.fetch_operand_value(&instruction, 1);
 
-                let temp = match (value0, value1) {
-                    (Value::U8(value0), Value::U8(value1)) => Value::U8(value0 & value1),
-                    (Value::U16(value0), Value::U16(value1)) => Value::U16(value0 & value1),
-                    (Value::U32(value0), Value::U32(value1)) => Value::U32(value0 & value1),
+                let temp = match (value0, value1, instruction.mnemonic()) {
+                    (Value::U8(value0), Value::U8(value1), iced_x86::Mnemonic::And) => {
+                        Value::U8(value0 & value1)
+                    }
+                    (Value::U16(value0), Value::U16(value1), iced_x86::Mnemonic::And) => {
+                        Value::U16(value0 & value1)
+                    }
+                    (Value::U32(value0), Value::U32(value1), iced_x86::Mnemonic::And) => {
+                        Value::U32(value0 & value1)
+                    }
+                    (Value::U8(value0), Value::U8(value1), iced_x86::Mnemonic::Or) => {
+                        Value::U8(value0 | value1)
+                    }
+                    (Value::U16(value0), Value::U16(value1), iced_x86::Mnemonic::Or) => {
+                        Value::U16(value0 | value1)
+                    }
+                    (Value::U32(value0), Value::U32(value1), iced_x86::Mnemonic::Or) => {
+                        Value::U32(value0 | value1)
+                    }
+                    (Value::U8(value0), Value::U8(value1), iced_x86::Mnemonic::Xor) => {
+                        Value::U8(value0 ^ value1)
+                    }
+                    (Value::U16(value0), Value::U16(value1), iced_x86::Mnemonic::Xor) => {
+                        Value::U16(value0 ^ value1)
+                    }
+                    (Value::U32(value0), Value::U32(value1), iced_x86::Mnemonic::Xor) => {
+                        Value::U32(value0 ^ value1)
+                    }
                     _ => unreachable!(),
                 };
 
@@ -361,6 +385,26 @@ impl Interpreter {
                 self.apply_rel_jump(&instruction);
             }
 
+            iced_x86::Mnemonic::Cbw => {
+                let al = u8::try_from(self.register(iced_x86::Register::AL)).unwrap();
+                let msb = (al & 0x80) != 0;
+                if msb {
+                    self.set_ax(0xff00 | u16::from(al));
+                } else {
+                    self.set_ax(u16::from(al));
+                }
+            }
+
+            iced_x86::Mnemonic::Cwde => {
+                let ax = u16::try_from(self.register(iced_x86::Register::AX)).unwrap();
+                let msb = (ax & 0x8000) != 0;
+                if msb {
+                    self.regs.eax = 0xffff0000 | u32::from(ax);
+                } else {
+                    self.regs.eax = u32::from(ax);
+                }
+            }
+
             iced_x86::Mnemonic::Cwd => {
                 if self.register(iced_x86::Register::AX).most_significant_bit() {
                     self.store_in_register(iced_x86::Register::DX, Value::U16(0xffff))
@@ -368,6 +412,7 @@ impl Interpreter {
                     self.store_in_register(iced_x86::Register::DX, Value::U16(0x0000))
                 }
             }
+
             iced_x86::Mnemonic::Cdq => {
                 if self
                     .register(iced_x86::Register::EAX)
@@ -537,7 +582,6 @@ impl Interpreter {
             }
 
             iced_x86::Mnemonic::Imul if instruction.op_count() == 3 => {
-                let value0 = self.fetch_operand_value(&instruction, 0);
                 let value1 = self.fetch_operand_value(&instruction, 1);
                 let value2 = self.fetch_operand_value(&instruction, 2);
 
@@ -836,27 +880,7 @@ impl Interpreter {
                 self.store_in_operand(&instruction, 0, result);
             }
 
-            iced_x86::Mnemonic::Or => {
-                let value0 = self.fetch_operand_value(&instruction, 0);
-                let value1 = self.fetch_operand_value(&instruction, 1);
-
-                let temp = match (value0, value1) {
-                    (Value::U8(value0), Value::U8(value1)) => Value::U8(value0 | value1),
-                    (Value::U16(value0), Value::U16(value1)) => Value::U16(value0 | value1),
-                    (Value::U32(value0), Value::U32(value1)) => Value::U32(value0 | value1),
-                    _ => unreachable!(),
-                };
-
-                self.store_in_operand(&instruction, 0, temp);
-
-                self.flags_set_sign_from_val(temp);
-                self.flags_set_zero_from_val(temp);
-                self.flags_set_parity_from_val(temp);
-                self.flags_set_carry(false);
-                self.flags_set_overflow(false);
-                // adjust flag is undefined
-            }
-
+            // Note: `Or` is handled simultaneously with `And`.
             iced_x86::Mnemonic::Out => {
                 let port = u16::try_from(self.fetch_operand_value(&instruction, 0)).unwrap();
                 if self.enable_io_operations {
@@ -1339,27 +1363,7 @@ impl Interpreter {
                 self.store_in_operand(&instruction, 1, value0);
             }
 
-            iced_x86::Mnemonic::Xor => {
-                let value0 = self.fetch_operand_value(&instruction, 0);
-                let value1 = self.fetch_operand_value(&instruction, 1);
-
-                let temp = match (value0, value1) {
-                    (Value::U8(value0), Value::U8(value1)) => Value::U8(value0 ^ value1),
-                    (Value::U16(value0), Value::U16(value1)) => Value::U16(value0 ^ value1),
-                    (Value::U32(value0), Value::U32(value1)) => Value::U32(value0 ^ value1),
-                    _ => unreachable!(),
-                };
-
-                self.store_in_operand(&instruction, 0, temp);
-
-                self.flags_set_sign_from_val(temp);
-                self.flags_set_zero_from_val(temp);
-                self.flags_set_parity_from_val(temp);
-                self.flags_set_carry(false);
-                self.flags_set_overflow(false);
-                // adjust flag is undefined
-            }
-
+            // Note: `Xor` is handled simultaneously with `And`.
             iced_x86::Mnemonic::INVALID => return Err(Error::InvalidInstruction),
             opcode => {
                 log::error!("Unsupported instruction: {:?}", opcode);
