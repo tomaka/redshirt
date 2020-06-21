@@ -20,11 +20,11 @@ mod tests;
 /// Intel 80386 real mode interpreter.
 pub struct Interpreter {
     regs: Registers,
-    /// Cache of the first megabyte of memory of the actual machine.
-    local_memory: Vec<u8>,
+    /// Cache of the first megabyte of memory.
+    memory_cache: Vec<u8>,
     /// If true, perform I/O ports operations on the actual machine. Otherwise, reading a port
     /// returns 0 and writing a port is a no-op.
-    enable_io_ports: bool,
+    enable_io_operations: bool,
 }
 
 #[derive(Debug)]
@@ -41,7 +41,7 @@ impl fmt::Display for Error {
 }
 
 impl Interpreter {
-    pub async fn new() -> Self {
+    pub async fn from_real_machine() -> Self {
         let first_mb = unsafe { redshirt_hardware_interface::read(0x0, 0x100000).await };
         // Small sanity check.
         assert!(first_mb.iter().any(|b| *b != 0));
@@ -49,8 +49,10 @@ impl Interpreter {
     }
 
     pub async fn from_memory(first_mb: Vec<u8>) -> Self {
+        assert_eq!(first_mb.len(), 0x100000);
+
         Interpreter {
-            local_memory: first_mb,
+            memory_cache: first_mb,
             regs: Registers {
                 eax: 0,
                 ecx: 0,
@@ -69,14 +71,18 @@ impl Interpreter {
                 gs: 0,
                 flags: 0b1011000000000010,
             },
-            enable_io_ports: true,
+            enable_io_operations: true,
         }
     }
 
-    /// After this is called, I/O ports operations will not be propagated on the actual machine.
-    /// Reading a port always returns 0, and writing a port becomes a no-op.
-    pub fn disable_io_ports(&mut self) {
-        self.enable_io_ports = false;
+    /// After this is called, I/O operations will no longer be performed on the actual machine.
+    /// Reading a port now always returns 0, and writing a port becomes a no-op. Reading and
+    /// writing memory is only done on the local cache.
+    ///
+    /// > **Note**: It is intentional that no opposite function is provided, as the memory stops
+    /// >           being in sync with the actual memory, which will likely cause issues.
+    pub fn disable_io_operations(&mut self) {
+        self.enable_io_operations = false;
     }
 
     pub fn read_memory(&mut self, addr: u32, out: &mut [u8]) {
@@ -86,14 +92,22 @@ impl Interpreter {
         // TODO: the VBE docs say that only I/O port operations are used? can we optimize this and
         // only read from local memory? first make sure that everything is working properly
 
-        // TODO: asyncify?
-        redshirt_syscalls::block_on(async {
-            unsafe {
-                redshirt_hardware_interface::read_to(u64::from(addr), out).await;
-            }
-        });
-        self.local_memory[usize::try_from(addr).unwrap()..usize::try_from(addr + out_len).unwrap()]
-            .copy_from_slice(&out);
+        if self.enable_io_operations {
+            // TODO: asyncify?
+            redshirt_syscalls::block_on(async {
+                unsafe {
+                    redshirt_hardware_interface::read_to(u64::from(addr), out).await;
+                }
+            });
+            self.memory_cache
+                [usize::try_from(addr).unwrap()..usize::try_from(addr + out_len).unwrap()]
+                .copy_from_slice(&out);
+        } else {
+            out.copy_from_slice(
+                &self.memory_cache
+                    [usize::try_from(addr).unwrap()..usize::try_from(addr + out_len).unwrap()],
+            );
+        }
     }
 
     pub fn read_memory_nul_terminated_str(&mut self, mut addr: u32) -> String {
@@ -126,11 +140,14 @@ impl Interpreter {
 
         // TODO: the VBE docs say that only I/O port operations are used? can we optimize this and
         // only write to local memory? first make sure that everything is working properly
-        self.local_memory
+
+        self.memory_cache
             [usize::try_from(addr).unwrap()..usize::try_from(addr + data_len).unwrap()]
             .copy_from_slice(data);
-        unsafe {
-            redshirt_hardware_interface::write(u64::from(addr), data);
+        if self.enable_io_operations {
+            unsafe {
+                redshirt_hardware_interface::write(u64::from(addr), data);
+            }
         }
     }
 
@@ -173,13 +190,13 @@ impl Interpreter {
             // Decode instruction and update the IP register.
             let instruction = {
                 let rip = (u64::from(self.regs.cs) << 4) + u64::from(self.regs.eip);
-                assert!(usize::try_from(rip).unwrap() < self.local_memory.len());
+                assert!(usize::try_from(rip).unwrap() < self.memory_cache.len());
 
                 // We recreate a `Decoder` at each iteration because we need to be able to modify
                 // the memory during the processing of the instruction. While it is unlikely to
                 // actually happen, we need to support self-modifying programs.
                 let mut decoder =
-                    iced_x86::Decoder::new(16, &self.local_memory, iced_x86::DecoderOptions::NONE);
+                    iced_x86::Decoder::new(16, &self.memory_cache, iced_x86::DecoderOptions::NONE);
                 decoder.set_position(usize::try_from(rip).unwrap());
                 decoder.set_ip(rip);
 
@@ -500,22 +517,22 @@ impl Interpreter {
 
                 iced_x86::Mnemonic::In => {
                     let port = u16::try_from(self.fetch_operand_value(&instruction, 1)).unwrap();
-                    let data = if self.enable_io_ports {
+                    let data = if self.enable_io_operations {
                         match self.fetch_operand_value(&instruction, 0) {
                             Value::U8(_) => Value::U8(unsafe {
-                                redshirt_syscalls::block_on(redshirt_hardware_interface::port_read_u8(
-                                    u32::from(port),
-                                ))
+                                redshirt_syscalls::block_on(
+                                    redshirt_hardware_interface::port_read_u8(u32::from(port)),
+                                )
                             }),
                             Value::U16(_) => Value::U16(unsafe {
-                                redshirt_syscalls::block_on(redshirt_hardware_interface::port_read_u16(
-                                    u32::from(port),
-                                ))
+                                redshirt_syscalls::block_on(
+                                    redshirt_hardware_interface::port_read_u16(u32::from(port)),
+                                )
                             }),
                             Value::U32(_) => Value::U32(unsafe {
-                                redshirt_syscalls::block_on(redshirt_hardware_interface::port_read_u32(
-                                    u32::from(port),
-                                ))
+                                redshirt_syscalls::block_on(
+                                    redshirt_hardware_interface::port_read_u32(u32::from(port)),
+                                )
                             }),
                         }
                     } else {
@@ -775,7 +792,7 @@ impl Interpreter {
 
                 iced_x86::Mnemonic::Out => {
                     let port = u16::try_from(self.fetch_operand_value(&instruction, 0)).unwrap();
-                    if self.enable_io_ports {
+                    if self.enable_io_operations {
                         match self.fetch_operand_value(&instruction, 1) {
                             Value::U8(data) => unsafe {
                                 redshirt_hardware_interface::port_write_u8(u32::from(port), data);

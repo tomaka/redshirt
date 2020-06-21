@@ -19,7 +19,6 @@ use core::{convert::TryFrom as _, fmt};
 // TODO: safety of everything in this module? things must only be called once at a time
 
 pub struct VbeContext {
-    current_mode: u16,
     interpreter: interpreter::Interpreter,
     video_modes: Vec<ModeInfo>,
 }
@@ -62,7 +61,7 @@ impl From<interpreter::Error> for Error {
 
 /// Try to fetch information about the supported video modes from the hardware.
 pub async fn load_vbe_info() -> Result<VbeContext, Error> {
-    let mut interpreter = interpreter::Interpreter::new().await;
+    let mut interpreter = interpreter::Interpreter::from_real_machine().await;
 
     // We start by asking the BIOS for general information about the graphics device.
     interpreter.set_ax(0x4f00);
@@ -169,7 +168,6 @@ pub async fn load_vbe_info() -> Result<VbeContext, Error> {
     }
 
     Ok(VbeContext {
-        current_mode: 0, // FIXME:
         interpreter,
         video_modes,
     })
@@ -189,28 +187,22 @@ impl VbeContext {
     pub async fn set_current_mode(&mut self, mode: u16) -> Result<(), Error> {
         assert!(self.video_modes.iter().any(|m| m.mode_num == mode));
 
-        async fn try_switch_mode(ctxt: &mut VbeContext, mode: u16) -> Result<(), Error> {
-            ctxt.interpreter.set_ax(0x4f02);
-            // Bit 14 requests to use .
-            // Note that bit 15 can normally be set in order to ask the BIOS to clear the screen,
-            // but we don't expose this feature as the specifications mention that it is not
-            // actually mandatory for the BIOS to do so.
-            ctxt.interpreter.set_bx((1 << 14) | mode);
-            ctxt.interpreter.int10h()?;
-            if ctxt.interpreter.ax() != 0x4f {
-                return Err(Error::NotSupported);
-            }
-            Ok(())
-        }
+        self.interpreter.set_ax(0x4f02);
 
-        if let Err(err) = try_switch_mode(self, mode).await {
-            // If an error happened while switching mode, we might be in the middle of the mode
-            // switch in some sort of inconsistent state. Try to revert back to what we had.
-            let _ = try_switch_mode(self, self.current_mode).await;
-            return Err(err);
-        }
+        // Bit 14 requests to use the linear framebuffer.
+        // Note that bit 15 can normally be set in order to ask the BIOS to clear the screen,
+        // but we don't expose this feature as the specifications mention that it is not
+        // actually mandatory for the BIOS to do so.
+        self.interpreter.set_bx((1 << 14) | mode);
 
-        self.current_mode = mode;
+        // Note that in case of failure such as an unsupported opcode, we might be in the middle
+        // of a mode switch and the video card might be in an inconsistent state. Unfortunately,
+        // there is no way to ask the video card to revert to the previous mode.
+
+        self.interpreter.int10h()?;
+        if self.interpreter.ax() != 0x4f {
+            return Err(Error::NotSupported);
+        }
         Ok(())
     }
 }
