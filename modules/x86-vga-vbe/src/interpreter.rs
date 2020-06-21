@@ -1006,6 +1006,53 @@ impl Interpreter {
                 }
             }
 
+            iced_x86::Mnemonic::Mul => {
+                let to_mul1 = self.fetch_operand_value(&instruction, 0);
+                let to_mul2 = self.fetch_operand_value(&instruction, 1);
+
+                // Unsigned multiplication of `to_mul1` and `to_mul2`. The highest and lowest
+                // half of the result are put in `result_hi` and `result_lo`.
+                let (result_hi, result_lo) = match (to_mul1, to_mul2) {
+                    (Value::U8(to_mul1), Value::U8(to_mul2)) => {
+                        let to_mul1 = u16::from(to_mul1);
+                        let to_mul2 = u16::from(to_mul2);
+                        let result = to_mul1.checked_mul(to_mul2).unwrap();
+                        let result_lo = u8::try_from(result & 0xff).unwrap();
+                        let result_hi = u8::try_from(result >> 8).unwrap();
+                        (Value::U8(result_hi), Value::U8(result_lo))
+                    }
+                    (Value::U16(to_mul1), Value::U16(to_mul2)) => {
+                        let to_mul1 = u32::from(to_mul1);
+                        let to_mul2 = u32::from(to_mul2);
+                        let result = to_mul1.checked_mul(to_mul2).unwrap();
+                        let result_lo = u16::try_from(result & 0xffff).unwrap();
+                        let result_hi = u16::try_from(result >> 16).unwrap();
+                        (Value::U16(result_hi), Value::U16(result_lo))
+                    }
+                    (Value::U32(to_mul1), Value::U32(to_mul2)) => {
+                        let to_mul1 = u64::from(to_mul1);
+                        let to_mul2 = u64::from(to_mul2);
+                        let result = to_mul1.checked_mul(to_mul2).unwrap();
+                        let result_lo = u32::try_from(result & 0xffffffff).unwrap();
+                        let result_hi = u32::try_from(result >> 32).unwrap();
+                        (Value::U32(result_hi), Value::U32(result_lo))
+                    }
+                    _ => unreachable!(),
+                };
+
+                self.store_in_operand(&instruction, 0, result_lo);
+
+                match result_hi {
+                    v @ Value::U8(_) => self.store_in_register(iced_x86::Register::AH, v),
+                    v @ Value::U16(_) => self.store_in_register(iced_x86::Register::DX, v),
+                    v @ Value::U32(_) => self.store_in_register(iced_x86::Register::EDX, v),
+                }
+
+                self.flags_set_carry(!result_hi.is_zero());
+                self.flags_set_overflow(!result_hi.is_zero());
+                // Sign, zero, parity and adjust flags are undefined.
+            }
+
             iced_x86::Mnemonic::Nop => {}
 
             iced_x86::Mnemonic::Not => {
@@ -1518,7 +1565,7 @@ impl Interpreter {
             iced_x86::Mnemonic::Std => self.flags_set_direction(true),
             iced_x86::Mnemonic::Sti => self.flags_set_interrupt(true),
 
-            iced_x86::Mnemonic::Stosb => {
+            iced_x86::Mnemonic::Stosb | iced_x86::Mnemonic::Stosw | iced_x86::Mnemonic::Stosd => {
                 // TODO: review this
                 let val = self.fetch_operand_value(&instruction, 1);
 
