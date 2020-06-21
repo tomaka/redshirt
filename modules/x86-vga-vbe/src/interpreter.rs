@@ -294,8 +294,9 @@ impl Interpreter {
             return self.run_one_no_rep(instruction);
         }
 
+        // TODO: is this the correct way of finding out?
         let use_ecx = match instruction.memory_size().size() {
-            2 => false,
+            1 | 2 => false,
             4 => true,
             _ => unreachable!(),
         };
@@ -1266,6 +1267,7 @@ impl Interpreter {
             }
 
             iced_x86::Mnemonic::Scasb | iced_x86::Mnemonic::Scasw | iced_x86::Mnemonic::Scasd => {
+                // TODO: review this
                 let value0 = self.fetch_operand_value(&instruction, 0);
                 let value1 = self.fetch_operand_value(&instruction, 1);
 
@@ -1293,7 +1295,7 @@ impl Interpreter {
                 // TODO: the adjust flag
 
                 let use_edi = match instruction.memory_size().size() {
-                    2 => false,
+                    1 | 2 => false,
                     4 => true,
                     _ => unreachable!(),
                 };
@@ -1400,10 +1402,11 @@ impl Interpreter {
             iced_x86::Mnemonic::Sti => self.flags_set_interrupt(true),
 
             iced_x86::Mnemonic::Stosb => {
+                // TODO: review this
                 let val = self.fetch_operand_value(&instruction, 1);
 
                 let use_edi = match instruction.memory_size().size() {
-                    2 => false,
+                    1 | 2 => false,
                     4 => true,
                     _ => unreachable!(),
                 };
