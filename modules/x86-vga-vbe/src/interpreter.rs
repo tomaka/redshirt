@@ -268,7 +268,10 @@ impl Interpreter {
             }
 
             match instruction.mnemonic() {
-                iced_x86::Mnemonic::Iret if nested_ints == 0 => break Ok(()),
+                iced_x86::Mnemonic::Iret if nested_ints == 0 => {
+                    log::info!("Used opcodes: {:?}", debug);
+                    break Ok(())
+                },
                 iced_x86::Mnemonic::Iret => nested_ints -= 1,
                 iced_x86::Mnemonic::Int => nested_ints += 1,
                 _ => {}
