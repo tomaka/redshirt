@@ -194,6 +194,10 @@ impl Interpreter {
         self.regs.ebx |= u32::from(value);
     }
 
+    pub fn cx(&mut self) -> u16 {
+        u16::try_from(self.regs.ecx & 0xffff).unwrap()
+    }
+
     pub fn set_cx(&mut self, value: u16) {
         self.regs.ecx &= 0xffff0000;
         self.regs.ecx |= u32::from(value);
@@ -257,21 +261,23 @@ impl Interpreter {
             };
 
             // TODO: remove this debug thing
-            *debug.entry(format!("{:?}", instruction.mnemonic())).or_insert(0) += 1;
+            *debug
+                .entry(format!("{:?}", instruction.mnemonic()))
+                .or_insert(0) += 1;
 
             match self.run_one(&instruction) {
                 Ok(()) => {}
                 Err(e) => {
                     log::info!("Used opcodes: {:?}", debug);
-                    return Err(e)
+                    return Err(e);
                 }
             }
 
             match instruction.mnemonic() {
                 iced_x86::Mnemonic::Iret if nested_ints == 0 => {
                     log::info!("Used opcodes: {:?}", debug);
-                    break Ok(())
-                },
+                    break Ok(());
+                }
                 iced_x86::Mnemonic::Iret => nested_ints -= 1,
                 iced_x86::Mnemonic::Int => nested_ints += 1,
                 _ => {}
@@ -831,16 +837,43 @@ impl Interpreter {
             }
 
             iced_x86::Mnemonic::Loop | iced_x86::Mnemonic::Loope | iced_x86::Mnemonic::Loopne => {
-                let cx = self.register(iced_x86::Register::CX);
-                let cx = cx.wrapping_dec();
-                self.store_in_register(iced_x86::Register::CX, cx);
+                let use_ecx = match instruction.code() {
+                    iced_x86::Code::Loop_rel8_16_CX => false,
+                    iced_x86::Code::Loop_rel8_32_CX => false,
+                    iced_x86::Code::Loop_rel8_16_ECX => true,
+                    iced_x86::Code::Loop_rel8_32_ECX => true,
+                    iced_x86::Code::Loop_rel8_64_ECX => true,
+                    iced_x86::Code::Loope_rel8_16_CX => false,
+                    iced_x86::Code::Loope_rel8_32_CX => false,
+                    iced_x86::Code::Loope_rel8_16_ECX => true,
+                    iced_x86::Code::Loope_rel8_32_ECX => true,
+                    iced_x86::Code::Loope_rel8_64_ECX => true,
+                    iced_x86::Code::Loopne_rel8_16_CX => false,
+                    iced_x86::Code::Loopne_rel8_32_CX => false,
+                    iced_x86::Code::Loopne_rel8_16_ECX => true,
+                    iced_x86::Code::Loopne_rel8_32_ECX => true,
+                    iced_x86::Code::Loopne_rel8_64_ECX => true,
+                    _ => false,
+                };
+
+                let is_zero = if use_ecx {
+                    self.regs.ecx = self.regs.ecx.wrapping_sub(1);
+                    self.regs.ecx == 0
+                } else {
+                    let cx = self.cx();
+                    let cx = cx.wrapping_sub(1);
+                    self.set_cx(cx);
+                    cx == 0
+                };
+
                 let could_jump = match instruction.mnemonic() {
                     iced_x86::Mnemonic::Loop => true,
                     iced_x86::Mnemonic::Loope => self.flags_is_zero(),
                     iced_x86::Mnemonic::Loopne => !self.flags_is_zero(),
                     _ => unreachable!(),
                 };
-                if !cx.is_zero() && could_jump {
+
+                if !is_zero && could_jump {
                     self.apply_rel_jump(&instruction);
                 }
             }
@@ -1333,21 +1366,21 @@ impl Interpreter {
                 let val = self.fetch_operand_value(&instruction, 1);
 
                 if instruction.has_rep_prefix() {
-                    while self.regs.ecx & 0xffff != 0 {
+                    while self.cx() != 0 {
                         self.store_in_operand(&instruction, 0, val);
                         if self.flags_is_direction() {
-                            self.sub_di(1);
+                            self.sub_di(u16::from(val.size()));
                         } else {
-                            self.add_di(1);
+                            self.add_di(u16::from(val.size()));
                         }
                         self.dec_cx();
                     }
                 } else {
                     self.store_in_operand(&instruction, 0, val);
                     if self.flags_is_direction() {
-                        self.sub_di(1);
+                        self.sub_di(u16::from(val.size()));
                     } else {
-                        self.add_di(1);
+                        self.add_di(u16::from(val.size()));
                     }
                 }
             }
