@@ -897,7 +897,8 @@ impl Interpreter {
             iced_x86::Mnemonic::Popf => match instruction.code() {
                 iced_x86::Code::Popfw => {
                     let val = self.stack_pop_u16();
-                    self.regs.flags = val & 0b0000111111010101;
+                    self.regs.flags &= 0b01000000000101010;
+                    self.regs.flags |= val & 0b0111111111010101;
                 }
                 _ => unimplemented!(),
             },
