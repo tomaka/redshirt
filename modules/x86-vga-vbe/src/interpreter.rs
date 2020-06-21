@@ -224,6 +224,8 @@ impl Interpreter {
         let mut instr_counter: u32 = 0;
         let mut nested_ints: u32 = 0;
 
+        let mut debug = std::collections::HashMap::new();
+
         loop {
             instr_counter = instr_counter.wrapping_add(1);
             if (instr_counter % 1000) == 0 {
@@ -254,7 +256,16 @@ impl Interpreter {
                 instruction
             };
 
-            self.run_one(&instruction)?;
+            // TODO: remove this debug thing
+            *debug.entry(format!("{:?}", instruction.mnemonic())).or_insert(0) += 1;
+
+            match self.run_one(&instruction) {
+                Ok(()) => {}
+                Err(e) => {
+                    log::info!("Used opcodes: {:?}", debug);
+                    return Err(e)
+                }
+            }
 
             match instruction.mnemonic() {
                 iced_x86::Mnemonic::Iret if nested_ints == 0 => break Ok(()),
