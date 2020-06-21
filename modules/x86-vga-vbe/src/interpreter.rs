@@ -20,8 +20,6 @@ mod tests;
 /// Intel 80386 real mode interpreter.
 pub struct Interpreter {
     machine: Machine,
-    /// First megabyte of memory of the machine. Contains the video BIOS.
-    memory: Vec<u8>,
 }
 
 #[derive(Debug)]
@@ -47,7 +45,7 @@ impl Interpreter {
 
     pub async fn from_memory(first_mb: Vec<u8>) -> Self {
         let machine = Machine {
-            local_memory: first_mb.clone(),
+            local_memory: first_mb,
             regs: Registers {
                 eax: 0,
                 ecx: 0,
@@ -68,13 +66,10 @@ impl Interpreter {
             },
         };
 
-        Interpreter {
-            memory: first_mb,
-            machine,
-        }
+        Interpreter { machine }
     }
 
-    pub fn read_memory_nul_terminated_str(&self, mut addr: u32) -> String {
+    pub fn read_memory_nul_terminated_str(&mut self, mut addr: u32) -> String {
         let mut out = Vec::new();
         loop {
             match self.read_memory_u8(addr) {
@@ -86,19 +81,19 @@ impl Interpreter {
         String::from_utf8(out).unwrap()
     }
 
-    pub fn read_memory_u8(&self, addr: u32) -> u8 {
+    pub fn read_memory_u8(&mut self, addr: u32) -> u8 {
         let mut out = [0; 1];
         self.read_memory(addr, &mut out);
         u8::from_le_bytes(out)
     }
 
-    pub fn read_memory_u16(&self, addr: u32) -> u16 {
+    pub fn read_memory_u16(&mut self, addr: u32) -> u16 {
         let mut out = [0; 2];
         self.read_memory(addr, &mut out);
         u16::from_le_bytes(out)
     }
 
-    pub fn read_memory(&self, addr: u32, out: &mut [u8]) {
+    pub fn read_memory(&mut self, addr: u32, out: &mut [u8]) {
         self.machine.read_memory(addr, out)
     }
 
@@ -134,7 +129,6 @@ impl Interpreter {
     pub fn int10h(&mut self) -> Result<(), Error> {
         self.machine.int_opcode(0x10);
 
-        let mut decoder = iced_x86::Decoder::new(16, &self.memory, iced_x86::DecoderOptions::NONE);
         let mut instr_counter: u32 = 0;
 
         loop {
@@ -143,19 +137,31 @@ impl Interpreter {
                 log::trace!("Executed 1000 instructions");
             }
 
-            // We update the position of the decoder at each loop, to be sure that it is in sync.
-            let rip = (u64::from(self.machine.regs.cs) << 4) + u64::from(self.machine.regs.eip);
-            assert!(usize::try_from(rip).unwrap() < self.memory.len());
-            decoder.set_position(usize::try_from(rip).unwrap());
-            decoder.set_ip(rip);
-
             // Decode instruction and update the IP register.
-            let instruction = decoder.decode();
-            assert!(!instruction.has_xrelease_prefix());
-            self.machine.regs.eip = {
-                let ip = u16::try_from(self.machine.regs.eip & 0xffff).unwrap();
-                let new_ip = ip.wrapping_add(u16::try_from(instruction.len()).unwrap());
-                u32::from(new_ip)
+            let instruction = {
+                let rip = (u64::from(self.machine.regs.cs) << 4) + u64::from(self.machine.regs.eip);
+                assert!(usize::try_from(rip).unwrap() < self.machine.local_memory.len());
+
+                // We recreate a `Decoder` at each iteration because we need to be able to modify
+                // the memory during the processing of the instruction. While it is unlikely to
+                // actually happen, we need to support self-modifying programs.
+                let mut decoder = iced_x86::Decoder::new(
+                    16,
+                    &self.machine.local_memory,
+                    iced_x86::DecoderOptions::NONE,
+                );
+                decoder.set_position(usize::try_from(rip).unwrap());
+                decoder.set_ip(rip);
+
+                let instruction = decoder.decode();
+                assert!(!instruction.has_xrelease_prefix());
+                self.machine.regs.eip = {
+                    let ip = u16::try_from(self.machine.regs.eip & 0xffff).unwrap();
+                    let new_ip = ip.wrapping_add(u16::try_from(instruction.len()).unwrap());
+                    u32::from(new_ip)
+                };
+
+                instruction
             };
 
             // List here: https://en.wikipedia.org/wiki/X86_instruction_listings#Original_8086/8088_instructions
@@ -1328,34 +1334,35 @@ pub struct Machine {
 }
 
 impl Machine {
-    fn read_memory(&self, addr: u32, out: &mut [u8]) {
+    fn read_memory(&mut self, addr: u32, out: &mut [u8]) {
         let out_len = u32::try_from(out.len()).unwrap();
         assert!(addr + out_len <= 0x100000);
 
-        out.copy_from_slice(
-            &self.local_memory
-                [usize::try_from(addr).unwrap()..usize::try_from(addr + out_len).unwrap()],
-        );
+        // TODO: the VBE docs say that only I/O port operations are used? can we optimize this and
+        // only read from local memory? first make sure that everything is working properly
+
         // TODO: asyncify?
-        /*redshirt_syscalls::block_on(async move {
+        redshirt_syscalls::block_on(async {
             unsafe {
                 redshirt_hardware_interface::read_to(u64::from(addr), out).await;
             }
-        });*/
+        });
+        self.local_memory[usize::try_from(addr).unwrap()..usize::try_from(addr + out_len).unwrap()]
+            .copy_from_slice(&out);
     }
 
     fn write_memory(&mut self, addr: u32, data: &[u8]) {
         let data_len = u32::try_from(data.len()).unwrap();
         assert!(addr + data_len <= 0x100000);
 
-        // TODO: detect if we overwrite the program and reload the decoder
-        // TODO: the VBE docs say that only I/O port operations are used
+        // TODO: the VBE docs say that only I/O port operations are used? can we optimize this and
+        // only write to local memory? first make sure that everything is working properly
         self.local_memory
             [usize::try_from(addr).unwrap()..usize::try_from(addr + data_len).unwrap()]
             .copy_from_slice(data);
-        /*unsafe {
+        unsafe {
             redshirt_hardware_interface::write(u64::from(addr), data);
-        }*/
+        }
     }
 
     fn apply_rel_jump(&mut self, instruction: &iced_x86::Instruction) {
@@ -1616,7 +1623,7 @@ impl Machine {
         base_and_index.wrapping_add(disp)
     }
 
-    fn fetch_operand_value(&self, instruction: &iced_x86::Instruction, op_n: u32) -> Value {
+    fn fetch_operand_value(&mut self, instruction: &iced_x86::Instruction, op_n: u32) -> Value {
         let (segment, pointer) = match instruction.op_kind(op_n) {
             iced_x86::OpKind::Register => return self.register(instruction.op_register(op_n)),
             iced_x86::OpKind::Immediate8 => return Value::U8(instruction.immediate8()),

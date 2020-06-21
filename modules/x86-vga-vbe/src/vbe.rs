@@ -70,6 +70,7 @@ pub async fn load_vbe_info() -> Result<VbeContext, Error> {
     interpreter.write_memory(0x500, &b"VBE2"[..]);
     interpreter.int10h()?;
     if interpreter.ax() != 0x4f {
+        panic!("AX = 0x{:x}", interpreter.ax()); // TODO: debug, remove this or expand the error type
         return Err(Error::NotSupported);
     }
 
