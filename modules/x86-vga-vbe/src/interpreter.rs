@@ -723,7 +723,12 @@ impl Interpreter {
             }
 
             iced_x86::Mnemonic::In => {
-                let port = u16::try_from(self.fetch_operand_value(&instruction, 1)).unwrap();
+                let port = match self.fetch_operand_value(&instruction, 1) {
+                    Value::U8(p) => u16::from(p),
+                    Value::U16(p) => p,
+                    _ => unreachable!(),
+                };
+
                 let data = if self.enable_io_operations {
                     match self.fetch_operand_value(&instruction, 0) {
                         Value::U8(_) => Value::U8(unsafe {
@@ -1093,7 +1098,12 @@ impl Interpreter {
 
             // Note: `Or` is handled simultaneously with `And`.
             iced_x86::Mnemonic::Out => {
-                let port = u16::try_from(self.fetch_operand_value(&instruction, 0)).unwrap();
+                let port = match self.fetch_operand_value(&instruction, 0) {
+                    Value::U8(p) => u16::from(p),
+                    Value::U16(p) => p,
+                    _ => unreachable!(),
+                };
+
                 if self.enable_io_operations {
                     match self.fetch_operand_value(&instruction, 1) {
                         Value::U8(data) => unsafe {
