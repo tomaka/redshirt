@@ -742,33 +742,50 @@ impl Interpreter {
             }
 
             iced_x86::Mnemonic::Mov => {
-                // TODO: when executing `mov reg, sreg`, the upper bits of `reg` are zeroed
-                // on modern processors; implement properly
+                // When executing `mov reg, sreg`, the upper bits of `reg` are zeroed on modern
+                // processors.
+                if let iced_x86::OpKind::Register = instruction.op_kind(1) {
+                    match instruction.op_register(1) {
+                        iced_x86::Register::ES
+                        | iced_x86::Register::CS
+                        | iced_x86::Register::SS
+                        | iced_x86::Register::DS
+                        | iced_x86::Register::FS
+                        | iced_x86::Register::GS => match self.operand_size(&instruction, 0) {
+                            2 => {}
+                            4 => self.store_in_operand(&instruction, 0, Value::U32(0)),
+                            _ => unreachable!(),
+                        },
+                        _ => {}
+                    }
+                }
+
                 let value = self.fetch_operand_value(&instruction, 1);
                 self.store_in_operand(&instruction, 0, value);
             }
 
             iced_x86::Mnemonic::Movsx => {
                 let value = self.fetch_operand_value(&instruction, 1);
+                let msb = value.most_significant_bit();
 
-                match (self.operand_size(&instruction, 0), value) {
-                    (2, Value::U8(v)) => {
-                        let out = u16::from_ne_bytes(
-                            i16::from(i8::from_ne_bytes(v.to_ne_bytes())).to_ne_bytes(),
-                        );
-                        self.store_in_operand(&instruction, 0, Value::U16(out))
+                match (self.operand_size(&instruction, 0), value, msb) {
+                    (2, Value::U8(v), true) => {
+                        self.store_in_operand(&instruction, 0, Value::U16(0xff | u16::from(v)))
                     }
-                    (4, Value::U8(v)) => {
-                        let out = u32::from_ne_bytes(
-                            i32::from(i8::from_ne_bytes(v.to_ne_bytes())).to_ne_bytes(),
-                        );
-                        self.store_in_operand(&instruction, 0, Value::U32(out))
+                    (2, Value::U8(v), false) => {
+                        self.store_in_operand(&instruction, 0, Value::U16(u16::from(v)))
                     }
-                    (4, Value::U16(v)) => {
-                        let out = u32::from_ne_bytes(
-                            i32::from(i16::from_ne_bytes(v.to_ne_bytes())).to_ne_bytes(),
-                        );
-                        self.store_in_operand(&instruction, 0, Value::U32(out))
+                    (4, Value::U8(v), true) => {
+                        self.store_in_operand(&instruction, 0, Value::U32(0xffffff | u32::from(v)))
+                    }
+                    (4, Value::U8(v), false) => {
+                        self.store_in_operand(&instruction, 0, Value::U32(u32::from(v)))
+                    }
+                    (4, Value::U16(v), true) => {
+                        self.store_in_operand(&instruction, 0, Value::U32(0xffff | u32::from(v)))
+                    }
+                    (4, Value::U16(v), false) => {
+                        self.store_in_operand(&instruction, 0, Value::U32(u32::from(v)))
                     }
                     _ => unreachable!(),
                 }
