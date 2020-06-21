@@ -64,6 +64,9 @@ fn main() {
 }
 
 async fn async_main() {
+    // TODO: somehow lock the "VBE system" so that no two drivers try to access it
+    // TODO: also this module should be able to run on any platform, and only enable itself on x86
+
     let mut vbe = vbe::load_vbe_info().await.unwrap();
     // TODO: mode selection
     let mode = vbe

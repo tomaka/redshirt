@@ -40,6 +40,8 @@ impl fmt::Display for Error {
 impl Interpreter {
     pub async fn new() -> Self {
         let first_mb = unsafe { redshirt_hardware_interface::read(0x0, 0x100000).await };
+        // Small sanity check.
+        assert!(first_mb.iter().any(|b| *b != 0));
         Self::from_memory(first_mb).await
     }
 
@@ -670,6 +672,38 @@ impl Interpreter {
                     // on modern processors; implement properly
                     let value = self.machine.fetch_operand_value(&instruction, 1);
                     self.machine.store_in_operand(&instruction, 0, value);
+                }
+
+                iced_x86::Mnemonic::Movsx => {
+                    let value = self.machine.fetch_operand_value(&instruction, 1);
+
+                    // We need to figure out the size of the destination.
+                    // We implement this in a very lazy and inefficient way by reading its value
+                    // in order to determine its size.
+                    match (self.machine.fetch_operand_value(&instruction, 0), value) {
+                        (Value::U16(_), Value::U8(v)) => {
+                            let out = u16::from_ne_bytes(
+                                i16::from(i8::from_ne_bytes(v.to_ne_bytes())).to_ne_bytes(),
+                            );
+                            self.machine
+                                .store_in_operand(&instruction, 0, Value::U16(out))
+                        }
+                        (Value::U32(_), Value::U8(v)) => {
+                            let out = u32::from_ne_bytes(
+                                i32::from(i8::from_ne_bytes(v.to_ne_bytes())).to_ne_bytes(),
+                            );
+                            self.machine
+                                .store_in_operand(&instruction, 0, Value::U32(out))
+                        }
+                        (Value::U32(_), Value::U16(v)) => {
+                            let out = u32::from_ne_bytes(
+                                i32::from(i16::from_ne_bytes(v.to_ne_bytes())).to_ne_bytes(),
+                            );
+                            self.machine
+                                .store_in_operand(&instruction, 0, Value::U32(out))
+                        }
+                        _ => unreachable!(),
+                    }
                 }
 
                 iced_x86::Mnemonic::Movzx => {
@@ -1331,9 +1365,9 @@ impl Machine {
     }
 
     fn int_opcode(&mut self, vector: u8) {
-        self.stack_push(&self.regs.flags.to_le_bytes());
-        self.stack_push(&self.regs.cs.to_le_bytes());
-        self.stack_push(&u16::try_from(self.regs.eip & 0xffff).unwrap().to_le_bytes());
+        self.stack_push_value(Value::U16(self.regs.flags));
+        self.stack_push_value(Value::U16(self.regs.cs));
+        self.stack_push_value(Value::U16(u16::try_from(self.regs.eip & 0xffff).unwrap()));
 
         let vector = u32::from(vector);
 

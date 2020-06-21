@@ -195,7 +195,9 @@ where
         Operation::PhysicalMemoryWriteU8 { address, data } => {
             if let Ok(mut address) = usize::try_from(address) {
                 for byte in data {
-                    (address as *mut u8).write_volatile(byte);
+                    if address != 0 {
+                        (address as *mut u8).write_volatile(byte);
+                    }
                     if let Some(addr_next) = address.checked_add(1) {
                         address = addr_next;
                     } else {
@@ -208,7 +210,9 @@ where
         Operation::PhysicalMemoryWriteU16 { address, data } => {
             if let Ok(mut address) = usize::try_from(address) {
                 for word in data {
-                    (address as *mut u16).write_volatile(word);
+                    if address != 0 {
+                        (address as *mut u16).write_volatile(word);
+                    }
                     if let Some(addr_next) = address.checked_add(2) {
                         address = addr_next;
                     } else {
@@ -221,7 +225,9 @@ where
         Operation::PhysicalMemoryWriteU32 { address, data } => {
             if let Ok(mut address) = usize::try_from(address) {
                 for dword in data {
-                    (address as *mut u32).write_volatile(dword);
+                    if address != 0 {
+                        (address as *mut u32).write_volatile(dword);
+                    }
                     if let Some(addr_next) = address.checked_add(4) {
                         address = addr_next;
                     } else {
@@ -237,7 +243,11 @@ where
             let mut address = Some(address);
             for _ in 0..len {
                 if let Some(addr) = address {
-                    out.push((addr as *mut u8).read_volatile());
+                    if addr == 0 {
+                        out.push(0);
+                    } else {
+                        out.push((addr as *mut u8).read_volatile());
+                    }
                     address = addr.checked_add(1);
                 } else {
                     out.push(0);
@@ -251,7 +261,11 @@ where
             let mut address = Some(address);
             for _ in 0..len {
                 if let Some(addr) = address {
-                    out.push((addr as *mut u16).read_volatile());
+                    if addr == 0 {
+                        out.push(0);
+                    } else {
+                        out.push((addr as *mut u16).read_volatile());
+                    }
                     address = addr.checked_add(2);
                 } else {
                     out.push(0);
@@ -265,7 +279,11 @@ where
             let mut address = Some(address);
             for _ in 0..len {
                 if let Some(addr) = address {
-                    out.push((addr as *mut u32).read_volatile());
+                    if addr == 0 {
+                        out.push(0);
+                    } else {
+                        out.push((addr as *mut u32).read_volatile());
+                    }
                     address = addr.checked_add(4);
                 } else {
                     out.push(0);
