@@ -182,7 +182,9 @@ where
         } => {
             if let Ok(mut address) = usize::try_from(address) {
                 for _ in 0..len {
-                    (address as *mut u8).write_volatile(value);
+                    if address != 0 {
+                        (address as *mut u8).write_volatile(value);
+                    }
                     if let Some(addr_next) = address.checked_add(1) {
                         address = addr_next;
                     } else {
