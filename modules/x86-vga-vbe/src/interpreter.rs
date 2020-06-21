@@ -467,7 +467,7 @@ impl Interpreter {
                     _ => unreachable!(),
                 }
 
-                self.apply_rel_jump(&instruction);
+                self.apply_jump(&instruction);
             }
 
             iced_x86::Mnemonic::Cbw => {
@@ -800,95 +800,95 @@ impl Interpreter {
 
             iced_x86::Mnemonic::Ja => {
                 if !self.flags_is_carry() && !self.flags_is_zero() {
-                    self.apply_rel_jump(&instruction);
+                    self.apply_jump(&instruction);
                 }
             }
             iced_x86::Mnemonic::Jae => {
                 if !self.flags_is_carry() {
-                    self.apply_rel_jump(&instruction);
+                    self.apply_jump(&instruction);
                 }
             }
             iced_x86::Mnemonic::Jb => {
                 if self.flags_is_carry() {
-                    self.apply_rel_jump(&instruction);
+                    self.apply_jump(&instruction);
                 }
             }
             iced_x86::Mnemonic::Jbe => {
                 if self.flags_is_carry() || self.flags_is_zero() {
-                    self.apply_rel_jump(&instruction);
+                    self.apply_jump(&instruction);
                 }
             }
             iced_x86::Mnemonic::Jcxz => {
                 if self.regs.ecx & 0xffff == 0 {
-                    self.apply_rel_jump(&instruction);
+                    self.apply_jump(&instruction);
                 }
             }
             iced_x86::Mnemonic::Je => {
                 if self.flags_is_zero() {
-                    self.apply_rel_jump(&instruction);
+                    self.apply_jump(&instruction);
                 }
             }
             iced_x86::Mnemonic::Jecxz => {
                 if self.regs.ecx == 0 {
-                    self.apply_rel_jump(&instruction);
+                    self.apply_jump(&instruction);
                 }
             }
             iced_x86::Mnemonic::Jg => {
                 if !self.flags_is_zero() && !self.flags_is_sign() {
-                    self.apply_rel_jump(&instruction);
+                    self.apply_jump(&instruction);
                 }
             }
             iced_x86::Mnemonic::Jge => {
                 if !self.flags_is_sign() {
-                    self.apply_rel_jump(&instruction);
+                    self.apply_jump(&instruction);
                 }
             }
             iced_x86::Mnemonic::Jl => {
                 if self.flags_is_sign() {
-                    self.apply_rel_jump(&instruction);
+                    self.apply_jump(&instruction);
                 }
             }
             iced_x86::Mnemonic::Jle => {
                 if self.flags_is_zero() || self.flags_is_sign() {
-                    self.apply_rel_jump(&instruction);
+                    self.apply_jump(&instruction);
                 }
             }
             iced_x86::Mnemonic::Jmp => {
-                self.apply_rel_jump(&instruction);
+                self.apply_jump(&instruction);
             }
             iced_x86::Mnemonic::Jne => {
                 if !self.flags_is_zero() {
-                    self.apply_rel_jump(&instruction);
+                    self.apply_jump(&instruction);
                 }
             }
             iced_x86::Mnemonic::Jno => {
                 if !self.flags_is_overflow() {
-                    self.apply_rel_jump(&instruction);
+                    self.apply_jump(&instruction);
                 }
             }
             iced_x86::Mnemonic::Jnp => {
                 if !self.flags_is_parity() {
-                    self.apply_rel_jump(&instruction);
+                    self.apply_jump(&instruction);
                 }
             }
             iced_x86::Mnemonic::Jns => {
                 if !self.flags_is_sign() {
-                    self.apply_rel_jump(&instruction);
+                    self.apply_jump(&instruction);
                 }
             }
             iced_x86::Mnemonic::Jo => {
                 if self.flags_is_overflow() {
-                    self.apply_rel_jump(&instruction);
+                    self.apply_jump(&instruction);
                 }
             }
             iced_x86::Mnemonic::Jp => {
                 if self.flags_is_parity() {
-                    self.apply_rel_jump(&instruction);
+                    self.apply_jump(&instruction);
                 }
             }
             iced_x86::Mnemonic::Js => {
                 if self.flags_is_sign() {
-                    self.apply_rel_jump(&instruction);
+                    self.apply_jump(&instruction);
                 }
             }
 
@@ -935,7 +935,7 @@ impl Interpreter {
                 };
 
                 if !is_zero && could_jump {
-                    self.apply_rel_jump(&instruction);
+                    self.apply_jump(&instruction);
                 }
             }
 
@@ -1309,9 +1309,9 @@ impl Interpreter {
 
                 if use_edi {
                     if self.flags_is_direction() {
-                        self.regs.edi.wrapping_sub(u32::from(temp.size()));
+                        self.regs.edi = self.regs.edi.wrapping_sub(u32::from(temp.size()));
                     } else {
-                        self.regs.edi.wrapping_add(u32::from(temp.size()));
+                        self.regs.edi = self.regs.edi.wrapping_add(u32::from(temp.size()));
                     }
                 } else {
                     if self.flags_is_direction() {
@@ -1424,9 +1424,9 @@ impl Interpreter {
 
                 if use_edi {
                     if self.flags_is_direction() {
-                        self.regs.edi.wrapping_sub(u32::from(val.size()));
+                        self.regs.edi = self.regs.edi.wrapping_sub(u32::from(val.size()));
                     } else {
-                        self.regs.edi.wrapping_add(u32::from(val.size()));
+                        self.regs.edi = self.regs.edi.wrapping_add(u32::from(val.size()));
                     }
                 } else {
                     if self.flags_is_direction() {
@@ -1519,9 +1519,40 @@ impl Interpreter {
         self.regs.eip = u32::from(self.read_memory_u16(vector * 4));
     }
 
-    fn apply_rel_jump(&mut self, instruction: &iced_x86::Instruction) {
-        // TODO: check segment bounds
-        self.regs.eip = u32::from(instruction.near_branch16());
+    /// Unconditionally applies the jump instruction passed as parameter.
+    ///
+    /// > **Note**: Does not work with `int` instruction.
+    ///
+    /// # Panic
+    ///
+    /// Panics if the passed instruction is not a jump or a call.
+    ///
+    fn apply_jump(&mut self, instruction: &iced_x86::Instruction) {
+        assert_eq!(instruction.op_count(), 1);
+
+        match instruction.op_kind(0) {
+            iced_x86::OpKind::NearBranch16 => {
+                self.regs.eip = u32::from(instruction.near_branch16());
+            }
+            iced_x86::OpKind::NearBranch32 => {
+                self.regs.eip = instruction.near_branch32();
+            }
+            iced_x86::OpKind::FarBranch16 => {
+                self.regs.cs = instruction.far_branch_selector();
+                self.regs.eip = u32::from(instruction.far_branch16());
+            }
+            iced_x86::OpKind::FarBranch32 => {
+                self.regs.cs = instruction.far_branch_selector();
+                self.regs.eip = instruction.far_branch32();
+            }
+            _ => {
+                self.regs.eip = match self.fetch_operand_value(instruction, 0) {
+                    Value::U16(v) => u32::from(v),
+                    Value::U32(v) => v,
+                    _ => unreachable!(),
+                };
+            }
+        }
     }
 
     /// Pushes data on the stack.
