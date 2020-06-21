@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use core::{convert::TryFrom as _, fmt, mem::MaybeUninit, ptr};
+use core::{convert::TryFrom as _, fmt, ptr};
 use redshirt_kernel_log_interface::ffi::{FramebufferFormat, FramebufferInfo};
 
 pub struct Terminal {

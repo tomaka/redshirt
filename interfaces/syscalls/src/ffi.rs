@@ -16,6 +16,7 @@
 use crate::{EncodedMessage, InterfaceHash, MessageId, Pid};
 
 use alloc::vec::Vec;
+use core::convert::TryFrom as _;
 
 #[cfg(target_arch = "wasm32")] // TODO: we should have a proper operating system name instead
 #[link(wasm_import_module = "redshirt")]
@@ -27,16 +28,18 @@ extern "C" {
     /// mean "a message received on an interface or a process destroyed notification". If a
     /// notification is successfully pulled, the corresponding entry in `to_poll` is set to `0`.
     ///
-    /// If `block` is true, then this function puts the thread to sleep until a notification is
-    /// available. If `block` is false, then this function returns as soon as possible.
+    /// Flags is a bitfield, defined as:
+    ///
+    /// - Bit 0: the `block` flag. If set, then this function puts the thread to sleep until a
+    /// notification is available. Otherwise, this function returns as soon as possible.
     ///
     /// If the function returns 0, then there is no notification available and nothing has been
     /// written.
-    /// This function never returns 0 if `block` is `true`.
+    /// This function never returns 0 if the `block` flag is set.
     /// If the function returns a value larger than `out_len`, then a notification is available
     /// whose  length is the value that has been returned, but nothing has been written in `out`.
     /// If the function returns value inferior or equal to `out_len` (and different from 0), then
-    /// a notification has been written in `out`.
+    /// a notification has been written in `out`. `out` must be 8-bytes-aligned.
     ///
     /// Messages, amongst the set that matches `to_poll`, are always returned in the order they
     /// have been received. In particular, this function does **not** search the queue of
@@ -53,7 +56,7 @@ extern "C" {
         to_poll_len: u32,
         out: *mut u8,
         out_len: u32,
-        block: bool,
+        flags: u64,
     ) -> u32;
 
     /// Sends a message to the process that has registered the given interface.
@@ -72,14 +75,17 @@ extern "C" {
     /// [`actual_data`](DecodedInterfaceNotification::actual_data) field of the
     /// [`DecodedInterfaceNotification`] that the target will receive.
     ///
+    /// Flags is a bitfield, defined as:
+    ///
+    /// - Bit 0: the `needs_answer` flag. If set, then this message expects an answer.
+    /// - Bit 1: the `allow_delay` flag. If set, the kernel is allowed to block the thread in
+    /// order to lazily-load a handler for that interface if necessary. If this flag is not set,
+    /// and no interface handler is available, then the function fails immediately.
+    ///
     /// Returns `0` on success, and `1` in case of error.
     ///
     /// On success, if `needs_answer` is true, will write the ID of new event into the memory
     /// pointed by `message_id_out`.
-    ///
-    /// If `allow_delay` is true, the kernel is allowed to block the thread in order to
-    /// lazily-load a handler for that interface if necessary. If `allow_delay` is false and no
-    /// interface handler is available, the function fails immediately.
     ///
     /// When this function is being called, a "lock" is being held on the memory pointed by
     /// `interface_hash`, `msg_bufs_ptrs`, `message_id_out`, and all the sub-buffers referred to
@@ -90,12 +96,14 @@ extern "C" {
         interface_hash: *const u8,
         msg_bufs_ptrs: *const u32,
         msg_bufs_num: u32,
-        needs_answer: bool,
-        allow_delay: bool,
+        flags: u64,
         message_id_out: *mut u64,
     ) -> u32;
 
     /// Sends an answer back to the emitter of given `message_id`.
+    ///
+    /// Has no effect if the message id is zero or refers to an invalid message. This can
+    /// legitimately happen if the process that emitted the message has crashed or stopped.
     ///
     /// When this function is being called, a "lock" is being held on the memory pointed by
     /// `message_id` and `msg`. In particular, it is invalid to modify these buffers while the
@@ -103,6 +111,9 @@ extern "C" {
     pub(crate) fn emit_answer(message_id: *const u64, msg: *const u8, msg_len: u32);
 
     /// Notifies the kernel that the given message is invalid and cannot reasonably be answered.
+    ///
+    /// Has no effect if the message id is zero or refers to an invalid message. This can
+    /// legitimately happen if the process that emitted the message has crashed or stopped.
     ///
     /// This should be used in situations where a message we receive fails to parse or is generally
     /// invalid. In other words, this should only be used in case of misbehaviour by the sender.
@@ -119,6 +130,8 @@ extern "C" {
     /// answer.
     ///
     /// After this function has been called, the passed `message_id` is no longer valid.
+    /// Has no effect if the message id is zero or refers to an invalid message. This can
+    /// legitimately happen if the process that emitted the message has crashed or stopped.
     ///
     /// When this function is being called, a "lock" is being held on the memory pointed by
     /// `message_id`. In particular, it is invalid to modify this buffer while the function is
@@ -195,6 +208,9 @@ pub enum DecodedNotification {
     ///
     /// Whenever a process that has emitted events on one of our interfaces stops, a
     /// `ProcessDestroyed` notification is sent.
+    ///
+    /// Note that this is done on a "best effort" basis. It is possible that these notifications
+    /// don't get immediately delivered, and that spurious notifications get emitted.
     ProcessDestroyed(DecodedProcessDestroyedNotification),
 }
 
@@ -256,6 +272,22 @@ impl InterfaceNotificationBuilder {
         self.data[49..53].copy_from_slice(&value.to_le_bytes());
     }
 
+    /// Returns the [`MessageId`] that was put in the builder.
+    pub fn message_id(&self) -> Option<MessageId> {
+        let id = u64::from_le_bytes([
+            self.data[33],
+            self.data[34],
+            self.data[35],
+            self.data[36],
+            self.data[37],
+            self.data[38],
+            self.data[39],
+            self.data[40],
+        ]);
+
+        MessageId::try_from(id).ok()
+    }
+
     pub fn len(&self) -> usize {
         self.data.len()
     }
@@ -286,11 +318,7 @@ pub fn decode_interface_notification(buffer: &[u8]) -> Result<DecodedInterfaceNo
                 buffer[40],
             ]);
 
-            if id == 0 {
-                None
-            } else {
-                Some(From::from(id))
-            }
+            MessageId::try_from(id).ok()
         },
         emitter_pid: From::from(u64::from_le_bytes([
             buffer[41], buffer[42], buffer[43], buffer[44], buffer[45], buffer[46], buffer[47],
@@ -350,7 +378,7 @@ impl ResponseNotificationBuilder {
     }
 
     pub fn message_id(&self) -> MessageId {
-        From::from(u64::from_le_bytes([
+        MessageId::try_from(u64::from_le_bytes([
             self.data[1],
             self.data[2],
             self.data[3],
@@ -360,6 +388,7 @@ impl ResponseNotificationBuilder {
             self.data[7],
             self.data[8],
         ]))
+        .unwrap()
     }
 
     pub fn len(&self) -> usize {
@@ -386,9 +415,13 @@ pub fn decode_response_notification(buffer: &[u8]) -> Result<DecodedResponseNoti
     }
 
     Ok(DecodedResponseNotification {
-        message_id: From::from(u64::from_le_bytes([
-            buffer[1], buffer[2], buffer[3], buffer[4], buffer[5], buffer[6], buffer[7], buffer[8],
-        ])),
+        message_id: MessageId::try_from({
+            u64::from_le_bytes([
+                buffer[1], buffer[2], buffer[3], buffer[4], buffer[5], buffer[6], buffer[7],
+                buffer[8],
+            ])
+        })
+        .map_err(|_| ())?,
         index_in_list: u32::from_le_bytes([buffer[9], buffer[10], buffer[11], buffer[12]]),
         actual_data: if success {
             Ok(EncodedMessage(buffer[14..].to_vec()))
@@ -478,11 +511,12 @@ pub struct DecodedProcessDestroyedNotification {
 mod tests {
     use super::*;
     use alloc::vec;
+    use core::{convert::TryFrom, num::NonZeroU64};
 
     #[test]
     fn interface_message_encode_decode() {
         let interface_hash = From::from([0xca; 32]);
-        let message_id = Some(From::from(0x0123456789abcdef));
+        let message_id = Some(TryFrom::try_from(0x0123456789abcdef).unwrap());
         let pid = From::from(0xfedcba9876543210);
         let index_in_list = 0xdeadbeef;
         let message = EncodedMessage(vec![8, 7, 9]);
@@ -490,6 +524,7 @@ mod tests {
         let mut int_notif =
             build_interface_notification(&interface_hash, message_id, pid, 0xf00baa, &message);
         int_notif.set_index_in_list(index_in_list);
+        assert_eq!(int_notif.message_id(), message_id);
 
         let decoded = decode_interface_notification(&int_notif.into_bytes()).unwrap();
         assert_eq!(decoded.interface, interface_hash);
@@ -501,7 +536,7 @@ mod tests {
 
     #[test]
     fn response_message_encode_decode() {
-        let message_id = From::from(0x0123456789abcdef);
+        let message_id = TryFrom::try_from(0x0123456789abcdef).unwrap();
         let index_in_list = 0xdeadbeef;
         let message = EncodedMessage(vec![8, 7, 9]);
 
@@ -517,7 +552,7 @@ mod tests {
 
     #[test]
     fn response_message_err_encode_decode() {
-        let message_id = From::from(0xa123456789abcdef);
+        let message_id = TryFrom::try_from(0x0123456789abcdef).unwrap();
         let index_in_list = 0xdeadbeef;
 
         let mut resp_notif = build_response_notification(message_id, 0xf00baa, Err(()));

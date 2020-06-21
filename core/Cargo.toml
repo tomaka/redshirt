@@ -16,7 +16,7 @@ bs58 = { version = "0.3.0", default-features = false, features = ["alloc"] }
 crossbeam-queue = { version = "0.2.1", default-features = false, features = ["alloc"] }
 either = { version = "1.5.3", default-features = false }
 fnv = { git = "https://github.com/dflemstr/rust-fnv", default-features = false }    # TODO: https://github.com/servo/rust-fnv/pull/22
-futures = { version = "0.3.1", default-features = false }      # TODO: necessary?
+futures = { version = "0.3.4", default-features = false }
 hashbrown = { version = "0.7.1", default-features = false }
 nohash-hasher = { version = "0.2.0", default-features = false }
 proc-macro-hack = "0.5.11"
@@ -32,6 +32,7 @@ rand = { version = "0.7", default-features = false }
 rand_chacha = { version = "0.2.1", default-features = false }
 rand_core = { version = "0.5.0", default-features = false }
 rand_hc = { version = "0.2.0", default-features = false }
+slab = { git = "https://github.com/baloo/slab", rev = "88b456131de20750e785655d1e62cd0b6e10d44b" }
 smallvec = { version = "1.0.0", default-features = false }
 spinning_top = "0.1.0"
 wasi = { version = "0.9.0", default-features = false }
@@ -40,7 +41,7 @@ wasmi = { git = "https://github.com/tomaka/wasmi", branch = "no-std", default-fe
 
 [dev-dependencies]
 criterion = "0.3"
-futures = "0.3.1"
+futures = { version = "0.3.1", default-features = false, features = ["executor"] }
 
 [[bench]]
 name = "keccak"

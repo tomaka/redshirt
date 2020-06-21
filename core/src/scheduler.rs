@@ -13,12 +13,15 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+//! Core system that includes executing Wasm programs passing messages to each other.
+//!
+//! This module is lower-level than [`system`](super::system). It doesn't hardcode any interface.
+
 mod extrinsics;
 mod ipc;
 mod processes;
 mod tests;
 mod vm;
 
-// TODO: move definition?
 pub use self::ipc::{Core, CoreBuilder, CoreProcess, CoreRunOutcome};
 pub use self::vm::NewErr;

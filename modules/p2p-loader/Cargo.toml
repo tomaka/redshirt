@@ -5,26 +5,31 @@ authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
 edition = "2018"
 publish = false
 
+[features]
+default = []
+git = ["git2", "notify", "openssl-sys"]
+
 [dependencies]
 base64 = { version = "0.11.0", default-features = false, features = ["alloc"] }
 blake3 = { version = "0.2.2", default-features = false }
 bs58 = "0.3.0"
 futures = "0.3"
-libp2p-core = { git = "https://github.com/libp2p/rust-libp2p", rev = "92ce5d6179c059c52a6c58c6c55ad69544ac2e93" }
-libp2p-kad = { git = "https://github.com/libp2p/rust-libp2p", rev = "92ce5d6179c059c52a6c58c6c55ad69544ac2e93" }
-libp2p-mplex = { git = "https://github.com/libp2p/rust-libp2p", rev = "92ce5d6179c059c52a6c58c6c55ad69544ac2e93" }
-#libp2p-noise = { git = "https://github.com/libp2p/rust-libp2p", rev = "92ce5d6179c059c52a6c58c6c55ad69544ac2e93" }
-libp2p-plaintext = { git = "https://github.com/libp2p/rust-libp2p", rev = "92ce5d6179c059c52a6c58c6c55ad69544ac2e93" }
-libp2p-swarm = { git = "https://github.com/libp2p/rust-libp2p", rev = "92ce5d6179c059c52a6c58c6c55ad69544ac2e93" }
+git2 = { version = "0.13.2", optional = true }
+libp2p = { version = "0.19.1", default-features = false, features = ["kad", "mplex", "plaintext"] }
 log = "0.4"
 notify = { version = "4.0.15", optional = true }
+# openssl-sys is not used directly, but we want to pass the "vendored" feature
+openssl-sys = { version = "0.9.55", features = ["vendored"], optional = true }
 parity-scale-codec = "1.0.5"
 structopt = "0.3.5"
+tempdir = "0.3.7"
 walkdir = "2.3.1"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 env_logger = "0.7.1"
-libp2p-tcp = { git = "https://github.com/libp2p/rust-libp2p", rev = "92ce5d6179c059c52a6c58c6c55ad69544ac2e93" }
+libp2p-tcp = { version = "0.19.1", default-features = false, features = ["async-std"] }
+# TODO: use the version below once cargo has fixed the associated bug
+#libp2p = { version = "0.19.1", default-features = false, features = ["tcp"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 redshirt-interface-interface = { path = "../../interfaces/interface" }

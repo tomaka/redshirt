@@ -22,12 +22,11 @@
 //!
 //! TODO: write doc on how to implement this trait
 
-use crate::signature::Signature;
+use crate::primitives::{Signature, WasmValue};
 use crate::{EncodedMessage, InterfaceHash, ThreadId};
 
 use alloc::{borrow::Cow, vec::Vec};
 use core::{fmt, iter, ops::Range};
-use wasmi::RuntimeValue;
 
 pub mod log_calls;
 pub mod wasi;
@@ -65,7 +64,7 @@ pub trait Extrinsics: Default {
         &self,
         tid: ThreadId,
         id: &Self::ExtrinsicId,
-        params: impl ExactSizeIterator<Item = RuntimeValue>,
+        params: impl ExactSizeIterator<Item = WasmValue>,
         proc_access: &mut impl ExtrinsicsMemoryAccess,
     ) -> (Self::Context, ExtrinsicsAction);
 
@@ -148,7 +147,7 @@ pub enum ExtrinsicsAction {
     ProgramCrash,
 
     /// Successfully finish the call and return with the given value.
-    Resume(Option<RuntimeValue>),
+    Resume(Option<WasmValue>),
 
     /// Emit a message.
     ///
@@ -178,7 +177,7 @@ impl Extrinsics for NoExtrinsics {
         &self,
         _: ThreadId,
         id: &Self::ExtrinsicId,
-        _: impl ExactSizeIterator<Item = RuntimeValue>,
+        _: impl ExactSizeIterator<Item = WasmValue>,
         _: &mut impl ExtrinsicsMemoryAccess,
     ) -> (Self::Context, ExtrinsicsAction) {
         match *id {} // unreachable

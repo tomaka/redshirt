@@ -24,8 +24,8 @@
 //!
 //! In order to generate entropy, we can rely on:
 //!
-//! - Hardware random number generators, such as `rdrand` on x86/x64. This is however generally
-//! widely untrusted.
+//! - Hardware random number generators, such as `rdseed`/`rdrand` on x86/x64. This is however
+//! generally widely untrusted.
 //! - Unpredictable events coming from the hardware, such as time between keyboard presses or
 //! network packets.
 //! - CPU execution time jitter. The time it takes for a CPU to execute instructions is very hard
@@ -33,8 +33,8 @@
 //!
 //! # Implementation in redshirt
 //!
-//! The current implementation relies on ChaCha20 seeded by a JitterRng and RdRand if it is
-//! available.
+//! The current implementation relies on ChaCha20 seeded by a JitterRng and RdSeed/RdRand if they
+//! are available.
 //!
 
 // TODO: I'm not a cryptographer nor a mathematician, but I guess that a ChaCha alone is a bit naive?
@@ -82,7 +82,6 @@ impl KernelRng {
             jitter.fill_bytes(&mut jitter_bytes);
             hasher.update(&jitter_bytes[..]);
             add_hardware_entropy(&mut hasher);
-            let mut chacha_seed = [0; 32];
             <[u8; 32]>::from(hasher.finalize())
         };
 
@@ -114,18 +113,20 @@ impl RngCore for KernelRng {
 
 #[cfg(target_arch = "x86_64")]
 fn add_hardware_entropy(hasher: &mut blake3::Hasher) {
-    if let Some(rdrand) = x86_64::instructions::random::RdRand::new() {
+    if let Ok(mut rdseed) = rdrand::RdSeed::new() {
         let mut buf = [0; 64];
-        let mut entropy_bytes = 0;
-        for chunk in buf.chunks_mut(8) {
-            if let Some(val) = rdrand.get_u64() {
-                chunk.copy_from_slice(&val.to_ne_bytes());
-                entropy_bytes += 8;
-            } else {
-                break;
-            }
+        if rdseed.try_fill_bytes(&mut buf).is_ok() {
+            hasher.update(&buf);
+            return;
         }
-        hasher.update(&buf[..entropy_bytes]);
+    }
+
+    if let Ok(mut rdrand) = rdrand::RdRand::new() {
+        let mut buf = [0; 64];
+        if rdrand.try_fill_bytes(&mut buf).is_ok() {
+            hasher.update(&buf);
+            return;
+        }
     }
 }
 

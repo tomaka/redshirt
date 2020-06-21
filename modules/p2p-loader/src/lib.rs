@@ -21,19 +21,19 @@ use libp2p_tcp::TcpConfig;
 use tcp_transport::TcpConfig;
 
 use futures::prelude::*;
-use libp2p_core::transport::Transport;
-use libp2p_core::{identity, muxing::StreamMuxerBox, upgrade};
-use libp2p_kad::{
+use libp2p::core::transport::Transport;
+use libp2p::core::{identity, muxing::StreamMuxerBox, upgrade};
+use libp2p::kad::{
     record::store::{MemoryStore, MemoryStoreConfig},
     record::Key,
-    Kademlia, KademliaConfig, KademliaEvent, Quorum,
+    Kademlia, KademliaConfig, KademliaEvent, QueryResult, Quorum,
 };
-use libp2p_mplex::MplexConfig;
-//use libp2p_noise::NoiseConfig;
-use libp2p_plaintext::PlainText2Config;
-use libp2p_swarm::{Swarm, SwarmEvent};
+use libp2p::mplex::MplexConfig;
+use libp2p::plaintext::PlainText2Config;
+use libp2p::swarm::{Swarm, SwarmEvent};
 use std::{collections::VecDeque, io, path::PathBuf, pin::Pin, time::Duration};
 
+mod git_clones;
 mod notifier;
 
 /// Active set of connections to the network.
@@ -43,6 +43,9 @@ pub struct Network<T> {
 
     /// Stream from the files watcher.
     notifications: stream::SelectAll<Pin<Box<dyn Stream<Item = notifier::NotifierEvent> + Send>>>,
+
+    /// Holds active git clones.
+    _git_clones_directories: git_clones::GitClones,
 
     /// List of keys that are currently being fetched.
     active_fetches: Vec<(Key, T)>,
@@ -78,20 +81,32 @@ pub struct NetworkConfig {
     /// All the files in this list of directories and children directories will be automatically
     /// pushed onto the DHT.
     ///
-    /// If `#[cfg(feature = "notify")]` isn't enabled, passing `Some` will panic at
+    /// If `#[cfg(feature = "notify")]` isn't enabled, passing a non-empty list will panic at
     /// initialization.
     // TODO: what happens if the same path is present multiple times? or if one element is a child
     // of another?
     pub watched_directories: Vec<PathBuf>,
+
+    /// URLs of git repositories whose Wasm files will be automatically pushed to the DHT.
+    ///
+    /// If `#[cfg(feature = "git")]` isn't enabled, passing a non-empty list will panic at
+    /// initialization.
+    pub watched_git_repositories: Vec<String>,
 }
 
 impl<T> Network<T> {
     /// Initializes the network.
     pub fn start(config: NetworkConfig) -> Result<Network<T>, io::Error> {
+        let git_clones_directories = git_clones::clone_git_repos(&config.watched_git_repositories)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+
         let notifications = {
             let mut list = stream::SelectAll::new();
             for directory in config.watched_directories {
                 list.push(notifier::start_notifier(directory)?.boxed());
+            }
+            for path in git_clones_directories.paths() {
+                list.push(notifier::start_notifier(path.to_owned())?.boxed());
             }
             // We have to push at least a pending stream, otherwise the `SelectAll` will produce
             // `None`.
@@ -111,7 +126,7 @@ impl<T> Network<T> {
         log::info!("Local peer id: {}", local_peer_id);
 
         // TODO: libp2p-noise doesn't compile for WASM
-        /*let noise_keypair = libp2p_noise::Keypair::new()
+        /*let noise_keypair = libp2p::noise::Keypair::new()
         .into_authentic(&local_keypair)
         .unwrap();*/
 
@@ -165,14 +180,16 @@ impl<T> Network<T> {
             &"Qmc25MQxSxbUpU49bZ7RVEqgBJPB3SrjG8WVycU3KC7xYP"
                 .parse()
                 .unwrap(),
-            "/ip4/138.68.126.243/tcp/30333".parse().unwrap(),
+            "/ip4/134.122.67.49/tcp/30333".parse().unwrap(),
         );
 
-        swarm.bootstrap();
+        // Bootstrapping returns an error if we don't know of any peer.
+        swarm.bootstrap().unwrap();
 
         Ok(Network {
             swarm,
             notifications,
+            _git_clones_directories: git_clones_directories,
             active_fetches: Vec::new(),
             events_queue: VecDeque::new(),
         })
@@ -205,30 +222,32 @@ impl<T> Network<T> {
             };
 
             match next_event {
-                future::Either::Left(SwarmEvent::Behaviour(KademliaEvent::GetRecordResult(
-                    Ok(result),
-                ))) => {
+                future::Either::Left(SwarmEvent::Behaviour(KademliaEvent::QueryResult {
+                    result: QueryResult::GetRecord(Ok(result)),
+                    ..
+                })) => {
                     for record in result.records {
                         log::debug!("Successfully loaded record from DHT: {:?}", record.key);
-                        if let Some(pos) = self
+                        while let Some(pos) = self
                             .active_fetches
                             .iter()
                             .position(|(key, _)| *key == record.key)
                         {
                             let user_data = self.active_fetches.remove(pos).1;
                             self.events_queue.push_back(NetworkEvent::FetchSuccess {
-                                data: record.value,
+                                data: record.value.clone(),
                                 user_data,
                             });
                         }
                     }
                 }
-                future::Either::Left(SwarmEvent::Behaviour(KademliaEvent::GetRecordResult(
-                    Err(err),
-                ))) => {
+                future::Either::Left(SwarmEvent::Behaviour(KademliaEvent::QueryResult {
+                    result: QueryResult::GetRecord(Err(err)),
+                    ..
+                })) => {
                     log::info!("Failed to get record: {:?}", err);
                     let fetch_failed_key = err.into_key();
-                    if let Some(pos) = self
+                    while let Some(pos) = self
                         .active_fetches
                         .iter()
                         .position(|(key, _)| *key == fetch_failed_key)
@@ -241,23 +260,33 @@ impl<T> Network<T> {
                 future::Either::Left(SwarmEvent::Behaviour(ev)) => {
                     log::info!("Other event: {:?}", ev)
                 }
-                future::Either::Left(SwarmEvent::Connected(peer)) => {
-                    log::trace!("Connected to {:?}", peer)
+                future::Either::Left(SwarmEvent::ConnectionEstablished { peer_id, .. }) => {
+                    log::trace!("Connected to {:?}", peer_id)
                 }
-                future::Either::Left(SwarmEvent::Disconnected(peer)) => {
-                    log::trace!("Disconnected from {:?}", peer)
+                future::Either::Left(SwarmEvent::ConnectionClosed { peer_id, .. }) => {
+                    log::trace!("Disconnected from {:?}", peer_id)
                 }
                 future::Either::Left(SwarmEvent::NewListenAddr(_)) => {}
                 future::Either::Left(SwarmEvent::ExpiredListenAddr(_)) => {}
                 future::Either::Left(SwarmEvent::UnreachableAddr { .. }) => {}
-                future::Either::Left(SwarmEvent::StartConnect(_)) => {}
+                future::Either::Left(SwarmEvent::Dialing(_)) => {}
+                future::Either::Left(SwarmEvent::IncomingConnection { .. }) => {}
+                future::Either::Left(SwarmEvent::IncomingConnectionError { .. }) => {}
+                future::Either::Left(SwarmEvent::BannedPeer { .. }) => {}
+                future::Either::Left(SwarmEvent::UnknownPeerUnreachableAddr { .. }) => {}
+                future::Either::Left(SwarmEvent::ListenerError { .. }) => {}
+                future::Either::Left(SwarmEvent::ListenerClosed { reason, .. }) => {
+                    log::warn!("Listener closed: {:?}", reason);
+                }
                 future::Either::Right(Some(notifier::NotifierEvent::InjectDht { hash, data })) => {
                     // TODO: use Quorum::Majority when network is large enough
                     // TODO: is republication automatic?
-                    self.swarm.put_record(
-                        libp2p_kad::Record::new(hash.to_vec(), data),
-                        libp2p_kad::Quorum::One,
-                    );
+                    self.swarm
+                        .put_record(
+                            libp2p::kad::Record::new(hash.to_vec(), data),
+                            libp2p::kad::Quorum::One,
+                        )
+                        .unwrap();
                 }
                 future::Either::Right(None) => panic!(),
             }
@@ -270,6 +299,7 @@ impl Default for NetworkConfig {
         NetworkConfig {
             private_key: None,
             watched_directories: Vec::new(),
+            watched_git_repositories: Vec::new(),
         }
     }
 }

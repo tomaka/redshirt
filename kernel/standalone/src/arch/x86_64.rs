@@ -20,8 +20,8 @@ use crate::klog::KLogger;
 
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use core::{
-    convert::TryFrom as _, fmt::Write as _, future::Future, iter, num::NonZeroU32, ops::Range,
-    pin::Pin, time::Duration,
+    convert::TryFrom as _, fmt::Write as _, iter, num::NonZeroU32, ops::Range, pin::Pin,
+    time::Duration,
 };
 use futures::channel::oneshot;
 use redshirt_kernel_log_interface::ffi::{FramebufferFormat, FramebufferInfo, KernelLogMethod};
@@ -49,7 +49,7 @@ const DEFAULT_LOG_METHOD: KernelLogMethod = KernelLogMethod {
     uart: None,
 };
 
-/// Called by `boot.S` after basic set up has been performed.
+/// Called by `boot.rs` after basic set up has been performed.
 ///
 /// When this function is called, a stack has been set up and as much memory space as possible has
 /// been identity-mapped (i.e. the virtual memory is equal to the physical memory).
@@ -128,6 +128,7 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
 
     // If a panic happens, we want it to use the logging system we just created.
     panic::set_logger(logger.clone());
+    writeln!(logger.log_printer(), "basic initialization ok").unwrap();
 
     // The first thing that gets executed when a x86 or x86_64 machine starts up is the
     // motherboard's firmware. Before giving control to the operating system, this firmware writes
@@ -135,10 +136,9 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
     // It then (indirectly) passes the memory address of this table to the operating system. This
     // is part of [the UEFI standard](https://en.wikipedia.org/wiki/UEFI).
     //
-    // However, this code is not loaded directly by the firmware but rather by a bootloader. This
-    // bootloader must save the information about the ACPI tables and propagate it as part of the
-    // multiboot2 header passed to the operating system.
-    // TODO: panics in BOCHS
+    // However, this code is not loaded directly by the operating system but rather by a
+    // bootloader. This bootloader must save the information about the ACPI tables and propagate it
+    // as part of the multiboot2 header passed to the operating system.
     // TODO: remove these tables from the memory ranges used as heap? `acpi_tables` is a copy of
     // the table, so once we are past this line there's no problem anymore. But in theory,
     // the `acpi_tables` variable might allocate over the actual ACPI tables.
@@ -173,11 +173,7 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
 
     // Initialize the timers state machine.
     // This allows us to create `Future`s that resolve after a certain amount of time has passed.
-    let timers = Box::leak(Box::new(apic::timers::init(
-        local_apics,
-        &*executor,
-        &mut pit,
-    )));
+    let timers = executor.block_on(apic::timers::init(local_apics, &mut pit));
 
     // This code is only executed by the main processor of the machine, called the **boot
     // processor**. The other processors are called the **associated processors** and must be
@@ -188,9 +184,8 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
     // it to each sender.
     let mut kernel_channels = Vec::with_capacity(acpi_tables.application_processors.len());
 
-    writeln!(logger.log_printer(), "Initializing associated processors").unwrap();
-    // TODO: this `take(0)` disables APs for now; it seems to not work on VirtualBox or actual hardware
-    for ap in acpi_tables.application_processors.iter().take(0) {
+    writeln!(logger.log_printer(), "initializing associated processors").unwrap();
+    for ap in acpi_tables.application_processors.iter() {
         debug_assert!(ap.is_ap);
         // It is possible for some associated processors to be in a disabled state, in which case
         // they **must not** be started. This is generally the case of defective processors.
@@ -199,13 +194,12 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
         }
 
         let (kernel_tx, kernel_rx) = oneshot::channel::<Arc<crate::kernel::Kernel<_>>>();
-        kernel_channels.push(kernel_tx);
 
-        ap_boot::boot_associated_processor(
+        let ap_boot_result = ap_boot::boot_associated_processor(
             &mut ap_boot_alloc,
             &*executor,
             &*local_apics,
-            timers,
+            &timers,
             apic::ApicId::from_unchecked(ap.local_apic_id),
             {
                 let executor = &*executor;
@@ -216,6 +210,17 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
                 }
             },
         );
+
+        match ap_boot_result {
+            Ok(()) => kernel_channels.push(kernel_tx),
+            Err(err) => writeln!(
+                logger.log_printer(),
+                "error while initializing AP#{}: {}",
+                ap.processor_uid,
+                err
+            )
+            .unwrap(),
+        }
     }
 
     // Now that everything has been initialized and all the processors started, we can initialize
@@ -223,8 +228,6 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
     let kernel = {
         let platform_specific = PlatformSpecificImpl {
             timers,
-            executor: &*executor,
-            local_apics,
             num_cpus: NonZeroU32::new(
                 u32::try_from(kernel_channels.len())
                     .unwrap()
@@ -238,12 +241,12 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
         Arc::new(crate::kernel::Kernel::init(platform_specific))
     };
 
-    writeln!(logger.log_printer(), "Boot successful").unwrap();
+    writeln!(logger.log_printer(), "boot successful").unwrap();
 
     // Send an `Arc<Kernel>` to the other processors so that they can run it too.
     for tx in kernel_channels {
         if tx.send(kernel.clone()).is_err() {
-            panic!();
+            panic!("failed to send kernel to associated processor");
         }
     }
 
@@ -354,15 +357,13 @@ fn find_free_memory_ranges<'a>(
 
 /// Implementation of [`PlatformSpecific`].
 struct PlatformSpecificImpl {
-    timers: &'static apic::timers::Timers<'static>,
-    local_apics: &'static apic::local::LocalApicsControl,
-    executor: &'static executor::Executor,
+    timers: Arc<apic::timers::Timers>,
     num_cpus: NonZeroU32,
     logger: Arc<KLogger>,
 }
 
 impl PlatformSpecific for PlatformSpecificImpl {
-    type TimerFuture = apic::timers::TimerFuture<'static>;
+    type TimerFuture = apic::timers::TimerFuture;
 
     fn num_cpus(self: Pin<&Self>) -> NonZeroU32 {
         self.num_cpus
@@ -373,7 +374,7 @@ impl PlatformSpecific for PlatformSpecificImpl {
     }
 
     fn timer(self: Pin<&Self>, clock_value: u128) -> Self::TimerFuture {
-        self.timers.register_tsc_timer({
+        self.timers.register_timer({
             let secs = u64::try_from(clock_value / 1_000_000_000).unwrap_or(u64::max_value());
             let nanos = u32::try_from(clock_value % 1_000_000_000).unwrap();
             Duration::new(secs, nanos)

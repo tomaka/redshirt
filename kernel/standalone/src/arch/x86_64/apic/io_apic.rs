@@ -105,6 +105,11 @@ pub unsafe fn init_io_apic(config: IoApicDescription) -> IoApicControl {
         u8::try_from((io_apic_ver >> 16) & 0xff).unwrap()
     };
 
+    assert!(config
+        .global_system_interrupt_base
+        .checked_add(maximum_redirection_entry)
+        .is_some());
+
     IoApicControl {
         io_reg_sel_register,
         io_win_register,
@@ -114,6 +119,15 @@ pub unsafe fn init_io_apic(config: IoApicDescription) -> IoApicControl {
 }
 
 impl IoApicControl {
+    /// Returns all the IRQs supported by this I/O APIC.
+    pub fn irqs<'a>(&'a self) -> impl Iterator<Item = u8> + 'a {
+        let max = self
+            .global_system_interrupt_base
+            .checked_add(self.maximum_redirection_entry)
+            .unwrap();
+        self.global_system_interrupt_base..=max
+    }
+
     /// Gives access to an object designating the configuration of an IRQ in this I/O APIC.
     ///
     /// Returns `None` if this I/O APIC doesn't handle the given IRQ.
@@ -158,11 +172,6 @@ impl IoApicControl {
         if interrupts_enabled {
             x86_64::instructions::interrupts::enable();
         }
-    }
-
-    unsafe fn read_register(&mut self, reg_num: u8) -> u32 {
-        self.io_reg_sel_register.write_volatile(u32::from(reg_num));
-        self.io_win_register.read_volatile()
     }
 
     unsafe fn write_register(&mut self, reg_num: u8, value: u32) {

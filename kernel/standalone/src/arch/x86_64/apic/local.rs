@@ -20,6 +20,8 @@ use core::{
 use x86_64::registers::model_specific::Msr;
 
 // TODO: "For correct APIC operation, this address space must be mapped to an area of memory that has been designated as strong uncacheable (UC)"
+//       For now everything is Strong Uncachable anyway, but care must be taken once we properly
+//       handle caching.
 
 /// Represents the local APICs of all CPUs.
 pub struct LocalApicsControl {
@@ -45,12 +47,10 @@ pub struct ApicId(u8);
 /// # Safety
 ///
 /// Must only be initialized once, and assumes that no other piece of code reads or writes
-/// to the MSR registers related to the local APIC or x2APIC, or the the registers mapped to
+/// to the MSR registers related to the local APIC or x2APIC, or the registers mapped to
 /// physical memory.
 ///
 pub unsafe fn init() -> LocalApicsControl {
-    // TODO: check whether CPUID is supported at all?
-
     // We don't support platforms without an APIC.
     assert!(is_apic_supported());
 
@@ -61,9 +61,34 @@ pub unsafe fn init() -> LocalApicsControl {
 
 // TODO: bad API ; should be a method on LocalApisControl, and a &'static ref passed when
 // initializing the IDT
+// TODO: document that no mutex is being locked; important because it's called from within an
+// interrupt handler
 pub unsafe fn end_of_interrupt() {
     let addr = usize::try_from(APIC_BASE_ADDR + 0xB0).unwrap() as *mut u32;
     addr.write_volatile(0x0);
+}
+
+pub enum Timer {
+    /// Default state.
+    Disabled,
+    Timer {
+        /// Number of ticks before the timer triggers.
+        value: NonZeroU32,
+        /// `value` will be multiplied by `value_multiplier`.
+        /// Must be a power of two.
+        value_multiplier: u8,
+        /// If `true`, the timer will continue firing periodically.
+        /// If `false`, it will switch back to `Disabled` after the first trigger.
+        periodic: bool,
+        /// Interrupt vector to trigger when the timer fires.
+        vector: u8,
+    },
+    TscDeadline {
+        /// Timer fires when the `rdtsc` value goes over this threshold.
+        threshold: NonZeroU64,
+        /// Interrupt vector to trigger when the timer fires.
+        vector: u8,
+    },
 }
 
 impl ApicId {
@@ -73,12 +98,12 @@ impl ApicId {
     ///
     /// There must be a processor with the given APIC ID.
     ///
-    pub unsafe fn from_unchecked(val: u8) -> Self {
+    pub const unsafe fn from_unchecked(val: u8) -> Self {
         ApicId(val)
     }
 
     /// Returns the integer value of this ID.
-    pub fn get(&self) -> u8 {
+    pub const fn get(&self) -> u8 {
         self.0
     }
 }
@@ -92,6 +117,7 @@ impl LocalApicsControl {
     ///
     // TODO: add debug_assert!s in all the other methods that check if the local APIC is initialized
     pub unsafe fn init_local(&self) {
+        // TODO: assert!(core::arch::x86_64::has_cpuid());  unstable for now
         assert!(is_apic_supported());
         assert_eq!(self.tsc_deadline_supported, is_tsc_deadline_supported());
 
@@ -111,6 +137,8 @@ impl LocalApicsControl {
             let val = svr_addr.read_volatile();
             svr_addr.write_volatile(val | 0x100); // Enable spurious interrupts.
         }
+
+        // TODO: enable error reporting
     }
 
     /// Returns the [`ApicId`] of the calling processor.
@@ -118,65 +146,66 @@ impl LocalApicsControl {
         current_apic_id()
     }
 
+    /// Returns true if the hardware supports TSC deadline mode.
     pub fn is_tsc_deadline_supported(&self) -> bool {
         self.tsc_deadline_supported
     }
 
-    // TODO: bad API
-    pub fn enable_local_timer_interrupt_tsc_deadline(&self, vector: u8) {
+    /// Configures the timer of the local APIC of the current CPU.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `TscDeadline` is passed and `is_tsc_deadline_supported` is false.
+    /// Panics if the `value_multiplier` is not either one or a power of two.
+    // TODO: sets the timer on the local APIC, which really isn't great
+    pub fn set_local_timer(&self, timer: Timer) {
         unsafe {
-            assert!(self.tsc_deadline_supported);
-            assert!(vector >= 32);
-            let addr = usize::try_from(APIC_BASE_ADDR + 0x320).unwrap() as *mut u32;
-            let flag = 0b10 << 17;
-            addr.write_volatile(flag | u32::from(vector));
+            match timer {
+                Timer::Disabled => {
+                    let addr = usize::try_from(APIC_BASE_ADDR + 0x320).unwrap() as *mut u32;
+                    addr.write_volatile(0x00010000);
+                }
+                Timer::Timer {
+                    value,
+                    value_multiplier,
+                    periodic,
+                    vector,
+                } => {
+                    let divide_config_addr =
+                        usize::try_from(APIC_BASE_ADDR + 0x3e0).unwrap() as *mut u32;
+                    divide_config_addr.write_volatile(match value_multiplier {
+                        1 => 0b1011,
+                        2 => 0b0000,
+                        4 => 0b0001,
+                        8 => 0b0010,
+                        16 => 0b0011,
+                        32 => 0b1000,
+                        64 => 0b1001,
+                        128 => 0b1010,
+                        _ => panic!(),
+                    });
 
-            // TODO: hack
-            let divide_config_addr = usize::try_from(APIC_BASE_ADDR + 0x3e0).unwrap() as *mut u32;
-            divide_config_addr.write_volatile(0b1010); // Divide by 128
-        }
-    }
+                    let lvt_addr = usize::try_from(APIC_BASE_ADDR + 0x320).unwrap() as *mut u32;
+                    let flags = if periodic { 1 << 17 } else { 0 };
+                    assert!(vector >= 32);
+                    lvt_addr.write_volatile(flags | u32::from(vector));
 
-    // TODO: bad API
-    pub fn enable_local_timer_interrupt(&self, periodic: bool, vector: u8) {
-        unsafe {
-            assert!(!self.tsc_deadline_supported);
-            assert!(vector >= 32);
-            let addr = usize::try_from(APIC_BASE_ADDR + 0x320).unwrap() as *mut u32;
-            let periodic = if periodic { 1 << 17 } else { 0 };
-            addr.write_volatile(periodic | u32::from(vector));
+                    let value_addr = usize::try_from(APIC_BASE_ADDR + 0x380).unwrap() as *mut u32;
+                    value_addr.write_volatile(value.get());
+                }
+                Timer::TscDeadline { threshold, vector } => {
+                    assert!(self.tsc_deadline_supported);
+                    debug_assert!(is_tsc_deadline_supported());
 
-            // TODO: hack
-            let divide_config_addr = usize::try_from(APIC_BASE_ADDR + 0x3e0).unwrap() as *mut u32;
-            divide_config_addr.write_volatile(0b1010); // Divide by 128
-        }
-    }
+                    assert!(vector >= 32);
+                    let lvt_addr = usize::try_from(APIC_BASE_ADDR + 0x320).unwrap() as *mut u32;
+                    let flag = 0b10 << 17;
+                    lvt_addr.write_volatile(flag | u32::from(vector));
 
-    // TODO: bad API
-    pub fn set_local_timer_value(&self, value: Option<NonZeroU32>) {
-        unsafe {
-            assert!(!self.tsc_deadline_supported);
-            let addr = usize::try_from(APIC_BASE_ADDR + 0x380).unwrap() as *mut u32;
-            let value = value.map(|v| v.get()).unwrap_or(0);
-            addr.write_volatile(value);
-        }
-    }
-
-    // TODO: bad API
-    pub fn disable_local_timer_interrupt(&self) {
-        unsafe {
-            let addr = usize::try_from(APIC_BASE_ADDR + 0x320).unwrap() as *mut u32;
-            addr.write_volatile(0x00010000);
-        }
-    }
-
-    // TODO: bad API
-    pub fn set_local_tsc_deadline(&self, value: Option<NonZeroU64>) {
-        unsafe {
-            assert!(self.tsc_deadline_supported);
-
-            const TIMER_MSR: Msr = Msr::new(0x6e0);
-            TIMER_MSR.write(value.map(|v| v.get()).unwrap_or(0));
+                    const TIMER_MSR: Msr = Msr::new(0x6e0);
+                    TIMER_MSR.write(threshold.get());
+                }
+            }
         }
     }
 
@@ -270,6 +299,7 @@ fn current_apic_id() -> ApicId {
 /// Checks in the CPUID whether the APIC is supported.
 fn is_apic_supported() -> bool {
     unsafe {
+        //TODO: unstable  assert!(core::arch::x86_64::has_cpuid());
         let cpuid = core::arch::x86_64::__cpuid(0x1);
         cpuid.edx & (1 << 9) != 0
     }
@@ -278,7 +308,22 @@ fn is_apic_supported() -> bool {
 /// Checks in the CPUID whether the APIC timer supports TSC deadline mode.
 fn is_tsc_deadline_supported() -> bool {
     unsafe {
+        //TODO: unstable  assert!(core::arch::x86_64::has_cpuid());
         let cpuid = core::arch::x86_64::__cpuid(0x1);
         cpuid.ecx & (1 << 24) != 0
+    }
+}
+
+/// Checks in the CPUID whether the APIC timer runs at a constant rate.
+fn is_apic_timer_constant_rate() -> bool {
+    unsafe {
+        //TODO: unstable  assert!(core::arch::x86_64::has_cpuid());
+
+        if core::arch::x86_64::__get_cpuid_max(0).0 < 0x6 {
+            return false;
+        }
+
+        let cpuid = core::arch::x86_64::__cpuid(0x6);
+        cpuid.eax & (1 << 2) != 0
     }
 }

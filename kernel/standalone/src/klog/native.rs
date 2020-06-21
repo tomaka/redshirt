@@ -18,10 +18,9 @@
 // TODO: the `kernel_log` interface doesn't actually exist yet
 
 use crate::arch::PlatformSpecific;
-use crate::klog::KLogger;
 
 use alloc::{boxed::Box, sync::Arc};
-use core::{fmt::Write as _, pin::Pin, str, sync::atomic};
+use core::{pin::Pin, str, sync::atomic};
 use crossbeam_queue::SegQueue;
 use futures::prelude::*;
 use redshirt_core::native::{DummyMessageIdWrite, NativeProgramEvent, NativeProgramRef};

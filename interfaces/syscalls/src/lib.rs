@@ -97,7 +97,7 @@ pub use interface_message::{
 pub use response::{message_response, message_response_sync_raw, MessageResponseFuture};
 pub use traits::{Decode, Encode, EncodedMessage};
 
-use core::{cmp::PartialEq, fmt};
+use core::{cmp::PartialEq, convert::TryFrom, fmt, num::NonZeroU64};
 
 mod block_on;
 mod emit;
@@ -109,10 +109,17 @@ pub mod ffi;
 
 /// Identifier of a running process within a core.
 // TODO: move to a Pid module?
+// TODO: should be NonZeroU64?
 #[derive(
     Copy, Clone, PartialEq, Eq, Hash, parity_scale_codec::Encode, parity_scale_codec::Decode,
 )]
 pub struct Pid(u64);
+
+impl From<NonZeroU64> for Pid {
+    fn from(id: NonZeroU64) -> Pid {
+        Pid(id.get())
+    }
+}
 
 impl From<u64> for Pid {
     fn from(id: u64) -> Pid {
@@ -134,10 +141,17 @@ impl fmt::Debug for Pid {
 
 /// Identifier of a running thread within a core.
 // TODO: move to a separate module?
+// TODO: should be NonZeroU64?
 #[derive(
     Copy, Clone, PartialEq, Eq, Hash, parity_scale_codec::Encode, parity_scale_codec::Decode,
 )]
 pub struct ThreadId(u64);
+
+impl From<NonZeroU64> for ThreadId {
+    fn from(id: NonZeroU64) -> ThreadId {
+        ThreadId(id.get())
+    }
+}
 
 impl From<u64> for ThreadId {
     fn from(id: u64) -> ThreadId {
@@ -162,23 +176,67 @@ impl fmt::Debug for ThreadId {
 #[derive(
     Copy, Clone, PartialEq, Eq, Hash, parity_scale_codec::Encode, parity_scale_codec::Decode,
 )]
-pub struct MessageId(u64); // TODO: should be NonZeroU64
+pub struct MessageId(NonZeroU64);
 
-impl From<u64> for MessageId {
-    fn from(id: u64) -> MessageId {
-        MessageId(id)
+impl MessageId {
+    /// Turns a raw integer into a [`MessageId`] without checking its validity.
+    ///
+    /// # Safety
+    ///
+    /// `id` must not be equal to 0 or 1.
+    pub unsafe fn from_u64_unchecked(id: u64) -> Self {
+        MessageId(NonZeroU64::new_unchecked(id))
+    }
+}
+
+impl TryFrom<u64> for MessageId {
+    type Error = InvalidMessageIdErr;
+
+    fn try_from(id: u64) -> Result<Self, Self::Error> {
+        match id {
+            0 | 1 => Err(InvalidMessageIdErr),
+            n => Ok(MessageId(NonZeroU64::new(n).unwrap())),
+        }
+    }
+}
+
+impl TryFrom<NonZeroU64> for MessageId {
+    type Error = InvalidMessageIdErr;
+
+    fn try_from(id: NonZeroU64) -> Result<Self, Self::Error> {
+        if id.get() == 1 {
+            return Err(InvalidMessageIdErr);
+        }
+
+        Ok(MessageId(id))
+    }
+}
+
+impl From<MessageId> for NonZeroU64 {
+    fn from(mid: MessageId) -> NonZeroU64 {
+        mid.0
     }
 }
 
 impl From<MessageId> for u64 {
     fn from(mid: MessageId) -> u64 {
-        mid.0
+        mid.0.get()
     }
 }
 
 impl fmt::Debug for MessageId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "#{:020}", self.0)
+    }
+}
+
+/// Error when trying to build a [`MessageId`] from a raw id.
+#[derive(Debug)]
+pub struct InvalidMessageIdErr;
+
+impl fmt::Display for InvalidMessageIdErr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Invalid message ID")
     }
 }
 
