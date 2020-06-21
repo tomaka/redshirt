@@ -543,7 +543,7 @@ impl Interpreter {
                 iced_x86::Mnemonic::Int => {
                     let value = self.machine.fetch_operand_value(&instruction, 0);
                     self.machine.int_opcode(u8::try_from(value).unwrap());
-                    log::info!("Int 0x{:?}", value);
+                    log::info!("Int 0x{:x}", u8::try_from(value).unwrap());
                 }
 
                 iced_x86::Mnemonic::Iret => {
