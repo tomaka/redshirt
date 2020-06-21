@@ -273,6 +273,11 @@ impl Interpreter {
                 }
             }
 
+            // TODO: remove or rework this, it's for debugging
+            if nested_ints >= 20 {
+                panic!("Protection against nested ints: {:?}", debug);
+            }
+
             match instruction.mnemonic() {
                 iced_x86::Mnemonic::Iret if nested_ints == 0 => {
                     log::info!("Used opcodes: {:?}", debug);
@@ -1294,9 +1299,11 @@ impl Interpreter {
                 self.flags_set_overflow(overflow != temp.most_significant_bit());
                 // TODO: the adjust flag
 
-                let use_edi = match instruction.memory_size().size() {
-                    1 | 2 => false,
-                    4 => true,
+                let use_edi = match instruction.op_kind(1) {
+                    iced_x86::OpKind::MemorySegDI => false,
+                    iced_x86::OpKind::MemorySegEDI => true,
+                    iced_x86::OpKind::MemoryESDI => false,
+                    iced_x86::OpKind::MemoryESEDI => true,
                     _ => unreachable!(),
                 };
 
@@ -1405,9 +1412,11 @@ impl Interpreter {
                 // TODO: review this
                 let val = self.fetch_operand_value(&instruction, 1);
 
-                let use_edi = match instruction.memory_size().size() {
-                    1 | 2 => false,
-                    4 => true,
+                let use_edi = match instruction.op_kind(0) {
+                    iced_x86::OpKind::MemorySegDI => false,
+                    iced_x86::OpKind::MemorySegEDI => true,
+                    iced_x86::OpKind::MemoryESDI => false,
+                    iced_x86::OpKind::MemoryESEDI => true,
                     _ => unreachable!(),
                 };
 
