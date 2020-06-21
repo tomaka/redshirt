@@ -205,16 +205,20 @@ impl Interpreter {
         self.regs.edi |= u32::from(di);
     }
 
-    /// Executes the `int 0x10` instruction on the machine, and run until the `iret` instruction is
-    /// executed.
+    /// Executes the `int 0x10` instruction on the machine, and run until the corresponding `iret`
+    /// instruction is executed.
     pub fn int10h(&mut self) -> Result<(), Error> {
-        self.int_opcode(0x10);
+        self.run_int_opcode(0x10);
         self.run_until_iret()
     }
 
     /// Runs the machine until the `iret` instruction is executed.
+    ///
+    /// Nested interrupts are accounted for. If an `int` opcode is executed, then the next `iret`
+    /// will not cause this function to finish.
     fn run_until_iret(&mut self) -> Result<(), Error> {
         let mut instr_counter: u32 = 0;
+        let mut nested_ints = 0;
 
         loop {
             instr_counter = instr_counter.wrapping_add(1);
@@ -246,9 +250,13 @@ impl Interpreter {
                 instruction
             };
 
+            self.run_one(&instruction)?;
+
             match instruction.mnemonic() {
-                iced_x86::Mnemonic::Iret => break Ok(()),
-                _ => self.run_one(&instruction)?,
+                iced_x86::Mnemonic::Iret if nested_ints == 0 => break Ok(()),
+                iced_x86::Mnemonic::Iret => nested_ints -= 1,
+                iced_x86::Mnemonic::Int => nested_ints += 1,
+                _ => {}
             }
         }
     }
@@ -619,12 +627,19 @@ impl Interpreter {
 
             iced_x86::Mnemonic::Int => {
                 let value = self.fetch_operand_value(&instruction, 0);
-                self.int_opcode(u8::try_from(value).unwrap());
+                self.run_int_opcode(u8::try_from(value).unwrap());
                 log::info!("Int 0x{:x}", u8::try_from(value).unwrap());
             }
 
             iced_x86::Mnemonic::Iret => {
-                todo!() // TODO: ?!
+                let ip = self.stack_pop_u16();
+                self.regs.eip = u32::from(ip);
+                let cs = self.stack_pop_u16();
+                self.regs.cs = cs;
+
+                let val = self.stack_pop_u16();
+                self.regs.flags &= 0b01000000000101010;
+                self.regs.flags |= val & 0b0111111111010101;
             }
 
             iced_x86::Mnemonic::Ja => {
@@ -1355,21 +1370,24 @@ impl Interpreter {
         Ok(())
     }
 
-    fn apply_rel_jump(&mut self, instruction: &iced_x86::Instruction) {
-        // TODO: check segment bounds
-        self.regs.eip = u32::from(instruction.near_branch16());
-    }
-
     /// Executes the `int` instruction on the current state of the machine.
-    fn int_opcode(&mut self, vector: u8) {
+    fn run_int_opcode(&mut self, vector: u8) {
         self.stack_push_value(Value::U16(self.regs.flags));
         self.stack_push_value(Value::U16(self.regs.cs));
         self.stack_push_value(Value::U16(self.ip()));
+
+        self.flags_set_interrupt(false);
+        self.flags_set_trap(false);
 
         let vector = u32::from(vector);
 
         self.regs.cs = self.read_memory_u16((vector * 4) + 2);
         self.regs.eip = u32::from(self.read_memory_u16(vector * 4));
+    }
+
+    fn apply_rel_jump(&mut self, instruction: &iced_x86::Instruction) {
+        // TODO: check segment bounds
+        self.regs.eip = u32::from(instruction.near_branch16());
     }
 
     /// Pushes data on the stack.
@@ -1505,6 +1523,14 @@ impl Interpreter {
             self.regs.flags |= 1 << 7;
         } else {
             self.regs.flags &= !(1 << 7);
+        }
+    }
+
+    fn flags_set_trap(&mut self, val: bool) {
+        if val {
+            self.regs.flags |= 1 << 8;
+        } else {
+            self.regs.flags &= !(1 << 8);
         }
     }
 
