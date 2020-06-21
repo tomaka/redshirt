@@ -562,73 +562,80 @@ impl Interpreter {
                         self.regs.edx = remainder;
                     }
                 }
+
+                // Flags are undefined.
             }
 
-            iced_x86::Mnemonic::Imul if matches!(instruction.op_count(), 1 | 2) => {
-                let value0 = self.fetch_operand_value(&instruction, 0);
-                let value1 = self.fetch_operand_value(&instruction, 1);
+            iced_x86::Mnemonic::Imul => {
+                let (to_mul1, to_mul2) = if instruction.op_count() == 3 {
+                    let value1 = self.fetch_operand_value(&instruction, 1);
+                    let value2 = self.fetch_operand_value(&instruction, 2);
+                    (value1, value2)
+                } else {
+                    // TODO: is that correct when op_count() == 1?
+                    let value0 = self.fetch_operand_value(&instruction, 0);
+                    let value1 = self.fetch_operand_value(&instruction, 1);
+                    (value0, value1)
+                };
 
-                let (temp, overflow) = match (value0, value1) {
-                    (Value::U8(value0), Value::U8(value1)) => {
-                        let value0 = i8::from_ne_bytes(value0.to_ne_bytes());
-                        let value1 = i8::from_ne_bytes(value1.to_ne_bytes());
-                        let (v, o) = value0.overflowing_mul(value1);
-                        (Value::U8(u8::from_ne_bytes(v.to_ne_bytes())), o)
+                // Signed multiplication of `to_mul1` and `to_mul2`. The highest and lowest half
+                // of the result in `result_hi` and `result_lo` are reinterpreted as unsigned
+                // integers.
+                let (result_hi, result_lo) = match (to_mul1, to_mul2) {
+                    (Value::U8(to_mul1), Value::U8(to_mul2)) => {
+                        let to_mul1 = i16::from(i8::from_ne_bytes(to_mul1.to_ne_bytes()));
+                        let to_mul2 = i16::from(i8::from_ne_bytes(to_mul2.to_ne_bytes()));
+                        let result = to_mul1.checked_mul(to_mul2).unwrap();
+                        let result = u16::from_ne_bytes(result.to_ne_bytes());
+                        let result_lo = u8::try_from(result & 0xff).unwrap();
+                        let result_hi = u8::try_from(result >> 8).unwrap();
+                        (Value::U8(result_hi), Value::U8(result_lo))
                     }
-                    (Value::U16(value0), Value::U16(value1)) => {
-                        let value0 = i16::from_ne_bytes(value0.to_ne_bytes());
-                        let value1 = i16::from_ne_bytes(value1.to_ne_bytes());
-                        let (v, o) = value0.overflowing_mul(value1);
-                        (Value::U16(u16::from_ne_bytes(v.to_ne_bytes())), o)
+                    (Value::U16(to_mul1), Value::U16(to_mul2)) => {
+                        let to_mul1 = i32::from(i16::from_ne_bytes(to_mul1.to_ne_bytes()));
+                        let to_mul2 = i32::from(i16::from_ne_bytes(to_mul2.to_ne_bytes()));
+                        let result = to_mul1.checked_mul(to_mul2).unwrap();
+                        let result = u32::from_ne_bytes(result.to_ne_bytes());
+                        let result_lo = u16::try_from(result & 0xffff).unwrap();
+                        let result_hi = u16::try_from(result >> 16).unwrap();
+                        (Value::U16(result_hi), Value::U16(result_lo))
                     }
-                    (Value::U32(value0), Value::U32(value1)) => {
-                        let value0 = i32::from_ne_bytes(value0.to_ne_bytes());
-                        let value1 = i32::from_ne_bytes(value1.to_ne_bytes());
-                        let (v, o) = value0.overflowing_mul(value1);
-                        (Value::U32(u32::from_ne_bytes(v.to_ne_bytes())), o)
+                    (Value::U32(to_mul1), Value::U32(to_mul2)) => {
+                        let to_mul1 = i64::from(i32::from_ne_bytes(to_mul1.to_ne_bytes()));
+                        let to_mul2 = i64::from(i32::from_ne_bytes(to_mul2.to_ne_bytes()));
+                        let result = to_mul1.checked_mul(to_mul2).unwrap();
+                        let result = u64::from_ne_bytes(result.to_ne_bytes());
+                        let result_lo = u32::try_from(result & 0xffffffff).unwrap();
+                        let result_hi = u32::try_from(result >> 32).unwrap();
+                        (Value::U32(result_hi), Value::U32(result_lo))
                     }
                     _ => unreachable!(),
                 };
 
-                self.store_in_operand(&instruction, 0, temp);
+                self.store_in_operand(&instruction, 0, result_lo);
 
-                // TODO: not sure whether this is actually correct for CF and OF;
-                // documentation seems contradictory
-                self.flags_set_carry(overflow);
-                self.flags_set_overflow(overflow);
-                // Sign, zero, parity and adjust flags are undefined.
-            }
-
-            iced_x86::Mnemonic::Imul if instruction.op_count() == 3 => {
-                let value1 = self.fetch_operand_value(&instruction, 1);
-                let value2 = self.fetch_operand_value(&instruction, 2);
-
-                let (temp, overflow) = match (value1, value2) {
-                    (Value::U8(value1), Value::U8(value2)) => {
-                        let value1 = i8::from_ne_bytes(value1.to_ne_bytes());
-                        let value2 = i8::from_ne_bytes(value2.to_ne_bytes());
-                        let (v, o) = value1.overflowing_mul(value2);
-                        (Value::U8(u8::from_ne_bytes(v.to_ne_bytes())), o)
+                match instruction.code() {
+                    iced_x86::Code::Imul_rm8 => {
+                        self.store_in_register(iced_x86::Register::AH, result_hi);
                     }
-                    (Value::U16(value1), Value::U16(value2)) => {
-                        let value1 = i16::from_ne_bytes(value1.to_ne_bytes());
-                        let value2 = i16::from_ne_bytes(value2.to_ne_bytes());
-                        let (v, o) = value1.overflowing_mul(value2);
-                        (Value::U16(u16::from_ne_bytes(v.to_ne_bytes())), o)
+                    iced_x86::Code::Imul_rm16 => {
+                        self.store_in_register(iced_x86::Register::DX, result_hi);
                     }
-                    (Value::U32(value1), Value::U32(value2)) => {
-                        let value1 = i32::from_ne_bytes(value1.to_ne_bytes());
-                        let value2 = i32::from_ne_bytes(value2.to_ne_bytes());
-                        let (v, o) = value1.overflowing_mul(value2);
-                        (Value::U32(u32::from_ne_bytes(v.to_ne_bytes())), o)
+                    iced_x86::Code::Imul_rm32 => {
+                        self.store_in_register(iced_x86::Register::EDX, result_hi);
                     }
-                    _ => unreachable!(),
+                    _ => {}
                 };
 
-                self.store_in_operand(&instruction, 0, temp);
+                // "The CF and OF flags are set when the signed integer value of the intermediate
+                // product differs from the sign extended operand-size-truncated product, otherwise
+                // the CF and OF flags are cleared." - Intel manual
+                let overflow = if result_lo.most_significant_bit() {
+                    !result_hi.is_max_value()
+                } else {
+                    !result_hi.is_zero()
+                };
 
-                // TODO: not sure whether this is actually correct for CF and OF;
-                // documentation seems contradictory
                 self.flags_set_carry(overflow);
                 self.flags_set_overflow(overflow);
                 // Sign, zero, parity and adjust flags are undefined.
@@ -2012,6 +2019,14 @@ impl Value {
             Value::U8(val) => val == 0,
             Value::U16(val) => val == 0,
             Value::U32(val) => val == 0,
+        }
+    }
+
+    fn is_max_value(&self) -> bool {
+        match *self {
+            Value::U8(val) => val == 0xff,
+            Value::U16(val) => val == 0xffff,
+            Value::U32(val) => val == 0xffffffff,
         }
     }
 }
