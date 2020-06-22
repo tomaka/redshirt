@@ -1301,69 +1301,72 @@ impl Interpreter {
                 self.flags_set_carry(self.regs.eax & (1 << 0) != 0);
             }
 
-            iced_x86::Mnemonic::Sal | iced_x86::Mnemonic::Shl => {
+            iced_x86::Mnemonic::Sal
+            | iced_x86::Mnemonic::Sar
+            | iced_x86::Mnemonic::Shl
+            | iced_x86::Mnemonic::Shr => {
+                assert_eq!(instruction.op_count(), 2);
                 let mut value0 = self.fetch_operand_value(&instruction, 0);
                 let value1 = self.fetch_operand_value(&instruction, 1);
 
                 for _ in 0..value1.zero_extend_to_u32() {
-                    let shifted_bit = value0.most_significant_bit();
-
-                    value0 = match value0 {
-                        Value::U8(v) => Value::U8(v.wrapping_shl(1)),
-                        Value::U16(v) => Value::U16(v.wrapping_shl(1)),
-                        Value::U32(v) => Value::U32(v.wrapping_shl(1)),
-                    };
-
-                    self.flags_set_sign_from_val(value0);
-                    self.flags_set_zero_from_val(value0);
-                    self.flags_set_parity_from_val(value0);
-                    self.flags_set_carry(shifted_bit);
-                    self.flags_set_overflow(shifted_bit != value0.most_significant_bit());
-                    // The adjust flag is undefined
-                }
-
-                self.store_in_operand(&instruction, 0, value0);
-            }
-
-            iced_x86::Mnemonic::Sar | iced_x86::Mnemonic::Shr => {
-                let mut value0 = self.fetch_operand_value(&instruction, 0);
-                let value1 = self.fetch_operand_value(&instruction, 1);
-
-                let sign_extension = if let iced_x86::Mnemonic::Sar = instruction.mnemonic() {
-                    if value0.most_significant_bit() {
-                        1u8
+                    if matches!(
+                        instruction.mnemonic(),
+                        iced_x86::Mnemonic::Sal | iced_x86::Mnemonic::Shl
+                    ) {
+                        self.flags_set_carry(value0.most_significant_bit());
                     } else {
-                        0u8
+                        self.flags_set_carry(value0.least_significant_bit());
                     }
-                } else {
-                    0u8
-                };
 
-                for _ in 0..value1.zero_extend_to_u32() {
-                    let shifted_bit = (value0.zero_extend_to_u32() & 0x1) != 0;
-                    let sign_bit = value0.most_significant_bit();
-
-                    value0 = match value0 {
-                        Value::U8(v) => {
-                            Value::U8((u8::from(sign_extension) << 7) | v.wrapping_shr(1))
-                        }
-                        Value::U16(v) => {
-                            Value::U16((u16::from(sign_extension) << 15) | v.wrapping_shr(1))
-                        }
-                        Value::U32(v) => {
-                            Value::U32((u32::from(sign_extension) << 31) | v.wrapping_shr(1))
-                        }
-                    };
-
-                    self.flags_set_sign_from_val(value0);
-                    self.flags_set_zero_from_val(value0);
-                    self.flags_set_parity_from_val(value0);
-                    self.flags_set_carry(shifted_bit);
-                    self.flags_set_overflow(sign_bit != value0.most_significant_bit());
-                    // The adjust flag is undefined
+                    if matches!(
+                        instruction.mnemonic(),
+                        iced_x86::Mnemonic::Sal | iced_x86::Mnemonic::Shl
+                    ) {
+                        value0 = match value0 {
+                            Value::U8(v) => Value::U8(v.wrapping_mul(2)),
+                            Value::U16(v) => Value::U16(v.wrapping_mul(2)),
+                            Value::U32(v) => Value::U32(v.wrapping_mul(2)),
+                        };
+                    } else if matches!(instruction.mnemonic(), iced_x86::Mnemonic::Sar) {
+                        let sign_extension = value0.most_significant_bit();
+                        value0 = match value0 {
+                            Value::U8(v) => {
+                                Value::U8((v / 2) | if sign_extension { 0x80 } else { 0 })
+                            }
+                            Value::U16(v) => {
+                                Value::U16((v / 2) | if sign_extension { 0x8000 } else { 0 })
+                            }
+                            Value::U32(v) => {
+                                Value::U32((v / 2) | if sign_extension { 0x80000000 } else { 0 })
+                            }
+                        };
+                    } else {
+                        value0 = match value0 {
+                            Value::U8(v) => Value::U8(v / 2),
+                            Value::U16(v) => Value::U16(v / 2),
+                            Value::U32(v) => Value::U32(v / 2),
+                        };
+                    }
                 }
 
                 self.store_in_operand(&instruction, 0, value0);
+
+                self.flags_set_sign_from_val(value0);
+                self.flags_set_zero_from_val(value0);
+                self.flags_set_parity_from_val(value0);
+                // The adjust flag is undefined
+
+                if matches!(
+                    instruction.mnemonic(),
+                    iced_x86::Mnemonic::Sal | iced_x86::Mnemonic::Shl
+                ) {
+                    self.flags_set_overflow(self.flags_is_carry() != value0.most_significant_bit());
+                } else if matches!(instruction.mnemonic(), iced_x86::Mnemonic::Sar) {
+                    self.flags_set_overflow(false);
+                } else {
+                    self.flags_set_overflow(value0.most_significant_bit());
+                }
             }
 
             iced_x86::Mnemonic::Sbb => {
@@ -2281,6 +2284,14 @@ impl Value {
             Value::U8(val) => (val & 0x80) != 0,
             Value::U16(val) => (val & 0x8000) != 0,
             Value::U32(val) => (val & 0x80000000) != 0,
+        }
+    }
+
+    fn least_significant_bit(&self) -> bool {
+        match *self {
+            Value::U8(val) => (val & 0x1) != 0,
+            Value::U16(val) => (val & 0x1) != 0,
+            Value::U32(val) => (val & 0x1) != 0,
         }
     }
 
