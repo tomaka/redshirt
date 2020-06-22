@@ -803,98 +803,34 @@ impl Interpreter {
                 self.regs.flags |= val & 0b0111111111010101;
             }
 
-            iced_x86::Mnemonic::Ja => {
-                if !self.flags_is_carry() && !self.flags_is_zero() {
-                    self.apply_jump(&instruction);
-                }
-            }
-            iced_x86::Mnemonic::Jae => {
-                if !self.flags_is_carry() {
-                    self.apply_jump(&instruction);
-                }
-            }
-            iced_x86::Mnemonic::Jb => {
-                if self.flags_is_carry() {
-                    self.apply_jump(&instruction);
-                }
-            }
-            iced_x86::Mnemonic::Jbe => {
-                if self.flags_is_carry() || self.flags_is_zero() {
-                    self.apply_jump(&instruction);
-                }
-            }
-            iced_x86::Mnemonic::Jcxz => {
-                if self.regs.ecx & 0xffff == 0 {
-                    self.apply_jump(&instruction);
-                }
-            }
-            iced_x86::Mnemonic::Je => {
-                if self.flags_is_zero() {
-                    self.apply_jump(&instruction);
-                }
-            }
-            iced_x86::Mnemonic::Jecxz => {
-                if self.regs.ecx == 0 {
-                    self.apply_jump(&instruction);
-                }
-            }
-            iced_x86::Mnemonic::Jg => {
-                if !self.flags_is_zero() && !self.flags_is_sign() {
-                    self.apply_jump(&instruction);
-                }
-            }
-            iced_x86::Mnemonic::Jge => {
-                if !self.flags_is_sign() {
-                    self.apply_jump(&instruction);
-                }
-            }
-            iced_x86::Mnemonic::Jl => {
-                if self.flags_is_sign() {
-                    self.apply_jump(&instruction);
-                }
-            }
-            iced_x86::Mnemonic::Jle => {
-                if self.flags_is_zero() || self.flags_is_sign() {
+            iced_x86::Mnemonic::Ja
+            | iced_x86::Mnemonic::Jae
+            | iced_x86::Mnemonic::Jb
+            | iced_x86::Mnemonic::Jbe
+            | iced_x86::Mnemonic::Jcxz
+            | iced_x86::Mnemonic::Je
+            | iced_x86::Mnemonic::Jecxz
+            | iced_x86::Mnemonic::Jg
+            | iced_x86::Mnemonic::Jge
+            | iced_x86::Mnemonic::Jl
+            | iced_x86::Mnemonic::Jle
+            | iced_x86::Mnemonic::Jne
+            | iced_x86::Mnemonic::Jno
+            | iced_x86::Mnemonic::Jnp
+            | iced_x86::Mnemonic::Jns
+            | iced_x86::Mnemonic::Jo
+            | iced_x86::Mnemonic::Jp
+            | iced_x86::Mnemonic::Js => {
+                debug_assert!(!matches!(
+                    instruction.condition_code(),
+                    iced_x86::ConditionCode::None
+                ));
+                if self.flags_check_condition(instruction.condition_code()) {
                     self.apply_jump(&instruction);
                 }
             }
             iced_x86::Mnemonic::Jmp => {
                 self.apply_jump(&instruction);
-            }
-            iced_x86::Mnemonic::Jne => {
-                if !self.flags_is_zero() {
-                    self.apply_jump(&instruction);
-                }
-            }
-            iced_x86::Mnemonic::Jno => {
-                if !self.flags_is_overflow() {
-                    self.apply_jump(&instruction);
-                }
-            }
-            iced_x86::Mnemonic::Jnp => {
-                if !self.flags_is_parity() {
-                    self.apply_jump(&instruction);
-                }
-            }
-            iced_x86::Mnemonic::Jns => {
-                if !self.flags_is_sign() {
-                    self.apply_jump(&instruction);
-                }
-            }
-            iced_x86::Mnemonic::Jo => {
-                if self.flags_is_overflow() {
-                    self.apply_jump(&instruction);
-                }
-            }
-            iced_x86::Mnemonic::Jp => {
-                if self.flags_is_parity() {
-                    self.apply_jump(&instruction);
-                }
-            }
-            iced_x86::Mnemonic::Js => {
-                if self.flags_is_sign() {
-                    self.apply_jump(&instruction);
-                }
             }
 
             iced_x86::Mnemonic::Lea => {
@@ -1514,85 +1450,28 @@ impl Interpreter {
                 }
             }
 
-            // TODO: use Instruction::condition_code instead of manually defining stuff here
-            iced_x86::Mnemonic::Seta => {
-                let value = Value::U8(if !self.flags_is_carry() && !self.flags_is_zero() {
-                    1
-                } else {
-                    0
-                });
-                self.store_in_operand(&instruction, 0, value);
-            }
-            iced_x86::Mnemonic::Setae => {
-                let value = Value::U8(if !self.flags_is_carry() { 1 } else { 0 });
-                self.store_in_operand(&instruction, 0, value);
-            }
-            iced_x86::Mnemonic::Setb => {
-                let value = Value::U8(if self.flags_is_carry() { 1 } else { 0 });
-                self.store_in_operand(&instruction, 0, value);
-            }
-            iced_x86::Mnemonic::Setbe => {
-                let value = Value::U8(if self.flags_is_carry() || self.flags_is_zero() {
-                    1
-                } else {
-                    0
-                });
-                self.store_in_operand(&instruction, 0, value);
-            }
-            iced_x86::Mnemonic::Sete => {
-                let value = Value::U8(if self.flags_is_zero() { 1 } else { 0 });
-                self.store_in_operand(&instruction, 0, value);
-            }
-            iced_x86::Mnemonic::Setg => {
-                let value = Value::U8(if !self.flags_is_zero() && !self.flags_is_sign() {
-                    1
-                } else {
-                    0
-                });
-                self.store_in_operand(&instruction, 0, value);
-            }
-            iced_x86::Mnemonic::Setge => {
-                let value = Value::U8(if !self.flags_is_sign() { 1 } else { 0 });
-                self.store_in_operand(&instruction, 0, value);
-            }
-            iced_x86::Mnemonic::Setl => {
-                let value = Value::U8(if self.flags_is_sign() { 1 } else { 0 });
-                self.store_in_operand(&instruction, 0, value);
-            }
-            iced_x86::Mnemonic::Setle => {
-                let value = Value::U8(if self.flags_is_zero() || self.flags_is_sign() {
-                    1
-                } else {
-                    0
-                });
-                self.store_in_operand(&instruction, 0, value);
-            }
-            iced_x86::Mnemonic::Setne => {
-                let value = Value::U8(if !self.flags_is_zero() { 1 } else { 0 });
-                self.store_in_operand(&instruction, 0, value);
-            }
-            iced_x86::Mnemonic::Setno => {
-                let value = Value::U8(if !self.flags_is_overflow() { 1 } else { 0 });
-                self.store_in_operand(&instruction, 0, value);
-            }
-            iced_x86::Mnemonic::Setnp => {
-                let value = Value::U8(if !self.flags_is_parity() { 1 } else { 0 });
-                self.store_in_operand(&instruction, 0, value);
-            }
-            iced_x86::Mnemonic::Setns => {
-                let value = Value::U8(if !self.flags_is_sign() { 1 } else { 0 });
-                self.store_in_operand(&instruction, 0, value);
-            }
-            iced_x86::Mnemonic::Seto => {
-                let value = Value::U8(if self.flags_is_overflow() { 1 } else { 0 });
-                self.store_in_operand(&instruction, 0, value);
-            }
-            iced_x86::Mnemonic::Setp => {
-                let value = Value::U8(if self.flags_is_parity() { 1 } else { 0 });
-                self.store_in_operand(&instruction, 0, value);
-            }
-            iced_x86::Mnemonic::Sets => {
-                let value = Value::U8(if self.flags_is_sign() { 1 } else { 0 });
+            iced_x86::Mnemonic::Seta
+            | iced_x86::Mnemonic::Setae
+            | iced_x86::Mnemonic::Setb
+            | iced_x86::Mnemonic::Setbe
+            | iced_x86::Mnemonic::Sete
+            | iced_x86::Mnemonic::Setg
+            | iced_x86::Mnemonic::Setge
+            | iced_x86::Mnemonic::Setl
+            | iced_x86::Mnemonic::Setle
+            | iced_x86::Mnemonic::Setne
+            | iced_x86::Mnemonic::Setno
+            | iced_x86::Mnemonic::Setnp
+            | iced_x86::Mnemonic::Setns
+            | iced_x86::Mnemonic::Seto
+            | iced_x86::Mnemonic::Setp
+            | iced_x86::Mnemonic::Sets => {
+                debug_assert!(!matches!(
+                    instruction.condition_code(),
+                    iced_x86::ConditionCode::None
+                ));
+                let cond = self.flags_check_condition(instruction.condition_code());
+                let value = Value::U8(if cond { 1 } else { 0 });
                 self.store_in_operand(&instruction, 0, value);
             }
 
@@ -1920,6 +1799,34 @@ impl Interpreter {
             self.regs.flags |= 1 << 11;
         } else {
             self.regs.flags &= !(1 << 11);
+        }
+    }
+
+    /// Checks whether the state of the flags matches the given condition. Returns `true` if `None`
+    /// is passed.
+    fn flags_check_condition(&self, condition: iced_x86::ConditionCode) -> bool {
+        match condition {
+            iced_x86::ConditionCode::None => true,
+            iced_x86::ConditionCode::o => self.flags_is_overflow(),
+            iced_x86::ConditionCode::no => !self.flags_is_overflow(),
+            iced_x86::ConditionCode::b => self.flags_is_carry(),
+            iced_x86::ConditionCode::ae => !self.flags_is_carry(),
+            iced_x86::ConditionCode::e => self.flags_is_zero(),
+            iced_x86::ConditionCode::ne => !self.flags_is_zero(),
+            iced_x86::ConditionCode::be => self.flags_is_carry() || self.flags_is_zero(),
+            iced_x86::ConditionCode::a => !self.flags_is_carry() && !self.flags_is_zero(),
+            iced_x86::ConditionCode::s => self.flags_is_sign(),
+            iced_x86::ConditionCode::ns => self.flags_is_sign(),
+            iced_x86::ConditionCode::p => self.flags_is_parity(),
+            iced_x86::ConditionCode::np => self.flags_is_parity(),
+            iced_x86::ConditionCode::l => self.flags_is_sign() != self.flags_is_zero(),
+            iced_x86::ConditionCode::ge => self.flags_is_sign() == self.flags_is_zero(),
+            iced_x86::ConditionCode::le => {
+                self.flags_is_zero() || self.flags_is_sign() != self.flags_is_overflow()
+            }
+            iced_x86::ConditionCode::g => {
+                !self.flags_is_zero() && self.flags_is_sign() == self.flags_is_overflow()
+            }
         }
     }
 
