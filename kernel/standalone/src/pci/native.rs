@@ -31,6 +31,9 @@ use spinning_top::Spinlock;
 pub struct PciNativeProgram<TPlat> {
     /// Platform-specific hooks.
     platform_specific: Pin<Arc<TPlat>>,
+    /// Future triggered the next time a PCI device generates an interrupt.
+    // TODO: at the moment we don't differentiate between devices
+    next_irq: Spinlock<Pin<Box<dyn Future<Output = ()> + Send>>>,
 
     /// Devices manager. Does the actual work.
     devices: pci::PciDevices,
@@ -59,8 +62,12 @@ where
 {
     /// Initializes the new state machine for PCI messages handling.
     pub fn new(devices: pci::PciDevices, platform_specific: Pin<Arc<TPlat>>) -> Self {
+        let next_irq =
+            Spinlock::new(Box::pin(TPlat::next_irq(platform_specific.as_ref())) as Pin<Box<_>>);
+
         PciNativeProgram {
             platform_specific,
+            next_irq,
             devices,
             locked_devices: Spinlock::new(Vec::new()),
             registered: atomic::AtomicBool::new(false),
@@ -96,7 +103,35 @@ where
                 answer,
             }))
         } else {
-            Box::pin(future::pending())
+            let next_irq = &self.next_irq;
+            let locked_devices = &self.locked_devices;
+            let platform_specific = &self.platform_specific;
+
+            Box::pin(async move {
+                loop {
+                    if let Ok((message_id, answer)) = self.pending_messages.pop() {
+                        return NativeProgramEvent::Answer { message_id, answer };
+                    }
+
+                    // Wait for next IRQ.
+                    future::poll_fn(move |cx| Future::poll(Pin::new(&mut *next_irq.lock()), cx))
+                        .await;
+
+                    let mut locked_devices = locked_devices.lock();
+                    for device in locked_devices.iter_mut() {
+                        for msg in device.next_interrupt_messages.drain(..) {
+                            let answer =
+                                redshirt_pci_interface::ffi::NextInterruptResponse::Interrupt
+                                    .encode();
+                            self.pending_messages.push((msg, Ok(answer)));
+                        }
+                    }
+                    drop(locked_devices);
+
+                    *next_irq.lock() =
+                        Box::pin(TPlat::next_irq(platform_specific.as_ref())) as Pin<Box<_>>;
+                }
+            })
         }
     }
 
