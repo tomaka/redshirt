@@ -299,12 +299,16 @@ impl Interpreter {
             return self.run_one_no_rep(instruction);
         }
 
-        // TODO: is this the correct way of finding out?
-        let use_ecx = match instruction.memory_size().size() {
-            1 | 2 => false,
-            4 => true,
-            _ => unreachable!(),
-        };
+        // At this point we know we have a REP/REPE/REPNE prefix.
+
+        // Determining whether to use CX or ECX is surprinsingly impossible with the iced-x86
+        // library.
+        let use_ecx = (0..instruction.op_count()).any(|op_n| match instruction.op_kind(op_n) {
+            iced_x86::OpKind::MemorySegEDI => true,
+            iced_x86::OpKind::MemorySegESI => true,
+            iced_x86::OpKind::MemoryESEDI => true,
+            _ => false,
+        });
 
         loop {
             if (use_ecx && self.regs.ecx == 0) || (!use_ecx && self.cx() == 0) {
@@ -323,6 +327,9 @@ impl Interpreter {
                 break;
             }
 
+            // Unfortunately, the REP and REPE prefixes are the same, and which one is which
+            // depends on the mnemonic. This `if` block checks whether we have a REPE prefix, as
+            // opposed to just REP.
             if let iced_x86::Mnemonic::Cmpsb
             | iced_x86::Mnemonic::Cmpsd
             | iced_x86::Mnemonic::Cmpsq
@@ -1403,7 +1410,7 @@ impl Interpreter {
             }
 
             iced_x86::Mnemonic::Scasb | iced_x86::Mnemonic::Scasw | iced_x86::Mnemonic::Scasd => {
-                // TODO: review this
+                assert_eq!(instruction.op_count(), 2);
                 let value0 = self.fetch_operand_value(&instruction, 0);
                 let value1 = self.fetch_operand_value(&instruction, 1);
 

@@ -822,9 +822,9 @@ dependencies = [
 
 [[package]]
 name = "iced-x86"
-version = "1.0.1"
+version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6ac869b23369a3125025bf1997e068b1c65e24c79f148d59fc963ba8435a959f"
+checksum = "c9ceaf243158360bb347e4257d8eaecabff2ae67a9fdb8744990b62937db34a6"
 dependencies = [
  "lazy_static",
  "rustc_version",
