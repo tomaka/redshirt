@@ -28,7 +28,10 @@ use redshirt_pci_interface::ffi;
 use spinning_top::Spinlock;
 
 /// State machine for `pci` interface messages handling.
-pub struct PciNativeProgram {
+pub struct PciNativeProgram<TPlat> {
+    /// Platform-specific hooks.
+    platform_specific: Pin<Arc<TPlat>>,
+
     /// Devices manager. Does the actual work.
     devices: pci::PciDevices,
     /// List of devices locked by processes.
@@ -50,10 +53,14 @@ struct LockedDevice {
     next_interrupt_messages: VecDeque<MessageId>,
 }
 
-impl PciNativeProgram {
+impl<TPlat> PciNativeProgram<TPlat>
+where
+    TPlat: PlatformSpecific,
+{
     /// Initializes the new state machine for PCI messages handling.
-    pub fn new(devices: pci::PciDevices) -> Self {
+    pub fn new(devices: pci::PciDevices, platform_specific: Pin<Arc<TPlat>>) -> Self {
         PciNativeProgram {
+            platform_specific,
             devices,
             locked_devices: Spinlock::new(Vec::new()),
             registered: atomic::AtomicBool::new(false),
@@ -62,7 +69,10 @@ impl PciNativeProgram {
     }
 }
 
-impl<'a> NativeProgramRef<'a> for &'a PciNativeProgram {
+impl<'a, TPlat> NativeProgramRef<'a> for &'a PciNativeProgram<TPlat>
+where
+    TPlat: PlatformSpecific,
+{
     type Future =
         Pin<Box<dyn Future<Output = NativeProgramEvent<Self::MessageIdWrite>> + Send + 'a>>;
     type MessageIdWrite = DummyMessageIdWrite;
