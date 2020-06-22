@@ -18,41 +18,52 @@
 //! VBE and VGA are two standards specifying a way for interfacing with a video card.
 //!
 //! The VGA standard was created in the 1980 and defines, amongst other things, a list of
-//! memory-mapped registers that the video card must implement.
+//! I/O registers that the video card must implement.
 //!
 //! The VBE standard is more recent and defines a list of functions that the video BIOS must
 //! provide. It is a superset of VGA.
 //!
-//! While these standards are fairly old, they are most up-to-date non-hardware-specific way of
-//! interfacing with a video card, and is still almost universally supported nowadays (as of
-//! 2020).
+//! While these standards are fairly old, they are as of 2020 still the most up-to-date
+//! non-hardware-specific way of interfacing with a video card, and is still almost universally
+//! supported nowadays.
 //!
 //! More modern features, such as 3D acceleration, are not standardized. They are much more
-//! complex to implement and often require writing a driver specific to each vendor.
+//! complex to implement and, in practice, require writing a driver specific to each vendor.
 //!
-//! Also note that all these standards refer to "the" video card of the machine. In other words,
-//! the motherboard firmware must choose a main video card, and the VGA and VBE functions apply
-//! on it. It is not possible to support multiple video cards without writing vendor-specific
-//! hardware.
+//! Both VGa and VBE refer to "the" video card of the machine. In other words, the motherboard
+//! firmware must either choose a main video card or expose all the video cards together as if it
+//! was a single one, and the VGA and VBE functions apply on it. It is not possible to support
+//! multiple distinct video cards without writing vendor-specific drivers.
 //!
 //! # VESA Bios Extension (VBE)
 //!
-//! The most recent way of interfacing with a video card is the VBE 3.0 standard.
-//! This standard defines a list of functions that the BIOS must define.
+//! When the machine is powered up, if the BIOS/firmware detects a VGA-compatible video card, it
+//! sets up the entry 0x10 of the IVT (interrupt vector table) to point to the entry point of the
+//! video BIOS, mapped somewhere in memory.
 //!
-//! VBE functions must support both a real mode (16bits) entry point through interrupt 0x10, as
-//! well as a protected mode (32bits) entry point. Unfortunately, the requirements for the
-//! protected mode entry point involve setting up memory segments that point to specific physcial
-//! memory locations. Memory segments are no longer a thing in long mode (64bits). In other
-//! words, in order to access these functions, we would have to switch the processor mode to
-//! something else.
+//! Amongst other things, being "VGA-compatible" means that the video BIOS must respond to a
+//! standardized list of calls. Details can be found [here](https://en.wikipedia.org/wiki/INT_10H).
 //!
-//! For this reason, the most sane way to call these functions is to execute them through a real
-//! mode (16bits) emulator. In other words, we read the instructions contained in the video BIOS
+//! The VBE standards, whose most recent version is 3.0, extends this list of functions. If the
+//! video BIOS doesn't support the VBE standard, it is assumed to simply do nothing and return
+//! an error code. While the VBE functions are an extension to the VGA functions, they are really
+//! meant to entirely replace all the legacy VGA functions.
+//!
+//! VBE-compatible cards, in addition to interruption 0x10, must also provide a protected-mode
+//! (32bits) entry point, which makes it possible to call VBE functions from protected mode.
+//! Unfortunately, the requirements for the protected mode entry point involve setting up memory
+//! segments that point to specific physcial memory locations. Memory segments are no longer a
+//! thing in long mode (64bits).
+//!
+//! Whatever entry point we decide to this, accessing these functions involves switching the
+//! processor mode from long mode (64bits) to either 16bits or 32bits, which is a hassle.
+//! For this reason, our solution consists in executing the VBE functions through a real mode
+//! (16bits) *emulator*. In other words, we read the instructions contained in the video BIOS
 //! and interpret them.
 //!
-//! > **Note**: We restrict ourselves to a 16bits emulator because it is considerably more simple
-//! >           to write than a 32bits emulator.
+//! > **Note**: We restrict ourselves to a 16bits emulator as it is considerably more simple to
+//! >           write than a 32bits emulator, but there is no fundamental reason to prefer 16bits
+//! >           over 32bits.
 //!
 
 mod interpreter;
