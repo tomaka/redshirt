@@ -15,22 +15,21 @@
 
 //! Support for VBE 3.0 and VGA.
 //!
-//! VBE and VGA are two standards specifying a way for interfacing with a video card.
+//! VBE and VGA are two standards specifying a way of interfacing with a video card.
 //!
 //! The VGA standard was created in the 1980 and defines, amongst other things, a list of
 //! I/O registers that the video card must implement.
-//!
 //! The VBE standard is more recent and defines a list of functions that the video BIOS must
 //! provide. It is a superset of VGA.
 //!
 //! While these standards are fairly old, they are as of 2020 still the most up-to-date
-//! non-hardware-specific way of interfacing with a video card, and is still almost universally
+//! non-hardware-specific way of interfacing with a video card, and are still almost universally
 //! supported nowadays.
 //!
 //! More modern features, such as 3D acceleration, are not standardized. They are much more
 //! complex to implement and, in practice, require writing a driver specific to each vendor.
 //!
-//! Both VGa and VBE refer to "the" video card of the machine. In other words, the motherboard
+//! Both VGA and VBE refer to "the" video card of the machine. In other words, the motherboard
 //! firmware must either choose a main video card or expose all the video cards together as if it
 //! was a single one, and the VGA and VBE functions apply on it. It is not possible to support
 //! multiple distinct video cards without writing vendor-specific drivers.
@@ -42,23 +41,24 @@
 //! video BIOS, mapped somewhere in memory.
 //!
 //! Amongst other things, being "VGA-compatible" means that the video BIOS must respond to a
-//! standardized list of calls. Details can be found [here](https://en.wikipedia.org/wiki/INT_10H).
+//! certain standardized list of calls. More details can be found
+//! [here](https://en.wikipedia.org/wiki/INT_10H).
 //!
-//! The VBE standards, whose most recent version is 3.0, extends this list of functions. If the
+//! The VBE standard, whose most recent version is 3.0, extends this list of functions. If the
 //! video BIOS doesn't support the VBE standard, it is assumed to simply do nothing and return
 //! an error code. While the VBE functions are an extension to the VGA functions, they are really
-//! meant to entirely replace all the legacy VGA functions.
+//! meant to entirely replace the VGA functions.
 //!
 //! VBE-compatible cards, in addition to interruption 0x10, must also provide a protected-mode
-//! (32bits) entry point, which makes it possible to call VBE functions from protected mode.
-//! Unfortunately, the requirements for the protected mode entry point involve setting up memory
-//! segments that point to specific physcial memory locations. Memory segments are no longer a
-//! thing in long mode (64bits).
+//! (32bits) entry point to their BIOS, which makes it possible to call VBE functions from
+//! protected mode. Unfortunately, the requirements for the protected mode entry point involve
+//! setting up memory segments that point to specific physcial memory locations. Memory segments
+//! are no longer a thing in long mode (64bits).
 //!
-//! Whatever entry point we decide to this, accessing these functions involves switching the
+//! Whatever entry point we decide to this, accessing these functions would involve switching the
 //! processor mode from long mode (64bits) to either 16bits or 32bits, which is a hassle.
 //! For this reason, our solution consists in executing the VBE functions through a real mode
-//! (16bits) *emulator*. In other words, we read the instructions contained in the video BIOS
+//! (16bits) emulator. In other words, we read the instructions contained in the video BIOS
 //! and interpret them.
 //!
 //! > **Note**: We restrict ourselves to a 16bits emulator as it is considerably more simple to
