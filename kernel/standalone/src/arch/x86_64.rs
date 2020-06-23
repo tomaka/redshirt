@@ -259,8 +259,11 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
         /// whenever it is woken up.
         struct NextIrqWaker {
             pci_interrupt_vector: interrupts::ReservedInterruptVector,
-            next_irq_futures:
-                Arc<Spinlock<HashMap<u64, (Arc<atomic::AtomicBool>, Waker), fnv::FnvBuildHasher>>>,
+            next_irq_futures: Arc<
+                Spinlock<
+                    HashMap<u64, (Arc<atomic::AtomicBool>, Option<Waker>), fnv::FnvBuildHasher>,
+                >,
+            >,
         }
 
         impl futures::task::ArcWake for NextIrqWaker {
@@ -274,7 +277,9 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
 
                 for (_, (atomic_bool, waker)) in next_irq_futures.drain() {
                     atomic_bool.store(true, atomic::Ordering::Acquire);
-                    waker.wake();
+                    if let Some(waker) = waker {
+                        waker.wake();
+                    }
                 }
             }
         }
@@ -431,7 +436,7 @@ struct PlatformSpecificImpl {
     /// List of active futures waiting for the next IRQ.
     /// Contains an `AtomicBool` to set to true when the IRQ happens, and the waker to wake up.
     next_irq_futures:
-        Arc<Spinlock<HashMap<u64, (Arc<atomic::AtomicBool>, Waker), fnv::FnvBuildHasher>>>,
+        Arc<Spinlock<HashMap<u64, (Arc<atomic::AtomicBool>, Option<Waker>), fnv::FnvBuildHasher>>>,
 }
 
 impl PlatformSpecific for PlatformSpecificImpl {
@@ -456,13 +461,20 @@ impl PlatformSpecific for PlatformSpecificImpl {
 
     fn next_irq(self: Pin<&Self>) -> Self::IrqFuture {
         let done = Arc::new(atomic::AtomicBool::new(false));
+        let id = self
+            .next_next_irq_id
+            .fetch_add(1, atomic::Ordering::Relaxed);
+
+        // We register the future here, otherwise an IRQ that happens before the first time the
+        // future gets polled won't be detected.
+        self.next_irq_futures
+            .lock()
+            .insert(id, (done.clone(), None));
 
         NextIrqFuture {
             next_irq_futures: self.next_irq_futures.clone(),
             done,
-            id: self
-                .next_next_irq_id
-                .fetch_add(1, atomic::Ordering::Relaxed),
+            id,
         }
     }
 
@@ -528,7 +540,7 @@ impl PlatformSpecific for PlatformSpecificImpl {
 
 struct NextIrqFuture {
     next_irq_futures:
-        Arc<Spinlock<HashMap<u64, (Arc<atomic::AtomicBool>, Waker), fnv::FnvBuildHasher>>>,
+        Arc<Spinlock<HashMap<u64, (Arc<atomic::AtomicBool>, Option<Waker>), fnv::FnvBuildHasher>>>,
     done: Arc<atomic::AtomicBool>,
     id: u64,
 }
@@ -543,15 +555,9 @@ impl Future for NextIrqFuture {
 
         {
             let mut next_irq_futures = self.next_irq_futures.lock();
-            match next_irq_futures.entry(self.id) {
-                Entry::Occupied(mut e) => {
-                    if !e.get().1.will_wake(cx.waker()) {
-                        e.get_mut().1 = cx.waker().clone();
-                    }
-                }
-                Entry::Vacant(e) => {
-                    e.insert((self.done.clone(), cx.waker().clone()));
-                }
+            let entry = next_irq_futures.get_mut(&self.id).unwrap();
+            if entry.1.as_ref().map_or(true, |w| !w.will_wake(cx.waker())) {
+                entry.1 = Some(cx.waker().clone());
             }
         }
 
