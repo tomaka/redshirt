@@ -276,7 +276,7 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
                     .register_waker(&futures::task::waker_ref(arc_self));
 
                 for (_, (atomic_bool, waker)) in next_irq_futures.drain() {
-                    atomic_bool.store(true, atomic::Ordering::Acquire);
+                    atomic_bool.store(true, atomic::Ordering::Release);
                     if let Some(waker) = waker {
                         waker.wake();
                     }

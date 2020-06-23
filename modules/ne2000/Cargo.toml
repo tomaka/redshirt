@@ -11,7 +11,6 @@ etherparse = "0.9.0"    # TODO: temporary for debugging; remove
 futures = "0.3.1"
 redshirt-ethernet-interface = { path = "../../interfaces/ethernet" }
 redshirt-hardware-interface = { path = "../../interfaces/hardware" }
-redshirt-log-interface = { path = "../../interfaces/log" }
 redshirt-interface-interface = { path = "../../interfaces/interface" }
 redshirt-pci-interface = { path = "../../interfaces/pci" }
 redshirt-random-interface = { path = "../../interfaces/random" }
