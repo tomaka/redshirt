@@ -59,12 +59,12 @@ async fn async_main() {
                 NetworkManagerEvent::EthernetCableOut(id, msg_id, mut buffer),
                 _,
             )) => {
+                debug_assert!(!buffer.is_empty());
                 if let Some(msg_id) = msg_id.pop_front() {
-                    debug_assert!(!buffer.is_empty());
-                    //log::trace!("Emitting {:?}", data); // TODO: remove
                     redshirt_syscalls::emit_answer(msg_id, &buffer);
                 } else {
-                    panic!("message_out but no message"); // TODO:
+                    // TODO: network driver is overloaded; we should have some backpressure system
+                    todo!()
                 }
                 continue;
             }
@@ -73,12 +73,6 @@ async fn async_main() {
 
         if msg.interface == tcp_ffi::INTERFACE {
             let msg_data = tcp_ffi::TcpMessage::decode(msg.actual_data).unwrap();
-            // TODO: remove
-            /*redshirt_log_interface::log(
-                redshirt_log_interface::Level::Debug,
-                &format!("message: {:?}", msg_data),
-            );*/
-
             match msg_data {
                 tcp_ffi::TcpMessage::Open(open_msg) => {
                     let result = network.build_tcp_socket(open_msg.listen, &{
@@ -130,6 +124,7 @@ async fn async_main() {
                     network.unregister_interface(&(msg.emitter_pid, id));
                 }
                 eth_ffi::NetworkMessage::InterfaceOnData(id, buf) => {
+                    // TODO: back-pressure here as well?
                     network.inject_interface_data(&(msg.emitter_pid, id), buf);
                     if let Some(message_id) = msg.message_id {
                         redshirt_syscalls::emit_answer(message_id, &());

@@ -14,6 +14,34 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 //! Manages a registered networking interface.
+//!
+//! This module manages the state of a single networking interface. This state consists of:
+//!
+//! - The local MAC address.
+//! - The local IP address, sub-net mask, and gateway.
+//! - The known neighbouring nodes, automatically discovered through ARP or NDP.
+//! - A list of TCP sockets active on this interface and their state.
+//! - A buffer of data waiting to be sent out on the interface. It is the role of the user of this
+//! module to empty this buffer.
+//! - (Optional) The state of a DHCP client.
+//!
+//! > **Note**: Most of this is delegated to the `smoltcp` library, but this should be considered
+//! >           as an implementation detail.
+//!
+//! # Usage
+//!
+//! - Create a [`NetInterfaceState`] by calling [`NetInterfaceState::new`].
+//! - When some data arrives from the network, call [`NetInterfaceState::inject_interface_data`].
+//! - Call [`NetInterfaceState::next_event`] to be informed of events on the interface. Events can
+//! be generated in response to a call to [`NetInterfaceState::inject_interface_data`], but also
+//! spontaneously after a certain time has elapsed.
+//! - If [`NetInterfaceEvent::EthernetCableOut`] is generated, call
+//! [`NetInterfaceState::read_ethernet_cable_out`] in order to obtain the data to send out to the
+//! network.
+//!
+
+// TODO: write more docs ^
+// TODO: implement UDP
 
 use fnv::FnvBuildHasher;
 use hashbrown::HashMap;
@@ -28,6 +56,7 @@ use std::{
 };
 
 /// State machine encompassing an Ethernet interface and the sockets operating on it.
+// TODO: Debug
 pub struct NetInterfaceState<TSockUd> {
     /// State of the Ethernet interface.
     ethernet: smoltcp::iface::EthernetInterface<'static, 'static, 'static, RawDevice>,
@@ -163,10 +192,9 @@ pub struct SocketId(smoltcp::socket::SocketHandle);
 
 impl<TSockUd> NetInterfaceState<TSockUd> {
     pub async fn new(config: Config) -> Self {
-        // TODO: with_capacity?
         let device = RawDevice {
             device_out_buffer: Vec::new(),
-            device_in_buffer: Vec::new(),
+            device_in_buffer: Vec::with_capacity(4096),
         };
 
         let mut routes = smoltcp::iface::Routes::new(BTreeMap::new());
@@ -248,6 +276,23 @@ impl<TSockUd> NetInterfaceState<TSockUd> {
             next_event_delay: None,
             dhcp_v4_client,
         }
+    }
+
+    /// Returns the IP address and prefix of the interface, or `None` if DHCP hasn't configured
+    /// the interface yet.
+    pub fn local_ip_prefix(&self) -> Option<(IpAddr, u8)> {
+        assert_eq!(self.ethernet.ip_addrs().len(), 1);
+        let addr = &self.ethernet.ip_addrs()[0];
+
+        let ip = match addr.address() {
+            smoltcp::wire::IpAddress::Unspecified => return None,
+            smoltcp::wire::IpAddress::Ipv4(ip) => IpAddr::from(Ipv4Addr::from(ip)),
+            smoltcp::wire::IpAddress::Ipv6(ip) => IpAddr::from(Ipv6Addr::from(ip)),
+            _ => unimplemented!(),
+        };
+
+        let prefix = addr.prefix_len();
+        Some((ip, prefix))
     }
 
     /// Initializes a new TCP connection which tries to connect to the given
@@ -372,6 +417,7 @@ impl<TSockUd> NetInterfaceState<TSockUd> {
 
                 // Check if this socket got connected.
                 if !socket_state.is_connected && smoltcp_socket.may_send() {
+                    panic!("connected! yay, success"); // TODO: remove
                     socket_state.is_connected = true;
                     return NetInterfaceEventStatic::TcpConnected(*socket_id);
                 }
@@ -452,7 +498,6 @@ impl<TSockUd> NetInterfaceState<TSockUd> {
                                 .add_default_ipv4_route(router.clone().into())
                                 .unwrap();
                         }
-                        println!("{:?}", config);
 
                         // Report that to the user.
                         // TODO: is it possible to get multiple independent reports in such as
