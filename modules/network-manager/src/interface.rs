@@ -20,6 +20,7 @@ use hashbrown::HashMap;
 use smoltcp::{dhcp::Dhcpv4Client, phy, time::Instant};
 use std::{
     collections::BTreeMap,
+    convert::TryFrom as _,
     fmt, mem,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     sync::MutexGuard,
@@ -280,8 +281,7 @@ impl<TSockUd> NetInterfaceState<TSockUd> {
 
             // Errors, other than `Unrecognized`, are meant to be logged and ignored.
             match self.ethernet.poll(&mut self.sockets, now().await) {
-                Ok(true) => log::trace!("Something changed!"), // TODO: remove this line
-                Ok(false) => {}
+                Ok(_) => {}
                 // The documentation of smoltcp recommends to *not* log any `Unrecognized`
                 // error, as such errors happen very frequently.
                 Err(smoltcp::Error::Unrecognized) => {}
@@ -550,10 +550,10 @@ impl<'a, TSockUd> fmt::Debug for TcpSocket<'a, TSockUd> {
     }
 }
 
-// TODO: remove
+// TODO: remove?
 async fn now() -> smoltcp::time::Instant {
     let now = redshirt_time_interface::monotonic_clock().await;
-    smoltcp::time::Instant::from_millis((now / 1_000_000) as i64) // TODO: don't use as
+    smoltcp::time::Instant::from_millis(i64::try_from(now / 1_000_000).unwrap())
 }
 
 /// Implementation of `smoltcp::phy::Device`.

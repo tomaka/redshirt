@@ -131,8 +131,6 @@ where
                     },
                 );
 
-                log::debug!("Created TCP socket ({}) assigned to interface", addr);
-
                 return TcpSocket {
                     id: socket_id,
                     inner: TcpSocketInner::Assigned {
@@ -142,11 +140,6 @@ where
                 };
             }
         }
-
-        log::debug!(
-            "Created TCP socket ({}) pending waiting for interface",
-            addr
-        );
 
         self.sockets.insert(
             socket_id,

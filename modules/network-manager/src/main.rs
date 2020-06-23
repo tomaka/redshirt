@@ -17,7 +17,7 @@ use fnv::FnvBuildHasher;
 use futures::prelude::*;
 use hashbrown::HashMap;
 use network_manager::{NetworkManager, NetworkManagerEvent};
-use redshirt_ethernet_interface::ffi as net_ffi;
+use redshirt_ethernet_interface::ffi as eth_ffi;
 use redshirt_syscalls::ffi::DecodedInterfaceOrDestroyed;
 use redshirt_syscalls::{Decode as _, MessageId};
 use redshirt_tcp_interface::ffi as tcp_ffi;
@@ -33,8 +33,8 @@ fn main() {
 }
 
 async fn async_main() {
-    // Register the network and tcp interfaces.
-    redshirt_interface_interface::register_interface(net_ffi::INTERFACE)
+    // Register the ethernet and TCP interfaces.
+    redshirt_interface_interface::register_interface(eth_ffi::INTERFACE)
         .await
         .unwrap();
     redshirt_interface_interface::register_interface(tcp_ffi::INTERFACE)
@@ -52,7 +52,7 @@ async fn async_main() {
             future::Either::Left((DecodedInterfaceOrDestroyed::Interface(msg), _)) => msg,
             future::Either::Left((DecodedInterfaceOrDestroyed::ProcessDestroyed(_), _)) => {
                 continue;
-                // TODO: unimplemented!()
+                // TODO: unimplemented
             }
             future::Either::Right((
                 NetworkManagerEvent::EthernetCableOut(id, msg_id, mut buffer),
@@ -115,30 +115,26 @@ async fn async_main() {
                 tcp_ffi::TcpMessage::Read(_) => unimplemented!(),
                 tcp_ffi::TcpMessage::Write(_) => unimplemented!(),
             }
-        } else if msg.interface == net_ffi::INTERFACE {
-            let msg_data = net_ffi::NetworkMessage::decode(msg.actual_data).unwrap();
-            /*redshirt_log_interface::log(
-                redshirt_log_interface::Level::Debug,
-                &format!("message: {:?}", msg_data),
-            );*/
+        } else if msg.interface == eth_ffi::INTERFACE {
+            let msg_data = eth_ffi::NetworkMessage::decode(msg.actual_data).unwrap();
+            log::debug!("message: {:?}", msg_data);
 
             match msg_data {
-                net_ffi::NetworkMessage::RegisterInterface { id, mac_address } => {
+                eth_ffi::NetworkMessage::RegisterInterface { id, mac_address } => {
                     network
                         .register_interface((msg.emitter_pid, id), mac_address, None::<MessageId>)
                         .await;
                 }
-                net_ffi::NetworkMessage::UnregisterInterface(id) => {
+                eth_ffi::NetworkMessage::UnregisterInterface(id) => {
                     network.unregister_interface(&(msg.emitter_pid, id));
                 }
-                net_ffi::NetworkMessage::InterfaceOnData(id, buf) => {
-                    //log::trace!("Incoming data: {:?}", buf);
+                eth_ffi::NetworkMessage::InterfaceOnData(id, buf) => {
                     network.inject_interface_data(&(msg.emitter_pid, id), buf);
                     if let Some(message_id) = msg.message_id {
                         redshirt_syscalls::emit_answer(message_id, &());
                     }
                 }
-                net_ffi::NetworkMessage::InterfaceWaitData(id) => {
+                eth_ffi::NetworkMessage::InterfaceWaitData(id) => {
                     let data = network.read_ethernet_cable_out(&(msg.emitter_pid, id));
                     if !data.is_empty() {
                         // TODO: don't unwrap message_id

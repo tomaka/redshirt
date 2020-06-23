@@ -162,6 +162,7 @@ impl<'a> PacketFromNetwork<'a> {
                 .emit_with_response_raw(&ffi::INTERFACE)
                 .unwrap();
             let fut = redshirt_syscalls::message_response(msg_id);
+            println!("sent message");
             *self.send_future = Some(fut);
         }
     }

@@ -38,3 +38,59 @@ pub fn get_pci_devices() -> impl Future<Output = Vec<PciDeviceInfo>> {
             .map(|response: ffi::GetDevicesListResponse| response.devices)
     }
 }
+
+// TODO: provide a good API for all this
+
+/// Active lock of a PCI device.
+///
+/// While this struct is alive, no other program can lock that same PCI device.
+pub struct PciDeviceLock {
+    device: ffi::PciDeviceBdf,
+}
+
+impl PciDeviceLock {
+    // TODO: shouldn't be public?
+    pub async fn lock(bdf: ffi::PciDeviceBdf) -> Result<Self, ()> {
+        let result: Result<(), ()> = unsafe {
+            let msg = ffi::PciMessage::LockDevice(bdf.clone());
+            redshirt_syscalls::emit_message_with_response(&ffi::INTERFACE, msg).unwrap().await
+        };
+
+        result?;
+
+        Ok(PciDeviceLock {
+            device: bdf,
+        })
+    }
+
+    /// Waits until the device produces an interrupt.
+    ///
+    /// The returned future is disconnected from the [`PciDeviceLock`]. However, polling the
+    /// future after its corresponding [`PciDeviceLock`] has been destroyed will panic.
+    pub fn next_interrupt(&self) -> impl Future<Output = ()> + Send + 'static {
+        let bdf = self.device.clone();
+
+        async move {
+            let msg = ffi::PciMessage::NextInterrupt(bdf);
+            unsafe { redshirt_syscalls::emit_message_with_response(&ffi::INTERFACE, msg) }
+                .unwrap()
+                .map(|response: ffi::NextInterruptResponse| {
+                    match response {
+                        ffi::NextInterruptResponse::Interrupt => {},
+                        ffi::NextInterruptResponse::BadDevice => panic!(),
+                        ffi::NextInterruptResponse::Unlocked => unreachable!(),
+                    }
+                })
+                .await
+        }
+    }
+}
+
+impl Drop for PciDeviceLock {
+    fn drop(&mut self) {
+        unsafe {
+            let msg = ffi::PciMessage::UnlockDevice(self.device.clone());
+            redshirt_syscalls::emit_message_without_response(&ffi::INTERFACE, msg).unwrap();
+        }
+    }
+}

@@ -53,7 +53,7 @@ pub struct Device {
     /// Information necessary for reading a packet.
     reading: Mutex<DeviceReading>,
     /// Information necessary for writing a packet.
-    writing: RefCell<DeviceWriting>,
+    writing: Mutex<DeviceWriting>,
 }
 
 /// Base information about the device. Immutable. Shared between the reading and writing side.
@@ -145,20 +145,6 @@ impl Device {
             ]
         };
 
-        // TODO: remove
-        redshirt_log_interface::emit_log(
-            redshirt_log_interface::Level::Info,
-            &format!(
-                "MAC: {:x} {:x} {:x} {:x} {:x} {:x}",
-                mac_address[0],
-                mac_address[1],
-                mac_address[2],
-                mac_address[3],
-                mac_address[4],
-                mac_address[5]
-            ),
-        );
-
         // Start page address of the packet to be transmitted.
         redshirt_hardware_interface::port_write_u8(base_port + 4, 0x40);
 
@@ -205,7 +191,7 @@ impl Device {
                 base_port,
                 mac_address,
             },
-            writing: RefCell::new(DeviceWriting {
+            writing: Mutex::new(DeviceWriting {
                 next_write_page: WRITE_BUFFER_PAGES.start,
                 pending_packet: None,
                 pending_transmit: SmallVec::new(),
@@ -253,7 +239,6 @@ impl Device {
         };
 
         // We compare `CURR` with `reading.next_to_read` to know whether there is available data.
-        //println!("curr = {:?} ; next = {:?}", curr_register, reading.next_to_read);
         if curr_register == reading.next_to_read {
             return None;
         }
@@ -336,8 +321,8 @@ impl Device {
     ///
     /// Panics if the packet is too large.
     ///
-    pub unsafe fn send_packet(&self, packet: impl Into<Vec<u8>>) -> Result<(), ()> {
-        let mut writing = self.writing.borrow_mut();
+    pub async unsafe fn send_packet(&self, packet: impl Into<Vec<u8>>) -> Result<(), ()> {
+        let mut writing = self.writing.lock().await;
 
         if writing.pending_packet.is_some() {
             return Err(());
@@ -352,28 +337,35 @@ impl Device {
         Ok(())
     }
 
-    // TODO:
-    /*pub async unsafe fn on_interrupt(&mut self) {
+    /// Must be called when the device generates an interrupt.
+    ///
+    /// Returns a packet of data received from the network, if any.
+    pub async unsafe fn on_interrupt(&self) -> Option<Vec<u8>> {
+        // We use `writing` as a lock to prevent multiple simultaneous calls to `on_interrupt`.
+        let mut writing = self.writing.lock().await;
+
         // Read the ISR (Interrupt Status Register) to determine why an interrupt has been raised.
-        let status = redshirt_hardware_interface::port_read_u8(self.base_port + 7).await;
+        let status = redshirt_hardware_interface::port_read_u8(self.base.base_port + 7).await;
         // Write back the same status in order to clear the bits and allow further interrupts to
         // happen.
-        redshirt_hardware_interface::port_write_u8(self.base_port + 7, status);
-
-        if (status & (1 << 0)) != 0 {
-            // Packet received with no error.
-            if let Some(packet) = self.read_one_incoming().await {
-                // TODO: implement
-            }
-        }
+        redshirt_hardware_interface::port_write_u8(self.base.base_port + 7, status);
 
         if (status & (1 << 1)) != 0 || (status & (1 << 3)) != 0 {
             // Packet transmission successful or aborted. We don't treat the "aborted" situation
             // differently than the successful situation.
-            self.transmitting = None;
-            self.flush_out();
+            writing.transmitting = None;
+            flush_out(&self.base, &mut writing);
         }
-    }*/
+
+        if (status & (1 << 0)) != 0 {
+            // Packet received with no error.
+            if let Some(packet) = self.read_one_incoming().await {
+                return Some(packet);
+            }
+        }
+
+        None
+    }
 }
 
 impl fmt::Debug for Device {

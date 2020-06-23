@@ -1349,7 +1349,6 @@ dependencies = [
  "redshirt-ethernet-interface",
  "redshirt-hardware-interface",
  "redshirt-interface-interface",
- "redshirt-log-interface",
  "redshirt-pci-interface",
  "redshirt-random-interface",
  "redshirt-syscalls",
