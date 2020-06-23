@@ -47,6 +47,8 @@ where
     /// Initializes a new `Kernel`.
     pub fn init(platform_specific: TPlat) -> Self {
         let platform_specific = Arc::pin(platform_specific);
+
+        // TODO: don't do this on platforms that don't have PCI?
         let pci_devices = unsafe { crate::pci::pci::init_cam_pci() };
 
         let mut system_builder = redshirt_core::system::SystemBuilder::new()
@@ -57,7 +59,10 @@ where
             .with_native_program(crate::random::native::RandomNativeProgram::new(
                 platform_specific.clone(),
             ))
-            .with_native_program(crate::pci::native::PciNativeProgram::new(pci_devices))
+            .with_native_program(crate::pci::native::PciNativeProgram::new(
+                pci_devices,
+                platform_specific.clone(),
+            ))
             .with_native_program(crate::klog::KernelLogNativeProgram::new(
                 platform_specific.clone(),
             ))
