@@ -55,19 +55,25 @@ async fn async_main() {
                 })
                 .next();
 
-            if let Some(port_number) = port_number {
-                let device = unsafe { device::Device::reset(port_number) }.await;
-                let registered_device_id = redshirt_random_interface::generate_u64().await;
-                let registration = interface::register_interface(interface::InterfaceConfig {
-                    mac_address: device.mac_address(),
-                })
-                .await;
-                ne2k_devices.push((registration, device));
-                redshirt_log_interface::emit_log(
-                    redshirt_log_interface::Level::Info,
-                    &format!("Initialized ne2000 at 0x{:x}", port_number),
-                );
-            }
+            let port_number = match port_number {
+                Some(p) => p,
+                None => continue,
+            };
+
+            let pci_lock = match redshirt_pci_interface::PciDeviceLock::lock(device.location).await
+            {
+                Ok(l) => l,
+                // PCI device is already handled by a different driver.
+                Err(_) => continue,
+            };
+
+            let device = unsafe { device::Device::reset(port_number) }.await;
+            let registered_device_id = redshirt_random_interface::generate_u64().await;
+            let registration = interface::register_interface(interface::InterfaceConfig {
+                mac_address: device.mac_address(),
+            })
+            .await;
+            ne2k_devices.push((registration, pci_lock, device));
         }
     }
 
@@ -78,24 +84,27 @@ async fn async_main() {
     ne2k_devices.shrink_to_fit();
 
     let mut tasks = stream::FuturesUnordered::new();
-    for (registration, device) in &ne2k_devices {
+    for (registration, pci_lock, device) in &ne2k_devices {
         tasks.push(
             async move {
-                let packet = registration.packet_to_send().await;
-                unsafe {
-                    device.send_packet(packet).unwrap();
-                } // TODO: unwrap?
+                loop {
+                    let packet = registration.packet_to_send().await;
+                    unsafe {
+                        device.send_packet(packet).await.unwrap();
+                    } // TODO: unwrap?
+                }
             }
             .boxed_local(),
         );
 
         tasks.push(
             async move {
-                // TODO: wake up only on interrupt
                 loop {
-                    if let Some(packet) = unsafe { device.read_one_incoming().await } {
+                    if let Some(packet) = unsafe { device.on_interrupt().await } {
                         registration.packet_from_network().await.send(packet)
                     }
+
+                    pci_lock.next_interrupt().await;
                 }
             }
             .boxed_local(),
