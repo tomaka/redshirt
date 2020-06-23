@@ -22,6 +22,7 @@ use redshirt_syscalls::ffi::DecodedInterfaceOrDestroyed;
 use redshirt_syscalls::{Decode as _, MessageId};
 use redshirt_tcp_interface::ffi as tcp_ffi;
 use std::{
+    collections::VecDeque,
     mem,
     net::{Ipv6Addr, SocketAddr},
     time::Duration,
@@ -41,7 +42,7 @@ async fn async_main() {
         .await
         .unwrap();
 
-    let mut network = NetworkManager::<_, Option<MessageId>>::new();
+    let mut network = NetworkManager::<_, VecDeque<MessageId>>::new();
     let mut sockets = HashMap::<_, _, FnvBuildHasher>::default();
     let mut next_socket_id = 0u32;
 
@@ -58,7 +59,7 @@ async fn async_main() {
                 NetworkManagerEvent::EthernetCableOut(id, msg_id, mut buffer),
                 _,
             )) => {
-                if let Some(msg_id) = msg_id.take() {
+                if let Some(msg_id) = msg_id.pop_front() {
                     debug_assert!(!buffer.is_empty());
                     //log::trace!("Emitting {:?}", data); // TODO: remove
                     redshirt_syscalls::emit_answer(msg_id, &buffer);
@@ -122,7 +123,7 @@ async fn async_main() {
             match msg_data {
                 eth_ffi::NetworkMessage::RegisterInterface { id, mac_address } => {
                     network
-                        .register_interface((msg.emitter_pid, id), mac_address, None::<MessageId>)
+                        .register_interface((msg.emitter_pid, id), mac_address, VecDeque::new())
                         .await;
                 }
                 eth_ffi::NetworkMessage::UnregisterInterface(id) => {
@@ -140,10 +141,10 @@ async fn async_main() {
                         // TODO: don't unwrap message_id
                         redshirt_syscalls::emit_answer(msg.message_id.unwrap(), &data);
                     } else {
-                        // TODO: check if already set
                         // TODO: don't unwrap message_id
-                        *network.interface_user_data(&(msg.emitter_pid, id)) =
-                            Some(msg.message_id.unwrap());
+                        network
+                            .interface_user_data(&(msg.emitter_pid, id))
+                            .push_back(msg.message_id.unwrap());
                     }
                 }
             }
