@@ -170,6 +170,7 @@ pub fn build_wasm_module(tokens: proc_macro::TokenStream) -> proc_macro::TokenSt
         .args(&["--target", "wasm32-wasi"])
         .arg("--")
         .args(&["-C", "link-arg=--export-table"])
+        .args(&["-C", "link-arg=--import-memory"])
         .current_dir(&wasm_crate_path)
         .status()
         .unwrap();
