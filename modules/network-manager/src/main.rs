@@ -59,10 +59,9 @@ async fn async_main() {
                 _,
             )) => {
                 if let Some(msg_id) = msg_id.take() {
-                    let data = mem::replace(buffer, Vec::new());
-                    debug_assert!(!data.is_empty());
-                    log::trace!("Emitting {:?}", data);
-                    redshirt_syscalls::emit_answer(msg_id, &data);
+                    debug_assert!(!buffer.is_empty());
+                    //log::trace!("Emitting {:?}", data); // TODO: remove
+                    redshirt_syscalls::emit_answer(msg_id, &buffer);
                 } else {
                     panic!("message_out but no message"); // TODO:
                 }
@@ -73,6 +72,7 @@ async fn async_main() {
 
         if msg.interface == tcp_ffi::INTERFACE {
             let msg_data = tcp_ffi::TcpMessage::decode(msg.actual_data).unwrap();
+            // TODO: remove
             /*redshirt_log_interface::log(
                 redshirt_log_interface::Level::Debug,
                 &format!("message: {:?}", msg_data),
