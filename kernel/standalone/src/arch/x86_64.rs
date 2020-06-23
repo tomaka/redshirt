@@ -544,7 +544,11 @@ impl Future for NextIrqFuture {
         {
             let mut next_irq_futures = self.next_irq_futures.lock();
             match next_irq_futures.entry(self.id) {
-                Entry::Occupied(mut e) => e.get_mut().1 = cx.waker().clone(), // TODO: compare waker before cloning
+                Entry::Occupied(mut e) => {
+                    if !e.get().1.will_wake(cx.waker()) {
+                        e.get_mut().1 = cx.waker().clone();
+                    }
+                }
                 Entry::Vacant(e) => {
                     e.insert((self.done.clone(), cx.waker().clone()));
                 }
