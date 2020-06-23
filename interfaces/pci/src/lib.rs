@@ -53,14 +53,14 @@ impl PciDeviceLock {
     pub async fn lock(bdf: ffi::PciDeviceBdf) -> Result<Self, ()> {
         let result: Result<(), ()> = unsafe {
             let msg = ffi::PciMessage::LockDevice(bdf.clone());
-            redshirt_syscalls::emit_message_with_response(&ffi::INTERFACE, msg).unwrap().await
+            redshirt_syscalls::emit_message_with_response(&ffi::INTERFACE, msg)
+                .unwrap()
+                .await
         };
 
         result?;
 
-        Ok(PciDeviceLock {
-            device: bdf,
-        })
+        Ok(PciDeviceLock { device: bdf })
     }
 
     /// Waits until the device produces an interrupt.
@@ -74,12 +74,10 @@ impl PciDeviceLock {
             let msg = ffi::PciMessage::NextInterrupt(bdf);
             unsafe { redshirt_syscalls::emit_message_with_response(&ffi::INTERFACE, msg) }
                 .unwrap()
-                .map(|response: ffi::NextInterruptResponse| {
-                    match response {
-                        ffi::NextInterruptResponse::Interrupt => {},
-                        ffi::NextInterruptResponse::BadDevice => panic!(),
-                        ffi::NextInterruptResponse::Unlocked => unreachable!(),
-                    }
+                .map(|response: ffi::NextInterruptResponse| match response {
+                    ffi::NextInterruptResponse::Interrupt => {}
+                    ffi::NextInterruptResponse::BadDevice => panic!(),
+                    ffi::NextInterruptResponse::Unlocked => unreachable!(),
                 })
                 .await
         }

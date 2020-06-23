@@ -90,6 +90,8 @@ const READ_BUFFER_PAGES: Range<u8> = 0x4c..0x60;
 /// Range of pages that we use for the write ring buffer.
 const WRITE_BUFFER_PAGES: Range<u8> = 0x40..0x4c;
 
+// TODO: many of the methods below are unsafe ; document why or remove the unsafe attribute
+
 impl Device {
     /// Assumes that an ne2000 device is mapped starting at `base_port` and reinitializes it
     /// to a starting state.
@@ -102,7 +104,7 @@ impl Device {
 
         // Wait for reset to be complete.
         {
-            let timeout = future::pending::<()>(); // TODO: doesn't work Delay::new(Duration::from_secs(5));
+            let timeout = Delay::new(Duration::from_secs(5));
             let try_reset = async move {
                 loop {
                     let val = redshirt_hardware_interface::port_read_u8(base_port + 7).await;

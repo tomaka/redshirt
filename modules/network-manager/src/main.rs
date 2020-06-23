@@ -117,7 +117,7 @@ async fn async_main() {
             }
         } else if msg.interface == eth_ffi::INTERFACE {
             let msg_data = eth_ffi::NetworkMessage::decode(msg.actual_data).unwrap();
-            log::debug!("message: {:?}", msg_data);
+            //log::debug!("message: {:?}", msg_data);
 
             match msg_data {
                 eth_ffi::NetworkMessage::RegisterInterface { id, mac_address } => {

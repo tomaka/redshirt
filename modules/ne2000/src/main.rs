@@ -60,7 +60,8 @@ async fn async_main() {
                 None => continue,
             };
 
-            let pci_lock = match redshirt_pci_interface::PciDeviceLock::lock(device.location).await {
+            let pci_lock = match redshirt_pci_interface::PciDeviceLock::lock(device.location).await
+            {
                 Ok(l) => l,
                 // PCI device is already handled by a different driver.
                 Err(_) => continue,

@@ -300,7 +300,7 @@ impl<TSockUd> NetInterfaceState<TSockUd> {
                         log::trace!("Error while polling DHCP client: {:?}", err);
                     }
                     Ok(None) => {}
-                    Ok(Some(config)) => panic!("got result: {:?}", config),
+                    Ok(Some(config)) => log::info!("got result: {:?}", config),
                 }
             }
 
