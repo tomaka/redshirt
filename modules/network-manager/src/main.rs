@@ -68,7 +68,16 @@ async fn async_main() {
                 }
                 continue;
             }
-            _ => unimplemented!(), // TODO:
+            future::Either::Right((NetworkManagerEvent::TcpConnected(socket), _)) => {
+                unimplemented!()
+            }
+            future::Either::Right((NetworkManagerEvent::TcpClosed(socket), _)) => unimplemented!(),
+            future::Either::Right((NetworkManagerEvent::TcpReadReady(socket), _)) => {
+                unimplemented!()
+            }
+            future::Either::Right((NetworkManagerEvent::TcpWriteFinished(socket), _)) => {
+                unimplemented!()
+            }
         };
 
         if msg.interface == tcp_ffi::INTERFACE {

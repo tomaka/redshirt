@@ -187,10 +187,14 @@ struct SocketState<TSockUd> {
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConnectError {
-    #[error("No route available for this destination")]
-    NoRoute,
     #[error("No port available")]
     NoPortAvailable,
+    #[error("The specific port requested isn't available")]
+    PortNotAvailable,
+    #[error("The destination IP cannot be 0.0.0.0 or [::]")]
+    UnspecifiedDestinationIp,
+    #[error("The destination port cannot be 0")]
+    UnspecifiedDestinationPort,
 }
 
 /// Opaque identifier of a socket within a [`NetInterfaceState`].
@@ -318,9 +322,29 @@ impl<TSockUd> NetInterfaceState<TSockUd> {
         };
 
         if listen {
+            let mut addr = addr.clone();
+            assert!(!addr.ip().is_multicast()); // TODO: ?
+            if addr.port() == 0 {
+                addr.set_port(
+                    self.tcp_ports_assign
+                        .reserve_any(1024)
+                        .ok_or(ConnectError::NoPortAvailable)?,
+                );
+            } else {
+                self.tcp_ports_assign
+                    .reserve(addr.port())
+                    .map_err(|()| ConnectError::PortNotAvailable)?;
+            }
             // `listen` can only fail if the socket was misconfigured.
-            socket.listen(addr.clone()).unwrap();
+            socket.listen(addr).unwrap();
         } else {
+            if addr.port() == 0 {
+                return Err(ConnectError::UnspecifiedDestinationPort);
+            }
+            if addr.ip().is_unspecified() {
+                return Err(ConnectError::UnspecifiedDestinationIp);
+            }
+            assert!(!addr.ip().is_multicast()); // TODO: not supported? or is it?
             let port = self
                 .tcp_ports_assign
                 .reserve_any(1024)
@@ -430,7 +454,6 @@ impl<TSockUd> NetInterfaceState<TSockUd> {
 
                 // Check if this socket got connected.
                 if !socket_state.is_connected && smoltcp_socket.may_send() {
-                    panic!("connected! yay, success"); // TODO: remove
                     socket_state.is_connected = true;
                     return NetInterfaceEventStatic::TcpConnected(*socket_id);
                 }
