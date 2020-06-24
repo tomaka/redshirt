@@ -34,8 +34,6 @@ use redshirt_core::{build_wasm_module, System};
 /// Main struct of this crate. Runs everything.
 pub struct Kernel<TPlat> {
     system: System<'static>,
-    /// If true, the kernel has started running from a different thread already.
-    running: AtomicBool,
     /// Phantom data so that we can keep the platform specific generic parameter.
     marker: PhantomData<TPlat>,
 }
@@ -90,20 +88,12 @@ where
 
         Kernel {
             system: system_builder.build().expect("failed to start kernel"),
-            running: AtomicBool::new(false),
             marker: PhantomData,
         }
     }
 
     /// Run the kernel. Must be called once per CPU.
     pub async fn run(&self) -> ! {
-        // TODO: we only run on a single CPU for now, to be cautious
-        if self.running.swap(true, Ordering::SeqCst) {
-            loop {
-                futures::future::poll_fn(|_| core::task::Poll::Pending).await
-            }
-        }
-
         loop {
             match self.system.run().await {
                 redshirt_core::system::SystemRunOutcome::ProgramFinished { .. } => {}

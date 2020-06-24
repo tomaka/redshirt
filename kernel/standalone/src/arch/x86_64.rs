@@ -555,7 +555,14 @@ impl Future for NextIrqFuture {
 
         {
             let mut next_irq_futures = self.next_irq_futures.lock();
-            let entry = next_irq_futures.get_mut(&self.id).unwrap();
+            let entry = match next_irq_futures.get_mut(&self.id) {
+                Some(e) => e,
+                None => {
+                    // TODO: debug_assert! instead
+                    assert!(self.done.load(atomic::Ordering::SeqCst));
+                    return Poll::Ready(());
+                }
+            };
             if entry.1.as_ref().map_or(true, |w| !w.will_wake(cx.waker())) {
                 entry.1 = Some(cx.waker().clone());
             }
