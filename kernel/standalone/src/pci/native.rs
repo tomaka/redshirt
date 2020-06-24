@@ -15,10 +15,15 @@
 
 //! Native program that handles the `pci` interface.
 
-use crate::{arch::PlatformSpecific, pci::pci};
+use crate::{arch::PlatformSpecific, future_channel, pci::pci};
 
 use alloc::{boxed::Box, collections::VecDeque, sync::Arc, vec, vec::Vec};
-use core::{convert::TryFrom as _, pin::Pin, sync::atomic};
+use core::{
+    convert::TryFrom as _,
+    pin::Pin,
+    sync::atomic,
+    task::{Context, Poll},
+};
 use crossbeam_queue::SegQueue;
 use futures::prelude::*;
 use rand_core::RngCore as _;
@@ -42,9 +47,10 @@ pub struct PciNativeProgram<TPlat> {
 
     /// If true, we have sent the interface registration message.
     registered: atomic::AtomicBool,
-    /// Message responses waiting to be emitted.
-    // TODO: must notify the next_event future
-    pending_messages: SegQueue<(MessageId, Result<EncodedMessage, ()>)>,
+    /// Sending side of `pending_messages`.
+    pending_messages_tx: future_channel::UnboundedSender<(MessageId, Result<EncodedMessage, ()>)>,
+    /// List of messages waiting to be emitted with `next_event`.
+    pending_messages: future_channel::UnboundedReceiver<(MessageId, Result<EncodedMessage, ()>)>,
 }
 
 #[derive(Debug)]
@@ -65,13 +71,16 @@ where
         let next_irq =
             Spinlock::new(Box::pin(TPlat::next_irq(platform_specific.as_ref())) as Pin<Box<_>>);
 
+        let (pending_messages_tx, pending_messages) = future_channel::channel();
+
         PciNativeProgram {
             platform_specific,
             next_irq,
             devices,
             locked_devices: Spinlock::new(Vec::new()),
             registered: atomic::AtomicBool::new(false),
-            pending_messages: SegQueue::new(),
+            pending_messages_tx,
+            pending_messages,
         }
     }
 }
@@ -85,54 +94,61 @@ where
     type MessageIdWrite = DummyMessageIdWrite;
 
     fn next_event(self) -> Self::Future {
-        // Register ourselves as the PCI interface provider, if not already done.
-        if !self.registered.swap(true, atomic::Ordering::Relaxed) {
-            return Box::pin(future::ready(NativeProgramEvent::Emit {
-                interface: redshirt_interface_interface::ffi::INTERFACE,
-                message_id_write: None,
-                message: redshirt_interface_interface::ffi::InterfaceMessage::Register(
-                    ffi::INTERFACE,
-                )
-                .encode(),
-            }));
-        }
+        Box::pin(async move {
+            // Register ourselves as the PCI interface provider, if not already done.
+            if !self.registered.swap(true, atomic::Ordering::Relaxed) {
+                return NativeProgramEvent::Emit {
+                    interface: redshirt_interface_interface::ffi::INTERFACE,
+                    message_id_write: None,
+                    message: redshirt_interface_interface::ffi::InterfaceMessage::Register(
+                        ffi::INTERFACE,
+                    )
+                    .encode(),
+                };
+            }
 
-        if let Ok((message_id, answer)) = self.pending_messages.pop() {
-            Box::pin(future::ready(NativeProgramEvent::Answer {
-                message_id,
-                answer,
-            }))
-        } else {
-            let next_irq = &self.next_irq;
-            let locked_devices = &self.locked_devices;
-            let platform_specific = &self.platform_specific;
-
-            Box::pin(async move {
-                loop {
-                    if let Ok((message_id, answer)) = self.pending_messages.pop() {
-                        return NativeProgramEvent::Answer { message_id, answer };
+            loop {
+                // Wait either for next IRQ or next pending message.
+                let ev = future::poll_fn(move |cx| {
+                    if let Poll::Ready(()) = Future::poll(Pin::new(&mut *self.next_irq.lock()), cx)
+                    {
+                        return Poll::Ready(None);
                     }
 
-                    // Wait for next IRQ.
-                    future::poll_fn(move |cx| Future::poll(Pin::new(&mut *next_irq.lock()), cx))
-                        .await;
-
-                    let mut locked_devices = locked_devices.lock();
-                    for device in locked_devices.iter_mut() {
-                        for msg in device.next_interrupt_messages.drain(..) {
-                            let answer =
-                                redshirt_pci_interface::ffi::NextInterruptResponse::Interrupt
-                                    .encode();
-                            self.pending_messages.push((msg, Ok(answer)));
-                        }
+                    if let Poll::Ready((message_id, answer)) = self.pending_messages.poll_next(cx) {
+                        return Poll::Ready(Some(NativeProgramEvent::Answer {
+                            message_id,
+                            answer,
+                        }));
                     }
-                    drop(locked_devices);
 
-                    *next_irq.lock() =
-                        Box::pin(TPlat::next_irq(platform_specific.as_ref())) as Pin<Box<_>>;
+                    Poll::Pending
+                })
+                .await;
+
+                // Message received on `pending_messages`.
+                if let Some(ev) = ev {
+                    return ev;
                 }
-            })
-        }
+
+                // We reach here only if an IRQ happened.
+
+                // We grab the next IRQ future now, in order to not miss any IRQ happening
+                // while `locked_devices` is processed below.
+                *self.next_irq.lock() =
+                    Box::pin(TPlat::next_irq(self.platform_specific.as_ref())) as Pin<Box<_>>;
+
+                // Wake up all the devices.
+                let mut locked_devices = self.locked_devices.lock();
+                for device in locked_devices.iter_mut() {
+                    for msg in device.next_interrupt_messages.drain(..) {
+                        let answer =
+                            redshirt_pci_interface::ffi::NextInterruptResponse::Interrupt.encode();
+                        self.pending_messages_tx.unbounded_send((msg, Ok(answer)));
+                    }
+                }
+            }
+        })
     }
 
     fn interface_message(
@@ -149,8 +165,8 @@ where
                 let mut locked_devices = self.locked_devices.lock();
                 if locked_devices.iter().any(|dev| dev.bdf == bdf) {
                     if let Some(message_id) = message_id {
-                        self.pending_messages
-                            .push((message_id, Ok(Result::<(), _>::Err(()).encode())));
+                        self.pending_messages_tx
+                            .unbounded_send((message_id, Ok(Result::<(), _>::Err(()).encode())));
                     }
                 } else {
                     // TODO: check device validity
@@ -161,8 +177,8 @@ where
                     });
 
                     if let Some(message_id) = message_id {
-                        self.pending_messages
-                            .push((message_id, Ok(Result::<_, ()>::Ok(()).encode())));
+                        self.pending_messages_tx
+                            .unbounded_send((message_id, Ok(Result::<_, ()>::Ok(()).encode())));
                     }
                 }
             }
@@ -175,8 +191,8 @@ where
                 {
                     let locked_device = locked_devices.remove(pos);
                     for m in locked_device.next_interrupt_messages {
-                        self.pending_messages
-                            .push((m, Ok(ffi::NextInterruptResponse::Unlocked.encode())));
+                        self.pending_messages_tx
+                            .unbounded_send((m, Ok(ffi::NextInterruptResponse::Unlocked.encode())));
                     }
                 }
             }
@@ -191,7 +207,7 @@ where
                     {
                         dev.next_interrupt_messages.push_back(message_id);
                     } else {
-                        self.pending_messages.push((
+                        self.pending_messages_tx.unbounded_send((
                             message_id,
                             Ok(ffi::NextInterruptResponse::BadDevice.encode()),
                         ));
@@ -236,8 +252,8 @@ where
                             .collect(),
                     };
 
-                    self.pending_messages
-                        .push((message_id, Ok(response.encode())));
+                    self.pending_messages_tx
+                        .unbounded_send((message_id, Ok(response.encode())));
                 }
             }
 
@@ -245,7 +261,8 @@ where
 
             Err(_) => {
                 if let Some(message_id) = message_id {
-                    self.pending_messages.push((message_id, Err(())))
+                    self.pending_messages_tx
+                        .unbounded_send((message_id, Err(())))
                 }
             }
         }
