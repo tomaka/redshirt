@@ -17,7 +17,10 @@
 
 use alloc::sync::Arc;
 use core::sync::atomic;
-use futures::{prelude::*, task::{AtomicWaker, Context, Poll}};
+use futures::{
+    prelude::*,
+    task::{AtomicWaker, Context, Poll},
+};
 use hashbrown::HashMap;
 use spinning_top::Spinlock;
 
@@ -28,8 +31,13 @@ pub fn channel<T>() -> (UnboundedSender<T>, UnboundedReceiver<T>) {
         wakers: Spinlock::new(HashMap::with_capacity_and_hasher(1, Default::default())),
     });
 
-    let tx = UnboundedSender { shared: shared.clone() };
-    let rx = UnboundedReceiver { id: 0, shared: shared.clone() };
+    let tx = UnboundedSender {
+        shared: shared.clone(),
+    };
+    let rx = UnboundedReceiver {
+        id: 0,
+        shared: shared.clone(),
+    };
     (tx, rx)
 }
 
@@ -82,7 +90,10 @@ impl<T> UnboundedReceiver<T> {
 
         {
             let mut wakers = self.shared.wakers.lock();
-            wakers.entry(self.id).or_insert(AtomicWaker::new()).register(cx.waker());
+            wakers
+                .entry(self.id)
+                .or_insert(AtomicWaker::new())
+                .register(cx.waker());
         }
 
         if let Ok(item) = self.shared.queue.pop() {
@@ -95,7 +106,10 @@ impl<T> UnboundedReceiver<T> {
 
 impl<T> Clone for UnboundedReceiver<T> {
     fn clone(&self) -> Self {
-        let id = self.shared.next_receiver_id.fetch_add(1, atomic::Ordering::Relaxed);
+        let id = self
+            .shared
+            .next_receiver_id
+            .fetch_add(1, atomic::Ordering::Relaxed);
 
         UnboundedReceiver {
             id,

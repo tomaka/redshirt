@@ -74,17 +74,16 @@ where
                 return NativeProgramEvent::Emit {
                     interface: redshirt_interface_interface::ffi::INTERFACE,
                     message_id_write: None,
-                    message: redshirt_interface_interface::ffi::InterfaceMessage::Register(INTERFACE)
-                        .encode(),
+                    message: redshirt_interface_interface::ffi::InterfaceMessage::Register(
+                        INTERFACE,
+                    )
+                    .encode(),
                 };
             }
 
             future::poll_fn(move |cx| {
                 if let Poll::Ready((message_id, answer)) = self.pending_messages.poll_next(cx) {
-                    return Poll::Ready(NativeProgramEvent::Answer {
-                        message_id,
-                        answer,
-                    });
+                    return Poll::Ready(NativeProgramEvent::Answer { message_id, answer });
                 }
 
                 let mut timers = self.timers.lock();
@@ -96,7 +95,8 @@ where
                     Poll::Ready(None) => unreachable!(),
                     Poll::Pending => Poll::Pending,
                 }
-            }).await
+            })
+            .await
         })
     }
 
@@ -127,7 +127,8 @@ where
                 )
             }
             Err(_) => {
-                self.pending_messages_tx.unbounded_send((message_id.unwrap(), Err(())));
+                self.pending_messages_tx
+                    .unbounded_send((message_id.unwrap(), Err(())));
             }
         }
     }

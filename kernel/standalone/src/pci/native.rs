@@ -18,7 +18,12 @@
 use crate::{arch::PlatformSpecific, future_channel, pci::pci};
 
 use alloc::{boxed::Box, collections::VecDeque, sync::Arc, vec, vec::Vec};
-use core::{convert::TryFrom as _, pin::Pin, sync::atomic, task::{Context, Poll}};
+use core::{
+    convert::TryFrom as _,
+    pin::Pin,
+    sync::atomic,
+    task::{Context, Poll},
+};
 use crossbeam_queue::SegQueue;
 use futures::prelude::*;
 use rand_core::RngCore as _;
@@ -105,7 +110,8 @@ where
             loop {
                 // Wait either for next IRQ or next pending message.
                 let ev = future::poll_fn(move |cx| {
-                    if let Poll::Ready(()) = Future::poll(Pin::new(&mut *self.next_irq.lock()), cx) {
+                    if let Poll::Ready(()) = Future::poll(Pin::new(&mut *self.next_irq.lock()), cx)
+                    {
                         return Poll::Ready(None);
                     }
 
@@ -117,7 +123,8 @@ where
                     }
 
                     Poll::Pending
-                }).await;
+                })
+                .await;
 
                 // Message received on `pending_messages`.
                 if let Some(ev) = ev {
@@ -131,8 +138,7 @@ where
                 for device in locked_devices.iter_mut() {
                     for msg in device.next_interrupt_messages.drain(..) {
                         let answer =
-                            redshirt_pci_interface::ffi::NextInterruptResponse::Interrupt
-                                .encode();
+                            redshirt_pci_interface::ffi::NextInterruptResponse::Interrupt.encode();
                         self.pending_messages_tx.unbounded_send((msg, Ok(answer)));
                     }
                 }
@@ -254,7 +260,8 @@ where
 
             Err(_) => {
                 if let Some(message_id) = message_id {
-                    self.pending_messages_tx.unbounded_send((message_id, Err(())))
+                    self.pending_messages_tx
+                        .unbounded_send((message_id, Err(())))
                 }
             }
         }
