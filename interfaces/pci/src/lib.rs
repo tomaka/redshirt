@@ -76,10 +76,16 @@ impl PciDeviceLock {
     pub fn next_interrupt(&self) -> impl Future<Output = ()> + Send + 'static {
         let bdf = self.device.clone();
 
-        async move {
+        // We send the message outside of the `async` block in order to be sure that the message
+        // gets sent before the user starts polling the `Future`.
+        let response = {
             let msg = ffi::PciMessage::NextInterrupt(bdf);
             unsafe { redshirt_syscalls::emit_message_with_response(&ffi::INTERFACE, msg) }
                 .unwrap()
+        };
+
+        async move {
+            response
                 .map(|response: ffi::NextInterruptResponse| match response {
                     ffi::NextInterruptResponse::Interrupt => {}
                     ffi::NextInterruptResponse::BadDevice => panic!(),
