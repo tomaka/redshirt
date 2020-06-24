@@ -15,7 +15,7 @@
 
 //! Implements the `time` interface.
 
-use crate::arch::PlatformSpecific;
+use crate::{arch::PlatformSpecific, future_channel};
 
 use alloc::{boxed::Box, sync::Arc};
 use core::{pin::Pin, sync::atomic, task::Poll};
@@ -32,9 +32,10 @@ pub struct TimeHandler<TPlat> {
     registered: atomic::AtomicBool,
     /// Platform-specific hooks.
     platform_specific: Pin<Arc<TPlat>>,
+    /// Sending side of `pending_messages`.
+    pending_messages_tx: future_channel::UnboundedSender<(MessageId, Result<EncodedMessage, ()>)>,
     /// List of messages waiting to be emitted with `next_event`.
-    // TODO: use futures channels
-    pending_messages: SegQueue<(MessageId, Result<EncodedMessage, ()>)>,
+    pending_messages: future_channel::UnboundedReceiver<(MessageId, Result<EncodedMessage, ()>)>,
     /// List of active timers.
     timers: Spinlock<FuturesUnordered<Pin<Box<dyn Future<Output = MessageId> + Send>>>>,
 }
@@ -44,12 +45,16 @@ impl<TPlat> TimeHandler<TPlat> {
     pub fn new(platform_specific: Pin<Arc<TPlat>>) -> Self {
         let timers = FuturesUnordered::new();
         // We don't want `timers` to ever produce `None`, so we push a dummy futures.
+        // TODO: remove that
         timers.push(future::pending().boxed());
+
+        let (pending_messages_tx, pending_messages) = future_channel::channel();
 
         TimeHandler {
             registered: atomic::AtomicBool::new(false),
             platform_specific,
-            pending_messages: SegQueue::new(),
+            pending_messages_tx,
+            pending_messages,
             timers: Spinlock::new(timers),
         }
     }
@@ -64,23 +69,23 @@ where
     type MessageIdWrite = DummyMessageIdWrite;
 
     fn next_event(self) -> Self::Future {
-        if !self.registered.swap(true, atomic::Ordering::Relaxed) {
-            return Box::pin(future::ready(NativeProgramEvent::Emit {
-                interface: redshirt_interface_interface::ffi::INTERFACE,
-                message_id_write: None,
-                message: redshirt_interface_interface::ffi::InterfaceMessage::Register(INTERFACE)
+        Box::pin(async move {
+            if !self.registered.swap(true, atomic::Ordering::Relaxed) {
+                return NativeProgramEvent::Emit {
+                    interface: redshirt_interface_interface::ffi::INTERFACE,
+                    message_id_write: None,
+                    message: redshirt_interface_interface::ffi::InterfaceMessage::Register(
+                        INTERFACE,
+                    )
                     .encode(),
-            }));
-        }
+                };
+            }
 
-        // TODO: wrong; if a message gets pushed, we don't wake up the task
-        if let Ok((message_id, answer)) = self.pending_messages.pop() {
-            Box::pin(future::ready(NativeProgramEvent::Answer {
-                message_id,
-                answer,
-            }))
-        } else {
-            Box::pin(future::poll_fn(move |cx| {
+            future::poll_fn(move |cx| {
+                if let Poll::Ready((message_id, answer)) = self.pending_messages.poll_next(cx) {
+                    return Poll::Ready(NativeProgramEvent::Answer { message_id, answer });
+                }
+
                 let mut timers = self.timers.lock();
                 match Stream::poll_next(Pin::new(&mut *timers), cx) {
                     Poll::Ready(Some(message_id)) => Poll::Ready(NativeProgramEvent::Answer {
@@ -90,8 +95,9 @@ where
                     Poll::Ready(None) => unreachable!(),
                     Poll::Pending => Poll::Pending,
                 }
-            }))
-        }
+            })
+            .await
+        })
     }
 
     fn interface_message(
@@ -106,8 +112,8 @@ where
         match TimeMessage::decode(message) {
             Ok(TimeMessage::GetMonotonic) => {
                 let now = self.platform_specific.as_ref().monotonic_clock();
-                self.pending_messages
-                    .push((message_id.unwrap(), Ok(now.encode())));
+                self.pending_messages_tx
+                    .unbounded_send((message_id.unwrap(), Ok(now.encode())));
             }
             Ok(TimeMessage::WaitMonotonic(value)) => {
                 let message_id = message_id.unwrap();
@@ -121,7 +127,8 @@ where
                 )
             }
             Err(_) => {
-                self.pending_messages.push((message_id.unwrap(), Err(())));
+                self.pending_messages_tx
+                    .unbounded_send((message_id.unwrap(), Err(())));
             }
         }
     }

@@ -32,6 +32,7 @@ extern crate alloc;
 extern crate rlibc; // TODO: necessary as a work-around for some linking issue; needs to be investigated
 
 mod arch;
+mod future_channel;
 mod hardware;
 mod kernel;
 mod klog;
