@@ -42,7 +42,7 @@ async fn async_main() {
         .await
         .unwrap();
 
-    let mut network = NetworkManager::<_, VecDeque<MessageId>>::new();
+    let mut network = NetworkManager::<_, VecDeque<MessageId>, _>::new();
     let mut sockets = HashMap::<_, _, FnvBuildHasher>::default();
     let mut next_socket_id = 0u32;
 
@@ -84,14 +84,18 @@ async fn async_main() {
             let msg_data = tcp_ffi::TcpMessage::decode(msg.actual_data).unwrap();
             match msg_data {
                 tcp_ffi::TcpMessage::Open(open_msg) => {
-                    let result = network.build_tcp_socket(open_msg.listen, &{
-                        let ip_addr = Ipv6Addr::from(open_msg.ip);
-                        if let Some(ip_addr) = ip_addr.to_ipv4() {
-                            SocketAddr::new(ip_addr.into(), open_msg.port)
-                        } else {
-                            SocketAddr::new(ip_addr.into(), open_msg.port)
-                        }
-                    });
+                    let result = network.build_tcp_socket(
+                        open_msg.listen,
+                        &{
+                            let ip_addr = Ipv6Addr::from(open_msg.ip);
+                            if let Some(ip_addr) = ip_addr.to_ipv4() {
+                                SocketAddr::new(ip_addr.into(), open_msg.port)
+                            } else {
+                                SocketAddr::new(ip_addr.into(), open_msg.port)
+                            }
+                        },
+                        (),
+                    );
 
                     let result = match result {
                         socket/*Ok(socket)*/ => {

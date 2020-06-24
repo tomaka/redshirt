@@ -314,7 +314,7 @@ impl<TSockUd> NetInterfaceState<TSockUd> {
         listen: bool,
         addr: &SocketAddr,
         user_data: TSockUd,
-    ) -> Result<TcpSocket<TSockUd>, ConnectError> {
+    ) -> Result<TcpSocket<TSockUd>, (ConnectError, TSockUd)> {
         let mut socket = {
             let rx_buf = smoltcp::socket::TcpSocketBuffer::new(vec![0; 1024]);
             let tx_buf = smoltcp::socket::TcpSocketBuffer::new(vec![0; 1024]);
@@ -325,30 +325,29 @@ impl<TSockUd> NetInterfaceState<TSockUd> {
             let mut addr = addr.clone();
             assert!(!addr.ip().is_multicast()); // TODO: ?
             if addr.port() == 0 {
-                addr.set_port(
-                    self.tcp_ports_assign
-                        .reserve_any(1024)
-                        .ok_or(ConnectError::NoPortAvailable)?,
-                );
+                addr.set_port(match self.tcp_ports_assign.reserve_any(1024) {
+                    Some(p) => p,
+                    None => return Err((ConnectError::NoPortAvailable, user_data)),
+                });
             } else {
-                self.tcp_ports_assign
-                    .reserve(addr.port())
-                    .map_err(|()| ConnectError::PortNotAvailable)?;
+                if let Err(()) = self.tcp_ports_assign.reserve(addr.port()) {
+                    return Err((ConnectError::PortNotAvailable, user_data));
+                }
             }
             // `listen` can only fail if the socket was misconfigured.
             socket.listen(addr).unwrap();
         } else {
             if addr.port() == 0 {
-                return Err(ConnectError::UnspecifiedDestinationPort);
+                return Err((ConnectError::UnspecifiedDestinationPort, user_data));
             }
             if addr.ip().is_unspecified() {
-                return Err(ConnectError::UnspecifiedDestinationIp);
+                return Err((ConnectError::UnspecifiedDestinationIp, user_data));
             }
             assert!(!addr.ip().is_multicast()); // TODO: not supported? or is it?
-            let port = self
-                .tcp_ports_assign
-                .reserve_any(1024)
-                .ok_or(ConnectError::NoPortAvailable)?;
+            let port = match self.tcp_ports_assign.reserve_any(1024) {
+                Some(p) => p,
+                None => return Err((ConnectError::NoPortAvailable, user_data)),
+            };
             // `connect` can only fail if the socket was misconfigured.
             socket.connect(addr.clone(), port).unwrap();
         }
