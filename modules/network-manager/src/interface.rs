@@ -43,6 +43,8 @@
 // TODO: write more docs ^
 // TODO: implement UDP
 
+use crate::port_assign;
+
 use fnv::FnvBuildHasher;
 use hashbrown::HashMap;
 use smoltcp::{dhcp::Dhcpv4Client, phy, time::Instant};
@@ -72,6 +74,9 @@ pub struct NetInterfaceState<TSockUd> {
 
     /// State of the sockets. Maintained in parallel with [`NetInterfaceState`].
     sockets_state: HashMap<SocketId, SocketState<TSockUd>, FnvBuildHasher>,
+
+    /// TCP ports reservation.
+    tcp_ports_assign: port_assign::PortAssign,
 
     /// Future that triggers the next time we should poll [`NetInterfaceState::ethernet`].
     /// Must be set to `None` whenever we modify [`NetInterfaceState::ethernet`] in such a way that
@@ -184,6 +189,8 @@ struct SocketState<TSockUd> {
 pub enum ConnectError {
     #[error("No route available for this destination")]
     NoRoute,
+    #[error("No port available")]
+    NoPortAvailable,
 }
 
 /// Opaque identifier of a socket within a [`NetInterfaceState`].
@@ -273,6 +280,7 @@ impl<TSockUd> NetInterfaceState<TSockUd> {
             reported_available_data: false,
             sockets,
             sockets_state: HashMap::default(),
+            tcp_ports_assign: port_assign::PortAssign::new(),
             next_event_delay: None,
             dhcp_v4_client,
         }
@@ -309,11 +317,16 @@ impl<TSockUd> NetInterfaceState<TSockUd> {
             smoltcp::socket::TcpSocket::new(rx_buf, tx_buf)
         };
 
-        // TODO: don't unwrap?
         if listen {
+            // `listen` can only fail if the socket was misconfigured.
             socket.listen(addr.clone()).unwrap();
         } else {
-            socket.connect(addr.clone(), 50000).unwrap(); // TODO: assign port better
+            let port = self
+                .tcp_ports_assign
+                .reserve_any(1024)
+                .ok_or(ConnectError::NoPortAvailable)?;
+            // `connect` can only fail if the socket was misconfigured.
+            socket.connect(addr.clone(), port).unwrap();
         }
 
         let id = SocketId(self.sockets.add(socket));

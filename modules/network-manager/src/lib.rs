@@ -28,6 +28,7 @@ use std::{
 };
 
 mod interface;
+mod port_assign;
 
 /// State machine managing all the network interfaces and sockets.
 ///

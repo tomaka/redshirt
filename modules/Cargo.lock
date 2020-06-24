@@ -1376,6 +1376,7 @@ dependencies = [
  "hashbrown 0.6.3",
  "log",
  "parity-scale-codec",
+ "rand 0.7.3",
  "redshirt-ethernet-interface",
  "redshirt-interface-interface",
  "redshirt-log-interface",
