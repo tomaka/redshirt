@@ -117,6 +117,11 @@ where
                     future::poll_fn(move |cx| Future::poll(Pin::new(&mut *next_irq.lock()), cx))
                         .await;
 
+                    // We grab the next IRQ future now, in order to not miss any IRQ happening
+                    // while `locked_devices` is processed below.
+                    *next_irq.lock() =
+                        Box::pin(TPlat::next_irq(platform_specific.as_ref())) as Pin<Box<_>>;
+
                     let mut locked_devices = locked_devices.lock();
                     for device in locked_devices.iter_mut() {
                         for msg in device.next_interrupt_messages.drain(..) {
@@ -127,9 +132,6 @@ where
                         }
                     }
                     drop(locked_devices);
-
-                    *next_irq.lock() =
-                        Box::pin(TPlat::next_irq(platform_specific.as_ref())) as Pin<Box<_>>;
                 }
             })
         }
