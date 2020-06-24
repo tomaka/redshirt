@@ -67,6 +67,12 @@ impl PciDeviceLock {
     ///
     /// The returned future is disconnected from the [`PciDeviceLock`]. However, polling the
     /// future after its corresponding [`PciDeviceLock`] has been destroyed will panic.
+    ///
+    /// > **Note**: Be aware that this `Future` only returns the *next* interrupt that happens.
+    /// >           PCI devices typically provide a way for the driver to know the reason why an
+    /// >           interrupt happened. In order to not miss any follow-up interrupt, call this
+    /// >           function *before* reading the reason, but only await on the returned Future
+    /// >           *after* reading the reason.
     pub fn next_interrupt(&self) -> impl Future<Output = ()> + Send + 'static {
         let bdf = self.device.clone();
 
