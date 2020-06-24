@@ -113,7 +113,7 @@ pub struct TcpSocket<'a, TIfId, TSockUd> {
 }
 
 enum TcpSocketInner<'a, TIfId, TSockUd> {
-    Pending,
+    Pending(&'a mut TSockUd),
     Assigned {
         inner: interface::TcpSocket<'a, (u64, TSockUd)>,
         device_id: TIfId,
@@ -155,6 +155,7 @@ where
         let mut user_data = Some(user_data);
 
         for (device_id, device) in self.devices.iter_mut() {
+            // TODO: naive
             match device.inner.build_tcp_socket(
                 listen,
                 addr,
@@ -192,18 +193,23 @@ where
             },
         );
 
+        let user_data = match self.sockets.get_mut(&socket_id).unwrap() {
+            SocketState::Pending { user_data, .. } => user_data,
+            _ => unreachable!(),
+        };
+
         TcpSocket {
             id: socket_id,
-            inner: TcpSocketInner::Pending,
+            inner: TcpSocketInner::Pending(user_data),
         }
     }
 
     ///
     pub fn tcp_socket_by_id(&mut self, id: &SocketId<TIfId>) -> Option<TcpSocket<TIfId, TSockUd>> {
         match self.sockets.get_mut(&id.id)? {
-            SocketState::Pending { .. } => Some(TcpSocket {
+            SocketState::Pending { user_data, .. } => Some(TcpSocket {
                 id: id.id,
-                inner: TcpSocketInner::Pending,
+                inner: TcpSocketInner::Pending(user_data),
             }),
             SocketState::Assigned {
                 interface,
@@ -371,26 +377,34 @@ where
                         };
 
                         // TODO: naive
-                        if let Ok(inner_socket) =
-                            interface
-                                .inner
-                                .build_tcp_socket(listen, &addr, (socket_id, user_data))
-                        {
-                            log::debug!(
-                                "Assigned TCP socket ({}) to newly-registered interface",
-                                addr
-                            );
-                            self.sockets.insert(
-                                socket_id,
-                                SocketState::Assigned {
-                                    interface: device_id.clone(),
-                                    inner_id: inner_socket.id(),
-                                },
-                            );
-                        } else {
-                            unimplemented!()
-                            // TODO: build_tcp_socket should give back user_data
-                            // self.sockets.insert(socket_id, SocketState::Pending { listen, addr, user_data });
+                        match interface.inner.build_tcp_socket(
+                            listen,
+                            &addr,
+                            (socket_id, user_data),
+                        ) {
+                            Ok(inner_socket) => {
+                                log::debug!(
+                                    "Assigned TCP socket ({}) to newly-registered interface",
+                                    addr
+                                );
+                                self.sockets.insert(
+                                    socket_id,
+                                    SocketState::Assigned {
+                                        interface: device_id.clone(),
+                                        inner_id: inner_socket.id(),
+                                    },
+                                );
+                            }
+                            Err((_, (_, user_data))) => {
+                                self.sockets.insert(
+                                    socket_id,
+                                    SocketState::Pending {
+                                        listen,
+                                        addr,
+                                        user_data,
+                                    },
+                                );
+                            }
                         }
                     }
                 }
@@ -448,6 +462,38 @@ impl<'a, TIfId: Clone, TSockUd> TcpSocket<'a, TIfId, TSockUd> {
             id: self.id,
             marker: PhantomData,
         }
+    }
+
+    pub fn user_data_mut(&mut self) -> &mut TSockUd {
+        match &mut self.inner {
+            TcpSocketInner::Pending(user_data) => user_data,
+            TcpSocketInner::Assigned { inner, .. } => &mut inner.user_data_mut().1,
+        }
+    }
+
+    /// Reads the data that has been received on the TCP socket.
+    ///
+    /// Returns an empty `Vec` if there is no data available.
+    pub fn read(&mut self) -> Vec<u8> {
+        let inner = match &mut self.inner {
+            TcpSocketInner::Pending(_) => return Vec::new(),
+            TcpSocketInner::Assigned { inner, .. } => inner,
+        };
+
+        inner.read()
+    }
+
+    /// Passes a buffer that the socket will encode into Ethernet frames.
+    ///
+    /// Only one buffer can be active at any given point in time. If a buffer is already active,
+    /// returns `Err(buffer)`.
+    pub fn set_write_buffer(&mut self, buffer: Vec<u8>) -> Result<(), Vec<u8>> {
+        let inner = match &mut self.inner {
+            TcpSocketInner::Pending(_) => return Err(buffer),
+            TcpSocketInner::Assigned { inner, .. } => inner,
+        };
+
+        inner.set_write_buffer(buffer)
     }
 
     /// Closes the socket.
