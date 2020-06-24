@@ -80,8 +80,7 @@ impl PciDeviceLock {
         // gets sent before the user starts polling the `Future`.
         let response = {
             let msg = ffi::PciMessage::NextInterrupt(bdf);
-            unsafe { redshirt_syscalls::emit_message_with_response(&ffi::INTERFACE, msg) }
-                .unwrap()
+            unsafe { redshirt_syscalls::emit_message_with_response(&ffi::INTERFACE, msg) }.unwrap()
         };
 
         async move {
