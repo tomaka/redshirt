@@ -133,6 +133,11 @@ where
 
                 // We reach here only if an IRQ happened.
 
+                // We grab the next IRQ future now, in order to not miss any IRQ happening
+                // while `locked_devices` is processed below.
+                *self.next_irq.lock() =
+                    Box::pin(TPlat::next_irq(self.platform_specific.as_ref())) as Pin<Box<_>>;
+
                 // Wake up all the devices.
                 let mut locked_devices = self.locked_devices.lock();
                 for device in locked_devices.iter_mut() {
@@ -142,10 +147,6 @@ where
                         self.pending_messages_tx.unbounded_send((msg, Ok(answer)));
                     }
                 }
-                drop(locked_devices);
-
-                *self.next_irq.lock() =
-                    Box::pin(TPlat::next_irq(self.platform_specific.as_ref())) as Pin<Box<_>>;
             }
         })
     }

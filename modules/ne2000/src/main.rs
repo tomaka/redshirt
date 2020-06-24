@@ -97,14 +97,21 @@ async fn async_main() {
             .boxed_local(),
         );
 
+        // This task is dedicated to listening to IRQs and pulling packets received from the
+        // network.
         tasks.push(
             async move {
                 loop {
+                    // Note that we grab a future to the next IRQ *before* calling `on_interrupt`,
+                    // otherwise IRQs that happen right after `on_interrupt` has returned wouldn't
+                    // be caught.
+                    let next_interrupt = pci_lock.next_interrupt();
+
                     if let Some(packet) = unsafe { device.on_interrupt().await } {
                         registration.packet_from_network().await.send(packet)
                     }
 
-                    pci_lock.next_interrupt().await;
+                    next_interrupt.await;
                 }
             }
             .boxed_local(),
