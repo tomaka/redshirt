@@ -136,6 +136,8 @@ impl TcpStream {
             },
         });
 
+        // Send the opening message here, so that the socket starts connecting or listening to
+        // connections before we start polling the returned `Future`.
         let open_future = unsafe {
             let msg = tcp_open.encode();
             redshirt_syscalls::MessageBuilder::new()

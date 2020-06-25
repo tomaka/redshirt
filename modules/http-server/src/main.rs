@@ -17,7 +17,7 @@ use futures::{channel::mpsc, prelude::*};
 use std::{pin::Pin, task::Context, task::Poll};
 
 fn main() {
-    redshirt_log_interface::init();
+    //redshirt_log_interface::init();
 
     redshirt_syscalls::block_on(async move {
         let listener = redshirt_tcp_interface::TcpListener::bind(&"0.0.0.0:8000".parse().unwrap())
