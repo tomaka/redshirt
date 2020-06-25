@@ -583,6 +583,10 @@ impl<TSockUd> NetInterfaceState<TSockUd> {
                         if let (Some(address), Some(router)) =
                             (config.address.as_ref(), config.router.as_ref())
                         {
+                            // Now that the DHCP request is complete, drop the client.
+                            // TODO: added as a hack, is that correct?
+                            self.dhcp_v4_client = None;
+
                             return NetInterfaceEventStatic::DhcpDiscovery {
                                 ip: address.address().into(),
                                 prefix_len: address.prefix_len(),

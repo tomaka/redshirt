@@ -52,6 +52,8 @@ async fn async_main() {
     let mut sockets = HashMap::with_capacity_and_hasher(0, fnv::FnvBuildHasher::default());
     let mut next_socket_id = 0u32;
 
+    // TODO: re-review all this code
+
     loop {
         let next_interface = redshirt_syscalls::next_interface_message();
         let next_net_event = Box::pin(network.next_event());
@@ -104,7 +106,32 @@ async fn async_main() {
                 );
                 continue;
             }
-            future::Either::Right((NetworkManagerEvent::TcpClosed(socket), _)) => unimplemented!(),
+            future::Either::Right((NetworkManagerEvent::TcpClosed(mut socket), _)) => {
+                let state = socket.user_data_mut();
+                if let Some(message_id) = state.connected_message.take() {
+                    redshirt_syscalls::emit_answer(
+                        message_id,
+                        &tcp_ffi::TcpOpenResponse {
+                            result: Err(()),
+                        },
+                    );
+                }
+                if let Some(message_id) = state.read_message.take() {
+                    redshirt_syscalls::emit_answer(
+                        message_id,
+                        &tcp_ffi::TcpReadResponse { result: Err(()) },
+                    );
+                }
+                if let Some(message_id) = state.write_finished_message.take() {
+                    redshirt_syscalls::emit_answer(
+                        message_id,
+                        &tcp_ffi::TcpWriteResponse { result: Err(()) },
+                    );
+                }
+                let _was_there = sockets.remove(&state.id);
+                debug_assert!(_was_there.is_some());
+                continue;
+            },
             future::Either::Right((NetworkManagerEvent::TcpReadReady(mut socket), _)) => {
                 let data = socket.read();
                 assert!(!data.is_empty());
@@ -160,9 +187,15 @@ async fn async_main() {
                     sockets.insert(new_id, inner_id);
                 }
                 tcp_ffi::TcpMessage::Close(msg) => {
-                    /*if let Some(inner_id) = sockets.remove(&msg.socket_id) {
-                        network.tcp_socket_by_id(&inner_id).unwrap().close();
-                    }*/
+                    if let Some(inner_id) = sockets.get_mut(&msg.socket_id) {
+                        let mut socket = network.tcp_socket_by_id(&inner_id).unwrap();
+                        let mut local_state = socket.user_data_mut();
+                        // TODO: is it correct to throw away messages?
+                        local_state.connected_message = None;
+                        local_state.read_message = None;
+                        local_state.write_finished_message = None;
+                        socket.close();
+                    }
                 }
                 tcp_ffi::TcpMessage::Read(read) => {
                     // TODO: don't unwrap
