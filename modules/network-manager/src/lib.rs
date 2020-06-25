@@ -494,9 +494,13 @@ impl<'a, TIfId: Clone, TSockUd> TcpSocket<'a, TIfId, TSockUd> {
     /// Reads the data that has been received on the TCP socket.
     ///
     /// Returns an empty `Vec` if there is no data available.
+    ///
+    /// # Panic
+    ///
+    /// Panics if the socket is still in the connecting stage.
     pub fn read(&mut self) -> Vec<u8> {
         let inner = match &mut self.inner {
-            TcpSocketInner::Pending(_) => return Vec::new(),
+            TcpSocketInner::Pending(_) => panic!(),
             TcpSocketInner::Assigned { inner, .. } => inner,
         };
 
@@ -507,18 +511,58 @@ impl<'a, TIfId: Clone, TSockUd> TcpSocket<'a, TIfId, TSockUd> {
     ///
     /// Only one buffer can be active at any given point in time. If a buffer is already active,
     /// returns `Err(buffer)`.
+    ///
+    /// # Panic
+    ///
+    /// Panics if the socket is still in the connecting stage.
     pub fn set_write_buffer(&mut self, buffer: Vec<u8>) -> Result<(), Vec<u8>> {
         let inner = match &mut self.inner {
-            TcpSocketInner::Pending(_) => return Err(buffer),
+            TcpSocketInner::Pending(_) => panic!(),
             TcpSocketInner::Assigned { inner, .. } => inner,
         };
 
         inner.set_write_buffer(buffer)
     }
 
-    /// Closes the socket.
-    pub fn close(self) {
-        //self.device.
+    /// Starts the process of closing the TCP socket.
+    ///
+    /// Returns an error if `closed` had been called earlier on this socket. This error is benign.
+    ///
+    /// # Panic
+    ///
+    /// Panics if the socket is still in the connecting stage.
+    pub fn close(&mut self) -> Result<(), ()> {
+        let inner = match &mut self.inner {
+            TcpSocketInner::Pending(_) => panic!(),
+            TcpSocketInner::Assigned { inner, .. } => inner,
+        };
+
+        inner.close()
+    }
+
+    /// Returns true if `close` has successfully been called earlier.
+    pub fn close_called(&self) -> bool {
+        match &self.inner {
+            TcpSocketInner::Pending(_) => false,
+            TcpSocketInner::Assigned { inner, .. } => inner.close_called(),
+        }
+    }
+
+    /// Returns true if the socket has been closed.
+    ///
+    /// > **Note**: This indicates whether the socket is entirely closed, including by the remote,
+    /// >           and isn't directly related to the `close` method.
+    pub fn closed(&self) -> bool {
+        match &self.inner {
+            TcpSocketInner::Pending(_) => false,
+            TcpSocketInner::Assigned { inner, .. } => inner.closed(),
+        }
+    }
+
+    /// Destroys the socket. If it was open, instantly drops everything.
+    pub fn reset(self) {
+        // TODO:
+        unimplemented!()
     }
 }
 

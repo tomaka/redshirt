@@ -135,7 +135,7 @@ pub enum NetInterfaceEvent<'a, TSockUd> {
         local_endpoint: SocketAddr,
         remote_endpoint: SocketAddr,
     },
-    /// A TCP/IP socket has been closed by the remote.
+    /// A TCP/IP socket has been closed. It is either in the "TIME WAIT" or "CLOSED" states.
     TcpClosed(TcpSocket<'a, TSockUd>),
     /// A TCP/IP socket has data ready to be read.
     TcpReadReady(TcpSocket<'a, TSockUd>),
@@ -188,6 +188,7 @@ struct SocketState<TSockUd> {
     user_data: TSockUd,
     is_connected: bool,
     is_closed: bool,
+    close_called: bool,
     read_ready: bool,
     write_ready: bool,
     write_remaining: Vec<u8>,
@@ -368,6 +369,7 @@ impl<TSockUd> NetInterfaceState<TSockUd> {
                 user_data,
                 is_connected: false,
                 is_closed: false,
+                close_called: false,
                 read_ready: false,
                 write_ready: true,
                 write_remaining: Vec::new(),
@@ -652,33 +654,69 @@ impl<'a, TSockUd> TcpSocket<'a, TSockUd> {
     }
 
     /// Starts the process of closing the TCP socket.
-    pub fn close(&mut self) {
+    ///
+    /// Returns an error if `closed` had been called earlier on this socket. This error is benign.
+    ///
+    /// # Panic
+    ///
+    /// Panics if the socket is still in the connecting stage.
+    // TODO: panic if not connected yet
+    pub fn close(&mut self) -> Result<(), ()> {
+        let mut state = &mut self.interface.sockets_state.get_mut(&self.id).unwrap();
+        assert!(state.is_connected);
+        if state.close_called {
+            return Err(());
+        }
+        state.close_called = true;
+
         let mut socket = self
             .interface
             .sockets
             .get::<smoltcp::socket::TcpSocket<'static>>(self.id.0);
         socket.close();
         self.interface.ethernet_poll_delay = None;
+
+        Ok(())
+    }
+
+    /// Returns true if `close` has successfully been called earlier.
+    pub fn close_called(&self) -> bool {
+        self.interface
+            .sockets_state
+            .get(&self.id)
+            .unwrap()
+            .close_called
+    }
+
+    /// Returns true if the socket has been closed.
+    ///
+    /// > **Note**: This indicates whether the socket is entirely closed, including by the remote,
+    /// >           and isn't directly related to the `close` method.
+    pub fn closed(&self) -> bool {
+        self.interface
+            .sockets_state
+            .get(&self.id)
+            .unwrap()
+            .is_closed
     }
 
     /// Instantly drops the socket without a proper shutdown.
-    pub fn reset(self) {
-        let mut socket = self
-            .interface
-            .sockets
-            .get::<smoltcp::socket::TcpSocket<'static>>(self.id.0);
-        socket.abort();
-        self.interface
-            .sockets_state
-            .get_mut(&self.id)
-            .unwrap()
-            .is_closed = true;
+    pub fn reset(mut self) {
+        self.interface.sockets.remove(self.id.0);
+        self.interface.sockets_state.remove(&self.id);
     }
 
     /// Reads the data that has been received on the TCP socket.
     ///
     /// Returns an empty `Vec` if there is no data available.
+    ///
+    /// # Panic
+    ///
+    /// Panics if the socket is still in the connecting stage.
     pub fn read(&mut self) -> Vec<u8> {
+        let mut state = &mut self.interface.sockets_state.get_mut(&self.id).unwrap();
+        assert!(state.is_connected);
+
         let mut socket = self
             .interface
             .sockets
@@ -687,11 +725,7 @@ impl<'a, TSockUd> TcpSocket<'a, TSockUd> {
             return Vec::new();
         }
 
-        self.interface
-            .sockets_state
-            .get_mut(&self.id)
-            .unwrap()
-            .read_ready = false;
+        state.read_ready = false;
 
         let recv_queue_len = socket.recv_queue();
         let mut out = Vec::with_capacity(recv_queue_len);
@@ -708,8 +742,13 @@ impl<'a, TSockUd> TcpSocket<'a, TSockUd> {
     ///
     /// Only one buffer can be active at any given point in time. If a buffer is already active,
     /// returns `Err(buffer)`.
+    ///
+    /// # Panic
+    ///
+    /// Panics if the socket is still in the connecting stage.
     pub fn set_write_buffer(&mut self, mut buffer: Vec<u8>) -> Result<(), Vec<u8>> {
         let mut state = self.interface.sockets_state.get_mut(&self.id).unwrap();
+        assert!(state.is_connected);
         if !state.write_remaining.is_empty() {
             return Err(buffer);
         }
