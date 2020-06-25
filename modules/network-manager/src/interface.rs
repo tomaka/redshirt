@@ -54,8 +54,6 @@ use std::{
     convert::TryFrom as _,
     fmt, mem,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
-    sync::MutexGuard,
-    time::Duration,
 };
 
 /// State machine encompassing an Ethernet interface and the sockets operating on it.
@@ -226,7 +224,7 @@ impl<TSockUd> NetInterfaceState<TSockUd> {
                 prefix_len,
                 gateway,
             } => {
-                routes.add_default_ipv4_route(From::from(gateway));
+                routes.add_default_ipv4_route(From::from(gateway)).unwrap();
                 assert!(prefix_len <= 32);
                 ip_addresses.push(From::from(smoltcp::wire::Ipv4Cidr::new(
                     From::from(ip_address),
@@ -238,7 +236,7 @@ impl<TSockUd> NetInterfaceState<TSockUd> {
                 prefix_len,
                 gateway,
             } => {
-                routes.add_default_ipv6_route(From::from(gateway));
+                routes.add_default_ipv6_route(From::from(gateway)).unwrap();
                 assert!(prefix_len <= 128);
                 ip_addresses.push(From::from(smoltcp::wire::Ipv6Cidr::new(
                     From::from(ip_address),
@@ -399,7 +397,7 @@ impl<TSockUd> NetInterfaceState<TSockUd> {
     ///
     /// Returns an empty buffer if nothing is ready.
     pub fn read_ethernet_cable_out(&mut self) -> Vec<u8> {
-        let mut device_out_buffer = &mut self.ethernet.device_mut().device_out_buffer;
+        let device_out_buffer = &mut self.ethernet.device_mut().device_out_buffer;
         self.reported_available_data = false;
         mem::replace(&mut *device_out_buffer, Vec::new())
     }
@@ -661,7 +659,6 @@ impl<'a, TSockUd> TcpSocket<'a, TSockUd> {
     /// # Panic
     ///
     /// Panics if the socket is still in the connecting stage.
-    // TODO: panic if not connected yet
     pub fn close(&mut self) -> Result<(), ()> {
         let mut state = &mut self.interface.sockets_state.get_mut(&self.id).unwrap();
         assert!(state.is_connected);
@@ -702,7 +699,7 @@ impl<'a, TSockUd> TcpSocket<'a, TSockUd> {
     }
 
     /// Instantly drops the socket without a proper shutdown.
-    pub fn reset(mut self) {
+    pub fn reset(self) {
         self.interface.sockets.remove(self.id.0);
         self.interface.sockets_state.remove(&self.id);
     }
@@ -773,29 +770,20 @@ impl<'a, TSockUd> TcpSocket<'a, TSockUd> {
 
     /// Returns a reference to the user data stored within the socket state.
     pub fn user_data(&self) -> &TSockUd {
-        let mut state = self.interface.sockets_state.get(&self.id).unwrap();
+        let state = self.interface.sockets_state.get(&self.id).unwrap();
         &state.user_data
     }
 
     /// Returns a reference to the user data stored within the socket state.
     pub fn into_user_data(self) -> &'a mut TSockUd {
-        let mut state = self.interface.sockets_state.get_mut(&self.id).unwrap();
+        let state = self.interface.sockets_state.get_mut(&self.id).unwrap();
         &mut state.user_data
     }
 
     /// Returns a reference to the user data stored within the socket state.
     pub fn user_data_mut(&mut self) -> &mut TSockUd {
-        let mut state = self.interface.sockets_state.get_mut(&self.id).unwrap();
+        let state = self.interface.sockets_state.get_mut(&self.id).unwrap();
         &mut state.user_data
-    }
-
-    /// Internal function that returns the `smoltcp::socket::TcpSocket` contained within the set.
-    fn smoltcp_socket(
-        &mut self,
-    ) -> smoltcp::socket::SocketRef<smoltcp::socket::TcpSocket<'static>> {
-        self.interface
-            .sockets
-            .get::<smoltcp::socket::TcpSocket<'static>>(self.id.0)
     }
 }
 
@@ -871,7 +859,7 @@ struct RawDeviceRxToken<'a> {
 }
 
 impl<'a> phy::RxToken for RawDeviceRxToken<'a> {
-    fn consume<R, F>(mut self, timestamp: Instant, f: F) -> Result<R, smoltcp::Error>
+    fn consume<R, F>(mut self, _timestamp: Instant, f: F) -> Result<R, smoltcp::Error>
     where
         F: FnOnce(&mut [u8]) -> Result<R, smoltcp::Error>,
     {
@@ -886,7 +874,7 @@ struct RawDeviceTxToken<'a> {
 }
 
 impl<'a> phy::TxToken for RawDeviceTxToken<'a> {
-    fn consume<R, F>(mut self, timestamp: Instant, len: usize, f: F) -> Result<R, smoltcp::Error>
+    fn consume<R, F>(mut self, _timestamp: Instant, len: usize, f: F) -> Result<R, smoltcp::Error>
     where
         F: FnOnce(&mut [u8]) -> Result<R, smoltcp::Error>,
     {

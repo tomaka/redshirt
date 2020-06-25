@@ -144,7 +144,7 @@ impl TcpStream {
                 .add_data(&msg)
                 .emit_with_response(&ffi::INTERFACE)
                 .unwrap()
-        };;
+        };
 
         async move {
             let message: ffi::TcpOpenResponse = open_future.await;

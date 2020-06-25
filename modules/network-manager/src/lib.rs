@@ -23,9 +23,7 @@
 use fnv::FnvBuildHasher;
 use futures::prelude::*;
 use hashbrown::{hash_map::Entry, HashMap};
-use std::{
-    fmt, hash::Hash, iter, marker::PhantomData, mem, net::SocketAddr, pin::Pin, sync::MutexGuard,
-};
+use std::{fmt, hash::Hash, iter, marker::PhantomData, mem, net::SocketAddr, pin::Pin};
 
 mod interface;
 mod port_assign;
@@ -186,11 +184,6 @@ where
             },
         );
 
-        let user_data = match self.sockets.get_mut(&socket_id).unwrap() {
-            SocketState::Pending { user_data, .. } => user_data,
-            _ => unreachable!(),
-        };
-
         TcpSocket {
             parent: self,
             id: socket_id,
@@ -243,7 +236,8 @@ where
 
     // TODO: better API?
     pub fn unregister_interface(&mut self, id: &TIfId) {
-        let device = self.devices.remove(id);
+        //let device = self.devices.remove(id);
+        todo!();
         // TODO:
     }
 

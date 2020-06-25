@@ -22,9 +22,7 @@ use redshirt_syscalls::{Decode as _, MessageId};
 use redshirt_tcp_interface::ffi as tcp_ffi;
 use std::{
     collections::VecDeque,
-    mem,
     net::{IpAddr, Ipv6Addr, SocketAddr},
-    time::Duration,
 };
 
 fn main() {
@@ -217,7 +215,7 @@ async fn async_main() {
                             }
                         } else if let Some(message_id) = msg.message_id {
                             redshirt_syscalls::emit_answer(
-                                msg.message_id.unwrap(),
+                                message_id,
                                 &tcp_ffi::TcpCloseResponse {
                                     result: Err(tcp_ffi::TcpCloseError::FinAlreaySent),
                                 },
@@ -329,7 +327,8 @@ async fn async_main() {
                 eth_ffi::NetworkMessage::RegisterInterface { id, mac_address } => {
                     network
                         .register_interface((msg.emitter_pid, id), mac_address, VecDeque::new())
-                        .await;
+                        .await
+                        .unwrap(); // TODO: don't unwrap
                 }
                 eth_ffi::NetworkMessage::UnregisterInterface(id) => {
                     network.unregister_interface(&(msg.emitter_pid, id));
