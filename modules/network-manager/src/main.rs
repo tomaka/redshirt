@@ -111,9 +111,7 @@ async fn async_main() {
                 if let Some(message_id) = state.connected_message.take() {
                     redshirt_syscalls::emit_answer(
                         message_id,
-                        &tcp_ffi::TcpOpenResponse {
-                            result: Err(()),
-                        },
+                        &tcp_ffi::TcpOpenResponse { result: Err(()) },
                     );
                 }
                 if let Some(message_id) = state.read_message.take() {
@@ -131,7 +129,7 @@ async fn async_main() {
                 let _was_there = sockets.remove(&state.id);
                 debug_assert!(_was_there.is_some());
                 continue;
-            },
+            }
             future::Either::Right((NetworkManagerEvent::TcpReadReady(mut socket), _)) => {
                 let data = socket.read();
                 assert!(!data.is_empty());

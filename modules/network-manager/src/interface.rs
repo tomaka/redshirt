@@ -55,6 +55,7 @@ use std::{
     fmt, mem,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     sync::MutexGuard,
+    time::Duration,
 };
 
 /// State machine encompassing an Ethernet interface and the sockets operating on it.
@@ -78,10 +79,13 @@ pub struct NetInterfaceState<TSockUd> {
     /// TCP ports reservation.
     tcp_ports_assign: port_assign::PortAssign,
 
+    /// If true, we should check the state of all the sockets at the next call to `next_event`.
+    check_sockets_required: bool,
+
     /// Future that triggers the next time we should poll [`NetInterfaceState::ethernet`].
     /// Must be set to `None` whenever we modify [`NetInterfaceState::ethernet`] in such a way that
     /// it could produce an event.
-    next_event_delay: Option<redshirt_time_interface::Delay>,
+    ethernet_poll_delay: Option<redshirt_time_interface::Delay>,
 }
 
 /// Configuration for a [`NetInterfaceState`] under construction.
@@ -289,7 +293,8 @@ impl<TSockUd> NetInterfaceState<TSockUd> {
             sockets,
             sockets_state: HashMap::default(),
             tcp_ports_assign: port_assign::PortAssign::new(),
-            next_event_delay: None,
+            check_sockets_required: false,
+            ethernet_poll_delay: None,
             dhcp_v4_client,
         }
     }
@@ -368,7 +373,7 @@ impl<TSockUd> NetInterfaceState<TSockUd> {
                 write_remaining: Vec::new(),
             },
         );
-        self.next_event_delay = None;
+        self.ethernet_poll_delay = None;
 
         Ok(TcpSocket {
             interface: self,
@@ -405,7 +410,7 @@ impl<TSockUd> NetInterfaceState<TSockUd> {
             .device_mut()
             .device_in_buffer
             .extend_from_slice(data.as_ref());
-        self.next_event_delay = None;
+        self.ethernet_poll_delay = None;
     }
 
     /// Wait until an event happens on the network.
@@ -455,88 +460,98 @@ impl<TSockUd> NetInterfaceState<TSockUd> {
             // Check whether any socket has changed state by comparing the latest known state
             // with what `smoltcp` tells us.
             // TODO: make changes in smoltcp to make this better?
-            for (socket_id, socket_state) in &mut self.sockets_state {
-                let mut smoltcp_socket =
-                    self.sockets.get::<smoltcp::socket::TcpSocket>(socket_id.0);
+            if self.check_sockets_required {
+                for (socket_id, socket_state) in &mut self.sockets_state {
+                    let mut smoltcp_socket =
+                        self.sockets.get::<smoltcp::socket::TcpSocket>(socket_id.0);
 
-                // Check if this socket got connected.
-                if !socket_state.is_connected && smoltcp_socket.may_send() {
-                    socket_state.is_connected = true;
+                    // Check if this socket got connected.
+                    if !socket_state.is_connected && smoltcp_socket.may_send() {
+                        socket_state.is_connected = true;
 
-                    let local_endpoint = {
-                        let endpoint = smoltcp_socket.local_endpoint();
-                        debug_assert_ne!(endpoint.port, 0);
-                        let ip = match endpoint.addr {
-                            smoltcp::wire::IpAddress::Ipv4(addr) => {
-                                IpAddr::from(Ipv4Addr::from(addr))
-                            }
-                            smoltcp::wire::IpAddress::Ipv6(addr) => {
-                                IpAddr::from(Ipv6Addr::from(addr))
-                            }
-                            _ => unreachable!(),
+                        let local_endpoint = {
+                            let endpoint = smoltcp_socket.local_endpoint();
+                            debug_assert_ne!(endpoint.port, 0);
+                            let ip = match endpoint.addr {
+                                smoltcp::wire::IpAddress::Ipv4(addr) => {
+                                    IpAddr::from(Ipv4Addr::from(addr))
+                                }
+                                smoltcp::wire::IpAddress::Ipv6(addr) => {
+                                    IpAddr::from(Ipv6Addr::from(addr))
+                                }
+                                _ => unreachable!(),
+                            };
+                            SocketAddr::from((ip, endpoint.port))
                         };
-                        SocketAddr::from((ip, endpoint.port))
-                    };
 
-                    let remote_endpoint = {
-                        let endpoint = smoltcp_socket.remote_endpoint();
-                        debug_assert_ne!(endpoint.port, 0);
-                        let ip = match endpoint.addr {
-                            smoltcp::wire::IpAddress::Ipv4(addr) => {
-                                IpAddr::from(Ipv4Addr::from(addr))
-                            }
-                            smoltcp::wire::IpAddress::Ipv6(addr) => {
-                                IpAddr::from(Ipv6Addr::from(addr))
-                            }
-                            _ => unreachable!(),
+                        let remote_endpoint = {
+                            let endpoint = smoltcp_socket.remote_endpoint();
+                            debug_assert_ne!(endpoint.port, 0);
+                            let ip = match endpoint.addr {
+                                smoltcp::wire::IpAddress::Ipv4(addr) => {
+                                    IpAddr::from(Ipv4Addr::from(addr))
+                                }
+                                smoltcp::wire::IpAddress::Ipv6(addr) => {
+                                    IpAddr::from(Ipv6Addr::from(addr))
+                                }
+                                _ => unreachable!(),
+                            };
+                            SocketAddr::from((ip, endpoint.port))
                         };
-                        SocketAddr::from((ip, endpoint.port))
-                    };
 
-                    return NetInterfaceEventStatic::TcpConnected(
-                        *socket_id,
-                        local_endpoint,
-                        remote_endpoint,
-                    );
+                        return NetInterfaceEventStatic::TcpConnected(
+                            *socket_id,
+                            local_endpoint,
+                            remote_endpoint,
+                        );
+                    }
+
+                    // Check if this socket got closed.
+                    if !socket_state.is_closed && !smoltcp_socket.is_open() {
+                        socket_state.is_closed = true;
+                        let socket_id = *socket_id;
+                        self.sockets_state.remove(&socket_id);
+                        return NetInterfaceEventStatic::TcpClosed(socket_id);
+                    }
+
+                    // Check if this socket has data for reading.
+                    if !socket_state.read_ready && smoltcp_socket.can_recv() {
+                        socket_state.read_ready = true;
+                        return NetInterfaceEventStatic::TcpReadReady(*socket_id);
+                    }
+
+                    // Continue writing `write_remaining`.
+                    while smoltcp_socket.can_send() && !socket_state.write_remaining.is_empty() {
+                        let written = smoltcp_socket
+                            .send_slice(&socket_state.write_remaining)
+                            .unwrap();
+                        assert_ne!(written, 0);
+                        self.ethernet_poll_delay = None;
+                        socket_state.write_remaining =
+                            socket_state.write_remaining.split_off(written);
+                    }
+
+                    // Report when this socket is available for writing.
+                    if smoltcp_socket.may_send()
+                        && !socket_state.write_ready
+                        && socket_state.write_remaining.is_empty()
+                    {
+                        socket_state.write_ready = true;
+                        return NetInterfaceEventStatic::TcpWriteFinished(*socket_id);
+                    }
                 }
 
-                // Check if this socket got closed.
-                if !socket_state.is_closed && !smoltcp_socket.is_open() {
-                    socket_state.is_closed = true;
-                    // TODO: also remove from list
-                    return NetInterfaceEventStatic::TcpClosed(*socket_id);
-                }
-
-                // Check if this socket has data for reading.
-                if !socket_state.read_ready && smoltcp_socket.can_recv() {
-                    socket_state.read_ready = true;
-                    return NetInterfaceEventStatic::TcpReadReady(*socket_id);
-                }
-
-                // Continue writing `write_remaining`.
-                if smoltcp_socket.can_send() && !socket_state.write_remaining.is_empty() {
-                    let written = smoltcp_socket
-                        .send_slice(&socket_state.write_remaining)
-                        .unwrap();
-                    socket_state.write_remaining = socket_state.write_remaining.split_off(written);
-                }
-
-                // Report when this socket is available for writing.
-                if smoltcp_socket.may_send()
-                    && !socket_state.write_ready
-                    && socket_state.write_remaining.is_empty()
-                {
-                    socket_state.write_ready = true;
-                    return NetInterfaceEventStatic::TcpWriteFinished(*socket_id);
-                }
+                // Only set `check_sockets_required` to false here, when we have iterated through
+                // all the sockets and made sure that nothing could be reported anymore.
+                self.check_sockets_required = false;
             }
 
             // Perform an active wait if any is going on.
             {
-                if let Some(next_event_delay) = self.next_event_delay.as_mut() {
-                    next_event_delay.await;
+                if let Some(ethernet_poll_delay) = self.ethernet_poll_delay.as_mut() {
+                    ethernet_poll_delay.await;
                 }
-                self.next_event_delay = None;
+                self.ethernet_poll_delay = None;
             }
 
             // We don't want to query `now` too often, so do it only once, here.
@@ -544,7 +559,8 @@ impl<TSockUd> NetInterfaceState<TSockUd> {
 
             // Errors other than `Unrecognized` are meant to be logged and ignored.
             match self.ethernet.poll(&mut self.sockets, now) {
-                Ok(_) => {}
+                Ok(true) => self.check_sockets_required = true,
+                Ok(false) => {}
                 // The documentation of smoltcp recommends to *not* log any `Unrecognized`
                 // error, as such errors happen very frequently.
                 Err(smoltcp::Error::Unrecognized) => {}
@@ -603,20 +619,22 @@ impl<TSockUd> NetInterfaceState<TSockUd> {
                 }
             }
 
-            // Update `next_event_delay`, if necessary.
-            debug_assert!(self.next_event_delay.is_none());
-            self.next_event_delay = {
+            // Update `ethernet_poll_delay`.
+            debug_assert!(self.ethernet_poll_delay.is_none());
+            self.ethernet_poll_delay = Some({
                 let when_iface = self.ethernet.poll_delay(&mut self.sockets, now);
                 let when_dchp = self.dhcp_v4_client.as_ref().map(|c| c.next_poll(now));
                 let combined = match (when_iface, when_dchp) {
-                    (Some(a), Some(b)) => Some(cmp::min(a, b)),
-                    (Some(a), None) => Some(a),
-                    (None, Some(b)) => Some(b),
-                    (None, None) => None,
+                    (Some(a), Some(b)) => cmp::min(a, b),
+                    (Some(a), None) => a,
+                    (None, Some(b)) => b,
+                    // `(None, None)` means "no deadline", other words "infinite". For convenience,
+                    // we instead set an arbitrary deadline.
+                    (None, None) => smoltcp::time::Duration::from_secs(20),
                 };
 
-                combined.map(|d| redshirt_time_interface::Delay::new(d.into()))
-            };
+                redshirt_time_interface::Delay::new(combined.into())
+            });
         }
     }
 }
@@ -640,6 +658,7 @@ impl<'a, TSockUd> TcpSocket<'a, TSockUd> {
             .sockets
             .get::<smoltcp::socket::TcpSocket<'static>>(self.id.0);
         socket.close();
+        self.interface.ethernet_poll_delay = None;
     }
 
     /// Instantly drops the socket without a proper shutdown.
@@ -689,14 +708,26 @@ impl<'a, TSockUd> TcpSocket<'a, TSockUd> {
     ///
     /// Only one buffer can be active at any given point in time. If a buffer is already active,
     /// returns `Err(buffer)`.
-    pub fn set_write_buffer(&mut self, buffer: Vec<u8>) -> Result<(), Vec<u8>> {
+    pub fn set_write_buffer(&mut self, mut buffer: Vec<u8>) -> Result<(), Vec<u8>> {
         let mut state = self.interface.sockets_state.get_mut(&self.id).unwrap();
         if !state.write_remaining.is_empty() {
             return Err(buffer);
         }
 
+        let mut socket = self
+            .interface
+            .sockets
+            .get::<smoltcp::socket::TcpSocket<'static>>(self.id.0);
+
+        if socket.can_send() {
+            let written = socket.send_slice(&buffer).unwrap();
+            self.interface.ethernet_poll_delay = None;
+            buffer = buffer.split_off(written);
+        }
+
         state.write_ready = false;
         state.write_remaining = buffer;
+        self.interface.check_sockets_required = true;
         Ok(())
     }
 

@@ -395,10 +395,6 @@ where
                             (socket_id, user_data),
                         ) {
                             Ok(inner_socket) => {
-                                log::debug!(
-                                    "Assigned TCP socket ({}) to newly-registered interface",
-                                    addr
-                                );
                                 self.sockets.insert(
                                     socket_id,
                                     SocketState::Assigned {
