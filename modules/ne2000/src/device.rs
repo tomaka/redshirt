@@ -342,7 +342,7 @@ impl Device {
     /// Must be called when the device generates an interrupt.
     ///
     /// Returns a packet of data received from the network, if any.
-    pub async unsafe fn on_interrupt(&self) -> Option<Vec<u8>> {
+    pub async unsafe fn on_interrupt(&self) -> Vec<Vec<u8>> {
         // We use `writing` as a lock to prevent multiple simultaneous calls to `on_interrupt`.
         let mut writing = self.writing.lock().await;
 
@@ -359,14 +359,18 @@ impl Device {
             flush_out(&self.base, &mut writing);
         }
 
+        let mut out = Vec::new();
+
         if (status & (1 << 0)) != 0 {
             // Packet received with no error.
-            if let Some(packet) = self.read_one_incoming().await {
-                return Some(packet);
+            out = Vec::with_capacity(8);
+
+            while let Some(packet) = self.read_one_incoming().await {
+                out.push(packet);
             }
         }
 
-        None
+        out
     }
 }
 
