@@ -126,7 +126,11 @@ pub enum NetInterfaceEvent<'a, TSockUd> {
     /// Data is available to be sent out by the Ethernet cable.
     EthernetCableOut,
     /// A TCP/IP socket has connected to its target.
-    TcpConnected(TcpSocket<'a, TSockUd>),
+    TcpConnected {
+        socket: TcpSocket<'a, TSockUd>,
+        local_endpoint: SocketAddr,
+        remote_endpoint: SocketAddr,
+    },
     /// A TCP/IP socket has been closed by the remote.
     TcpClosed(TcpSocket<'a, TSockUd>),
     /// A TCP/IP socket has data ready to be read.
@@ -155,7 +159,7 @@ pub enum NetInterfaceEvent<'a, TSockUd> {
 #[derive(Debug)]
 enum NetInterfaceEventStatic {
     EthernetCableOut,
-    TcpConnected(SocketId),
+    TcpConnected(SocketId, SocketAddr, SocketAddr),
     TcpClosed(SocketId),
     TcpReadReady(SocketId),
     TcpWriteFinished(SocketId),
@@ -408,8 +412,12 @@ impl<TSockUd> NetInterfaceState<TSockUd> {
     pub async fn next_event<'a>(&'a mut self) -> NetInterfaceEvent<'a, TSockUd> {
         match self.next_event_static().await {
             NetInterfaceEventStatic::EthernetCableOut => NetInterfaceEvent::EthernetCableOut,
-            NetInterfaceEventStatic::TcpConnected(id) => {
-                NetInterfaceEvent::TcpConnected(self.tcp_socket_by_id(id).unwrap())
+            NetInterfaceEventStatic::TcpConnected(id, local_endpoint, remote_endpoint) => {
+                NetInterfaceEvent::TcpConnected {
+                    socket: self.tcp_socket_by_id(id).unwrap(),
+                    local_endpoint,
+                    remote_endpoint,
+                }
             }
             NetInterfaceEventStatic::TcpClosed(id) => {
                 NetInterfaceEvent::TcpClosed(self.tcp_socket_by_id(id).unwrap())
@@ -454,7 +462,42 @@ impl<TSockUd> NetInterfaceState<TSockUd> {
                 // Check if this socket got connected.
                 if !socket_state.is_connected && smoltcp_socket.may_send() {
                     socket_state.is_connected = true;
-                    return NetInterfaceEventStatic::TcpConnected(*socket_id);
+
+                    let local_endpoint = {
+                        let endpoint = smoltcp_socket.local_endpoint();
+                        debug_assert_ne!(endpoint.port, 0);
+                        let ip = match endpoint.addr {
+                            smoltcp::wire::IpAddress::Ipv4(addr) => {
+                                IpAddr::from(Ipv4Addr::from(addr))
+                            }
+                            smoltcp::wire::IpAddress::Ipv6(addr) => {
+                                IpAddr::from(Ipv6Addr::from(addr))
+                            }
+                            _ => unreachable!(),
+                        };
+                        SocketAddr::from((ip, endpoint.port))
+                    };
+
+                    let remote_endpoint = {
+                        let endpoint = smoltcp_socket.remote_endpoint();
+                        debug_assert_ne!(endpoint.port, 0);
+                        let ip = match endpoint.addr {
+                            smoltcp::wire::IpAddress::Ipv4(addr) => {
+                                IpAddr::from(Ipv4Addr::from(addr))
+                            }
+                            smoltcp::wire::IpAddress::Ipv6(addr) => {
+                                IpAddr::from(Ipv6Addr::from(addr))
+                            }
+                            _ => unreachable!(),
+                        };
+                        SocketAddr::from((ip, endpoint.port))
+                    };
+
+                    return NetInterfaceEventStatic::TcpConnected(
+                        *socket_id,
+                        local_endpoint,
+                        remote_endpoint,
+                    );
                 }
 
                 // Check if this socket got closed.

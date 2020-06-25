@@ -82,7 +82,11 @@ pub enum NetworkManagerEvent<'a, TIfId, TIfUser, TSockUd> {
     /// desired.
     EthernetCableOut(TIfId, &'a mut TIfUser, Vec<u8>),
     /// A TCP/IP socket has connected to its target.
-    TcpConnected(TcpSocket<'a, TIfId, TSockUd>),
+    TcpConnected {
+        socket: TcpSocket<'a, TIfId, TSockUd>,
+        local_endpoint: SocketAddr,
+        remote_endpoint: SocketAddr,
+    },
     /// A TCP/IP socket has been closed by the remote.
     TcpClosed(TcpSocket<'a, TIfId, TSockUd>),
     /// A TCP/IP socket has data ready to be read.
@@ -99,7 +103,7 @@ pub enum NetworkManagerEvent<'a, TIfId, TIfUser, TSockUd> {
 #[derive(Debug)]
 enum NetworkManagerEventStatic {
     EthernetCableOut,
-    TcpConnected(interface::SocketId),
+    TcpConnected(interface::SocketId, SocketAddr, SocketAddr),
     TcpClosed(interface::SocketId),
     TcpReadReady(interface::SocketId),
     TcpWriteFinished(interface::SocketId),
@@ -318,13 +322,21 @@ where
                         data,
                     );
                 }
-                NetworkManagerEventStatic::TcpConnected(socket) => {
+                NetworkManagerEventStatic::TcpConnected(
+                    socket,
+                    local_endpoint,
+                    remote_endpoint,
+                ) => {
                     let device = self.devices.get_mut(&device_id).unwrap();
                     let inner = device.inner.tcp_socket_by_id(socket).unwrap();
-                    return NetworkManagerEvent::TcpConnected(TcpSocket {
-                        id: inner.user_data().0,
-                        inner: TcpSocketInner::Assigned { inner, device_id },
-                    });
+                    return NetworkManagerEvent::TcpConnected {
+                        socket: TcpSocket {
+                            id: inner.user_data().0,
+                            inner: TcpSocketInner::Assigned { inner, device_id },
+                        },
+                        local_endpoint,
+                        remote_endpoint,
+                    };
                 }
                 NetworkManagerEventStatic::TcpClosed(socket) => {
                     let device = self.devices.get_mut(&device_id).unwrap();
@@ -433,9 +445,21 @@ where
             (device_id, _, interface::NetInterfaceEvent::EthernetCableOut) => {
                 Some((device_id, NetworkManagerEventStatic::EthernetCableOut))
             }
-            (device_id, _, interface::NetInterfaceEvent::TcpConnected(inner)) => Some((
+            (
                 device_id,
-                NetworkManagerEventStatic::TcpConnected(inner.id()),
+                _,
+                interface::NetInterfaceEvent::TcpConnected {
+                    socket,
+                    local_endpoint,
+                    remote_endpoint,
+                },
+            ) => Some((
+                device_id,
+                NetworkManagerEventStatic::TcpConnected(
+                    socket.id(),
+                    local_endpoint,
+                    remote_endpoint,
+                ),
             )),
             (device_id, _, interface::NetInterfaceEvent::TcpClosed(inner)) => {
                 Some((device_id, NetworkManagerEventStatic::TcpClosed(inner.id())))

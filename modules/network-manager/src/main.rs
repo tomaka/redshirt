@@ -23,7 +23,7 @@ use redshirt_tcp_interface::ffi as tcp_ffi;
 use std::{
     collections::VecDeque,
     mem,
-    net::{Ipv6Addr, SocketAddr},
+    net::{IpAddr, Ipv6Addr, SocketAddr},
     time::Duration,
 };
 
@@ -74,7 +74,14 @@ async fn async_main() {
                 }
                 continue;
             }
-            future::Either::Right((NetworkManagerEvent::TcpConnected(mut socket), _)) => {
+            future::Either::Right((
+                NetworkManagerEvent::TcpConnected {
+                    mut socket,
+                    local_endpoint,
+                    remote_endpoint,
+                },
+                _,
+            )) => {
                 let state = socket.user_data_mut();
                 let message_id = state.connected_message.take().unwrap();
                 redshirt_syscalls::emit_answer(
@@ -82,10 +89,16 @@ async fn async_main() {
                     &tcp_ffi::TcpOpenResponse {
                         result: Ok(tcp_ffi::TcpSocketOpen {
                             socket_id: state.id,
-                            local_ip: [0; 8],  // TODO:
-                            local_port: 0,     // TODO:
-                            remote_ip: [0; 8], // TODO:
-                            remote_port: 0,    // TODO:
+                            local_ip: match local_endpoint.ip() {
+                                IpAddr::V4(ip) => ip.to_ipv6_mapped().segments(),
+                                IpAddr::V6(ip) => ip.segments(),
+                            },
+                            local_port: local_endpoint.port(),
+                            remote_ip: match remote_endpoint.ip() {
+                                IpAddr::V4(ip) => ip.to_ipv6_mapped().segments(),
+                                IpAddr::V6(ip) => ip.segments(),
+                            },
+                            remote_port: remote_endpoint.port(),
                         }),
                     },
                 );
