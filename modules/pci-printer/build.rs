@@ -24,7 +24,9 @@ fn main() {
     write!(f, r#"
         fn build_pci_info() -> hashbrown::HashMap<(u16, u16), (&'static str, &'static str), fnv::FnvBuildHasher> {{
             [
-    "#).unwrap();
+    "#
+    )
+    .unwrap();
 
     let mut current_vendor_id = None::<u16>;
     let mut current_vendor_name = None;

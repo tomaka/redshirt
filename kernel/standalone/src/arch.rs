@@ -41,6 +41,9 @@ pub trait PlatformSpecific: Send + Sync + 'static {
     /// `Future` that fires when the monotonic clock reaches a certain value.
     // TODO: remove `'static` requirement
     type TimerFuture: Future<Output = ()> + Send + 'static;
+    /// `Future` that fires when an IRQ is triggered.
+    // TODO: remove `'static` requirement
+    type IrqFuture: Future<Output = ()> + Send + 'static;
 
     /// Returns the number of CPUs available.
     fn num_cpus(self: Pin<&Self>) -> NonZeroU32;
@@ -64,6 +67,13 @@ pub trait PlatformSpecific: Send + Sync + 'static {
     /// > **Important**: The returned future is not guaranteed to function properly with an
     /// >                executor other than the ones in the platform-specific code.
     fn timer(self: Pin<&Self>, clock_value: u128) -> Self::TimerFuture;
+
+    /// Returns a `Future` that fires the next time the given IRQ is triggered.
+    ///
+    /// > **Important**: The returned future is not guaranteed to function properly with an
+    /// >                executor other than the ones in the platform-specific code.
+    // TODO: pass some IRQ number and define what this number exactly means
+    fn next_irq(self: Pin<&Self>) -> Self::IrqFuture;
 
     /// Writes a `u8` on a port. Returns an error if the operation is not supported or if the port
     /// is out of range.

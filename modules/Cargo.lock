@@ -814,7 +814,7 @@ dependencies = [
  "itoa",
  "log",
  "pin-project",
- "time 0.1.43",
+ "time",
  "tokio",
  "tower-service",
  "want",
@@ -1339,7 +1339,6 @@ dependencies = [
  "redshirt-ethernet-interface",
  "redshirt-hardware-interface",
  "redshirt-interface-interface",
- "redshirt-log-interface",
  "redshirt-pci-interface",
  "redshirt-random-interface",
  "redshirt-syscalls",
@@ -2283,16 +2282,6 @@ dependencies = [
  "log",
  "redox_syscall",
  "rustc-serialize",
- "winapi 0.3.8",
-]
-
-[[package]]
-name = "time"
-version = "0.1.43"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ca8a50ef2360fbd1eeb0ecd46795a87a19024eb4b53c5dc916ca1fd95fe62438"
-dependencies = [
- "libc",
  "winapi 0.3.8",
 ]
 

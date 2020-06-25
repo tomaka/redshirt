@@ -141,6 +141,7 @@ struct PlatformSpecificImpl {
 
 impl PlatformSpecific for PlatformSpecificImpl {
     type TimerFuture = time::TimerFuture;
+    type IrqFuture = future::Pending<()>;
 
     fn num_cpus(self: Pin<&Self>) -> NonZeroU32 {
         NonZeroU32::new(1).unwrap()
@@ -152,6 +153,10 @@ impl PlatformSpecific for PlatformSpecificImpl {
 
     fn timer(self: Pin<&Self>, deadline: u128) -> Self::TimerFuture {
         self.time.timer(deadline)
+    }
+
+    fn next_irq(self: Pin<&Self>) -> Self::IrqFuture {
+        future::pending()
     }
 
     fn write_log(&self, message: &str) {
