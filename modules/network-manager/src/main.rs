@@ -159,8 +159,8 @@ async fn async_main() {
         };
 
         if msg.interface == tcp_ffi::INTERFACE {
+            // TODO: don't unwrap
             let msg_data = tcp_ffi::TcpMessage::decode(msg.actual_data).unwrap();
-            println!("message: {:?}", msg_data);
             match msg_data {
                 tcp_ffi::TcpMessage::Open(open_msg) => {
                     let message_id = match msg.message_id {

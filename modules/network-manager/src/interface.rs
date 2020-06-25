@@ -510,6 +510,7 @@ impl<TSockUd> NetInterfaceState<TSockUd> {
 
                     // Check if this socket got closed.
                     if !socket_state.is_closed && !smoltcp_socket.is_open() {
+                        // TODO: free the port if socket is outgoing
                         socket_state.is_closed = true;
                         let socket_id = *socket_id;
                         self.sockets_state.remove(&socket_id);
@@ -774,6 +775,12 @@ impl<'a, TSockUd> TcpSocket<'a, TSockUd> {
     pub fn user_data(&self) -> &TSockUd {
         let mut state = self.interface.sockets_state.get(&self.id).unwrap();
         &state.user_data
+    }
+
+    /// Returns a reference to the user data stored within the socket state.
+    pub fn into_user_data(self) -> &'a mut TSockUd {
+        let mut state = self.interface.sockets_state.get_mut(&self.id).unwrap();
+        &mut state.user_data
     }
 
     /// Returns a reference to the user data stored within the socket state.

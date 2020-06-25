@@ -83,17 +83,17 @@ pub enum NetworkManagerEvent<'a, TIfId, TIfUser, TSockUd> {
     EthernetCableOut(TIfId, &'a mut TIfUser, Vec<u8>),
     /// A TCP/IP socket has connected to its target.
     TcpConnected {
-        socket: TcpSocket<'a, TIfId, TSockUd>,
+        socket: TcpSocket<'a, TIfId, TIfUser, TSockUd>,
         local_endpoint: SocketAddr,
         remote_endpoint: SocketAddr,
     },
     /// A TCP/IP socket has been closed by the remote.
-    TcpClosed(TcpSocket<'a, TIfId, TSockUd>),
+    TcpClosed(TcpSocket<'a, TIfId, TIfUser, TSockUd>),
     /// A TCP/IP socket has data ready to be read.
-    TcpReadReady(TcpSocket<'a, TIfId, TSockUd>),
+    TcpReadReady(TcpSocket<'a, TIfId, TIfUser, TSockUd>),
     /// A TCP/IP socket has finished writing the data that we passed to it, and is now ready to
     /// accept more.
-    TcpWriteFinished(TcpSocket<'a, TIfId, TSockUd>),
+    TcpWriteFinished(TcpSocket<'a, TIfId, TIfUser, TSockUd>),
 }
 
 /// Internal enum similar to [`NetworkManagerEvent`], except that it is `'static`.
@@ -111,17 +111,9 @@ enum NetworkManagerEventStatic {
 }
 
 /// Access to a socket within the manager.
-pub struct TcpSocket<'a, TIfId, TSockUd> {
+pub struct TcpSocket<'a, TIfId, TIfUser, TSockUd> {
+    parent: &'a mut NetworkManager<TIfId, TIfUser, TSockUd>,
     id: u64,
-    inner: TcpSocketInner<'a, TIfId, TSockUd>,
-}
-
-enum TcpSocketInner<'a, TIfId, TSockUd> {
-    Pending(&'a mut TSockUd),
-    Assigned {
-        inner: interface::TcpSocket<'a, (u64, TSockUd)>,
-        device_id: TIfId,
-    },
 }
 
 /// Identifier of a socket within the [`NetworkManager`]. Common between all types of sockets.
@@ -152,7 +144,7 @@ where
         listen: bool,
         addr: &SocketAddr,
         user_data: TSockUd,
-    ) -> TcpSocket<TIfId, TSockUd> {
+    ) -> TcpSocket<TIfId, TIfUser, TSockUd> {
         let socket_id = self.next_socket_id;
         self.next_socket_id += 1;
 
@@ -175,11 +167,8 @@ where
                     );
 
                     return TcpSocket {
+                        parent: self,
                         id: socket_id,
-                        inner: TcpSocketInner::Assigned {
-                            inner: socket,
-                            device_id: device_id.clone(),
-                        },
                     };
                 }
                 Err((_, (_, ud))) => {
@@ -203,33 +192,24 @@ where
         };
 
         TcpSocket {
+            parent: self,
             id: socket_id,
-            inner: TcpSocketInner::Pending(user_data),
         }
     }
 
     ///
-    pub fn tcp_socket_by_id(&mut self, id: &SocketId<TIfId>) -> Option<TcpSocket<TIfId, TSockUd>> {
-        match self.sockets.get_mut(&id.id)? {
-            SocketState::Pending { user_data, .. } => Some(TcpSocket {
-                id: id.id,
-                inner: TcpSocketInner::Pending(user_data),
-            }),
-            SocketState::Assigned {
-                interface,
-                inner_id,
-            } => {
-                let int_ref = &mut self.devices.get_mut(&interface)?.inner;
-                let inner = int_ref.tcp_socket_by_id(*inner_id)?;
-                Some(TcpSocket {
-                    id: id.id,
-                    inner: TcpSocketInner::Assigned {
-                        device_id: interface.clone(),
-                        inner,
-                    },
-                })
-            }
+    pub fn tcp_socket_by_id(
+        &mut self,
+        id: &SocketId<TIfId>,
+    ) -> Option<TcpSocket<TIfId, TIfUser, TSockUd>> {
+        if !self.sockets.contains_key(&id.id) {
+            return None;
         }
+
+        Some(TcpSocket {
+            parent: self,
+            id: id.id,
+        })
     }
 
     /// Registers an interface with the given ID. Returns an error if an interface with that ID
@@ -329,11 +309,9 @@ where
                 ) => {
                     let device = self.devices.get_mut(&device_id).unwrap();
                     let inner = device.inner.tcp_socket_by_id(socket).unwrap();
+                    let id = inner.user_data().0;
                     return NetworkManagerEvent::TcpConnected {
-                        socket: TcpSocket {
-                            id: inner.user_data().0,
-                            inner: TcpSocketInner::Assigned { inner, device_id },
-                        },
+                        socket: TcpSocket { parent: self, id },
                         local_endpoint,
                         remote_endpoint,
                     };
@@ -341,26 +319,20 @@ where
                 NetworkManagerEventStatic::TcpClosed(socket) => {
                     let device = self.devices.get_mut(&device_id).unwrap();
                     let inner = device.inner.tcp_socket_by_id(socket).unwrap();
-                    return NetworkManagerEvent::TcpClosed(TcpSocket {
-                        id: inner.user_data().0,
-                        inner: TcpSocketInner::Assigned { inner, device_id },
-                    });
+                    let id = inner.user_data().0;
+                    return NetworkManagerEvent::TcpClosed(TcpSocket { parent: self, id });
                 }
                 NetworkManagerEventStatic::TcpReadReady(socket) => {
                     let device = self.devices.get_mut(&device_id).unwrap();
                     let inner = device.inner.tcp_socket_by_id(socket).unwrap();
-                    return NetworkManagerEvent::TcpReadReady(TcpSocket {
-                        id: inner.user_data().0,
-                        inner: TcpSocketInner::Assigned { inner, device_id },
-                    });
+                    let id = inner.user_data().0;
+                    return NetworkManagerEvent::TcpReadReady(TcpSocket { parent: self, id });
                 }
                 NetworkManagerEventStatic::TcpWriteFinished(socket) => {
                     let device = self.devices.get_mut(&device_id).unwrap();
                     let inner = device.inner.tcp_socket_by_id(socket).unwrap();
-                    return NetworkManagerEvent::TcpWriteFinished(TcpSocket {
-                        id: inner.user_data().0,
-                        inner: TcpSocketInner::Assigned { inner, device_id },
-                    });
+                    let id = inner.user_data().0;
+                    return NetworkManagerEvent::TcpWriteFinished(TcpSocket { parent: self, id });
                 }
                 NetworkManagerEventStatic::DhcpDiscovery => {
                     let interface = self.devices.get_mut(&device_id).unwrap();
@@ -475,7 +447,10 @@ where
     }
 }
 
-impl<'a, TIfId: Clone, TSockUd> TcpSocket<'a, TIfId, TSockUd> {
+impl<'a, TIfId, TIfUser, TSockUd> TcpSocket<'a, TIfId, TIfUser, TSockUd>
+where
+    TIfId: Clone + Hash + PartialEq + Eq,
+{
     /// Returns the identifier of the socket, for later retrieval.
     pub fn id(&self) -> SocketId<TIfId> {
         SocketId {
@@ -485,9 +460,23 @@ impl<'a, TIfId: Clone, TSockUd> TcpSocket<'a, TIfId, TSockUd> {
     }
 
     pub fn user_data_mut(&mut self) -> &mut TSockUd {
-        match &mut self.inner {
-            TcpSocketInner::Pending(user_data) => user_data,
-            TcpSocketInner::Assigned { inner, .. } => &mut inner.user_data_mut().1,
+        match self.parent.sockets.get_mut(&self.id).unwrap() {
+            SocketState::Pending { user_data, .. } => user_data,
+            SocketState::Assigned {
+                interface,
+                inner_id,
+            } => {
+                &mut self
+                    .parent
+                    .devices
+                    .get_mut(interface)
+                    .unwrap()
+                    .inner
+                    .tcp_socket_by_id(*inner_id)
+                    .unwrap()
+                    .into_user_data()
+                    .1
+            }
         }
     }
 
@@ -499,12 +488,21 @@ impl<'a, TIfId: Clone, TSockUd> TcpSocket<'a, TIfId, TSockUd> {
     ///
     /// Panics if the socket is still in the connecting stage.
     pub fn read(&mut self) -> Vec<u8> {
-        let inner = match &mut self.inner {
-            TcpSocketInner::Pending(_) => panic!(),
-            TcpSocketInner::Assigned { inner, .. } => inner,
-        };
-
-        inner.read()
+        match self.parent.sockets.get_mut(&self.id).unwrap() {
+            SocketState::Pending { .. } => panic!(),
+            SocketState::Assigned {
+                interface,
+                inner_id,
+            } => self
+                .parent
+                .devices
+                .get_mut(interface)
+                .unwrap()
+                .inner
+                .tcp_socket_by_id(*inner_id)
+                .unwrap()
+                .read(),
+        }
     }
 
     /// Passes a buffer that the socket will encode into Ethernet frames.
@@ -516,12 +514,21 @@ impl<'a, TIfId: Clone, TSockUd> TcpSocket<'a, TIfId, TSockUd> {
     ///
     /// Panics if the socket is still in the connecting stage.
     pub fn set_write_buffer(&mut self, buffer: Vec<u8>) -> Result<(), Vec<u8>> {
-        let inner = match &mut self.inner {
-            TcpSocketInner::Pending(_) => panic!(),
-            TcpSocketInner::Assigned { inner, .. } => inner,
-        };
-
-        inner.set_write_buffer(buffer)
+        match self.parent.sockets.get_mut(&self.id).unwrap() {
+            SocketState::Pending { .. } => panic!(),
+            SocketState::Assigned {
+                interface,
+                inner_id,
+            } => self
+                .parent
+                .devices
+                .get_mut(interface)
+                .unwrap()
+                .inner
+                .tcp_socket_by_id(*inner_id)
+                .unwrap()
+                .set_write_buffer(buffer),
+        }
     }
 
     /// Starts the process of closing the TCP socket.
@@ -532,19 +539,39 @@ impl<'a, TIfId: Clone, TSockUd> TcpSocket<'a, TIfId, TSockUd> {
     ///
     /// Panics if the socket is still in the connecting stage.
     pub fn close(&mut self) -> Result<(), ()> {
-        let inner = match &mut self.inner {
-            TcpSocketInner::Pending(_) => panic!(),
-            TcpSocketInner::Assigned { inner, .. } => inner,
-        };
-
-        inner.close()
+        match self.parent.sockets.get_mut(&self.id).unwrap() {
+            SocketState::Pending { .. } => panic!(),
+            SocketState::Assigned {
+                interface,
+                inner_id,
+            } => self
+                .parent
+                .devices
+                .get_mut(interface)
+                .unwrap()
+                .inner
+                .tcp_socket_by_id(*inner_id)
+                .unwrap()
+                .close(),
+        }
     }
 
     /// Returns true if `close` has successfully been called earlier.
-    pub fn close_called(&self) -> bool {
-        match &self.inner {
-            TcpSocketInner::Pending(_) => false,
-            TcpSocketInner::Assigned { inner, .. } => inner.close_called(),
+    pub fn close_called(&mut self) -> bool {
+        match self.parent.sockets.get(&self.id).unwrap() {
+            SocketState::Pending { .. } => false,
+            SocketState::Assigned {
+                interface,
+                inner_id,
+            } => self
+                .parent
+                .devices
+                .get_mut(interface)
+                .unwrap()
+                .inner
+                .tcp_socket_by_id(*inner_id)
+                .unwrap()
+                .close_called(),
         }
     }
 
@@ -552,21 +579,45 @@ impl<'a, TIfId: Clone, TSockUd> TcpSocket<'a, TIfId, TSockUd> {
     ///
     /// > **Note**: This indicates whether the socket is entirely closed, including by the remote,
     /// >           and isn't directly related to the `close` method.
-    pub fn closed(&self) -> bool {
-        match &self.inner {
-            TcpSocketInner::Pending(_) => false,
-            TcpSocketInner::Assigned { inner, .. } => inner.closed(),
+    pub fn closed(&mut self) -> bool {
+        match self.parent.sockets.get(&self.id).unwrap() {
+            SocketState::Pending { .. } => false,
+            SocketState::Assigned {
+                interface,
+                inner_id,
+            } => self
+                .parent
+                .devices
+                .get_mut(interface)
+                .unwrap()
+                .inner
+                .tcp_socket_by_id(*inner_id)
+                .unwrap()
+                .closed(),
         }
     }
 
     /// Destroys the socket. If it was open, instantly drops everything.
     pub fn reset(self) {
-        // TODO:
-        unimplemented!()
+        match self.parent.sockets.remove(&self.id).unwrap() {
+            SocketState::Pending { .. } => {}
+            SocketState::Assigned {
+                interface,
+                inner_id,
+            } => self
+                .parent
+                .devices
+                .get_mut(&interface)
+                .unwrap()
+                .inner
+                .tcp_socket_by_id(inner_id)
+                .unwrap()
+                .reset(),
+        }
     }
 }
 
-impl<'a, TIfId, TSockUd> fmt::Debug for TcpSocket<'a, TIfId, TSockUd>
+impl<'a, TIfId, TIfUser, TSockUd> fmt::Debug for TcpSocket<'a, TIfId, TIfUser, TSockUd>
 where
     TIfId: fmt::Debug,
 {

@@ -64,10 +64,10 @@ where
             .with_native_program(crate::klog::KernelLogNativeProgram::new(
                 platform_specific.clone(),
             ))
-            /*.with_startup_process(build_wasm_module!(
+            .with_startup_process(build_wasm_module!(
                 "../../../modules/p2p-loader",
                 "passive-node"
-            ))*/
+            ))
             //.with_startup_process(build_wasm_module!("../../../modules/pci-printer"))
             .with_startup_process(build_wasm_module!("../../../modules/log-to-kernel"))
             .with_startup_process(build_wasm_module!("../../../modules/http-server"))
