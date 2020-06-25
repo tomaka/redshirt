@@ -107,7 +107,7 @@ async fn async_main() {
                     // be caught.
                     let next_interrupt = pci_lock.next_interrupt();
 
-                    if let Some(packet) = unsafe { device.on_interrupt().await } {
+                    for packet in unsafe { device.on_interrupt().await } {
                         registration.packet_from_network().await.send(packet)
                     }
 
