@@ -59,6 +59,10 @@
 //! Additionally, the connection can jump at any point to the "Finished" state without any prior
 //! warning, for example if a RST packet is received or if a protocol error is detected.
 //!
+//! > **Note**: The official denomination of the "Finished" state is "CLOSED", but we chose the
+//! >           word "Finished" to clear any confusion regarding the relationship with the action 
+//! >           of sending a FIN packet.
+//!
 //! From the point of view of the user of this interface, all the state transitions happen
 //! automatically except for the transitions from "Established" to "Fin wait" and from "Closed
 //! wait" to "Last ACK", which happen when they request to close the socket.
@@ -132,15 +136,16 @@ impl TcpStream {
             },
         });
 
+        let open_future = unsafe {
+            let msg = tcp_open.encode();
+            redshirt_syscalls::MessageBuilder::new()
+                .add_data(&msg)
+                .emit_with_response(&ffi::INTERFACE)
+                .unwrap()
+        };;
+
         async move {
-            let message: ffi::TcpOpenResponse = unsafe {
-                let msg = tcp_open.encode();
-                redshirt_syscalls::MessageBuilder::new()
-                    .add_data(&msg)
-                    .emit_with_response(&ffi::INTERFACE)
-                    .unwrap()
-                    .await
-            };
+            let message: ffi::TcpOpenResponse = open_future.await;
 
             let socket_open_info = message.result?;
             let remote_addr = {
