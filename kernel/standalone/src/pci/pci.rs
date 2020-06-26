@@ -78,6 +78,19 @@ pub struct Device<'a> {
 }
 
 impl<'a> Device<'a> {
+    pub fn set_command(&mut self, bus_master: bool, memory_space: bool, io_space: bool) {
+        let command: u16 = if bus_master { 1 << 2 } else { 0 }
+            | if memory_space { 1 << 1 } else { 0 }
+            | if io_space { 1 << 0 } else { 0 };
+
+        // TODO: that overwrites status, is that ok?
+        pci_cfg_write_u32(
+            &self.parent.known_devices[self.index].bdf,
+            0x4,
+            u32::from(command),
+        );
+    }
+
     pub fn bus(&self) -> u8 {
         self.parent.known_devices[self.index].bdf.bus
     }
@@ -306,6 +319,39 @@ fn scan_function(bdf: &DeviceBdf) -> Option<ScanResult> {
 /// Panics if `offset` is not 4-bytes aligned.
 ///
 fn pci_cfg_read_u32(bdf: &DeviceBdf, offset: u8) -> u32 {
+    pci_cfg_prepare_port(bdf, offset);
+
+    unsafe {
+        if cfg!(target_endian = "little") {
+            u32::read_from_port(0xcfc)
+        } else {
+            u32::read_from_port(0xcfc).swap_bytes()
+        }
+    }
+}
+
+/// Writes the configuration space of the given device.
+///
+/// Automatically swaps bytes on big-endian platforms.
+///
+/// # Panic
+///
+/// Panics if the device or function are out of range.
+/// Panics if `offset` is not 4-bytes aligned.
+///
+fn pci_cfg_write_u32(bdf: &DeviceBdf, offset: u8, data: u32) {
+    pci_cfg_prepare_port(bdf, offset);
+
+    unsafe {
+        if cfg!(target_endian = "little") {
+            u32::write_to_port(0xcfc, data)
+        } else {
+            u32::write_to_port(0xcfc, data.swap_bytes())
+        }
+    }
+}
+
+fn pci_cfg_prepare_port(bdf: &DeviceBdf, offset: u8) {
     assert!(bdf.device < 32);
     assert!(bdf.function < 8);
     assert_eq!(offset % 4, 0);
@@ -318,10 +364,5 @@ fn pci_cfg_read_u32(bdf: &DeviceBdf, offset: u8) -> u32 {
 
     unsafe {
         u32::write_to_port(0xcf8, addr);
-        if cfg!(target_endian = "little") {
-            u32::read_from_port(0xcfc)
-        } else {
-            u32::read_from_port(0xcfc).swap_bytes()
-        }
     }
 }
