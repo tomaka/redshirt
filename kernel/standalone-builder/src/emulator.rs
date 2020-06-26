@@ -82,6 +82,7 @@ pub fn run_kernel(cfg: Config) -> Result<(), Error> {
                 .args(&["-netdev", "user,id=net0,hostfwd=tcp::8000-:8000"])
                 .args(&["-device", "ne2k_pci,netdev=net0"])
                 .args(&["-smp", "cpus=4"])
+                .args(&["-enable-kvm", "-cpu", "host"])
                 .status()
                 .map_err(Error::EmulatorNotFound)?;
             // TODO: stdout/stderr
