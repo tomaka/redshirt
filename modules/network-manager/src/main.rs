@@ -246,24 +246,26 @@ async fn async_main() {
                                         .unwrap(); // TODO: don't unwrap
                                 }
                                 eth_ffi::NetworkMessage::UnregisterInterface(id) => {
-                                    network.unregister_interface(&(msg.emitter_pid, id));
+                                    network.interface_by_id((msg.emitter_pid, id)).unwrap().unregister();
                                 }
                                 eth_ffi::NetworkMessage::InterfaceOnData(id, buf) => {
                                     // TODO: back-pressure here as well?
-                                    network.inject_interface_data(&(msg.emitter_pid, id), buf);
+                                    network.interface_by_id((msg.emitter_pid, id)).unwrap().inject_data(buf);
                                     if let Some(message_id) = msg.message_id {
                                         redshirt_syscalls::emit_answer(message_id, &());
                                     }
                                 }
                                 eth_ffi::NetworkMessage::InterfaceWaitData(id) => {
-                                    let data = network.read_ethernet_cable_out(&(msg.emitter_pid, id));
+                                    let data = network
+                                    .interface_by_id((msg.emitter_pid, id)).unwrap().read_ethernet_cable_out();
                                     if !data.is_empty() {
                                         // TODO: don't unwrap message_id
                                         redshirt_syscalls::emit_answer(msg.message_id.unwrap(), &data);
                                     } else {
                                         // TODO: don't unwrap message_id
                                         network
-                                            .interface_user_data(&(msg.emitter_pid, id))
+                                            .interface_by_id((msg.emitter_pid, id)).unwrap()
+                                            .user_data()
                                             .push_back(msg.message_id.unwrap());
                                     }
                                 }
@@ -280,7 +282,7 @@ async fn async_main() {
             }
             net_event = network.next_event().fuse() => {
                 match net_event {
-                    NetworkManagerEvent::EthernetCableOut(id, msg_id) => {
+                    NetworkManagerEvent::EthernetCableOut(mut interface) => {
                         // There is data available for sending to the network. We only actually
                         // send data if there is a `InterfaceWaitData` message available to
                         // respond to.
@@ -288,8 +290,8 @@ async fn async_main() {
                         // the interface to not emit any data, and propagates the back-pressure to
                         // the sockets. When a `InterfaceWaitData` later arrives, we try to call
                         // `read_ethernet_cable_out` again.
-                        if let Some(msg_id) = msg_id.pop_front() {
-                            let buffer = network.read_ethernet_cable_out(&id);
+                        if let Some(msg_id) = interface.user_data().pop_front() {
+                            let buffer = interface.read_ethernet_cable_out();
                             debug_assert!(!buffer.is_empty());
                             redshirt_syscalls::emit_answer(msg_id, &buffer);
                         }

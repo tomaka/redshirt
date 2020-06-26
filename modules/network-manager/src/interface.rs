@@ -714,11 +714,11 @@ impl<'a, TSockUd> TcpSocket<'a, TSockUd> {
         };
 
         // Free the port if it is no longer in use by any other socket.
-        let free_port = !self.interface.sockets.iter().any(|s| match s {
+        let port_still_in_use = self.interface.sockets.iter().any(|s| match s {
             smoltcp::socket::Socket::Tcp(s) => s.local_endpoint().port == local_port,
-            _ => unreachable!(),
+            _ => false,
         });
-        if free_port {
+        if !port_still_in_use {
             self.interface.tcp_ports_assign.free(local_port).unwrap();
         }
     }
