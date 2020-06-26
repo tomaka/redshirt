@@ -214,18 +214,30 @@ async fn async_main() {
                                     if let Some(inner_id) = sockets.remove(&socket_id) {
                                         let mut socket = network.tcp_socket_by_id(&inner_id).unwrap();
                                         let mut local_state = socket.user_data_mut();
-                                        // TODO: don't throw away messages but respond them
-                                        local_state.connected_message = None;
-                                        local_state.read_message = None;
-                                        local_state.write_finished_message = None;
+                                        // TODO: connected_message should be None, or the user
+                                        // managed to guess an ID that hasn't been reported yet
+                                        if let Some(message_id) = local_state.read_message.take() {
+                                            redshirt_syscalls::emit_answer(
+                                                message_id,
+                                                &tcp_ffi::TcpReadResponse {
+                                                    result: Err(tcp_ffi::TcpReadError::InvalidSocket),
+                                                },
+                                            );
+                                        }
+                                        if let Some(message_id) = local_state.write_finished_message.take() {
+                                            redshirt_syscalls::emit_answer(
+                                                message_id,
+                                                &tcp_ffi::TcpWriteResponse {
+                                                    result: Err(tcp_ffi::TcpWriteError::InvalidSocket),
+                                                },
+                                            );
+                                        }
                                         socket.reset();
                                     }
                                 }
                             }
                         } else if msg.interface == eth_ffi::INTERFACE {
                             let msg_data = eth_ffi::NetworkMessage::decode(msg.actual_data).unwrap();
-                            //log::debug!("message: {:?}", msg_data);
-
                             match msg_data {
                                 eth_ffi::NetworkMessage::RegisterInterface { id, mac_address } => {
                                     network
@@ -269,6 +281,13 @@ async fn async_main() {
             net_event = network.next_event().fuse() => {
                 match net_event {
                     NetworkManagerEvent::EthernetCableOut(id, msg_id) => {
+                        // There is data available for sending to the network. We only actually
+                        // send data if there is a `InterfaceWaitData` message available to
+                        // respond to.
+                        // If that is not the case, then we don't pull any data, which also causes
+                        // the interface to not emit any data, and propagates the back-pressure to
+                        // the sockets. When a `InterfaceWaitData` later arrives, we try to call
+                        // `read_ethernet_cable_out` again.
                         if let Some(msg_id) = msg_id.pop_front() {
                             let buffer = network.read_ethernet_cable_out(&id);
                             debug_assert!(!buffer.is_empty());
@@ -276,10 +295,10 @@ async fn async_main() {
                         }
                     }
                     NetworkManagerEvent::TcpConnected {
-                            mut socket,
-                            local_endpoint,
-                            remote_endpoint,
-                        } => {
+                        mut socket,
+                        local_endpoint,
+                        remote_endpoint,
+                    } => {
                         let state = socket.user_data_mut();
                         let message_id = state.connected_message.take().unwrap();
                         redshirt_syscalls::emit_answer(
@@ -325,14 +344,12 @@ async fn async_main() {
                                 },
                             );
                         }
-                        let _was_there = sockets.remove(&state.id);
-                        debug_assert!(_was_there.is_some());
                     }
                     NetworkManagerEvent::TcpReadReady(mut socket) => {
-                        let data = socket.read();
-                        assert!(!data.is_empty());
                         let state = socket.user_data_mut();
                         if let Some(message_id) = state.read_message.take() {
+                            let data = socket.read();
+                            debug_assert!(!data.is_empty());
                             redshirt_syscalls::emit_answer(
                                 message_id,
                                 &tcp_ffi::TcpReadResponse { result: Ok(data) },

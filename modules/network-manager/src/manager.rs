@@ -81,6 +81,9 @@ pub enum NetworkManagerEvent<'a, TIfId, TIfUser, TSockUd> {
         remote_endpoint: SocketAddr,
     },
     /// A TCP/IP socket has been closed by the remote.
+    ///
+    /// > **Note**: This does *not* destroy the socket. You must call [`TcpSocket::reset`] to
+    /// >           actually destroy it.
     TcpClosed(TcpSocket<'a, TIfId, TIfUser, TSockUd>),
     /// A TCP/IP socket has data ready to be read.
     TcpReadReady(TcpSocket<'a, TIfId, TIfUser, TSockUd>),

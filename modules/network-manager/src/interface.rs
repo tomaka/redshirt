@@ -134,6 +134,9 @@ pub enum NetInterfaceEvent<'a, TSockUd> {
         remote_endpoint: SocketAddr,
     },
     /// A TCP/IP socket has been closed. It is either in the "TIME WAIT" or "CLOSED" states.
+    ///
+    /// > **Note**: This does *not* destroy the socket. You must call [`TcpSocket::reset`] to
+    /// >           actually destroy it.
     TcpClosed(TcpSocket<'a, TSockUd>),
     /// A TCP/IP socket has data ready to be read.
     TcpReadReady(TcpSocket<'a, TSockUd>),
@@ -511,22 +514,6 @@ impl<TSockUd> NetInterfaceState<TSockUd> {
 
                     // Check if this socket got closed.
                     if !socket_state.is_closed && !smoltcp_socket.is_open() {
-                        let local_port = smoltcp_socket.local_endpoint().port;
-
-                        drop(smoltcp_socket);
-                        self.sockets.remove(socket_id.0);
-
-                        // Free the port if it is no longer in use by any other socket.
-                        let free_port = !self.sockets.iter().any(|s| match s {
-                            smoltcp::socket::Socket::Tcp(s) => {
-                                s.local_endpoint().port == local_port
-                            }
-                            _ => unreachable!(),
-                        });
-                        if free_port {
-                            self.tcp_ports_assign.free(local_port).unwrap();
-                        }
-
                         socket_state.is_closed = true;
                         let socket_id = *socket_id;
                         self.sockets_state.remove(&socket_id);
@@ -718,8 +705,22 @@ impl<'a, TSockUd> TcpSocket<'a, TSockUd> {
 
     /// Instantly drops the socket without a proper shutdown.
     pub fn reset(self) {
-        self.interface.sockets.remove(self.id.0);
+        let smoltcp_socket = self.interface.sockets.remove(self.id.0);
         self.interface.sockets_state.remove(&self.id);
+
+        let local_port = match smoltcp_socket {
+            smoltcp::socket::Socket::Tcp(s) => s.local_endpoint().port,
+            _ => unreachable!(),
+        };
+
+        // Free the port if it is no longer in use by any other socket.
+        let free_port = !self.interface.sockets.iter().any(|s| match s {
+            smoltcp::socket::Socket::Tcp(s) => s.local_endpoint().port == local_port,
+            _ => unreachable!(),
+        });
+        if free_port {
+            self.interface.tcp_ports_assign.free(local_port).unwrap();
+        }
     }
 
     /// Reads the data that has been received on the TCP socket.
