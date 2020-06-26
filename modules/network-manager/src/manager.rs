@@ -410,7 +410,7 @@ where
     pub fn unregister(self) {
         //let device = self.devices.remove(id);
         todo!();
-        // TODO:
+        // TODO: this is far from trivial, as one has to kill all sockets
     }
 
     /// Extract the data to transmit out of the Ethernet cable.
@@ -427,7 +427,7 @@ where
         self.parent
             .devices
             .get_mut(&self.id)
-            .unwrap() // TODO: don't unwrap
+            .unwrap()
             .inner
             .read_ethernet_cable_out()
     }
@@ -437,7 +437,7 @@ where
         self.parent
             .devices
             .get_mut(&self.id)
-            .unwrap() // TODO: don't unwrap
+            .unwrap()
             .inner
             .inject_interface_data(data)
     }
