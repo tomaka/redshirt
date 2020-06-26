@@ -215,7 +215,9 @@ impl<'a> NativeProgramRef<'a> for &'a TcpHandler {
                 BackToFront::Close { message_id, result } => {
                     return NativeProgramEvent::Answer {
                         message_id,
-                        answer: Ok(redshirt_tcp_interface::ffi::TcpCloseResponse { result }.encode()),
+                        answer: Ok(
+                            redshirt_tcp_interface::ffi::TcpCloseResponse { result }.encode()
+                        ),
                     }
                 }
             }
@@ -311,9 +313,7 @@ impl<'a> NativeProgramRef<'a> for &'a TcpHandler {
                     .unwrap() // TODO: don't unwrap; but what to do?
                     .as_mut_connected()
                     .unwrap()
-                    .unbounded_send(FrontToBackSocket::Close {
-                        message_id,
-                    })
+                    .unbounded_send(FrontToBackSocket::Close { message_id })
                     .unwrap(); // TODO: don't unwrap; but what to do?
             }
 
