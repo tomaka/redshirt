@@ -103,6 +103,12 @@ dependencies = [
 
 [[package]]
 name = "autocfg"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d49d90015b3c36167a20fe2810c5cd875ad504b39cff3d4eae7977e6b7c1cb2"
+
+[[package]]
+name = "autocfg"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8aac770f1885fd7e387acedd76065302551364496e46b3dd00860b2f8359b9d"
@@ -310,7 +316,7 @@ version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "058ed274caafc1f60c4997b5fc07bf7dc7cca454af7c6e81edffe5f33f70dace"
 dependencies = [
- "autocfg",
+ "autocfg 1.0.0",
  "cfg-if",
  "crossbeam-utils",
  "lazy_static",
@@ -325,7 +331,7 @@ version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3c7c73a2d1e9fc0886a08b93e98eb643461230d5f1925e4036204d5f2e261a8"
 dependencies = [
- "autocfg",
+ "autocfg 1.0.0",
  "cfg-if",
  "lazy_static",
 ]
@@ -456,9 +462,9 @@ source = "git+https://github.com/dflemstr/rust-fnv#bfc842cc68cd3a2628915f46d3bff
 
 [[package]]
 name = "fnv"
-version = "1.0.6"
+version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2fad85553e09a6f881f739c29f0b00b0f01357c743266d478b68951ce23285f3"
+checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
 
 [[package]]
 name = "fsevent"
@@ -696,7 +702,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "377038bf3c89d18d6ca1431e7a5027194fbd724ca10592b9487ede5e8e144f42"
 dependencies = [
  "bytes",
- "fnv 1.0.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "fnv 1.0.7",
  "futures-core",
  "futures-sink",
  "futures-util",
@@ -710,11 +716,20 @@ dependencies = [
 
 [[package]]
 name = "hashbrown"
+version = "0.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8e6073d0ca812575946eb5f35ff68dbe519907b25c42530389ff946dc84c6ead"
+dependencies = [
+ "autocfg 0.1.7",
+]
+
+[[package]]
+name = "hashbrown"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "96282e96bfcd3da0d3aa9938bedf1e50df3269b6db08b4876d2da0bb1a0841cf"
 dependencies = [
- "autocfg",
+ "autocfg 1.0.0",
 ]
 
 [[package]]
@@ -767,7 +782,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "28d569972648b2c512421b5f2a405ad6ac9666547189d0c5477a3f200f3e02f9"
 dependencies = [
  "bytes",
- "fnv 1.0.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "fnv 1.0.7",
  "itoa",
 ]
 
@@ -859,7 +874,7 @@ version = "1.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "076f042c5b7b98f31d205f1249267e12a6518c1481e9dae9764af19b707d2292"
 dependencies = [
- "autocfg",
+ "autocfg 1.0.0",
 ]
 
 [[package]]
@@ -1023,7 +1038,7 @@ dependencies = [
  "bs58",
  "ed25519-dalek",
  "either",
- "fnv 1.0.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "fnv 1.0.7",
  "futures",
  "futures-timer 3.0.2",
  "lazy_static",
@@ -1066,7 +1081,7 @@ dependencies = [
  "arrayvec",
  "bytes",
  "either",
- "fnv 1.0.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "fnv 1.0.7",
  "futures",
  "futures_codec",
  "libp2p-core",
@@ -1091,7 +1106,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "34ce63313ad4bce2d76e54c292a1293ea47a0ebbe16708f1513fa62184992f53"
 dependencies = [
  "bytes",
- "fnv 1.0.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "fnv 1.0.7",
  "futures",
  "futures_codec",
  "libp2p-core",
@@ -1220,6 +1235,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "managed"
+version = "0.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c75de51135344a4f8ed3cfe2720dc27736f7711989703a0b43aadf3753c55577"
+
+[[package]]
 name = "matches"
 version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1243,7 +1264,7 @@ version = "0.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4fc2c02a7e374099d4ee95a193111f72d2110197fe200272371758f6c3643d8"
 dependencies = [
- "autocfg",
+ "autocfg 1.0.0",
 ]
 
 [[package]]
@@ -1369,6 +1390,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "network-manager"
+version = "0.1.0"
+dependencies = [
+ "fnv 1.0.7",
+ "futures",
+ "hashbrown 0.6.3",
+ "log",
+ "parity-scale-codec",
+ "rand 0.7.3",
+ "redshirt-ethernet-interface",
+ "redshirt-interface-interface",
+ "redshirt-log-interface",
+ "redshirt-syscalls",
+ "redshirt-tcp-interface",
+ "redshirt-time-interface",
+ "smoltcp",
+ "thiserror",
+]
+
+[[package]]
 name = "nohash-hasher"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1435,7 +1476,7 @@ version = "0.9.55"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7717097d810a0f2e2323f9e5d11e71608355e24828410b55b9d4f18aa5f9a5d8"
 dependencies = [
- "autocfg",
+ "autocfg 1.0.0",
  "cc",
  "libc",
  "openssl-src",
@@ -1539,8 +1580,8 @@ dependencies = [
 name = "pci-printer"
 version = "0.1.0"
 dependencies = [
- "fnv 1.0.6 (git+https://github.com/dflemstr/rust-fnv)",
- "hashbrown",
+ "fnv 1.0.6",
+ "hashbrown 0.7.2",
  "lazy_static",
  "log",
  "parity-scale-codec",
@@ -1899,7 +1940,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "generic-array 0.13.2",
- "hashbrown",
+ "hashbrown 0.7.2",
  "lazy_static",
  "nohash-hasher",
  "parity-scale-codec",
@@ -1912,6 +1953,7 @@ dependencies = [
 name = "redshirt-tcp-interface"
 version = "0.1.0"
 dependencies = [
+ "derive_more",
  "futures",
  "parity-scale-codec",
  "redshirt-syscalls",
@@ -2101,6 +2143,17 @@ name = "smallvec"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c7cb5678e1615754284ec264d9bb5b4c27d2018577fd90ac0ceb578591ed5ee4"
+
+[[package]]
+name = "smoltcp"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0fe46639fd2ec79eadf8fe719f237a7a0bd4dac5d957f1ca5bbdbc1c3c39e53a"
+dependencies = [
+ "bitflags",
+ "byteorder",
+ "managed",
+]
 
 [[package]]
 name = "socket2"
@@ -2303,7 +2356,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "05c1d570eb1a36f0345a5ce9c6c6e665b70b73d11236912c0b477616aeec47b1"
 dependencies = [
  "bytes",
- "fnv 1.0.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "fnv 1.0.7",
  "futures-core",
  "memchr",
  "pin-project-lite",
@@ -2634,9 +2687,9 @@ name = "x86-vga-vbe"
 version = "0.1.0"
 dependencies = [
  "derive_more",
- "fnv 1.0.6 (git+https://github.com/dflemstr/rust-fnv)",
+ "fnv 1.0.6",
  "futures",
- "hashbrown",
+ "hashbrown 0.7.2",
  "iced-x86",
  "lazy_static",
  "log",

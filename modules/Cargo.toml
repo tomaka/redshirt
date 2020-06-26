@@ -2,6 +2,7 @@
 members = [
     "hello-world",
     "http-server",
+    "network-manager",
     "log-to-kernel",
     "ne2000",
     "p2p-loader",

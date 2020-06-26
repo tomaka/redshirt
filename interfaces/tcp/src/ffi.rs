@@ -25,13 +25,16 @@ pub const INTERFACE: InterfaceHash = InterfaceHash::from_raw_hash([
 #[derive(Debug, Encode, Decode)]
 pub enum TcpMessage {
     Open(TcpOpen),
+    /// Ask to close the socket. Replied with a [`TcpCloseResponse`].
     Close(TcpClose),
-    /// Ask to read data from a socket. The response contains the data. For each socket, only one
-    /// read can exist at any given point in time.
+    /// Ask to read data from a socket. The response is a [`TcpReadResponse`].
     Read(TcpRead),
     /// Ask to write data to a socket. A response is sent back once written. For each socket, only
     /// one write can exist at any given point in time.
     Write(TcpWrite),
+    /// Destroy the given socket. Doesn't expect any response. The given socket ID will no longer
+    /// be valid, and any existing message be replied to with `InvalidSocket`.
+    Destroy(u32),
 }
 
 #[derive(Debug, Encode, Decode)]
@@ -41,7 +44,6 @@ pub struct TcpOpen {
     ///
     /// If false, then `ip` and `port` designate a remote IP and port that the socket will try to
     /// connect to. A response will arrive when we successfully connect or fail to connect.
-    // TODO: enum instead?
     pub listen: bool,
     /// IPv6 address.
     pub ip: [u16; 8],
@@ -51,6 +53,7 @@ pub struct TcpOpen {
 
 #[derive(Debug, Encode, Decode)]
 pub struct TcpOpenResponse {
+    // TODO: proper error type
     pub result: Result<TcpSocketOpen, ()>,
 }
 
@@ -69,13 +72,40 @@ pub struct TcpClose {
 }
 
 #[derive(Debug, Encode, Decode)]
+pub struct TcpCloseResponse {
+    pub result: Result<(), TcpCloseError>,
+}
+
+#[derive(Debug, Encode, Decode, derive_more::Display)]
+pub enum TcpCloseError {
+    /// We have already sent a FIN to the remote. It is invalid to send another one.
+    /// This happens if the connection is in the "Fin wait", "Fin wait 2", or "Last ACK" states.
+    FinAlreaySent,
+    /// Connection is in the "Finished" state.
+    ConnectionFinished,
+    /// The socket ID is invalid.
+    InvalidSocket,
+}
+
+#[derive(Debug, Encode, Decode)]
 pub struct TcpRead {
     pub socket_id: u32,
 }
 
 #[derive(Debug, Encode, Decode)]
 pub struct TcpReadResponse {
-    pub result: Result<Vec<u8>, ()>,
+    /// If the connection is in the "Closed" wait or "Last ACK" state, it is known that no more
+    /// data will be received and an empty `Vec` is returned. If the connection is in the
+    /// "Finished" state, then [`TcpReadError::ConnectionFinished`] is returned.
+    pub result: Result<Vec<u8>, TcpReadError>,
+}
+
+#[derive(Debug, Encode, Decode, derive_more::Display)]
+pub enum TcpReadError {
+    /// Connection is in the "Finished" state.
+    ConnectionFinished,
+    /// The socket ID is invalid.
+    InvalidSocket,
 }
 
 #[derive(Debug, Encode, Decode)]
@@ -86,5 +116,16 @@ pub struct TcpWrite {
 
 #[derive(Debug, Encode, Decode)]
 pub struct TcpWriteResponse {
-    pub result: Result<(), ()>,
+    pub result: Result<(), TcpWriteError>,
+}
+
+#[derive(Debug, Encode, Decode, derive_more::Display)]
+pub enum TcpWriteError {
+    /// We have sent a FIN to the remote, and thus are not allowed to send any more data.
+    /// This happens if the connection is in the "Fin wait", "Fin wait 2", or "Last ACK" states.
+    FinAlreaySent,
+    /// Connection is in the "Finished" state.
+    ConnectionFinished,
+    /// The socket ID is invalid.
+    InvalidSocket,
 }
