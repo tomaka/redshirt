@@ -165,7 +165,7 @@ impl<'a> HardwareOperationsBuilder<'a> {
         }
     }
 
-    pub unsafe fn read(&mut self, address: u64, out: &'a mut impl AsMut<[u8]>) {
+    pub unsafe fn read(&mut self, address: u64, out: &'a mut (impl ?Sized + AsMut<[u8]>)) {
         let out = out.as_mut();
         self.operations.push(ffi::Operation::PhysicalMemoryReadU8 {
             address,
@@ -174,7 +174,7 @@ impl<'a> HardwareOperationsBuilder<'a> {
         self.out.push(Out::MemReadU8(out));
     }
 
-    pub unsafe fn read_u32(&mut self, address: u64, out: &'a mut impl AsMut<[u32]>) {
+    pub unsafe fn read_u32(&mut self, address: u64, out: &'a mut (impl ?Sized + AsMut<[u32]>)) {
         let out = out.as_mut();
         self.operations.push(ffi::Operation::PhysicalMemoryReadU32 {
             address,

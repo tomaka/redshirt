@@ -41,7 +41,7 @@ impl<T> PhysicalBuffer<T> {
     ///
     pub fn new(data: T) -> impl Future<Output = Self> {
         let size = u64::try_from(mem::size_of_val(&data)).unwrap();
-        let align = u8::try_from(mem::align_of_val(&data)).unwrap();
+        let align = u64::try_from(mem::align_of_val(&data)).unwrap();
 
         malloc(size, align).map(move |ptr| {
             let buf = PhysicalBuffer {
@@ -131,14 +131,14 @@ impl<T: ?Sized> Drop for PhysicalBuffer<T> {
 ///
 /// Panics if the allocation fails, for example if `size` is too large to be acceptable.
 ///
-pub fn malloc(size: u64, alignment: u8) -> impl Future<Output = u64> {
+pub fn malloc(size: u64, alignment: u64) -> impl Future<Output = u64> {
     unsafe {
         let msg = ffi::HardwareMessage::Malloc { size, alignment };
         redshirt_syscalls::emit_message_with_response(&ffi::INTERFACE, msg)
             .unwrap()
             .map(move |ptr: u64| {
                 assert_ne!(ptr, 0);
-                debug_assert_eq!(ptr % u64::from(alignment), 0);
+                debug_assert_eq!(ptr % alignment, 0);
                 ptr
             })
     }

@@ -21,7 +21,7 @@
 
 extern crate alloc;
 
-pub use self::ffi::{PciBaseAddressRegister, PciDeviceInfo};
+pub use self::ffi::{PciBaseAddressRegister, PciDeviceBdf, PciDeviceInfo};
 
 use alloc::vec::Vec;
 use futures::prelude::*;
@@ -61,6 +61,20 @@ impl PciDeviceLock {
         result?;
 
         Ok(PciDeviceLock { device: bdf })
+    }
+
+    pub fn set_command(&self, bus_master: bool, memory_space: bool, io_space: bool) {
+        unsafe {
+            redshirt_syscalls::emit_message_without_response(&ffi::INTERFACE, &{
+                ffi::PciMessage::SetCommand {
+                    location: self.device.clone(),
+                    bus_master,
+                    memory_space,
+                    io_space,
+                }
+            })
+            .unwrap();
+        }
     }
 
     /// Waits until the device produces an interrupt.
