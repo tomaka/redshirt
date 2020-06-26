@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use core::{convert::TryFrom, fmt, mem};
+use core::{convert::TryFrom, fmt};
 
 mod tests;
 
@@ -102,6 +102,7 @@ impl Interpreter {
     ///
     /// > **Note**: It is intentional that no opposite function is provided, as the memory stops
     /// >           being in sync with the actual memory, which will likely cause issues.
+    #[cfg_attr(not(test), allow(unused))] // Used only in tests.
     pub fn disable_io_operations(&mut self) {
         self.enable_io_operations = false;
     }
@@ -563,7 +564,6 @@ impl Interpreter {
                         let (v, o) = value.overflowing_sub(1);
                         (Value::U32(v), o)
                     }
-                    _ => unreachable!(),
                 };
 
                 self.store_in_operand(&instruction, 0, temp);
@@ -780,7 +780,6 @@ impl Interpreter {
                         let (v, o) = value.overflowing_add(1);
                         (Value::U32(v), o)
                     }
-                    _ => unreachable!(),
                 };
 
                 self.store_in_operand(&instruction, 0, temp);
@@ -1010,7 +1009,6 @@ impl Interpreter {
                         let result_hi = u32::try_from(result >> 32).unwrap();
                         (Value::U32(result_hi), Value::U32(result_lo))
                     }
-                    _ => unreachable!(),
                 };
 
                 self.store_in_operand(&instruction, 0, result_lo);
@@ -1034,7 +1032,6 @@ impl Interpreter {
                     Value::U8(value) => Value::U8(!value),
                     Value::U16(value) => Value::U16(!value),
                     Value::U32(value) => Value::U32(!value),
-                    _ => unreachable!(),
                 };
                 self.store_in_operand(&instruction, 0, result);
             }
@@ -1263,7 +1260,6 @@ impl Interpreter {
                             });
                             self.flags_set_carry(bit);
                         }
-                        _ => unimplemented!(),
                     }
                 }
 
@@ -1744,10 +1740,6 @@ impl Interpreter {
         }
     }
 
-    fn flags_is_adjust(&self) -> bool {
-        (self.regs.flags & 1 << 4) != 0
-    }
-
     fn flags_set_adjust(&mut self, val: bool) {
         if val {
             self.regs.flags |= 1 << 4;
@@ -1850,20 +1842,6 @@ impl Interpreter {
         let new_cx = cx.wrapping_sub(1);
         self.regs.ecx &= 0xffff0000;
         self.regs.ecx |= u32::from(new_cx);
-    }
-
-    fn dec_si(&mut self) {
-        let si = u16::try_from(self.regs.esi & 0xffff).unwrap();
-        let new_si = si.wrapping_sub(1);
-        self.regs.esi &= 0xffff0000;
-        self.regs.esi |= u32::from(new_si);
-    }
-
-    fn inc_si(&mut self) {
-        let si = u16::try_from(self.regs.esi & 0xffff).unwrap();
-        let new_si = si.wrapping_add(1);
-        self.regs.esi &= 0xffff0000;
-        self.regs.esi |= u32::from(new_si);
     }
 
     fn sub_si(&mut self, n: u16) {
@@ -2275,14 +2253,6 @@ impl Value {
             Value::U8(_) => 1,
             Value::U16(_) => 2,
             Value::U32(_) => 4,
-        }
-    }
-
-    fn wrapping_dec(&self) -> Value {
-        match *self {
-            Value::U8(val) => Value::U8(val.wrapping_sub(1)),
-            Value::U16(val) => Value::U16(val.wrapping_sub(1)),
-            Value::U32(val) => Value::U32(val.wrapping_sub(1)),
         }
     }
 

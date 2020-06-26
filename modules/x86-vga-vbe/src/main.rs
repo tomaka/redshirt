@@ -77,15 +77,29 @@ fn main() {
 async fn async_main() {
     // TODO: somehow lock the "VBE system" so that no two drivers try to access it
     // TODO: also this module should be able to run on any platform, and only enable itself on x86
+    let mut vbe = unsafe { vbe::load_vbe_info().await.unwrap() };
 
-    unsafe {
-        let mut vbe = vbe::load_vbe_info().await.unwrap();
-        // TODO: mode selection
-        let mode = vbe
-            .modes()
-            .find(|m| m.pixels_dimensions().0 > 1500)
-            .unwrap()
-            .num();
-        vbe.set_current_mode(mode).await;
-    }
+    let (chosen_mode_num, width, height, linear_framebuffer_location) = {
+        let mut out = None;
+        for mode in vbe.modes() {
+            if mode.pixels_dimensions().0 < 1500 {
+                continue;
+            }
+
+            out = Some((
+                mode.num(),
+                mode.pixels_dimensions().0,
+                mode.pixels_dimensions().1,
+                mode.linear_framebuffer_location(),
+            ));
+        }
+        out.unwrap() // TODO: don't unwrap
+    };
+
+    vbe.set_current_mode(chosen_mode_num).await.unwrap();
+
+    // TODO: temporary
+    let mut ops = redshirt_hardware_interface::HardwareWriteOperationsBuilder::new();
+    unsafe { ops.memset(linear_framebuffer_location, 32, 0xff) };
+    ops.send();
 }

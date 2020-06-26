@@ -14,7 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use crate::interpreter;
-use core::{convert::TryFrom as _, fmt};
+use core::convert::TryFrom as _;
 
 /// Access to VBE functions.
 pub struct VbeContext {
@@ -84,7 +84,7 @@ pub async unsafe fn load_vbe_info() -> Result<VbeContext, Error> {
         interpreter.set_es_di(0x50, 0x0);
 
         // Try to call the VBE function, but ignored that specific mode if the call fails.
-        if let Err(err) = interpreter.int10h() {
+        if interpreter.int10h().is_err() {
             continue;
         }
         if check_ax(interpreter.ax()).is_err() {
@@ -239,14 +239,12 @@ pub enum Error {
 /// successful.
 fn check_ax(ax: u16) -> Result<(), Error> {
     if ax == 0x4f {
-        return Ok(())
+        return Ok(());
     }
 
     if (ax & 0xf) != 0x4f {
         return Err(Error::NotSupported);
     }
 
-    Err(Error::FunctionCallFailed {
-        ax_value: ax,
-    })
+    Err(Error::FunctionCallFailed { ax_value: ax })
 }
