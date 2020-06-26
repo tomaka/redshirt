@@ -49,7 +49,7 @@ unsafe extern "C" fn _start() -> ! {
     // (ARMv7-A and ARMv7-R edition).
     //
     // This is specific to ARMv7-A and ARMv7-R, hence the compile_error! above.
-    asm!(
+    llvm_asm!(
         r#"
     mrc p15, 0, r5, c0, c0, 5
     and r5, r5, #3
@@ -68,11 +68,11 @@ unsafe extern "C" fn _start() -> ! {
     }
 
     // Set up the stack.
-    asm!(r#"
+    llvm_asm!(r#"
     .comm stack, 0x400000, 8
     ldr sp, =stack+0x400000"#:::"memory":"volatile");
 
-    asm!(r#"b cpu_enter"#:::"volatile");
+    llvm_asm!(r#"b cpu_enter"#:::"volatile");
     core::hint::unreachable_unchecked()
 }
 
@@ -82,7 +82,7 @@ unsafe extern "C" fn _start() -> ! {
 #[naked]
 unsafe extern "C" fn _start() -> ! {
     // TODO: review this
-    asm!(r#"
+    llvm_asm!(r#"
     mrs x6, MPIDR_EL1
     and x6, x6, #0x3
     cbz x6, L0
@@ -101,11 +101,11 @@ L0: nop
     }
 
     // Set up the stack.
-    asm!(r#"
+    llvm_asm!(r#"
     .comm stack, 0x400000, 8
     ldr x5, =stack+0x400000; mov sp, x5"#:::"memory":"volatile");
 
-    asm!(r#"b cpu_enter"#:::"volatile");
+    llvm_asm!(r#"b cpu_enter"#:::"volatile");
     core::hint::unreachable_unchecked()
 }
 
@@ -141,6 +141,7 @@ struct PlatformSpecificImpl {
 
 impl PlatformSpecific for PlatformSpecificImpl {
     type TimerFuture = time::TimerFuture;
+    type IrqFuture = future::Pending<()>;
 
     fn num_cpus(self: Pin<&Self>) -> NonZeroU32 {
         NonZeroU32::new(1).unwrap()
@@ -152,6 +153,10 @@ impl PlatformSpecific for PlatformSpecificImpl {
 
     fn timer(self: Pin<&Self>, deadline: u128) -> Self::TimerFuture {
         self.time.timer(deadline)
+    }
+
+    fn next_irq(self: Pin<&Self>) -> Self::IrqFuture {
+        future::pending()
     }
 
     fn write_log(&self, message: &str) {
@@ -195,7 +200,7 @@ impl PlatformSpecific for PlatformSpecificImpl {
 fn halt() -> ! {
     unsafe {
         loop {
-            asm!(r#"wfe"#);
+            llvm_asm!(r#"wfe"#);
         }
     }
 }
@@ -238,7 +243,7 @@ fn init_uart() -> UartInfo {
 fn delay(count: i32) {
     unsafe {
         for _ in 0..count {
-            asm!("nop" ::: "volatile");
+            llvm_asm!("nop" ::: "volatile");
         }
     }
 }

@@ -17,8 +17,16 @@
 //!
 //! This module provides handling of interrupts on x86_64. It sets up the interrupts table (IDT)
 //! and allows reserving interrupt vectors. Once done, you can register a
-//! [`Waker`](core::task::Waker) that is waken up when an interrupt happens.
-//! This is done by calling [`ReservedInterruptVector::register_waker`].
+//! [`Waker`](core::task::Waker) that is waken up when an interrupt happens. This is done by
+//! calling [`ReservedInterruptVector::register_waker`].
+//!
+//! Because interrupts can happen at any time, it is important that interrupt handlers do not use
+//! any mutex whatsoever, unless interrupts are disabled before locking the mutex and re-enabled
+//! after unlocking it.
+//! Unfortunately, waking up a [`Waker`] might (and often does) lock a mutex. For this reasons,
+//! when an interrupt happens we only queue the corresponding waker, and wakers are only actually
+//! woken up when you later call [`process_wakers`].
+//! It is expected that [`process_wakers`] gets called by the tasks executor.
 //!
 //! Note that this API is racy. Once a `Waker` has been woken up, it gets discarded and needs to
 //! be registered again. It is possible that an interrupt gets triggered between the discard and
@@ -38,6 +46,7 @@ use core::{
     sync::atomic::{AtomicBool, Ordering},
     task::Waker,
 };
+use crossbeam_queue::ArrayQueue;
 use futures::task::AtomicWaker;
 use x86_64::structures::idt;
 
@@ -67,9 +76,19 @@ pub struct ReservedInterruptVector {
     interrupt: u8,
 }
 
-#[derive(Debug)]
+/// Error returned by [`reserve_any_vector`].
+#[derive(Debug, derive_more::Display)]
 pub enum ReserveErr {
+    /// No free interrupt vector available.
     Full,
+}
+
+/// Wake up all the wakers that have been marked as ready by all the interrupt(s) that have
+/// happened since the last call to this function.
+pub fn process_wakers() {
+    while let Ok(waker) = WAKERS_QUEUE.pop() {
+        waker.wake();
+    }
 }
 
 /// Loads the global IDT on the local processor and enables interrupts.
@@ -121,6 +140,10 @@ impl Drop for ReservedInterruptVector {
 }
 
 lazy_static::lazy_static! {
+    /// When an interrupt happens, we push the corresponding waker here. This list is emptied by
+    /// [`process_wakers`]
+    static ref WAKERS_QUEUE: ArrayQueue<Waker> = ArrayQueue::new(512);
+
     /// Table read by the hardware in order to determine what to do when an interrupt happens.
     static ref IDT: idt::InterruptDescriptorTable = {
         let mut idt = idt::InterruptDescriptorTable::new();
@@ -165,7 +188,12 @@ lazy_static::lazy_static! {
             }};
             ($entry:expr, $n:expr) => {{
                 extern "x86-interrupt" fn handler(_: &mut idt::InterruptStackFrame) {
-                    WAKERS[$n - 32].wake();
+                    // Because interrupts can happen at any time, it is important the code below
+                    // doesn't lock any mutex.
+                    if let Some(waker) = WAKERS[$n - 32].take() {
+                        // TODO: what if queue is legitimately full?
+                        WAKERS_QUEUE.push(waker).unwrap();
+                    }
                     if END_OF_INTERRUPT[$n - 32].load(Ordering::Relaxed) {
                         unsafe { local::end_of_interrupt(); }
                     }
@@ -428,12 +456,12 @@ extern "x86-interrupt" fn int1(_frame: &mut idt::InterruptStackFrame) {
     let dr7: u64;
 
     unsafe {
-        asm!("mov %dr0, $0" : "=r"(dr0));
-        asm!("mov %dr1, $0" : "=r"(dr1));
-        asm!("mov %dr2, $0" : "=r"(dr2));
-        asm!("mov %dr3, $0" : "=r"(dr3));
-        asm!("mov %dr6, $0" : "=r"(dr6));
-        asm!("mov %dr7, $0" : "=r"(dr7));
+        asm!("mov {}, dr0", out(reg) dr0, options(nomem, nostack, preserves_flags));
+        asm!("mov {}, dr1", out(reg) dr1, options(nomem, nostack, preserves_flags));
+        asm!("mov {}, dr2", out(reg) dr2, options(nomem, nostack, preserves_flags));
+        asm!("mov {}, dr3", out(reg) dr3, options(nomem, nostack, preserves_flags));
+        asm!("mov {}, dr6", out(reg) dr6, options(nomem, nostack, preserves_flags));
+        asm!("mov {}, dr7", out(reg) dr7, options(nomem, nostack, preserves_flags));
     }
 
     panic!(

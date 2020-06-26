@@ -115,8 +115,8 @@ unsafe fn cpu_enter() -> ! {
 fn abort() -> ! {
     loop {
         unsafe {
-            asm!("ebreak");
-            asm!("wfi");
+            llvm_asm!("ebreak");
+            llvm_asm!("wfi");
         }
     }
 }
@@ -159,6 +159,7 @@ struct PlatformSpecificImpl {}
 
 impl PlatformSpecific for PlatformSpecificImpl {
     type TimerFuture = future::Pending<()>;
+    type IrqFuture = future::Pending<()>;
 
     fn num_cpus(self: Pin<&Self>) -> NonZeroU32 {
         // TODO:
@@ -178,9 +179,9 @@ impl PlatformSpecific for PlatformSpecificImpl {
                 let hi1: u32;
                 let hi2: u32;
 
-                // Note that we put all three instructions in the same `asm!`, to prevent the
+                // Note that we put all three instructions in the same `llvm_asm!`, to prevent the
                 // compiler from reordering them.
-                asm!("rdtimeh $0 ; rdtime $1 ; rdtimeh $2" : "=r"(hi1), "=r"(lo), "=r"(hi2));
+                llvm_asm!("rdtimeh $0 ; rdtime $1 ; rdtimeh $2" : "=r"(hi1), "=r"(lo), "=r"(hi2));
 
                 if hi1 == hi2 {
                     break (u64::from(hi1) << 32) | u64::from(lo);
@@ -197,13 +198,17 @@ impl PlatformSpecific for PlatformSpecificImpl {
         // TODO: this is only supported in the "I" version of RISC-V; check that
         unsafe {
             let val: u64;
-            asm!("rdtime $0" : "=r"(val));
+            llvm_asm!("rdtime $0" : "=r"(val));
             u128::from(val)
         }
     }
 
     fn timer(self: Pin<&Self>, deadline: u128) -> Self::TimerFuture {
         unimplemented!()
+    }
+
+    fn next_irq(self: Pin<&Self>) -> Self::IrqFuture {
+        future::pending()
     }
 
     fn write_log(&self, message: &str) {

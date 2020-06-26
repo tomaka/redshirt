@@ -23,7 +23,7 @@ pub unsafe fn init() -> Interrupts {
     assert_eq!(value % 4, 0);
     // The 4 lower bits defined the mode. We keep 0, which means that all exceptions/interrupts
     // go to the same handler.
-    asm!("csrw mtvec, $0"::"r"(value)::"volatile");
+    llvm_asm!("csrw mtvec, $0"::"r"(value)::"volatile");
     Interrupts {}
 }
 
@@ -116,6 +116,6 @@ _trap_handler:
 #[no_mangle]
 unsafe extern "C" fn _trap_handler_rust() {
     let mcause: usize;
-    asm!("csrr $0, mcause":"=r"(mcause));
+    llvm_asm!("csrr $0, mcause":"=r"(mcause));
     panic!("Interrupt with mcause = 0x{:x}", mcause);
 }

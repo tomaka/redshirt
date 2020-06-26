@@ -34,8 +34,6 @@ use redshirt_core::{build_wasm_module, System};
 /// Main struct of this crate. Runs everything.
 pub struct Kernel<TPlat> {
     system: System<'static>,
-    /// If true, the kernel has started running from a different thread already.
-    running: AtomicBool,
     /// Phantom data so that we can keep the platform specific generic parameter.
     marker: PhantomData<TPlat>,
 }
@@ -47,6 +45,8 @@ where
     /// Initializes a new `Kernel`.
     pub fn init(platform_specific: TPlat) -> Self {
         let platform_specific = Arc::pin(platform_specific);
+
+        // TODO: don't do this on platforms that don't have PCI?
         let pci_devices = unsafe { crate::pci::pci::init_cam_pci() };
 
         let mut system_builder = redshirt_core::system::SystemBuilder::new()
@@ -57,7 +57,10 @@ where
             .with_native_program(crate::random::native::RandomNativeProgram::new(
                 platform_specific.clone(),
             ))
-            .with_native_program(crate::pci::native::PciNativeProgram::new(pci_devices))
+            .with_native_program(crate::pci::native::PciNativeProgram::new(
+                pci_devices,
+                platform_specific.clone(),
+            ))
             .with_native_program(crate::klog::KernelLogNativeProgram::new(
                 platform_specific.clone(),
             ))
@@ -83,20 +86,12 @@ where
 
         Kernel {
             system: system_builder.build().expect("failed to start kernel"),
-            running: AtomicBool::new(false),
             marker: PhantomData,
         }
     }
 
     /// Run the kernel. Must be called once per CPU.
     pub async fn run(&self) -> ! {
-        // TODO: we only run on a single CPU for now, to be cautious
-        if self.running.swap(true, Ordering::SeqCst) {
-            loop {
-                futures::future::poll_fn(|_| core::task::Poll::Pending).await
-            }
-        }
-
         loop {
             match self.system.run().await {
                 redshirt_core::system::SystemRunOutcome::ProgramFinished { .. } => {}

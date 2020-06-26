@@ -150,6 +150,8 @@ pub enum NewErr {
     StartIsntAFunction,
     /// If a "memory" symbol is provided, it must be a memory.
     MemoryIsntMemory,
+    /// A memory object has both been imported and exported.
+    MultipleMemoriesNotSupported,
     /// If a "__indirect_function_table" symbol is provided, it must be a table.
     IndirectTableIsntTable,
 }
@@ -333,6 +335,9 @@ impl fmt::Display for NewErr {
             NewErr::StartIsntAFunction => write!(f, "The \"start\" symbol must be a function"),
             NewErr::MemoryIsntMemory => {
                 write!(f, "If a \"memory\" symbol is provided, it must be a memory")
+            }
+            NewErr::MultipleMemoriesNotSupported => {
+                write!(f, "A memory object has both been imported and exported")
             }
             NewErr::IndirectTableIsntTable => write!(
                 f,

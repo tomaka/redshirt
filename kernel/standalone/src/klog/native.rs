@@ -15,12 +15,10 @@
 
 //! Native program that handles the `kernel_log` interface.
 
-// TODO: the `kernel_log` interface doesn't actually exist yet
-
-use crate::arch::PlatformSpecific;
+use crate::{arch::PlatformSpecific, future_channel};
 
 use alloc::{boxed::Box, sync::Arc};
-use core::{pin::Pin, str, sync::atomic};
+use core::{pin::Pin, str, sync::atomic, task::Poll};
 use crossbeam_queue::SegQueue;
 use futures::prelude::*;
 use redshirt_core::native::{DummyMessageIdWrite, NativeProgramEvent, NativeProgramRef};
@@ -31,8 +29,10 @@ use redshirt_kernel_log_interface::ffi::{KernelLogMethod, INTERFACE};
 pub struct KernelLogNativeProgram<TPlat> {
     /// If true, we have sent the interface registration message.
     registered: atomic::AtomicBool,
-    /// Message responses waiting to be emitted.
-    pending_messages: SegQueue<(MessageId, Result<EncodedMessage, ()>)>,
+    /// Sending side of `pending_messages`.
+    pending_messages_tx: future_channel::UnboundedSender<(MessageId, Result<EncodedMessage, ()>)>,
+    /// List of messages waiting to be emitted with `next_event`.
+    pending_messages: future_channel::UnboundedReceiver<(MessageId, Result<EncodedMessage, ()>)>,
     /// Platform-specific hooks.
     platform_specific: Pin<Arc<TPlat>>,
 }
@@ -40,9 +40,11 @@ pub struct KernelLogNativeProgram<TPlat> {
 impl<TPlat> KernelLogNativeProgram<TPlat> {
     /// Initializes the native program.
     pub fn new(platform_specific: Pin<Arc<TPlat>>) -> Self {
+        let (pending_messages_tx, pending_messages) = future_channel::channel();
         KernelLogNativeProgram {
             registered: atomic::AtomicBool::new(false),
-            pending_messages: SegQueue::new(),
+            pending_messages_tx,
+            pending_messages,
             platform_specific,
         }
     }
@@ -57,23 +59,27 @@ where
     type MessageIdWrite = DummyMessageIdWrite;
 
     fn next_event(self) -> Self::Future {
-        if !self.registered.swap(true, atomic::Ordering::Relaxed) {
-            return Box::pin(future::ready(NativeProgramEvent::Emit {
-                interface: redshirt_interface_interface::ffi::INTERFACE,
-                message_id_write: None,
-                message: redshirt_interface_interface::ffi::InterfaceMessage::Register(INTERFACE)
+        Box::pin(async move {
+            if !self.registered.swap(true, atomic::Ordering::Relaxed) {
+                return NativeProgramEvent::Emit {
+                    interface: redshirt_interface_interface::ffi::INTERFACE,
+                    message_id_write: None,
+                    message: redshirt_interface_interface::ffi::InterfaceMessage::Register(
+                        INTERFACE,
+                    )
                     .encode(),
-            }));
-        }
+                };
+            }
 
-        if let Ok((message_id, answer)) = self.pending_messages.pop() {
-            Box::pin(future::ready(NativeProgramEvent::Answer {
-                message_id,
-                answer,
-            }))
-        } else {
-            Box::pin(future::pending())
-        }
+            future::poll_fn(move |cx| {
+                if let Poll::Ready((message_id, answer)) = self.pending_messages.poll_next(cx) {
+                    return Poll::Ready(NativeProgramEvent::Answer { message_id, answer });
+                }
+
+                Poll::Pending
+            })
+            .await
+        })
     }
 
     fn interface_message(
@@ -99,17 +105,18 @@ where
                                   /*if let Ok(method) = KernelLogMethod::decode(&message.0[1..]) {
                                       self.klogger.set_method(method);
                                       if let Some(message_id) = message_id {
-                                          self.pending_messages.push((message_id, Ok(().encode())))
+                                          self.pending_messages_tx.unbounded_send((message_id, Ok(().encode())))
                                       }
                                   } else {
                                       if let Some(message_id) = message_id {
-                                          self.pending_messages.push((message_id, Err(())))
+                                          self.pending_messages_tx.unbounded_send((message_id, Err(())))
                                       }
                                   }*/
             }
             _ => {
                 if let Some(message_id) = message_id {
-                    self.pending_messages.push((message_id, Err(())))
+                    self.pending_messages_tx
+                        .unbounded_send((message_id, Err(())))
                 }
             }
         }

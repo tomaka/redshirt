@@ -56,7 +56,7 @@ pub fn block_on<R>(future: impl Future<Output = R>) -> R {
             // Thanks to this, if an event happens between the moment when we check the value of
             // `local_waken.woken_up` and the moment when we call `wfe`, then the `wfe`
             // instruction will immediately return and we will check the value again.
-            unsafe { asm!("wfe" :::: "volatile") }
+            unsafe { llvm_asm!("wfe" :::: "volatile") }
         }
     }
 }
@@ -72,7 +72,7 @@ impl ArcWake for LocalWake {
             // Wakes up all the CPUs that called `wfe`.
             // Note that this wakes up *all* CPUs, but the ARM architecture doesn't provide any
             // way to target a single CPU for wake-up.
-            asm!("dsb sy ; sev" :::: "volatile")
+            llvm_asm!("dsb sy ; sev" :::: "volatile")
         }
     }
 }
