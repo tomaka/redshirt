@@ -185,6 +185,7 @@ pub struct TcpSocket<'a, TSockUd> {
 struct SocketState<TSockUd> {
     user_data: TSockUd,
     is_connected: bool,
+    // TODO: a bit stupid, since we destroy the socket asap?
     is_closed: bool,
     close_called: bool,
     read_ready: bool,
@@ -192,6 +193,7 @@ struct SocketState<TSockUd> {
     write_remaining: Vec<u8>,
 }
 
+/// Error when building a TCP socket.
 #[derive(Debug, thiserror::Error)]
 pub enum ConnectError {
     #[error("No port available")]
@@ -209,6 +211,7 @@ pub enum ConnectError {
 pub struct SocketId(smoltcp::socket::SocketHandle);
 
 impl<TSockUd> NetInterfaceState<TSockUd> {
+    /// Initializes the state machine of a new interface.
     pub async fn new(config: Config) -> Self {
         let device = RawDevice {
             device_out_buffer: Vec::new(),
@@ -508,7 +511,22 @@ impl<TSockUd> NetInterfaceState<TSockUd> {
 
                     // Check if this socket got closed.
                     if !socket_state.is_closed && !smoltcp_socket.is_open() {
-                        // TODO: free the port if socket is outgoing
+                        let local_port = smoltcp_socket.local_endpoint().port;
+
+                        drop(smoltcp_socket);
+                        self.sockets.remove(socket_id.0);
+
+                        // Free the port if it is no longer in use by any other socket.
+                        let free_port = !self.sockets.iter().any(|s| match s {
+                            smoltcp::socket::Socket::Tcp(s) => {
+                                s.local_endpoint().port == local_port
+                            }
+                            _ => unreachable!(),
+                        });
+                        if free_port {
+                            self.tcp_ports_assign.free(local_port).unwrap();
+                        }
+
                         socket_state.is_closed = true;
                         let socket_id = *socket_id;
                         self.sockets_state.remove(&socket_id);
