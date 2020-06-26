@@ -13,6 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+#![recursion_limit = "2048"]
+
 use futures::prelude::*;
 use hashbrown::HashMap;
 use network_manager::{NetworkManager, NetworkManagerEvent};
@@ -53,308 +55,301 @@ async fn async_main() {
     // TODO: re-review all this code
 
     loop {
-        let next_interface = redshirt_syscalls::next_interface_message();
-        let next_net_event = Box::pin(network.next_event());
-        let msg = match future::select(next_interface, next_net_event).await {
-            future::Either::Left((DecodedInterfaceOrDestroyed::Interface(msg), _)) => msg,
-            future::Either::Left((DecodedInterfaceOrDestroyed::ProcessDestroyed(_), _)) => {
-                continue;
-                // TODO: unimplemented
-            }
-            future::Either::Right((
-                NetworkManagerEvent::EthernetCableOut(id, msg_id, buffer),
-                _,
-            )) => {
-                debug_assert!(!buffer.is_empty());
-                if let Some(msg_id) = msg_id.pop_front() {
-                    redshirt_syscalls::emit_answer(msg_id, &buffer);
-                } else {
-                    // TODO: network driver is overloaded; we should have some backpressure system
-                    todo!()
-                }
-                continue;
-            }
-            future::Either::Right((
-                NetworkManagerEvent::TcpConnected {
-                    mut socket,
-                    local_endpoint,
-                    remote_endpoint,
-                },
-                _,
-            )) => {
-                let state = socket.user_data_mut();
-                let message_id = state.connected_message.take().unwrap();
-                redshirt_syscalls::emit_answer(
-                    message_id,
-                    &tcp_ffi::TcpOpenResponse {
-                        result: Ok(tcp_ffi::TcpSocketOpen {
-                            socket_id: state.id,
-                            local_ip: match local_endpoint.ip() {
-                                IpAddr::V4(ip) => ip.to_ipv6_mapped().segments(),
-                                IpAddr::V6(ip) => ip.segments(),
-                            },
-                            local_port: local_endpoint.port(),
-                            remote_ip: match remote_endpoint.ip() {
-                                IpAddr::V4(ip) => ip.to_ipv6_mapped().segments(),
-                                IpAddr::V6(ip) => ip.segments(),
-                            },
-                            remote_port: remote_endpoint.port(),
-                        }),
-                    },
-                );
-                continue;
-            }
-            future::Either::Right((NetworkManagerEvent::TcpClosed(mut socket), _)) => {
-                let state = socket.user_data_mut();
-                if let Some(message_id) = state.connected_message.take() {
-                    redshirt_syscalls::emit_answer(
-                        message_id,
-                        &tcp_ffi::TcpOpenResponse { result: Err(()) },
-                    );
-                }
-                if let Some(message_id) = state.read_message.take() {
-                    redshirt_syscalls::emit_answer(
-                        message_id,
-                        &tcp_ffi::TcpReadResponse {
-                            result: Err(tcp_ffi::TcpReadError::ConnectionFinished),
-                        },
-                    );
-                }
-                if let Some(message_id) = state.write_finished_message.take() {
-                    redshirt_syscalls::emit_answer(
-                        message_id,
-                        &tcp_ffi::TcpWriteResponse {
-                            result: Err(tcp_ffi::TcpWriteError::ConnectionFinished),
-                        },
-                    );
-                }
-                let _was_there = sockets.remove(&state.id);
-                debug_assert!(_was_there.is_some());
-                continue;
-            }
-            future::Either::Right((NetworkManagerEvent::TcpReadReady(mut socket), _)) => {
-                let data = socket.read();
-                assert!(!data.is_empty());
-                let state = socket.user_data_mut();
-                if let Some(message_id) = state.read_message.take() {
-                    redshirt_syscalls::emit_answer(
-                        message_id,
-                        &tcp_ffi::TcpReadResponse { result: Ok(data) },
-                    );
-                }
-                continue;
-            }
-            future::Either::Right((NetworkManagerEvent::TcpWriteFinished(mut socket), _)) => {
-                let state = socket.user_data_mut();
-                if let Some(message_id) = state.write_finished_message.take() {
-                    redshirt_syscalls::emit_answer(
-                        message_id,
-                        &tcp_ffi::TcpWriteResponse { result: Ok(()) },
-                    );
-                }
-                continue;
-            }
-        };
+        futures::select! {
+            interface_event = redshirt_syscalls::next_interface_message().fuse() => {
+                match interface_event {
+                    DecodedInterfaceOrDestroyed::Interface(msg) => {
+                        if msg.interface == tcp_ffi::INTERFACE {
+                            // TODO: don't unwrap
+                            let msg_data = tcp_ffi::TcpMessage::decode(msg.actual_data).unwrap();
+                            match msg_data {
+                                tcp_ffi::TcpMessage::Open(open_msg) => {
+                                    let message_id = match msg.message_id {
+                                        Some(m) => m,
+                                        None => continue,
+                                    };
 
-        if msg.interface == tcp_ffi::INTERFACE {
-            // TODO: don't unwrap
-            let msg_data = tcp_ffi::TcpMessage::decode(msg.actual_data).unwrap();
-            match msg_data {
-                tcp_ffi::TcpMessage::Open(open_msg) => {
-                    let message_id = match msg.message_id {
-                        Some(m) => m,
-                        None => continue,
-                    };
+                                    let new_id = next_socket_id;
+                                    next_socket_id += 1;
 
-                    let new_id = next_socket_id;
-                    next_socket_id += 1;
+                                    let inner_id = network
+                                        .build_tcp_socket(
+                                            open_msg.listen,
+                                            &{
+                                                let ip_addr = Ipv6Addr::from(open_msg.ip);
+                                                if let Some(ip_addr) = ip_addr.to_ipv4() {
+                                                    SocketAddr::new(ip_addr.into(), open_msg.port)
+                                                } else {
+                                                    SocketAddr::new(ip_addr.into(), open_msg.port)
+                                                }
+                                            },
+                                            SocketState {
+                                                id: new_id,
+                                                connected_message: Some(message_id),
+                                                read_message: None,
+                                                write_finished_message: None,
+                                            },
+                                        )
+                                        .id();
 
-                    let inner_id = network
-                        .build_tcp_socket(
-                            open_msg.listen,
-                            &{
-                                let ip_addr = Ipv6Addr::from(open_msg.ip);
-                                if let Some(ip_addr) = ip_addr.to_ipv4() {
-                                    SocketAddr::new(ip_addr.into(), open_msg.port)
-                                } else {
-                                    SocketAddr::new(ip_addr.into(), open_msg.port)
+                                    sockets.insert(new_id, inner_id);
                                 }
-                            },
-                            SocketState {
-                                id: new_id,
-                                connected_message: Some(message_id),
-                                read_message: None,
-                                write_finished_message: None,
-                            },
-                        )
-                        .id();
+                                tcp_ffi::TcpMessage::Close(close) => {
+                                    if let Some(inner_id) = sockets.get_mut(&close.socket_id) {
+                                        let mut socket = network.tcp_socket_by_id(&inner_id).unwrap();
+                                        if socket.closed() {
+                                            if let Some(message_id) = msg.message_id {
+                                                redshirt_syscalls::emit_answer(
+                                                    message_id,
+                                                    &tcp_ffi::TcpCloseResponse {
+                                                        result: Err(tcp_ffi::TcpCloseError::ConnectionFinished),
+                                                    },
+                                                );
+                                            }
+                                            continue;
+                                        }
 
-                    sockets.insert(new_id, inner_id);
+                                        if socket.close().is_ok() {
+                                            if let Some(message_id) = msg.message_id {
+                                                redshirt_syscalls::emit_answer(
+                                                    message_id,
+                                                    &tcp_ffi::TcpCloseResponse { result: Ok(()) },
+                                                );
+                                            }
+                                        } else if let Some(message_id) = msg.message_id {
+                                            redshirt_syscalls::emit_answer(
+                                                message_id,
+                                                &tcp_ffi::TcpCloseResponse {
+                                                    result: Err(tcp_ffi::TcpCloseError::FinAlreaySent),
+                                                },
+                                            );
+                                        }
+                                    } else if let Some(message_id) = msg.message_id {
+                                        redshirt_syscalls::emit_answer(
+                                            message_id,
+                                            &tcp_ffi::TcpCloseResponse {
+                                                result: Err(tcp_ffi::TcpCloseError::InvalidSocket),
+                                            },
+                                        );
+                                    }
+                                }
+                                tcp_ffi::TcpMessage::Read(read) => {
+                                    let message_id = match msg.message_id {
+                                        Some(m) => m,
+                                        None => continue,
+                                    };
+
+                                    if let Some(inner_socket_id) = sockets.get_mut(&read.socket_id) {
+                                        let mut inner_socket = network.tcp_socket_by_id(inner_socket_id).unwrap();
+                                        if inner_socket.closed() {
+                                            redshirt_syscalls::emit_answer(
+                                                message_id,
+                                                &tcp_ffi::TcpReadResponse {
+                                                    result: Err(tcp_ffi::TcpReadError::ConnectionFinished),
+                                                },
+                                            );
+                                            continue;
+                                        }
+
+                                        // TODO: handle errors
+                                        let available = inner_socket.read();
+                                        if !available.is_empty() {
+                                            redshirt_syscalls::emit_answer(
+                                                message_id,
+                                                &tcp_ffi::TcpReadResponse {
+                                                    result: Ok(available),
+                                                },
+                                            );
+                                        } else {
+                                            inner_socket.user_data_mut().read_message = Some(message_id);
+                                        }
+                                    } else {
+                                        redshirt_syscalls::emit_answer(
+                                            message_id,
+                                            &tcp_ffi::TcpReadResponse {
+                                                result: Err(tcp_ffi::TcpReadError::InvalidSocket),
+                                            },
+                                        );
+                                    }
+                                }
+                                tcp_ffi::TcpMessage::Write(write) => {
+                                    if let Some(inner_socket_id) = sockets.get_mut(&write.socket_id) {
+                                        let mut inner_socket = network.tcp_socket_by_id(inner_socket_id).unwrap();
+                                        if inner_socket.closed() {
+                                            if let Some(message_id) = msg.message_id {
+                                                redshirt_syscalls::emit_answer(
+                                                    message_id,
+                                                    &tcp_ffi::TcpWriteResponse {
+                                                        result: Err(tcp_ffi::TcpWriteError::ConnectionFinished),
+                                                    },
+                                                );
+                                            }
+                                            continue;
+                                        }
+                                        if inner_socket.close_called() {
+                                            if let Some(message_id) = msg.message_id {
+                                                redshirt_syscalls::emit_answer(
+                                                    message_id,
+                                                    &tcp_ffi::TcpWriteResponse {
+                                                        result: Err(tcp_ffi::TcpWriteError::FinAlreaySent),
+                                                    },
+                                                );
+                                            }
+                                            continue;
+                                        }
+
+                                        // TODO: handle errors
+                                        let _ = inner_socket.set_write_buffer(write.data);
+                                        inner_socket.user_data_mut().write_finished_message = msg.message_id;
+                                    } else if let Some(message_id) = msg.message_id {
+                                        redshirt_syscalls::emit_answer(
+                                            message_id,
+                                            &tcp_ffi::TcpWriteResponse {
+                                                result: Err(tcp_ffi::TcpWriteError::InvalidSocket),
+                                            },
+                                        );
+                                    }
+                                }
+                                tcp_ffi::TcpMessage::Destroy(socket_id) => {
+                                    if let Some(inner_id) = sockets.remove(&socket_id) {
+                                        let mut socket = network.tcp_socket_by_id(&inner_id).unwrap();
+                                        let mut local_state = socket.user_data_mut();
+                                        // TODO: don't throw away messages but respond them
+                                        local_state.connected_message = None;
+                                        local_state.read_message = None;
+                                        local_state.write_finished_message = None;
+                                        socket.reset();
+                                    }
+                                }
+                            }
+                        } else if msg.interface == eth_ffi::INTERFACE {
+                            let msg_data = eth_ffi::NetworkMessage::decode(msg.actual_data).unwrap();
+                            //log::debug!("message: {:?}", msg_data);
+
+                            match msg_data {
+                                eth_ffi::NetworkMessage::RegisterInterface { id, mac_address } => {
+                                    network
+                                        .register_interface((msg.emitter_pid, id), mac_address, VecDeque::new())
+                                        .await
+                                        .unwrap(); // TODO: don't unwrap
+                                }
+                                eth_ffi::NetworkMessage::UnregisterInterface(id) => {
+                                    network.unregister_interface(&(msg.emitter_pid, id));
+                                }
+                                eth_ffi::NetworkMessage::InterfaceOnData(id, buf) => {
+                                    // TODO: back-pressure here as well?
+                                    network.inject_interface_data(&(msg.emitter_pid, id), buf);
+                                    if let Some(message_id) = msg.message_id {
+                                        redshirt_syscalls::emit_answer(message_id, &());
+                                    }
+                                }
+                                eth_ffi::NetworkMessage::InterfaceWaitData(id) => {
+                                    let data = network.read_ethernet_cable_out(&(msg.emitter_pid, id));
+                                    if !data.is_empty() {
+                                        // TODO: don't unwrap message_id
+                                        redshirt_syscalls::emit_answer(msg.message_id.unwrap(), &data);
+                                    } else {
+                                        // TODO: don't unwrap message_id
+                                        network
+                                            .interface_user_data(&(msg.emitter_pid, id))
+                                            .push_back(msg.message_id.unwrap());
+                                    }
+                                }
+                            }
+                        } else {
+                            unreachable!()
+                        }
+                    },
+                    DecodedInterfaceOrDestroyed::ProcessDestroyed(_) => {
+                        continue;
+                        // TODO: unimplemented
+                    }
                 }
-                tcp_ffi::TcpMessage::Close(close) => {
-                    if let Some(inner_id) = sockets.get_mut(&close.socket_id) {
-                        let mut socket = network.tcp_socket_by_id(&inner_id).unwrap();
-                        if socket.closed() {
-                            if let Some(message_id) = msg.message_id {
-                                redshirt_syscalls::emit_answer(
-                                    message_id,
-                                    &tcp_ffi::TcpCloseResponse {
-                                        result: Err(tcp_ffi::TcpCloseError::ConnectionFinished),
-                                    },
-                                );
-                            }
-                            continue;
+            }
+            net_event = network.next_event().fuse() => {
+                match net_event {
+                    NetworkManagerEvent::EthernetCableOut(id, msg_id) => {
+                        if let Some(msg_id) = msg_id.pop_front() {
+                            let buffer = network.read_ethernet_cable_out(&id);
+                            debug_assert!(!buffer.is_empty());
+                            redshirt_syscalls::emit_answer(msg_id, &buffer);
                         }
-
-                        if socket.close().is_ok() {
-                            if let Some(message_id) = msg.message_id {
-                                redshirt_syscalls::emit_answer(
-                                    message_id,
-                                    &tcp_ffi::TcpCloseResponse { result: Ok(()) },
-                                );
-                            }
-                        } else if let Some(message_id) = msg.message_id {
-                            redshirt_syscalls::emit_answer(
-                                message_id,
-                                &tcp_ffi::TcpCloseResponse {
-                                    result: Err(tcp_ffi::TcpCloseError::FinAlreaySent),
-                                },
-                            );
-                        }
-                    } else if let Some(message_id) = msg.message_id {
+                    }
+                    NetworkManagerEvent::TcpConnected {
+                            mut socket,
+                            local_endpoint,
+                            remote_endpoint,
+                        } => {
+                        let state = socket.user_data_mut();
+                        let message_id = state.connected_message.take().unwrap();
                         redshirt_syscalls::emit_answer(
                             message_id,
-                            &tcp_ffi::TcpCloseResponse {
-                                result: Err(tcp_ffi::TcpCloseError::InvalidSocket),
+                            &tcp_ffi::TcpOpenResponse {
+                                result: Ok(tcp_ffi::TcpSocketOpen {
+                                    socket_id: state.id,
+                                    local_ip: match local_endpoint.ip() {
+                                        IpAddr::V4(ip) => ip.to_ipv6_mapped().segments(),
+                                        IpAddr::V6(ip) => ip.segments(),
+                                    },
+                                    local_port: local_endpoint.port(),
+                                    remote_ip: match remote_endpoint.ip() {
+                                        IpAddr::V4(ip) => ip.to_ipv6_mapped().segments(),
+                                        IpAddr::V6(ip) => ip.segments(),
+                                    },
+                                    remote_port: remote_endpoint.port(),
+                                }),
                             },
                         );
                     }
-                }
-                tcp_ffi::TcpMessage::Read(read) => {
-                    let message_id = match msg.message_id {
-                        Some(m) => m,
-                        None => continue,
-                    };
-
-                    if let Some(inner_socket_id) = sockets.get_mut(&read.socket_id) {
-                        let mut inner_socket = network.tcp_socket_by_id(inner_socket_id).unwrap();
-                        if inner_socket.closed() {
+                    NetworkManagerEvent::TcpClosed(mut socket) => {
+                        let state = socket.user_data_mut();
+                        if let Some(message_id) = state.connected_message.take() {
+                            redshirt_syscalls::emit_answer(
+                                message_id,
+                                &tcp_ffi::TcpOpenResponse { result: Err(()) },
+                            );
+                        }
+                        if let Some(message_id) = state.read_message.take() {
                             redshirt_syscalls::emit_answer(
                                 message_id,
                                 &tcp_ffi::TcpReadResponse {
                                     result: Err(tcp_ffi::TcpReadError::ConnectionFinished),
                                 },
                             );
-                            continue;
                         }
-
-                        // TODO: handle errors
-                        let available = inner_socket.read();
-                        if !available.is_empty() {
+                        if let Some(message_id) = state.write_finished_message.take() {
                             redshirt_syscalls::emit_answer(
                                 message_id,
-                                &tcp_ffi::TcpReadResponse {
-                                    result: Ok(available),
+                                &tcp_ffi::TcpWriteResponse {
+                                    result: Err(tcp_ffi::TcpWriteError::ConnectionFinished),
                                 },
                             );
-                        } else {
-                            inner_socket.user_data_mut().read_message = Some(message_id);
                         }
-                    } else {
-                        redshirt_syscalls::emit_answer(
-                            message_id,
-                            &tcp_ffi::TcpReadResponse {
-                                result: Err(tcp_ffi::TcpReadError::InvalidSocket),
-                            },
-                        );
+                        let _was_there = sockets.remove(&state.id);
+                        debug_assert!(_was_there.is_some());
                     }
-                }
-                tcp_ffi::TcpMessage::Write(write) => {
-                    if let Some(inner_socket_id) = sockets.get_mut(&write.socket_id) {
-                        let mut inner_socket = network.tcp_socket_by_id(inner_socket_id).unwrap();
-                        if inner_socket.closed() {
-                            if let Some(message_id) = msg.message_id {
-                                redshirt_syscalls::emit_answer(
-                                    message_id,
-                                    &tcp_ffi::TcpWriteResponse {
-                                        result: Err(tcp_ffi::TcpWriteError::ConnectionFinished),
-                                    },
-                                );
-                            }
-                            continue;
+                    NetworkManagerEvent::TcpReadReady(mut socket) => {
+                        let data = socket.read();
+                        assert!(!data.is_empty());
+                        let state = socket.user_data_mut();
+                        if let Some(message_id) = state.read_message.take() {
+                            redshirt_syscalls::emit_answer(
+                                message_id,
+                                &tcp_ffi::TcpReadResponse { result: Ok(data) },
+                            );
                         }
-                        if inner_socket.close_called() {
-                            if let Some(message_id) = msg.message_id {
-                                redshirt_syscalls::emit_answer(
-                                    message_id,
-                                    &tcp_ffi::TcpWriteResponse {
-                                        result: Err(tcp_ffi::TcpWriteError::FinAlreaySent),
-                                    },
-                                );
-                            }
-                            continue;
-                        }
-
-                        // TODO: handle errors
-                        let _ = inner_socket.set_write_buffer(write.data);
-                        inner_socket.user_data_mut().write_finished_message = msg.message_id;
-                    } else if let Some(message_id) = msg.message_id {
-                        redshirt_syscalls::emit_answer(
-                            message_id,
-                            &tcp_ffi::TcpWriteResponse {
-                                result: Err(tcp_ffi::TcpWriteError::InvalidSocket),
-                            },
-                        );
                     }
-                }
-                tcp_ffi::TcpMessage::Destroy(socket_id) => {
-                    if let Some(inner_id) = sockets.remove(&socket_id) {
-                        let mut socket = network.tcp_socket_by_id(&inner_id).unwrap();
-                        let mut local_state = socket.user_data_mut();
-                        // TODO: don't throw away messages but respond them
-                        local_state.connected_message = None;
-                        local_state.read_message = None;
-                        local_state.write_finished_message = None;
-                        socket.reset();
+                    NetworkManagerEvent::TcpWriteFinished(mut socket) => {
+                        let state = socket.user_data_mut();
+                        if let Some(message_id) = state.write_finished_message.take() {
+                            redshirt_syscalls::emit_answer(
+                                message_id,
+                                &tcp_ffi::TcpWriteResponse { result: Ok(()) },
+                            );
+                        }
                     }
                 }
             }
-        } else if msg.interface == eth_ffi::INTERFACE {
-            let msg_data = eth_ffi::NetworkMessage::decode(msg.actual_data).unwrap();
-            //log::debug!("message: {:?}", msg_data);
-
-            match msg_data {
-                eth_ffi::NetworkMessage::RegisterInterface { id, mac_address } => {
-                    network
-                        .register_interface((msg.emitter_pid, id), mac_address, VecDeque::new())
-                        .await
-                        .unwrap(); // TODO: don't unwrap
-                }
-                eth_ffi::NetworkMessage::UnregisterInterface(id) => {
-                    network.unregister_interface(&(msg.emitter_pid, id));
-                }
-                eth_ffi::NetworkMessage::InterfaceOnData(id, buf) => {
-                    // TODO: back-pressure here as well?
-                    network.inject_interface_data(&(msg.emitter_pid, id), buf);
-                    if let Some(message_id) = msg.message_id {
-                        redshirt_syscalls::emit_answer(message_id, &());
-                    }
-                }
-                eth_ffi::NetworkMessage::InterfaceWaitData(id) => {
-                    let data = network.read_ethernet_cable_out(&(msg.emitter_pid, id));
-                    if !data.is_empty() {
-                        // TODO: don't unwrap message_id
-                        redshirt_syscalls::emit_answer(msg.message_id.unwrap(), &data);
-                    } else {
-                        // TODO: don't unwrap message_id
-                        network
-                            .interface_user_data(&(msg.emitter_pid, id))
-                            .push_back(msg.message_id.unwrap());
-                    }
-                }
-            }
-        } else {
-            unreachable!()
         }
     }
 }
