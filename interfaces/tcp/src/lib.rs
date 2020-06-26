@@ -17,6 +17,56 @@
 //!
 //! Allows opening asynchronous TCP sockets and listeners, similar to what the `tokio` or
 //! `async-std` libraries do.
+//!
+//! # Socket state
+//!
+//! At any given time, a TCP socket is in one of the following states:
+//!
+//! - Connecting/Listening. The socket is performing the three-way handshake or, for listening
+//! sockets, is waiting for an incoming connection. From that state, a connection can transition
+//! to the Established state.
+//! - Established. The socket is connecting and performing normal reads and writes.
+//! - Closed wait. The socket has received a FIN from the remote. In this state, it is guaranteed
+//! that reading from the socket will not produce any more data. Writing is still possible.
+//! Depending on the logic of the application, the local machine might be encouraged to close
+//! their side as soon as possible, or can continue writing data on the socket for a long period
+//! of time.
+//! - Fin wait. Our side has sent a FIN to the remote. This only happens if the application layer
+//! has requested so. Writing is no longer allowed. Reading is still allowed and might yield more
+//! data.
+//! - Fin wait 2. The remote has ACK'ed the FIN that we have sent to it. Only happens after
+//! the Fin wait state.
+//! - Last ACK. The socket has received a FIN from the remote, and we have sent a FIN to the remote
+//! as well, but the remote still has to ACK it.
+//! - Finished. Both sides have sent a FIN to each other. Writing is forbidden, and reading is
+//! guaranteed to no longer produce any data. The only sensible thing that can be done with the
+//! socket is to destroy it.
+//!
+//! +---------------+       +---------------+      +---------------+
+//! |  Connecting   |+----->|  Established  |+---->|  Closed wait  |
+//! +---------------+       +---------------+      +---------------+
+//!                                 | Close                | Close
+//!                                 v                      v
+//!                         +---------------+      +---------------+
+//!                         |   Fin wait    |+---->|   Last ACK    |
+//!                         +---------------+      +---------------+
+//!                                 |                      |
+//!                                 v                      v
+//!                         +---------------+      +---------------+
+//!                         |  Fin wait 2   |+---->|   Finished    |
+//!                         +---------------+      +---------------+
+//!
+//! Additionally, the connection can jump at any point to the "Finished" state without any prior
+//! warning, for example if a RST packet is received or if a protocol error is detected.
+//!
+//! > **Note**: The official denomination of the "Finished" state is "CLOSED", but we chose the
+//! >           word "Finished" to clear any confusion regarding the relationship with the action
+//! >           of sending a FIN packet.
+//!
+//! From the point of view of the user of this interface, all the state transitions happen
+//! automatically except for the transitions from "Established" to "Fin wait" and from "Closed
+//! wait" to "Last ACK", which happen when they request to close the socket.
+//!
 
 use futures::{lock::Mutex, prelude::*, ready};
 use redshirt_syscalls::{Encode as _, MessageResponseFuture};
@@ -35,11 +85,15 @@ pub mod ffi;
 pub struct TcpStream {
     handle: u32,
     /// Buffer of data that has been read from the socket but not transmitted to the user yet.
-    read_buffer: Vec<u8>,
+    /// Contains `None` after the remote has sent us a FIN, meaning that we will not get any more
+    /// data.
+    read_buffer: Option<Vec<u8>>,
     /// If Some, we have sent out a "read" message and are waiting for a response.
     pending_read: Option<MessageResponseFuture<ffi::TcpReadResponse>>,
     /// If Some, we have sent out a "write" message and are waiting for a response.
     pending_write: Option<MessageResponseFuture<ffi::TcpWriteResponse>>,
+    /// If Some, we have sent out a "close" message and are waiting for a response.
+    pending_close: Option<MessageResponseFuture<ffi::TcpCloseResponse>>,
 }
 
 /// Active TCP listening socket.
@@ -56,7 +110,8 @@ pub struct TcpListener {
 
 impl TcpStream {
     /// Start connecting to the given address. Returns a `TcpStream` if the connection is
-    /// successful.
+    /// successful. The returned `TcpStream` is in the "Established" state (but might quickly
+    /// transition to another state).
     pub fn connect(socket_addr: &SocketAddr) -> impl Future<Output = Result<TcpStream, ()>> {
         let fut = TcpStream::new(socket_addr, false);
         async move { Ok(fut.await?.0) }
@@ -81,15 +136,18 @@ impl TcpStream {
             },
         });
 
+        // Send the opening message here, so that the socket starts connecting or listening to
+        // connections before we start polling the returned `Future`.
+        let open_future = unsafe {
+            let msg = tcp_open.encode();
+            redshirt_syscalls::MessageBuilder::new()
+                .add_data(&msg)
+                .emit_with_response(&ffi::INTERFACE)
+                .unwrap()
+        };
+
         async move {
-            let message: ffi::TcpOpenResponse = unsafe {
-                let msg = tcp_open.encode();
-                redshirt_syscalls::MessageBuilder::new()
-                    .add_data(&msg)
-                    .emit_with_response(&ffi::INTERFACE)
-                    .unwrap()
-                    .await
-            };
+            let message: ffi::TcpOpenResponse = open_future.await;
 
             let socket_open_info = message.result?;
             let remote_addr = {
@@ -99,9 +157,10 @@ impl TcpStream {
 
             let stream = TcpStream {
                 handle: socket_open_info.socket_id,
-                read_buffer: Vec::new(),
+                read_buffer: Some(Vec::new()),
                 pending_read: None,
                 pending_write: None,
+                pending_close: None,
             };
 
             Ok((stream, remote_addr))
@@ -118,18 +177,28 @@ impl AsyncRead for TcpStream {
         loop {
             if let Some(pending_read) = self.pending_read.as_mut() {
                 self.read_buffer = match ready!(Future::poll(Pin::new(pending_read), cx)).result {
-                    Ok(d) => d,
-                    Err(_) => return Poll::Ready(Err(io::ErrorKind::Other.into())), // TODO:
+                    Ok(d) if d.is_empty() => None,
+                    Ok(d) => Some(d),
+                    Err(ffi::TcpReadError::ConnectionFinished) => {
+                        return Poll::Ready(Err(io::ErrorKind::BrokenPipe.into()))
+                    }
+                    Err(ffi::TcpReadError::InvalidSocket) => unreachable!(),
                 };
                 self.pending_read = None;
             }
 
             debug_assert!(self.pending_read.is_none());
 
-            if !self.read_buffer.is_empty() {
-                let to_copy = cmp::min(self.read_buffer.len(), buf.len());
-                let mut tmp = mem::replace(&mut self.read_buffer, Vec::new());
-                self.read_buffer = tmp.split_off(to_copy);
+            let read_buffer = match self.read_buffer.as_mut() {
+                Some(b) => b,
+                // We have received a FIN. Returning EOF.
+                None => return Poll::Ready(Ok(0)),
+            };
+
+            if !read_buffer.is_empty() {
+                let to_copy = cmp::min(read_buffer.len(), buf.len());
+                let mut tmp = mem::replace(read_buffer, Vec::new());
+                *read_buffer = tmp.split_off(to_copy);
                 buf[..to_copy].copy_from_slice(&tmp);
                 return Poll::Ready(Ok(to_copy));
             }
@@ -162,14 +231,7 @@ impl AsyncWrite for TcpStream {
         cx: &mut Context,
         buf: &[u8],
     ) -> Poll<Result<usize, io::Error>> {
-        // Try to finish the previous write, if any is in progress.
-        if let Some(pending_write) = self.pending_write.as_mut() {
-            match ready!(Future::poll(Pin::new(pending_write), cx)).result {
-                Ok(()) => self.pending_write = None,
-                Err(_) => return Poll::Ready(Err(io::ErrorKind::Other.into())), // TODO:
-            }
-        }
-
+        ready!(AsyncWrite::poll_flush(self.as_mut(), cx))?;
         debug_assert!(self.pending_write.is_none());
 
         // Perform the write, and store into `self.pending_write` a future to when we can start
@@ -196,12 +258,74 @@ impl AsyncWrite for TcpStream {
 
     // TODO: implement poll_write_vectored
 
-    fn poll_flush(self: Pin<&mut Self>, _: &mut Context) -> Poll<Result<(), io::Error>> {
-        Poll::Ready(Ok(()))
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), io::Error>> {
+        // Try to finish the previous write, if any is in progress.
+        if let Some(pending_write) = self.pending_write.as_mut() {
+            let result = ready!(Future::poll(Pin::new(pending_write), cx)).result;
+            self.pending_write = None;
+            match result {
+                Ok(()) => Poll::Ready(Ok(())),
+                Err(ffi::TcpWriteError::FinAlreaySent) => {
+                    Poll::Ready(Err(io::ErrorKind::BrokenPipe.into()))
+                }
+                Err(ffi::TcpWriteError::ConnectionFinished) => {
+                    Poll::Ready(Err(io::ErrorKind::BrokenPipe.into()))
+                }
+                Err(ffi::TcpWriteError::InvalidSocket) => unreachable!(),
+            }
+        } else {
+            Poll::Ready(Ok(()))
+        }
     }
 
-    fn poll_close(self: Pin<&mut Self>, _: &mut Context) -> Poll<Result<(), io::Error>> {
-        Poll::Ready(Ok(()))
+    fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), io::Error>> {
+        // Try to finish the previous write, if any is in progress.
+        if let Some(pending_write) = self.pending_write.as_mut() {
+            let result = ready!(Future::poll(Pin::new(pending_write), cx)).result;
+            self.pending_write = None;
+            match result {
+                Ok(()) => {}
+                Err(ffi::TcpWriteError::FinAlreaySent) => return Poll::Ready(Ok(())),
+                Err(ffi::TcpWriteError::ConnectionFinished) => {
+                    return Poll::Ready(Err(io::ErrorKind::BrokenPipe.into()))
+                }
+                Err(ffi::TcpWriteError::InvalidSocket) => unreachable!(),
+            }
+        }
+
+        debug_assert!(self.pending_write.is_none());
+
+        loop {
+            // Try to finish the previous close, if any is in progress.
+            if let Some(pending_close) = self.pending_close.as_mut() {
+                let result = ready!(Future::poll(Pin::new(pending_close), cx)).result;
+                self.pending_close = None;
+                match result {
+                    Ok(()) | Err(ffi::TcpCloseError::FinAlreaySent) => return Poll::Ready(Ok(())),
+                    Err(ffi::TcpCloseError::ConnectionFinished) => {
+                        return Poll::Ready(Err(io::ErrorKind::BrokenPipe.into()))
+                    }
+                    Err(ffi::TcpCloseError::InvalidSocket) => unreachable!(),
+                }
+            }
+
+            debug_assert!(self.pending_close.is_none());
+
+            self.pending_close = {
+                let tcp_close = ffi::TcpMessage::Close(ffi::TcpClose {
+                    socket_id: self.handle,
+                });
+
+                let msg_id = unsafe {
+                    redshirt_syscalls::MessageBuilder::new()
+                        .add_data(&tcp_close.encode())
+                        .emit_with_response_raw(&ffi::INTERFACE)
+                        .unwrap()
+                };
+
+                Some(redshirt_syscalls::message_response(msg_id))
+            };
+        }
     }
 }
 
@@ -240,11 +364,8 @@ impl tokio::io::AsyncWrite for TcpStream {
 impl Drop for TcpStream {
     fn drop(&mut self) {
         unsafe {
-            let tcp_close = ffi::TcpMessage::Close(ffi::TcpClose {
-                socket_id: self.handle,
-            });
-
-            let _ = redshirt_syscalls::emit_message_without_response(&ffi::INTERFACE, &tcp_close);
+            let destroy = ffi::TcpMessage::Destroy(self.handle);
+            let _ = redshirt_syscalls::emit_message_without_response(&ffi::INTERFACE, &destroy);
         }
     }
 }

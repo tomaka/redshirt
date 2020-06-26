@@ -1849,6 +1849,7 @@ dependencies = [
 name = "redshirt-tcp-interface"
 version = "0.1.0"
 dependencies = [
+ "derive_more",
  "futures",
  "parity-scale-codec",
  "redshirt-syscalls",
