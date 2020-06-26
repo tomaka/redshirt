@@ -16,51 +16,20 @@
 use crate::interpreter;
 use core::{convert::TryFrom as _, fmt};
 
-// TODO: safety of everything in this module? things must only be called once at a time
-
+/// Access to VBE functions.
 pub struct VbeContext {
     interpreter: interpreter::Interpreter,
     video_modes: Vec<ModeInfo>,
 }
 
-pub struct Mode<'a> {
-    info: &'a ModeInfo,
-}
-
-struct ModeInfo {
-    /// Identifier for this mode.
-    mode_num: u16,
-    /// Number of pixels for the width.
-    x_resolution: u16,
-    /// Number of pixels for the height.
-    y_resolution: u16,
-    /// Base for the physical address of a linear framebuffer for this mode.
-    phys_base: u64,
-}
-
-#[derive(Debug)]
-pub enum Error {
-    NotSupported,
-    InterpretationError(interpreter::Error),
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Error::NotSupported => write!(f, "Function not supported"),
-            Error::InterpretationError(err) => write!(f, "{}", err),
-        }
-    }
-}
-
-impl From<interpreter::Error> for Error {
-    fn from(err: interpreter::Error) -> Error {
-        Error::InterpretationError(err)
-    }
-}
-
 /// Try to fetch information about the supported video modes from the hardware.
-pub async fn load_vbe_info() -> Result<VbeContext, Error> {
+///
+/// # Safety
+///
+/// Must only ever be called once at a time. No other code should access the VGA BIOS or the video
+/// card while this call is in progress or the returned [`VbeContext`] is in use.
+///
+pub async unsafe fn load_vbe_info() -> Result<VbeContext, Error> {
     let mut interpreter = interpreter::Interpreter::from_real_machine().await;
 
     // We start by asking the BIOS for general information about the graphics device.
@@ -68,16 +37,13 @@ pub async fn load_vbe_info() -> Result<VbeContext, Error> {
     interpreter.set_es_di(0x50, 0x0); // Fill 512 bytes at address 0x500.
     interpreter.write_memory(0x500, &b"VBE2"[..]);
     interpreter.int10h()?;
-    if interpreter.ax() != 0x4f {
-        panic!("AX = 0x{:x}", interpreter.ax()); // TODO: debug, remove this or expand the error type
-        return Err(Error::NotSupported);
-    }
+    check_ax(interpreter.ax())?;
 
     // Read out what the BIOS has written.
     let mut info_out = [0; 512];
     interpreter.read_memory(0x500, &mut info_out[..]);
     if &info_out[0..4] != b"VESA" {
-        return Err(Error::NotSupported);
+        return Err(Error::BadMagic);
     }
 
     // Note that there's a bunch of information we can read from this data, but apart from the
@@ -114,44 +80,32 @@ pub async fn load_vbe_info() -> Result<VbeContext, Error> {
     for mode in video_modes_nums {
         interpreter.set_ax(0x4f01);
         interpreter.set_cx(mode);
+        // TODO: better location
         interpreter.set_es_di(0x50, 0x0);
+
+        // Try to call the VBE function, but ignored that specific mode if the call fails.
         if let Err(err) = interpreter.int10h() {
-            log::warn!(
-                "Failed to call VBE function 1 for mode 0x{:x}: {}",
-                mode,
-                err
-            );
             continue;
         }
-        if interpreter.ax() != 0x4f {
-            log::warn!(
-                "Failed to call VBE function 1 for mode 0x{:x}: return value = 0x{:x}",
-                mode,
-                interpreter.ax()
-            );
+        if check_ax(interpreter.ax()).is_err() {
             continue;
         }
 
+        // The VBE function wrote the information in memory.
         let mut info_out = [0; 256];
         interpreter.read_memory(0x500, &mut info_out[..]);
 
         let mode_attributes = u16::from_le_bytes(<[u8; 2]>::try_from(&info_out[0..2]).unwrap());
         if mode_attributes & (1 << 0) == 0 {
             // Skip unsupported video modes.
-            log::debug!("Skipping unsupported video mode 0x{:x}", mode);
             continue;
         }
         if mode_attributes & (1 << 4) == 0 {
             // Skip text modes.
-            log::debug!("Skipping textual video mode 0x{:x}", mode);
             continue;
         }
         if mode_attributes & (1 << 7) == 0 {
             // Skip modes that don't support the linear framebuffer.
-            log::debug!(
-                "Skipping video mode 0x{:x} without a linear framebuffer",
-                mode
-            );
             continue;
         }
 
@@ -181,11 +135,15 @@ impl VbeContext {
 
     /// Try to switch to the given video mode.
     ///
+    /// > **Note**: As documented in [`load_vbe_info`], no other code should access the video card
+    /// >           or the VGA BIOS while this call is in progress.
+    ///
     /// # Panic
     ///
     /// The mode number must be one of the supported modes.
-    pub async fn set_current_mode(&mut self, mode: u16) -> Result<(), Error> {
-        assert!(self.video_modes.iter().any(|m| m.mode_num == mode));
+    ///
+    pub async fn set_current_mode(&mut self, mode_num: u16) -> Result<(), Error> {
+        assert!(self.video_modes.iter().any(|m| m.mode_num == mode_num));
 
         self.interpreter.set_ax(0x4f02);
 
@@ -193,18 +151,45 @@ impl VbeContext {
         // Note that bit 15 can normally be set in order to ask the BIOS to clear the screen,
         // but we don't expose this feature as the specifications mention that it is not
         // actually mandatory for the BIOS to do so.
-        self.interpreter.set_bx((1 << 14) | mode);
+        self.interpreter.set_bx((1 << 14) | mode_num);
 
         // Note that in case of failure such as an unsupported opcode, we might be in the middle
         // of a mode switch and the video card might be in an inconsistent state. Unfortunately,
         // there is no way to ask the video card to revert to the previous mode.
+        //
+        // While switching back to the previous mode seems like a legitimate idea, there are two
+        // major obstacles to this:
+        //
+        // - The VBE specs don't give a way to know what the initial mode is. The "return current
+        //   VBE mode" (0x3) function is only guaranteed to give a meaningful result if the mode
+        //   wasn't set using the "set current mode" function.
+        // - Chances are high that an error that happens when switching mode is a bug that would
+        //   happen as well when switching back to the previous.
+        //
 
         self.interpreter.int10h()?;
-        if self.interpreter.ax() != 0x4f {
-            return Err(Error::NotSupported);
-        }
+        check_ax(self.interpreter.ax())?;
+
         Ok(())
     }
+}
+
+/// Access to a single mode within the [`VbeContext`].
+#[derive(Debug)]
+pub struct Mode<'a> {
+    info: &'a ModeInfo,
+}
+
+#[derive(Debug)]
+struct ModeInfo {
+    /// Identifier for this mode.
+    mode_num: u16,
+    /// Number of pixels for the width.
+    x_resolution: u16,
+    /// Number of pixels for the height.
+    y_resolution: u16,
+    /// Base for the physical address of a linear framebuffer for this mode.
+    phys_base: u64,
 }
 
 impl<'a> Mode<'a> {
@@ -223,4 +208,45 @@ impl<'a> Mode<'a> {
     pub fn linear_framebuffer_location(&self) -> u64 {
         self.info.phys_base
     }
+}
+
+/// Error while calling VBE functioons.
+#[derive(Debug, derive_more::Display, derive_more::From)]
+pub enum Error {
+    /// VBE implementation doesn't support the requested function.
+    #[display(fmt = "VBE implementation doesn't support requested function")]
+    #[from(ignore)]
+    NotSupported,
+    /// VBE implementation supports the function, but the call has failed for an undeterminate
+    /// reason.
+    #[display(fmt = "VBE function call failed. Return code: {}", ax_value)]
+    #[from(ignore)]
+    FunctionCallFailed {
+        /// Value returned by the VBE function in the `ax` register.
+        ax_value: u16,
+    },
+    /// Magic number produced by the VBE implementation is invalid.
+    #[display(fmt = "Magic number produced by the VBE implementation is invalid")]
+    #[from(ignore)]
+    BadMagic,
+    /// An error happened in the real mode interpreter. This indicates either a bug in the VGA
+    /// BIOS or, more likely, a bug in the interpreter itself.
+    #[display(fmt = "Error in i386 real mode interpreter: {}", _0)]
+    InterpretationError(interpreter::Error),
+}
+
+/// Check whether the value of `ax` at the end of a VBE function call indicates that the call was
+/// successful.
+fn check_ax(ax: u16) -> Result<(), Error> {
+    if ax == 0x4f {
+        return Ok(())
+    }
+
+    if (ax & 0xf) != 0x4f {
+        return Err(Error::NotSupported);
+    }
+
+    Err(Error::FunctionCallFailed {
+        ax_value: ax,
+    })
 }

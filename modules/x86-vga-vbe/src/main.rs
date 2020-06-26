@@ -78,12 +78,14 @@ async fn async_main() {
     // TODO: somehow lock the "VBE system" so that no two drivers try to access it
     // TODO: also this module should be able to run on any platform, and only enable itself on x86
 
-    let mut vbe = vbe::load_vbe_info().await.unwrap();
-    // TODO: mode selection
-    let mode = vbe
-        .modes()
-        .find(|m| m.pixels_dimensions().0 > 1500)
-        .unwrap()
-        .num();
-    vbe.set_current_mode(mode).await;
+    unsafe {
+        let mut vbe = vbe::load_vbe_info().await.unwrap();
+        // TODO: mode selection
+        let mode = vbe
+            .modes()
+            .find(|m| m.pixels_dimensions().0 > 1500)
+            .unwrap()
+            .num();
+        vbe.set_current_mode(mode).await;
+    }
 }
