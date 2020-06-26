@@ -18,10 +18,10 @@
 //! The `hardware` interface is particular in that it can only be implemented using a "hosted"
 //! implementation.
 
-use crate::arch::PlatformSpecific;
+use crate::{arch::PlatformSpecific, future_channel};
 
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
-use core::{convert::TryFrom as _, pin::Pin, sync::atomic};
+use core::{convert::TryFrom as _, pin::Pin, sync::atomic, task::Poll};
 use crossbeam_queue::SegQueue;
 use futures::prelude::*;
 use hashbrown::HashMap;
@@ -42,18 +42,22 @@ pub struct HardwareHandler<TPlat> {
     /// For each PID, a list of memory allocations.
     // TODO: optimize
     allocations: Spinlock<HashMap<Pid, Vec<Vec<u8>>, BuildNoHashHasher<u64>>>,
+    /// Sending side of `pending_messages`.
+    pending_messages_tx: future_channel::UnboundedSender<(MessageId, Result<EncodedMessage, ()>)>,
     /// List of messages waiting to be emitted with `next_event`.
-    pending_messages: SegQueue<(MessageId, Result<EncodedMessage, ()>)>,
+    pending_messages: future_channel::UnboundedReceiver<(MessageId, Result<EncodedMessage, ()>)>,
 }
 
 impl<TPlat> HardwareHandler<TPlat> {
     /// Initializes the new state machine for hardware accesses.
     pub fn new(platform_specific: Pin<Arc<TPlat>>) -> Self {
+        let (pending_messages_tx, pending_messages) = future_channel::channel();
         HardwareHandler {
             registered: atomic::AtomicBool::new(false),
             platform_specific,
             allocations: Spinlock::new(HashMap::default()),
-            pending_messages: SegQueue::new(),
+            pending_messages_tx,
+            pending_messages,
         }
     }
 }
@@ -67,24 +71,27 @@ where
     type MessageIdWrite = DummyMessageIdWrite;
 
     fn next_event(self) -> Self::Future {
-        if !self.registered.swap(true, atomic::Ordering::Relaxed) {
-            return Box::pin(future::ready(NativeProgramEvent::Emit {
-                interface: redshirt_interface_interface::ffi::INTERFACE,
-                message_id_write: None,
-                message: redshirt_interface_interface::ffi::InterfaceMessage::Register(INTERFACE)
+        Box::pin(async move {
+            if !self.registered.swap(true, atomic::Ordering::Relaxed) {
+                return NativeProgramEvent::Emit {
+                    interface: redshirt_interface_interface::ffi::INTERFACE,
+                    message_id_write: None,
+                    message: redshirt_interface_interface::ffi::InterfaceMessage::Register(
+                        INTERFACE,
+                    )
                     .encode(),
-            }));
-        }
+                };
+            }
 
-        // TODO: wrong; if a message gets pushed, we don't wake up the task
-        if let Ok((message_id, answer)) = self.pending_messages.pop() {
-            Box::pin(future::ready(NativeProgramEvent::Answer {
-                message_id,
-                answer,
-            }))
-        } else {
-            Box::pin(future::pending())
-        }
+            future::poll_fn(move |cx| {
+                if let Poll::Ready((message_id, answer)) = self.pending_messages.poll_next(cx) {
+                    return Poll::Ready(NativeProgramEvent::Answer { message_id, answer });
+                }
+
+                Poll::Pending
+            })
+            .await
+        })
     }
 
     fn interface_message(
@@ -111,8 +118,8 @@ where
 
                 if let Some(message_id) = message_id {
                     if !response.is_empty() {
-                        self.pending_messages
-                            .push((message_id, Ok(response.encode())));
+                        self.pending_messages_tx
+                            .unbounded_send((message_id, Ok(response.encode())));
                     }
                 }
             }
@@ -139,7 +146,8 @@ where
                 allocations.entry(emitter_pid).or_default().push(buffer);
 
                 if let Some(message_id) = message_id {
-                    self.pending_messages.push((message_id, Ok(ptr.encode())));
+                    self.pending_messages_tx
+                        .unbounded_send((message_id, Ok(ptr.encode())));
                 }
             }
             Ok(HardwareMessage::Free { ptr }) => {
@@ -156,7 +164,8 @@ where
             Ok(HardwareMessage::InterruptWait(_int_id)) => unimplemented!(), // TODO:
             Err(_) => {
                 if let Some(message_id) = message_id {
-                    self.pending_messages.push((message_id, Err(())))
+                    self.pending_messages_tx
+                        .unbounded_send((message_id, Err(())))
                 }
             }
         }

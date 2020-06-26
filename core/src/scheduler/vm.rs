@@ -21,7 +21,11 @@ use alloc::{
     format,
     vec::Vec,
 };
-use core::{cell::RefCell, convert::TryInto, fmt};
+use core::{
+    cell::RefCell,
+    convert::{TryFrom as _, TryInto},
+    fmt,
+};
 use smallvec::SmallVec;
 
 /// WASMI state machine dedicated to a process.
@@ -191,6 +195,8 @@ pub enum NewErr {
     StartIsntAFunction,
     /// If a "memory" symbol is provided, it must be a memory.
     MemoryIsntMemory,
+    /// A memory object has both been imported and exported.
+    MultipleMemoriesNotSupported,
     /// If a "__indirect_function_table" symbol is provided, it must be a table.
     IndirectTableIsntTable,
 }
@@ -235,9 +241,11 @@ impl<T> ProcessStateMachine<T> {
         main_thread_user_data: T,
         mut symbols: impl FnMut(&str, &str, &Signature) -> Result<usize, ()>,
     ) -> Result<Self, NewErr> {
-        struct ImportResolve<'a>(
-            RefCell<&'a mut dyn FnMut(&str, &str, &Signature) -> Result<usize, ()>>,
-        );
+        struct ImportResolve<'a> {
+            func: RefCell<&'a mut dyn FnMut(&str, &str, &Signature) -> Result<usize, ()>>,
+            memory: RefCell<&'a mut Option<wasmi::MemoryRef>>,
+        }
+
         impl<'a> wasmi::ImportResolver for ImportResolve<'a> {
             fn resolve_func(
                 &self,
@@ -245,7 +253,7 @@ impl<T> ProcessStateMachine<T> {
                 field_name: &str,
                 signature: &wasmi::Signature,
             ) -> Result<wasmi::FuncRef, wasmi::Error> {
-                let closure = &mut **self.0.borrow_mut();
+                let closure = &mut **self.func.borrow_mut();
                 let index = match closure(module_name, field_name, &From::from(signature)) {
                     Ok(i) => i,
                     Err(_) => {
@@ -274,11 +282,24 @@ impl<T> ProcessStateMachine<T> {
                 &self,
                 _module_name: &str,
                 _field_name: &str,
-                _memory_type: &wasmi::MemoryDescriptor,
+                memory_type: &wasmi::MemoryDescriptor,
             ) -> Result<wasmi::MemoryRef, wasmi::Error> {
-                Err(wasmi::Error::Instantiation(
-                    "Importing memory is not supported yet".to_owned(),
-                ))
+                let mut mem = self.memory.borrow_mut();
+                if mem.is_some() {
+                    return Err(wasmi::Error::Instantiation(
+                        "Only one memory object is supported yet".to_owned(),
+                    ));
+                }
+
+                let new_mem = wasmi::MemoryInstance::alloc(
+                    wasmi::memory_units::Pages(usize::try_from(memory_type.initial()).unwrap()),
+                    memory_type
+                        .maximum()
+                        .map(|p| wasmi::memory_units::Pages(usize::try_from(p).unwrap())),
+                )
+                .unwrap();
+                **mem = Some(new_mem.clone());
+                Ok(new_mem)
             }
 
             fn resolve_table(
@@ -293,9 +314,16 @@ impl<T> ProcessStateMachine<T> {
             }
         }
 
-        let not_started =
-            wasmi::ModuleInstance::new(module.as_ref(), &ImportResolve(RefCell::new(&mut symbols)))
+        let (not_started, imported_memory) = {
+            let mut imported_memory = None;
+            let resolve = ImportResolve {
+                func: RefCell::new(&mut symbols),
+                memory: RefCell::new(&mut imported_memory),
+            };
+            let not_started = wasmi::ModuleInstance::new(module.as_ref(), &resolve)
                 .map_err(NewErr::Interpreter)?;
+            (not_started, imported_memory)
+        };
 
         // TODO: WASM has a special "start" instruction that can be used to designate a function
         // that must be executed before the module is considered initialized. It is unclear whether
@@ -305,7 +333,15 @@ impl<T> ProcessStateMachine<T> {
         // a "start" item, so we will fortunately not blindly run into troubles.
         let module = not_started.assert_no_start();
 
-        let memory = if let Some(mem) = module.export_by_name("memory") {
+        let memory = if let Some(imported_mem) = imported_memory {
+            if module
+                .export_by_name("memory")
+                .map_or(false, |m| m.as_memory().is_some())
+            {
+                return Err(NewErr::MultipleMemoriesNotSupported);
+            }
+            Some(imported_mem)
+        } else if let Some(mem) = module.export_by_name("memory") {
             if let Some(mem) = mem.as_memory() {
                 Some(mem.clone())
             } else {
@@ -656,6 +692,9 @@ impl fmt::Display for NewErr {
             NewErr::StartIsntAFunction => write!(f, "The \"start\" symbol must be a function"),
             NewErr::MemoryIsntMemory => {
                 write!(f, "If a \"memory\" symbol is provided, it must be a memory")
+            }
+            NewErr::MultipleMemoriesNotSupported => {
+                write!(f, "A memory object has both been imported and exported")
             }
             NewErr::IndirectTableIsntTable => write!(
                 f,

@@ -2,6 +2,7 @@
 members = [
     "hello-world",
     "http-server",
+    "network-manager",
     "log-to-kernel",
     "ne2000",
     "p2p-loader",
@@ -15,6 +16,12 @@ members = [
 
 [profile.dev]
 opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.test.package."*"]
+opt-level = 3
 
 [profile.release]
 opt-level = 3

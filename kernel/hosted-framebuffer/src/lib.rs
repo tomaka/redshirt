@@ -26,12 +26,12 @@
 //!
 
 use futures::{channel::mpsc, lock::Mutex as FutureMutex, prelude::*};
-use glium::glutin::event::{ElementState, Event, StartCause, WindowEvent};
+use glium::glutin::event::{ElementState, Event, MouseButton, StartCause, WindowEvent};
 use glium::glutin::event_loop::{ControlFlow, EventLoop, EventLoopProxy, EventLoopWindowTarget};
 use parking_lot::Mutex;
 use redshirt_core::native::{DummyMessageIdWrite, NativeProgramEvent, NativeProgramRef};
 use redshirt_core::{Encode as _, EncodedMessage, InterfaceHash, MessageId, Pid};
-use redshirt_framebuffer_interface::ffi::INTERFACE;
+use redshirt_framebuffer_interface::ffi;
 use std::{
     collections::{hash_map::Entry, HashMap, VecDeque},
     convert::TryFrom as _,
@@ -307,7 +307,7 @@ impl<'a> NativeProgramRef<'a> for &'a FramebufferHandler {
                     interface: redshirt_interface_interface::ffi::INTERFACE,
                     message_id_write: None,
                     message: redshirt_interface_interface::ffi::InterfaceMessage::Register(
-                        INTERFACE,
+                        ffi::INTERFACE_WITH_EVENTS,
                     )
                     .encode(),
                 };
@@ -332,7 +332,7 @@ impl<'a> NativeProgramRef<'a> for &'a FramebufferHandler {
         emitter_pid: Pid,
         message: EncodedMessage,
     ) {
-        debug_assert_eq!(interface, INTERFACE);
+        debug_assert_eq!(interface, ffi::INTERFACE_WITH_EVENTS);
         self.to_context
             .unbounded_send(HandlerToContext::InterfaceMessage {
                 emitter_pid,
@@ -357,16 +357,53 @@ impl<'a> NativeProgramRef<'a> for &'a FramebufferHandler {
 fn host_event_to_guest(ev: &WindowEvent) -> Option<EncodedMessage> {
     match ev {
         WindowEvent::KeyboardInput { input, .. } => {
-            if let Some(keycode) = input.virtual_keycode {
-                let first_byte = match input.state {
-                    ElementState::Pressed => 1,
-                    ElementState::Released => 0,
+            // TODO: is input.scancode the USB-conforming scancode?
+            if let Ok(scancode) = u16::try_from(input.scancode) {
+                let new_state = match input.state {
+                    ElementState::Pressed => ffi::ElementState::Pressed,
+                    ElementState::Released => ffi::ElementState::Released,
                 };
 
-                let rest = (keycode as u32).to_le_bytes();
-                Some(EncodedMessage(vec![
-                    first_byte, rest[0], rest[1], rest[2], rest[3],
-                ]))
+                Some(
+                    ffi::Event::KeyboardChange {
+                        scancode,
+                        new_state,
+                    }
+                    .encode(),
+                )
+            } else {
+                None
+            }
+        }
+        WindowEvent::CursorLeft { .. } => {
+            Some(ffi::Event::CursorMoved { new_position: None }.encode())
+        }
+        WindowEvent::CursorMoved { position, .. } => {
+            assert!(position.x.is_normal());
+            assert!(position.y.is_normal());
+            let x = (position.x * 1000.0) as u64; // TODO: check conversion correctness?
+            let y = (position.y * 1000.0) as u64; // TODO: check conversion correctness?
+            Some(
+                ffi::Event::CursorMoved {
+                    new_position: Some((x, y)),
+                }
+                .encode(),
+            )
+        }
+        WindowEvent::MouseInput { state, button, .. } => {
+            let new_state = match state {
+                ElementState::Pressed => ffi::ElementState::Pressed,
+                ElementState::Released => ffi::ElementState::Released,
+            };
+
+            let button = match button {
+                MouseButton::Left => Some(ffi::MouseButton::Main),
+                MouseButton::Right => Some(ffi::MouseButton::Secondary),
+                _ => None,
+            };
+
+            if let Some(button) = button {
+                Some(ffi::Event::MouseButtonChange { button, new_state }.encode())
             } else {
                 None
             }

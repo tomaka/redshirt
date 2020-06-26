@@ -58,7 +58,7 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
     // Freeze forever.
     unsafe {
         loop {
-            asm!(r#"wfe"#);
+            llvm_asm!(r#"wfe"#);
         }
     }
 }

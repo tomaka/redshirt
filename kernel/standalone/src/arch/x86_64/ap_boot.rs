@@ -33,6 +33,7 @@ use crate::arch::x86_64::{executor, interrupts};
 use alloc::{
     alloc::{AllocInit, Layout},
     boxed::Box,
+    sync::Arc,
 };
 use core::{convert::TryFrom as _, fmt, ops::Range, ptr, slice, time::Duration};
 use futures::{channel::oneshot, prelude::*};
@@ -130,7 +131,7 @@ pub unsafe fn boot_associated_processor(
     alloc: &mut ApBootAlloc,
     executor: &executor::Executor,
     local_apics: &'static LocalApicsControl,
-    timers: &Timers,
+    timers: &Arc<Timers>,
     target: ApicId,
     boot_code: impl FnOnce() -> core::convert::Infallible + Send + 'static,
 ) -> Result<(), Error> {
@@ -163,7 +164,7 @@ pub unsafe fn boot_associated_processor(
     local_apics.send_interprocessor_init(target);
 
     // Later we will wait for 10ms to have elapsed since the INIT.
-    let wait_after_init = timers.register_tsc_timer(Duration::from_millis(10));
+    let wait_after_init = timers.register_timer(Duration::from_millis(10));
 
     // Write the template code to the buffer.
     ptr::copy_nonoverlapping(
@@ -320,7 +321,7 @@ pub unsafe fn boot_associated_processor(
 
         // Wait for the processor initialization to finish, but with a timeout in order to not
         // wait forever if nothing happens.
-        let ap_ready_timeout = timers.register_tsc_timer(Duration::from_secs(1));
+        let ap_ready_timeout = timers.register_timer(Duration::from_secs(1));
         futures::pin_mut!(ap_ready_timeout);
         match executor.block_on(future::select(ap_ready_timeout, &mut init_finished_future)) {
             future::Either::Left(_) => continue,
