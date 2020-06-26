@@ -59,7 +59,8 @@ async fn async_main() {
 
                 // Try to lock the given PCI device. Can fail if there is another USB controller
                 // drive that is already handling the device.
-                let lock = match redshirt_pci_interface::DeviceLock::new(device.location).await {
+                let lock = match redshirt_pci_interface::PciDeviceLock::lock(device.location).await
+                {
                     Ok(l) => l,
                     Err(_) => continue,
                 };
