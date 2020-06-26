@@ -1,0 +1,16 @@
+[package]
+name = "e1000"
+version = "0.1.0"
+license = "GPL-3.0-or-later"
+authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
+edition = "2018"
+publish = false
+
+[dependencies]
+futures = "0.3.1"
+redshirt-ethernet-interface = { path = "../../interfaces/ethernet" }
+redshirt-hardware-interface = { path = "../../interfaces/hardware" }
+redshirt-pci-interface = { path = "../../interfaces/pci" }
+redshirt-syscalls = { path = "../../interfaces/syscalls" }
+redshirt-time-interface = { path = "../../interfaces/time" }
+smallvec = "1.0.0"

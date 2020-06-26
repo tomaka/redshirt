@@ -18,16 +18,18 @@
 //! There are situations where it is necessary to pass to a device a pointer to a region of
 //! memory. This is where this module comes into play.
 
-use crate::{ffi, HardwareWriteOperationsBuilder};
+use crate::{ffi, HardwareWriteOperationsBuilder, HardwareOperationsBuilder};
 
 use alloc::{boxed::Box, vec, vec::Vec};
-use core::{convert::TryFrom, marker::PhantomData, mem, ptr};
+use core::{convert::TryFrom, marker::PhantomData, mem, ptr, slice};
 use futures::prelude::*;
 
 /// Buffer located in physical memory.
 pub struct PhysicalBuffer<T: ?Sized> {
     /// Location of the buffer in physical memory.
     ptr: u64,
+    /// Size in bytes of the buffer.
+    size: u64,
     /// Marker to pin the `T` generic.
     marker: PhantomData<Box<T>>,
 }
@@ -46,16 +48,12 @@ impl<T> PhysicalBuffer<T> {
         malloc(size, align).map(move |ptr| {
             let buf = PhysicalBuffer {
                 ptr,
+                size,
                 marker: PhantomData,
             };
             buf.write(data);
             buf
         })
-    }
-
-    /// Returns the location in physical memory of the buffer.
-    pub fn pointer(&self) -> u64 {
-        self.ptr
     }
 
     /// Overwrites the content of the buffer with a new value.
@@ -116,6 +114,116 @@ impl<T> PhysicalBuffer<T> {
                 };
                 ptr::read_unaligned(buf.as_ptr() as *const T)
             })
+    }
+}
+
+impl<T> PhysicalBuffer<[T]> {
+    /// Allocates a new buffer with uninitialized contents.
+    pub async fn new_uninit_slice(len: usize) -> PhysicalBuffer<[mem::MaybeUninit<T>]> {
+        Self::new_uninit_slice_with_align(len, mem::align_of::<T>()).await
+    }
+
+    /// Allocates a new buffer with uninitialized contents.
+    pub async fn new_uninit_slice_with_align(len: usize, align: usize) -> PhysicalBuffer<[mem::MaybeUninit<T>]> {
+        let size = u64::try_from(mem::size_of::<T>()).unwrap().checked_mul(u64::try_from(len).unwrap()).unwrap();
+        let align = u64::try_from(align).unwrap();
+
+        PhysicalBuffer {
+            ptr: malloc(size, align).await,
+            size,
+            marker: PhantomData,
+        }
+    }
+
+    /// Returns the number of elements in the buffer.
+    pub fn len(&self) -> usize {
+        usize::try_from(self.size / u64::try_from(mem::size_of::<T>()).unwrap()).unwrap()
+    }
+
+    pub fn write_one(&self, idx: usize, value: T) {
+        unsafe {
+            if idx >= self.len() {
+                panic!()
+            }
+
+            let mut ops = HardwareWriteOperationsBuilder::with_capacity(1);
+            ops.write(
+                self.ptr + u64::try_from(idx * mem::size_of::<T>()).unwrap(),
+                slice::from_raw_parts(&value as *const T as *const u8, mem::size_of::<T>()).to_vec()
+            );
+            ops.send();
+
+            mem::forget(value);
+        }
+    }
+}
+
+impl<T: Copy> PhysicalBuffer<[T]> {
+    pub async fn read_one(&self, idx: usize) -> Option<T> {
+        unsafe {
+            if idx >= self.len() {
+                return None;
+            }
+
+            let mut out = mem::MaybeUninit::<T>::uninit();
+
+            let mut ops = HardwareOperationsBuilder::with_capacity(1);
+            ops.read(
+                self.ptr + u64::try_from(idx * mem::size_of::<T>()).unwrap(),
+                slice::from_raw_parts_mut(out.as_mut_ptr() as *mut u8, mem::size_of::<T>())
+            );
+            ops.send().await;
+
+            Some(out.assume_init())
+        }
+    }
+
+    pub async fn read_slice(&self, idx: usize, out: &mut [T]) {
+        unsafe {
+            assert!(idx + out.len() <= self.len());
+
+            let mut ops = HardwareOperationsBuilder::with_capacity(1);
+            ops.read(
+                self.ptr + u64::try_from(idx * mem::size_of::<T>()).unwrap(),
+                slice::from_raw_parts_mut(out.as_mut_ptr() as *mut u8, out.len() * mem::size_of::<T>())
+            );
+            ops.send().await;
+        }
+    }
+
+    pub fn write_slice(&self, idx: usize, data: &[T]) {
+        unsafe {
+            assert!(idx + data.len() <= self.len());
+
+            let mut ops = HardwareWriteOperationsBuilder::with_capacity(1);
+            ops.write(
+                self.ptr + u64::try_from(idx * mem::size_of::<T>()).unwrap(),
+                slice::from_raw_parts(data.as_ptr() as *const u8, data.len() * mem::size_of::<T>()).to_vec()
+            );
+            ops.send();
+        }
+    }
+}
+
+impl<T> PhysicalBuffer<[mem::MaybeUninit<T>]> {
+    /// Converts to an actual buffer.
+    pub unsafe fn assume_init(self) -> PhysicalBuffer<[T]> {
+        let size = self.size;
+        let ptr = self.ptr;
+        mem::forget(self);
+
+        PhysicalBuffer {
+            ptr,
+            size,
+            marker: PhantomData,
+        }
+    }
+}
+
+impl<T: ?Sized> PhysicalBuffer<T> {
+    /// Returns the location in physical memory of the buffer.
+    pub fn pointer(&self) -> u64 {
+        self.ptr
     }
 }
 
