@@ -436,15 +436,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "etherparse"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2fa20922281f9ee5ffcda45e80d56085829279f1270f79fbabc39809a4354807"
-dependencies = [
- "byteorder",
-]
-
-[[package]]
 name = "fake-simd"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1362,22 +1353,6 @@ dependencies = [
  "pin-project",
  "smallvec",
  "unsigned-varint",
-]
-
-[[package]]
-name = "ne2000"
-version = "0.1.0"
-dependencies = [
- "etherparse",
- "futures",
- "redshirt-ethernet-interface",
- "redshirt-hardware-interface",
- "redshirt-interface-interface",
- "redshirt-pci-interface",
- "redshirt-random-interface",
- "redshirt-syscalls",
- "redshirt-time-interface",
- "smallvec",
 ]
 
 [[package]]

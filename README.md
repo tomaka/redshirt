@@ -4,8 +4,6 @@ network.
 
 See the `docs/introduction.md` file for an introduction.
 
-[![dependency status](https://deps.rs/repo/github/tomaka/os/status.svg)](https://deps.rs/repo/github/tomaka/os)
-
 # How to test
 
 **Important**: At the moment, most of the compilation requires a nightly version of Rust. See also https://github.com/tomaka/redshirt/issues/300.
