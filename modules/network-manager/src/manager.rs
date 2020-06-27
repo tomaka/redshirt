@@ -209,7 +209,15 @@ where
             Entry::Vacant(e) => e,
         };
 
-        log::debug!("Registering interface with MAC {:?}", mac_address);
+        log::debug!(
+            "Registering interface with MAC {:>02X}:{:>02X}:{:>02X}:{:>02X}:{:>02X}:{:>02X}",
+            mac_address[0],
+            mac_address[1],
+            mac_address[2],
+            mac_address[3],
+            mac_address[4],
+            mac_address[5]
+        );
 
         let interface = interface::NetInterfaceState::new(interface::Config {
             ip_address: interface::ConfigIpAddr::DHCPv4,
