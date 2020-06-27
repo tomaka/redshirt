@@ -29,7 +29,6 @@ use libp2p::kad::{
     Kademlia, KademliaConfig, KademliaEvent, QueryResult, Quorum,
 };
 use libp2p::mplex::MplexConfig;
-use libp2p::plaintext::PlainText2Config;
 use libp2p::swarm::{Swarm, SwarmEvent};
 use std::{collections::VecDeque, io, path::PathBuf, pin::Pin, time::Duration};
 
@@ -125,17 +124,13 @@ impl<T> Network<T> {
         let local_peer_id = local_keypair.public().into_peer_id();
         log::info!("Local peer id: {}", local_peer_id);
 
-        // TODO: libp2p-noise doesn't compile for WASM
-        /*let noise_keypair = libp2p::noise::Keypair::new()
-        .into_authentic(&local_keypair)
-        .unwrap();*/
+        let noise_keypair = libp2p::noise::Keypair::<libp2p::noise::X25519Spec>::new()
+            .into_authentic(&local_keypair)
+            .unwrap();
 
         let transport = TcpConfig::default()
             .upgrade(upgrade::Version::V1)
-            //.authenticate(NoiseConfig::xx(noise_keypair).into_authenticated())
-            .authenticate(PlainText2Config {
-                local_public_key: local_keypair.public(),
-            })
+            .authenticate(libp2p::noise::NoiseConfig::xx(noise_keypair).into_authenticated())
             .multiplex({
                 let mut cfg = MplexConfig::default();
                 cfg.split_send_size(10 * 1024 * 1024);
@@ -151,7 +146,7 @@ impl<T> Network<T> {
             MemoryStore::with_config(
                 local_peer_id.clone(),
                 MemoryStoreConfig {
-                    // TODO: that's a max of 2GB; to increase we should be writing this on disk
+                    // TODO: that's a max of 2GB; we should instead be writing this on disk
                     max_value_bytes: 10 * 1024 * 1024,
                     max_records: 256,
                     ..Default::default()
@@ -180,7 +175,7 @@ impl<T> Network<T> {
             &"Qmc25MQxSxbUpU49bZ7RVEqgBJPB3SrjG8WVycU3KC7xYP"
                 .parse()
                 .unwrap(),
-            "/ip4/134.209.239.245/tcp/30333".parse().unwrap(),
+            "/ip4/157.245.20.120/tcp/30333".parse().unwrap(),
         );
 
         // Bootstrapping returns an error if we don't know of any peer.
