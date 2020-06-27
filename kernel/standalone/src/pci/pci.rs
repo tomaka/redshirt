@@ -288,22 +288,45 @@ fn scan_function(bdf: &DeviceBdf) -> Option<ScanResult> {
         revision_id,
         base_address_registers: {
             let mut list = Vec::with_capacity(6);
-            for bar_n in 0..6 {
+
+            let mut bar_n = 0;
+            loop {
+                if bar_n >= 6 {
+                    break;
+                }
+
                 let bar = pci_cfg_read_u32(bdf, 0x10 + bar_n * 0x4);
-                list.push(if (bar & 0x1) == 0 {
+                if (bar & 0x1) == 0 {
+                    let ty = (bar >> 1) & 0b11;
                     let prefetchable = (bar & (1 << 3)) != 0;
-                    let base_address = usize::try_from(bar & !0b1111).unwrap();
-                    BaseAddressRegister::Memory {
-                        base_address,
-                        prefetchable,
+                    let base_address = bar & !0b1111;
+
+                    if ty == 0 {
+                        // 32 bits memory BAR
+                        list.push(BaseAddressRegister::Memory {
+                            base_address: usize::try_from(base_address).unwrap(),
+                            prefetchable,
+                        });
+                        bar_n += 1;
+                    } else if ty == 2 {
+                        // 64 bits memory BAR. The higher 32 bits are located in the next BAR.
+                        let addr_hi = pci_cfg_read_u32(bdf, 0x10 + (bar_n + 1) * 0x4);
+                        let address = (u64::from(addr_hi) << 32) | u64::from(base_address);
+                        if let Ok(address) = usize::try_from(address) {
+                            list.push(BaseAddressRegister::Memory {
+                                base_address: address,
+                                prefetchable,
+                            });
+                        }
+                        bar_n += 2;
                     }
                 } else {
-                    // TODO: this extra ` & 0xffff` is here because real-life machines seem to
-                    // give values larger than 16 bits?
-                    let base_address = u16::try_from((bar & !0b11) & 0xffff).unwrap();
-                    BaseAddressRegister::Io { base_address }
-                });
+                    let base_address = u16::try_from(bar & !0b11).unwrap();
+                    list.push(BaseAddressRegister::Io { base_address });
+                    bar_n += 1;
+                }
             }
+
             list
         },
     }))

@@ -262,7 +262,7 @@ where
                                         pci::BaseAddressRegister::Memory {
                                             base_address, ..
                                         } => ffi::PciBaseAddressRegister::Memory {
-                                            base_address: u32::try_from(base_address).unwrap(),
+                                            base_address: u64::try_from(base_address).unwrap(),
                                         },
                                         pci::BaseAddressRegister::Io { base_address } => {
                                             ffi::PciBaseAddressRegister::Io {
