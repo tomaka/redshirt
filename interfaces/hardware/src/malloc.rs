@@ -18,7 +18,7 @@
 //! There are situations where it is necessary to pass to a device a pointer to a region of
 //! memory. This is where this module comes into play.
 
-use crate::{ffi, HardwareWriteOperationsBuilder, HardwareOperationsBuilder};
+use crate::{ffi, HardwareOperationsBuilder, HardwareWriteOperationsBuilder};
 
 use alloc::{boxed::Box, vec, vec::Vec};
 use core::{convert::TryFrom, marker::PhantomData, mem, ptr, slice};
@@ -124,8 +124,14 @@ impl<T> PhysicalBuffer<[T]> {
     }
 
     /// Allocates a new buffer with uninitialized contents.
-    pub async fn new_uninit_slice_with_align(len: usize, align: usize) -> PhysicalBuffer<[mem::MaybeUninit<T>]> {
-        let size = u64::try_from(mem::size_of::<T>()).unwrap().checked_mul(u64::try_from(len).unwrap()).unwrap();
+    pub async fn new_uninit_slice_with_align(
+        len: usize,
+        align: usize,
+    ) -> PhysicalBuffer<[mem::MaybeUninit<T>]> {
+        let size = u64::try_from(mem::size_of::<T>())
+            .unwrap()
+            .checked_mul(u64::try_from(len).unwrap())
+            .unwrap();
         let align = u64::try_from(align).unwrap();
 
         PhysicalBuffer {
@@ -149,7 +155,8 @@ impl<T> PhysicalBuffer<[T]> {
             let mut ops = HardwareWriteOperationsBuilder::with_capacity(1);
             ops.write(
                 self.ptr + u64::try_from(idx * mem::size_of::<T>()).unwrap(),
-                slice::from_raw_parts(&value as *const T as *const u8, mem::size_of::<T>()).to_vec()
+                slice::from_raw_parts(&value as *const T as *const u8, mem::size_of::<T>())
+                    .to_vec(),
             );
             ops.send();
 
@@ -170,7 +177,7 @@ impl<T: Copy> PhysicalBuffer<[T]> {
             let mut ops = HardwareOperationsBuilder::with_capacity(1);
             ops.read(
                 self.ptr + u64::try_from(idx * mem::size_of::<T>()).unwrap(),
-                slice::from_raw_parts_mut(out.as_mut_ptr() as *mut u8, mem::size_of::<T>())
+                slice::from_raw_parts_mut(out.as_mut_ptr() as *mut u8, mem::size_of::<T>()),
             );
             ops.send().await;
 
@@ -185,7 +192,10 @@ impl<T: Copy> PhysicalBuffer<[T]> {
             let mut ops = HardwareOperationsBuilder::with_capacity(1);
             ops.read(
                 self.ptr + u64::try_from(idx * mem::size_of::<T>()).unwrap(),
-                slice::from_raw_parts_mut(out.as_mut_ptr() as *mut u8, out.len() * mem::size_of::<T>())
+                slice::from_raw_parts_mut(
+                    out.as_mut_ptr() as *mut u8,
+                    out.len() * mem::size_of::<T>(),
+                ),
             );
             ops.send().await;
         }
@@ -198,7 +208,8 @@ impl<T: Copy> PhysicalBuffer<[T]> {
             let mut ops = HardwareWriteOperationsBuilder::with_capacity(1);
             ops.write(
                 self.ptr + u64::try_from(idx * mem::size_of::<T>()).unwrap(),
-                slice::from_raw_parts(data.as_ptr() as *const u8, data.len() * mem::size_of::<T>()).to_vec()
+                slice::from_raw_parts(data.as_ptr() as *const u8, data.len() * mem::size_of::<T>())
+                    .to_vec(),
             );
             ops.send();
         }
