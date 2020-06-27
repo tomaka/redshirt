@@ -121,6 +121,6 @@ impl<T> Clone for UnboundedReceiver<T> {
 impl<T> Drop for UnboundedReceiver<T> {
     fn drop(&mut self) {
         let mut wakers = self.shared.wakers.lock();
-        wakers.remove(&self.id).unwrap();
+        let _ = wakers.remove(&self.id);
     }
 }
