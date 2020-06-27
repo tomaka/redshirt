@@ -515,9 +515,7 @@ impl<TSockUd> NetInterfaceState<TSockUd> {
                     // Check if this socket got closed.
                     if !socket_state.is_closed && !smoltcp_socket.is_open() {
                         socket_state.is_closed = true;
-                        let socket_id = *socket_id;
-                        self.sockets_state.remove(&socket_id);
-                        return NetInterfaceEventStatic::TcpClosed(socket_id);
+                        return NetInterfaceEventStatic::TcpClosed(*socket_id);
                     }
 
                     // Check if this socket has data for reading.
