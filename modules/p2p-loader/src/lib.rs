@@ -193,13 +193,13 @@ impl<T> Network<T> {
 
         // Bootnodes.
         swarm.add_address(
-            &"12D3KooWCWX1zQ3WXSMGuDK2qgVPgC4itYUkj84AsxBYcafMX6ot"
+            &"12D3KooWRx34RaEpD3jjHruSHRW2JTv18uiHDtk82j9cGCWKQVZF"
                 .parse()
                 .unwrap(),
             "/ip4/157.245.20.120/tcp/30333".parse().unwrap(),
         );
         swarm.add_address(
-            &"12D3KooWCWX1zQ3WXSMGuDK2qgVPgC4itYUkj84AsxBYcafMX6ot"
+            &"12D3KooWCodzgHiHEtgYUECQN3RqPPBSRWdV7psnatSqdWHfAqGc"
                 .parse()
                 .unwrap(),
             "/ip4/68.183.243.252/tcp/30333".parse().unwrap(),
