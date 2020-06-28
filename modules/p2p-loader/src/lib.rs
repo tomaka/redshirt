@@ -193,7 +193,7 @@ impl<T> Network<T> {
 
         // Bootnode.
         swarm.add_address(
-            &"Qmc25MQxSxbUpU49bZ7RVEqgBJPB3SrjG8WVycU3KC7xYP"
+            &"12D3KooWCWX1zQ3WXSMGuDK2qgVPgC4itYUkj84AsxBYcafMX6ot"
                 .parse()
                 .unwrap(),
             "/ip4/157.245.20.120/tcp/30333".parse().unwrap(),
