@@ -199,8 +199,9 @@ impl<T> Network<T> {
             "/ip4/157.245.20.120/tcp/30333".parse().unwrap(),
         );
 
-        // Bootstrapping returns an error if we don't know of any peer.
-        swarm.bootstrap().unwrap();
+        // Bootstrapping returns an error if we don't know of any other peer to connect to.
+        // This would typically happen on the bootnode itself.
+        let _ = swarm.bootstrap();
 
         Ok(Network {
             swarm,
