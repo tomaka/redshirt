@@ -78,8 +78,8 @@ where
         // TODO: use a better system than cfgs
         #[cfg(target_arch = "x86_64")]
         {
-            system_builder = system_builder
-                .with_startup_process(build_wasm_module!("../../../modules/e1000"));
+            system_builder =
+                system_builder.with_startup_process(build_wasm_module!("../../../modules/e1000"));
         }
         #[cfg(any(target_arch = "arm", target_arch = "aarch64"))]
         {
