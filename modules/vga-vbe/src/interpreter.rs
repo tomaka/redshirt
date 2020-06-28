@@ -51,12 +51,16 @@ struct Registers {
 #[derive(Debug)]
 pub enum Error {
     InvalidInstruction,
+
+    /// Code has called the `hlt` instruction, which cannot do anything.
+    InterruptNotSupported,
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Error::InvalidInstruction => write!(f, "Invalid instruction"),
+            Error::InterruptNotSupported => write!(f, "HLT has been called"),
         }
     }
 }
@@ -358,7 +362,15 @@ impl Interpreter {
 
         // List here: https://en.wikipedia.org/wiki/X86_instruction_listings#Original_8086/8088_instructions
         // The objective is to implement up to and including the x386.
+        // TODO: finish implementing all instructions marked as `todo!()`
         match instruction.mnemonic() {
+            iced_x86::Mnemonic::Aaa => todo!(),
+            iced_x86::Mnemonic::Aad => todo!(),
+            iced_x86::Mnemonic::Aam => todo!(),
+            iced_x86::Mnemonic::Aas => todo!(),
+
+            iced_x86::Mnemonic::Adc => todo!(),
+
             iced_x86::Mnemonic::Add => {
                 let value0 = self.fetch_operand_value(&instruction, 0);
                 let value1 = self.fetch_operand_value(&instruction, 1);
@@ -434,6 +446,11 @@ impl Interpreter {
                 // adjust flag is undefined
             }
 
+            iced_x86::Mnemonic::Bound => todo!(),
+
+            iced_x86::Mnemonic::Bsf => todo!(),
+            iced_x86::Mnemonic::Bsr => todo!(),
+
             iced_x86::Mnemonic::Bt => {
                 let value0 = self.fetch_operand_value(&instruction, 0);
                 let value1 = self.fetch_operand_value(&instruction, 1);
@@ -460,6 +477,10 @@ impl Interpreter {
 
                 self.flags_set_carry(bit);
             }
+
+            iced_x86::Mnemonic::Btc => todo!(),
+            iced_x86::Mnemonic::Btr => todo!(),
+            iced_x86::Mnemonic::Bts => todo!(),
 
             iced_x86::Mnemonic::Call => {
                 match instruction.code() {
@@ -520,6 +541,7 @@ impl Interpreter {
             iced_x86::Mnemonic::Clc => self.flags_set_carry(false),
             iced_x86::Mnemonic::Cld => self.flags_set_direction(false),
             iced_x86::Mnemonic::Cli => self.flags_set_interrupt(false),
+            iced_x86::Mnemonic::Cmc => self.flags_set_carry(!self.flags_is_carry()),
 
             iced_x86::Mnemonic::Cmp => {
                 let value0 = self.fetch_operand_value(&instruction, 0);
@@ -548,6 +570,11 @@ impl Interpreter {
                 self.flags_set_overflow(overflow != temp.most_significant_bit());
                 // TODO: the adjust flag
             }
+
+            iced_x86::Mnemonic::Cmpsb | iced_x86::Mnemonic::Cmpsw | iced_x86::Mnemonic::Cmpsd => todo!(),
+    
+            iced_x86::Mnemonic::Daa => todo!(),
+            iced_x86::Mnemonic::Das => todo!(),
 
             iced_x86::Mnemonic::Dec => {
                 let value = self.fetch_operand_value(&instruction, 0);
@@ -608,6 +635,10 @@ impl Interpreter {
                     }
                 }
             }
+    
+            iced_x86::Mnemonic::Enter => todo!(),
+
+            iced_x86::Mnemonic::Hlt => return Err(Error::InterruptNotSupported),
 
             iced_x86::Mnemonic::Idiv => {
                 // TODO: no check for division by zero
@@ -792,11 +823,15 @@ impl Interpreter {
                 // Carry flag is not affected.
             }
 
+            iced_x86::Mnemonic::Insb | iced_x86::Mnemonic::Insd | iced_x86::Mnemonic::Insw => todo!(),
+
             iced_x86::Mnemonic::Int => {
                 let value = self.fetch_operand_value(&instruction, 0);
                 self.run_int_opcode(u8::try_from(value).unwrap());
                 log::info!("Int 0x{:x}", u8::try_from(value).unwrap());
             }
+
+            iced_x86::Mnemonic::Into => todo!(),
 
             iced_x86::Mnemonic::Iret => {
                 let ip = self.stack_pop_u16();
@@ -835,14 +870,22 @@ impl Interpreter {
                     self.apply_jump(&instruction);
                 }
             }
+
             iced_x86::Mnemonic::Jmp => {
                 self.apply_jump(&instruction);
             }
+    
+            iced_x86::Mnemonic::Lahf => todo!(),
+            iced_x86::Mnemonic::Lar => todo!(),
 
             iced_x86::Mnemonic::Lea => {
                 let ptr = self.memory_operand_pointer(&instruction, 1);
                 self.store_in_operand(&instruction, 0, Value::U16(ptr));
             }
+
+            iced_x86::Mnemonic::Leave => todo!(),
+
+            iced_x86::Mnemonic::Lgs | iced_x86::Mnemonic::Lss | iced_x86::Mnemonic::Lds | iced_x86::Mnemonic::Les | iced_x86::Mnemonic::Lfs => todo!(),
 
             iced_x86::Mnemonic::Lodsb => {
                 // TODO: review this
@@ -871,6 +914,8 @@ impl Interpreter {
                 }
             }
 
+            iced_x86::Mnemonic::Lodsw | iced_x86::Mnemonic::Lodsd => todo!(),
+    
             iced_x86::Mnemonic::Loop | iced_x86::Mnemonic::Loope | iced_x86::Mnemonic::Loopne => {
                 let use_ecx = match instruction.code() {
                     iced_x86::Code::Loop_rel8_16_CX => false,
@@ -935,6 +980,8 @@ impl Interpreter {
                 let value = self.fetch_operand_value(&instruction, 1);
                 self.store_in_operand(&instruction, 0, value);
             }
+
+            iced_x86::Mnemonic::Movsb | iced_x86::Mnemonic::Movsw | iced_x86::Mnemonic::Movsd => todo!(),
 
             iced_x86::Mnemonic::Movsx => {
                 let value = self.fetch_operand_value(&instruction, 1);
@@ -1036,7 +1083,6 @@ impl Interpreter {
                 self.store_in_operand(&instruction, 0, result);
             }
 
-            // Note: `Or` is handled simultaneously with `And`.
             iced_x86::Mnemonic::Out => {
                 let port = match self.fetch_operand_value(&instruction, 0) {
                     Value::U8(p) => u16::from(p),
@@ -1059,6 +1105,8 @@ impl Interpreter {
                 }
             }
 
+            iced_x86::Mnemonic::Outsb | iced_x86::Mnemonic::Outsw | iced_x86::Mnemonic::Outsd => todo!(),
+
             iced_x86::Mnemonic::Pop => match self.operand_size(&instruction, 0) {
                 1 => {
                     let val = Value::U8(self.stack_pop_u8());
@@ -1074,6 +1122,7 @@ impl Interpreter {
                 }
                 _ => unreachable!(),
             },
+
             iced_x86::Mnemonic::Popa => match instruction.code() {
                 iced_x86::Code::Popaw => {
                     let val = Value::U16(self.stack_pop_u16());
@@ -1111,13 +1160,15 @@ impl Interpreter {
                 }
                 _ => unreachable!(),
             },
+
             iced_x86::Mnemonic::Popf => match instruction.code() {
                 iced_x86::Code::Popfw => {
                     let val = self.stack_pop_u16();
                     self.regs.flags &= 0b01000000000101010;
                     self.regs.flags |= val & 0b0111111111010101;
                 }
-                _ => unimplemented!(),
+                iced_x86::Code::Popfd => todo!(),
+                _ => unreachable!(),
             },
 
             iced_x86::Mnemonic::Push => {
@@ -1155,7 +1206,8 @@ impl Interpreter {
                 iced_x86::Code::Pushfw => {
                     self.stack_push_value(Value::U16(self.regs.flags));
                 }
-                _ => unimplemented!(),
+                iced_x86::Code::Pushfd => todo!(),
+                _ => unreachable!(),
             },
 
             iced_x86::Mnemonic::Rcl
@@ -1481,6 +1533,11 @@ impl Interpreter {
                 self.store_in_operand(&instruction, 0, value);
             }
 
+            iced_x86::Mnemonic::Shld => todo!(),
+            iced_x86::Mnemonic::Shrd => todo!(),
+
+            iced_x86::Mnemonic::Smsw => todo!(),
+
             iced_x86::Mnemonic::Stc => self.flags_set_carry(true),
             iced_x86::Mnemonic::Std => self.flags_set_direction(true),
             iced_x86::Mnemonic::Sti => self.flags_set_interrupt(true),
@@ -1563,6 +1620,9 @@ impl Interpreter {
                 // adjust flag is undefined
             }
 
+            iced_x86::Mnemonic::Wait => {
+            }
+
             iced_x86::Mnemonic::Xchg => {
                 let value0 = self.fetch_operand_value(&instruction, 0);
                 let value1 = self.fetch_operand_value(&instruction, 1);
@@ -1570,7 +1630,8 @@ impl Interpreter {
                 self.store_in_operand(&instruction, 1, value0);
             }
 
-            // Note: `Xor` is handled simultaneously with `And`.
+            iced_x86::Mnemonic::Xlatb => todo!(),
+
             iced_x86::Mnemonic::INVALID => return Err(Error::InvalidInstruction),
             opcode => {
                 log::error!("Unsupported instruction: {:?}", opcode);
