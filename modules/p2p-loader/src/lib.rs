@@ -191,16 +191,22 @@ impl<T> Network<T> {
             log::warn!("Failed to start listener: {}", err);
         }
 
-        // Bootnode.
+        // Bootnodes.
         swarm.add_address(
             &"12D3KooWCWX1zQ3WXSMGuDK2qgVPgC4itYUkj84AsxBYcafMX6ot"
                 .parse()
                 .unwrap(),
             "/ip4/157.245.20.120/tcp/30333".parse().unwrap(),
         );
+        swarm.add_address(
+            &"12D3KooWCWX1zQ3WXSMGuDK2qgVPgC4itYUkj84AsxBYcafMX6ot"
+                .parse()
+                .unwrap(),
+            "/ip4/68.183.243.252/tcp/30333".parse().unwrap(),
+        );
 
         // Bootstrapping returns an error if we don't know of any other peer to connect to.
-        // This would typically happen on the bootnode itself.
+        // This would normally only happen on the bootnodes themselves.
         let _ = swarm.bootstrap();
 
         Ok(Network {
