@@ -44,6 +44,11 @@ pub struct Network<T> {
     /// Stream from the files watcher.
     notifications: stream::SelectAll<Pin<Box<dyn Stream<Item = notifier::NotifierEvent> + Send>>>,
 
+    /// True if we are connected to any node and have reported it through a
+    /// [`NetworkEvent::Readiness`].
+    // TODO: never set to false
+    connected_to_network: bool,
+
     /// Holds active git clones.
     _git_clones_directories: git_clones::GitClones,
 
@@ -58,6 +63,17 @@ pub struct Network<T> {
 // TODO: better Debug impl? `data` might be huge
 #[derive(Debug)]
 pub enum NetworkEvent<T> {
+    /// If true, indicates that we're now connected to the peer-to-peer network. If false,
+    /// indicates that we're not.
+    ///
+    /// The [`Network`] starts in a "not ready" state, and this event indicates a switch in
+    /// readiness.
+    ///
+    /// Not being ready has no incidence on how the API is allowed to be used, but queries will
+    /// fail unless they hit the local cache.
+    // TODO: nothing ever reports false
+    Readiness(bool),
+
     /// Successfully fetched a resource.
     FetchSuccess {
         /// Data that matches the hash.
@@ -189,6 +205,7 @@ impl<T> Network<T> {
         Ok(Network {
             swarm,
             notifications,
+            connected_to_network: false,
             _git_clones_directories: git_clones_directories,
             active_fetches: Vec::new(),
             events_queue: VecDeque::new(),
@@ -257,11 +274,19 @@ impl<T> Network<T> {
                             .push_back(NetworkEvent::FetchFail { user_data });
                     }
                 }
+                future::Either::Left(SwarmEvent::Behaviour(KademliaEvent::QueryResult {
+                    result: QueryResult::Bootstrap(_),
+                    ..
+                })) => {}
                 future::Either::Left(SwarmEvent::Behaviour(ev)) => {
                     log::info!("Other event: {:?}", ev)
                 }
                 future::Either::Left(SwarmEvent::ConnectionEstablished { peer_id, .. }) => {
-                    log::trace!("Connected to {:?}", peer_id)
+                    log::trace!("Connected to {:?}", peer_id);
+                    if !self.connected_to_network {
+                        self.connected_to_network = true;
+                        self.events_queue.push_back(NetworkEvent::Readiness(true));
+                    }
                 }
                 future::Either::Left(SwarmEvent::ConnectionClosed { peer_id, .. }) => {
                     log::trace!("Disconnected from {:?}", peer_id)

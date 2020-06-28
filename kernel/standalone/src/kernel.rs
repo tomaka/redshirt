@@ -29,7 +29,7 @@ use core::{
     marker::PhantomData,
     sync::atomic::{AtomicBool, Ordering},
 };
-use redshirt_core::{build_wasm_module, System};
+use redshirt_core::{build_wasm_module, module::ModuleHash, System};
 
 /// Main struct of this crate. Runs everything.
 pub struct Kernel<TPlat> {
@@ -66,7 +66,7 @@ where
             ))
             .with_startup_process(build_wasm_module!(
                 "../../../modules/p2p-loader",
-                "passive-node"
+                "modules-loader"
             ))
             .with_startup_process(build_wasm_module!("../../../modules/pci-printer"))
             .with_startup_process(build_wasm_module!("../../../modules/log-to-kernel"))
@@ -85,6 +85,11 @@ where
             system_builder = system_builder
                 .with_startup_process(build_wasm_module!("../../../modules/rpi-framebuffer"))
         }
+
+        // TODO: temporary; uncomment to test
+        /*system_builder = system_builder.with_main_program(
+            ModuleHash::from_base58("FWMwRMQCKdWVDdKyx6ogQ8sXuoeDLNzZxniRMyD5S71").unwrap(),
+        );*/
 
         Kernel {
             system: system_builder.build().expect("failed to start kernel"),
