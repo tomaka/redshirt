@@ -24,11 +24,8 @@ fn main() {
 }
 
 async fn async_main() {
-    redshirt_time_interface::monotonic_wait(Duration::from_secs(5)).await;
-
-    redshirt_interface_interface::register_interface(redshirt_loader_interface::ffi::INTERFACE)
-        .await
-        .unwrap();
+    // True if we have already registered ourselves as the "loader" interface handler.
+    let mut registered = false;
 
     let mut network = Network::start(Default::default()).unwrap();
 
@@ -48,6 +45,20 @@ async fn async_main() {
             future::Either::Left(
                 redshirt_syscalls::DecodedInterfaceOrDestroyed::ProcessDestroyed(_),
             ) => continue,
+            future::Either::Right(NetworkEvent::Readiness(true)) => {
+                if !registered {
+                    registered = true;
+                    redshirt_interface_interface::register_interface(
+                        redshirt_loader_interface::ffi::INTERFACE,
+                    )
+                    .await
+                    .unwrap();
+                }
+                continue;
+            }
+            future::Either::Right(NetworkEvent::Readiness(false)) => {
+                continue;
+            }
             future::Either::Right(NetworkEvent::FetchSuccess { data, user_data }) => {
                 let rp = redshirt_loader_interface::ffi::LoadResponse { result: Ok(data) };
                 redshirt_syscalls::emit_answer(user_data, &rp);

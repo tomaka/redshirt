@@ -1,4 +1,5 @@
 ---
+# Nodes running a peer-to-peer node expose their TCP port 30333.
 kind: Service
 apiVersion: v1
 metadata:
@@ -18,9 +19,12 @@ spec:
 apiVersion: v1
 kind: Secret
 metadata:
-  name: p2p-loader-private-key
+  name: p2p-loader-private-key-base
 type: Opaque
 data:
+  # Note: the application expects a base64-encoded value, and Kubernetes expects you to give
+  # the base64 encoding of the value to pass to the application. Therefore the value below is the
+  # private key that has been base64-encoded twice.
   private_key: Y0N6UEc3ZE13TUlPSjI1Z0JVRmdDMWNvb1lRbWlaNTRIS2Z6SDJXOEFtUT0=   # TODO: that's not exactly "secret"
 ---
 apiVersion: apps/v1
@@ -29,7 +33,7 @@ metadata:
   name: passive-node
 spec:
   serviceName: passive-node
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: passive-node
@@ -62,11 +66,16 @@ spec:
         env:
         - name: RUST_LOG
           value: p2p_loader=TRACE
-        - name: PRIVATE_KEY
+        - name: PRIVATE_KEY_BASE
+          # The value in `PRIVATE_KEY_BASE` is combined with `NODE_NAME` to obtain the real actual key.
           valueFrom:
             secretKeyRef:
-              name: p2p-loader-private-key # TODO: we need one key per node :facepalm:
+              name: p2p-loader-private-key-base
               key: private_key
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
         ports:
         - containerPort: 30333
           protocol: TCP
