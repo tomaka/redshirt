@@ -78,9 +78,6 @@ pub fn run_kernel(cfg: Config) -> Result<(), Error> {
                 .args(&["-m", "1024"])
                 .arg("-cdrom")
                 .arg(build_dir.path().join("image"))
-                // TODO: these settings are opinionated towards the features being tested in the OS
-                .args(&["-netdev", "user,id=net0,hostfwd=tcp::8000-:8000"])
-                .args(&["-device", "ne2k_pci,netdev=net0"])
                 .args(&["-smp", "cpus=4"])
                 .args(&["-enable-kvm", "-cpu", "host"])
                 .status()

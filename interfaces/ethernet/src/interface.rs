@@ -74,8 +74,7 @@ pub struct NetInterfaceRegistration {
     id: u64,
     /// Future that will resolve once we receive a packet from the network manager to send to the
     /// network. Must always be `Some`.
-    packet_to_net:
-        Mutex<stream::FuturesUnordered<redshirt_syscalls::MessageResponseFuture<Vec<u8>>>>,
+    packet_to_net: Mutex<stream::FuturesOrdered<redshirt_syscalls::MessageResponseFuture<Vec<u8>>>>,
     /// Future that will resolve once we have successfully delivered a packet from the network,
     /// and are ready to deliver a next one.
     packet_from_net: Mutex<Option<redshirt_syscalls::MessageResponseFuture<()>>>,
