@@ -87,9 +87,9 @@ where
         }
 
         // TODO: temporary; uncomment to test
-        system_builder = system_builder.with_main_program(
+        /*system_builder = system_builder.with_main_program(
             ModuleHash::from_base58("FWMwRMQCKdWVDdKyx6ogQ8sXuoeDLNzZxniRMyD5S71").unwrap(),
-        );
+        );*/
 
         Kernel {
             system: system_builder.build().expect("failed to start kernel"),
