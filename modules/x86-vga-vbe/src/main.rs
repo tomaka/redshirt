@@ -75,8 +75,29 @@ fn main() {
 }
 
 async fn async_main() {
-    // TODO: somehow lock the "VBE system" so that no two drivers try to access it
-    // TODO: also this module should be able to run on any platform, and only enable itself on x86
+    let mut pci_locks = Vec::new();
+
+    let pci_devices = redshirt_pci_interface::get_pci_devices().await;
+    for device in pci_devices {
+        // We match any PCI device that self-describes as VGA-compatible.
+        match (device.class_code, device.subclass, device.prog_if) {
+            (0x03, 0x00, 0x00) => {}
+            _ => continue,
+        };
+
+        let pci_lock = match redshirt_pci_interface::PciDeviceLock::lock(device.location).await {
+            Ok(l) => l,
+            // PCI device is already handled by a different driver.
+            Err(_) => continue,
+        };
+
+        pci_locks.push(pci_lock);
+    }
+
+    if pci_locks.is_empty() {
+        return;
+    }
+
     let mut vbe = unsafe { vbe::load_vbe_info().await.unwrap() };
 
     let (chosen_mode_num, width, height, linear_framebuffer_location) = {
