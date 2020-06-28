@@ -11,7 +11,7 @@ members = [
     "stub",
     "third-party/time",
     "third-party/wasm-timer",
-    "x86-vga-vbe",
+    "vga-vbe",
 ]
 
 [profile.dev]

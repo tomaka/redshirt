@@ -70,6 +70,7 @@ where
             ))*/
             .with_startup_process(build_wasm_module!("../../../modules/pci-printer"))
             .with_startup_process(build_wasm_module!("../../../modules/log-to-kernel"))
+            .with_startup_process(build_wasm_module!("../../../modules/vga-vbe"))
             .with_startup_process(build_wasm_module!("../../../modules/http-server"))
             .with_startup_process(build_wasm_module!("../../../modules/hello-world"))
             .with_startup_process(build_wasm_module!("../../../modules/network-manager"));
@@ -78,8 +79,7 @@ where
         #[cfg(target_arch = "x86_64")]
         {
             system_builder = system_builder
-                .with_startup_process(build_wasm_module!("../../../modules/e1000"))
-                .with_startup_process(build_wasm_module!("../../../modules/x86-vga-vbe"));
+                .with_startup_process(build_wasm_module!("../../../modules/e1000"));
         }
         #[cfg(any(target_arch = "arm", target_arch = "aarch64"))]
         {

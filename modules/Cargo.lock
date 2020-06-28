@@ -2485,6 +2485,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "078775d0255232fb988e6fccf26ddc9d1ac274299aaedcedce21c6f72cc533ce"
 
 [[package]]
+name = "vga-vbe"
+version = "0.1.0"
+dependencies = [
+ "derive_more",
+ "fnv 1.0.6",
+ "futures",
+ "hashbrown 0.7.2",
+ "iced-x86",
+ "lazy_static",
+ "log",
+ "redshirt-hardware-interface",
+ "redshirt-interface-interface",
+ "redshirt-log-interface",
+ "redshirt-pci-interface",
+ "redshirt-syscalls",
+]
+
+[[package]]
 name = "void"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2668,24 +2686,6 @@ checksum = "d59cefebd0c892fa2dd6de581e937301d8552cb44489cdff035c6187cb63fa5e"
 dependencies = [
  "winapi 0.2.8",
  "winapi-build",
-]
-
-[[package]]
-name = "x86-vga-vbe"
-version = "0.1.0"
-dependencies = [
- "derive_more",
- "fnv 1.0.6",
- "futures",
- "hashbrown 0.7.2",
- "iced-x86",
- "lazy_static",
- "log",
- "redshirt-hardware-interface",
- "redshirt-interface-interface",
- "redshirt-log-interface",
- "redshirt-pci-interface",
- "redshirt-syscalls",
 ]
 
 [[package]]
