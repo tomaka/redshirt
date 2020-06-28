@@ -230,17 +230,14 @@ impl Interpreter {
     /// Nested interrupts are accounted for. If an `int` opcode is executed, then the next `iret`
     /// will not cause this function to finish.
     fn run_until_iret(&mut self) -> Result<(), Error> {
-        let mut instr_counter: u32 = 0;
+        /// Counts the number of nested interrupts. Incremented when `int` is called, decremented
+        /// when `iret` is called.
         let mut nested_ints: u32 = 0;
 
+        // TODO: remove
         let mut debug = std::collections::HashMap::new();
 
         loop {
-            instr_counter = instr_counter.wrapping_add(1);
-            if (instr_counter % 1000) == 0 {
-                log::trace!("Executed 1000 instructions");
-            }
-
             // Decode instruction and update the IP register.
             let instruction = {
                 let rip = (u64::from(self.regs.cs) << 4) + u64::from(self.regs.eip);
