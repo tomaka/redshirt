@@ -68,6 +68,7 @@ where
                 "../../../modules/p2p-loader",
                 "modules-loader"
             ))
+            .with_startup_process(build_wasm_module!("../../../modules/compositor"))
             .with_startup_process(build_wasm_module!("../../../modules/pci-printer"))
             .with_startup_process(build_wasm_module!("../../../modules/log-to-kernel"))
             .with_startup_process(build_wasm_module!("../../../modules/http-server"))

@@ -72,4 +72,5 @@ This list contains human-friendly names, but remember that interfaces are define
 - `time`: Getting the value of the monotonic clock and waiting.
 - `udp`: UDP packets.
 - `usb`: Accessing USB devices (if any).
+- `video-output`: Registering video outputs that will be presented to the user. Typically a video card connected to a monitor.
 - `webgpu`: Issuing WebGPU draw calls to an unspecified location.
