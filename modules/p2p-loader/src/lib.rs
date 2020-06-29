@@ -177,7 +177,6 @@ impl<T> Network<T> {
             {
                 let mut cfg = KademliaConfig::default();
                 cfg.set_max_packet_size(10 * 1024 * 1024);
-                cfg.set_query_timeout(Duration::from_secs(3600));
                 cfg
             },
         );
