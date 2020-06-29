@@ -251,7 +251,10 @@ impl<T> Network<T> {
                     ..
                 })) => {
                     for record in result.records {
-                        log::debug!("Successfully loaded record from DHT: {:?}", record.record.key);
+                        log::debug!(
+                            "Successfully loaded record from DHT: {:?}",
+                            record.record.key
+                        );
                         while let Some(pos) = self
                             .active_fetches
                             .iter()
