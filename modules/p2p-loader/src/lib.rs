@@ -156,6 +156,7 @@ impl<T> Network<T> {
                 let mut yamux_config = yamux::Config::default();
                 // Only set SYN flag on first data frame sent to the remote.
                 yamux_config.set_lazy_open(true);
+                yamux_config.set_window_update_mode(yamux::WindowUpdateMode::OnRead);
                 yamux_config
             })
             // TODO: timeout
