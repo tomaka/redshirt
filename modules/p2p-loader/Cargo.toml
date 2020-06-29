@@ -15,7 +15,7 @@ blake3 = { version = "0.2.2", default-features = false }
 bs58 = "0.3.0"
 futures = "0.3"
 git2 = { version = "0.13.2", optional = true }
-libp2p = { version = "0.19.1", default-features = false, features = ["kad", "mplex", "plaintext"] }
+libp2p = { version = "0.20.1", default-features = false, features = ["kad", "plaintext", "yamux"] }
 log = "0.4"
 notify = { version = "4.0.15", optional = true }
 # openssl-sys is not used directly, but we want to pass the "vendored" feature
