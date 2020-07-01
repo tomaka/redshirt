@@ -28,9 +28,9 @@ use libp2p::kad::{
     record::Key,
     Kademlia, KademliaConfig, KademliaEvent, QueryResult, Quorum,
 };
-use libp2p::mplex::MplexConfig;
 use libp2p::plaintext::PlainText2Config;
 use libp2p::swarm::{Swarm, SwarmEvent};
+use libp2p::yamux;
 use std::{collections::VecDeque, io, path::PathBuf, pin::Pin, time::Duration};
 
 mod git_clones;
@@ -153,9 +153,11 @@ impl<T> Network<T> {
                 local_public_key: local_keypair.public(),
             })
             .multiplex({
-                let mut cfg = MplexConfig::default();
-                cfg.split_send_size(10 * 1024 * 1024);
-                cfg
+                let mut yamux_config = yamux::Config::default();
+                // Only set SYN flag on first data frame sent to the remote.
+                yamux_config.set_lazy_open(true);
+                yamux_config.set_window_update_mode(yamux::WindowUpdateMode::OnRead);
+                yamux_config
             })
             // TODO: timeout
             .map(|(id, muxer), _| (id, StreamMuxerBox::new(muxer)))
@@ -175,7 +177,6 @@ impl<T> Network<T> {
             ),
             {
                 let mut cfg = KademliaConfig::default();
-                cfg.set_replication_interval(Some(Duration::from_secs(60)));
                 cfg.set_max_packet_size(10 * 1024 * 1024);
                 cfg
             },
@@ -251,15 +252,18 @@ impl<T> Network<T> {
                     ..
                 })) => {
                     for record in result.records {
-                        log::debug!("Successfully loaded record from DHT: {:?}", record.key);
+                        log::debug!(
+                            "Successfully loaded record from DHT: {:?}",
+                            record.record.key
+                        );
                         while let Some(pos) = self
                             .active_fetches
                             .iter()
-                            .position(|(key, _)| *key == record.key)
+                            .position(|(key, _)| *key == record.record.key)
                         {
                             let user_data = self.active_fetches.remove(pos).1;
                             self.events_queue.push_back(NetworkEvent::FetchSuccess {
-                                data: record.value.clone(),
+                                data: record.record.value.clone(),
                                 user_data,
                             });
                         }
@@ -312,7 +316,8 @@ impl<T> Network<T> {
                 }
                 future::Either::Right(Some(notifier::NotifierEvent::InjectDht { hash, data })) => {
                     // TODO: use Quorum::Majority when network is large enough
-                    // TODO: is republication automatic?
+                    // This stores the record in the local storage. Republication on the DHT
+                    // is then automatically handled by `libp2p-kad`.
                     self.swarm
                         .put_record(
                             libp2p::kad::Record::new(hash.to_vec(), data),
