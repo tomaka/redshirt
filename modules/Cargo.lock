@@ -1847,9 +1847,8 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "parity-scale-codec",
- "redshirt-random-interface",
+ "rand 0.7.3",
  "redshirt-syscalls",
- "tokio",
 ]
 
 [[package]]
@@ -1900,14 +1899,6 @@ name = "redshirt-pci-interface"
 version = "0.1.0"
 dependencies = [
  "futures",
- "parity-scale-codec",
- "redshirt-syscalls",
-]
-
-[[package]]
-name = "redshirt-random-interface"
-version = "0.1.0"
-dependencies = [
  "parity-scale-codec",
  "redshirt-syscalls",
 ]
