@@ -123,10 +123,8 @@ impl Interpreter {
         let out_len = u32::try_from(out.len()).unwrap();
         assert!(addr + out_len <= 0x100000);
 
-        // TODO: the VBE docs say that only I/O port operations are used? can we optimize this and
-        // only read from local memory? first make sure that everything is working properly
-
-        if self.enable_io_operations {
+        // Perform a cache refresh only if we hit the video memory.
+        if self.enable_io_operations && addr >= 0xa0000 && addr < 0xc0000 {
             // TODO: asyncify?
             redshirt_syscalls::block_on(async {
                 unsafe {
@@ -172,13 +170,12 @@ impl Interpreter {
         let data_len = u32::try_from(data.len()).unwrap();
         assert!(addr + data_len <= 0x100000);
 
-        // TODO: the VBE docs say that only I/O port operations are used? can we optimize this and
-        // only write to local memory? first make sure that everything is working properly
-
         self.memory_cache
             [usize::try_from(addr).unwrap()..usize::try_from(addr + data_len).unwrap()]
             .copy_from_slice(data);
-        if self.enable_io_operations {
+
+        // We only perform the actual write to memory if we hit the video memory.
+        if self.enable_io_operations && addr >= 0xa0000 && addr < 0xc0000 {
             unsafe {
                 redshirt_hardware_interface::write(u64::from(addr), data);
             }
