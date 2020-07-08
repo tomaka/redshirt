@@ -20,6 +20,8 @@
 use alloc::{borrow::Cow, collections::VecDeque, vec::Vec};
 use core::{convert::TryFrom as _, iter};
 use fnv::FnvBuildHasher;
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use x86_64::structures::port::{PortRead as _, PortWrite as _};
 
 /// Initializes PCI the "legacy" way, by reading and writing CPU I/O ports.
@@ -78,6 +80,7 @@ pub struct Device<'a> {
 }
 
 impl<'a> Device<'a> {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     pub fn set_command(&mut self, bus_master: bool, memory_space: bool, io_space: bool) {
         let command: u16 = if bus_master { 1 << 2 } else { 0 }
             | if memory_space { 1 << 1 } else { 0 }
@@ -89,6 +92,11 @@ impl<'a> Device<'a> {
             0x4,
             u32::from(command),
         );
+    }
+
+    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+    pub fn set_command(&mut self, _: bool, _: bool, _: bool) {
+        unreachable!()
     }
 
     pub fn bus(&self) -> u8 {
@@ -147,6 +155,13 @@ pub enum BaseAddressRegister {
 }
 
 /// Scans all the PCI devices.
+#[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+fn scan_all_buses() -> Vec<DeviceInfo> {
+    Vec::new()
+}
+
+/// Scans all the PCI devices.
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 fn scan_all_buses() -> Vec<DeviceInfo> {
     // TODO: apparently it's possible to have multiple PCI controllers
     //       see https://wiki.osdev.org/PCI#Recursive_Scan
@@ -179,6 +194,7 @@ fn scan_all_buses() -> Vec<DeviceInfo> {
 }
 
 /// Scans all the devices on a certain PCI bus.
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 fn scan_bus(bus: u8) -> impl Iterator<Item = ScanResult> {
     (0..32).flat_map(move |device_idx| scan_device(bus, device_idx))
 }
@@ -188,6 +204,7 @@ fn scan_bus(bus: u8) -> impl Iterator<Item = ScanResult> {
 /// # Panic
 ///
 /// Panics if the device is out of range.
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 fn scan_device(bus: u8, device: u8) -> impl Iterator<Item = ScanResult> {
     assert!(device < 32);
 
@@ -220,6 +237,7 @@ fn scan_device(bus: u8, device: u8) -> impl Iterator<Item = ScanResult> {
 }
 
 /// Output of [`scan_function`].
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[derive(Debug)]
 enum ScanResult {
     /// Function is a device description.
@@ -238,6 +256,7 @@ enum ScanResult {
 /// # Panic
 ///
 /// Panics if the device is out of range.
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 fn scan_function(bdf: &DeviceBdf) -> Option<ScanResult> {
     let (vendor_id, device_id) = {
         let vendor_device = pci_cfg_read_u32(bdf, 0);
@@ -341,6 +360,7 @@ fn scan_function(bdf: &DeviceBdf) -> Option<ScanResult> {
 /// Panics if the device or function are out of range.
 /// Panics if `offset` is not 4-bytes aligned.
 ///
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 fn pci_cfg_read_u32(bdf: &DeviceBdf, offset: u8) -> u32 {
     pci_cfg_prepare_port(bdf, offset);
 
@@ -362,6 +382,7 @@ fn pci_cfg_read_u32(bdf: &DeviceBdf, offset: u8) -> u32 {
 /// Panics if the device or function are out of range.
 /// Panics if `offset` is not 4-bytes aligned.
 ///
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 fn pci_cfg_write_u32(bdf: &DeviceBdf, offset: u8, data: u32) {
     pci_cfg_prepare_port(bdf, offset);
 
@@ -374,6 +395,7 @@ fn pci_cfg_write_u32(bdf: &DeviceBdf, offset: u8, data: u32) {
     }
 }
 
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 fn pci_cfg_prepare_port(bdf: &DeviceBdf, offset: u8) {
     assert!(bdf.device < 32);
     assert!(bdf.function < 8);

@@ -28,8 +28,8 @@ use libp2p::kad::{
     record::Key,
     Kademlia, KademliaConfig, KademliaEvent, QueryResult, Quorum,
 };
-use libp2p::mplex::MplexConfig;
 use libp2p::swarm::{Swarm, SwarmEvent};
+use libp2p::yamux;
 use std::{collections::VecDeque, io, path::PathBuf, pin::Pin, time::Duration};
 
 mod git_clones;
@@ -42,6 +42,11 @@ pub struct Network<T> {
 
     /// Stream from the files watcher.
     notifications: stream::SelectAll<Pin<Box<dyn Stream<Item = notifier::NotifierEvent> + Send>>>,
+
+    /// True if we are connected to any node and have reported it through a
+    /// [`NetworkEvent::Readiness`].
+    // TODO: never set to false
+    connected_to_network: bool,
 
     /// Holds active git clones.
     _git_clones_directories: git_clones::GitClones,
@@ -57,6 +62,17 @@ pub struct Network<T> {
 // TODO: better Debug impl? `data` might be huge
 #[derive(Debug)]
 pub enum NetworkEvent<T> {
+    /// If true, indicates that we're now connected to the peer-to-peer network. If false,
+    /// indicates that we're not.
+    ///
+    /// The [`Network`] starts in a "not ready" state, and this event indicates a switch in
+    /// readiness.
+    ///
+    /// Not being ready has no incidence on how the API is allowed to be used, but queries will
+    /// fail unless they hit the local cache.
+    // TODO: nothing ever reports false
+    Readiness(bool),
+
     /// Successfully fetched a resource.
     FetchSuccess {
         /// Data that matches the hash.
@@ -132,9 +148,11 @@ impl<T> Network<T> {
             .upgrade(upgrade::Version::V1)
             .authenticate(libp2p::noise::NoiseConfig::xx(noise_keypair).into_authenticated())
             .multiplex({
-                let mut cfg = MplexConfig::default();
-                cfg.split_send_size(10 * 1024 * 1024);
-                cfg
+                let mut yamux_config = yamux::Config::default();
+                // Only set SYN flag on first data frame sent to the remote.
+                yamux_config.set_lazy_open(true);
+                yamux_config.set_window_update_mode(yamux::WindowUpdateMode::OnRead);
+                yamux_config
             })
             // TODO: timeout
             .map(|(id, muxer), _| (id, StreamMuxerBox::new(muxer)))
@@ -154,7 +172,6 @@ impl<T> Network<T> {
             ),
             {
                 let mut cfg = KademliaConfig::default();
-                cfg.set_replication_interval(Some(Duration::from_secs(60)));
                 cfg.set_max_packet_size(10 * 1024 * 1024);
                 cfg
             },
@@ -170,20 +187,28 @@ impl<T> Network<T> {
             log::warn!("Failed to start listener: {}", err);
         }
 
-        // Bootnode.
+        // Bootnodes.
         swarm.add_address(
-            &"Qmc25MQxSxbUpU49bZ7RVEqgBJPB3SrjG8WVycU3KC7xYP"
+            &"12D3KooWRx34RaEpD3jjHruSHRW2JTv18uiHDtk82j9cGCWKQVZF"
                 .parse()
                 .unwrap(),
             "/ip4/157.245.20.120/tcp/30333".parse().unwrap(),
         );
+        swarm.add_address(
+            &"12D3KooWCodzgHiHEtgYUECQN3RqPPBSRWdV7psnatSqdWHfAqGc"
+                .parse()
+                .unwrap(),
+            "/ip4/68.183.243.252/tcp/30333".parse().unwrap(),
+        );
 
-        // Bootstrapping returns an error if we don't know of any peer.
-        swarm.bootstrap().unwrap();
+        // Bootstrapping returns an error if we don't know of any other peer to connect to.
+        // This would normally only happen on the bootnodes themselves.
+        let _ = swarm.bootstrap();
 
         Ok(Network {
             swarm,
             notifications,
+            connected_to_network: false,
             _git_clones_directories: git_clones_directories,
             active_fetches: Vec::new(),
             events_queue: VecDeque::new(),
@@ -222,15 +247,18 @@ impl<T> Network<T> {
                     ..
                 })) => {
                     for record in result.records {
-                        log::debug!("Successfully loaded record from DHT: {:?}", record.key);
+                        log::debug!(
+                            "Successfully loaded record from DHT: {:?}",
+                            record.record.key
+                        );
                         while let Some(pos) = self
                             .active_fetches
                             .iter()
-                            .position(|(key, _)| *key == record.key)
+                            .position(|(key, _)| *key == record.record.key)
                         {
                             let user_data = self.active_fetches.remove(pos).1;
                             self.events_queue.push_back(NetworkEvent::FetchSuccess {
-                                data: record.value.clone(),
+                                data: record.record.value.clone(),
                                 user_data,
                             });
                         }
@@ -252,11 +280,19 @@ impl<T> Network<T> {
                             .push_back(NetworkEvent::FetchFail { user_data });
                     }
                 }
+                future::Either::Left(SwarmEvent::Behaviour(KademliaEvent::QueryResult {
+                    result: QueryResult::Bootstrap(_),
+                    ..
+                })) => {}
                 future::Either::Left(SwarmEvent::Behaviour(ev)) => {
                     log::info!("Other event: {:?}", ev)
                 }
                 future::Either::Left(SwarmEvent::ConnectionEstablished { peer_id, .. }) => {
-                    log::trace!("Connected to {:?}", peer_id)
+                    log::trace!("Connected to {:?}", peer_id);
+                    if !self.connected_to_network {
+                        self.connected_to_network = true;
+                        self.events_queue.push_back(NetworkEvent::Readiness(true));
+                    }
                 }
                 future::Either::Left(SwarmEvent::ConnectionClosed { peer_id, .. }) => {
                     log::trace!("Disconnected from {:?}", peer_id)
@@ -275,7 +311,8 @@ impl<T> Network<T> {
                 }
                 future::Either::Right(Some(notifier::NotifierEvent::InjectDht { hash, data })) => {
                     // TODO: use Quorum::Majority when network is large enough
-                    // TODO: is republication automatic?
+                    // This stores the record in the local storage. Republication on the DHT
+                    // is then automatically handled by `libp2p-kad`.
                     self.swarm
                         .put_record(
                             libp2p::kad::Record::new(hash.to_vec(), data),

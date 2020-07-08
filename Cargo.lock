@@ -1657,9 +1657,8 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "parity-scale-codec",
- "redshirt-random-interface",
+ "rand",
  "redshirt-syscalls",
- "tokio",
 ]
 
 [[package]]
