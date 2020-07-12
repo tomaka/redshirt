@@ -1278,7 +1278,7 @@ dependencies = [
  "rand 0.7.3",
  "sha2 0.8.1",
  "snow",
- "static_assertions",
+ "static_assertions 1.1.0",
  "x25519-dalek",
  "zeroize",
 ]
