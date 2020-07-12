@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "compositor",
     "e1000",
     "hello-world",
     "http-server",
