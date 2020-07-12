@@ -405,6 +405,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "compositor"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "redshirt-interface-interface",
+ "redshirt-syscalls",
+ "redshirt-time-interface",
+ "redshirt-video-output-interface",
+]
+
+[[package]]
 name = "concurrent-queue"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2056,6 +2067,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "redshirt-random-interface"
+version = "0.1.0"
+dependencies = [
+ "parity-scale-codec",
+ "redshirt-syscalls",
+]
+
+[[package]]
 name = "redshirt-syscalls"
 version = "0.1.0"
 dependencies = [
@@ -2088,6 +2107,16 @@ dependencies = [
  "futures",
  "parity-scale-codec",
  "pin-project",
+ "redshirt-syscalls",
+]
+
+[[package]]
+name = "redshirt-video-output-interface"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "parity-scale-codec",
+ "redshirt-random-interface",
  "redshirt-syscalls",
 ]
 

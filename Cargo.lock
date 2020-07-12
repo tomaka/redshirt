@@ -1879,6 +1879,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "redshirt-video-output-interface"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "parity-scale-codec",
+ "redshirt-random-interface",
+ "redshirt-syscalls",
+]
+
+[[package]]
 name = "regex"
 version = "1.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
