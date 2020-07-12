@@ -2769,6 +2769,7 @@ dependencies = [
  "redshirt-log-interface",
  "redshirt-pci-interface",
  "redshirt-syscalls",
+ "redshirt-video-output-interface",
 ]
 
 [[package]]

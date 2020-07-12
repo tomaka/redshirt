@@ -66,6 +66,8 @@
 //! >           over 32bits.
 //!
 
+use core::convert::TryFrom as _;
+
 mod interpreter;
 mod vbe;
 
@@ -119,8 +121,38 @@ async fn async_main() {
 
     vbe.set_current_mode(chosen_mode_num).await.unwrap();
 
-    // TODO: temporary
-    let mut ops = redshirt_hardware_interface::HardwareWriteOperationsBuilder::new();
-    unsafe { ops.memset(linear_framebuffer_location, 32, 0xff) };
-    ops.send();
+    // Register the framebuffer as a video output.
+    let video_output_registration = redshirt_video_output_interface::video_output::register(
+        redshirt_video_output_interface::video_output::VideoOutputConfig {
+            width: u32::from(width),
+            height: u32::from(height),
+            // TODO: proper format
+            format: redshirt_video_output_interface::ffi::Format::R8G8B8X8,
+        },
+    )
+    .await;
+
+    loop {
+        let frame = video_output_registration.next_frame().await;
+        if frame.changes.is_empty() {
+            continue;
+        }
+
+        let mut ops = redshirt_hardware_interface::HardwareWriteOperationsBuilder::new();
+
+        for change in frame.changes {
+            for (y, pixels_row) in change.pixels.into_iter().enumerate() {
+                // TODO: proper calculation
+                let addr = linear_framebuffer_location
+                    + u64::from(
+                        (change.screen_y_start + u32::try_from(y).unwrap()) * u32::from(width)
+                            + change.screen_x_start,
+                    ) * 4;
+                // TODO: check length of pixels_row
+                unsafe { ops.write(addr, pixels_row) };
+            }
+        }
+
+        ops.send();
+    }
 }
