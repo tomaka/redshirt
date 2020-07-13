@@ -1657,9 +1657,8 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "parity-scale-codec",
- "redshirt-random-interface",
+ "rand",
  "redshirt-syscalls",
- "tokio",
 ]
 
 [[package]]
@@ -1876,6 +1875,16 @@ dependencies = [
  "futures",
  "parity-scale-codec",
  "pin-project",
+ "redshirt-syscalls",
+]
+
+[[package]]
+name = "redshirt-video-output-interface"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "parity-scale-codec",
+ "redshirt-random-interface",
  "redshirt-syscalls",
 ]
 

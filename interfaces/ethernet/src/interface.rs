@@ -48,7 +48,7 @@ pub struct InterfaceConfig {
 /// Registers a new network interface.
 pub async fn register_interface(config: InterfaceConfig) -> NetInterfaceRegistration {
     unsafe {
-        let id = redshirt_random_interface::generate_u64().await;
+        let id = rand::random();
 
         redshirt_syscalls::emit_message_without_response(&ffi::INTERFACE, &{
             ffi::NetworkMessage::RegisterInterface {
@@ -72,12 +72,14 @@ pub async fn register_interface(config: InterfaceConfig) -> NetInterfaceRegistra
 pub struct NetInterfaceRegistration {
     /// Identifier of the interface in the network manager.
     id: u64,
-    /// Future that will resolve once we receive a packet from the network manager to send to the
-    /// network. Must always be `Some`.
-    packet_to_net:
-        Mutex<stream::FuturesUnordered<redshirt_syscalls::MessageResponseFuture<Vec<u8>>>>,
+
+    /// Futures that will resolve once we receive a packet from the network manager to send to the
+    /// network.
+    packet_to_net: Mutex<stream::FuturesOrdered<redshirt_syscalls::MessageResponseFuture<Vec<u8>>>>,
+
     /// Future that will resolve once we have successfully delivered a packet from the network,
     /// and are ready to deliver a next one.
+    // TODO: should probably change to send multiple packets in parallel
     packet_from_net: Mutex<Option<redshirt_syscalls::MessageResponseFuture<()>>>,
 }
 

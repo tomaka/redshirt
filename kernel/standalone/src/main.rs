@@ -20,7 +20,6 @@
 #![feature(allocator_api)] // TODO: https://github.com/rust-lang/rust/issues/32838
 #![feature(alloc_error_handler)] // TODO: https://github.com/rust-lang/rust/issues/66741
 #![feature(asm)] // TODO: https://github.com/rust-lang/rust/issues/72016
-#![feature(core_intrinsics)]
 #![feature(const_if_match)] // TODO: https://github.com/rust-lang/rust/issues/49146
 #![feature(global_asm)] // TODO: https://github.com/rust-lang/rust/issues/35119
 #![feature(llvm_asm)] // TODO: replace all occurrences of `llvm_asm!` with `asm!`
