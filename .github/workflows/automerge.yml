@@ -1,3 +1,6 @@
+# Automatically merged pull requests that have a label applied to them.
+# Documentation: https://github.com/pascalgn/automerge-action
+
 name: automerge
 on:
   pull_request:
