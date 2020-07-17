@@ -403,9 +403,11 @@ where
 
 #[cfg(test)]
 mod tests {
+    use crate::extrinsics;
+
     #[test]
     fn send_sync() {
         fn is_send_sync<T: Send + Sync>() {}
-        is_send_sync::<super::System>()
+        is_send_sync::<super::System<extrinsics::NoExtrinsics>>()
     }
 }
