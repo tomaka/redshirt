@@ -35,7 +35,7 @@ use redshirt_core::{
 
 /// Main struct of this crate. Runs everything.
 pub struct Kernel<TPlat> {
-    system: System<'static>,
+    system: System<'static, WasiExtrinsics>,
     /// Phantom data so that we can keep the platform specific generic parameter.
     marker: PhantomData<TPlat>,
 }
