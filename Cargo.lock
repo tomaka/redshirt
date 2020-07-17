@@ -1619,7 +1619,6 @@ dependencies = [
  "futures",
  "hashbrown",
  "nohash-hasher",
- "proc-macro-hack",
  "rand",
  "rand_chacha",
  "rand_core",
@@ -1644,7 +1643,6 @@ name = "redshirt-core-proc-macros"
 version = "0.1.0"
 dependencies = [
  "cargo_metadata",
- "proc-macro-hack",
  "proc-macro2 1.0.18",
  "serde_json",
  "syn",
