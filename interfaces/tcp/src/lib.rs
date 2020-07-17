@@ -13,10 +13,12 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-//! TCP/IP.
+//! TCP/IP sockets.
 //!
 //! Allows opening asynchronous TCP sockets and listeners, similar to what the `tokio` or
 //! `async-std` libraries do.
+//!
+//! See [the Wikipedia page](https://en.wikipedia.org/wiki/TCP/IP) for an introduction to TCP/IP.
 //!
 //! # Socket state
 //!
@@ -25,7 +27,7 @@
 //! - Connecting/Listening. The socket is performing the three-way handshake or, for listening
 //! sockets, is waiting for an incoming connection. From that state, a connection can transition
 //! to the Established state.
-//! - Established. The socket is connecting and performing normal reads and writes.
+//! - Established. The socket is connected and performing normal reads and writes.
 //! - Closed wait. The socket has received a FIN from the remote. In this state, it is guaranteed
 //! that reading from the socket will not produce any more data. Writing is still possible.
 //! Depending on the logic of the application, the local machine might be encouraged to close
@@ -66,6 +68,15 @@
 //! From the point of view of the user of this interface, all the state transitions happen
 //! automatically except for the transitions from "Established" to "Fin wait" and from "Closed
 //! wait" to "Last ACK", which happen when they request to close the socket.
+//!
+//! ## About listening sockets
+//!
+//! Contrary to Berkley sockets, there is no such thing as a listening socket that *accepts*
+//! incoming connections and produces other sockets.
+//!
+//! Instead, you are expected to create multiple listening sockets that all listen on the same
+//! port. When a remote tries to connect, one of these sockets transitions to the `Established`
+//! state and is now considered connected to that the remote.
 //!
 
 use futures::{lock::Mutex, prelude::*, ready};
