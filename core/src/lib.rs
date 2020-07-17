@@ -135,11 +135,10 @@ pub use redshirt_syscalls::{
 /// Can be passed an optional second argument containing the binary name to compile. Mandatory if
 /// the package contains multiple binaries.
 #[cfg(feature = "nightly")]
-#[cfg_attr(docsrs, doc(cfg(feature = "nightly")))] // TODO: enable unconditonally after https://github.com/rust-lang/rust/issues/43781
-#[proc_macro_hack::proc_macro_hack]
+#[cfg_attr(docsrs, doc(cfg(feature = "nightly")))]
+// TODO: enable unconditonally after https://github.com/rust-lang/rust/issues/43781
 pub use redshirt_core_proc_macros::build_wasm_module;
 
-#[proc_macro_hack::proc_macro_hack]
 #[doc(hidden)]
 pub use redshirt_core_proc_macros::wat_to_bin;
 
@@ -151,7 +150,7 @@ macro_rules! from_wat {
     // TODO: also build the hash at compile-time? https://github.com/tomaka/redshirt/issues/218
     // TODO: we need this hack with a special `local` tag because of macro paths resolution issues
     (local, $wat:expr) => {{
-        $crate::Module::from_bytes(wat_to_bin!($wat)).unwrap()
+        $crate::Module::from_bytes(redshirt_core_proc_macros::wat_to_bin!($wat)).unwrap()
     }};
     ($wat:expr) => {{
         $crate::Module::from_bytes($crate::wat_to_bin!($wat)).unwrap()

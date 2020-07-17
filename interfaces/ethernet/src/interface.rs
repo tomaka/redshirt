@@ -30,7 +30,10 @@
 
 use crate::ffi;
 use core::fmt;
-use futures::lock::{Mutex, MutexGuard};
+use futures::{
+    lock::{Mutex, MutexGuard},
+    prelude::*,
+};
 use redshirt_syscalls::Encode as _;
 
 /// Configuration of an interface to register.
@@ -45,7 +48,7 @@ pub struct InterfaceConfig {
 /// Registers a new network interface.
 pub async fn register_interface(config: InterfaceConfig) -> NetInterfaceRegistration {
     unsafe {
-        let id = redshirt_random_interface::generate_u64().await;
+        let id = rand::random();
 
         redshirt_syscalls::emit_message_without_response(&ffi::INTERFACE, &{
             ffi::NetworkMessage::RegisterInterface {
@@ -58,7 +61,7 @@ pub async fn register_interface(config: InterfaceConfig) -> NetInterfaceRegistra
         NetInterfaceRegistration {
             id,
             packet_from_net: Mutex::new(None),
-            packet_to_net: Mutex::new(build_packet_to_net(id)),
+            packet_to_net: Mutex::new((0..10).map(|_| build_packet_to_net(id)).collect()),
         }
     }
 }
@@ -69,11 +72,14 @@ pub async fn register_interface(config: InterfaceConfig) -> NetInterfaceRegistra
 pub struct NetInterfaceRegistration {
     /// Identifier of the interface in the network manager.
     id: u64,
-    /// Future that will resolve once we receive a packet from the network manager to send to the
-    /// network. Must always be `Some`.
-    packet_to_net: Mutex<redshirt_syscalls::MessageResponseFuture<Vec<u8>>>,
+
+    /// Futures that will resolve once we receive a packet from the network manager to send to the
+    /// network.
+    packet_to_net: Mutex<stream::FuturesOrdered<redshirt_syscalls::MessageResponseFuture<Vec<u8>>>>,
+
     /// Future that will resolve once we have successfully delivered a packet from the network,
     /// and are ready to deliver a next one.
+    // TODO: should probably change to send multiple packets in parallel
     packet_from_net: Mutex<Option<redshirt_syscalls::MessageResponseFuture<()>>>,
 }
 
@@ -120,8 +126,8 @@ impl NetInterfaceRegistration {
     /// >           `Future` finishes first.
     pub async fn packet_to_send(&self) -> Vec<u8> {
         let mut packet_to_net = self.packet_to_net.lock().await;
-        let data = (&mut *packet_to_net).await;
-        *packet_to_net = build_packet_to_net(self.id);
+        let data = packet_to_net.next().await.unwrap();
+        packet_to_net.push(build_packet_to_net(self.id));
         data
     }
 }
