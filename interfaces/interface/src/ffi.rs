@@ -13,8 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use parity_scale_codec::{Decode, Encode};
-use redshirt_syscalls::InterfaceHash;
+use alloc::vec::Vec;
+use redshirt_syscalls::{Encode as _, EncodedMessage, InterfaceHash, MessageId, Pid};
 
 // TODO: this has been randomly generated; instead should be a hash or something
 pub const INTERFACE: InterfaceHash = InterfaceHash::from_raw_hash([
@@ -22,18 +22,192 @@ pub const INTERFACE: InterfaceHash = InterfaceHash::from_raw_hash([
     0x7d, 0xd5, 0x70, 0x92, 0x4d, 0x4f, 0x70, 0xdf, 0xb3, 0xda, 0xf6, 0xfe, 0xdc, 0x65, 0x93, 0x8a,
 ]);
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug, parity_scale_codec::Encode, parity_scale_codec::Decode)]
 pub enum InterfaceMessage {
     Register(InterfaceHash),
+    NextMessage(u64),
 }
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug, parity_scale_codec::Encode, parity_scale_codec::Decode)]
 pub struct InterfaceRegisterResponse {
-    pub result: Result<(), InterfaceRegisterError>,
+    pub result: Result<u64, InterfaceRegisterError>,
 }
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug, parity_scale_codec::Encode, parity_scale_codec::Decode)]
 pub enum InterfaceRegisterError {
     /// There already exists a process registered for this interface.
     AlreadyRegistered,
+}
+
+/// Either a decoded interface notification or a decoded process destroyed notification.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DecodedInterfaceOrDestroyed {
+    /// Interface notification.
+    Interface(DecodedInterfaceNotification),
+    /// Process destroyed notification.
+    ProcessDestroyed(DecodedProcessDestroyedNotification),
+}
+
+/// Builds a interface notification from its raw components.
+pub fn build_interface_notification(
+    interface: &InterfaceHash,
+    message_id: Option<MessageId>,
+    emitter_pid: Pid,
+    index_in_list: u32,
+    actual_data: &EncodedMessage,
+) -> InterfaceNotificationBuilder {
+    let mut buffer = Vec::with_capacity(1 + 32 + 8 + 8 + 4 + actual_data.0.len());
+    buffer.push(0);
+    buffer.extend_from_slice(&interface.0);
+    buffer.extend_from_slice(&message_id.map(u64::from).unwrap_or(0).to_le_bytes());
+    buffer.extend_from_slice(&u64::from(emitter_pid).to_le_bytes());
+    buffer.extend_from_slice(&index_in_list.to_le_bytes());
+    buffer.extend_from_slice(&actual_data.0);
+
+    debug_assert_eq!(buffer.capacity(), buffer.len());
+    InterfaceNotificationBuilder { data: buffer }
+}
+
+#[derive(Debug, Clone)]
+pub struct InterfaceNotificationBuilder {
+    data: Vec<u8>,
+}
+
+impl InterfaceNotificationBuilder {
+    /// Updates the `index_in_list` field of the message.
+    pub fn set_index_in_list(&mut self, value: u32) {
+        self.data[49..53].copy_from_slice(&value.to_le_bytes());
+    }
+
+    /// Returns the [`MessageId`] that was put in the builder.
+    pub fn message_id(&self) -> Option<MessageId> {
+        let id = u64::from_le_bytes([
+            self.data[33],
+            self.data[34],
+            self.data[35],
+            self.data[36],
+            self.data[37],
+            self.data[38],
+            self.data[39],
+            self.data[40],
+        ]);
+
+        MessageId::try_from(id).ok()
+    }
+
+    pub fn len(&self) -> usize {
+        self.data.len()
+    }
+
+    pub fn into_bytes(self) -> Vec<u8> {
+        self.data
+    }
+}
+
+pub fn decode_interface_notification(buffer: &[u8]) -> Result<DecodedInterfaceNotification, ()> {
+    if buffer.len() < 1 + 32 + 8 + 8 + 4 {
+        return Err(());
+    }
+
+    if buffer[0] != 0x0 {
+        return Err(());
+    }
+
+    Ok(DecodedInterfaceNotification {
+        interface: InterfaceHash::from({
+            let mut hash = [0; 32];
+            hash.copy_from_slice(&buffer[1..33]);
+            hash
+        }),
+        message_id: {
+            let id = u64::from_le_bytes([
+                buffer[33], buffer[34], buffer[35], buffer[36], buffer[37], buffer[38], buffer[39],
+                buffer[40],
+            ]);
+
+            MessageId::try_from(id).ok()
+        },
+        emitter_pid: From::from(u64::from_le_bytes([
+            buffer[41], buffer[42], buffer[43], buffer[44], buffer[45], buffer[46], buffer[47],
+            buffer[48],
+        ])),
+        index_in_list: u32::from_le_bytes([buffer[49], buffer[50], buffer[51], buffer[52]]),
+        actual_data: EncodedMessage(buffer[53..].to_vec()),
+    })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DecodedInterfaceNotification {
+    /// Interface the message concerns.
+    pub interface: InterfaceHash,
+    /// Id of the message. Can be used for answering. `None` if no answer is expected.
+    pub message_id: Option<MessageId>,
+    /// Id of the process that emitted the message.
+    ///
+    /// This should be used for security purposes, so that a process can't modify another process'
+    /// resources.
+    pub emitter_pid: Pid,
+    /// Index within the list to poll where this message was.
+    pub index_in_list: u32,
+    pub actual_data: EncodedMessage,
+}
+
+pub fn build_process_destroyed_notification(
+    pid: Pid,
+    index_in_list: u32,
+) -> ProcessDestroyedNotificationBuilder {
+    let mut buffer = Vec::with_capacity(1 + 8 + 4);
+    buffer.push(2);
+    buffer.extend_from_slice(&u64::from(pid).to_le_bytes());
+    buffer.extend_from_slice(&index_in_list.to_le_bytes());
+
+    debug_assert_eq!(buffer.capacity(), buffer.len());
+    ProcessDestroyedNotificationBuilder { data: buffer }
+}
+
+#[derive(Debug, Clone)]
+pub struct ProcessDestroyedNotificationBuilder {
+    data: Vec<u8>,
+}
+
+impl ProcessDestroyedNotificationBuilder {
+    /// Updates the `index_in_list` field of the message.
+    pub fn set_index_in_list(&mut self, value: u32) {
+        self.data[9..13].copy_from_slice(&value.to_le_bytes());
+    }
+
+    pub fn len(&self) -> usize {
+        self.data.len()
+    }
+
+    pub fn into_bytes(self) -> Vec<u8> {
+        self.data
+    }
+}
+
+pub fn decode_process_destroyed_notification(
+    buffer: &[u8],
+) -> Result<DecodedProcessDestroyedNotification, ()> {
+    if buffer.len() != 1 + 8 + 4 {
+        return Err(());
+    }
+
+    if buffer[0] != 0x2 {
+        return Err(());
+    }
+
+    Ok(DecodedProcessDestroyedNotification {
+        pid: From::from(u64::from_le_bytes([
+            buffer[1], buffer[2], buffer[3], buffer[4], buffer[5], buffer[6], buffer[7], buffer[8],
+        ])),
+        index_in_list: u32::from_le_bytes([buffer[9], buffer[10], buffer[11], buffer[12]]),
+    })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DecodedProcessDestroyedNotification {
+    /// Identifier of the process that got destroyed.
+    pub pid: Pid,
+    /// Index within the list to poll where this message was.
+    pub index_in_list: u32,
 }

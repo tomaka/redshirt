@@ -17,10 +17,12 @@
 
 #![no_std]
 
+extern crate alloc;
+
 use futures::prelude::*;
 use redshirt_syscalls::InterfaceHash;
 
-pub use ffi::InterfaceRegisterError;
+pub use ffi::{DecodedInterfaceOrDestroyed, InterfaceRegisterError};
 
 pub mod ffi;
 
@@ -30,14 +32,55 @@ pub mod ffi;
 /// >           `interfaces` directory, although that is subject to change.
 ///
 /// Returns an error if there was already a program registered for that interface.
-pub fn register_interface(
+pub async fn register_interface(
     hash: InterfaceHash,
-) -> impl Future<Output = Result<(), InterfaceRegisterError>> {
+) -> Result<Registration, InterfaceRegisterError> {
     let msg = ffi::InterfaceMessage::Register(hash);
-    // We unwrap cause there's always something that handles interface registration.
-    unsafe {
-        redshirt_syscalls::emit_message_with_response(&ffi::INTERFACE, msg)
-            .unwrap()
-            .map(|response: ffi::InterfaceRegisterResponse| response.result)
+    // Unwrapping is ok because there's always something that handles interface registration.
+    let id = unsafe { redshirt_syscalls::emit_message_with_response(&ffi::INTERFACE, msg) }
+        .unwrap()
+        .await
+        .result?;
+
+    let mut registration = Registration {
+        id,
+        messages: stream::FuturesOrdered::new(),
+    };
+
+    for _ in 0..32 {
+        registration.add_message();
+    }
+
+    registration
+}
+
+/// Registered interface.
+// TODO: unregister it if dropped? unregistrations aren't supported at the moment
+pub struct Registration {
+    /// Identifier of the interface registration.
+    id: u64,
+    /// Futures that will resolve when we receive a message on the interface.
+    messages: stream::FuturesOrdered<
+        redshirt_syscalls::MessageResponseFuture<DecodedInterfaceOrDestroyed>,
+    >,
+}
+
+impl Registration {
+    /// Returns the next message received on this interface.
+    pub async fn next_message_raw(&mut self) -> DecodedInterfaceOrDestroyed {
+        let message = self.messages.next().await.unwrap();
+        self.add_message();
+        message
+    }
+
+    fn add_message(&mut self) {
+        self.messages.push(unsafe {
+            let message = ffi::InterfaceMessage::NextMessage(self.id).encode();
+            let msg_id = redshirt_syscalls::MessageBuilder::new()
+                .add_data(&message)
+                .emit_with_response_raw(&ffi::INTERFACE)
+                .unwrap();
+            redshirt_syscalls::message_response(msg_id)
+        });
     }
 }

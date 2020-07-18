@@ -26,7 +26,7 @@ use spinning_top::{Spinlock, SpinlockGuard};
 pub struct NotificationsQueue {
     /// The actual list.
     ///
-    /// The [`DecodedResponseNotification::index_in_list`](redshirt_syscalls::ffi::DecodedResponseNotification::index_in_list)
+    /// The [`DecodedNotification::index_in_list`](redshirt_syscalls::ffi::DecodedNotification::index_in_list)
     /// and [`DecodedInterfaceNotification::index_in_list`](redshirt_syscalls::ffi::DecodedInterfaceNotification::index_in_list)
     /// fields are set to a dummy value, and will be filled before actually delivering the
     /// notification.
@@ -87,7 +87,7 @@ impl NotificationsQueue {
 
     /// Pushes a response notification at the end of the queue.
     pub fn push_response(&self, message_id: MessageId, response: Result<EncodedMessage, ()>) {
-        let notif = redshirt_syscalls::ffi::build_response_notification(
+        let notif = redshirt_syscalls::ffi::build_notification(
             message_id,
             // We use a dummy value here and fill it up later when actually delivering the notif.
             0,

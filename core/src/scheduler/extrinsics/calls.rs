@@ -64,7 +64,6 @@ pub fn parse_extrinsic_next_notification<TExtr, TPud, TTud>(
             let id = u64::from_le_bytes(<[u8; 8]>::try_from(i).unwrap());
             out.push(match id {
                 0 => WaitEntry::Empty,
-                1 => WaitEntry::InterfaceOrProcDestroyed,
                 _ => WaitEntry::Answer(MessageId::try_from(id).unwrap()),
             });
         }
@@ -117,14 +116,11 @@ pub struct NotificationWait {
 }
 
 /// What a thread is waiting upon.
-// TODO: would be cool if this representation of that was just a u64
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WaitEntry {
     /// An empty entry. Serves no purpose but it might be convenient for the user of this call
     /// to leave entries empty.
     Empty,
-    /// Waiting for either an interface notification or a process destroyed notification.
-    InterfaceOrProcDestroyed,
     /// Waiting for an answer to the given message.
     Answer(MessageId),
 }
