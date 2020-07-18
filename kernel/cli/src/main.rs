@@ -14,7 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use futures::{channel::mpsc, prelude::*};
-use redshirt_core::{build_wasm_module, module::ModuleHash};
+use redshirt_core::{build_wasm_module, extrinsics::wasi::WasiExtrinsics, module::ModuleHash};
 use std::{fs, path::PathBuf, process, sync::Arc};
 use structopt::StructOpt;
 
@@ -67,7 +67,7 @@ fn main() {
 
     let framebuffer_context = redshirt_framebuffer_hosted::FramebufferContext::new();
 
-    let system = redshirt_core::system::SystemBuilder::new()
+    let system = redshirt_core::system::SystemBuilder::new(WasiExtrinsics::default())
         .with_native_program(redshirt_time_hosted::TimerHandler::new())
         .with_native_program(redshirt_tcp_hosted::TcpHandler::new())
         .with_native_program(redshirt_log_hosted::LogHandler::new())

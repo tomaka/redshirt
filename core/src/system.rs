@@ -23,7 +23,7 @@
 //! - `interface`.
 //!
 
-use crate::extrinsics::wasi;
+use crate::extrinsics;
 use crate::module::{Module, ModuleHash};
 use crate::native::{self, NativeProgramMessageIdWrite as _};
 use crate::scheduler::{Core, CoreBuilder, CoreRunOutcome, NewErr};
@@ -41,9 +41,9 @@ use spinning_top::Spinlock;
 /// inter-process communication, and so on.
 ///
 /// See [the module-level documentation](super) for more information.
-pub struct System<'a> {
+pub struct System<'a, TExtr: extrinsics::Extrinsics> {
     /// Inner system with inter-process communications.
-    core: Core<wasi::WasiExtrinsics>,
+    core: Core<TExtr>,
 
     /// Collection of programs. Each is assigned a `Pid` that is reserved within `core`.
     /// Can communicate with the WASM programs that are within `core`.
@@ -67,9 +67,9 @@ pub struct System<'a> {
 }
 
 /// Prototype for a [`System`].
-pub struct SystemBuilder<'a> {
+pub struct SystemBuilder<'a, TExtr: extrinsics::Extrinsics> {
     /// Builder for the inner core.
-    core: CoreBuilder<wasi::WasiExtrinsics>,
+    core: CoreBuilder<TExtr>,
 
     /// Native programs.
     native_programs: native::NativeProgramsCollection<'a>,
@@ -108,7 +108,10 @@ enum RunOnceOutcome {
     LoopAgainNow,
 }
 
-impl<'a> System<'a> {
+impl<'a, TExtr> System<'a, TExtr>
+where
+    TExtr: extrinsics::Extrinsics,
+{
     /// Start executing a program.
     pub fn execute(&self, program: &Module) -> Result<Pid, NewErr> {
         Ok(self.core.execute(program)?.0.pid())
@@ -289,9 +292,12 @@ impl<'a> System<'a> {
     }
 }
 
-impl<'a> SystemBuilder<'a> {
+impl<'a, TExtr> SystemBuilder<'a, TExtr>
+where
+    TExtr: extrinsics::Extrinsics,
+{
     /// Starts a new builder.
-    pub fn new() -> Self {
+    pub fn new(extrinsics: TExtr) -> Self {
         // We handle some low-level interfaces here.
         let mut core = CoreBuilder::new();
         let interface_interface_pid = core.reserve_pid();
@@ -358,7 +364,7 @@ impl<'a> SystemBuilder<'a> {
     ///
     /// Returns an error if any of the programs passed through
     /// [`SystemBuilder::with_startup_process`] fails to start.
-    pub fn build(self) -> Result<System<'a>, NewErr> {
+    pub fn build(self) -> Result<System<'a, TExtr>, NewErr> {
         let core = self.core.build();
 
         // We ask the core to redirect messages for the `interface` interface towards our
@@ -386,17 +392,22 @@ impl<'a> SystemBuilder<'a> {
     }
 }
 
-impl<'a> Default for SystemBuilder<'a> {
+impl<'a, TExtr> Default for SystemBuilder<'a, TExtr>
+where
+    TExtr: extrinsics::Extrinsics + Default,
+{
     fn default() -> Self {
-        SystemBuilder::new()
+        SystemBuilder::new(Default::default())
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::extrinsics;
+
     #[test]
     fn send_sync() {
         fn is_send_sync<T: Send + Sync>() {}
-        is_send_sync::<super::System>()
+        is_send_sync::<super::System<extrinsics::NoExtrinsics>>()
     }
 }

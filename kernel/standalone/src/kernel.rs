@@ -29,11 +29,13 @@ use core::{
     marker::PhantomData,
     sync::atomic::{AtomicBool, Ordering},
 };
-use redshirt_core::{build_wasm_module, module::ModuleHash, System};
+use redshirt_core::{
+    build_wasm_module, extrinsics::wasi::WasiExtrinsics, module::ModuleHash, System,
+};
 
 /// Main struct of this crate. Runs everything.
 pub struct Kernel<TPlat> {
-    system: System<'static>,
+    system: System<'static, WasiExtrinsics>,
     /// Phantom data so that we can keep the platform specific generic parameter.
     marker: PhantomData<TPlat>,
 }
@@ -49,33 +51,34 @@ where
         // TODO: don't do this on platforms that don't have PCI?
         let pci_devices = unsafe { crate::pci::pci::init_cam_pci() };
 
-        let mut system_builder = redshirt_core::system::SystemBuilder::new()
-            .with_native_program(crate::hardware::HardwareHandler::new(
-                platform_specific.clone(),
-            ))
-            .with_native_program(crate::time::TimeHandler::new(platform_specific.clone()))
-            .with_native_program(crate::random::native::RandomNativeProgram::new(
-                platform_specific.clone(),
-            ))
-            .with_native_program(crate::pci::native::PciNativeProgram::new(
-                pci_devices,
-                platform_specific.clone(),
-            ))
-            .with_native_program(crate::klog::KernelLogNativeProgram::new(
-                platform_specific.clone(),
-            ))
-            .with_startup_process(build_wasm_module!(
-                "../../../modules/p2p-loader",
-                "modules-loader"
-            ))
-            .with_startup_process(build_wasm_module!("../../../modules/usb-controller-driver"))
-            .with_startup_process(build_wasm_module!("../../../modules/compositor"))
-            .with_startup_process(build_wasm_module!("../../../modules/pci-printer"))
-            .with_startup_process(build_wasm_module!("../../../modules/log-to-kernel"))
-            .with_startup_process(build_wasm_module!("../../../modules/http-server"))
-            .with_startup_process(build_wasm_module!("../../../modules/hello-world"))
-            .with_startup_process(build_wasm_module!("../../../modules/network-manager"))
-            .with_startup_process(build_wasm_module!("../../../modules/e1000"));
+        let mut system_builder =
+            redshirt_core::system::SystemBuilder::new(WasiExtrinsics::default())
+                .with_native_program(crate::hardware::HardwareHandler::new(
+                    platform_specific.clone(),
+                ))
+                .with_native_program(crate::time::TimeHandler::new(platform_specific.clone()))
+                .with_native_program(crate::random::native::RandomNativeProgram::new(
+                    platform_specific.clone(),
+                ))
+                .with_native_program(crate::pci::native::PciNativeProgram::new(
+                    pci_devices,
+                    platform_specific.clone(),
+                ))
+                .with_native_program(crate::klog::KernelLogNativeProgram::new(
+                    platform_specific.clone(),
+                ))
+                .with_startup_process(build_wasm_module!(
+                    "../../../modules/p2p-loader",
+                    "modules-loader"
+                ))
+                .with_startup_process(build_wasm_module!("../../../modules/usb-controller-driver"))
+                .with_startup_process(build_wasm_module!("../../../modules/compositor"))
+                .with_startup_process(build_wasm_module!("../../../modules/pci-printer"))
+                .with_startup_process(build_wasm_module!("../../../modules/log-to-kernel"))
+                .with_startup_process(build_wasm_module!("../../../modules/http-server"))
+                .with_startup_process(build_wasm_module!("../../../modules/hello-world"))
+                .with_startup_process(build_wasm_module!("../../../modules/network-manager"))
+                .with_startup_process(build_wasm_module!("../../../modules/e1000"));
 
         // TODO: remove the cfg guards once rpi-framebuffer is capable of auto-detecting whether
         // it should enable itself
