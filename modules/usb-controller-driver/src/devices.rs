@@ -27,12 +27,13 @@
 //!
 //! When you send or receive a packet, you must specify the *address* of the USB device (also
 //! called a "function") that must receive or send this packet.
-//! USB devices, when they connect, are by default assigned to address 0. This address must then
-//! be reconfigured must by the operating system during the initialization process of the device.
+//! USB devices, when they connect and are enabled, are by default assigned to address 0. This
+//! address must then be reconfigured by the operating system during the initialization process of
+//! the device.
 //! At any given time, no two devices must be assigned to the same address. In order to enforce
 //! this, devices must be enabled one by one and assigned an address one by one.
 //!
-//! In addition to the address, you msut also specify an *endpoint* number. Each USB
+//! In addition to the address, sending a packet must also specify an *endpoint* number. Each USB
 //! device/function consists of one or more endpoints. Endpoint zero is hardcoded to be the
 //! *default control pipe* and is always available. The other endpoints depend on the way the
 //! device is configured (see below).
