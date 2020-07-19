@@ -37,6 +37,7 @@ spinning_top = "0.1.0"
 wasi = { version = "0.9.0", default-features = false }
 # TODO: https://github.com/paritytech/wasmi/issues/218
 wasmi = { git = "https://github.com/tomaka/wasmi", branch = "no-std", default-features = false, features = ["core"] }
+wrrm = "0.1.1"
 
 [dev-dependencies]
 criterion = "0.3"

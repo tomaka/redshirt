@@ -120,6 +120,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c17772156ef2829aadc587461c7753af20b7e8db1529bc66855add962a3b35d3"
 
 [[package]]
+name = "atomicbox_nostd"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "51eebc16c2f0143a4b2221c18c54d76dad25faef64d93a2f56f1be82e8bd87db"
+
+[[package]]
 name = "atty"
 version = "0.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1636,6 +1642,7 @@ dependencies = [
  "spinning_top",
  "wasi",
  "wasmi",
+ "wrrm",
 ]
 
 [[package]]
@@ -2559,6 +2566,15 @@ dependencies = [
  "wayland-client",
  "winapi 0.3.8",
  "x11-dl",
+]
+
+[[package]]
+name = "wrrm"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "618edc23672bbc45c9c15e162ff380a5642c27afe7e3854079c3d53c04a89c96"
+dependencies = [
+ "atomicbox_nostd",
 ]
 
 [[package]]
