@@ -566,7 +566,7 @@ impl<TExt: Extrinsics> Core<TExt> {
             process
                 .user_data()
                 .notifications_queue
-                .push_response(message_id, response);
+                .push(message_id, response);
             self.try_resume_notification_wait(process);
         } else if self.reserved_pids.contains(&emitter_pid) {
             self.pending_events.push(CoreRunOutcome::MessageResponse {

@@ -1107,12 +1107,7 @@ impl<'a, TPud, TTud, TExt: Extrinsics> ThreadWaitNotif<'a, TPud, TTud, TExt> {
                 // TODO: the way this is handled is clearly not great; the API of this method
                 // should be improved
                 let decoded = redshirt_syscalls::ffi::decode_notification(&notif.0).unwrap();
-                let message = match decoded {
-                    redshirt_syscalls::ffi::DecodedNotification::Response(response) => {
-                        response.actual_data.unwrap()
-                    } // TODO: don't unwrap
-                    _ => panic!(),
-                };
+                let message = decoded.actual_data.unwrap();
 
                 assert_eq!(index, 0);
                 let action = self

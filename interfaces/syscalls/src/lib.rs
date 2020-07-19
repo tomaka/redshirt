@@ -242,6 +242,12 @@ impl InterfaceHash {
     }
 }
 
+impl AsRef<[u8]> for InterfaceHash {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
 impl From<InterfaceHash> for [u8; 32] {
     fn from(interface: InterfaceHash) -> [u8; 32] {
         interface.0

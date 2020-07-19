@@ -19,8 +19,10 @@
 
 extern crate alloc;
 
+use core::convert::TryFrom as _;
 use futures::prelude::*;
-use redshirt_syscalls::InterfaceHash;
+use parity_scale_codec::Encode as _;
+use redshirt_syscalls::{EncodedMessage, InterfaceHash};
 
 pub use ffi::{DecodedInterfaceOrDestroyed, InterfaceRegisterError};
 
@@ -37,10 +39,13 @@ pub async fn register_interface(
 ) -> Result<Registration, InterfaceRegisterError> {
     let msg = ffi::InterfaceMessage::Register(hash);
     // Unwrapping is ok because there's always something that handles interface registration.
-    let id = unsafe { redshirt_syscalls::emit_message_with_response(&ffi::INTERFACE, msg) }
-        .unwrap()
-        .await
-        .result?;
+    let id = {
+        let msg: ffi::InterfaceRegisterResponse =
+            unsafe { redshirt_syscalls::emit_message_with_response(&ffi::INTERFACE, msg) }
+                .unwrap()
+                .await;
+        msg.result?
+    };
 
     let mut registration = Registration {
         id,
@@ -51,7 +56,7 @@ pub async fn register_interface(
         registration.add_message();
     }
 
-    registration
+    Ok(registration)
 }
 
 /// Registered interface.
@@ -60,9 +65,7 @@ pub struct Registration {
     /// Identifier of the interface registration.
     id: u64,
     /// Futures that will resolve when we receive a message on the interface.
-    messages: stream::FuturesOrdered<
-        redshirt_syscalls::MessageResponseFuture<DecodedInterfaceOrDestroyed>,
-    >,
+    messages: stream::FuturesOrdered<redshirt_syscalls::MessageResponseFuture<EncodedMessage>>,
 }
 
 impl Registration {
@@ -70,14 +73,14 @@ impl Registration {
     pub async fn next_message_raw(&mut self) -> DecodedInterfaceOrDestroyed {
         let message = self.messages.next().await.unwrap();
         self.add_message();
-        message
+        todo!() // TODO: message
     }
 
     fn add_message(&mut self) {
         self.messages.push(unsafe {
             let message = ffi::InterfaceMessage::NextMessage(self.id).encode();
             let msg_id = redshirt_syscalls::MessageBuilder::new()
-                .add_data(&message)
+                .add_data(&EncodedMessage(message))
                 .emit_with_response_raw(&ffi::INTERFACE)
                 .unwrap();
             redshirt_syscalls::message_response(msg_id)

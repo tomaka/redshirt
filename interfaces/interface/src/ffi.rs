@@ -14,6 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use alloc::vec::Vec;
+use core::convert::TryFrom as _;
 use redshirt_syscalls::{Encode as _, EncodedMessage, InterfaceHash, MessageId, Pid};
 
 // TODO: this has been randomly generated; instead should be a hash or something
@@ -48,6 +49,21 @@ pub enum DecodedInterfaceOrDestroyed {
     ProcessDestroyed(DecodedProcessDestroyedNotification),
 }
 
+/// Attempt to decode a notification.
+pub fn decode_notification(buffer: &[u8]) -> Result<DecodedInterfaceOrDestroyed, ()> {
+    if buffer.is_empty() {
+        return Err(());
+    }
+
+    match buffer[0] {
+        0 => decode_interface_notification(buffer).map(DecodedInterfaceOrDestroyed::Interface),
+        2 => {
+            decode_process_destroyed_notification(buffer).map(DecodedInterfaceOrDestroyed::ProcessDestroyed)
+        }
+        _ => Err(()),
+    }
+}
+
 /// Builds a interface notification from its raw components.
 pub fn build_interface_notification(
     interface: &InterfaceHash,
@@ -58,7 +74,7 @@ pub fn build_interface_notification(
 ) -> InterfaceNotificationBuilder {
     let mut buffer = Vec::with_capacity(1 + 32 + 8 + 8 + 4 + actual_data.0.len());
     buffer.push(0);
-    buffer.extend_from_slice(&interface.0);
+    buffer.extend_from_slice(interface.as_ref());
     buffer.extend_from_slice(&message_id.map(u64::from).unwrap_or(0).to_le_bytes());
     buffer.extend_from_slice(&u64::from(emitter_pid).to_le_bytes());
     buffer.extend_from_slice(&index_in_list.to_le_bytes());

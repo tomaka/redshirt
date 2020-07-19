@@ -140,6 +140,27 @@ extern "C" {
 
 // TODO: all the decoding performs unaligned reads, which isn't great
 
+pub fn build_notification(
+    message_id: MessageId,
+    index_in_list: u32,
+    actual_data: Result<&EncodedMessage, ()>,
+) -> NotificationBuilder {
+    let mut buffer =
+        Vec::with_capacity(1 + 8 + 4 + 1 + actual_data.map(|m| m.0.len()).unwrap_or(0));
+    buffer.push(1);
+    buffer.extend_from_slice(&u64::from(message_id).to_le_bytes());
+    buffer.extend_from_slice(&index_in_list.to_le_bytes());
+    if let Ok(actual_data) = actual_data {
+        buffer.push(0);
+        buffer.extend_from_slice(&actual_data.0);
+    } else {
+        buffer.push(1);
+    }
+
+    debug_assert_eq!(buffer.capacity(), buffer.len());
+    NotificationBuilder { data: buffer }
+}
+
 #[derive(Debug, Clone)]
 pub struct NotificationBuilder {
     data: Vec<u8>,

@@ -65,28 +65,8 @@ impl NotificationsQueue {
         })
     }
 
-    /// Adds an interface notification at the end of the queue.
-    pub fn push_interface_notification(
-        &self,
-        interface: &InterfaceHash,
-        message_id: Option<MessageId>,
-        emitter_pid: Pid,
-        message: EncodedMessage,
-    ) {
-        let notif = redshirt_syscalls::ffi::build_interface_notification(
-            &interface,
-            message_id,
-            emitter_pid,
-            // We use a dummy value here and fill it up later when actually delivering the notif.
-            0,
-            &message,
-        );
-
-        self.notifications_queue.lock().push_back(From::from(notif));
-    }
-
     /// Pushes a response notification at the end of the queue.
-    pub fn push_response(&self, message_id: MessageId, response: Result<EncodedMessage, ()>) {
+    pub fn push(&self, message_id: MessageId, response: Result<EncodedMessage, ()>) {
         let notif = redshirt_syscalls::ffi::build_notification(
             message_id,
             // We use a dummy value here and fill it up later when actually delivering the notif.
@@ -95,17 +75,6 @@ impl NotificationsQueue {
                 Ok(r) => Ok(r),
                 Err(()) => Err(()),
             },
-        );
-
-        self.notifications_queue.lock().push_back(From::from(notif));
-    }
-
-    /// Pushes a notification about a process being destroyed at the end of the queue.
-    pub fn push_process_destroyed_notification(&self, pid: Pid) {
-        let notif = redshirt_syscalls::ffi::build_process_destroyed_notification(
-            pid,
-            // We use a dummy value here and fill it up later when actually delivering the notif.
-            0,
         );
 
         self.notifications_queue.lock().push_back(From::from(notif));
@@ -126,19 +95,8 @@ impl NotificationsQueue {
                 return None;
             }
 
-            // For that notification in queue, build the value that must be in `msg_ids` in order
-            // to match.
-            let wait_entry = match &notifications_queue[index_in_queue] {
-                NotificationBuilder::Interface(_) | NotificationBuilder::ProcessDestroyed(_) => {
-                    WaitEntry::InterfaceOrProcDestroyed
-                }
-                NotificationBuilder::Response(response) => {
-                    debug_assert!(u64::from(response.message_id()) >= 2);
-                    WaitEntry::Answer(response.message_id())
-                }
-            };
-
-            if let Some(p) = indices.iter().position(|id| *id == wait_entry) {
+            let expected = WaitEntry::Answer(response.message_id());
+            if let Some(p) = indices.iter().position(|id| *id == expected) {
                 break p;
             }
 
