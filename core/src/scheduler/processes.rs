@@ -175,11 +175,15 @@ pub struct ProcessesCollection<TExtr, TPud, TTud> {
 
     /// List of all processes currently alive.
     ///
+    /// Considering that this field is rarely written (it is only ever written when starting or
+    /// ending a program) but frequently read, the underlying implementation only accesses the
+    /// actual hashmap through a reference-counter pointer. Modifying the hashmap consist in
+    /// performing in a deep clone and atomically-replacing the old one with the new one.
+    ///
     /// We hold `Weak`s to processes rather than `Arc`s. Processes are kept alive by the execution
     /// queue and the interrupted threads, thereby guaranteeing that they are alive only if they
     /// can potentially continue running.
-    // TODO: find a solution for that mutex?
-    processes: Spinlock<HashMap<Pid, Weak<Process<TPud, TTud>>, BuildNoHashHasher<u64>>>,
+    processes: wrrm::Wrrm<HashMap<Pid, Weak<Process<TPud, TTud>>, BuildNoHashHasher<u64>>>,
 
     /// List of functions that processes can call.
     /// The key of this map is an arbitrary `usize` that we pass to the WASM virtual machine.
@@ -304,15 +308,9 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
             user_data: proc_user_data,
         });
 
-        {
-            let mut processes = self.processes.lock();
-            processes.insert(new_pid, Arc::downgrade(&process));
-            // Shrink the list from time to time so that it doesn't grow too much.
-            if u64::from(new_pid) % 256 == 0 {
-                processes.shrink_to(PROCESSES_MIN_CAPACITY);
-            }
-        }
-
+        self.processes.modify_with(|p| {
+            p.insert(new_pid, Arc::downgrade(&process));
+        });
         self.execution_queue.push(process.clone());
         self.wakers.notify_one();
 
@@ -339,7 +337,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
     pub fn processes<'a>(
         &'a self,
     ) -> impl ExactSizeIterator<Item = ProcAccess<'a, TExtr, TPud, TTud>> + 'a {
-        let processes = self.processes.lock();
+        let processes = self.processes.access();
 
         // TODO: what if process is in death_reports?
 
@@ -374,7 +372,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
     /// for a process that has crashed or finished before said crash or termination has been
     /// reported with the [`run`](ProcessesCollection::run) method.
     pub fn process_by_id(&self, pid: Pid) -> Option<ProcAccess<TExtr, TPud, TTud>> {
-        let processes = self.processes.lock();
+        let processes = self.processes.access();
 
         // TODO: what if process is in death_reports?
 
@@ -426,7 +424,14 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
             Err(_) => return,
         };
 
-        let _was_in = self.processes.lock().remove(&process.pid);
+        let _was_in = {
+            let mut wi = None;
+            self.processes.modify_with(|p| {
+                wi = Some(p.remove(&process.pid));
+            });
+            wi.unwrap()
+        };
+
         debug_assert!(_was_in.is_some());
         debug_assert_eq!(_was_in.as_ref().unwrap().weak_count(), 0);
         debug_assert_eq!(_was_in.as_ref().unwrap().strong_count(), 0);
@@ -525,7 +530,7 @@ impl<TExtr> ProcessesCollectionBuilder<TExtr> {
                 PROCESSES_MIN_CAPACITY, // TODO: no
                 Default::default(),
             )),
-            processes: Spinlock::new(HashMap::with_capacity_and_hasher(
+            processes: wrrm::Wrrm::new(HashMap::with_capacity_and_hasher(
                 PROCESSES_MIN_CAPACITY,
                 Default::default(),
             )),
