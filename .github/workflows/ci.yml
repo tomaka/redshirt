@@ -154,11 +154,12 @@ jobs:
         override: true
     - name: Cache cargo registry
       uses: actions/cache@v2
-      path: |
-        ~/.cargo/registry
-        ~/.cargo/git
-        modules/target
-      key: passive-node-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          modules/target
+        key: passive-node-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
     - name: Check peer-to-peer passive node
       run: cargo check --manifest-path ./modules/Cargo.toml --package p2p-loader --bin passive-node --locked --verbose --all-features
 
