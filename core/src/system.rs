@@ -29,7 +29,7 @@ use crate::native::{self, NativeProgramMessageIdWrite as _};
 use crate::scheduler::{Core, CoreBuilder, CoreRunOutcome, NewErr};
 
 use alloc::vec::Vec;
-use core::{iter, num::NonZeroU64, task::Poll};
+use core::{iter, num::NonZeroU64, sync::atomic::Ordering, task::Poll};
 use crossbeam_queue::SegQueue;
 use futures::prelude::*;
 use hashbrown::HashSet;
@@ -52,7 +52,7 @@ pub struct System<'a, TExtr: extrinsics::Extrinsics> {
     /// PID of the program that handles the `loader` interface, or `None` is no such program
     /// exists yet.
     // TODO: add timeout for loader interface availability?
-    loader_pid: Spinlock<Option<NonZeroU64>>,
+    loader_pid: atomic::Atomic<Option<NonZeroU64>>,
 
     /// List of programs to load if the loader interface handler is available.
     programs_to_load: SegQueue<ModuleHash>,
@@ -128,7 +128,7 @@ where
         future::poll_fn(move |cx| {
             loop {
                 // If we have a handler for the loader interface, start loading pending programs.
-                if self.loader_pid.lock().is_some() {
+                if self.loader_pid.load(Ordering::Relaxed).is_some() {
                     while let Ok(hash) = self.programs_to_load.pop() {
                         // TODO: can this not fail if the handler crashed in parallel in a
                         // multithreaded situation?
@@ -206,10 +206,12 @@ where
     async fn run_once(&self) -> RunOnceOutcome {
         match self.core.run().await {
             CoreRunOutcome::ProgramFinished { pid, outcome, .. } => {
-                let mut loader_pid = self.loader_pid.lock();
-                if *loader_pid == NonZeroU64::new(u64::from(pid)) {
-                    *loader_pid = None;
-                }
+                self.loader_pid.compare_exchange(
+                    Some(NonZeroU64::new(u64::from(pid)).unwrap()),
+                    None,
+                    Ordering::Acquire,
+                    Ordering::Relaxed,
+                );
                 self.native_programs.process_destroyed(pid);
                 return RunOnceOutcome::Report(SystemRunOutcome::ProgramFinished {
                     pid,
@@ -265,7 +267,8 @@ where
                             && interface_hash == redshirt_loader_interface::ffi::INTERFACE
                         {
                             debug_assert_ne!(u64::from(pid), 0);
-                            *self.loader_pid.lock() = NonZeroU64::new(u64::from(pid));
+                            self.loader_pid
+                                .store(NonZeroU64::new(u64::from(pid)), Ordering::Release);
                             return RunOnceOutcome::LoopAgainNow;
                         }
                     }
@@ -384,7 +387,7 @@ where
         Ok(System {
             core,
             native_programs: self.native_programs,
-            loader_pid: Spinlock::new(None),
+            loader_pid: atomic::Atomic::new(None),
             load_source_virtual_pid: self.load_source_virtual_pid,
             loading_programs: Spinlock::new(Default::default()),
             programs_to_load: self.programs_to_load,
