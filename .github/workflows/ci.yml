@@ -15,7 +15,7 @@ jobs:
       env:
         CC: clang-10
     steps:
-    - uses: actions/checkout@v1
+    - uses: actions/checkout@v2
     - name: Install Rust
       uses: actions-rs/toolchain@v1
       with:
@@ -30,28 +30,20 @@ jobs:
         apt-get install -y clang-10
     - name: Install CMake
       run: apt-get install -y cmake
-    - name: Cache cargo registry
-      uses: actions/cache@v1
+    - uses: actions/cache@v2
       with:
-        path: ~/.cargo/registry
-        key: cargo-registry-${{ hashFiles('modules/Cargo.lock') }}
-    - name: Cache cargo index
-      uses: actions/cache@v1
-      with:
-        path: ~/.cargo/git
-        key: cargo-index-${{ hashFiles('modules/Cargo.lock') }}
-    - name: Cache cargo build
-      uses: actions/cache@v1
-      with:
-        path: modules/target
-        key: cargo-build-target-${{ hashFiles('modules/Cargo.lock') }}
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          modules/target
+        key: modules-cargo-${{ hashFiles('./modules/Cargo.lock') }}
     - name: Build modules
       run: cargo build --manifest-path ./modules/Cargo.toml --workspace --exclude stub --locked --verbose --release --target=wasm32-wasi
     - name: Upload WASM modules
       uses: actions/upload-artifact@v1
       with:
         name: wasm-modules
-        path: modules/target/wasm32-wasi/release
+        path: modules/target
 
   build-hosted:
     name: Build hosted kernel
@@ -62,7 +54,7 @@ jobs:
       env:
         CC: clang-10
     steps:
-    - uses: actions/checkout@v1
+    - uses: actions/checkout@v2
     - name: Install Rust
       uses: actions-rs/toolchain@v1
       with:
@@ -79,22 +71,15 @@ jobs:
       uses: actions/download-artifact@v1
       with:
         name: wasm-modules
-        path: modules/target/wasm32-wasi/release
-    - name: Cache cargo registry
-      uses: actions/cache@v1
+        path: modules/target
+    - uses: actions/cache@v2
       with:
-        path: ~/.cargo/registry
-        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('Cargo.lock') }}
-    - name: Cache cargo index
-      uses: actions/cache@v1
-      with:
-        path: ~/.cargo/git
-        key: ${{ runner.os }}-cargo-index-${{ hashFiles('Cargo.lock') }}
-    - name: Cache cargo build
-      uses: actions/cache@v1
-      with:
-        path: target
-        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('Cargo.lock') }}
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          kernel/standalone-builder/target
+          target
+        key: hosted-kernel-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
     - name: Build
       run: cargo build --workspace --exclude redshirt-standalone-kernel --exclude redshirt-core-proc-macros --locked --verbose
     - name: Run tests
@@ -115,12 +100,12 @@ jobs:
         #target: [x86_64-multiboot2, arm-rpi2]  # TODO: not implemented
         target: [x86_64-multiboot2]
     steps:
-    - uses: actions/checkout@v1
+    - uses: actions/checkout@v2
     - name: Download WASM modules
       uses: actions/download-artifact@v1
       with:
         name: wasm-modules
-        path: modules/target/wasm32-wasi/release
+        path: modules/target
     - name: Install required packages
       run: |
         apt-get update
@@ -131,21 +116,14 @@ jobs:
         echo "deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-10 main" >> /etc/apt/sources.list
         apt-get update
         apt-get install -y clang-10
-    - name: Cache cargo registry
-      uses: actions/cache@v1
+    - uses: actions/cache@v2
       with:
-        path: ~/.cargo/registry
-        key: ${{ runner.os }}-cargo-registry-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}
-    - name: Cache cargo index
-      uses: actions/cache@v1
-      with:
-        path: ~/.cargo/git
-        key: ${{ runner.os }}-cargo-index-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}
-    - name: Cache cargo build
-      uses: actions/cache@v1
-      with:
-        path: target
-        key: ${{ runner.os }}-cargo-build-target-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}-standalone
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          kernel/standalone-builder/target
+          target
+        key: standalone-kernel-cargo-${{ hashFiles('**/Cargo.lock') }}
     - name: Install nightly Rust
       uses: actions-rs/toolchain@v1
       with:
@@ -168,27 +146,19 @@ jobs:
     container:
       image: rust
     steps:
-    - uses: actions/checkout@v1
+    - uses: actions/checkout@v2
     - name: Install Rust
       uses: actions-rs/toolchain@v1
       with:
         toolchain: stable
         override: true
     - name: Cache cargo registry
-      uses: actions/cache@v1
-      with:
-        path: ~/.cargo/registry
-        key: cargo-registry-${{ hashFiles('modules/Cargo.lock') }}
-    - name: Cache cargo index
-      uses: actions/cache@v1
-      with:
-        path: ~/.cargo/git
-        key: cargo-index-${{ hashFiles('modules/Cargo.lock') }}
-    - name: Cache cargo build
-      uses: actions/cache@v1
-      with:
-        path: modules/target
-        key: passive-node-check-target-${{ hashFiles('modules/Cargo.lock') }}
+      uses: actions/cache@v2
+      path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          modules/target
+        key: passive-node-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
     - name: Check peer-to-peer passive node
       run: cargo check --manifest-path ./modules/Cargo.toml --package p2p-loader --bin passive-node --locked --verbose --all-features
 
@@ -197,7 +167,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v1
+        uses: actions/checkout@v2
       - name: Install stable toolchain
         uses: actions-rs/toolchain@v1
         with:
@@ -230,7 +200,7 @@ jobs:
         CC: clang-10
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v1
+        uses: actions/checkout@v2
       - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
@@ -243,6 +213,15 @@ jobs:
           echo "deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-10 main" >> /etc/apt/sources.list
           apt-get update
           apt-get install -y clang-10
+      - uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            modules/target
+            kernel/standalone-builder/target
+            target
+          key: intra-doc-links-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Check core intra-doc links
         run: RUSTDOCFLAGS="--deny intra_doc_link_resolution_failure" cargo doc --verbose --workspace --no-deps --document-private-items
       - name: Check modules intra-doc links
