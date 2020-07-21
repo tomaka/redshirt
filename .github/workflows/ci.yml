@@ -68,10 +68,9 @@ jobs:
         apt-get update
         apt-get install -y clang-10
     - name: Download WASM modules
-      uses: actions/download-artifact@v1
+      uses: actions/download-artifact@v2
       with:
         name: wasm-modules
-        path: modules/target
     - uses: actions/cache@v2
       with:
         path: |
@@ -102,10 +101,9 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: Download WASM modules
-      uses: actions/download-artifact@v1
+      uses: actions/download-artifact@v2
       with:
         name: wasm-modules
-        path: modules/target
     - name: Install required packages
       run: |
         apt-get update
@@ -135,7 +133,7 @@ jobs:
     - name: Build kernel
       run: cargo run --manifest-path=./kernel/standalone-builder/Cargo.toml -- build-image --target ${{ matrix.target }} --device-type cdrom --out image
     - name: Upload generated kernel
-      uses: actions/upload-artifact@master
+      uses: actions/upload-artifact@v2
       with:
         name: kernel-${{ matrix.target }}
         path: image
