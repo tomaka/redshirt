@@ -368,6 +368,8 @@ fn get_template() -> Template {
     // copied.
     unsafe {
         asm!(r#"
+            // This jmp is **not** part of the template. It is reached only when `get_template`
+            // is called.
             jmp 5f
 
         .code16
@@ -448,13 +450,14 @@ fn get_template() -> Template {
             cli
             hlt
 
-        // Small structure whose location is passed to the CPU in order to load the GDT.
+            // Small structure whose location is passed to the CPU in order to load the GDT.
         .align 8
         6:
             .short 15
             .long gdt_table  // TODO: shouldn't refer to unmangled symbol
 
         5:
+            // This code is not part of the template and is executed by `get_template`.
             lea (4b), {code_start}
             lea (5b), {code_end}
             lea (1b), {marker1}
