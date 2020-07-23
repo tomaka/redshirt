@@ -452,7 +452,7 @@ fn get_template() -> Template {
         .align 8
         6:
             .short 15
-            .long gdt_table
+            .long gdt_table  // TODO: shouldn't refer to unmangled symbol
 
         5:
             lea (4b), {code_start}
