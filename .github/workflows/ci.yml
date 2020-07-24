@@ -38,7 +38,7 @@ jobs:
           modules/target
         key: modules-cargo-${{ hashFiles('./modules/Cargo.lock') }}
     - name: Build modules
-      run: cargo build --manifest-path ./modules/Cargo.toml --workspace --exclude stub -j 1 --locked --verbose --release --target=wasm32-wasi
+      run: cargo build --manifest-path ./modules/Cargo.toml --workspace --exclude stub --locked --verbose --release --target=wasm32-wasi
     - name: Upload WASM modules
       uses: actions/upload-artifact@v1
       with:
