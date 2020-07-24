@@ -125,7 +125,7 @@ extern "C" fn _start() {
             wrmsr
 
             // Set up the GDT. It will become active only after we do the `ljmp` below.
-            lgdt gdt_ptr
+            lgdtl {gdt_ptr}
         
             // Activate long mode, and jump to the new segment.
             mov %cr0, %eax
@@ -174,16 +174,9 @@ extern "C" fn _start() {
             movb $0xf, 0xb8009
             cli
             hlt
-        
-        // Small structure whose location is passed to the CPU.
-        // TODO: move out
-        .align 8
-        gdt_ptr:
-            .short 15
-            .long gdt_table
-
         "#,
             after_boot = sym super::after_boot,
+            gdt_ptr = sym super::gdt::GDT_POINTER,
             multiboot_info_ptr = sym MULTIBOOT_INFO_PTR,
             stack = sym MAIN_PROCESSOR_STACK,
             stack_size = const MAIN_PROCESSOR_STACK_SIZE,
