@@ -190,7 +190,7 @@ extern "C" fn _start() {
             pml4 = sym PML4,
             pdpt = sym PDPT,
             pds = sym PDS,
-            options(noreturn, att_syntax));
+            options(noreturn, att_syntax)); // TODO: convert to Intel syntax
     }
 }
 
