@@ -451,10 +451,12 @@ fn get_template() -> Template {
             hlt
 
             // Small structure whose location is passed to the CPU in order to load the GDT.
+            // Because we call `lgdt` from 16bits code, we have to define the GDT pointer
+            // locally.
         .align 8
         6:
             .short 15
-            .long gdt_table  // TODO: shouldn't refer to unmangled symbol
+            .long {gdt_table}
 
         5:
             // This code is not part of the template and is executed by `get_template`.
@@ -465,6 +467,7 @@ fn get_template() -> Template {
             lea (3b), {marker3}
         "#,
             ap_after_boot = sym ap_after_boot,
+            gdt_table = sym super::gdt::GDT_TABLE,
             code_start = out(reg) code_start,
             code_end = out(reg) code_end,
             marker1 = out(reg) marker1,

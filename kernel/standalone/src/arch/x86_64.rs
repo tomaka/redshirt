@@ -42,6 +42,7 @@ mod ap_boot;
 mod apic;
 mod boot;
 mod executor;
+mod gdt;
 mod interrupts;
 mod panic;
 mod pit;
