@@ -71,8 +71,7 @@ const DEFAULT_LOG_METHOD: KernelLogMethod = KernelLogMethod {
 ///
 /// `multiboot_info` must be a valid memory address that contains valid information.
 ///
-#[no_mangle]
-unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
+unsafe fn after_boot(multiboot_info: usize) -> ! {
     let multiboot_info = multiboot2::load(multiboot_info);
 
     // Initialization of the memory allocator.
