@@ -30,8 +30,6 @@ use x86_64::registers::model_specific::Msr;
 pub struct LocalApicsControl {
     /// True if the CPUs support TSC-Deadline mode.
     tsc_deadline_supported: bool,
-    /// True if APIC timer runs at a constant rate.
-    apic_timer_constant_rate: bool,
     /// Interrupt vector triggered when an APIC error happens.
     error_interrupt_vector: interrupts::ReservedInterruptVector,
 }
@@ -58,8 +56,9 @@ pub struct ApicId(u8);
 /// physical memory.
 ///
 pub unsafe fn init() -> LocalApicsControl {
-    // We don't support platforms without an APIC.
+    // We don't support platforms without an APIC or without the TSC.
     assert!(is_apic_supported());
+    assert!(is_tsc_supported());
 
     // We reserve an interrupt vector for errors triggered by the APIC.
     // Each APIC, when it gets initialized, will set this interrupt vector in its LVT.
@@ -88,7 +87,6 @@ pub unsafe fn init() -> LocalApicsControl {
 
     LocalApicsControl {
         tsc_deadline_supported: is_tsc_deadline_supported(),
-        apic_timer_constant_rate: is_apic_timer_constant_rate(),
         error_interrupt_vector,
     }
 }
@@ -151,7 +149,6 @@ impl LocalApicsControl {
     ///
     // TODO: add debug_assert!s in all the other methods that check if the local APIC is initialized
     pub unsafe fn init_local(&self) {
-        // TODO: assert!(core::arch::x86_64::has_cpuid());  unstable for now
         assert!(is_apic_supported());
         assert_eq!(self.tsc_deadline_supported, is_tsc_deadline_supported());
 
@@ -187,11 +184,6 @@ impl LocalApicsControl {
     /// Returns true if the hardware supports TSC deadline mode.
     pub fn is_tsc_deadline_supported(&self) -> bool {
         self.tsc_deadline_supported
-    }
-
-    /// Returns true if the local APIC operates at a constant rate.
-    pub fn is_apic_timer_constant_rate(&self) -> bool {
-        self.apic_timer_constant_rate
     }
 
     /// Configures the timer of the local APIC of the current CPU.
@@ -341,36 +333,23 @@ fn current_apic_id() -> ApicId {
 /// Checks in the CPUID whether the APIC is supported.
 fn is_apic_supported() -> bool {
     unsafe {
-        //TODO: unstable  assert!(core::arch::x86_64::has_cpuid());
         let cpuid = core::arch::x86_64::__cpuid(0x1);
         cpuid.edx & (1 << 9) != 0
+    }
+}
+
+/// Checks in the CPUID whether the TSC is supported.
+fn is_tsc_supported() -> bool {
+    unsafe {
+        let cpuid = core::arch::x86_64::__cpuid(0x1);
+        cpuid.edx & (1 << 4) != 0
     }
 }
 
 /// Checks in the CPUID whether the APIC timer supports TSC deadline mode.
 fn is_tsc_deadline_supported() -> bool {
     unsafe {
-        //TODO: unstable  assert!(core::arch::x86_64::has_cpuid());
         let cpuid = core::arch::x86_64::__cpuid(0x1);
         cpuid.ecx & (1 << 24) != 0
-    }
-}
-
-/// Checks in the CPUID whether the APIC timer runs at a constant rate.
-///
-/// If false, quoting the Intel manual:
-///
-/// > the APIC timer may temporarily stop while the processor is in deep C-states or during
-/// > transitions caused by Enhanced Intel SpeedStep® Technology.
-fn is_apic_timer_constant_rate() -> bool {
-    unsafe {
-        //TODO: unstable  assert!(core::arch::x86_64::has_cpuid());
-
-        if core::arch::x86_64::__get_cpuid_max(0).0 < 0x6 {
-            return false;
-        }
-
-        let cpuid = core::arch::x86_64::__cpuid(0x6);
-        cpuid.eax & (1 << 2) != 0
     }
 }
