@@ -113,7 +113,8 @@ pub async fn init(
     local_apics: &'static local::LocalApicsControl,
     pit: &mut pit::PitControl,
 ) -> Arc<Timers> {
-    // TODO: check if TSC is supported somewhere with CPUID.1:EDX.TSC[bit 4] == 1
+    // We don't support systems without the TSC.
+    assert!(is_tsc_supported());
 
     // We use the PIT to figure out approximately how many RDTSC ticks happen per second.
     // TODO: instead of using the PIT, we can use CPUID[EAX=0x15] to find the frequency, but that
@@ -605,5 +606,13 @@ fn configure_apic(
         apic_timer_firing_tsc_value: NonZeroU64::new(tsc_now.checked_add(ticks_to_timer).unwrap())
             .unwrap(),
         timer: entry,
+    }
+}
+
+/// Checks in the CPUID whether the TSC is supported.
+fn is_tsc_supported() -> bool {
+    unsafe {
+        let cpuid = core::arch::x86_64::__cpuid(0x1);
+        cpuid.edx & (1 << 4) != 0
     }
 }
