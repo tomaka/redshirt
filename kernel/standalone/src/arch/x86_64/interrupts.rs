@@ -61,7 +61,7 @@ use x86_64::structures::idt;
 /// >           and only make sense relative to each other. This API is far from ideal, but
 /// >           considering that this method isn't publicly exposed, one can simply search the
 /// >           source code for all occurrences of [`reserve_any_vector`] and compare the values.
-// TODO: see Volume 3, chapter 10.8.3: the higher the interrupt vector the higher the priority; we should give a way to tweak that
+///
 pub fn reserve_any_vector(min_vector: u8) -> Result<ReservedInterruptVector, ReserveErr> {
     // TODO: maybe we should rotate the reservations, so that de-allocated vectors
     // don't get immediately reused
