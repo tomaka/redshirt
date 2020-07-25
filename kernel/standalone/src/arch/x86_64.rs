@@ -196,7 +196,7 @@ unsafe fn after_boot(multiboot_info: usize) -> ! {
     // redirecting all IRQs to a single interrupt vector. This single interrupt vector, when
     // triggered, notifies all the components that were waiting for a PCI interrupt.
     // TODO: make this better ^
-    let pci_interrupt_vector = interrupts::reserve_any_vector(true).unwrap();
+    let pci_interrupt_vector = interrupts::reserve_any_vector(40).unwrap();
     for irq in io_apics.irqs().collect::<Vec<_>>() {
         io_apics.irq(irq).unwrap().set_destination(
             local_apics.current_apic_id(),

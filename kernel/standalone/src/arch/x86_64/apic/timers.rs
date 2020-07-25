@@ -137,7 +137,7 @@ pub async fn init(
 
     Arc::new(Timers {
         local_apics,
-        interrupt_vector: interrupts::reserve_any_vector(true).unwrap(),
+        interrupt_vector: interrupts::reserve_any_vector(160).unwrap(),
         monotonic_clock_zero,
         rdtsc_ticks_per_sec,
         next_unique_timer_id: atomic::AtomicU64::new(0),
