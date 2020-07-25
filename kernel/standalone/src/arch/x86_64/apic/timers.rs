@@ -114,7 +114,7 @@ pub async fn init(
     pit: &mut pit::PitControl,
 ) -> Arc<Timers> {
     // We don't support systems without the TSC.
-    asser!(is_tsc_supported());
+    assert!(is_tsc_supported());
 
     // We use the PIT to figure out approximately how many RDTSC ticks happen per second.
     // TODO: instead of using the PIT, we can use CPUID[EAX=0x15] to find the frequency, but that
