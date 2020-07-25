@@ -54,6 +54,7 @@ use x86_64::structures::idt;
 ///
 /// If `apic_eoi` is true, then the interrupt handler will send an "end of interrupt" message
 /// to the local APIC after handling the interrupt.
+// TODO: see Volume 3, chapter 10.8.3: the higher the interrupt vector the higher the priority; we should give a way to tweak that
 // TODO: do we ever pass false? probably not, and we can remove the entire system
 pub fn reserve_any_vector(apic_eoi: bool) -> Result<ReservedInterruptVector, ReserveErr> {
     // TODO: maybe we should rotate the reservations, so that de-allocated vectors

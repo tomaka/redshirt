@@ -13,6 +13,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use super::super::interrupts;
+
+use alloc::sync::Arc;
 use core::{
     convert::TryFrom as _,
     num::{NonZeroU32, NonZeroU64},
@@ -27,6 +30,10 @@ use x86_64::registers::model_specific::Msr;
 pub struct LocalApicsControl {
     /// True if the CPUs support TSC-Deadline mode.
     tsc_deadline_supported: bool,
+    /// True if APIC timer runs at a constant rate.
+    apic_timer_constant_rate: bool,
+    /// Interrupt vector triggered when an APIC error happens.
+    error_interrupt_vector: interrupts::ReservedInterruptVector,
 }
 
 /// Opaque type representing the APIC ID of a processor.
@@ -54,8 +61,35 @@ pub unsafe fn init() -> LocalApicsControl {
     // We don't support platforms without an APIC.
     assert!(is_apic_supported());
 
+    // We reserve an interrupt vector for errors triggered by the APIC.
+    // Each APIC, when it gets initialized, will set this interrupt vector in its LVT.
+    let error_interrupt_vector = interrupts::reserve_any_vector(true).unwrap();
+    // We don't have any intent of actually processing the interrupts, instead we just set up a
+    // one-time panicking waker.
+    error_interrupt_vector.register_waker(&{
+        struct ErrWaker;
+        impl futures::task::ArcWake for ErrWaker {
+            fn wake_by_ref(arc_self: &Arc<Self>) {
+                unsafe {
+                    // The errors reported are found in the Error Status Register (ESR).
+                    let esr_addr = usize::try_from(APIC_BASE_ADDR + 0xf0).unwrap() as *mut u32;
+                    // Before reading from the ESR, we must first write to it.
+                    esr_addr.write_volatile(0b11111111);
+                    let status = esr_addr.read_volatile();
+                    panic!(
+                        "Local APIC error; Error Status Register value: 0x{:x}",
+                        status
+                    );
+                }
+            }
+        }
+        futures::task::waker(Arc::new(ErrWaker))
+    });
+
     LocalApicsControl {
         tsc_deadline_supported: is_tsc_deadline_supported(),
+        apic_timer_constant_rate: is_apic_timer_constant_rate(),
+        error_interrupt_vector,
     }
 }
 
@@ -138,7 +172,11 @@ impl LocalApicsControl {
             svr_addr.write_volatile(val | 0x100); // Enable spurious interrupts.
         }
 
-        // TODO: enable error reporting
+        // Set the error handling interrupt vector.
+        {
+            let lvt_addr = usize::try_from(APIC_BASE_ADDR + 0x370).unwrap() as *mut u32;
+            lvt_addr.write_volatile(u32::from(self.error_interrupt_vector.interrupt_num()));
+        }
     }
 
     /// Returns the [`ApicId`] of the calling processor.
@@ -151,13 +189,17 @@ impl LocalApicsControl {
         self.tsc_deadline_supported
     }
 
+    /// Returns true if the local APIC operates at a constant rate.
+    pub fn is_apic_timer_constant_rate(&self) -> bool {
+        self.apic_timer_constant_rate
+    }
+
     /// Configures the timer of the local APIC of the current CPU.
     ///
     /// # Panic
     ///
     /// Panics if `TscDeadline` is passed and `is_tsc_deadline_supported` is false.
     /// Panics if the `value_multiplier` is not either one or a power of two.
-    // TODO: sets the timer on the local APIC, which really isn't great
     pub fn set_local_timer(&self, timer: Timer) {
         unsafe {
             match timer {
@@ -315,6 +357,11 @@ fn is_tsc_deadline_supported() -> bool {
 }
 
 /// Checks in the CPUID whether the APIC timer runs at a constant rate.
+///
+/// If false, quoting the Intel manual:
+///
+/// > the APIC timer may temporarily stop while the processor is in deep C-states or during
+/// > transitions caused by Enhanced Intel SpeedStep® Technology.
 fn is_apic_timer_constant_rate() -> bool {
     unsafe {
         //TODO: unstable  assert!(core::arch::x86_64::has_cpuid());
