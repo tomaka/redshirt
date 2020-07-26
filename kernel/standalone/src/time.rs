@@ -33,11 +33,13 @@ pub struct TimeHandler<TPlat> {
     /// Platform-specific hooks.
     platform_specific: Pin<Arc<TPlat>>,
     /// Sending side of `pending_messages`.
-    pending_messages_tx: future_channel::UnboundedSender<Option<(MessageId, Result<EncodedMessage, ()>)>>,
+    pending_messages_tx:
+        future_channel::UnboundedSender<Option<(MessageId, Result<EncodedMessage, ()>)>>,
     /// List of messages waiting to be emitted with `next_event`. Can also contain dummy events
     /// (`None`) if we just need to wake up the receiving task after having pushed an element on
     /// `timers`.
-    pending_messages: future_channel::UnboundedReceiver<Option<(MessageId, Result<EncodedMessage, ()>)>>,
+    pending_messages:
+        future_channel::UnboundedReceiver<Option<(MessageId, Result<EncodedMessage, ()>)>>,
     /// List of active timers.
     timers: Spinlock<FuturesUnordered<Pin<Box<dyn Future<Output = MessageId> + Send>>>>,
 }
@@ -128,8 +130,7 @@ where
                         .map(move |_| message_id)
                         .boxed(),
                 );
-                self.pending_messages_tx
-                    .unbounded_send(None);
+                self.pending_messages_tx.unbounded_send(None);
             }
             Err(_) => {
                 self.pending_messages_tx
