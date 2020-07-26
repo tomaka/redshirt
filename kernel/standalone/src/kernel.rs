@@ -31,9 +31,11 @@ use core::{
     sync::atomic::{AtomicBool, AtomicU64, Ordering},
 };
 use futures::prelude::*;
+use hashbrown::HashSet;
 use redshirt_core::{
     build_wasm_module, extrinsics::wasi::WasiExtrinsics, module::ModuleHash, System,
 };
+use spinning_top::Spinlock;
 
 /// Main struct of this crate. Runs everything.
 pub struct Kernel<TPlat> {
@@ -44,6 +46,9 @@ pub struct Kernel<TPlat> {
     cpu_busy_counters: Vec<CpuCounter>,
     /// Platform-specific getters. Passed at initialization.
     platform_specific: Pin<Arc<TPlat>>,
+    /// List of CPUs for which [`Kernel::run`] hasn't been called yet. Also makes it possible to
+    /// make sure that [`Kernel::run`] isn't called twice with the same CPU index.
+    not_started_cpus: Spinlock<HashSet<usize, fnv::FnvBuildHasher>>,
 }
 
 #[derive(Debug)]
@@ -113,19 +118,30 @@ where
             })
             .collect();
 
+        let not_started_cpus = Spinlock::new(
+            (0..usize::try_from(platform_specific.as_ref().num_cpus().get()).unwrap()).collect(),
+        );
+
         Kernel {
             system: system_builder.build().expect("failed to start kernel"),
             cpu_busy_counters,
             platform_specific,
+            not_started_cpus,
         }
     }
 
     /// Run the kernel. Must be called once per CPU.
-    // TODO: check whether cpu_index is correct? (i.e. not the same index passed twice)
     pub async fn run(&self, cpu_index: usize) -> ! {
-        assert!(
-            u32::try_from(cpu_index).unwrap() < self.platform_specific.as_ref().num_cpus().get()
-        );
+        // Check that the `cpu_index` is correct.
+        {
+            let mut not_started_cpus = self.not_started_cpus.lock();
+            let _was_in = not_started_cpus.remove(&cpu_index);
+            assert!(_was_in);
+            if not_started_cpus.is_empty() {
+                // Un-allocate memory.
+                not_started_cpus.shrink_to_fit();
+            }
+        }
 
         // In order for the idle/busy counters to report accurate information, we keep here the
         // last time we have updated one of the counters.
