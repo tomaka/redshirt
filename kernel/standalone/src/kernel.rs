@@ -24,7 +24,7 @@
 
 use crate::arch::PlatformSpecific;
 
-use alloc::{sync::Arc, vec::Vec};
+use alloc::{format, string::String, sync::Arc, vec::Vec};
 use core::{
     convert::TryFrom as _,
     pin::Pin,
@@ -92,6 +92,7 @@ where
                 ))
                 .with_startup_process(build_wasm_module!("../../../modules/compositor"))
                 .with_startup_process(build_wasm_module!("../../../modules/pci-printer"))
+                .with_startup_process(build_wasm_module!("../../../modules/kernel-debug-printer"))
                 .with_startup_process(build_wasm_module!("../../../modules/log-to-kernel"))
                 .with_startup_process(build_wasm_module!("../../../modules/http-server"))
                 .with_startup_process(build_wasm_module!("../../../modules/hello-world"))
@@ -173,7 +174,35 @@ where
 
             match fut.await {
                 redshirt_core::system::SystemRunOutcome::ProgramFinished { .. } => {}
-                _ => panic!(),
+                redshirt_core::system::SystemRunOutcome::KernelDebugMetricsRequest(report) => {
+                    let mut out = String::new();
+
+                    out.push_str("# HELP cpu_idle_seconds_total Total number of seconds during which each CPU has been idle.\n");
+                    out.push_str("# TYPE cpu_idle_seconds_total counter\n");
+                    for (cpu_n, cpu) in self.cpu_busy_counters.iter().enumerate() {
+                        let as_secs =
+                            cpu.idle_ticks.load(Ordering::Relaxed) as f64 / 1_000_000_000.0;
+                        out.push_str(&format!(
+                            "cpu_idle_seconds_total{{cpu=\"{}\"}} {}\n",
+                            cpu_n, as_secs
+                        ));
+                    }
+                    out.push_str("\n");
+
+                    out.push_str("# HELP cpu_busy_seconds_total Total number of seconds during which each CPU has been busy.\n");
+                    out.push_str("# TYPE cpu_busy_seconds_total counter\n");
+                    for (cpu_n, cpu) in self.cpu_busy_counters.iter().enumerate() {
+                        let as_secs =
+                            cpu.busy_ticks.load(Ordering::Relaxed) as f64 / 1_000_000_000.0;
+                        out.push_str(&format!(
+                            "cpu_busy_seconds_total{{cpu=\"{}\"}} {}\n",
+                            cpu_n, as_secs
+                        ));
+                    }
+                    out.push_str("\n");
+
+                    report.respond(&out);
+                }
             }
         }
     }
