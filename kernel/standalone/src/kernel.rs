@@ -108,9 +108,9 @@ where
         }
 
         // TODO: temporary; uncomment to test
-        system_builder = system_builder.with_main_program(
+        /*system_builder = system_builder.with_main_program(
             ModuleHash::from_base58("FWMwRMQCKdWVDdKyx6ogQ8sXuoeDLNzZxniRMyD5S71").unwrap(),
-        );
+        );*/
 
         let cpu_busy_counters = (0..platform_specific.as_ref().num_cpus().get())
             .map(|_| CpuCounter {
