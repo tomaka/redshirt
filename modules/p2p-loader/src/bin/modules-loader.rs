@@ -19,7 +19,8 @@ use parity_scale_codec::DecodeAll;
 use std::time::Duration;
 
 fn main() {
-    redshirt_log_interface::init();
+    // TODO: too verbose
+    //redshirt_log_interface::init();
     redshirt_syscalls::block_on(async_main())
 }
 
