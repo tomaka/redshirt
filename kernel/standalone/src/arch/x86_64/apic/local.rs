@@ -62,7 +62,7 @@ pub unsafe fn init() -> LocalApicsControl {
 
     // We reserve an interrupt vector for errors triggered by the APIC.
     // Each APIC, when it gets initialized, will set this interrupt vector in its LVT.
-    let error_interrupt_vector = interrupts::reserve_any_vector(true).unwrap();
+    let error_interrupt_vector = interrupts::reserve_any_vector(240).unwrap();
     // We don't have any intent of actually processing the interrupts, instead we just set up a
     // one-time panicking waker.
     error_interrupt_vector.register_waker(&{
