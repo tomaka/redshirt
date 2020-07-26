@@ -1632,6 +1632,7 @@ dependencies = [
  "rand_hc",
  "redshirt-core-proc-macros",
  "redshirt-interface-interface",
+ "redshirt-kernel-debug-interface",
  "redshirt-loader-interface",
  "redshirt-log-interface",
  "redshirt-random-interface",
@@ -1703,6 +1704,13 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "parity-scale-codec",
+ "redshirt-syscalls",
+]
+
+[[package]]
+name = "redshirt-kernel-debug-interface"
+version = "0.1.0"
+dependencies = [
  "redshirt-syscalls",
 ]
 

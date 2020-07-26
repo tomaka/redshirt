@@ -29,12 +29,12 @@ use crate::native::{self, NativeProgramMessageIdWrite as _};
 use crate::scheduler::{Core, CoreBuilder, CoreRunOutcome, NewErr};
 
 use alloc::vec::Vec;
-use core::{iter, num::NonZeroU64, sync::atomic::Ordering, task::Poll};
+use core::{fmt, iter, num::NonZeroU64, sync::atomic::Ordering, task::Poll};
 use crossbeam_queue::SegQueue;
 use futures::prelude::*;
 use hashbrown::HashSet;
 use nohash_hasher::BuildNoHashHasher;
-use redshirt_syscalls::{Decode, Encode, MessageId, Pid};
+use redshirt_syscalls::{Decode, Encode, EncodedMessage, MessageId, Pid};
 use spinning_top::Spinlock;
 
 /// Main struct that handles a system, including the scheduler, program loader,
@@ -80,6 +80,9 @@ pub struct SystemBuilder<'a, TExtr: extrinsics::Extrinsics> {
     /// "Virtual" pid for the process that sends messages towards the loader.
     load_source_virtual_pid: Pid,
 
+    /// "Virtual" pid for handling messages on the `kernel_debug` interface.
+    kernel_debug_interface_pid: Pid,
+
     /// List of programs to start executing immediately after construction.
     startup_processes: Vec<Module>,
 
@@ -89,7 +92,7 @@ pub struct SystemBuilder<'a, TExtr: extrinsics::Extrinsics> {
 
 /// Outcome of running the [`System`] once.
 #[derive(Debug)]
-pub enum SystemRunOutcome {
+pub enum SystemRunOutcome<'a, 'b, TExtr: extrinsics::Extrinsics> {
     /// A program has ended, either successfully or after an error.
     ProgramFinished {
         /// Identifier of the process that has stopped.
@@ -99,11 +102,14 @@ pub enum SystemRunOutcome {
         // TODO: change error type
         outcome: Result<(), wasmi::Error>,
     },
+    /// A program has requested metrics from the kernel. Use the [`KernelDebugMetricsRequest`] to
+    /// report them.
+    KernelDebugMetricsRequest(KernelDebugMetricsRequest<'a, 'b, TExtr>),
 }
 
 #[derive(Debug)]
-enum RunOnceOutcome {
-    Report(SystemRunOutcome),
+enum RunOnceOutcome<'a, 'b, TExtr: extrinsics::Extrinsics> {
+    Report(SystemRunOutcome<'a, 'b, TExtr>),
     LoopAgain,
     LoopAgainNow,
 }
@@ -123,7 +129,7 @@ where
     /// >           waiting for the native programs to produce events in case there's nothing to
     /// >           do. In other words, this function can be seen more as a generator that whose
     /// >           `Future` becomes `Ready` only when something needs to be notified.
-    pub fn run<'b>(&'b self) -> impl Future<Output = SystemRunOutcome> + 'b {
+    pub fn run<'b>(&'b self) -> impl Future<Output = SystemRunOutcome<'a, 'b, TExtr>> + 'b {
         // TODO: We use a `poll_fn` because async/await don't work in no_std yet.
         future::poll_fn(move |cx| {
             loop {
@@ -203,7 +209,7 @@ where
         })
     }
 
-    async fn run_once(&self) -> RunOnceOutcome {
+    async fn run_once<'b>(&'b self) -> RunOnceOutcome<'a, 'b, TExtr> {
         match self.core.run().await {
             CoreRunOutcome::ProgramFinished { pid, outcome, .. } => {
                 self.loader_pid.compare_exchange(
@@ -285,6 +291,29 @@ where
                 message_id,
                 interface,
                 message,
+            } if interface == redshirt_kernel_debug_interface::ffi::INTERFACE => {
+                // Handling messages on the `kernel_debug` interface.
+                if let Some(message_id) = message_id {
+                    if message.0.is_empty() {
+                        return RunOnceOutcome::Report(
+                            SystemRunOutcome::KernelDebugMetricsRequest(
+                                KernelDebugMetricsRequest {
+                                    system: self,
+                                    message_id,
+                                },
+                            ),
+                        );
+                    } else {
+                        self.core.answer_message(message_id, Err(()));
+                    }
+                }
+            }
+
+            CoreRunOutcome::ReservedPidInterfaceMessage {
+                pid,
+                message_id,
+                interface,
+                message,
             } => {
                 self.native_programs
                     .interface_message(interface, message_id, pid, message);
@@ -292,6 +321,36 @@ where
         }
 
         RunOnceOutcome::LoopAgain
+    }
+}
+
+/// Object to use to report kernel metrics to a requesting process.
+#[must_use]
+pub struct KernelDebugMetricsRequest<'a, 'b, TExtr: extrinsics::Extrinsics> {
+    system: &'b System<'a, TExtr>,
+    message_id: MessageId,
+}
+
+impl<'a, 'b, TExtr: extrinsics::Extrinsics> KernelDebugMetricsRequest<'a, 'b, TExtr> {
+    /// Indicate the metrics. Must pass a Prometheus-compatible metrics.
+    /// See [this document](https://prometheus.io/docs/instrumenting/exposition_formats/#text-format-details)
+    /// for more information.
+    ///
+    /// The metrics will be concatenated with other metrics tracked internally by the `System`.
+    pub fn respond(self, metrics: &str) {
+        // TODO: add more metrics
+        let response = EncodedMessage(metrics.as_bytes().to_vec());
+        self.system
+            .core
+            .answer_message(self.message_id, Ok(response));
+    }
+}
+
+impl<'a, 'b, TExtr: extrinsics::Extrinsics> fmt::Debug
+    for KernelDebugMetricsRequest<'a, 'b, TExtr>
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_tuple("KernelDebugMetricsRequest").finish()
     }
 }
 
@@ -305,11 +364,13 @@ where
         let mut core = CoreBuilder::new();
         let interface_interface_pid = core.reserve_pid();
         let load_source_virtual_pid = core.reserve_pid();
+        let kernel_debug_interface_pid = core.reserve_pid();
 
         SystemBuilder {
             core,
             interface_interface_pid,
             load_source_virtual_pid,
+            kernel_debug_interface_pid,
             startup_processes: Vec::new(),
             programs_to_load: SegQueue::new(),
             native_programs: native::NativeProgramsCollection::new(),
@@ -375,6 +436,15 @@ where
         match core.set_interface_handler(
             redshirt_interface_interface::ffi::INTERFACE,
             self.interface_interface_pid,
+        ) {
+            Ok(()) => {}
+            Err(_) => unreachable!(),
+        };
+
+        // Same for the `kernel-debug` interface.
+        match core.set_interface_handler(
+            redshirt_kernel_debug_interface::ffi::INTERFACE,
+            self.kernel_debug_interface_pid,
         ) {
             Ok(()) => {}
             Err(_) => unreachable!(),
