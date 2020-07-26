@@ -48,11 +48,10 @@ async fn async_main() {
             future::Either::Right(NetworkEvent::Readiness(true)) => {
                 if !registered {
                     registered = true;
-                    redshirt_interface_interface::register_interface(
+                    let _ = redshirt_interface_interface::register_interface(
                         redshirt_loader_interface::ffi::INTERFACE,
                     )
-                    .await
-                    .unwrap();
+                    .await;
                 }
                 continue;
             }
@@ -60,17 +59,20 @@ async fn async_main() {
                 continue;
             }
             future::Either::Right(NetworkEvent::FetchSuccess { data, user_data }) => {
+                assert!(registered);
                 let rp = redshirt_loader_interface::ffi::LoadResponse { result: Ok(data) };
                 redshirt_syscalls::emit_answer(user_data, &rp);
                 continue;
             }
             future::Either::Right(NetworkEvent::FetchFail { user_data }) => {
+                assert!(registered);
                 let rp = redshirt_loader_interface::ffi::LoadResponse { result: Err(()) };
                 redshirt_syscalls::emit_answer(user_data, &rp);
                 continue;
             }
         };
 
+        assert!(registered);
         assert_eq!(msg.interface, redshirt_loader_interface::ffi::INTERFACE);
         let msg_data =
             redshirt_loader_interface::ffi::LoaderMessage::decode_all(&msg.actual_data.0).unwrap();
