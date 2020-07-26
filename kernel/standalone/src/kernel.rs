@@ -150,6 +150,9 @@ where
 
         loop {
             // Wrap around `self.system.run()` and add time reports to the CPU idle/busy counters.
+            // TODO: because of this implementation, the idle counter is only updated when the
+            // CPU has some work to do; in other words, if a CPU is asleep for a long time then its
+            // counters will not be updated
             let inner = self.system.run();
             futures::pin_mut!(inner);
             let fut = future::poll_fn(|cx| {
