@@ -223,6 +223,7 @@ unsafe fn after_boot(multiboot_info: usize) -> ! {
         }
 
         let (kernel_tx, kernel_rx) = oneshot::channel::<Arc<crate::kernel::Kernel<_>>>();
+        let cpu_num = kernel_channels.len().checked_add(1).unwrap();
 
         let ap_boot_result = ap_boot::boot_associated_processor(
             &mut ap_boot_alloc,
@@ -235,7 +236,7 @@ unsafe fn after_boot(multiboot_info: usize) -> ! {
                 move || {
                     let kernel = executor.block_on(kernel_rx).unwrap();
                     // The `run()` method never returns.
-                    executor.block_on(kernel.run())
+                    executor.block_on(kernel.run(cpu_num))
                 }
             },
         );
@@ -323,7 +324,7 @@ unsafe fn after_boot(multiboot_info: usize) -> ! {
 
     // Start the kernel on the boot processor too.
     // This function never returns.
-    executor.block_on(kernel.run())
+    executor.block_on(kernel.run(0))
 }
 
 /// Reads the boot information and find the memory ranges that can be used as a heap.

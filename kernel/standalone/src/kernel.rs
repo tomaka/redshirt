@@ -24,20 +24,34 @@
 
 use crate::arch::PlatformSpecific;
 
-use alloc::sync::Arc;
+use alloc::{sync::Arc, vec::Vec};
 use core::{
-    marker::PhantomData,
-    sync::atomic::{AtomicBool, Ordering},
+    convert::TryFrom as _,
+    pin::Pin,
+    sync::atomic::{AtomicBool, AtomicU64, Ordering},
 };
+use futures::prelude::*;
 use redshirt_core::{
     build_wasm_module, extrinsics::wasi::WasiExtrinsics, module::ModuleHash, System,
 };
 
 /// Main struct of this crate. Runs everything.
 pub struct Kernel<TPlat> {
+    /// Contains the list of all processes, threads, interfaces, messages, and so on.
     system: System<'static, WasiExtrinsics>,
-    /// Phantom data so that we can keep the platform specific generic parameter.
-    marker: PhantomData<TPlat>,
+    /// Has one entry for each CPU. Never resized.
+    // TODO: add a way to report these values, see https://github.com/tomaka/redshirt/issues/117
+    cpu_busy_counters: Vec<CpuCounter>,
+    /// Platform-specific getters. Passed at initialization.
+    platform_specific: Pin<Arc<TPlat>>,
+}
+
+#[derive(Debug)]
+struct CpuCounter {
+    /// Total number of nanoseconds spent working since [`Kernel::run`] has been called.
+    busy_ticks: atomic::Atomic<u128>,
+    /// Total number of nanoseconds spent idle since [`Kernel::run`] has been called.
+    idle_ticks: atomic::Atomic<u128>,
 }
 
 impl<TPlat> Kernel<TPlat>
@@ -92,16 +106,56 @@ where
             ModuleHash::from_base58("FWMwRMQCKdWVDdKyx6ogQ8sXuoeDLNzZxniRMyD5S71").unwrap(),
         );*/
 
+        let cpu_busy_counters = (0..platform_specific.as_ref().num_cpus().get())
+            .map(|_| CpuCounter {
+                busy_ticks: atomic::Atomic::new(0),
+                idle_ticks: atomic::Atomic::new(0),
+            })
+            .collect();
+
         Kernel {
             system: system_builder.build().expect("failed to start kernel"),
-            marker: PhantomData,
+            cpu_busy_counters,
+            platform_specific,
         }
     }
 
     /// Run the kernel. Must be called once per CPU.
-    pub async fn run(&self) -> ! {
+    // TODO: check whether cpu_index is correct? (i.e. not the same index passed twice)
+    pub async fn run(&self, cpu_index: usize) -> ! {
+        assert!(
+            u32::try_from(cpu_index).unwrap() < self.platform_specific.as_ref().num_cpus().get()
+        );
+
+        // In order for the idle/busy counters to report accurate information, we keep here the
+        // last time we have updated one of the counters.
+        let mut now = self.platform_specific.as_ref().monotonic_clock();
+
         loop {
-            match self.system.run().await {
+            // Wrap around `self.system.run()` and add time reports to the CPU idle/busy counters.
+            let inner = self.system.run();
+            futures::pin_mut!(inner);
+            let fut = future::poll_fn(|cx| {
+                let new_now = self.platform_specific.as_ref().monotonic_clock();
+                let elapsed_idle = new_now.checked_sub(now).unwrap();
+                now = new_now;
+                self.cpu_busy_counters[cpu_index]
+                    .idle_ticks
+                    .fetch_add(elapsed_idle, Ordering::Relaxed);
+
+                let outcome = Future::poll(inner.as_mut(), cx);
+
+                let new_now = self.platform_specific.as_ref().monotonic_clock();
+                let elapsed_budy = new_now.checked_sub(now).unwrap();
+                now = new_now;
+                self.cpu_busy_counters[cpu_index]
+                    .busy_ticks
+                    .fetch_add(elapsed_budy, Ordering::Relaxed);
+
+                outcome
+            });
+
+            match fut.await {
                 redshirt_core::system::SystemRunOutcome::ProgramFinished { .. } => {}
                 _ => panic!(),
             }

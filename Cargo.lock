@@ -1776,6 +1776,7 @@ name = "redshirt-standalone-kernel"
 version = "0.1.0"
 dependencies = [
  "acpi",
+ "atomic",
  "blake3",
  "crossbeam-queue",
  "crossbeam-utils",
