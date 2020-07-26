@@ -33,9 +33,13 @@ pub struct TimeHandler<TPlat> {
     /// Platform-specific hooks.
     platform_specific: Pin<Arc<TPlat>>,
     /// Sending side of `pending_messages`.
-    pending_messages_tx: future_channel::UnboundedSender<(MessageId, Result<EncodedMessage, ()>)>,
-    /// List of messages waiting to be emitted with `next_event`.
-    pending_messages: future_channel::UnboundedReceiver<(MessageId, Result<EncodedMessage, ()>)>,
+    pending_messages_tx:
+        future_channel::UnboundedSender<Option<(MessageId, Result<EncodedMessage, ()>)>>,
+    /// List of messages waiting to be emitted with `next_event`. Can also contain dummy events
+    /// (`None`) if we just need to wake up the receiving task after having pushed an element on
+    /// `timers`.
+    pending_messages:
+        future_channel::UnboundedReceiver<Option<(MessageId, Result<EncodedMessage, ()>)>>,
     /// List of active timers.
     timers: Spinlock<FuturesUnordered<Pin<Box<dyn Future<Output = MessageId> + Send>>>>,
 }
@@ -43,11 +47,6 @@ pub struct TimeHandler<TPlat> {
 impl<TPlat> TimeHandler<TPlat> {
     /// Initializes the new state machine for time accesses.
     pub fn new(platform_specific: Pin<Arc<TPlat>>) -> Self {
-        let timers = FuturesUnordered::new();
-        // We don't want `timers` to ever produce `None`, so we push a dummy futures.
-        // TODO: remove that
-        timers.push(future::pending().boxed());
-
         let (pending_messages_tx, pending_messages) = future_channel::channel();
 
         TimeHandler {
@@ -55,7 +54,7 @@ impl<TPlat> TimeHandler<TPlat> {
             platform_specific,
             pending_messages_tx,
             pending_messages,
-            timers: Spinlock::new(timers),
+            timers: Spinlock::new(FuturesUnordered::new()),
         }
     }
 }
@@ -82,18 +81,24 @@ where
             }
 
             future::poll_fn(move |cx| {
-                if let Poll::Ready((message_id, answer)) = self.pending_messages.poll_next(cx) {
-                    return Poll::Ready(NativeProgramEvent::Answer { message_id, answer });
+                while let Poll::Ready(msg) = self.pending_messages.poll_next(cx) {
+                    if let Some((message_id, answer)) = msg {
+                        return Poll::Ready(NativeProgramEvent::Answer { message_id, answer });
+                    }
                 }
 
                 let mut timers = self.timers.lock();
-                match Stream::poll_next(Pin::new(&mut *timers), cx) {
-                    Poll::Ready(Some(message_id)) => Poll::Ready(NativeProgramEvent::Answer {
-                        message_id,
-                        answer: Ok(().encode()),
-                    }),
-                    Poll::Ready(None) => unreachable!(),
-                    Poll::Pending => Poll::Pending,
+                if !timers.is_empty() {
+                    match Stream::poll_next(Pin::new(&mut *timers), cx) {
+                        Poll::Ready(Some(message_id)) => Poll::Ready(NativeProgramEvent::Answer {
+                            message_id,
+                            answer: Ok(().encode()),
+                        }),
+                        Poll::Ready(None) => unreachable!(),
+                        Poll::Pending => Poll::Pending,
+                    }
+                } else {
+                    Poll::Pending
                 }
             })
             .await
@@ -113,7 +118,7 @@ where
             Ok(TimeMessage::GetMonotonic) => {
                 let now = self.platform_specific.as_ref().monotonic_clock();
                 self.pending_messages_tx
-                    .unbounded_send((message_id.unwrap(), Ok(now.encode())));
+                    .unbounded_send(Some((message_id.unwrap(), Ok(now.encode()))));
             }
             Ok(TimeMessage::WaitMonotonic(value)) => {
                 let message_id = message_id.unwrap();
@@ -124,11 +129,12 @@ where
                         .timer(value)
                         .map(move |_| message_id)
                         .boxed(),
-                )
+                );
+                self.pending_messages_tx.unbounded_send(None);
             }
             Err(_) => {
                 self.pending_messages_tx
-                    .unbounded_send((message_id.unwrap(), Err(())));
+                    .unbounded_send(Some((message_id.unwrap(), Err(()))));
             }
         }
     }
