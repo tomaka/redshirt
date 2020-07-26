@@ -121,19 +121,15 @@ pub async fn init(
     // might not be available and does AMD support it?
     let rdtsc_ticks_per_sec = unsafe {
         // We use fences in order to guarantee that the RDTSC instructions don't get moved around.
-        // TODO: not sure about these Ordering values
-        // TODO: are the fences the same as core::arch::x86_64::_mm_mfence()?
-        let before = core::arch::x86_64::_rdtsc();
-        atomic::fence(atomic::Ordering::Release);
+        let before = tsc_sync::volatile_rdtsc();
         pit.timer(Duration::from_secs(1)).await;
-        atomic::fence(atomic::Ordering::Acquire);
-        let after = core::arch::x86_64::_rdtsc();
+        let after = tsc_sync::volatile_rdtsc();
 
         assert!(after > before);
         NonZeroU64::new(after - before).unwrap()
     };
 
-    let monotonic_clock_zero = NonZeroU64::new(unsafe { core::arch::x86_64::_rdtsc() }).unwrap();
+    let monotonic_clock_zero = NonZeroU64::new(tsc_sync::volatile_rdtsc()).unwrap();
 
     Arc::new(Timers {
         local_apics,
@@ -222,28 +218,27 @@ struct TimerEntry {
 
 impl Timers {
     /// Returns a `Future` that fires when the given amount of time has elapsed.
-    pub fn register_timer(self: &Arc<Self>, duration: Duration) -> TimerFuture {
-        let now = {
-            let local_val = tsc_sync::volatile_rdtsc();
-            self.monotonic_clock_min
-                .fetch_max(local_val, atomic::Ordering::AcqRel)
-                .max(local_val)
-        };
+    pub fn register_timer_after(self: &Arc<Self>, after: Duration) -> TimerFuture {
+        let now = self.monotonic_clock();
+        self.register_timer_at(now + after)
+    }
 
+    /// Returns a `Future` that fires when the monotonic clock reaches the given value.
+    pub fn register_timer_at(self: &Arc<Self>, when: Duration) -> TimerFuture {
         // Find out the TSC value corresponding to the requested `Duration`.
-        let tsc_value = duration
+        let tsc_value = when
             .as_secs()
             .checked_mul(self.rdtsc_ticks_per_sec.get())
             .unwrap()
             .checked_add(
-                u64::from(duration.subsec_nanos())
+                u64::from(when.subsec_nanos())
                     .checked_mul(self.rdtsc_ticks_per_sec.get())
                     .unwrap()
                     .checked_div(1_000_000_000)
                     .unwrap(),
             )
             .unwrap()
-            .checked_add(now)
+            .checked_add(self.monotonic_clock_zero.get())
             .unwrap();
 
         TimerFuture {

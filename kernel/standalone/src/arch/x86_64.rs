@@ -453,7 +453,9 @@ impl PlatformSpecific for PlatformSpecificImpl {
     }
 
     fn timer(self: Pin<&Self>, clock_value: u128) -> Self::TimerFuture {
-        self.timers.register_timer({
+        self.timers.register_timer_at({
+            // `unwrap_or(u64::max_value())` means that any wait longer than 2^64 seconds will be
+            // clamped to 2^64 seconds. We don't expect any system to ever run for 2^64 seconds.
             let secs = u64::try_from(clock_value / 1_000_000_000).unwrap_or(u64::max_value());
             let nanos = u32::try_from(clock_value % 1_000_000_000).unwrap();
             Duration::new(secs, nanos)
