@@ -131,7 +131,7 @@ unsafe fn cpu_enter() -> ! {
     let time = time::TimeControl::init();
 
     let kernel = crate::kernel::Kernel::init(PlatformSpecificImpl { time });
-    executor::block_on(kernel.run())
+    executor::block_on(kernel.run(0))
 }
 
 /// Implementation of [`PlatformSpecific`].

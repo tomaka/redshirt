@@ -107,7 +107,7 @@ unsafe fn cpu_enter() -> ! {
     panic!("We pre-emptively panic because running the kernel is known to overflow the stack");
 
     // Run the kernel. This call never returns.
-    executor::block_on(kernel.run())
+    executor::block_on(kernel.run(0))
 }
 
 // TODO: why is this symbol required?
