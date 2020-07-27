@@ -28,8 +28,8 @@ use crate::module::{Module, ModuleHash};
 use crate::native::{self, NativeProgramMessageIdWrite as _};
 use crate::scheduler::{Core, CoreBuilder, CoreRunOutcome, NewErr};
 
-use alloc::vec::Vec;
-use core::{fmt, iter, num::NonZeroU64, sync::atomic::Ordering, task::Poll};
+use alloc::{format, vec::Vec};
+use core::{convert::TryFrom as _, fmt, iter, num::NonZeroU64, sync::atomic::Ordering, task::Poll};
 use crossbeam_queue::SegQueue;
 use futures::prelude::*;
 use hashbrown::HashSet;
@@ -44,6 +44,9 @@ use spinning_top::Spinlock;
 pub struct System<'a, TExtr: extrinsics::Extrinsics> {
     /// Inner system with inter-process communications.
     core: Core<TExtr>,
+
+    /// Number of processes currently running in the core.
+    num_processes: atomic::Atomic<u64>,
 
     /// Collection of programs. Each is assigned a `Pid` that is reserved within `core`.
     /// Can communicate with the WASM programs that are within `core`.
@@ -120,6 +123,7 @@ where
 {
     /// Start executing a program.
     pub fn execute(&self, program: &Module) -> Result<Pid, NewErr> {
+        self.num_processes.fetch_add(1, Ordering::Relaxed);
         Ok(self.core.execute(program)?.0.pid())
     }
 
@@ -218,6 +222,7 @@ where
                     Ordering::Acquire,
                     Ordering::Relaxed,
                 );
+                self.num_processes.fetch_sub(1, Ordering::Relaxed);
                 self.native_programs.process_destroyed(pid);
                 return RunOnceOutcome::Report(SystemRunOutcome::ProgramFinished {
                     pid,
@@ -238,6 +243,7 @@ where
                     // TODO: don't unwrap
                     let module = Module::from_bytes(&result.expect("loader returned error"))
                         .expect("module isn't proper wasm");
+                    self.num_processes.fetch_add(1, Ordering::Relaxed);
                     match self.core.execute(&module) {
                         Ok(_) => {}
                         Err(_) => panic!(),
@@ -338,8 +344,24 @@ impl<'a, 'b, TExtr: extrinsics::Extrinsics> KernelDebugMetricsRequest<'a, 'b, TE
     ///
     /// The metrics will be concatenated with other metrics tracked internally by the `System`.
     pub fn respond(self, metrics: &str) {
-        // TODO: add more metrics
-        let response = EncodedMessage(metrics.as_bytes().to_vec());
+        let mut metrics_bytes = metrics.as_bytes().to_vec();
+
+        // `processes_count`
+        metrics_bytes
+            .extend_from_slice(b"# HELP processes_count Number of processes currently running.\n");
+        metrics_bytes.extend_from_slice(b"# TYPE processes_count gauge\n");
+        metrics_bytes.extend_from_slice(
+            format!(
+                "processes_count {}\n",
+                self.system.num_processes.load(Ordering::Relaxed)
+            )
+            .as_bytes(),
+        );
+        metrics_bytes.extend_from_slice(b"\n");
+
+        // TODO: add more metrics?
+
+        let response = EncodedMessage(metrics_bytes);
         self.system
             .core
             .answer_message(self.message_id, Ok(response));
@@ -450,12 +472,14 @@ where
             Err(_) => unreachable!(),
         };
 
+        let num_processes = u64::try_from(self.startup_processes.len()).unwrap();
         for program in self.startup_processes {
             core.execute(&program)?;
         }
 
         Ok(System {
             core,
+            num_processes: atomic::Atomic::new(num_processes),
             native_programs: self.native_programs,
             loader_pid: atomic::Atomic::new(None),
             load_source_virtual_pid: self.load_source_virtual_pid,
