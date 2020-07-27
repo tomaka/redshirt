@@ -299,7 +299,7 @@ fn send_ipi_inner(target_apic_id: ApicId, delivery: u8, vector: u8) {
     debug_assert!(delivery != 0b101 || vector == 0);
 
     // TODO: if P6 architecture, then only 4 bits of the target are valid; do we care about that?
-    let level_bit = if delivery == 0b101 { 0 } else { 1 << 15 };
+    let level_bit = if delivery == 0b101 { 0 } else { 1 << 14 };
     let value_lo = level_bit | (u32::from(delivery) << 8) | u32::from(vector);
     let value_hi = u32::from(target_apic_id.0) << (56 - 32);
 

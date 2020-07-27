@@ -169,6 +169,7 @@ unsafe fn after_boot(multiboot_info: usize) -> ! {
     // We then initialize the local APIC.
     // `Box::leak` gives us a `&'static` reference to the object.
     let local_apics = Box::leak(Box::new(apic::local::init()));
+    local_apics.init_local();
 
     // Initialize an object that can execute futures between CPUs.
     let executor = Box::leak(Box::new(executor::Executor::new(&*local_apics)));
@@ -234,9 +235,11 @@ unsafe fn after_boot(multiboot_info: usize) -> ! {
             {
                 let executor = &*executor;
                 move || {
-                    let kernel = executor.block_on(kernel_rx).unwrap();
-                    // The `run()` method never returns.
-                    executor.block_on(kernel.run(cpu_num))
+                    executor.block_on(async move {
+                        let kernel = kernel_rx.await.unwrap();
+                        // The `run()` method never returns.
+                        kernel.run(cpu_num).await
+                    })
                 }
             },
         );
