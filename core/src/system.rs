@@ -45,8 +45,14 @@ pub struct System<'a, TExtr: extrinsics::Extrinsics> {
     /// Inner system with inter-process communications.
     core: Core<TExtr>,
 
-    /// Number of processes currently running in the core.
-    num_processes: atomic::Atomic<u64>,
+    /// Total number of processes that have been spawned since initialization.
+    num_processes_started: atomic::Atomic<u64>,
+
+    /// Total number of processes that have successfully ended since initialization.
+    num_processes_finished: atomic::Atomic<u64>,
+
+    /// Total number of processes that have ended because of a problem, since initialization.
+    num_processes_trap: atomic::Atomic<u64>,
 
     /// Collection of programs. Each is assigned a `Pid` that is reserved within `core`.
     /// Can communicate with the WASM programs that are within `core`.
@@ -123,7 +129,7 @@ where
 {
     /// Start executing a program.
     pub fn execute(&self, program: &Module) -> Result<Pid, NewErr> {
-        self.num_processes.fetch_add(1, Ordering::Relaxed);
+        self.num_processes_started.fetch_add(1, Ordering::Relaxed);
         Ok(self.core.execute(program)?.0.pid())
     }
 
@@ -222,7 +228,11 @@ where
                     Ordering::Acquire,
                     Ordering::Relaxed,
                 );
-                self.num_processes.fetch_sub(1, Ordering::Relaxed);
+                if outcome.is_ok() {
+                    self.num_processes_finished.fetch_add(1, Ordering::Relaxed);
+                } else {
+                    self.num_processes_trap.fetch_add(1, Ordering::Relaxed);
+                }
                 self.native_programs.process_destroyed(pid);
                 return RunOnceOutcome::Report(SystemRunOutcome::ProgramFinished {
                     pid,
@@ -243,7 +253,7 @@ where
                     // TODO: don't unwrap
                     let module = Module::from_bytes(&result.expect("loader returned error"))
                         .expect("module isn't proper wasm");
-                    self.num_processes.fetch_add(1, Ordering::Relaxed);
+                    self.num_processes_started.fetch_add(1, Ordering::Relaxed);
                     match self.core.execute(&module) {
                         Ok(_) => {}
                         Err(_) => panic!(),
@@ -346,14 +356,38 @@ impl<'a, 'b, TExtr: extrinsics::Extrinsics> KernelDebugMetricsRequest<'a, 'b, TE
     pub fn respond(self, metrics: &str) {
         let mut metrics_bytes = metrics.as_bytes().to_vec();
 
-        // `processes_count`
-        metrics_bytes
-            .extend_from_slice(b"# HELP processes_count Number of processes currently running.\n");
-        metrics_bytes.extend_from_slice(b"# TYPE processes_count gauge\n");
+        // `processes_started_total`
+        metrics_bytes.extend_from_slice(
+            b"# HELP processes_started_total Number of processes that have \
+            been spawned since initialization.\n",
+        );
+        metrics_bytes.extend_from_slice(b"# TYPE processes_started_total counter\n");
         metrics_bytes.extend_from_slice(
             format!(
-                "processes_count {}\n",
-                self.system.num_processes.load(Ordering::Relaxed)
+                "processes_started_total {}\n",
+                self.system.num_processes_started.load(Ordering::Relaxed)
+            )
+            .as_bytes(),
+        );
+        metrics_bytes.extend_from_slice(b"\n");
+
+        // `processes_ended_total`
+        metrics_bytes.extend_from_slice(
+            b"# HELP processes_ended_total Number of processes that have \
+            ended, since initialization.\n",
+        );
+        metrics_bytes.extend_from_slice(b"# TYPE processes_ended_total counter\n");
+        metrics_bytes.extend_from_slice(
+            format!(
+                "processes_ended_total{{reason=\"graceful\"}} {}\n",
+                self.system.num_processes_finished.load(Ordering::Relaxed)
+            )
+            .as_bytes(),
+        );
+        metrics_bytes.extend_from_slice(
+            format!(
+                "processes_ended_total{{reason=\"crash\"}} {}\n",
+                self.system.num_processes_trap.load(Ordering::Relaxed)
             )
             .as_bytes(),
         );
@@ -472,14 +506,16 @@ where
             Err(_) => unreachable!(),
         };
 
-        let num_processes = u64::try_from(self.startup_processes.len()).unwrap();
+        let num_processes_started = u64::try_from(self.startup_processes.len()).unwrap();
         for program in self.startup_processes {
             core.execute(&program)?;
         }
 
         Ok(System {
             core,
-            num_processes: atomic::Atomic::new(num_processes),
+            num_processes_started: atomic::Atomic::new(num_processes_started),
+            num_processes_finished: atomic::Atomic::new(0),
+            num_processes_trap: atomic::Atomic::new(0),
             native_programs: self.native_programs,
             loader_pid: atomic::Atomic::new(None),
             load_source_virtual_pid: self.load_source_virtual_pid,
