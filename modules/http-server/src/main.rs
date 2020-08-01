@@ -24,7 +24,7 @@ fn main() {
             .await
             .unwrap();
 
-        log::info!("Now listening on 0.0.0.0:8000");
+        log::info!("Kernel Prometheus metrics now available on http://127.0.0.1:8000/metrics");
 
         let stream = stream::unfold(listener, |l| async move {
             let connec = l.accept().await.0;
@@ -45,8 +45,18 @@ fn main() {
             http,
         )
         .serve(hyper::service::make_service_fn(|_| async {
-            Ok::<_, std::io::Error>(hyper::service::service_fn(|_req| async {
-                Ok::<_, std::io::Error>(hyper::Response::new(hyper::Body::from("Hello World")))
+            Ok::<_, hyper::Error>(hyper::service::service_fn(|req| async move {
+                if req.uri().path() == "/metrics" {
+                    let metrics = redshirt_kernel_debug_interface::get_metrics().await;
+                    hyper::Response::builder()
+                        .status(hyper::StatusCode::OK)
+                        .header("Content-Type", "text/plain; version=0.0.4")
+                        .body(hyper::Body::from(metrics))
+                } else {
+                    hyper::Response::builder()
+                        .status(hyper::StatusCode::NOT_FOUND)
+                        .body(hyper::Body::from("Not found"))
+                }
             }))
         }));
 

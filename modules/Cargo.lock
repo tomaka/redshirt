@@ -966,6 +966,7 @@ dependencies = [
  "futures",
  "hyper",
  "log",
+ "redshirt-kernel-debug-interface",
  "redshirt-log-interface",
  "redshirt-syscalls",
  "redshirt-tcp-interface",
