@@ -42,7 +42,6 @@ pub struct Kernel<TPlat> {
     /// Contains the list of all processes, threads, interfaces, messages, and so on.
     system: System<'static, WasiExtrinsics>,
     /// Has one entry for each CPU. Never resized.
-    // TODO: add a way to report these values, see https://github.com/tomaka/redshirt/issues/117
     cpu_busy_counters: Vec<CpuCounter>,
     /// Platform-specific getters. Passed at initialization.
     platform_specific: Pin<Arc<TPlat>>,
