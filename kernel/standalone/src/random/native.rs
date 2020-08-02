@@ -15,11 +15,10 @@
 
 //! Native program that handles the `random` interface.
 
-use crate::arch::PlatformSpecific;
-use crate::random::rng::KernelRng;
+use crate::{arch::PlatformSpecific, future_channel, random::rng::KernelRng};
 
 use alloc::{boxed::Box, sync::Arc, vec};
-use core::{pin::Pin, sync::atomic};
+use core::{pin::Pin, sync::atomic, task::Poll};
 use crossbeam_queue::SegQueue;
 use futures::prelude::*;
 use rand_core::RngCore as _;
@@ -33,8 +32,10 @@ pub struct RandomNativeProgram<TPlat> {
     registered: atomic::AtomicBool,
     /// Queue of random number generators. If it is empty, we generate a new one.
     rngs: SegQueue<KernelRng>,
-    /// Message responses waiting to be emitted.
-    pending_messages: SegQueue<(MessageId, Result<EncodedMessage, ()>)>,
+    /// Sending side of `pending_messages`.
+    pending_messages_tx: future_channel::UnboundedSender<(MessageId, Result<EncodedMessage, ()>)>,
+    /// List of messages waiting to be emitted with `next_event`.
+    pending_messages: future_channel::UnboundedReceiver<(MessageId, Result<EncodedMessage, ()>)>,
     /// Platform-specific hooks.
     platform_specific: Pin<Arc<TPlat>>,
 }
@@ -42,10 +43,12 @@ pub struct RandomNativeProgram<TPlat> {
 impl<TPlat> RandomNativeProgram<TPlat> {
     /// Initializes the new state machine for random messages handling.
     pub fn new(platform_specific: Pin<Arc<TPlat>>) -> Self {
+        let (pending_messages_tx, pending_messages) = future_channel::channel();
         RandomNativeProgram {
             registered: atomic::AtomicBool::new(false),
             rngs: SegQueue::new(),
-            pending_messages: SegQueue::new(),
+            pending_messages_tx,
+            pending_messages,
             platform_specific,
         }
     }
@@ -60,23 +63,27 @@ where
     type MessageIdWrite = DummyMessageIdWrite;
 
     fn next_event(self) -> Self::Future {
-        if !self.registered.swap(true, atomic::Ordering::Relaxed) {
-            return Box::pin(future::ready(NativeProgramEvent::Emit {
-                interface: redshirt_interface_interface::ffi::INTERFACE,
-                message_id_write: None,
-                message: redshirt_interface_interface::ffi::InterfaceMessage::Register(INTERFACE)
+        Box::pin(async move {
+            if !self.registered.swap(true, atomic::Ordering::Relaxed) {
+                return NativeProgramEvent::Emit {
+                    interface: redshirt_interface_interface::ffi::INTERFACE,
+                    message_id_write: None,
+                    message: redshirt_interface_interface::ffi::InterfaceMessage::Register(
+                        INTERFACE,
+                    )
                     .encode(),
-            }));
-        }
+                };
+            }
 
-        if let Ok((message_id, answer)) = self.pending_messages.pop() {
-            Box::pin(future::ready(NativeProgramEvent::Answer {
-                message_id,
-                answer,
-            }))
-        } else {
-            Box::pin(future::pending())
-        }
+            future::poll_fn(move |cx| {
+                if let Poll::Ready((message_id, answer)) = self.pending_messages.poll_next(cx) {
+                    return Poll::Ready(NativeProgramEvent::Answer { message_id, answer });
+                }
+
+                Poll::Pending
+            })
+            .await
+        })
     }
 
     fn interface_message(
@@ -106,10 +113,12 @@ where
                 rng.fill_bytes(&mut out);
                 self.rngs.push(rng);
                 let response = GenerateResponse { result: out };
-                self.pending_messages
-                    .push((message_id, Ok(response.encode())));
+                self.pending_messages_tx
+                    .unbounded_send((message_id, Ok(response.encode())));
             }
-            Err(_) => self.pending_messages.push((message_id, Err(()))),
+            Err(_) => self
+                .pending_messages_tx
+                .unbounded_send((message_id, Err(()))),
         }
     }
 

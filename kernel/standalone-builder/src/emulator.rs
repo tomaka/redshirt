@@ -78,9 +78,8 @@ pub fn run_kernel(cfg: Config) -> Result<(), Error> {
                 .args(&["-m", "1024"])
                 .arg("-cdrom")
                 .arg(build_dir.path().join("image"))
-                .args(&["-netdev", "bridge,id=nd0,br=virbr0"])
-                .args(&["-device", "ne2k_pci,netdev=nd0"])
                 .args(&["-smp", "cpus=4"])
+                .args(&["-enable-kvm", "-cpu", "host"])
                 .status()
                 .map_err(Error::EmulatorNotFound)?;
             // TODO: stdout/stderr
@@ -128,6 +127,32 @@ pub fn run_kernel(cfg: Config) -> Result<(), Error> {
             let status = Command::new("qemu-system-aarch64")
                 .args(&["-M", "raspi3"])
                 .args(&["-m", "1024"])
+                .args(&["-serial", "stdio"])
+                .arg("-kernel")
+                .arg(build_out.out_kernel_path)
+                .status()
+                .map_err(Error::EmulatorNotFound)?;
+            // TODO: stdout/stderr
+
+            if !status.success() {
+                return Err(Error::EmulatorRunFailure);
+            }
+        }
+
+        crate::image::Target::HiFiveRiscV => {
+            let build_out = crate::build::build(crate::build::Config {
+                kernel_cargo_toml: cfg.kernel_cargo_toml,
+                release: cfg.release,
+                target_name: "riscv-hifive",
+                target_specs: include_str!("../res/specs/riscv-hifive.json"),
+                link_script: include_str!("../res/specs/riscv-hifive.ld"),
+            })
+            .map_err(crate::image::Error::Build)?;
+
+            let status = Command::new("qemu-system-riscv32")
+                .args(&["-machine", "sifive_e"])
+                .args(&["-cpu", "sifive-e31"])
+                .args(&["-m", "2G"])
                 .args(&["-serial", "stdio"])
                 .arg("-kernel")
                 .arg(build_out.out_kernel_path)

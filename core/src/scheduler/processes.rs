@@ -13,42 +13,178 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::id_pool::IdPool;
-use crate::module::Module;
-use crate::scheduler::vm;
-use crate::signature::Signature;
-use alloc::{borrow::Cow, vec::Vec};
-use core::fmt;
-use fnv::FnvBuildHasher;
-use hashbrown::{
-    hash_map::{Entry, OccupiedEntry},
-    HashMap,
+//! Collection of VMs representing processes.
+//!
+//! This module contains most the of important logic related to parallelism in the scheduler.
+//!
+//! The [`ProcessesCollection`] struct contains a list of processes identified by [`Pid`]s and
+//! threads identified by [`ThreadId`]s. You can add new processes by calling
+//! [`ProcessesCollection::execute`].
+//!
+//! Call [`ProcessesCollection::run`] in order to run one of the threads in the collection and
+//! obtain an event describing what has just happened. The function is asynchronous, and if there
+//! is nothing to do then its corresponding `Future` will be pending.
+//!
+//! # Interrupted threads
+//!
+//! If [`RunOneOutcome::Interrupted`] is returned, that means that the given thread has just
+//! called (from within the VM) an external function and is now in an "interrupted" state waiting
+//! for the call to that external function to be finished.
+//!
+//! You can:
+//!
+//! - Either process the call immediately and call [`ThreadAccess::resume`], passing
+//! the return value of the call.
+//! - Or decide to resume the thread later. You can drop the [`ThreadAccess`] object,
+//! and later retrieve it by calling [`ProcessesCollection::interrupted_thread_by_id`].
+//!
+//! Keep in mind that only one instance of [`ThreadAccess`] for any given thread can
+//! exist simultaneously. Attempting to access the same thread multiple times will result in an
+//! error, and the upper layers should be designed in such a way that this is not necessary.
+//!
+//! # Locking processes
+//!
+//! One can access the state of a process through a [`ProcAccess`]. This struct can
+//! be obtained through a [`ThreadAccess`], or by calling
+//! [`ProcessesCollection::process_by_id`] or [`ProcessesCollection::processes`].
+//!
+//! Contrary to threads, multiple instances of [`ProcAccess`] can exist for the same
+//! process.
+//!
+//! If a process finishes (either by normal termination or because of a crash), the emission of
+//! the corresponding [`RunOneOutcome::ProcessFinished`] event will be delayed until no instance
+//! of [`ProcAccess`] corresponding to that process exist anymore.
+
+// Implementation notes.
+//
+// The ownership of each thread is passed between five different structures, as illustrated below.
+//
+//                                            +---> RunOneOutcome::ThreadFinished
+//                                            |
+//                                            +---> ProcessDeadState::dead_threads <-------+
+//                                            |                               ^            |
+//                                            |                               +---------+  |
+//   +--------------------------------+ run   |    +--------------+                     |  |
+//   |                                +-------+--->+              |                     |  |
+//   | ProcessLock::threads_to_resume |            | ThreadAccess |                     |  |
+//   |                                +<-----------+              |                     |  |
+//   +--------------------------------+    resume  +----+-----+---+                     |  |
+//                                                      ^     |                         |  |
+//                                                      |     | ThreadAccess::Drop      |  |
+//                                                      |     |                         |  |
+//                                                      |     |                         |  |
+//                             interrupted_thread_by_id |     +-------------------------+  |
+//                                                      |     v                            |
+//                                   +------------------+-----+-----------------+          |
+//                                   | ProcessesCollection::interrupted_threads +----------+
+//                                   +------------------------------------------+
+//
+// When a thread is created, it is inserted in `ProcessLock::threads_to_resume`. After it is
+// executed, it either terminates or is given to the user as a `ThreadAccess`. If the user drops
+// that `ThreadAccess`, the thread is moved to `ProcessesCollection::interrupted_threads` where it
+// can later be extracted again with `interrupted_thread_by_id`.
+//
+// Whenever a thread is inserted in `ProcessLock::threads_to_resume`, the process itself is also
+// inserted in `ProcessesCollection::execution_queue`. The number of times a process is in
+// `execution_queue` must always be equal to the length of its `threads_to_resume` field.
+//
+// When a process needs to be terminated (because of `ProcessAccess::abort`, the main thread has
+// returned, or an error has happened), we don't immediately report the termination to the user
+// or remove the process from the state. Instead, the process is marked as "dying" by putting a
+// `Some` in `ProcessLock::dead`.
+//
+// When a process is marked as dying, normal thread state transitions (between `threads_to_resume`,
+// `ThreadAccess` and `interrupted_threads`) are hijacked. Whenever a state transition would
+// normally occur, the thread is instead moved to `ProcessDeadState::dead_threads`. In other
+// words, whenever a thread state transition needs to happen, we first check the process's dying
+// flag.
+//
+// Processes are always manipulated through an `Arc`, and the lifetime of a process is tracked by
+// that `Arc`. An `Arc<Process>` must never be silently dropped, but instead passed to
+// `try_report_process_death` for destruction. If `try_report_process_death` is called with the
+// last remaining `Arc` containing a process, the content of `dead_threads` is extracted and the
+// information about the death of the process is pushed to `death_reports`.
+//
+// When a death report has been pushed in `death_reports`, the state is entirely clean from that
+// process. The last step is to report that death to the user through a
+// `RunOneOutcome::ProcessFinished`, which happens as soon as `run` is called.
+
+use crate::{id_pool::IdPool, module::Module, primitives::Signature, scheduler::vm, Pid, ThreadId};
+
+use alloc::{
+    borrow::Cow,
+    boxed::Box,
+    collections::VecDeque,
+    sync::{Arc, Weak},
+    vec,
+    vec::Vec,
 };
+use core::{
+    fmt,
+    future::Future,
+    pin::Pin,
+    task::{Context, Poll},
+};
+use crossbeam_queue::SegQueue;
+use fnv::FnvBuildHasher;
+use hashbrown::{hash_map::Entry, HashMap};
 use nohash_hasher::BuildNoHashHasher;
-use redshirt_syscalls::{Pid, ThreadId};
+use spinning_top::Spinlock;
+
+#[cfg(test)]
+mod tests;
+mod wakers;
+
+/// Minimum capacity of the container of the list of processes.
+///
+/// If we shrink the container too much, then it will have to perform lots of allocations in order
+/// to grow again in the future. We therefore avoid that situation.
+const PROCESSES_MIN_CAPACITY: usize = 128;
 
 /// Collection of multiple [`ProcessStateMachine`](vm::ProcessStateMachine)s grouped together in a
 /// smart way.
 ///
-/// This struct handles interleaving processes execution.
+/// See the module-level documentation for more information.
 ///
 /// The generic parameters `TPud` and `TTud` are "user data"s that are stored respectively per
 /// process and per thread, and allows the user to put extra information associated to a process
 /// or a thread.
 pub struct ProcessesCollection<TExtr, TPud, TTud> {
-    /// Allocations of process IDs.
-    pid_pool: IdPool,
+    /// Allocations of process IDs and thread IDs.
+    pid_tid_pool: IdPool,
 
-    /// Allocation of thread IDs.
-    tid_pool: IdPool,
+    /// Holds the list of task wakers to wake when an event is ready or that something is ready to
+    /// run.
+    wakers: wakers::Wakers,
 
-    /// List of running processes.
-    processes: HashMap<Pid, Process<TPud, TTud>, BuildNoHashHasher<u64>>,
+    /// Queue of processes with at least one thread to run. Every time a thread starts or is
+    /// resumed, its process gets pushed to the end of this queue. In other words, each process is
+    /// in this queue `N` times, it means that `N` of its threads are ready to run. There isn't
+    /// any unnecessary entry.
+    // TODO: use something better than a naive round robin?
+    execution_queue: SegQueue<Arc<Process<TPud, TTud>>>,
+
+    /// List of threads waiting to be resumed, plus their user data and the process they belong to.
+    /// Doesn't contains threads that have been locked by the user with
+    /// [`ProcessesCollection::interrupted_thread_by_id`], as this method extracts the thread from
+    /// the list.
+    // TODO: find a solution for that mutex?
+    // TODO: call shrink_to_fit from time to time?
+    interrupted_threads:
+        Spinlock<HashMap<ThreadId, (TTud, Arc<Process<TPud, TTud>>), BuildNoHashHasher<u64>>>,
+
+    /// List of all processes currently alive.
+    ///
+    /// We hold `Weak`s to processes rather than `Arc`s. Processes are kept alive by the execution
+    /// queue and the interrupted threads, thereby guaranteeing that they are alive only if they
+    /// can potentially continue running.
+    // TODO: find a solution for that mutex?
+    processes: Spinlock<HashMap<Pid, Weak<Process<TPud, TTud>>, BuildNoHashHasher<u64>>>,
 
     /// List of functions that processes can call.
-    /// The key of this map is an arbitrary `usize` that we pass to the WASM interpreter.
+    /// The key of this map is an arbitrary `usize` that we pass to the WASM virtual machine.
     /// This field is never modified after the [`ProcessesCollection`] is created.
-    extrinsics: HashMap<usize, TExtr, BuildNoHashHasher<usize>>,
+    extrinsics: Vec<TExtr>,
 
     /// Map used to resolve imports when starting a process.
     /// For each module and function name, stores the signature and an arbitrary usize that
@@ -56,57 +192,348 @@ pub struct ProcessesCollection<TExtr, TPud, TTud> {
     /// This field is never modified after the [`ProcessesCollection`] is created.
     extrinsics_id_assign:
         HashMap<(Cow<'static, str>, Cow<'static, str>), (usize, Signature), FnvBuildHasher>,
+
+    /// Queue of process deaths to report to the external API.
+    death_reports: SegQueue<(
+        Pid,
+        TPud,
+        Vec<(ThreadId, TTud)>,
+        Result<Option<crate::WasmValue>, wasmi::Trap>,
+    )>,
 }
 
-/// Prototype for a `ProcessesCollection` under construction.
-pub struct ProcessesCollectionBuilder<TExtr> {
-    /// See the corresponding field in `ProcessesCollection`.
-    pid_pool: IdPool,
-    /// See the corresponding field in `ProcessesCollection`.
-    extrinsics: HashMap<usize, TExtr, BuildNoHashHasher<usize>>,
-    /// See the corresponding field in `ProcessesCollection`.
-    extrinsics_id_assign:
-        HashMap<(Cow<'static, str>, Cow<'static, str>), (usize, Signature), FnvBuildHasher>,
-}
-
-/// Single running process in the list.
+/// Description of a process. Always addressed through an `Arc`.
+///
+/// Note that the process might be dead.
 struct Process<TPud, TTud> {
-    /// State of a single process.
-    state_machine: vm::ProcessStateMachine<Thread<TTud>>,
+    /// Identifier of the process.
+    pid: Pid,
+
+    /// Part of the state behind a mutex.
+    // TODO: it's obviously not great to have a Mutex here; this should be refactored once the
+    // `vm` module supports multithreading
+    lock: Spinlock<ProcessLock<TTud>>,
 
     /// User-chosen data (opaque to us) that describes the process.
     user_data: TPud,
 }
 
-/// Additional data associated to a thread.
-struct Thread<TTud> {
-    /// User-chosen data (opaque to us) that describes the thread.
-    user_data: TTud,
+/// Part of each process's state that is behind a mutex.
+struct ProcessLock<TTud> {
+    /// The actual Wasm virtual machine. Do not use if `dead` is `Some`.
+    vm: vm::ProcessStateMachine<Thread>,
 
+    /// Queue of threads that are ready to be resumed.
+    threads_to_resume: VecDeque<(ThreadId, TTud, Option<crate::WasmValue>)>,
+
+    /// If `Some`, then the process has been marked for death. The virtual machine must no longer
+    /// be used (as it might be in a poisoned state), and we are in the process of collecting all
+    /// the threads user datas into the [`ProcessDeadState`] before notifying the user.
+    dead: Option<ProcessDeadState<TTud>>,
+}
+
+/// Additional optional state to a process if it's been marked for destruction.
+struct ProcessDeadState<TTud> {
+    /// List of dead thread that we will ultimately send to the user.
+    dead_threads: Vec<(ThreadId, TTud)>,
+
+    /// Why the process ended. Never modified once set.
+    outcome: Result<Option<crate::WasmValue>, wasmi::Trap>,
+}
+
+/// Additional data associated to a thread. Stored within the [`vm::ProcessStateMachine`].
+struct Thread {
     /// Identifier of the thread.
     thread_id: ThreadId,
-
-    /// Value to use when resuming. If `Some`, the process is ready for a round of running. If
-    /// `None`, then we're waiting for the user to call `resume`.
-    value_back: Option<Option<crate::WasmValue>>,
 }
 
-/// Access to a process within the collection.
-pub struct ProcessesCollectionProc<'a, TPud, TTud> {
-    /// Pointer within the hashmap.
-    process: OccupiedEntry<'a, Pid, Process<TPud, TTud>, BuildNoHashHasher<u64>>,
+impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
+    /// Creates a new process from the given module.
+    ///
+    /// The closure is called for each import that the module has. It must assign a number to each
+    /// import, or return an error if the import can't be resolved. When the VM calls one of these
+    /// functions, this number will be returned back in order for the user to know how to handle
+    /// the call.
+    ///
+    /// A single main thread (whose user data is passed by parameter) is automatically created and
+    /// is paused at the start of the "_start" function of the module.
+    pub fn execute(
+        &self,
+        module: &Module,
+        proc_user_data: TPud,
+        main_thread_user_data: TTud,
+    ) -> Result<(ProcAccess<TExtr, TPud, TTud>, ThreadId), vm::NewErr> {
+        let main_thread_id = self.pid_tid_pool.assign(); // TODO: check for duplicates?
 
-    /// Reference to the same field in [`ProcessesCollection`].
-    tid_pool: &'a mut IdPool,
+        let state_machine = {
+            let extrinsics_id_assign = &self.extrinsics_id_assign;
+            vm::ProcessStateMachine::new(
+                module,
+                Thread {
+                    thread_id: main_thread_id,
+                },
+                move |interface, function, obtained_signature| {
+                    if let Some((index, expected_signature)) =
+                        extrinsics_id_assign.get(&(interface.into(), function.into()))
+                    {
+                        if expected_signature == obtained_signature {
+                            return Ok(*index);
+                        } else {
+                            // TODO: way to report the signature mismatch?
+                        }
+                    }
+
+                    Err(())
+                },
+            )?
+        };
+
+        // We only modify `self` at the very end.
+        let new_pid = self.pid_tid_pool.assign();
+        let process = Arc::new(Process {
+            pid: new_pid,
+            lock: Spinlock::new(ProcessLock {
+                vm: state_machine,
+                threads_to_resume: {
+                    let mut queue = VecDeque::new();
+                    queue.push_back((main_thread_id, main_thread_user_data, None));
+                    queue
+                },
+                dead: None,
+            }),
+            user_data: proc_user_data,
+        });
+
+        {
+            let mut processes = self.processes.lock();
+            processes.insert(new_pid, Arc::downgrade(&process));
+            // Shrink the list from time to time so that it doesn't grow too much.
+            if u64::from(new_pid) % 256 == 0 {
+                processes.shrink_to(PROCESSES_MIN_CAPACITY);
+            }
+        }
+
+        self.execution_queue.push(process.clone());
+        self.wakers.notify_one();
+
+        let proc_lock = ProcAccess {
+            collection: self,
+            process: Some(process),
+            pid_tid_pool: &self.pid_tid_pool,
+        };
+
+        Ok((proc_lock, main_thread_id))
+    }
+
+    /// Runs one thread amongst the collection.
+    ///
+    /// Which thread is run is implementation-defined and no guarantee is made.
+    pub fn run(&self) -> RunFuture<TExtr, TPud, TTud> {
+        RunFuture(self, self.wakers.register())
+    }
+
+    /// Returns an iterator to all the processes that exist in the collection.
+    ///
+    /// This is equivalent to calling [`ProcessesCollection::process_by_id`] for each possible
+    /// ID.
+    pub fn processes<'a>(
+        &'a self,
+    ) -> impl ExactSizeIterator<Item = ProcAccess<'a, TExtr, TPud, TTud>> + 'a {
+        let processes = self.processes.lock();
+
+        // TODO: what if process is in death_reports?
+
+        processes
+            .values()
+            .cloned()
+            .filter_map(|process| {
+                if let Some(process) = process.upgrade() {
+                    Some(ProcAccess {
+                        collection: self,
+                        process: Some(process),
+                        pid_tid_pool: &self.pid_tid_pool,
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+    }
+
+    /// Returns a process by its [`Pid`], if it exists.
+    ///
+    /// This function returns a "lock".
+    /// While the lock is held, it isn't possible for a [`RunOneOutcome::ProcessFinished`]
+    /// message to be returned for the given process.
+    ///
+    /// You can call this function mutiple times in order to obtain the lock multiple times.
+    ///
+    /// This method is guaranteed to return `Some` for a process for which you already have an
+    /// existing lock, or if you hold a lock to one of its threads. However, it can return `None`
+    /// for a process that has crashed or finished before said crash or termination has been
+    /// reported with the [`run`](ProcessesCollection::run) method.
+    pub fn process_by_id(&self, pid: Pid) -> Option<ProcAccess<TExtr, TPud, TTud>> {
+        let processes = self.processes.lock();
+
+        // TODO: what if process is in death_reports?
+
+        if let Some(p) = processes.get(&pid)?.upgrade() {
+            debug_assert_eq!(p.pid, pid);
+            Some(ProcAccess {
+                collection: self,
+                process: Some(p),
+                pid_tid_pool: &self.pid_tid_pool,
+            })
+        } else {
+            None
+        }
+    }
+
+    /// Returns a thread by its [`ThreadId`], if it exists and is not running.
+    ///
+    /// Only threads that are currently paused waiting to be resumed can be grabbed using this
+    /// method.
+    ///
+    /// Additionally, the returned object holds an exclusive lock to this thread. Calling this
+    /// method twice for the same thread will fail the second time.
+    pub fn interrupted_thread_by_id(
+        &self,
+        id: ThreadId,
+    ) -> Option<ThreadAccess<TExtr, TPud, TTud>> {
+        let mut interrupted_threads = self.interrupted_threads.lock();
+
+        // TODO: what if thread has been moved in dead_threads?
+
+        if let Some((user_data, process)) = interrupted_threads.remove(&id) {
+            Some(ThreadAccess {
+                collection: self,
+                process: Some(process),
+                tid: id,
+                pid_tid_pool: &self.pid_tid_pool,
+                user_data: Some(user_data),
+            })
+        } else {
+            None
+        }
+    }
+
+    /// If the `process` passed as parameter is the last strong reference, then cleans the state
+    /// of `self` and reports the process's death to the user.
+    fn try_report_process_death(&self, process: Arc<Process<TPud, TTud>>) {
+        let mut process = match Arc::try_unwrap(process) {
+            Ok(p) => p,
+            Err(_) => return,
+        };
+
+        let _was_in = self.processes.lock().remove(&process.pid);
+        debug_assert!(_was_in.is_some());
+        debug_assert_eq!(_was_in.as_ref().unwrap().weak_count(), 0);
+        debug_assert_eq!(_was_in.as_ref().unwrap().strong_count(), 0);
+
+        debug_assert!(process.lock.get_mut().threads_to_resume.is_empty());
+
+        let dead = process.lock.get_mut().dead.take().unwrap();
+        self.death_reports.push((
+            process.pid,
+            process.user_data,
+            dead.dead_threads,
+            dead.outcome,
+        ));
+        self.wakers.notify_one();
+    }
 }
 
-/// Access to a thread within the collection.
-pub struct ProcessesCollectionThread<'a, TPud, TTud> {
-    /// Pointer within the hashmap.
-    process: OccupiedEntry<'a, Pid, Process<TPud, TTud>, BuildNoHashHasher<u64>>,
+/// Prototype for a [`ProcessesCollection`] under construction.
+pub struct ProcessesCollectionBuilder<TExtr> {
+    /// See the corresponding field in `ProcessesCollection`.
+    pid_tid_pool: IdPool,
+    /// See the corresponding field in `ProcessesCollection`.
+    extrinsics: Vec<TExtr>,
+    /// See the corresponding field in `ProcessesCollection`.
+    extrinsics_id_assign:
+        HashMap<(Cow<'static, str>, Cow<'static, str>), (usize, Signature), FnvBuildHasher>,
+}
 
-    /// Index of the thread within the [`vm::ProcessStateMachine`].
-    thread_index: usize,
+impl<TExtr> Default for ProcessesCollectionBuilder<TExtr> {
+    fn default() -> ProcessesCollectionBuilder<TExtr> {
+        ProcessesCollectionBuilder {
+            pid_tid_pool: IdPool::new(),
+            extrinsics: Default::default(),
+            extrinsics_id_assign: Default::default(),
+        }
+    }
+}
+
+impl<TExtr> ProcessesCollectionBuilder<TExtr> {
+    /// Allocates a `Pid` that will not be used by any process.
+    ///
+    /// > **Note**: As of the writing of this comment, this feature is only ever used to allocate
+    /// >           `Pid`s that last forever. There is therefore no corresponding "unreserve_pid"
+    /// >           method that frees such an allocated `Pid`. If there is ever a need to free
+    /// >           these `Pid`s, such a method should be added.
+    pub fn reserve_pid(&mut self) -> Pid {
+        // Note that this function accepts `&mut self`. It could be `&self`, but that would
+        // expose implementation details.
+        self.pid_tid_pool.assign()
+    }
+
+    /// Registers a function that is available for processes to call.
+    ///
+    /// The function is registered under the given interface and function name. If a WASM module
+    /// imports a function with the corresponding interface and function name combination and
+    /// calls it, a [`RunOneOutcome::Interrupted`] event will be generated, containing the token
+    /// passed as parameter.
+    ///
+    /// The function signature passed as parameter is enforced when the process is created.
+    ///
+    /// # Panic
+    ///
+    /// Panics if an extrinsic with this interface/name combination has already been registered.
+    ///
+    pub fn with_extrinsic(
+        mut self,
+        interface: impl Into<Cow<'static, str>>,
+        f_name: impl Into<Cow<'static, str>>,
+        signature: Signature,
+        token: impl Into<TExtr>,
+    ) -> Self {
+        let interface = interface.into();
+        let f_name = f_name.into();
+
+        let index = self.extrinsics.len();
+        match self.extrinsics_id_assign.entry((interface, f_name)) {
+            Entry::Occupied(_) => panic!(),
+            Entry::Vacant(e) => e.insert((index, signature)),
+        };
+        self.extrinsics.push(token.into());
+        self
+    }
+
+    /// Turns the builder into a [`ProcessesCollection`].
+    pub fn build<TPud, TTud>(mut self) -> ProcessesCollection<TExtr, TPud, TTud> {
+        // We're not going to modify these fields ever again, so let's free some memory.
+        self.extrinsics.shrink_to_fit();
+        self.extrinsics_id_assign.shrink_to_fit();
+        debug_assert_eq!(self.extrinsics.len(), self.extrinsics_id_assign.len());
+
+        ProcessesCollection {
+            pid_tid_pool: self.pid_tid_pool,
+            wakers: wakers::Wakers::default(),
+            execution_queue: SegQueue::new(),
+            interrupted_threads: Spinlock::new(HashMap::with_capacity_and_hasher(
+                PROCESSES_MIN_CAPACITY, // TODO: no
+                Default::default(),
+            )),
+            processes: Spinlock::new(HashMap::with_capacity_and_hasher(
+                PROCESSES_MIN_CAPACITY,
+                Default::default(),
+            )),
+            extrinsics: self.extrinsics,
+            extrinsics_id_assign: self.extrinsics_id_assign,
+            death_reports: SegQueue::new(),
+        }
+    }
 }
 
 /// Outcome of the [`run`](ProcessesCollection::run) function.
@@ -137,7 +564,7 @@ pub enum RunOneOutcome<'a, TExtr, TPud, TTud> {
         thread_id: ThreadId,
 
         /// Process whose thread has finished.
-        process: ProcessesCollectionProc<'a, TPud, TTud>,
+        process: ProcAccess<'a, TExtr, TPud, TTud>,
 
         /// User data of the thread.
         user_data: TTud,
@@ -149,362 +576,233 @@ pub enum RunOneOutcome<'a, TExtr, TPud, TTud> {
     /// The currently-executed function has been paused due to a call to an external function.
     ///
     /// This variant contains the identifier of the external function that is expected to be
-    /// called, and its parameters. When you call [`resume`](ProcessesCollectionThread::resume)
+    /// called, and its parameters. When you call [`resume`](ThreadAccess::resume)
     /// again, you must pass back the outcome of calling that function.
     Interrupted {
         /// Thread that has been interrupted.
-        thread: ProcessesCollectionThread<'a, TPud, TTud>,
+        thread: ThreadAccess<'a, TExtr, TPud, TTud>,
 
         /// Identifier of the function to call. Corresponds to the value provided at
         /// initialization when resolving imports.
-        id: &'a mut TExtr,
+        id: &'a TExtr,
 
         /// Parameters of the function call.
         params: Vec<crate::WasmValue>,
     },
-
-    /// No thread is ready to run. Nothing was done.
-    Idle,
 }
 
-/// Minimum capacity of the container of the list of processes.
-///
-/// If we shrink the container too much, then it will have to perform lots of allocations in order
-/// to grow again in the future. We therefore avoid that situation.
-const PROCESSES_MIN_CAPACITY: usize = 128;
+/// Future that drives the [`ProcessesCollection::run`] method.
+pub struct RunFuture<'a, TExtr, TPud, TTud>(
+    &'a ProcessesCollection<TExtr, TPud, TTud>,
+    wakers::Registration<'a>,
+);
 
-impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
-    /// Creates a new process state machine from the given module.
-    ///
-    /// The closure is called for each import that the module has. It must assign a number to each
-    /// import, or return an error if the import can't be resolved. When the VM calls one of these
-    /// functions, this number will be returned back in order for the user to know how to handle
-    /// the call.
-    ///
-    /// A single main thread (whose user data is passed by parameter) is automatically created and
-    /// is paused at the start of the "_start" function of the module.
-    pub fn execute(
-        &mut self,
-        module: &Module,
-        proc_user_data: TPud,
-        main_thread_user_data: TTud,
-    ) -> Result<ProcessesCollectionProc<TPud, TTud>, vm::NewErr> {
-        let main_thread_id = self.tid_pool.assign(); // TODO: check for duplicates
-        let main_thread_data = Thread {
-            user_data: main_thread_user_data,
-            thread_id: main_thread_id,
-            value_back: Some(None),
-        };
+impl<'a, TExtr, TPud, TTud> Future for RunFuture<'a, TExtr, TPud, TTud> {
+    type Output = RunOneOutcome<'a, TExtr, TPud, TTud>;
 
-        let state_machine = {
-            let extrinsics_id_assign = &mut self.extrinsics_id_assign;
-            vm::ProcessStateMachine::new(
-                module,
-                main_thread_data,
-                move |interface, function, obtained_signature| {
-                    if let Some((index, expected_signature)) =
-                        extrinsics_id_assign.get(&(interface.into(), function.into()))
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = &mut self.0;
+
+        // We track the number of times this `loop` is run and panic if it seems like we're in an
+        // infinite loop.
+        let mut infinite_loop_guard = 0;
+
+        loop {
+            infinite_loop_guard += 1;
+            assert!(
+                infinite_loop_guard < 1_000_000,
+                "infinite loop detected in scheduler"
+            );
+
+            // Items are pushed on `death_reports` when a `Process` struct is destroyed.
+            if let Ok((pid, user_data, dead_threads, outcome)) = this.death_reports.pop() {
+                return Poll::Ready(RunOneOutcome::ProcessFinished {
+                    pid,
+                    user_data,
+                    dead_threads,
+                    outcome,
+                });
+            }
+
+            // We start by finding a process that is ready to run and lock it by extracting the
+            // state machine.
+            let process = match this.execution_queue.pop() {
+                Ok(p) => p,
+                Err(_) => {
+                    self.1.set_waker(cx.waker());
+                    return Poll::Pending;
+                }
+            };
+
+            // "Lock" the process's state machine for execution.
+            // TODO: this is ok right now because we only have a single thread per process
+            let mut proc_state = process.lock.lock();
+
+            // If the process was in `this.execution_queue`, then we are guaranteed that a
+            // thread was ready.
+            let (tid, thread_user_data, resume_value) =
+                proc_state.threads_to_resume.pop_front().unwrap();
+
+            // If the process is marked as dying, insert the thread in the dying state and see if
+            // we can finalize the destruction.
+            if let Some(proc_dead) = &mut proc_state.dead {
+                proc_dead.dead_threads.push((tid, thread_user_data));
+                drop(proc_state); // Drop the lock.
+                this.try_report_process_death(process);
+                continue;
+            }
+
+            // Now run a thread until something happens.
+            // This takes most of the CPU time of this function.
+            let run_outcome = {
+                debug_assert!(!proc_state.vm.is_poisoned());
+                let thread_index = (0..proc_state.vm.num_threads())
+                    .find(|n| proc_state.vm.thread(*n).unwrap().user_data().thread_id == tid)
+                    .unwrap();
+                proc_state
+                    .vm
+                    .thread(thread_index)
+                    .unwrap()
+                    .run(resume_value)
+            };
+
+            match run_outcome {
+                Err(vm::RunErr::BadValueTy { .. }) => panic!(), // TODO:
+                Err(vm::RunErr::Poisoned) => unreachable!(),
+
+                // The entire process has ended or has crashed.
+                Ok(vm::ExecOutcome::ThreadFinished {
+                    thread_index: 0,
+                    return_value,
+                    user_data: main_thread_user_data,
+                }) => {
+                    debug_assert!(proc_state.vm.is_poisoned());
+                    debug_assert!(proc_state.dead.is_none());
+
+                    // TODO: Vec::with_capacity?
+                    let mut dead_threads =
+                        vec![(main_thread_user_data.thread_id, thread_user_data)];
+
+                    // TODO: possible deadlock?
+                    let mut threads = this.interrupted_threads.lock();
+                    // TODO: O(n) complexity
+                    while let Some(tid) = threads
+                        .iter()
+                        .find(|(_, (_, p))| Arc::ptr_eq(&process, p))
+                        .map(|(k, _)| *k)
                     {
-                        if expected_signature.matches_wasmi(obtained_signature) {
-                            return Ok(*index);
-                        } else {
-                            // TODO: way to report the signature mismatch?
-                        }
+                        let (user_data, _) = threads.remove(&tid).unwrap();
+                        dead_threads.push((tid, user_data));
                     }
 
-                    Err(())
-                },
-            )?
-        };
-
-        // We only modify `self` at the very end.
-        let new_pid = self.pid_pool.assign();
-        self.processes.insert(
-            new_pid,
-            Process {
-                state_machine,
-                user_data: proc_user_data,
-            },
-        );
-
-        // Shrink the list from time to time so that it doesn't grow too much.
-        if u64::from(new_pid) % 256 == 0 {
-            self.processes.shrink_to(PROCESSES_MIN_CAPACITY);
-        }
-
-        Ok(match self.process_by_id(new_pid) {
-            Some(p) => p,
-            None => unreachable!(),
-        })
-    }
-
-    /// Runs one thread amongst the collection.
-    ///
-    /// Which thread is run is implementation-defined and no guarantee is made.
-    pub fn run(&mut self) -> RunOneOutcome<TExtr, TPud, TTud> {
-        // We start by finding a thread in `self.processes` that is ready to run.
-        let (mut process, inner_thread_index): (OccupiedEntry<_, _, _>, usize) = {
-            let entries = self.processes.iter_mut().collect::<Vec<_>>();
-            // TODO: entries.shuffle(&mut rand::thread_rng());
-            let entry = entries
-                .into_iter()
-                .filter_map(|(k, p)| {
-                    if let Some(i) = p.ready_to_run_thread_index() {
-                        Some((*k, i))
-                    } else {
-                        None
-                    }
-                })
-                .next();
-            match entry {
-                Some((pid, inner_thread_index)) => match self.processes.entry(pid) {
-                    Entry::Occupied(p) => (p, inner_thread_index),
-                    Entry::Vacant(_) => unreachable!(),
-                },
-                None => return RunOneOutcome::Idle,
-            }
-        };
-
-        // Now run the thread until something happens.
-        let run_outcome = {
-            let mut thread = match process.get_mut().state_machine.thread(inner_thread_index) {
-                Some(t) => t,
-                None => unreachable!(),
-            };
-            let value_back = match thread.user_data().value_back.take() {
-                Some(vb) => vb,
-                None => unreachable!(),
-            };
-            thread.run(value_back)
-        };
-
-        match run_outcome {
-            Err(vm::RunErr::BadValueTy { .. }) => panic!(), // TODO:
-            Err(vm::RunErr::Poisoned) => unreachable!(),
-
-            // A process has ended.
-            Ok(vm::ExecOutcome::ThreadFinished {
-                thread_index: 0,
-                return_value,
-                user_data: main_thread_user_data,
-            }) => {
-                let (pid, proc) = process.remove_entry();
-                let other_threads_ud = proc.state_machine.into_user_datas();
-                let mut dead_threads = Vec::with_capacity(1 + other_threads_ud.len());
-                dead_threads.push((
-                    main_thread_user_data.thread_id,
-                    main_thread_user_data.user_data,
-                ));
-                for thread in other_threads_ud {
-                    dead_threads.push((thread.thread_id, thread.user_data));
+                    proc_state.dead = Some(ProcessDeadState {
+                        dead_threads,
+                        outcome: Ok(return_value),
+                    });
                 }
-                debug_assert_eq!(dead_threads.len(), dead_threads.capacity());
-                RunOneOutcome::ProcessFinished {
-                    pid,
-                    user_data: proc.user_data,
-                    dead_threads,
-                    outcome: Ok(return_value),
+
+                // The thread has ended.
+                Ok(vm::ExecOutcome::ThreadFinished {
+                    return_value,
+                    user_data,
+                    ..
+                }) => {
+                    debug_assert!(Arc::strong_count(&process) >= 2);
+                    drop(proc_state);
+                    return Poll::Ready(RunOneOutcome::ThreadFinished {
+                        thread_id: user_data.thread_id,
+                        process: ProcAccess {
+                            collection: this,
+                            process: Some(process),
+                            pid_tid_pool: &this.pid_tid_pool,
+                        },
+                        user_data: thread_user_data,
+                        value: return_value,
+                    });
                 }
-            }
 
-            // A thread has ended.
-            Ok(vm::ExecOutcome::ThreadFinished {
-                return_value,
-                user_data,
-                ..
-            }) => RunOneOutcome::ThreadFinished {
-                thread_id: user_data.thread_id,
-                process: ProcessesCollectionProc {
-                    process,
-                    tid_pool: &mut self.tid_pool,
-                },
-                user_data: user_data.user_data,
-                value: return_value,
-            },
-
-            // Thread wants to call an extrinsic function.
-            Ok(vm::ExecOutcome::Interrupted { id, params, .. }) => {
-                // TODO: check params against signature with a debug_assert
-                let extrinsic = match self.extrinsics.get_mut(&id) {
-                    Some(e) => e,
-                    None => unreachable!(),
-                };
-                RunOneOutcome::Interrupted {
-                    thread: ProcessesCollectionThread {
-                        process,
-                        thread_index: inner_thread_index,
-                    },
-                    id: extrinsic,
+                // Thread wants to call an extrinsic function.
+                Ok(vm::ExecOutcome::Interrupted {
+                    mut thread,
+                    id,
                     params,
+                }) => {
+                    // TODO: check params against signature with a debug_assert?
+                    let extrinsic = match this.extrinsics.get(id) {
+                        Some(e) => e,
+                        None => unreachable!(),
+                    };
+                    let tid = thread.user_data().thread_id;
+                    drop(proc_state);
+                    return Poll::Ready(RunOneOutcome::Interrupted {
+                        thread: ThreadAccess {
+                            collection: this,
+                            process: Some(process),
+                            tid,
+                            pid_tid_pool: &this.pid_tid_pool,
+                            user_data: Some(thread_user_data),
+                        },
+                        id: extrinsic,
+                        params,
+                    });
+                }
+
+                // An error happened during the execution. We kill the entire process.
+                Ok(vm::ExecOutcome::Errored { error, mut thread }) => {
+                    // TODO: Vec::with_capacity?
+                    let mut dead_threads = vec![(thread.user_data().thread_id, thread_user_data)];
+                    drop(thread);
+
+                    debug_assert!(proc_state.vm.is_poisoned());
+                    debug_assert!(proc_state.dead.is_none());
+
+                    // TODO: possible deadlock?
+                    let mut threads = this.interrupted_threads.lock();
+                    // TODO: O(n) complexity
+                    while let Some(tid) = threads
+                        .iter()
+                        .find(|(_, (_, p))| Arc::ptr_eq(&process, p))
+                        .map(|(k, _)| *k)
+                    {
+                        let (user_data, _) = threads.remove(&tid).unwrap();
+                        dead_threads.push((tid, user_data));
+                    }
+
+                    proc_state.dead = Some(ProcessDeadState {
+                        dead_threads,
+                        outcome: Err(error),
+                    });
                 }
             }
 
-            // An error happened during the execution. We kill the entire process.
-            Ok(vm::ExecOutcome::Errored { error, .. }) => {
-                let (pid, proc) = process.remove_entry();
-                let dead_threads = proc
-                    .state_machine
-                    .into_user_datas()
-                    .map(|t| (t.thread_id, t.user_data))
-                    .collect::<Vec<_>>();
-                RunOneOutcome::ProcessFinished {
-                    pid,
-                    user_data: proc.user_data,
-                    dead_threads,
-                    outcome: Err(error),
-                }
-            }
-        }
-    }
-
-    /// Returns an iterator to all the processes that exist in the collection.
-    pub fn pids<'a>(&'a self) -> impl ExactSizeIterator<Item = Pid> + 'a {
-        self.processes.keys().cloned()
-    }
-
-    /// Returns a process by its [`Pid`], if it exists.
-    pub fn process_by_id(&mut self, pid: Pid) -> Option<ProcessesCollectionProc<TPud, TTud>> {
-        match self.processes.entry(pid) {
-            Entry::Vacant(_) => None,
-            Entry::Occupied(e) => Some(ProcessesCollectionProc {
-                process: e,
-                tid_pool: &mut self.tid_pool,
-            }),
-        }
-    }
-
-    /// Returns a thread by its [`ThreadId`], if it exists.
-    pub fn thread_by_id(&mut self, id: ThreadId) -> Option<ProcessesCollectionThread<TPud, TTud>> {
-        // TODO: ouch that's O(n)
-
-        let mut loop_out = None;
-        for (pid, process) in self.processes.iter_mut() {
-            for thread_index in 0..process.state_machine.num_threads() {
-                let mut thread = match process.state_machine.thread(thread_index) {
-                    Some(t) => t,
-                    None => unreachable!(),
-                };
-                if thread.user_data().thread_id == id {
-                    loop_out = Some((pid.clone(), thread_index));
-                    break;
-                }
-            }
-        }
-
-        let (pid, thread_index) = loop_out?;
-        Some(ProcessesCollectionThread {
-            process: match self.processes.entry(pid) {
-                Entry::Vacant(_) => unreachable!(),
-                Entry::Occupied(e) => e,
-            },
-            thread_index,
-        })
-    }
-}
-
-impl<TExtr> Default for ProcessesCollectionBuilder<TExtr> {
-    fn default() -> ProcessesCollectionBuilder<TExtr> {
-        ProcessesCollectionBuilder {
-            pid_pool: IdPool::new(),
-            extrinsics: Default::default(),
-            extrinsics_id_assign: Default::default(),
+            // If we reach here, the process has to be terminated.
+            drop(proc_state);
+            this.try_report_process_death(process);
         }
     }
 }
 
-impl<TExtr> ProcessesCollectionBuilder<TExtr> {
-    /// Allocates a `Pid` that will not be used by any process.
-    ///
-    /// > **Note**: As of the writing of this comment, this feature is only ever used to allocate
-    /// >           `Pid`s that last forever. There is therefore no corresponding "unreserve_pid"
-    /// >           method that frees such an allocated `Pid`. If there is ever a need to free
-    /// >           these `Pid`s, such a method should be added.
-    pub fn reserve_pid(&mut self) -> Pid {
-        // Note that we take `&mut self`. It could be `&self`, but that would expose
-        // implementation details.
-        self.pid_pool.assign()
-    }
+impl<'a, TExtr, TPud, TTud> Unpin for RunFuture<'a, TExtr, TPud, TTud> {}
 
-    /// Registers a function that is available for processes to call.
-    ///
-    /// The function is registered under the given interface and function name. If a WASM module
-    /// imports a function with the corresponding interface and function name combination and
-    /// calls it, a [`RunOneOutcome::Interrupted`] event will be generated, containing the token
-    /// passed as parameter.
-    ///
-    /// The function signature passed as parameter is enforced when the process is created.
-    ///
-    /// # Panic
-    ///
-    /// Panics if an extrinsic with this interface/name combination has already been registered.
-    ///
-    pub fn with_extrinsic(
-        mut self,
-        interface: impl Into<Cow<'static, str>>,
-        f_name: impl Into<Cow<'static, str>>,
-        signature: Signature,
-        token: impl Into<TExtr>,
-    ) -> Self {
-        let interface = interface.into();
-        let f_name = f_name.into();
+/// Access to a process within the collection.
+pub struct ProcAccess<'a, TExtr, TPud, TTud> {
+    collection: &'a ProcessesCollection<TExtr, TPud, TTud>,
+    process: Option<Arc<Process<TPud, TTud>>>,
 
-        let index = self.extrinsics.len();
-        debug_assert!(!self.extrinsics.contains_key(&index));
-        match self.extrinsics_id_assign.entry((interface, f_name)) {
-            Entry::Occupied(_) => panic!(),
-            Entry::Vacant(e) => e.insert((index, signature)),
-        };
-        self.extrinsics.insert(index, token.into());
-        self
-    }
-
-    /// Turns the builder into a [`ProcessesCollection`].
-    pub fn build<TPud, TTud>(mut self) -> ProcessesCollection<TExtr, TPud, TTud> {
-        // We're not going to modify these fields ever again, so let's free some memory.
-        self.extrinsics.shrink_to_fit();
-        self.extrinsics_id_assign.shrink_to_fit();
-        debug_assert_eq!(self.extrinsics.len(), self.extrinsics_id_assign.len());
-
-        ProcessesCollection {
-            pid_pool: self.pid_pool,
-            tid_pool: IdPool::new(),
-            processes: HashMap::with_capacity_and_hasher(
-                PROCESSES_MIN_CAPACITY,
-                Default::default(),
-            ),
-            extrinsics: self.extrinsics,
-            extrinsics_id_assign: self.extrinsics_id_assign,
-        }
-    }
+    /// Reference to the same field in [`ProcessesCollection`].
+    pid_tid_pool: &'a IdPool,
 }
 
-impl<TPud, TTud> Process<TPud, TTud> {
-    /// Finds a thread in this process that is ready to be executed.
-    fn ready_to_run_thread_index(&mut self) -> Option<usize> {
-        for thread_n in 0..self.state_machine.num_threads() {
-            let mut thread = match self.state_machine.thread(thread_n) {
-                Some(t) => t,
-                None => unreachable!(),
-            };
-            if thread.user_data().value_back.is_some() {
-                return Some(thread_n);
-            }
-        }
-
-        None
-    }
-}
-
-impl<'a, TPud, TTud> ProcessesCollectionProc<'a, TPud, TTud> {
+impl<'a, TExtr, TPud, TTud> ProcAccess<'a, TExtr, TPud, TTud> {
     /// Returns the [`Pid`] of the process. Allows later retrieval by calling
     /// [`process_by_id`](ProcessesCollection::process_by_id).
     pub fn pid(&self) -> Pid {
-        *self.process.key()
+        self.process.as_ref().unwrap().pid
     }
 
     /// Returns the user data that is associated to the process.
     pub fn user_data(&self) -> &TPud {
-        &self.process.get().user_data
+        &self.process.as_ref().unwrap().user_data
     }
 
     /// Adds a new thread to the process, starting the function with the given index and passing
@@ -513,196 +811,254 @@ impl<'a, TPud, TTud> ProcessesCollectionProc<'a, TPud, TTud> {
     /// > **Note**: The "function ID" is the index of the function in the WASM module. WASM
     /// >           doesn't have function pointers. Instead, all the functions are part of a single
     /// >           global array of functions.
-    // TODO: don't expose crate::WasmValue in the API
     pub fn start_thread(
-        mut self,
+        &self,
         fn_index: u32,
         params: Vec<crate::WasmValue>,
         user_data: TTud,
-    ) -> Result<ProcessesCollectionThread<'a, TPud, TTud>, vm::StartErr> {
-        let thread_id = self.tid_pool.assign(); // TODO: check for duplicates
-        let thread_data = Thread {
-            user_data,
-            thread_id,
-            value_back: Some(None),
-        };
+    ) -> Result<ThreadId, vm::StartErr> {
+        let thread_id = self.pid_tid_pool.assign(); // TODO: check for duplicates
+        let thread_data = Thread { thread_id };
 
-        self.process
-            .get_mut()
-            .state_machine
+        let mut process_state = self.process.as_ref().unwrap().lock.lock();
+
+        process_state
+            .vm
             .start_thread_by_id(fn_index, params, thread_data)?;
 
-        let thread_index = self.process.get_mut().state_machine.num_threads();
-        Ok(ProcessesCollectionThread {
-            process: self.process,
-            thread_index,
-        })
+        process_state
+            .threads_to_resume
+            .push_back((thread_id, user_data, None));
+
+        self.collection
+            .execution_queue
+            .push(self.process.as_ref().unwrap().clone());
+        self.collection.wakers.notify_one();
+
+        Ok(thread_id)
     }
 
-    /// Returns an object representing the main thread of this process.
+    /// Marks the process as aborting.
     ///
-    /// The "main thread" of a process is created automatically when you call
-    /// [`ProcessesCollection::execute`]. If it stops, the entire process stops.
-    pub fn main_thread(self) -> ProcessesCollectionThread<'a, TPud, TTud> {
-        ProcessesCollectionThread {
-            process: self.process,
-            thread_index: 0,
+    /// The termination will happen after all locks to this process have been released.
+    ///
+    /// Calling [`abort`](ProcAccess::abort) a second time or more has no effect.
+    pub fn abort(&self) {
+        let mut process_state = self.process.as_ref().unwrap().lock.lock();
+
+        if process_state.dead.is_some() {
+            return;
         }
-    }
 
-    pub fn read_memory(&mut self, offset: u32, size: u32) -> Result<Vec<u8>, ()> {
-        self.process
-            .get_mut()
-            .state_machine
-            .read_memory(offset, size)
-    }
+        // TODO: possible deadlock?
+        let mut threads = self.collection.interrupted_threads.lock();
+        let mut dead_threads = Vec::new();
+        // TODO: O(n) complexity
+        while let Some(tid) = threads
+            .iter()
+            .find(|(_, (_, p))| Arc::ptr_eq(self.process.as_ref().unwrap(), p))
+            .map(|(k, _)| *k)
+        {
+            let (user_data, _) = threads.remove(&tid).unwrap();
+            dead_threads.push((tid, user_data));
+        }
 
-    /// Write the data at the given memory location.
-    ///
-    /// Returns an error if the range is invalid or out of range.
-    pub fn write_memory(&mut self, offset: u32, value: &[u8]) -> Result<(), ()> {
-        self.process
-            .get_mut()
-            .state_machine
-            .write_memory(offset, value)
-    }
+        // TODO: replace with better error once we no longer expose wasmi::Trap in the API
+        #[derive(Debug)]
+        struct HostErr;
+        impl wasmi::HostError for HostErr {}
+        impl fmt::Display for HostErr {
+            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                write!(f, "Aborted")
+            }
+        }
 
-    /// Aborts the process and returns the associated user data.
-    pub fn abort(self) -> (TPud, Vec<(ThreadId, TTud)>) {
-        let (_, proc) = self.process.remove_entry();
-        let dead_threads = proc
-            .state_machine
-            .into_user_datas()
-            .map(|t| (t.thread_id, t.user_data))
-            .collect::<Vec<_>>();
-        (proc.user_data, dead_threads)
+        process_state.dead = Some(ProcessDeadState {
+            dead_threads,
+            outcome: Err(From::from(wasmi::TrapKind::Host(Box::new(HostErr)))),
+        });
     }
 }
 
-impl<'a, TPud, TTud> fmt::Debug for ProcessesCollectionProc<'a, TPud, TTud>
+impl<'a, TExtr, TPud, TTud> fmt::Debug for ProcAccess<'a, TExtr, TPud, TTud>
 where
     TPud: fmt::Debug,
-    TTud: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // TODO: threads user datas
-        f.debug_struct("ProcessesCollectionProc")
+        f.debug_struct("ProcAccess")
             .field("pid", &self.pid())
-            //.field("user_data", self.user_data())     // TODO: requires &mut self :-/
+            .field("user_data", self.user_data())
             .finish()
     }
 }
 
-impl<'a, TPud, TTud> ProcessesCollectionThread<'a, TPud, TTud> {
-    fn inner(&mut self) -> vm::Thread<Thread<TTud>> {
-        match self
-            .process
-            .get_mut()
-            .state_machine
-            .thread(self.thread_index)
-        {
-            Some(t) => t,
-            None => unreachable!(),
-        }
+impl<'a, TExtr, TPud, TTud> Drop for ProcAccess<'a, TExtr, TPud, TTud> {
+    fn drop(&mut self) {
+        self.collection
+            .try_report_process_death(self.process.take().unwrap());
     }
+}
 
+/// Access to a thread within the collection.
+pub struct ThreadAccess<'a, TExtr, TPud, TTud> {
+    collection: &'a ProcessesCollection<TExtr, TPud, TTud>,
+    process: Option<Arc<Process<TPud, TTud>>>,
+
+    /// Identifier of the thread. Must always match one of the user data in the virtual machine.
+    tid: ThreadId,
+
+    /// Reference to the same field in [`ProcessesCollection`].
+    pid_tid_pool: &'a IdPool,
+
+    /// User data extracted from [`Thread`]. Must be put back when this struct is destroyed.
+    /// Always `Some`, except right before destruction.
+    user_data: Option<TTud>,
+}
+
+impl<'a, TExtr, TPud, TTud> ThreadAccess<'a, TExtr, TPud, TTud> {
     /// Returns the id of the thread. Allows later retrieval by calling
-    /// [`thread_by_id`](ProcessesCollection::thread_by_id).
+    /// [`thread_by_id`](ProcessesCollection::interrupted_thread_by_id).
     ///
     /// [`ThreadId`]s are unique within a [`ProcessesCollection`], independently from the process.
-    pub fn tid(&mut self) -> ThreadId {
-        self.inner().into_user_data().thread_id
+    pub fn tid(&self) -> ThreadId {
+        self.tid
     }
 
     /// Returns the [`Pid`] of the process. Allows later retrieval by calling
     /// [`process_by_id`](ProcessesCollection::process_by_id).
     pub fn pid(&self) -> Pid {
-        *self.process.key()
+        self.process.as_ref().unwrap().pid
     }
 
-    /// Returns the following thread within the next process, or `None` if this is the last thread.
-    ///
-    /// Threads are ordered arbitrarily. In particular, they are **not** ordered by [`ThreadId`].
-    pub fn next_thread(mut self) -> Option<ProcessesCollectionThread<'a, TPud, TTud>> {
-        self.thread_index += 1;
-        if self.thread_index >= self.process.get_mut().state_machine.num_threads() {
-            return None;
+    /// Returns the process this thread belongs to.
+    pub fn process(&self) -> ProcAccess<'a, TExtr, TPud, TTud> {
+        ProcAccess {
+            collection: self.collection,
+            process: self.process.clone(),
+            pid_tid_pool: self.pid_tid_pool,
         }
-
-        Some(self)
-    }
-
-    /// Returns the user data that is associated to the process.
-    pub fn process_user_data(&mut self) -> &mut TPud {
-        &mut self.process.get_mut().user_data
-    }
-
-    /// Returns the user data that is associated to the thread.
-    pub fn user_data(&mut self) -> &mut TTud {
-        &mut self.inner().into_user_data().user_data
-    }
-
-    /// After [`RunOneOutcome::Interrupted`] is returned, use this function to feed back the value
-    /// to use as the return type of the function that has been called.
-    pub fn resume(&mut self, value: Option<crate::WasmValue>) {
-        let user_data = self.inner().into_user_data();
-
-        // TODO: check type of the value?
-        if user_data.value_back.is_some() {
-            panic!()
-        }
-
-        user_data.value_back = Some(value);
-    }
-
-    pub fn read_memory(&mut self, offset: u32, size: u32) -> Result<Vec<u8>, ()> {
-        self.process
-            .get_mut()
-            .state_machine
-            .read_memory(offset, size)
     }
 
     /// Write the data at the given memory location.
     ///
     /// Returns an error if the range is invalid or out of range.
+    ///
+    /// > **Important**: See also the remarks on [`ThreadAccess::write_memory`].
+    ///
+    pub fn read_memory(&self, offset: u32, size: u32) -> Result<Vec<u8>, ()> {
+        // TODO: if another thread of this process is running, this will block until it has
+        // finished executing ; it isn't really possible right now to do otherwise, as the WASM
+        // memory model isn't properly defined
+        let lock = self.process.as_ref().unwrap().lock.lock();
+        lock.vm.read_memory(offset, size)
+    }
+
+    /// Write the data at the given memory location.
+    ///
+    /// Returns an error if the range is invalid or out of range.
+    ///
+    /// # About concurrency
+    ///
+    /// Memory writes made using this method are guaranteed to be visible later by calling
+    /// [`read_memory`](ThreadAccess::read_memory) on the same thread.
+    ///
+    /// However, writes are not guaranteed to be visible by calling
+    /// [`read_memory`](ThreadAccess::read_memory) on a different thread, even when
+    /// they belong to the same process.
+    ///
+    /// It is only when the instance of [`ThreadAccess`] is
+    /// [resume](ThreadAccess::resume)d that the writes are guaranteed to be made
+    /// visible to the rest of the process. This means that it is legal, for example, for this
+    /// method to keep a cache of the changes and flush it later.
+    ///
+    /// As such, just like for "actual threads", writing and reading the same memory from multiple
+    /// different threads without any synchronization primitive (which resuming the thread
+    /// provides) will lead to a race condition.
+    ///
     pub fn write_memory(&mut self, offset: u32, value: &[u8]) -> Result<(), ()> {
-        self.process
-            .get_mut()
-            .state_machine
-            .write_memory(offset, value)
+        // TODO: if another thread of this process is running, this will block until it has
+        // finished executing ; it isn't really possible right now to do otherwise, as the WASM
+        // memory model isn't properly defined
+        let mut lock = self.process.as_ref().unwrap().lock.lock();
+        lock.vm.write_memory(offset, value)
+    }
+
+    /// Returns the user data that is associated to the thread.
+    pub fn user_data(&self) -> &TTud {
+        self.user_data.as_ref().unwrap()
+    }
+
+    /// Returns the user data that is associated to the thread.
+    pub fn user_data_mut(&mut self) -> &mut TTud {
+        self.user_data.as_mut().unwrap()
+    }
+
+    /// After [`RunOneOutcome::Interrupted`] is returned, use this function to feed back the value
+    /// to use as the return type of the function that has been called.
+    ///
+    /// This releases the [`ThreadAccess`]. The thread can now potentially be run by
+    /// calling [`ProcessesCollection::run`].
+    pub fn resume(mut self, value: Option<crate::WasmValue>) {
+        let process = self.process.take().unwrap();
+        let user_data = self.user_data.take().unwrap();
+
+        let push_to_exec_q = {
+            let mut process_state = process.lock.lock();
+            let process_state = &mut *process_state;
+            if let Some(death_state) = &mut process_state.dead {
+                debug_assert!(process_state.vm.is_poisoned());
+                death_state.dead_threads.push((self.tid, user_data));
+                false
+            } else {
+                process_state
+                    .threads_to_resume
+                    .push_back((self.tid, user_data, value));
+                true
+            }
+        };
+
+        if push_to_exec_q {
+            self.collection.execution_queue.push(process);
+            self.collection.wakers.notify_one();
+        } else {
+            self.collection.try_report_process_death(process);
+        }
     }
 }
 
-impl<'a, TPud, TTud> fmt::Debug for ProcessesCollectionThread<'a, TPud, TTud>
-where
-    TPud: fmt::Debug,
-    TTud: fmt::Debug,
-{
+impl<'a, TExtr, TPud, TTud> fmt::Debug for ThreadAccess<'a, TExtr, TPud, TTud> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        //let id = self.id();
-        let pid = self.pid();
-        // TODO: requires &mut self :-/
-        //let ready_to_run = self.inner().into_user_data().value_back.is_some();
-
-        f.debug_struct("ProcessesCollectionThread")
-            .field("pid", &pid)
-            //.field("thread_id", &id)
-            //.field("user_data", self.user_data())
-            //.field("ready_to_run", &ready_to_run)
+        f.debug_struct("ThreadAccess")
+            .field("pid", &self.pid())
             .finish()
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::ProcessesCollectionBuilder;
-    use crate::sig;
+impl<'a, TExtr, TPud, TTud> Drop for ThreadAccess<'a, TExtr, TPud, TTud> {
+    fn drop(&mut self) {
+        let process = match self.process.take() {
+            Some(p) => p,
+            None => return,
+        };
 
-    #[test]
-    #[should_panic]
-    fn panic_duplicate_extrinsic() {
-        ProcessesCollectionBuilder::<()>::default()
-            .with_extrinsic("foo", "test", sig!(()), ())
-            .with_extrinsic("foo", "test", sig!(()), ());
+        // `self.user_data` is `None` if the thread has been resumed, and `Some` if it has been
+        // dropped without being resumed.
+        if let Some(user_data) = self.user_data.take() {
+            let mut process_state_lock = process.lock.lock();
+            let process_state = &mut *process_state_lock;
+
+            if let Some(death_state) = &mut process_state.dead {
+                debug_assert!(process_state.vm.is_poisoned());
+                death_state.dead_threads.push((self.tid, user_data));
+            } else {
+                let mut interrupted_threads = self.collection.interrupted_threads.lock();
+                drop(process_state_lock);
+                let _prev_in = interrupted_threads.insert(self.tid, (user_data, process));
+                debug_assert!(_prev_in.is_none());
+                return;
+            }
+        }
+
+        self.collection.try_report_process_death(process);
     }
 }

@@ -27,10 +27,14 @@
 //! - Call [`boot_associated_processor`] for each processor one by one.
 //!
 
-use crate::arch::x86_64::apic::{local::LocalApicsControl, timers::Timers, ApicId};
+use crate::arch::x86_64::apic::{local::LocalApicsControl, timers::Timers, tsc_sync, ApicId};
 use crate::arch::x86_64::{executor, interrupts};
 
-use alloc::{alloc::Layout, boxed::Box};
+use alloc::{
+    alloc::{AllocInit, Layout},
+    boxed::Box,
+    sync::Arc,
+};
 use core::{convert::TryFrom as _, fmt, ops::Range, ptr, slice, time::Duration};
 use futures::{channel::oneshot, prelude::*};
 
@@ -65,7 +69,7 @@ pub unsafe fn filter_build_ap_boot_alloc<'a>(
     // Size that we grab from the ranges.
     // TODO: This value is kind of arbitrary for now. Once
     // https://github.com/rust-lang/rust/issues/51910 is stabilized, we can instead compute this
-    // value from `_ap_boot_end - _ap_boot_start`.
+    // value from `code_end - code_start`.
     const WANTED: usize = 0x4000;
 
     ranges.filter_map(move |range| {
@@ -127,7 +131,7 @@ pub unsafe fn boot_associated_processor(
     alloc: &mut ApBootAlloc,
     executor: &executor::Executor,
     local_apics: &'static LocalApicsControl,
-    timers: &Timers,
+    timers: &Arc<Timers>,
     target: ApicId,
     boot_code: impl FnOnce() -> core::convert::Infallible + Send + 'static,
 ) -> Result<(), Error> {
@@ -145,11 +149,15 @@ pub unsafe fn boot_associated_processor(
     // x86 machine code in that buffer, and then we can ask the processor to run it. This is
     // implemented by copying a template code into that buffer and tweaking the constants.
 
+    // Get information about the template.
+    let code_template = get_template();
+    assert!(code_template.marker1_offset < code_template.code.len());
+    assert!(code_template.marker2_offset < code_template.code.len());
+    assert!(code_template.marker3_offset < code_template.code.len());
+
     // We start by allocating the buffer where to write the bootstrap code.
     let mut bootstrap_code_buf = {
-        let size = (_ap_boot_end as *const u8 as usize)
-            .checked_sub(_ap_boot_start as *const u8 as usize)
-            .unwrap();
+        let size = code_template.code.len();
         // Basic sanity check to make sure that nothing's fundamentally wrong.
         assert!(size <= 0x1000);
         let layout = Layout::from_size_align(size, 0x1000).unwrap();
@@ -160,26 +168,29 @@ pub unsafe fn boot_associated_processor(
     local_apics.send_interprocessor_init(target);
 
     // Later we will wait for 10ms to have elapsed since the INIT.
-    let wait_after_init = timers.register_tsc_timer(Duration::from_millis(10));
+    let wait_after_init = timers.register_timer_after(Duration::from_millis(10));
 
     // Write the template code to the buffer.
     ptr::copy_nonoverlapping(
-        _ap_boot_start as *const u8,
+        code_template.code.as_ptr(),
         bootstrap_code_buf.as_mut_ptr(),
         bootstrap_code_buf.size(),
     );
 
     // Later, we will want to wait until the AP has finished initializing. To do so, we create
     // a channel and modify `boot_code` to signal that channel before doing anything more.
-    let (boot_code, mut init_finished_future) = {
+    let (boot_code, mut init_finished_future, mut tsc_sync_src) = {
         let (tx, rx) = oneshot::channel();
+        // TODO: not great that the TSC sync is hidden in there
+        let (tsc_sync_src, mut tsc_sync_dst) = tsc_sync::tsc_sync();
         let boot_code = move || {
             local_apics.init_local();
             interrupts::load_idt();
             let _ = tx.send(());
+            tsc_sync_dst.sync();
             boot_code()
         };
-        (boot_code, rx)
+        (boot_code, rx, tsc_sync_src)
     };
 
     // We want the processor we bootstrap to call the `ap_after_boot` function defined below.
@@ -205,19 +216,19 @@ pub unsafe fn boot_associated_processor(
     // There exists several placeholders within the template code that we must adjust before it
     // can be executed.
     //
-    // The code at symbol `_ap_boot_marker1` starts with the following instruction:
+    // The code at marker 1 starts with the following instruction:
     //
     // ```
     // 66 ea ad de ad de 08    ljmpl  $0x8, $0xdeaddead
     // ```
     //
-    // The code at symbol `_ap_boot_marker3` starts with the following instruction:
+    // The code at marker 3 starts with the following instruction:
     //
     // ```
     // 66 ba dd ba 00 ff    mov $0xff00badd, %edx
     // ```
     //
-    // The code at symbol `_ap_boot_marker2` starts with the following instructions:
+    // The code at marker 2 starts with the following instructions:
     //
     // ```
     // 48 bc ef cd ab 90 78 56 34 12    movabs $0x1234567890abcdef, %rsp
@@ -228,21 +239,15 @@ pub unsafe fn boot_associated_processor(
     // placeholders that we overwrite in the block below.
     {
         let ap_boot_marker1_loc: *mut u8 = {
-            let offset = (_ap_boot_marker1 as usize)
-                .checked_sub(_ap_boot_start as usize)
-                .unwrap();
+            let offset = code_template.marker1_offset;
             bootstrap_code_buf.as_mut_ptr().add(offset)
         };
         let ap_boot_marker2_loc: *mut u8 = {
-            let offset = (_ap_boot_marker2 as usize)
-                .checked_sub(_ap_boot_start as usize)
-                .unwrap();
+            let offset = code_template.marker2_offset;
             bootstrap_code_buf.as_mut_ptr().add(offset)
         };
         let ap_boot_marker3_loc: *mut u8 = {
-            let offset = (_ap_boot_marker3 as usize)
-                .checked_sub(_ap_boot_start as usize)
-                .unwrap();
+            let offset = code_template.marker3_offset;
             bootstrap_code_buf.as_mut_ptr().add(offset)
         };
 
@@ -314,11 +319,14 @@ pub unsafe fn boot_associated_processor(
 
         // Wait for the processor initialization to finish, but with a timeout in order to not
         // wait forever if nothing happens.
-        let ap_ready_timeout = timers.register_tsc_timer(Duration::from_secs(1));
+        let ap_ready_timeout = timers.register_timer_after(Duration::from_secs(1));
         futures::pin_mut!(ap_ready_timeout);
         match executor.block_on(future::select(ap_ready_timeout, &mut init_finished_future)) {
             future::Either::Left(_) => continue,
-            future::Either::Right(_) => break Ok(()),
+            future::Either::Right(_) => {
+                tsc_sync_src.sync();
+                break Ok(());
+            }
         }
     };
 
@@ -328,122 +336,153 @@ pub unsafe fn boot_associated_processor(
     result
 }
 
-// The code here is the template in question. Just like any code, is included in the kernel and
-// will be loaded in memory. However, it is not actually meant be executed. Instead it is meant
-// to be used as a template.
-// Because the associated processor (AP) boot code must be in the first megabyte of memory, we
-// first copy this code somewhere in this first megabyte and adjust it.
-//
-// The `_ap_boot_start` and `_ap_boot_end` symbols encompass the template, so that `ap_boot.rs`
-// can copy it. There exist three other symbols `_ap_boot_marker1`, `_ap_boot_marker2` and
-// `_ap_boot_marker3` that point to instructions that must be adjusted before execution.
-//
-// Within this module, we must be careful to not use any absolute address referring to anything
-// between `_ap_boot_start` and `_ap_boot_end`, and to not use any relative address referring to
-// anything outside of this range, as the addresses will then be wrong when the code gets copied.
-global_asm! {r#"
-.code16
-.align 0x1000
-.global _ap_boot_start
-.type _ap_boot_start, @function
-_ap_boot_start:
-    // When we enter here, the CS register is set to the value that we passed through the SIPI,
-    // and the IP register is set to `0`.
+/// Information about the template code.
+struct Template {
+    code: &'static [u8],
+    marker1_offset: usize,
+    marker2_offset: usize,
+    marker3_offset: usize,
+}
 
-    movw %cs, %ax
-    movw %ax, %ds
-    movw %ax, %es
-    movw %ax, %fs
-    movw %ax, %gs
-    movw %ax, %ss
+/// Returns information about the template code.
+fn get_template() -> Template {
+    let code_start: usize;
+    let code_end: usize;
+    let marker1: usize;
+    let marker2: usize;
+    let marker3: usize;
 
-    movl $0, %eax
-    or $(1 << 10), %eax             // Set SIMD floating point exceptions bit.
-    or $(1 << 9), %eax              // Set OSFXSR bit, which enables SIMD.
-    or $(1 << 5), %eax              // Set physical address extension (PAE) bit.
-    movl %eax, %cr4
+    // The code here is the template in question. Just like any code, is included in the kernel
+    // and will be loaded in memory. However, it is not actually meant be executed. Instead it
+    // is meant to be used as a template.
+    // Because the associated processor (AP) boot code must be in the first megabyte of memory,
+    // we first copy this code somewhere in this first megabyte and adjust it.
+    //
+    // The `code_start` and `code_end` addresses encompass the template. There exist three other
+    // symbols `marker1`, `marker2` and `marker3` that point to instructions that must be adjusted
+    // before execution.
+    //
+    // Within this module, we must be careful to not use any absolute address referring to
+    // anything between `code_start` and `code_end`, and to not use any relative address referring
+    // to anything outside of this range, as the addresses will then be wrong when the code gets
+    // copied.
+    unsafe {
+        asm!(r#"
+            // This jmp is **not** part of the template. It is reached only when `get_template`
+            // is called.
+            jmp 5f
 
-.global _ap_boot_marker3
-_ap_boot_marker3:
-    // The `0xff00badd` constant below is replaced with the address of a PML4 table when the
-    // template gets adjusted.
-    mov $0xff00badd, %edx
-    mov %edx, %cr3
+        .code16
+        .align 0x1000
+        4:
+            // When we enter here, the CS register is set to the value that we passed through the
+            // SIPI, and the IP register is set to `0`.
 
-    // Enable the EFER.LMA bit, which enables compatibility mode and will make us switch to long
-    // mode when we update the CS register.
-    mov $0xc0000080, %ecx
-    rdmsr
-    or $(1 << 8), %eax
-    wrmsr
+            movw %cs, %ax
+            movw %ax, %ds
+            movw %ax, %es
+            movw %ax, %fs
+            movw %ax, %gs
+            movw %ax, %ss
 
-    // Set the appropriate CR0 flags: Paging, Extension Type (math co-processor), and
-    // Protected Mode.
-    movl $((1 << 31) | (1 << 4) | (1 << 0)), %eax
-    movl %eax, %cr0
+            movl $0, %eax
+            or $(1 << 10), %eax             // Set SIMD floating point exceptions bit.
+            or $(1 << 9), %eax              // Set OSFXSR bit, which enables SIMD.
+            or $(1 << 5), %eax              // Set physical address extension (PAE) bit.
+            movl %eax, %cr4
 
-    // Set up the GDT. Since the absolute address of `_ap_boot_start` is effectively 0 according
-    // to the CPU in this 16 bits context, we pass an "absolute" address to `_ap_gdt_ptr` by
-    // substracting `_ap_boot_start` from its 32 bits address.
-    lgdtl (_ap_gdt_ptr - _ap_boot_start)
+        3:
+            // The `0xff00badd` constant below is replaced with the address of a PML4 table when
+            // the template gets adjusted.
+            mov $0xff00badd, %edx
+            mov %edx, %cr3
 
-.global _ap_boot_marker1
-_ap_boot_marker1:
-    // A long jump is necessary in order to update the CS registry and properly switch to
-    // long mode.
-    // The `0xdeaddead` constant below is replaced with the location of `_ap_boot_marker2` when
-    // the template gets adjusted.
-    ljmpl $8, $0xdeaddead
+            // Enable the EFER.LMA bit, which enables compatibility mode and will make us switch
+            // to long mode when we update the CS register.
+            mov $0xc0000080, %ecx
+            rdmsr
+            or $(1 << 8), %eax
+            wrmsr
 
-.code64
-.global _ap_boot_marker2
-.type _ap_boot_marker2, @function
-_ap_boot_marker2:
-    // The constants below are replaced with an actual stack location when the template gets
-    // adjusted.
-    // Set up the stack.
-    movq $0x1234567890abcdef, %rsp
-    // This is an opaque value for the purpose of this assembly code. It is the parameter that we
-    // pass to `ap_after_boot`
-    movq $0x9999cccc2222ffff, %rax
+            // Set the appropriate CR0 flags: Paging, Extension Type (math co-processor), and
+            // Protected Mode.
+            movl $((1 << 31) | (1 << 4) | (1 << 0)), %eax
+            movl %eax, %cr0
 
-    movw $0, %bx
-    movw %bx, %ds
-    movw %bx, %es
-    movw %bx, %fs
-    movw %bx, %gs
-    movw %bx, %ss
+            // Set up the GDT. Since the absolute address of the tempalte start is effectively 0
+            // according to the CPU in this 16 bits context, we pass an "absolute" address to the
+            // GDT by substracting `code_start` from its 32 bits address.
+            lgdtl (6f - 4b)
 
-    // In the x86-64 calling convention, the RDI register is used to store the value of the first
-    // parameter to pass to a function.
-    movq %rax, %rdi
+        1:
+            // A long jump is necessary in order to update the CS registry and properly switch to
+            // long mode.
+            // The `0xdeaddead` constant below is replaced with the location of the marker `2`
+            // below the template gets adjusted.
+            ljmpl $8, $0xdeaddead
 
-    // We do an indirect call in order to force the assembler to use the absolute address rather
-    // than a relative call.
-    mov $ap_after_boot, %rdx
-    call *%rdx
+        .code64
+        2:
+            // The constants below are replaced with an actual stack location when the template
+            // gets adjusted.
+            // Set up the stack.
+            movq $0x1234567890abcdef, %rsp
+            // This is an opaque value for the purpose of this assembly code. It is the parameter
+            // that we pass to `ap_after_boot`
+            movq $0x9999cccc2222ffff, %rax
 
-    cli
-    hlt
+            movw $0, %bx
+            movw %bx, %ds
+            movw %bx, %es
+            movw %bx, %fs
+            movw %bx, %gs
+            movw %bx, %ss
 
-// Small structure whose location is passed to the CPU in order to load the GDT.
-.align 8
-_ap_gdt_ptr:
-    .short 15
-    .long gdt_table
+            // In the x86-64 calling convention, the RDI register is used to store the value of
+            // the first parameter to pass to a function.
+            movq %rax, %rdi
 
-.global _ap_boot_end
-.type _ap_boot_end, @function
-_ap_boot_end:
-    nop
-"#}
+            // We do an indirect call in order to force the assembler to use the absolute address
+            // rather than a relative call.
+            lea {ap_after_boot}, %rdx
+            call *%rdx
 
-extern "C" {
-    fn _ap_boot_start();
-    fn _ap_boot_marker1();
-    fn _ap_boot_marker2();
-    fn _ap_boot_marker3();
-    fn _ap_boot_end();
+            cli
+            hlt
+
+            // Small structure whose location is passed to the CPU in order to load the GDT.
+            // Because we call `lgdt` from 16bits code, we have to define the GDT pointer
+            // locally.
+        .align 8
+        6:
+            .short 15
+            .long {gdt_table}
+
+        5:
+            // This code is not part of the template and is executed by `get_template`.
+            lea (4b), {code_start}
+            lea (5b), {code_end}
+            lea (1b), {marker1}
+            lea (2b), {marker2}
+            lea (3b), {marker3}
+        "#,
+            ap_after_boot = sym ap_after_boot,
+            gdt_table = sym super::gdt::GDT_TABLE,
+            code_start = out(reg) code_start,
+            code_end = out(reg) code_end,
+            marker1 = out(reg) marker1,
+            marker2 = out(reg) marker2,
+            marker3 = out(reg) marker3,
+            options(pure, nostack, nomem, preserves_flags, att_syntax) // TODO: translate to Intel syntax
+        );
+
+        Template {
+            code: slice::from_raw_parts(code_start as *const u8, code_end - code_start),
+            marker1_offset: marker1 - code_start,
+            marker2_offset: marker2 - code_start,
+            marker3_offset: marker3 - code_start,
+        }
+    }
 }
 
 /// Holds an allocation with the given layout.
@@ -458,10 +497,10 @@ struct Allocation<'a, T: alloc::alloc::AllocRef> {
 
 impl<'a, T: alloc::alloc::AllocRef> Allocation<'a, T> {
     fn new(alloc: &'a mut T, layout: Layout) -> Self {
-        let (buf, _) = alloc.alloc(layout).unwrap();
+        let block = alloc.alloc(layout, AllocInit::Uninitialized).unwrap();
         Allocation {
             alloc,
-            inner: buf,
+            inner: block.ptr,
             layout,
         }
     }
@@ -489,7 +528,6 @@ type ApAfterBootParam = *mut Box<dyn FnOnce() -> core::convert::Infallible + Sen
 /// When this function is called, the stack and paging have already been properly set up. The
 /// first parameter is gathered from the `rdi` register according to the x86_64 calling
 /// convention.
-#[no_mangle]
 extern "C" fn ap_after_boot(to_exec: usize) -> ! {
     unsafe {
         let to_exec = to_exec as ApAfterBootParam;

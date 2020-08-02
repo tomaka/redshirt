@@ -43,6 +43,7 @@ pub struct Config<'a> {
 /// Target platform.
 #[derive(Debug)]
 pub enum Target {
+    HiFiveRiscV,
     RaspberryPi2,
     RaspberryPi3,
     X8664Multiboot2,
@@ -120,6 +121,8 @@ pub fn build_image(config: Config) -> Result<(), Error> {
             )?;
             Ok(())
         }
+
+        Target::HiFiveRiscV => unimplemented!(),
     }
 }
 
@@ -148,8 +151,6 @@ fn build_x86_multiboot2_cdrom_iso(
         &br#"
 set timeout=5
 set default=0
-set gfxmode=auto
-set gfxpayload=auto
 
 menuentry "redshirt" {
     insmod all_video

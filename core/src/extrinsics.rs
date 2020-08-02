@@ -22,7 +22,7 @@
 //!
 //! TODO: write doc on how to implement this trait
 
-use crate::{signature::Signature, wasm_value::WasmValue};
+use crate::primitives::{Signature, WasmValue};
 use crate::{EncodedMessage, InterfaceHash, ThreadId};
 
 use alloc::{borrow::Cow, vec::Vec};

@@ -98,7 +98,7 @@ impl TimeControl {
     pub unsafe fn init() -> Arc<TimeControl> {
         // Initialize the physical counter frequency.
         // TODO: I think this is a global setting, but make sure it's the case?
-        asm!("mcr p15, 0, $0, c14, c0, 0"::"r"(CNTFRQ)::"volatile");
+        llvm_asm!("mcr p15, 0, $0, c14, c0, 0"::"r"(CNTFRQ)::"volatile");
 
         // TODO: this code doesn't work, as we have to register some IRQ handler or something to
         //       check the state of the timers and fire the wakers
@@ -229,7 +229,7 @@ fn physical_counter() -> u64 {
     unsafe {
         let lo: u32;
         let hi: u32;
-        asm!("mrrc p15, 0, $0, $1, c14": "=r"(lo), "=r"(hi) ::: "volatile");
+        llvm_asm!("mrrc p15, 0, $0, $1, c14": "=r"(lo), "=r"(hi) ::: "volatile");
         u64::from(hi) << 32 | u64::from(lo)
     }
 }
@@ -243,13 +243,13 @@ fn update_hardware(timers: &mut Vec<Timer>) {
         // If there's no active timer, disable the timer firing by updating the `CNTP_CTL`
         // register.
         if timers.is_empty() {
-            asm!("mcr p15, 0, $0, c14, c2, 1" :: "r"(0));
+            llvm_asm!("mcr p15, 0, $0, c14, c2, 1" :: "r"(0));
             return;
         }
 
         // Make sure that the timer is enabled by updating the `CNTP_CTL` register.
         // TODO: don't do this every single time
-        asm!("mcr p15, 0, $0, c14, c2, 1" :: "r"(0b01));
+        llvm_asm!("mcr p15, 0, $0, c14, c2, 1" :: "r"(0b01));
 
         // Write the `CNTP_CVAL` register with the value to compare with.
         // The timer will fire when the physical counter (`CNTPCT`) reaches the given value.
@@ -257,7 +257,7 @@ fn update_hardware(timers: &mut Vec<Timer>) {
             let cmp_value = timers.get(0).unwrap().counter_value;
             let lo = u32::try_from(cmp_value & 0xffffffff).unwrap();
             let hi = u32::try_from(cmp_value >> 32).unwrap();
-            asm!("mcrr p15, 2, $0, $1, c14" :: "r"(lo), "r"(hi));
+            llvm_asm!("mcrr p15, 2, $0, $1, c14" :: "r"(lo), "r"(hi));
         }
     }
 }

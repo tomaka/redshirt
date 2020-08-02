@@ -18,7 +18,7 @@
 use std::{env, fs, path::Path, process::Command};
 
 /// Turns a string of WebAssembly text representation into a binary representation.
-#[proc_macro_hack::proc_macro_hack]
+#[proc_macro]
 pub fn wat_to_bin(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let wat = syn::parse_macro_input!(tokens as syn::LitStr);
     let wat = wat.value();
@@ -50,7 +50,7 @@ pub fn wat_to_bin(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
 /// the package contains multiple binaries.
 // TODO: show better errors
 #[cfg(feature = "nightly")]
-#[proc_macro_hack::proc_macro_hack]
+#[proc_macro]
 pub fn build_wasm_module(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
     // Find the absolute path requested by the user, and optionally the binary target.
     let (wasm_crate_path, requested_bin_target) = {
@@ -79,10 +79,8 @@ pub fn build_wasm_module(tokens: proc_macro::TokenStream) -> proc_macro::TokenSt
 
         let macro_params = syn::parse_macro_input!(tokens as Params);
         let macro_call_file = {
-            // We go through the stack of Spans until we find one with a file path.
+            // We go up the stack of Spans to find the one with a file path.
             let mut span = proc_macro::Span::call_site();
-            // For hacky reasons, we go two stacks up to find the call site.
-            span = span.parent().unwrap();
             span = span.parent().unwrap();
             loop {
                 let src_file = span.source_file();
@@ -170,6 +168,7 @@ pub fn build_wasm_module(tokens: proc_macro::TokenStream) -> proc_macro::TokenSt
         .args(&["--target", "wasm32-wasi"])
         .arg("--")
         .args(&["-C", "link-arg=--export-table"])
+        .args(&["-C", "link-arg=--import-memory"])
         .current_dir(&wasm_crate_path)
         .status()
         .unwrap();

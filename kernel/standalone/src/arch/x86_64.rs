@@ -20,11 +20,21 @@ use crate::klog::KLogger;
 
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use core::{
-    convert::TryFrom as _, fmt::Write as _, iter, num::NonZeroU32, ops::Range, pin::Pin,
+    convert::TryFrom as _,
+    fmt::Write as _,
+    future::Future,
+    iter,
+    num::NonZeroU32,
+    ops::Range,
+    pin::Pin,
+    sync::atomic,
+    task::{Context, Poll, Waker},
     time::Duration,
 };
 use futures::channel::oneshot;
+use hashbrown::{hash_map::Entry, HashMap};
 use redshirt_kernel_log_interface::ffi::{FramebufferFormat, FramebufferInfo, KernelLogMethod};
+use spinning_top::Spinlock;
 use x86_64::structures::port::{PortRead as _, PortWrite as _};
 
 mod acpi;
@@ -32,6 +42,7 @@ mod ap_boot;
 mod apic;
 mod boot;
 mod executor;
+mod gdt;
 mod interrupts;
 mod mrtt;
 mod paging;
@@ -51,7 +62,7 @@ const DEFAULT_LOG_METHOD: KernelLogMethod = KernelLogMethod {
     uart: None,
 };
 
-/// Called by `boot.S` after basic set up has been performed.
+/// Called by `boot.rs` after basic set up has been performed.
 ///
 /// When this function is called, a stack has been set up and as much memory space as possible has
 /// been identity-mapped (i.e. the virtual memory is equal to the physical memory).
@@ -63,8 +74,7 @@ const DEFAULT_LOG_METHOD: KernelLogMethod = KernelLogMethod {
 ///
 /// `multiboot_info` must be a valid memory address that contains valid information.
 ///
-#[no_mangle]
-unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
+unsafe fn after_boot(multiboot_info: usize) -> ! {
     let multiboot_info = multiboot2::load(multiboot_info);
 
     // Initialization of the memory allocator.
@@ -132,6 +142,7 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
 
     // If a panic happens, we want it to use the logging system we just created.
     panic::set_logger(logger.clone());
+    writeln!(logger.log_printer(), "basic initialization ok").unwrap();
 
     // The first thing that gets executed when a x86 or x86_64 machine starts up is the
     // motherboard's firmware. Before giving control to the operating system, this firmware writes
@@ -139,9 +150,9 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
     // It then (indirectly) passes the memory address of this table to the operating system. This
     // is part of [the UEFI standard](https://en.wikipedia.org/wiki/UEFI).
     //
-    // However, this code is not loaded directly by the firmware but rather by a bootloader. This
-    // bootloader must save the information about the ACPI tables and propagate it as part of the
-    // multiboot2 header passed to the operating system.
+    // However, this code is not loaded directly by the operating system but rather by a
+    // bootloader. This bootloader must save the information about the ACPI tables and propagate it
+    // as part of the multiboot2 header passed to the operating system.
     // TODO: remove these tables from the memory ranges used as heap? `acpi_tables` is a copy of
     // the table, so once we are past this line there's no problem anymore. But in theory,
     // the `acpi_tables` variable might allocate over the actual ACPI tables.
@@ -162,6 +173,7 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
     // We then initialize the local APIC.
     // `Box::leak` gives us a `&'static` reference to the object.
     let local_apics = Box::leak(Box::new(apic::local::init()));
+    local_apics.init_local();
 
     // Initialize an object that can execute futures between CPUs.
     let executor = Box::leak(Box::new(executor::Executor::new(&*local_apics)));
@@ -176,13 +188,28 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
 
     // Initialize the timers state machine.
     // This allows us to create `Future`s that resolve after a certain amount of time has passed.
-    let timers = Box::leak(Box::new(apic::timers::init(
-        local_apics,
-        &*executor,
-        &mut pit,
-    )));
+    let timers = executor.block_on(apic::timers::init(local_apics, &mut pit));
 
-    // This code is only executed by the main processor of the machine, called the **boot
+    // We no longer need the `pit`. Since we overwrite all the IRQs below, and the PIT uses an IRQ,
+    // the PIT will stop working. We destroy it to make sure that we're not going to attempt to
+    // use it.
+    // TODO: add some safety mechanism regarding overwriting IRQs? ^
+    drop(pit);
+
+    // Considering that it is quite complicated to determine which IRQ a PCI device is going to
+    // use (it requires parsing and executing AML tables), we instead go with the strategy of
+    // redirecting all IRQs to a single interrupt vector. This single interrupt vector, when
+    // triggered, notifies all the components that were waiting for a PCI interrupt.
+    // TODO: make this better ^
+    let pci_interrupt_vector = interrupts::reserve_any_vector(40).unwrap();
+    for irq in io_apics.irqs().collect::<Vec<_>>() {
+        io_apics.irq(irq).unwrap().set_destination(
+            local_apics.current_apic_id(),
+            pci_interrupt_vector.interrupt_num(),
+        );
+    }
+
+    // This function is only executed by the main processor of the machine, called the **boot
     // processor**. The other processors are called the **associated processors** and must be
     // manually started.
 
@@ -201,19 +228,22 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
         }
 
         let (kernel_tx, kernel_rx) = oneshot::channel::<Arc<crate::kernel::Kernel<_>>>();
+        let cpu_num = kernel_channels.len().checked_add(1).unwrap();
 
         let ap_boot_result = ap_boot::boot_associated_processor(
             &mut ap_boot_alloc,
             &*executor,
             &*local_apics,
-            timers,
+            &timers,
             apic::ApicId::from_unchecked(ap.local_apic_id),
             {
                 let executor = &*executor;
                 move || {
-                    let kernel = executor.block_on(kernel_rx).unwrap();
-                    // The `run()` method never returns.
-                    executor.block_on(kernel.run())
+                    executor.block_on(async move {
+                        let kernel = kernel_rx.await.unwrap();
+                        // The `run()` method never returns.
+                        kernel.run(cpu_num).await
+                    })
                 }
             },
         );
@@ -233,6 +263,46 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
     // Now that everything has been initialized and all the processors started, we can initialize
     // the kernel.
     let kernel = {
+        /// Waker registered for `pci_interrupt_vector`. Re-registers itself automatically
+        /// whenever it is woken up.
+        struct NextIrqWaker {
+            pci_interrupt_vector: interrupts::ReservedInterruptVector,
+            next_irq_futures: Arc<
+                Spinlock<
+                    HashMap<u64, (Arc<atomic::AtomicBool>, Option<Waker>), fnv::FnvBuildHasher>,
+                >,
+            >,
+        }
+
+        impl futures::task::ArcWake for NextIrqWaker {
+            fn wake_by_ref(arc_self: &Arc<Self>) {
+                let mut next_irq_futures = arc_self.next_irq_futures.lock();
+
+                // Re-register ourselves for the next time.
+                arc_self
+                    .pci_interrupt_vector
+                    .register_waker(&futures::task::waker_ref(arc_self));
+
+                for (_, (atomic_bool, waker)) in next_irq_futures.drain() {
+                    atomic_bool.store(true, atomic::Ordering::Release);
+                    if let Some(waker) = waker {
+                        waker.wake();
+                    }
+                }
+            }
+        }
+
+        let next_irq_futures = Arc::new(Spinlock::new(Default::default()));
+
+        let waker = Arc::new(NextIrqWaker {
+            pci_interrupt_vector,
+            next_irq_futures: next_irq_futures.clone(),
+        });
+
+        waker
+            .pci_interrupt_vector
+            .register_waker(&futures::task::waker(waker.clone()));
+
         let platform_specific = PlatformSpecificImpl {
             timers,
             num_cpus: NonZeroU32::new(
@@ -243,6 +313,8 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
             )
             .unwrap(),
             logger: logger.clone(),
+            next_irq_futures,
+            next_next_irq_id: From::from(0),
         };
 
         Arc::new(crate::kernel::Kernel::init(platform_specific))
@@ -259,7 +331,7 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
 
     // Start the kernel on the boot processor too.
     // This function never returns.
-    executor.block_on(kernel.run())
+    executor.block_on(kernel.run(0))
 }
 
 /// Reads the boot information and find the memory ranges that can be used as a heap.
@@ -364,13 +436,20 @@ fn find_free_memory_ranges<'a>(
 
 /// Implementation of [`PlatformSpecific`].
 struct PlatformSpecificImpl {
-    timers: &'static apic::timers::Timers<'static>,
+    timers: Arc<apic::timers::Timers>,
     num_cpus: NonZeroU32,
     logger: Arc<KLogger>,
+
+    next_next_irq_id: atomic::AtomicU64,
+    /// List of active futures waiting for the next IRQ.
+    /// Contains an `AtomicBool` to set to true when the IRQ happens, and the waker to wake up.
+    next_irq_futures:
+        Arc<Spinlock<HashMap<u64, (Arc<atomic::AtomicBool>, Option<Waker>), fnv::FnvBuildHasher>>>,
 }
 
 impl PlatformSpecific for PlatformSpecificImpl {
-    type TimerFuture = apic::timers::TimerFuture<'static>;
+    type TimerFuture = apic::timers::TimerFuture;
+    type IrqFuture = NextIrqFuture;
 
     fn num_cpus(self: Pin<&Self>) -> NonZeroU32 {
         self.num_cpus
@@ -381,11 +460,32 @@ impl PlatformSpecific for PlatformSpecificImpl {
     }
 
     fn timer(self: Pin<&Self>, clock_value: u128) -> Self::TimerFuture {
-        self.timers.register_tsc_timer({
+        self.timers.register_timer_at({
+            // `unwrap_or(u64::max_value())` means that any wait longer than 2^64 seconds will be
+            // clamped to 2^64 seconds. We don't expect any system to ever run for 2^64 seconds.
             let secs = u64::try_from(clock_value / 1_000_000_000).unwrap_or(u64::max_value());
             let nanos = u32::try_from(clock_value % 1_000_000_000).unwrap();
             Duration::new(secs, nanos)
         })
+    }
+
+    fn next_irq(self: Pin<&Self>) -> Self::IrqFuture {
+        let done = Arc::new(atomic::AtomicBool::new(false));
+        let id = self
+            .next_next_irq_id
+            .fetch_add(1, atomic::Ordering::Relaxed);
+
+        // We register the future here, otherwise an IRQ that happens before the first time the
+        // future gets polled won't be detected.
+        self.next_irq_futures
+            .lock()
+            .insert(id, (done.clone(), None));
+
+        NextIrqFuture {
+            next_irq_futures: self.next_irq_futures.clone(),
+            done,
+            id,
+        }
     }
 
     fn write_log(&self, message: &str) {
@@ -445,5 +545,50 @@ impl PlatformSpecific for PlatformSpecificImpl {
         } else {
             Err(PortErr::OutOfRange)
         }
+    }
+}
+
+struct NextIrqFuture {
+    next_irq_futures:
+        Arc<Spinlock<HashMap<u64, (Arc<atomic::AtomicBool>, Option<Waker>), fnv::FnvBuildHasher>>>,
+    done: Arc<atomic::AtomicBool>,
+    id: u64,
+}
+
+impl Future for NextIrqFuture {
+    type Output = ();
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<()> {
+        if self.done.load(atomic::Ordering::SeqCst) {
+            return Poll::Ready(());
+        }
+
+        {
+            let mut next_irq_futures = self.next_irq_futures.lock();
+            let entry = match next_irq_futures.get_mut(&self.id) {
+                Some(e) => e,
+                None => {
+                    // TODO: debug_assert! instead
+                    assert!(self.done.load(atomic::Ordering::SeqCst));
+                    return Poll::Ready(());
+                }
+            };
+            if entry.1.as_ref().map_or(true, |w| !w.will_wake(cx.waker())) {
+                entry.1 = Some(cx.waker().clone());
+            }
+        }
+
+        if self.done.load(atomic::Ordering::SeqCst) {
+            Poll::Ready(())
+        } else {
+            Poll::Pending
+        }
+    }
+}
+
+impl Drop for NextIrqFuture {
+    fn drop(&mut self) {
+        let mut next_irq_futures = self.next_irq_futures.lock();
+        let _ = next_irq_futures.remove(&self.id);
     }
 }

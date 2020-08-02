@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use core::fmt;
+use core::{convert::TryFrom, fmt, num::NonZeroU64};
 use crossbeam_queue::SegQueue;
 use rand::distributions::{Distribution as _, Uniform};
 use rand_chacha::ChaCha20Rng;
@@ -52,11 +52,18 @@ impl IdPool {
     }
 
     /// Assigns a new PID from this pool.
-    pub fn assign<T: From<u64>>(&self) -> T {
+    ///
+    /// The returned value must implement the `TryFrom<u64>` trait. `u64`s are rolled as long as
+    /// as calling `TryFrom` returns an error.
+    pub fn assign<T: TryFrom<u64>>(&self) -> T {
         if let Ok(mut rng) = self.rngs.pop() {
-            let id = self.distribution.sample(&mut rng);
-            self.rngs.push(rng);
-            return T::from(id);
+            return loop {
+                let raw_id = self.distribution.sample(&mut rng);
+                if let Ok(id) = TryFrom::try_from(raw_id) {
+                    self.rngs.push(rng);
+                    break id;
+                }
+            };
         }
 
         let mut master_rng = self.master_rng.lock();
@@ -64,9 +71,14 @@ impl IdPool {
             Ok(r) => r,
             Err(_) => unreachable!(),
         };
-        let id = self.distribution.sample(&mut new_rng);
-        self.rngs.push(new_rng);
-        T::from(id)
+
+        loop {
+            let raw_id = self.distribution.sample(&mut new_rng);
+            if let Ok(id) = TryFrom::try_from(raw_id) {
+                self.rngs.push(new_rng);
+                break id;
+            }
+        }
     }
 }
 

@@ -14,7 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use criterion::{criterion_group, criterion_main, Criterion};
-use redshirt_core::{Module, SystemBuilder, SystemRunOutcome};
+use redshirt_core::{extrinsics::wasi::WasiExtrinsics, Module, SystemBuilder, SystemRunOutcome};
 
 fn bench(c: &mut Criterion) {
     /* Original code:
@@ -57,7 +57,9 @@ fn bench(c: &mut Criterion) {
     let module = Module::from_bytes(&include_bytes!("keccak.wasm")[..]).unwrap();
 
     c.bench_function("keccak-4096-bytes", |b| {
-        let system = SystemBuilder::new().build().unwrap();
+        let system = SystemBuilder::new(WasiExtrinsics::default())
+            .build()
+            .unwrap();
         b.iter(|| {
             system.execute(&module).unwrap();
             futures::executor::block_on(async {

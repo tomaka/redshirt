@@ -23,6 +23,9 @@ struct CliOptions {
     /// Path to a directory containing Wasm files to automatically push to the DHT.
     #[structopt(long, parse(from_os_str))]
     watch: Vec<PathBuf>,
+    /// URL of a git repository whose Wasm files will be automatically pushed to the DHT.
+    #[structopt(long)]
+    git_watch: Vec<String>,
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -41,16 +44,17 @@ async fn async_main() {
     let cli_opts = CliOptions::from_args();
 
     let mut config = NetworkConfig::default();
-    config.private_key = if let Ok(key) = env::var("PRIVATE_KEY") {
-        let bytes = base64::decode(&key).unwrap();
-        assert_eq!(bytes.len(), 32);
-        let mut out = [0; 32];
-        out.copy_from_slice(&bytes);
-        Some(out)
-    } else {
-        None
-    };
     config.watched_directories = cli_opts.watch;
+    config.watched_git_repositories = cli_opts.git_watch;
+    config.private_key = match (env::var("PRIVATE_KEY_BASE"), env::var("NODE_NAME")) {
+        (Ok(key_base), Ok(pod_name)) => {
+            let mut hasher = blake3::Hasher::new();
+            hasher.update(&base64::decode(&key_base).unwrap());
+            hasher.update(pod_name.as_bytes());
+            Some(hasher.finalize().into())
+        }
+        _ => None,
+    };
 
     let mut network = Network::<std::convert::Infallible>::start(config).unwrap(); // TODO: use `!`
     loop {

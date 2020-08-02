@@ -7,13 +7,17 @@ edition = "2018"
 publish = false
 
 [dependencies]
+atomic = { version = "0.4.6", default-features = false }
 blake3 = { version = "0.2.2", default-features = false }
 crossbeam-queue = { version = "0.2.1", default-features = false, features = ["alloc"] }
+derive_more = "0.99.8"
+either = { version = "1.5.3", default-features = false }
+fnv = { git = "https://github.com/dflemstr/rust-fnv", default-features = false }    # TODO: https://github.com/servo/rust-fnv/pull/22
 futures = { version = "0.3.2", default-features = false, features = ["alloc"] }
 hashbrown = { version = "0.7.1", default-features = false }
 lazy_static = "1.4"
 libm = "0.2.1"
-linked_list_allocator = { version = "0.8.1", features = ["alloc_ref"] }
+linked_list_allocator = { version = "0.8.2", features = ["alloc_ref"] }
 nohash-hasher = { version = "0.2.0", default-features = false }
 rand_chacha = { version = "0.2.1", default-features = false }
 rand_core = { version = "0.5.1", default-features = false }
@@ -24,6 +28,7 @@ redshirt-hardware-interface = { path = "../../interfaces/hardware", default-feat
 redshirt-interface-interface = { path = "../../interfaces/interface", default-features = false }
 redshirt-kernel-log-interface = { path = "../../interfaces/kernel-log", default-features = false }
 redshirt-log-interface = { path = "../../interfaces/log", default-features = false }
+redshirt-pci-interface = { path = "../../interfaces/pci", default-features = false }
 redshirt-random-interface = { path = "../../interfaces/random", default-features = false }
 redshirt-syscalls = { path = "../../interfaces/syscalls", default-features = false }
 redshirt-time-interface = { path = "../../interfaces/time", default-features = false }
@@ -36,5 +41,7 @@ rusttype = "0.8.2"
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 acpi = "0.8.0"
+crossbeam-utils = { version = "0.7.2", default-features = false }
 multiboot2 = "0.8.1"
-x86_64 = "0.8.2"
+rdrand = { version = "0.7.0", default-features = false }
+x86_64 = "0.11.0"

@@ -15,8 +15,8 @@
 
 use crate::klog::video;
 
-use core::fmt;
-use redshirt_kernel_log_interface::ffi::KernelLogMethod;
+use core::{convert::TryFrom as _, fmt};
+use redshirt_kernel_log_interface::ffi::{KernelLogMethod, UartInfo};
 use spinning_top::{Spinlock, SpinlockGuard};
 
 pub struct KLogger {
@@ -25,7 +25,10 @@ pub struct KLogger {
 
 enum Inner {
     Disabled(KernelLogMethod),
-    Enabled { terminal: Option<video::Terminal> },
+    Enabled {
+        terminal: Option<video::Terminal>,
+        uart: Option<UartInfo>,
+    },
 }
 
 impl KLogger {
@@ -37,6 +40,7 @@ impl KLogger {
                         Some(fb) => Some(video::Terminal::new(fb)),
                         None => None,
                     },
+                    uart: method.uart,
                 }),
             }
         } else {
@@ -84,10 +88,30 @@ impl<'a> fmt::Write for Printer<'a> {
     fn write_str(&mut self, message: &str) -> fmt::Result {
         match &mut *self.inner {
             Inner::Disabled(_) => {} // TODO: push to some buffer
-            Inner::Enabled { terminal } => {
+            Inner::Enabled { terminal, uart } => {
                 if let Some(terminal) = terminal {
                     // TODO: red for panics
                     terminal.printer(self.color).write_str(message)?;
+                }
+
+                if let Some(uart) = uart {
+                    unsafe {
+                        if let (Ok(r_addr), Ok(w_addr)) = (
+                            usize::try_from(uart.wait_low_address),
+                            usize::try_from(uart.write_address),
+                        ) {
+                            for byte in message.as_bytes() {
+                                loop {
+                                    let v = (r_addr as *const u32).read_volatile();
+                                    if (v & uart.wait_low_mask) != 0x0 {
+                                        continue;
+                                    }
+                                    (w_addr as *mut u32).write_volatile(u32::from(*byte));
+                                    break;
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

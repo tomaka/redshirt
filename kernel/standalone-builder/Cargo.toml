@@ -12,9 +12,19 @@ publish = false
 fatfs = "0.3.3"
 fscommon = "0.1.0"
 cargo_metadata = "0.9"
-mbrman = "0.3.1"
+mbrman = { git = "https://github.com/cecton/mbrman" }    # TODO: waiting for a publication
 serde_json = "1.0.48"
 structopt = "0.3.11"
 tempdir = "0.3.7"
 thiserror = "1.0"
 walkdir = "2.3.1"
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.test.package."*"]
+opt-level = 3
+

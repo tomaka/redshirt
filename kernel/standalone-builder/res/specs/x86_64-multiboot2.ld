@@ -18,6 +18,24 @@ SECTIONS {
     LONG(MULTIBOOT2_HEADER_LEN)
     LONG(MULTIBOOT2_CHECKSUM)
 
+    /* Flags tag, indicating that we support graphics */
+    . = ALIGN(8);
+    SHORT(4)
+    SHORT(1)    /* flags = 1 means this tag can be ignored if not supported */
+    LONG(12)
+    LONG(1)     /* 0 = text, 1 = graphics
+
+    /* Framebuffer tag, indicating the preferred graphics mode */
+    . = ALIGN(8);
+    SHORT(5)
+    SHORT(1)    /* flags = 1 means this tag can be ignored if not supported */
+    LONG(20)
+    LONG(1024)  /* width */
+    LONG(768)   /* height */
+    LONG(32)    /* depth */
+
+    /* end of tags */
+    . = ALIGN(8);
     SHORT(0)
     SHORT(0)
     LONG(8)

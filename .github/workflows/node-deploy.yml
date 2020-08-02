@@ -3,7 +3,7 @@ name: Node deployment
 on:
   push:
     branches:    
-      - master
+      - develop
 
 jobs:
   build-push-docker-image:
@@ -22,7 +22,7 @@ jobs:
         docker tag tomaka/redshirt-passive-node:$(echo $GITHUB_SHA | head -c7) tomaka/redshirt-passive-node:latest
         docker push tomaka/redshirt-passive-node:latest
     - name: Update deployment config
-      run: TAG=$(echo $GITHUB_SHA | head -c7) && sed -i 's|<TAG>|'${TAG}'|' .github/node-deploy-kube-config.yml
+      run: TAG=$(echo $GITHUB_SHA | head -c7) && sed -i 's|<TAG>|'${TAG}'|' .maintain/node-deploy-kube-config.yml
     - name: Save DigitalOcean kubeconfig
       uses: digitalocean/action-doctl@master
       env:
@@ -31,6 +31,6 @@ jobs:
         args: kubernetes cluster kubeconfig show redshirt > .kubeconfig
     - name: Deploy to DigitalOcean Kubernetes
       # TODO: use `--prune`?
-      run: kubectl --kubeconfig=.kubeconfig apply -f .github/node-deploy-kube-config.yml
+      run: kubectl --kubeconfig=.kubeconfig apply -f .maintain/node-deploy-kube-config.yml
     - name: Verify deployment
-      run: kubectl --kubeconfig=.kubeconfig rollout status deployment/passive-node
+      run: kubectl --kubeconfig=.kubeconfig rollout status statefulsets/passive-node

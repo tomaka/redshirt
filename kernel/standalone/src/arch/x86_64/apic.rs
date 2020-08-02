@@ -22,3 +22,4 @@ pub mod io_apics;
 pub mod local;
 pub mod pic;
 pub mod timers;
+pub mod tsc_sync;

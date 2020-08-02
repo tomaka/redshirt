@@ -14,7 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use futures::prelude::*;
-use libp2p_core::{
+use libp2p::core::{
     multiaddr::{Multiaddr, Protocol},
     transport::{ListenerEvent, TransportError},
     Transport,
@@ -66,7 +66,6 @@ impl Transport for TcpConfig {
                     .map_err(|()| io::Error::from(io::ErrorKind::Other))?;
                 let local_addr =
                     ip_to_multiaddr(listener.local_addr().ip(), listener.local_addr().port());
-                println!("Listening on {}", local_addr);
 
                 let first = stream::once({
                     let local_addr = local_addr.clone();
@@ -105,7 +104,6 @@ impl Transport for TcpConfig {
             return Err(TransportError::MultiaddrNotSupported(addr));
         };
 
-        println!("Dialing {}", addr);
         Ok(Box::pin(async move {
             redshirt_tcp_interface::TcpStream::connect(&socket_addr)
                 .await
