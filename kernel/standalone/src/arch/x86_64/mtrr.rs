@@ -20,7 +20,7 @@
 //! - Strong Uncachable (UC). Memory is not cached. All operations are ordered.
 //! - Uncachable (UC-). Used in conjunction with the (Page Attributes Table) PAT, which we don't
 //! support.
-//! - Write Combining (WC). Memory is not cached. Writes might be reordered and multiple writes 
+//! - Write Combining (WC). Memory is not cached. Writes might be reordered and multiple writes
 //! might be combined into one.
 //! - Write Through (WT). Memory is cached. Writes update the cache entry (if any) and are also
 //! propagated to the physical memory and may be combined (as with WC).

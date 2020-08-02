@@ -13,10 +13,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use super::raw_table::RawPageTable;
 use core::convert::TryFrom;
 use hashbrown::HashMap;
 use nohash_hasher::BuildNoHashHasher;
-use super::raw_table::RawPageTable;
 
 // TODO: support PAE caching in 32bits mode
 
@@ -50,15 +50,9 @@ pub struct PageTable {
 
 pub enum Kind {
     PML4,
-    PDPT {
-        base: usize,
-    },
-    PD {
-        base: usize,
-    },
-    PT {
-        base: usize,
-    },
+    PDPT { base: usize },
+    PD { base: usize },
+    PT { base: usize },
 }
 
 /// Equivalent to [`Kind`] but whose validity has been ensured.
@@ -76,7 +70,7 @@ impl PageTable {
 
     /// Ensures that entries `0` to `num` are marked as present.
     fn populate_to(&mut self, num: u16) {
-        for n in self.num_present_entries .. num {
+        for n in self.num_present_entries..num {
             // TODO:
             //self.raw_table[n]
         }
@@ -84,12 +78,10 @@ impl PageTable {
         self.num_present_entries = num;
     }
 
-    /// 
+    ///
     ///
     /// # Panic
     ///
     /// Panics if the entry is not already marked as "present" in the table.
-    fn split(&mut self, entry: u16) {
-
-    }
+    fn split(&mut self, entry: u16) {}
 }

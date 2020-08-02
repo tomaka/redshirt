@@ -22,25 +22,31 @@ use core::convert::TryFrom;
 pub struct EncodedEntry(usize);
 
 impl EncodedEntry {
-    pub fn raw_value(&self) -> usize {
+    pub const fn raw_value(&self) -> usize {
         self.0
     }
 }
 
-// TODO: impl Display
-#[derive(Debug)]
+#[derive(Debug, derive_more::Display)]
 pub enum DecodeError {
     InvalidTy,
 }
 
 /// Represents an absent entry.
 ///
-/// Can be turned into an [`EncodedEntry`] with the `From` trait.
+/// Can be turned into an [`EncodedEntry`] with the [`Absent::encode`] method.
 pub struct Absent;
 
-impl From<Absent> for EncodedEntry {
-    fn from(_: Absent) -> EncodedEntry {
+impl Absent {
+    /// Encodes this [`Absent`] into an entry ready for usage.
+    pub const fn encode(self) -> EncodedEntry {
         EncodedEntry(0)
+    }
+}
+
+impl From<Absent> for EncodedEntry {
+    fn from(absent: Absent) -> EncodedEntry {
+        absent.encode()
     }
 }
 
@@ -55,6 +61,7 @@ impl TryFrom<EncodedEntry> for Absent {
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct DecodedPml4ePdptePde {
     pub present: bool,
     pub read_write: bool,
@@ -66,27 +73,47 @@ pub struct DecodedPml4ePdptePde {
     pub execute_disable: bool,
 }
 
-impl TryFrom<DecodedPml4ePdptePde> for EncodedEntry {
-    type Error = ();
-    fn try_from(decoded: DecodedPml4ePdptePde) -> Result<Self, Self::Error> {
-        TryFrom::try_from(DecodedAll {
-            present: decoded.present,
-            read_write: decoded.read_write,
-            user: decoded.user,
-            write_through: decoded.write_through,
-            cache_disable: decoded.cache_disable,
-            accessed: decoded.accessed,
+impl DecodedPml4ePdptePde {
+    /// Encodes this descriptor into an entry ready for usage.
+    ///
+    /// # Safety
+    ///
+    /// For the entry to be valid:
+    ///
+    /// - `physical_address` must be a multiple of 4096.
+    ///
+    pub const unsafe fn encode_unchecked(self) -> EncodedEntry {
+        self.into_decode_all().encode_unchecked()
+    }
+
+    /// Turns this structure into a less specific [`DecodeAll`].
+    const fn into_decode_all(self) -> DecodedAll {
+        DecodedAll {
+            present: self.present,
+            read_write: self.read_write,
+            user: self.user,
+            write_through: self.write_through,
+            cache_disable: self.cache_disable,
+            accessed: self.accessed,
             dirty: false,
             bit7: false,
             global: false,
             bit12: false,
-            physical_address: decoded.physical_address,
+            physical_address: self.physical_address,
             protection_key: 0,
-            execute_disable: decoded.execute_disable,
-        })
+            execute_disable: self.execute_disable,
+        }
     }
 }
 
+impl TryFrom<DecodedPml4ePdptePde> for EncodedEntry {
+    type Error = ();
+    fn try_from(decoded: DecodedPml4ePdptePde) -> Result<Self, Self::Error> {
+        TryFrom::try_from(decoded.into_decode_all())
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct DecodedPdpte1G {
     pub present: bool,
     pub read_write: bool,
@@ -102,6 +129,39 @@ pub struct DecodedPdpte1G {
     pub execute_disable: bool,
 }
 
+impl DecodedPdpte1G {
+    /// Encodes this descriptor into an entry ready for usage.
+    ///
+    /// # Safety
+    ///
+    /// For the entry to be valid:
+    ///
+    /// - `physical_address` must be aligned on 1 GiB.
+    ///
+    pub const unsafe fn encode_unchecked(self) -> EncodedEntry {
+        self.into_decode_all().encode_unchecked()
+    }
+
+    /// Turns this structure into a less specific [`DecodeAll`].
+    const fn into_decode_all(self) -> DecodedAll {
+        DecodedAll {
+            present: self.present,
+            read_write: self.read_write,
+            user: self.user,
+            write_through: self.write_through,
+            cache_disable: self.cache_disable,
+            accessed: self.accessed,
+            dirty: self.dirty,
+            bit7: true,
+            global: self.global,
+            bit12: self.attributes_table,
+            physical_address: self.physical_address,
+            protection_key: self.protection_key,
+            execute_disable: self.execute_disable,
+        }
+    }
+}
+
 impl TryFrom<DecodedPdpte1G> for EncodedEntry {
     type Error = ();
     fn try_from(decoded: DecodedPdpte1G) -> Result<Self, Self::Error> {
@@ -109,24 +169,11 @@ impl TryFrom<DecodedPdpte1G> for EncodedEntry {
             return Err(());
         }
 
-        TryFrom::try_from(DecodedAll {
-            present: decoded.present,
-            read_write: decoded.read_write,
-            user: decoded.user,
-            write_through: decoded.write_through,
-            cache_disable: decoded.cache_disable,
-            accessed: decoded.accessed,
-            dirty: decoded.dirty,
-            bit7: true,
-            global: decoded.global,
-            bit12: decoded.attributes_table,
-            physical_address: decoded.physical_address,
-            protection_key: decoded.protection_key,
-            execute_disable: decoded.execute_disable,
-        })
+        TryFrom::try_from(decoded.into_decode_all())
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct DecodedPde2M {
     pub present: bool,
     pub read_write: bool,
@@ -142,6 +189,39 @@ pub struct DecodedPde2M {
     pub execute_disable: bool,
 }
 
+impl DecodedPde2M {
+    /// Encodes this descriptor into an entry ready for usage.
+    ///
+    /// # Safety
+    ///
+    /// For the entry to be valid:
+    ///
+    /// - `physical_address` must be aligned on 2 Mib.
+    ///
+    pub const unsafe fn encode_unchecked(self) -> EncodedEntry {
+        self.into_decode_all().encode_unchecked()
+    }
+
+    /// Turns this structure into a less specific [`DecodeAll`].
+    const fn into_decode_all(self) -> DecodedAll {
+        DecodedAll {
+            present: self.present,
+            read_write: self.read_write,
+            user: self.user,
+            write_through: self.write_through,
+            cache_disable: self.cache_disable,
+            accessed: self.accessed,
+            dirty: self.dirty,
+            bit7: true,
+            global: self.global,
+            bit12: self.attributes_table,
+            physical_address: self.physical_address,
+            protection_key: self.protection_key,
+            execute_disable: self.execute_disable,
+        }
+    }
+}
+
 impl TryFrom<DecodedPde2M> for EncodedEntry {
     type Error = ();
     fn try_from(decoded: DecodedPde2M) -> Result<Self, Self::Error> {
@@ -149,24 +229,11 @@ impl TryFrom<DecodedPde2M> for EncodedEntry {
             return Err(());
         }
 
-        TryFrom::try_from(DecodedAll {
-            present: decoded.present,
-            read_write: decoded.read_write,
-            user: decoded.user,
-            write_through: decoded.write_through,
-            cache_disable: decoded.cache_disable,
-            accessed: decoded.accessed,
-            dirty: decoded.dirty,
-            bit7: true,
-            global: decoded.global,
-            bit12: decoded.attributes_table,
-            physical_address: decoded.physical_address,
-            protection_key: decoded.protection_key,
-            execute_disable: decoded.execute_disable,
-        })
+        TryFrom::try_from(decoded.into_decode_all())
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct DecodedPde4M {
     pub present: bool,
     pub read_write: bool,
@@ -178,6 +245,39 @@ pub struct DecodedPde4M {
     pub global: bool,
     pub attributes_table: bool,
     pub physical_address: usize,
+}
+
+impl DecodedPde4M {
+    /// Encodes this descriptor into an entry ready for usage.
+    ///
+    /// # Safety
+    ///
+    /// For the entry to be valid:
+    ///
+    /// - `physical_address` must be aligned on 4 MiB.
+    ///
+    pub const unsafe fn encode_unchecked(self) -> EncodedEntry {
+        self.into_decode_all().encode_unchecked()
+    }
+
+    /// Turns this structure into a less specific [`DecodeAll`].
+    const fn into_decode_all(self) -> DecodedAll {
+        DecodedAll {
+            present: self.present,
+            read_write: self.read_write,
+            user: self.user,
+            write_through: self.write_through,
+            cache_disable: self.cache_disable,
+            accessed: self.accessed,
+            dirty: self.dirty,
+            bit7: true,
+            global: self.global,
+            bit12: self.attributes_table,
+            physical_address: self.physical_address,
+            protection_key: 0,
+            execute_disable: false,
+        }
+    }
 }
 
 impl TryFrom<DecodedPde4M> for EncodedEntry {
@@ -192,25 +292,12 @@ impl TryFrom<DecodedPde4M> for EncodedEntry {
         // however, makes little sense, as we could not actually access the extra available
         // physical memory.
 
-        TryFrom::try_from(DecodedAll {
-            present: decoded.present,
-            read_write: decoded.read_write,
-            user: decoded.user,
-            write_through: decoded.write_through,
-            cache_disable: decoded.cache_disable,
-            accessed: decoded.accessed,
-            dirty: decoded.dirty,
-            bit7: true,
-            global: decoded.global,
-            bit12: decoded.attributes_table,
-            physical_address: decoded.physical_address,
-            protection_key: 0,
-            execute_disable: false,
-        })
+        TryFrom::try_from(decoded.into_decode_all())
     }
 }
 
 /// Intermediary type common to all types of entries.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 struct DecodedAll {
     present: bool,
     read_write: bool,
@@ -227,8 +314,6 @@ struct DecodedAll {
     execute_disable: bool,
 }
 
-// TODO: implement From<EncodedEntry> for DecodedAll
-
 impl TryFrom<DecodedAll> for EncodedEntry {
     type Error = ();
     fn try_from(decoded: DecodedAll) -> Result<Self, Self::Error> {
@@ -244,20 +329,26 @@ impl TryFrom<DecodedAll> for EncodedEntry {
             return Err(());
         }
 
-        let value = (if decoded.present { 1 } else { 0 } << 0)
-            | (if decoded.read_write { 1 } else { 0 } << 1)
-            | (if decoded.user { 1 } else { 0 } << 2)
-            | (if decoded.write_through { 1 } else { 0 } << 3)
-            | (if decoded.cache_disable { 1 } else { 0 } << 4)
-            | (if decoded.accessed { 1 } else { 0 } << 5)
-            | (if decoded.dirty { 1 } else { 0 } << 6)
-            | (if decoded.bit7 { 1 } else { 0 } << 7)
-            | (if decoded.global { 1 } else { 0 } << 8)
-            | (if decoded.bit12 { 1 } else { 0 } << 12)
-            | decoded.physical_address
-            | (usize::from(decoded.protection_key) << 59)
-            | (if decoded.execute_disable { 1 } else { 0 } << 63);
+        Ok(unsafe { decoded.encode_unchecked() })
+    }
+}
 
-        Ok(EncodedEntry(value))
+impl DecodedAll {
+    const unsafe fn encode_unchecked(self) -> EncodedEntry {
+        let value = (if self.present { 1 } else { 0 } << 0)
+            | (if self.read_write { 1 } else { 0 } << 1)
+            | (if self.user { 1 } else { 0 } << 2)
+            | (if self.write_through { 1 } else { 0 } << 3)
+            | (if self.cache_disable { 1 } else { 0 } << 4)
+            | (if self.accessed { 1 } else { 0 } << 5)
+            | (if self.dirty { 1 } else { 0 } << 6)
+            | (if self.bit7 { 1 } else { 0 } << 7)
+            | (if self.global { 1 } else { 0 } << 8)
+            | (if self.bit12 { 1 } else { 0 } << 12)
+            | self.physical_address
+            | ((self.protection_key as usize) << 59)
+            | (if self.execute_disable { 1 } else { 0 } << 63);
+
+        EncodedEntry(value)
     }
 }

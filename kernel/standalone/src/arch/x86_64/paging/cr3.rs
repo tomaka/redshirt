@@ -28,5 +28,5 @@ pub unsafe fn load_cr3(pml4: &RawPageTable, write_through: bool, cache_disable: 
     let value = pml4.address()
         | (if write_through { 1 } else { 0 } << 3)
         | (if cache_disable { 1 } else { 0 } << 4);
-    asm!("mov $0, %cr3" :: "r"(value) : "memory" : "volatile");
+    asm!("mov cr3, {}", in(reg) value, options(preserves_flags));
 }
