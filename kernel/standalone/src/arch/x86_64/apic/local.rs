@@ -13,6 +13,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use super::super::interrupts;
+
+use alloc::sync::Arc;
 use core::{
     convert::TryFrom as _,
     num::{NonZeroU32, NonZeroU64},
@@ -27,6 +30,8 @@ use x86_64::registers::model_specific::Msr;
 pub struct LocalApicsControl {
     /// True if the CPUs support TSC-Deadline mode.
     tsc_deadline_supported: bool,
+    /// Interrupt vector triggered when an APIC error happens.
+    error_interrupt_vector: interrupts::ReservedInterruptVector,
 }
 
 /// Opaque type representing the APIC ID of a processor.
@@ -51,11 +56,38 @@ pub struct ApicId(u8);
 /// physical memory.
 ///
 pub unsafe fn init() -> LocalApicsControl {
-    // We don't support platforms without an APIC.
+    // We don't support platforms without an APIC or without the TSC.
     assert!(is_apic_supported());
+    assert!(is_tsc_supported());
+
+    // We reserve an interrupt vector for errors triggered by the APIC.
+    // Each APIC, when it gets initialized, will set this interrupt vector in its LVT.
+    let error_interrupt_vector = interrupts::reserve_any_vector(240).unwrap();
+    // We don't have any intent of actually processing the interrupts, instead we just set up a
+    // one-time panicking waker.
+    error_interrupt_vector.register_waker(&{
+        struct ErrWaker;
+        impl futures::task::ArcWake for ErrWaker {
+            fn wake_by_ref(arc_self: &Arc<Self>) {
+                unsafe {
+                    // The errors reported are found in the Error Status Register (ESR).
+                    let esr_addr = usize::try_from(APIC_BASE_ADDR + 0xf0).unwrap() as *mut u32;
+                    // Before reading from the ESR, we must first write to it.
+                    esr_addr.write_volatile(0b11111111);
+                    let status = esr_addr.read_volatile();
+                    panic!(
+                        "Local APIC error; Error Status Register value: 0x{:x}",
+                        status
+                    );
+                }
+            }
+        }
+        futures::task::waker(Arc::new(ErrWaker))
+    });
 
     LocalApicsControl {
         tsc_deadline_supported: is_tsc_deadline_supported(),
+        error_interrupt_vector,
     }
 }
 
@@ -117,7 +149,6 @@ impl LocalApicsControl {
     ///
     // TODO: add debug_assert!s in all the other methods that check if the local APIC is initialized
     pub unsafe fn init_local(&self) {
-        // TODO: assert!(core::arch::x86_64::has_cpuid());  unstable for now
         assert!(is_apic_supported());
         assert_eq!(self.tsc_deadline_supported, is_tsc_deadline_supported());
 
@@ -138,7 +169,11 @@ impl LocalApicsControl {
             svr_addr.write_volatile(val | 0x100); // Enable spurious interrupts.
         }
 
-        // TODO: enable error reporting
+        // Set the error handling interrupt vector.
+        {
+            let lvt_addr = usize::try_from(APIC_BASE_ADDR + 0x370).unwrap() as *mut u32;
+            lvt_addr.write_volatile(u32::from(self.error_interrupt_vector.interrupt_num()));
+        }
     }
 
     /// Returns the [`ApicId`] of the calling processor.
@@ -157,7 +192,6 @@ impl LocalApicsControl {
     ///
     /// Panics if `TscDeadline` is passed and `is_tsc_deadline_supported` is false.
     /// Panics if the `value_multiplier` is not either one or a power of two.
-    // TODO: sets the timer on the local APIC, which really isn't great
     pub fn set_local_timer(&self, timer: Timer) {
         unsafe {
             match timer {
@@ -265,7 +299,7 @@ fn send_ipi_inner(target_apic_id: ApicId, delivery: u8, vector: u8) {
     debug_assert!(delivery != 0b101 || vector == 0);
 
     // TODO: if P6 architecture, then only 4 bits of the target are valid; do we care about that?
-    let level_bit = if delivery == 0b101 { 0 } else { 1 << 15 };
+    let level_bit = if delivery == 0b101 { 0 } else { 1 << 14 };
     let value_lo = level_bit | (u32::from(delivery) << 8) | u32::from(vector);
     let value_hi = u32::from(target_apic_id.0) << (56 - 32);
 
@@ -299,31 +333,23 @@ fn current_apic_id() -> ApicId {
 /// Checks in the CPUID whether the APIC is supported.
 fn is_apic_supported() -> bool {
     unsafe {
-        //TODO: unstable  assert!(core::arch::x86_64::has_cpuid());
         let cpuid = core::arch::x86_64::__cpuid(0x1);
         cpuid.edx & (1 << 9) != 0
+    }
+}
+
+/// Checks in the CPUID whether the TSC is supported.
+fn is_tsc_supported() -> bool {
+    unsafe {
+        let cpuid = core::arch::x86_64::__cpuid(0x1);
+        cpuid.edx & (1 << 4) != 0
     }
 }
 
 /// Checks in the CPUID whether the APIC timer supports TSC deadline mode.
 fn is_tsc_deadline_supported() -> bool {
     unsafe {
-        //TODO: unstable  assert!(core::arch::x86_64::has_cpuid());
         let cpuid = core::arch::x86_64::__cpuid(0x1);
         cpuid.ecx & (1 << 24) != 0
-    }
-}
-
-/// Checks in the CPUID whether the APIC timer runs at a constant rate.
-fn is_apic_timer_constant_rate() -> bool {
-    unsafe {
-        //TODO: unstable  assert!(core::arch::x86_64::has_cpuid());
-
-        if core::arch::x86_64::__get_cpuid_max(0).0 < 0x6 {
-            return false;
-        }
-
-        let cpuid = core::arch::x86_64::__cpuid(0x6);
-        cpuid.eax & (1 << 2) != 0
     }
 }

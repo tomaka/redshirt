@@ -340,7 +340,9 @@ fn scan_function(bdf: &DeviceBdf) -> Option<ScanResult> {
                         bar_n += 2;
                     }
                 } else {
-                    let base_address = u16::try_from(bar & !0b11).unwrap();
+                    // TODO: this ` & 0xffff` is normally not needed, but it seems like on real
+                    // hardware the value is higher than 0xffff
+                    let base_address = u16::try_from((bar & !0b11) & 0xffff).unwrap();
                     list.push(BaseAddressRegister::Io { base_address });
                     bar_n += 1;
                 }

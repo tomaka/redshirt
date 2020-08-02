@@ -966,6 +966,7 @@ dependencies = [
  "futures",
  "hyper",
  "log",
+ "redshirt-kernel-debug-interface",
  "redshirt-log-interface",
  "redshirt-syscalls",
  "redshirt-tcp-interface",
@@ -1102,6 +1103,16 @@ name = "keccak"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67c21572b4949434e4fc1e1978b99c5f77064153c59d998bf13ecd96fb5ecba7"
+
+[[package]]
+name = "kernel-debug-printer"
+version = "0.1.0"
+dependencies = [
+ "redshirt-kernel-debug-interface",
+ "redshirt-log-interface",
+ "redshirt-syscalls",
+ "redshirt-time-interface",
+]
 
 [[package]]
 name = "kernel32-sys"
@@ -2029,6 +2040,13 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "parity-scale-codec",
+ "redshirt-syscalls",
+]
+
+[[package]]
+name = "redshirt-kernel-debug-interface"
+version = "0.1.0"
+dependencies = [
  "redshirt-syscalls",
 ]
 

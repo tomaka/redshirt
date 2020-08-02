@@ -110,9 +110,15 @@ fn main() {
         let system = system.clone();
         async_std::task::spawn(async move {
             loop {
-                let outcome = system.run().await;
-                if tx.send(outcome).await.is_err() {
-                    break;
+                match system.run().await {
+                    redshirt_core::system::SystemRunOutcome::ProgramFinished { pid, outcome } => {
+                        if tx.send((pid, outcome)).await.is_err() {
+                            break;
+                        }
+                    }
+                    redshirt_core::system::SystemRunOutcome::KernelDebugMetricsRequest(report) => {
+                        report.respond("");
+                    }
                 }
             }
         });
@@ -120,25 +126,19 @@ fn main() {
 
     // All the background tasks events are grouped together and sent here.
     framebuffer_context.run(async move {
-        while let Some(event) = rx.next().await {
-            match event {
-                redshirt_core::system::SystemRunOutcome::ProgramFinished {
-                    pid,
-                    outcome: Err(err),
-                } if cli_pids.iter().any(|p| *p == pid) => {
+        while let Some((pid, outcome)) = rx.next().await {
+            match outcome {
+                Err(err) if cli_pids.iter().any(|p| *p == pid) => {
                     eprintln!("{:?}", err);
                     process::exit(1);
                 }
-                redshirt_core::system::SystemRunOutcome::ProgramFinished {
-                    pid,
-                    outcome: Ok(()),
-                } => {
+                Ok(()) => {
                     cli_pids.retain(|p| *p != pid);
                     if cli_pids.is_empty() {
                         process::exit(0);
                     }
                 }
-                _ => panic!(),
+                Err(_) => {}
             }
         }
     });

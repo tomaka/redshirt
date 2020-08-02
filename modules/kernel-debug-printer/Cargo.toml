@@ -1,15 +1,13 @@
 [package]
-name = "http-server"
+name = "kernel-debug-printer"
 version = "0.1.0"
+license = "GPL-3.0-or-later"
 authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
 edition = "2018"
 publish = false
 
 [dependencies]
-futures = "0.3.1"
-hyper = { version = "0.13.1", default-features = false }
-log = "0.4.8"
 redshirt-kernel-debug-interface = { path = "../../interfaces/kernel-debug" }
 redshirt-log-interface = { path = "../../interfaces/log" }
 redshirt-syscalls = { path = "../../interfaces/syscalls" }
-redshirt-tcp-interface = { path = "../../interfaces/tcp" }
+redshirt-time-interface = { path = "../../interfaces/time" }

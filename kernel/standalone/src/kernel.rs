@@ -24,20 +24,38 @@
 
 use crate::arch::PlatformSpecific;
 
-use alloc::sync::Arc;
+use alloc::{format, string::String, sync::Arc, vec::Vec};
 use core::{
-    marker::PhantomData,
-    sync::atomic::{AtomicBool, Ordering},
+    convert::TryFrom as _,
+    pin::Pin,
+    sync::atomic::{AtomicBool, AtomicU64, Ordering},
 };
+use futures::prelude::*;
+use hashbrown::HashSet;
 use redshirt_core::{
     build_wasm_module, extrinsics::wasi::WasiExtrinsics, module::ModuleHash, System,
 };
+use spinning_top::Spinlock;
 
 /// Main struct of this crate. Runs everything.
 pub struct Kernel<TPlat> {
+    /// Contains the list of all processes, threads, interfaces, messages, and so on.
     system: System<'static, WasiExtrinsics>,
-    /// Phantom data so that we can keep the platform specific generic parameter.
-    marker: PhantomData<TPlat>,
+    /// Has one entry for each CPU. Never resized.
+    cpu_busy_counters: Vec<CpuCounter>,
+    /// Platform-specific getters. Passed at initialization.
+    platform_specific: Pin<Arc<TPlat>>,
+    /// List of CPUs for which [`Kernel::run`] hasn't been called yet. Also makes it possible to
+    /// make sure that [`Kernel::run`] isn't called twice with the same CPU index.
+    not_started_cpus: Spinlock<HashSet<usize, fnv::FnvBuildHasher>>,
+}
+
+#[derive(Debug)]
+struct CpuCounter {
+    /// Total number of nanoseconds spent working since [`Kernel::run`] has been called.
+    busy_ticks: atomic::Atomic<u128>,
+    /// Total number of nanoseconds spent idle since [`Kernel::run`] has been called.
+    idle_ticks: atomic::Atomic<u128>,
 }
 
 impl<TPlat> Kernel<TPlat>
@@ -73,6 +91,7 @@ where
                 ))
                 .with_startup_process(build_wasm_module!("../../../modules/compositor"))
                 .with_startup_process(build_wasm_module!("../../../modules/pci-printer"))
+                .with_startup_process(build_wasm_module!("../../../modules/kernel-debug-printer"))
                 .with_startup_process(build_wasm_module!("../../../modules/log-to-kernel"))
                 .with_startup_process(build_wasm_module!("../../../modules/http-server"))
                 .with_startup_process(build_wasm_module!("../../../modules/hello-world"))
@@ -92,18 +111,114 @@ where
             ModuleHash::from_base58("FWMwRMQCKdWVDdKyx6ogQ8sXuoeDLNzZxniRMyD5S71").unwrap(),
         );*/
 
+        let cpu_busy_counters = (0..platform_specific.as_ref().num_cpus().get())
+            .map(|_| CpuCounter {
+                busy_ticks: atomic::Atomic::new(0),
+                idle_ticks: atomic::Atomic::new(0),
+            })
+            .collect();
+
+        let not_started_cpus = Spinlock::new(
+            (0..usize::try_from(platform_specific.as_ref().num_cpus().get()).unwrap()).collect(),
+        );
+
         Kernel {
             system: system_builder.build().expect("failed to start kernel"),
-            marker: PhantomData,
+            cpu_busy_counters,
+            platform_specific,
+            not_started_cpus,
         }
     }
 
     /// Run the kernel. Must be called once per CPU.
-    pub async fn run(&self) -> ! {
+    pub async fn run(&self, cpu_index: usize) -> ! {
+        // Check that the `cpu_index` is correct.
+        {
+            let mut not_started_cpus = self.not_started_cpus.lock();
+            let _was_in = not_started_cpus.remove(&cpu_index);
+            assert!(_was_in);
+            if not_started_cpus.is_empty() {
+                // Un-allocate memory.
+                not_started_cpus.shrink_to_fit();
+            }
+        }
+
+        // In order for the idle/busy counters to report accurate information, we keep here the
+        // last time we have updated one of the counters.
+        let mut now = self.platform_specific.as_ref().monotonic_clock();
+
         loop {
-            match self.system.run().await {
+            // Wrap around `self.system.run()` and add time reports to the CPU idle/busy counters.
+            // TODO: because of this implementation, the idle counter is only updated when the
+            // CPU has some work to do; in other words, if a CPU is asleep for a long time then its
+            // counters will not be updated
+            let inner = self.system.run();
+            futures::pin_mut!(inner);
+            let fut = future::poll_fn(|cx| {
+                let new_now = self.platform_specific.as_ref().monotonic_clock();
+                let elapsed_idle = new_now.checked_sub(now).unwrap();
+                now = new_now;
+                self.cpu_busy_counters[cpu_index]
+                    .idle_ticks
+                    .fetch_add(elapsed_idle, Ordering::Relaxed);
+
+                let outcome = Future::poll(inner.as_mut(), cx);
+
+                let new_now = self.platform_specific.as_ref().monotonic_clock();
+                let elapsed_budy = new_now.checked_sub(now).unwrap();
+                now = new_now;
+                self.cpu_busy_counters[cpu_index]
+                    .busy_ticks
+                    .fetch_add(elapsed_budy, Ordering::Relaxed);
+
+                outcome
+            });
+
+            match fut.await {
                 redshirt_core::system::SystemRunOutcome::ProgramFinished { .. } => {}
-                _ => panic!(),
+                redshirt_core::system::SystemRunOutcome::KernelDebugMetricsRequest(report) => {
+                    let mut out = String::new();
+
+                    // cpu_idle_seconds_total
+                    out.push_str("# HELP cpu_idle_seconds_total Total number of seconds during which each CPU has been idle.\n");
+                    out.push_str("# TYPE cpu_idle_seconds_total counter\n");
+                    for (cpu_n, cpu) in self.cpu_busy_counters.iter().enumerate() {
+                        let as_secs =
+                            cpu.idle_ticks.load(Ordering::Relaxed) as f64 / 1_000_000_000.0;
+                        out.push_str(&format!(
+                            "cpu_idle_seconds_total{{cpu=\"{}\"}} {}\n",
+                            cpu_n, as_secs
+                        ));
+                    }
+                    out.push_str("\n");
+
+                    // cpu_busy_seconds_total
+                    out.push_str("# HELP cpu_busy_seconds_total Total number of seconds during which each CPU has been busy.\n");
+                    out.push_str("# TYPE cpu_busy_seconds_total counter\n");
+                    for (cpu_n, cpu) in self.cpu_busy_counters.iter().enumerate() {
+                        let as_secs =
+                            cpu.busy_ticks.load(Ordering::Relaxed) as f64 / 1_000_000_000.0;
+                        out.push_str(&format!(
+                            "cpu_busy_seconds_total{{cpu=\"{}\"}} {}\n",
+                            cpu_n, as_secs
+                        ));
+                    }
+                    out.push_str("\n");
+
+                    // monotonic_clock
+                    out.push_str("# HELP monotonic_clock Value of the monotonic clock.\n");
+                    out.push_str("# TYPE monotonic_clock counter\n");
+                    out.push_str(&format!("monotonic_clock {}\n", now));
+                    out.push_str("\n");
+
+                    // num_cpus
+                    out.push_str("# HELP num_cpus Number of CPUs on the machine.\n");
+                    out.push_str("# TYPE num_cpus counter\n");
+                    out.push_str(&format!("num_cpus {}\n", self.cpu_busy_counters.len()));
+                    out.push_str("\n");
+
+                    report.respond(&out);
+                }
             }
         }
     }

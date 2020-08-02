@@ -153,6 +153,7 @@ set timeout=5
 set default=0
 
 menuentry "redshirt" {
+    insmod all_video
     multiboot2 /boot/kernel
 }
             "#[..],
