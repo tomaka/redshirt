@@ -45,13 +45,13 @@
 /// the `CS` register.
 ///
 /// The memory address is guaranteed to fit in 32bits.
-pub static GDT: GdtTable = GdtTable([0, (1 << 53) | (1 << 47) | (1 << 44) | (1 << 43)]);
+pub static GDT: Gdt = Gdt([0, (1 << 53) | (1 << 47) | (1 << 44) | (1 << 43)]);
 
 // TODO: assert that GDT has a 32bits memory address, once Rust makes this possible
 //       see https://github.com/rust-lang/rust/issues/51910
 
 /// Opaque type of the GDT table.
-pub struct GdtTable([u64; 2]);
+pub struct Gdt([u64; 2]);
 
 /// Pointer to [`GDT`] suitable for the `lgdt` instruction.
 ///
@@ -71,23 +71,24 @@ pub struct GdtTable([u64; 2]);
 /// asm!("lgdt {gdt_ptr}", gdt_ptr = sym GDT_POINTER);
 /// ```
 ///
-pub static GDT_POINTER: GdtPtr = GdtPtr(GdtPtrIn {
+pub static GDT_POINTER: GdtPtr = GdtPtr(GdtPtr2 {
     _size: 15,
     _pointer: &GDT,
 });
 
 /// Opaque type of the GDT pointer.
 #[repr(align(8))]
-pub struct GdtPtr(GdtPtrIn);
+pub struct GdtPtr(GdtPtr2);
 
 // We need a second inner type in order to be able to apply both `repr(packed)` and
 // `repr(align(8))`.
 #[repr(packed)]
-struct GdtPtrIn {
+struct GdtPtr2 {
     _size: u16,
     // TODO: must be 64bits, as explained above; see https://github.com/rust-lang/rust/issues/51910
-    _pointer: *const GdtTable,
+    _pointer: *const Gdt,
 }
 
+// TODO: remove once `GdtPtr2::_pointer` is a u64
 unsafe impl Send for GdtPtr {}
 unsafe impl Sync for GdtPtr {}
