@@ -242,4 +242,4 @@ pub extern "C" fn __truncdfsf2(a: f64) -> f32 {
 
 // TODO: move somewhere better and document
 #[no_mangle]
-static gdt_table: [u64; 2] = [0, (1 << 53) | (1 << 47) | (1 << 44) | (1 << 43)];
+static GDT: [u64; 2] = [0, (1 << 53) | (1 << 47) | (1 << 44) | (1 << 43)];
