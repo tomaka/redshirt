@@ -15,6 +15,21 @@
 
 use core::convert::TryFrom;
 
+#[cfg(target_arch = "x86_64")]
+pub const ENTRIES_PER_TABLE: usize = 512;
+#[cfg(target_arch = "x86")]
+pub const ENTRIES_PER_TABLE: usize = 1024;
+
+// TODO: move somewhere
+#[repr(align(4096))]
+pub struct Table(pub [EncodedEntry; ENTRIES_PER_TABLE]);
+
+impl Table {
+    pub const fn empty() -> Self {
+        Table([Absent.encode(); ENTRIES_PER_TABLE])
+    }
+}
+
 /// Represents a PML4E, PDPTE, PDE, or PTE. In other words, an entry in a table used in the
 /// paging system.
 #[derive(Debug, Copy, Clone)] // TODO: better Debug impl
