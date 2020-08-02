@@ -193,15 +193,6 @@ impl<TExt: Extrinsics> Core<TExt> {
                 //       but not answered
                 // TODO: empty the content of active_messages?
 
-                // There were maybe interface messages in the notifications queue of the process,
-                // in which case emit an error for each of them.
-                for message_id in user_data
-                    .notifications_queue
-                    .into_pending_interface_notifications_messages()
-                {
-                    self.answer_message_inner(message_id, Err(()));
-                }
-
                 // Notify interface handlers about the process stopping.
                 //
                 // Note that it is possible for the interface handler to be replaced by a

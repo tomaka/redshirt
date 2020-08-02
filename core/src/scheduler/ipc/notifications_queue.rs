@@ -52,19 +52,6 @@ impl NotificationsQueue {
         }
     }
 
-    /// Destroys `self` and returns the list of all interface notifications in the queue
-    /// containing a `MessageId`.
-    pub fn into_pending_interface_notifications_messages(self) -> impl Iterator<Item = MessageId> {
-        let notifications_queue = self.notifications_queue.into_inner();
-        notifications_queue.into_iter().filter_map(|notif| {
-            if let NotificationBuilder::Interface(notif) = notif {
-                notif.message_id()
-            } else {
-                None
-            }
-        })
-    }
-
     /// Pushes a response notification at the end of the queue.
     pub fn push(&self, message_id: MessageId, response: Result<EncodedMessage, ()>) {
         let notif = redshirt_syscalls::ffi::build_notification(

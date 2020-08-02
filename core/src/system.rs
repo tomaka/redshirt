@@ -294,6 +294,9 @@ where
                             return RunOnceOutcome::LoopAgainNow;
                         }
                     }
+                    Ok(redshirt_interface_interface::ffi::InterfaceMessage::NextMessage(registration_id)) => {
+                        todo!()
+                    },
                     Err(_) => {
                         if let Some(message_id) = message_id {
                             self.core.answer_message(message_id, Err(()));
