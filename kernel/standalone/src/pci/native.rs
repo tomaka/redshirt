@@ -17,16 +17,9 @@
 
 use crate::{arch::PlatformSpecific, future_channel, pci::pci};
 
-use alloc::{boxed::Box, collections::VecDeque, sync::Arc, vec, vec::Vec};
-use core::{
-    convert::TryFrom as _,
-    pin::Pin,
-    sync::atomic,
-    task::{Context, Poll},
-};
-use crossbeam_queue::SegQueue;
+use alloc::{boxed::Box, collections::VecDeque, sync::Arc, vec::Vec};
+use core::{convert::TryFrom as _, pin::Pin, sync::atomic, task::Poll};
 use futures::prelude::*;
-use rand_core::RngCore as _;
 use redshirt_core::native::{DummyMessageIdWrite, NativeProgramEvent, NativeProgramRef};
 use redshirt_core::{Decode as _, Encode as _, EncodedMessage, InterfaceHash, MessageId, Pid};
 use redshirt_pci_interface::ffi;
@@ -203,10 +196,10 @@ where
                 memory_space,
                 bus_master,
             }) => {
-                let mut locked_devices = self.locked_devices.lock();
-                if let Some(dev) = locked_devices
-                    .iter_mut()
-                    .find(|dev| dev.owner == emitter_pid && dev.bdf == location)
+                let locked_devices = self.locked_devices.lock();
+                if locked_devices
+                    .iter()
+                    .any(|dev| dev.owner == emitter_pid && dev.bdf == location)
                 {
                     self.devices
                         .devices()
