@@ -44,7 +44,7 @@ mod boot;
 mod executor;
 mod gdt;
 mod interrupts;
-mod mrtt;
+mod mtrr;
 mod paging;
 mod panic;
 mod pit;
