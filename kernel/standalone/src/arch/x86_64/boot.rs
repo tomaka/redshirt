@@ -239,7 +239,3 @@ pub extern "C" fn fmaxf(a: f32, b: f32) -> f32 {
 pub extern "C" fn __truncdfsf2(a: f64) -> f32 {
     libm::trunc(a) as f32 // TODO: correct?
 }
-
-// TODO: move somewhere better and document
-#[no_mangle]
-static GDT: [u64; 2] = [0, (1 << 53) | (1 << 47) | (1 << 44) | (1 << 43)];

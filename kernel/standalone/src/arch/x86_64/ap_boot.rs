@@ -456,7 +456,7 @@ fn get_template() -> Template {
         .align 8
         6:
             .short 15
-            .long {GDT}
+            .long {gdt}
 
         5:
             // This code is not part of the template and is executed by `get_template`.
@@ -467,7 +467,7 @@ fn get_template() -> Template {
             lea (3b), {marker3}
         "#,
             ap_after_boot = sym ap_after_boot,
-            GDT = sym super::gdt::GDT,
+            gdt = sym super::gdt::GDT,
             code_start = out(reg) code_start,
             code_end = out(reg) code_end,
             marker1 = out(reg) marker1,
