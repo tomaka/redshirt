@@ -1,0 +1,12 @@
+[package]
+name = "dummy-system-time"
+version = "0.1.0"
+license = "GPL-3.0-or-later"
+authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
+edition = "2018"
+publish = false
+
+[dependencies]
+redshirt-interface-interface = { path = "../../interfaces/interface" }
+redshirt-syscalls = { path = "../../interfaces/syscalls" }
+redshirt-system-time-interface = { path = "../../interfaces/system-time" }

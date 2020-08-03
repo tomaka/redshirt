@@ -84,6 +84,8 @@ where
             ))
             .with_startup_process(build_wasm_module!("../../../modules/compositor"))
             .with_startup_process(build_wasm_module!("../../../modules/pci-printer"))
+            // TODO: actually implement system-time and remove this dummy; https://github.com/tomaka/redshirt/issues/542
+            .with_startup_process(build_wasm_module!("../../../modules/dummy-system-time"))
             .with_startup_process(build_wasm_module!("../../../modules/kernel-debug-printer"))
             .with_startup_process(build_wasm_module!("../../../modules/log-to-kernel"))
             .with_startup_process(build_wasm_module!("../../../modules/http-server"))
