@@ -19,7 +19,6 @@ use crate::{arch::PlatformSpecific, future_channel};
 
 use alloc::{boxed::Box, sync::Arc};
 use core::{pin::Pin, str, sync::atomic, task::Poll};
-use crossbeam_queue::SegQueue;
 use futures::prelude::*;
 use redshirt_core::native::{DummyMessageIdWrite, NativeProgramEvent, NativeProgramRef};
 use redshirt_core::{Encode as _, EncodedMessage, InterfaceHash, MessageId, Pid};

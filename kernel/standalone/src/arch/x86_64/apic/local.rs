@@ -68,7 +68,7 @@ pub unsafe fn init() -> LocalApicsControl {
     error_interrupt_vector.register_waker(&{
         struct ErrWaker;
         impl futures::task::ArcWake for ErrWaker {
-            fn wake_by_ref(arc_self: &Arc<Self>) {
+            fn wake_by_ref(_: &Arc<Self>) {
                 unsafe {
                     // The errors reported are found in the Error Status Register (ESR).
                     let esr_addr = usize::try_from(APIC_BASE_ADDR + 0xf0).unwrap() as *mut u32;
