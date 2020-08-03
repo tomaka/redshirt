@@ -5,7 +5,6 @@ members = [
     "e1000",
     "hello-world",
     "http-server",
-    "kernel-debug-printer",
     "network-manager",
     "log-to-kernel",
     "p2p-loader",
