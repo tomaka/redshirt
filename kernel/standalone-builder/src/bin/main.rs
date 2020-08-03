@@ -14,14 +14,11 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
-    error, fs,
-    io::{self, Write as _},
+    error,
     path::{Path, PathBuf},
-    process::Command,
     str::FromStr,
 };
 use structopt::StructOpt;
-use tempdir::TempDir;
 
 #[derive(Debug, StructOpt)]
 #[structopt(

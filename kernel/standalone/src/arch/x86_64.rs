@@ -32,7 +32,7 @@ use core::{
     time::Duration,
 };
 use futures::channel::oneshot;
-use hashbrown::{hash_map::Entry, HashMap};
+use hashbrown::HashMap;
 use redshirt_kernel_log_interface::ffi::{FramebufferFormat, FramebufferInfo, KernelLogMethod};
 use spinning_top::Spinlock;
 use x86_64::structures::port::{PortRead as _, PortWrite as _};
