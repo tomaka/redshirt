@@ -1632,6 +1632,7 @@ dependencies = [
  "rand_hc",
  "redshirt-core-proc-macros",
  "redshirt-interface-interface",
+ "redshirt-kernel-debug-interface",
  "redshirt-loader-interface",
  "redshirt-log-interface",
  "redshirt-random-interface",
@@ -1707,6 +1708,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "redshirt-kernel-debug-interface"
+version = "0.1.0"
+dependencies = [
+ "redshirt-syscalls",
+]
+
+[[package]]
 name = "redshirt-kernel-log-interface"
 version = "0.1.0"
 dependencies = [
@@ -1776,6 +1784,7 @@ name = "redshirt-standalone-kernel"
 version = "0.1.0"
 dependencies = [
  "acpi",
+ "atomic",
  "blake3",
  "crossbeam-queue",
  "crossbeam-utils",

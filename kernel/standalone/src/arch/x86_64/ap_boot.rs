@@ -168,7 +168,7 @@ pub unsafe fn boot_associated_processor(
     local_apics.send_interprocessor_init(target);
 
     // Later we will wait for 10ms to have elapsed since the INIT.
-    let wait_after_init = timers.register_timer(Duration::from_millis(10));
+    let wait_after_init = timers.register_timer_after(Duration::from_millis(10));
 
     // Write the template code to the buffer.
     ptr::copy_nonoverlapping(
@@ -283,7 +283,7 @@ pub unsafe fn boot_associated_processor(
         // Write the location of marker 2 into the constant at marker 1.
         let ljmp_target_ptr = (ap_boot_marker1_loc.add(2)) as *mut u32;
         assert_eq!(ljmp_target_ptr.read_unaligned(), 0xdeaddead);
-        ljmp_target_ptr.write_unaligned({ u32::try_from(ap_boot_marker2_loc as usize).unwrap() });
+        ljmp_target_ptr.write_unaligned(u32::try_from(ap_boot_marker2_loc as usize).unwrap());
 
         // Write the value of our `cr3` register to the constant at marker 3.
         let pml_addr_ptr = (ap_boot_marker3_loc.add(2)) as *mut u32;
@@ -319,7 +319,7 @@ pub unsafe fn boot_associated_processor(
 
         // Wait for the processor initialization to finish, but with a timeout in order to not
         // wait forever if nothing happens.
-        let ap_ready_timeout = timers.register_timer(Duration::from_secs(1));
+        let ap_ready_timeout = timers.register_timer_after(Duration::from_secs(1));
         futures::pin_mut!(ap_ready_timeout);
         match executor.block_on(future::select(ap_ready_timeout, &mut init_finished_future)) {
             future::Either::Left(_) => continue,
@@ -456,7 +456,7 @@ fn get_template() -> Template {
         .align 8
         6:
             .short 15
-            .long {gdt_table}
+            .long {gdt}
 
         5:
             // This code is not part of the template and is executed by `get_template`.
@@ -467,7 +467,7 @@ fn get_template() -> Template {
             lea (3b), {marker3}
         "#,
             ap_after_boot = sym ap_after_boot,
-            gdt_table = sym super::gdt::GDT_TABLE,
+            gdt = sym super::gdt::GDT,
             code_start = out(reg) code_start,
             code_end = out(reg) code_end,
             marker1 = out(reg) marker1,

@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "compositor",
+    "dummy-system-time",
     "e1000",
     "hello-world",
     "http-server",
@@ -10,7 +11,6 @@ members = [
     "pci-printer",
     "rpi-framebuffer",
     "stub",
-    "third-party/time",
     "third-party/wasm-timer",
 ]
 
@@ -30,8 +30,9 @@ codegen-units = 1
 panic = 'abort'
 
 [patch.crates-io]
+# TODO: waiting for the release of https://github.com/hyperium/hyper/pull/2253
+hyper = { git = "https://github.com/hyperium/hyper", rev = "25a05894b97eca5b5e486cf2f4245e638464d318" }
 # TODO: waiting for the release of https://github.com/paritytech/parity-scale-codec/pull/199
 parity-scale-codec = { git = "https://github.com/paritytech/parity-scale-codec" }
 ring = { git = "https://github.com/nhynes/ring", branch = "wasi" }
-time = { path = "./third-party/time" }
 wasm-timer = { path = "./third-party/wasm-timer" }
