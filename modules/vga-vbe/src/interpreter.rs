@@ -227,12 +227,9 @@ impl Interpreter {
     /// Nested interrupts are accounted for. If an `int` opcode is executed, then the next `iret`
     /// will not cause this function to finish.
     fn run_until_iret(&mut self) -> Result<(), Error> {
-        /// Counts the number of nested interrupts. Incremented when `int` is called, decremented
-        /// when `iret` is called.
+        // Counts the number of nested interrupts. Incremented when `int` is called, decremented
+        // when `iret` is called.
         let mut nested_ints: u32 = 0;
-
-        // TODO: remove
-        let mut debug = std::collections::HashMap::new();
 
         loop {
             // Decode instruction and update the IP register.
@@ -259,29 +256,10 @@ impl Interpreter {
                 instruction
             };
 
-            // TODO: remove this debug thing
-            *debug
-                .entry(format!("{:?}", instruction.mnemonic()))
-                .or_insert(0) += 1;
-
-            match self.run_one(&instruction) {
-                Ok(()) => {}
-                Err(e) => {
-                    log::info!("Used opcodes: {:?}", debug);
-                    return Err(e);
-                }
-            }
-
-            // TODO: remove or rework this, it's for debugging
-            if nested_ints >= 20 {
-                panic!("Protection against nested ints: {:?}", debug);
-            }
+            self.run_one(&instruction)?;
 
             match instruction.mnemonic() {
-                iced_x86::Mnemonic::Iret if nested_ints == 0 => {
-                    log::info!("Used opcodes: {:?}", debug);
-                    break Ok(());
-                }
+                iced_x86::Mnemonic::Iret if nested_ints == 0 => break Ok(()),
                 iced_x86::Mnemonic::Iret => nested_ints -= 1,
                 iced_x86::Mnemonic::Int => nested_ints += 1,
                 _ => {}
@@ -1990,8 +1968,7 @@ impl Interpreter {
         match instruction.op_kind(op_n) {
             // TODO: lazy way to implement this
             iced_x86::OpKind::Register => {
-                // TODO: debug_assert!
-                assert!(!matches!(
+                debug_assert!(!matches!(
                     instruction.op_register(op_n),
                     iced_x86::Register::None
                 ));
@@ -2020,8 +1997,7 @@ impl Interpreter {
     fn fetch_operand_value(&mut self, instruction: &iced_x86::Instruction, op_n: u32) -> Value {
         let (segment, pointer) = match instruction.op_kind(op_n) {
             iced_x86::OpKind::Register => {
-                // TODO: debug_assert!
-                assert!(
+                debug_assert!(
                     !matches!(instruction.op_register(op_n), iced_x86::Register::None),
                     "{:?} with {:?}",
                     instruction.code(),
@@ -2050,8 +2026,7 @@ impl Interpreter {
             }
             iced_x86::OpKind::MemorySegSI => {
                 let segment = {
-                    // TODO: debug_assert! instead
-                    assert!(!matches!(
+                    debug_assert!(!matches!(
                         instruction.memory_segment(),
                         iced_x86::Register::None
                     ));
@@ -2067,8 +2042,7 @@ impl Interpreter {
             }
             iced_x86::OpKind::Memory => {
                 let segment = {
-                    // TODO: debug_assert! instead
-                    assert!(!matches!(
+                    debug_assert!(!matches!(
                         instruction.memory_segment(),
                         iced_x86::Register::None
                     ));
@@ -2157,8 +2131,7 @@ impl Interpreter {
                 (self.regs.es, u16::try_from(self.regs.edi & 0xffff).unwrap())
             }
             iced_x86::OpKind::Memory => {
-                // TODO: debug_assert! instead
-                assert!(!matches!(
+                debug_assert!(!matches!(
                     instruction.memory_segment(),
                     iced_x86::Register::None
                 ));
