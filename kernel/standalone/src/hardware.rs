@@ -22,7 +22,6 @@ use crate::{arch::PlatformSpecific, future_channel};
 
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use core::{convert::TryFrom as _, pin::Pin, sync::atomic, task::Poll};
-use crossbeam_queue::SegQueue;
 use futures::prelude::*;
 use hashbrown::HashMap;
 use nohash_hasher::BuildNoHashHasher;

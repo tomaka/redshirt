@@ -522,6 +522,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "dummy-system-time"
+version = "0.1.0"
+dependencies = [
+ "redshirt-interface-interface",
+ "redshirt-syscalls",
+ "redshirt-system-time-interface",
+]
+
+[[package]]
 name = "e1000"
 version = "0.1.0"
 dependencies = [
@@ -966,6 +975,7 @@ dependencies = [
  "futures",
  "hyper",
  "log",
+ "redshirt-kernel-debug-interface",
  "redshirt-log-interface",
  "redshirt-syscalls",
  "redshirt-tcp-interface",
@@ -978,6 +988,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cd179ae861f0c2e53da70d892f5f3029f9594be0c41dc5269cd371691b1dc2f9"
 
 [[package]]
+name = "httpdate"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "494b4d60369511e7dea41cf646832512a94e542f68bb9c49e54518e0f468eb47"
+
+[[package]]
 name = "humantime"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -988,9 +1004,8 @@ dependencies = [
 
 [[package]]
 name = "hyper"
-version = "0.13.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "96816e1d921eca64d208a85aab4f7798455a8e34229ee5a88c935bdee1b78b14"
+version = "0.13.7"
+source = "git+https://github.com/hyperium/hyper?rev=25a05894b97eca5b5e486cf2f4245e638464d318#25a05894b97eca5b5e486cf2f4245e638464d318"
 dependencies = [
  "bytes",
  "futures-channel",
@@ -1000,12 +1015,12 @@ dependencies = [
  "http",
  "http-body",
  "httparse",
+ "httpdate",
  "itoa",
- "log",
  "pin-project",
- "time",
  "tokio",
  "tower-service",
+ "tracing",
  "want",
 ]
 
@@ -2044,6 +2059,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "redshirt-kernel-debug-interface"
+version = "0.1.0"
+dependencies = [
+ "redshirt-syscalls",
+]
+
+[[package]]
 name = "redshirt-kernel-log-interface"
 version = "0.1.0"
 dependencies = [
@@ -2098,6 +2120,16 @@ dependencies = [
  "pin-project",
  "slab 0.4.2 (git+https://github.com/baloo/slab?rev=88b456131de20750e785655d1e62cd0b6e10d44b)",
  "spinning_top",
+]
+
+[[package]]
+name = "redshirt-system-time-interface"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "parity-scale-codec",
+ "pin-project",
+ "redshirt-syscalls",
 ]
 
 [[package]]
@@ -2189,12 +2221,6 @@ name = "rustc-hex"
 version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3e75f6a532d0fd9f7f13144f392b6ad56a32696bfcd9c78f797f16bbb6f072d6"
-
-[[package]]
-name = "rustc-serialize"
-version = "0.3.24"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dcf128d1287d2ea9d80910b5f1120d0b8eede3fbf1abe91c40d39ea7d51e6fda"
 
 [[package]]
 name = "rustc_version"
@@ -2580,17 +2606,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "time"
-version = "0.1.42"
-dependencies = [
- "libc",
- "log",
- "redox_syscall",
- "rustc-serialize",
- "winapi 0.3.8",
-]
-
-[[package]]
 name = "tokio"
 version = "0.2.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2631,6 +2646,26 @@ name = "tower-service"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e987b6bf443f4b5b3b6f38704195592cca41c5bb7aedd3c3693c7081f8289860"
+
+[[package]]
+name = "tracing"
+version = "0.1.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f0aae59226cf195d8e74d4b34beae1859257efb4e5fed3f147d2dc2c7d372178"
+dependencies = [
+ "cfg-if",
+ "log",
+ "tracing-core",
+]
+
+[[package]]
+name = "tracing-core"
+version = "0.1.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b2734b5a028fa697686f16c6d18c2c6a3c7e41513f9a213abb6754c4acb3c8d7"
+dependencies = [
+ "lazy_static",
+]
 
 [[package]]
 name = "try-lock"

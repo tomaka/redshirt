@@ -16,7 +16,7 @@
 use std::{
     fs,
     io::{self, Read, Seek, SeekFrom, Write},
-    path::{Path, PathBuf},
+    path::Path,
     process::Command,
 };
 use tempdir::TempDir;
@@ -153,6 +153,7 @@ set timeout=5
 set default=0
 
 menuentry "redshirt" {
+    insmod all_video
     multiboot2 /boot/kernel
 }
             "#[..],

@@ -120,6 +120,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c17772156ef2829aadc587461c7753af20b7e8db1529bc66855add962a3b35d3"
 
 [[package]]
+name = "atomic"
+version = "0.4.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "64f46ca51dca4837f1520754d1c8c36636356b81553d928dc9c177025369a06e"
+
+[[package]]
 name = "atty"
 version = "0.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1610,6 +1616,7 @@ dependencies = [
 name = "redshirt-core"
 version = "0.1.0"
 dependencies = [
+ "atomic",
  "blake3",
  "bs58",
  "criterion",
@@ -1619,13 +1626,13 @@ dependencies = [
  "futures",
  "hashbrown",
  "nohash-hasher",
- "proc-macro-hack",
  "rand",
  "rand_chacha",
  "rand_core",
  "rand_hc",
  "redshirt-core-proc-macros",
  "redshirt-interface-interface",
+ "redshirt-kernel-debug-interface",
  "redshirt-loader-interface",
  "redshirt-log-interface",
  "redshirt-random-interface",
@@ -1644,7 +1651,6 @@ name = "redshirt-core-proc-macros"
 version = "0.1.0"
 dependencies = [
  "cargo_metadata",
- "proc-macro-hack",
  "proc-macro2 1.0.18",
  "serde_json",
  "syn",
@@ -1698,6 +1704,13 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "parity-scale-codec",
+ "redshirt-syscalls",
+]
+
+[[package]]
+name = "redshirt-kernel-debug-interface"
+version = "0.1.0"
+dependencies = [
  "redshirt-syscalls",
 ]
 
@@ -1771,6 +1784,7 @@ name = "redshirt-standalone-kernel"
 version = "0.1.0"
 dependencies = [
  "acpi",
+ "atomic",
  "blake3",
  "crossbeam-queue",
  "crossbeam-utils",
