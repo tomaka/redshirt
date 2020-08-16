@@ -2801,6 +2801,7 @@ dependencies = [
  "log",
  "redshirt-hardware-interface",
  "redshirt-interface-interface",
+ "redshirt-kernel-log-interface",
  "redshirt-log-interface",
  "redshirt-pci-interface",
  "redshirt-syscalls",

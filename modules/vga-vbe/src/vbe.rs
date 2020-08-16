@@ -112,12 +112,31 @@ pub async unsafe fn load_vbe_info() -> Result<VbeContext, Error> {
         let x_resolution = u16::from_le_bytes(<[u8; 2]>::try_from(&info_out[0x12..0x14]).unwrap());
         let y_resolution = u16::from_le_bytes(<[u8; 2]>::try_from(&info_out[0x14..0x16]).unwrap());
         let phys_base = u32::from_le_bytes(<[u8; 4]>::try_from(&info_out[0x28..0x2c]).unwrap());
+        let bytes_per_scan_line =
+            u16::from_le_bytes(<[u8; 2]>::try_from(&info_out[0x32..0x34]).unwrap());
+        let red_mask_size = info_out[0x36];
+        let red_mask_pos = info_out[0x37];
+        let green_mask_size = info_out[0x38];
+        let green_mask_pos = info_out[0x39];
+        let blue_mask_size = info_out[0x3a];
+        let blue_mask_pos = info_out[0x3b];
+        let reserved_mask_size = info_out[0x3c];
+        let reserved_mask_pos = info_out[0x3d];
 
         video_modes.push(ModeInfo {
             mode_num: mode,
             x_resolution,
             y_resolution,
             phys_base: u64::from(phys_base),
+            bytes_per_scan_line,
+            red_mask_size,
+            red_mask_pos,
+            green_mask_size,
+            green_mask_pos,
+            blue_mask_size,
+            blue_mask_pos,
+            reserved_mask_size,
+            reserved_mask_pos,
         });
     }
 
@@ -162,9 +181,9 @@ impl VbeContext {
         //
         // - The VBE specs don't give a way to know what the initial mode is. The "return current
         //   VBE mode" (0x3) function is only guaranteed to give a meaningful result if the mode
-        //   wasn't set using the "set current mode" function.
+        //   was earlier set using the "set current mode" function.
         // - Chances are high that an error that happens when switching mode is a bug that would
-        //   happen as well when switching back to the previous.
+        //   happen as well when switching back to the previous one.
         //
 
         self.interpreter.int10h()?;
@@ -190,6 +209,24 @@ struct ModeInfo {
     y_resolution: u16,
     /// Base for the physical address of a linear framebuffer for this mode.
     phys_base: u64,
+    /// Number of bytes per scanline. Also often called the `pitch`.
+    bytes_per_scan_line: u16,
+    /// Size of the red component of the color.
+    red_mask_size: u8,
+    /// Position of the red component of the color.
+    red_mask_pos: u8,
+    /// Size of the green component of the color.
+    green_mask_size: u8,
+    /// Position of the green component of the color.
+    green_mask_pos: u8,
+    /// Size of the blue component of the color.
+    blue_mask_size: u8,
+    /// Position of the blue component of the color.
+    blue_mask_pos: u8,
+    /// Size of the reserved component of the color.
+    reserved_mask_size: u8,
+    /// Position of the reserved component of the color.
+    reserved_mask_pos: u8,
 }
 
 impl<'a> Mode<'a> {
@@ -207,6 +244,51 @@ impl<'a> Mode<'a> {
     /// to this mode.
     pub fn linear_framebuffer_location(&self) -> u64 {
         self.info.phys_base
+    }
+
+    /// Returns the number of bytes per scan line. Also often called the `pitch`.
+    pub fn bytes_per_scan_line(&self) -> u16 {
+        self.info.bytes_per_scan_line
+    }
+
+    /// Returns the size of the red component of the color.
+    pub fn red_mask_size(&self) -> u8 {
+        self.info.red_mask_size
+    }
+
+    /// Returns the position of the red component of the color.
+    pub fn red_mask_pos(&self) -> u8 {
+        self.info.red_mask_pos
+    }
+
+    /// Returns the size of the green component of the color.
+    pub fn green_mask_size(&self) -> u8 {
+        self.info.green_mask_size
+    }
+
+    /// Returns the position of the green component of the color.
+    pub fn green_mask_pos(&self) -> u8 {
+        self.info.green_mask_pos
+    }
+
+    /// Returns the size of the blue component of the color.
+    pub fn blue_mask_size(&self) -> u8 {
+        self.info.blue_mask_size
+    }
+
+    /// Returns the position of the blue component of the color.
+    pub fn blue_mask_pos(&self) -> u8 {
+        self.info.blue_mask_pos
+    }
+
+    /// Returns the size of the reserved component of the color.
+    pub fn reserved_mask_size(&self) -> u8 {
+        self.info.reserved_mask_size
+    }
+
+    /// Returns the position of the reserved component of the color.
+    pub fn reserved_mask_pos(&self) -> u8 {
+        self.info.reserved_mask_pos
     }
 }
 

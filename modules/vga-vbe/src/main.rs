@@ -102,7 +102,21 @@ async fn async_main() {
 
     let mut vbe = unsafe { vbe::load_vbe_info().await.unwrap() };
 
-    let (chosen_mode_num, width, height, linear_framebuffer_location) = {
+    let (
+        chosen_mode_num,
+        width,
+        height,
+        linear_framebuffer_location,
+        bytes_per_scan_line,
+        red_mask_size,
+        red_mask_pos,
+        green_mask_size,
+        green_mask_pos,
+        blue_mask_size,
+        blue_mask_pos,
+        reserved_mask_size,
+        reserved_mask_pos,
+    ) = {
         let mut out = None;
         for mode in vbe.modes() {
             if mode.pixels_dimensions().0 < 1500 {
@@ -114,10 +128,26 @@ async fn async_main() {
                 mode.pixels_dimensions().0,
                 mode.pixels_dimensions().1,
                 mode.linear_framebuffer_location(),
+                mode.bytes_per_scan_line(),
+                mode.red_mask_size(),
+                mode.red_mask_pos(),
+                mode.green_mask_size(),
+                mode.green_mask_pos(),
+                mode.blue_mask_size(),
+                mode.blue_mask_pos(),
+                mode.reserved_mask_size(),
+                mode.reserved_mask_pos(),
             ));
         }
         out.unwrap() // TODO: don't unwrap
     };
+
+    assert_eq!(
+        (red_mask_size + green_mask_size + blue_mask_size + reserved_mask_size) % 8,
+        0
+    );
+    let bytes_per_character =
+        (red_mask_size + green_mask_size + blue_mask_size + reserved_mask_size) / 8;
 
     vbe.set_current_mode(chosen_mode_num).await.unwrap();
 
@@ -132,6 +162,31 @@ async fn async_main() {
     )
     .await;
 
+    // TODO: not implemented in the kernel
+    // TODO: should *add* a logging method, rather than set it
+    /*redshirt_kernel_log_interface::configure_kernel(
+        redshirt_kernel_log_interface::KernelLogMethod {
+            enabled: false,
+            framebuffer: Some(redshirt_kernel_log_interface::ffi::FramebufferInfo {
+                address: linear_framebuffer_location,
+                width: width.into(),
+                height: height.into(),
+                pitch: bytes_per_scan_line.into(),
+                bytes_per_character,
+                format: redshirt_kernel_log_interface::ffi::FramebufferFormat::Rgb {
+                    red_size: red_mask_size,
+                    red_position: red_mask_pos,
+                    green_size: green_mask_size,
+                    green_position: green_mask_pos,
+                    blue_size: blue_mask_size,
+                    blue_position: blue_mask_pos,
+                },
+            }),
+            uart: None,
+        },
+    )
+    .await;*/
+
     loop {
         let frame = video_output_registration.next_frame().await;
         if frame.changes.is_empty() {
@@ -142,12 +197,12 @@ async fn async_main() {
 
         for change in frame.changes {
             for (y, pixels_row) in change.pixels.into_iter().enumerate() {
-                // TODO: proper calculation
                 let addr = linear_framebuffer_location
                     + u64::from(
-                        (change.screen_y_start + u32::try_from(y).unwrap()) * u32::from(width)
-                            + change.screen_x_start,
-                    ) * 4;
+                        (change.screen_y_start + u32::try_from(y).unwrap())
+                            * u32::from(bytes_per_scan_line)
+                            + change.screen_x_start * u32::from(bytes_per_character),
+                    );
                 // TODO: check length of pixels_row
                 unsafe { ops.write(addr, pixels_row) };
             }
@@ -155,6 +210,4 @@ async fn async_main() {
 
         ops.send();
     }
-
-    // TODO: change klogger
 }
