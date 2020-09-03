@@ -18,7 +18,7 @@ crossbeam-queue = { version = "0.2.1", default-features = false, features = ["al
 either = { version = "1.5.3", default-features = false }
 fnv = { git = "https://github.com/dflemstr/rust-fnv", default-features = false }    # TODO: https://github.com/servo/rust-fnv/pull/22
 futures = { version = "0.3.4", default-features = false }
-hashbrown = { version = "0.7.1", default-features = false }
+hashbrown = { version = "0.9.0", default-features = false }
 nohash-hasher = { version = "0.2.0", default-features = false }
 redshirt-core-proc-macros = { path = "../core-proc-macros" }
 redshirt-interface-interface = { path = "../interfaces/interface", default-features = false }
