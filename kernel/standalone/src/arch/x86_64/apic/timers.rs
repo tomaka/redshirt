@@ -465,7 +465,7 @@ impl futures::task::ArcWake for TimerWaker {
         // Remove from `active_timers` all the timers that have fired.
         for (_, timer) in shared
             .active_timers
-            .drain_filter(|_, timer| timer.apic_timer_firing_tsc_value.get() > now)
+            .drain_filter(|_, timer| timer.apic_timer_firing_tsc_value.get() <= now)
         {
             debug_assert!(timer.apic_timer_firing_tsc_value.get() <= now);
             if timer.timer.target_tsc_value.get() <= now {
