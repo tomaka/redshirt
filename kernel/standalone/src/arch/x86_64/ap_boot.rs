@@ -30,11 +30,7 @@
 use crate::arch::x86_64::apic::{local::LocalApicsControl, timers::Timers, tsc_sync, ApicId};
 use crate::arch::x86_64::{executor, interrupts};
 
-use alloc::{
-    alloc::{AllocInit, Layout},
-    boxed::Box,
-    sync::Arc,
-};
+use alloc::{alloc::Layout, boxed::Box, sync::Arc};
 use core::{convert::TryFrom as _, fmt, ops::Range, ptr, slice, time::Duration};
 use futures::{channel::oneshot, prelude::*};
 
@@ -497,10 +493,10 @@ struct Allocation<'a, T: alloc::alloc::AllocRef> {
 
 impl<'a, T: alloc::alloc::AllocRef> Allocation<'a, T> {
     fn new(alloc: &'a mut T, layout: Layout) -> Self {
-        let block = alloc.alloc(layout, AllocInit::Uninitialized).unwrap();
+        let inner = alloc.alloc(layout).unwrap();
         Allocation {
             alloc,
-            inner: block.ptr,
+            inner: inner.cast(),
             layout,
         }
     }
