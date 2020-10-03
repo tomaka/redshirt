@@ -13,7 +13,7 @@ jobs:
     container:
       image: rust
       env:
-        CC: clang-10
+        CC: clang-11
     steps:
     - uses: actions/checkout@v2
     - name: Install Rust
@@ -25,9 +25,9 @@ jobs:
     - name: Install a recent version of clang
       run: |
         wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
-        echo "deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-10 main" >> /etc/apt/sources.list
+        echo "deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-11 main" >> /etc/apt/sources.list
         apt-get update
-        apt-get install -y clang-10
+        apt-get install -y clang-11
     - name: Install CMake
       run: apt-get install -y cmake
     - uses: actions/cache@v2
@@ -52,7 +52,7 @@ jobs:
     container:
       image: rust
       env:
-        CC: clang-10
+        CC: clang-11
     steps:
     - uses: actions/checkout@v2
     - name: Install Rust
@@ -64,9 +64,9 @@ jobs:
     - name: Install a recent version of clang
       run: |
         wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
-        echo "deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-10 main" >> /etc/apt/sources.list
+        echo "deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-11 main" >> /etc/apt/sources.list
         apt-get update
-        apt-get install -y clang-10
+        apt-get install -y clang-11
     - name: Download WASM modules
       uses: actions/download-artifact@v2
       with:
@@ -93,7 +93,7 @@ jobs:
     container:
       image: rust
       env:
-        CC: clang-10
+        CC: clang-11
     strategy:
       matrix:
         #target: [x86_64-multiboot2, arm-rpi2]  # TODO: not implemented
@@ -111,9 +111,9 @@ jobs:
     - name: Install a recent version of clang
       run: |
         wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
-        echo "deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-10 main" >> /etc/apt/sources.list
+        echo "deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-11 main" >> /etc/apt/sources.list
         apt-get update
-        apt-get install -y clang-10
+        apt-get install -y clang-11
     - uses: actions/cache@v2
       with:
         path: |
@@ -196,7 +196,7 @@ jobs:
     container:
       image: rust
       env:
-        CC: clang-10
+        CC: clang-11
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
@@ -209,9 +209,9 @@ jobs:
       - name: Install a recent version of clang
         run: |
           wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
-          echo "deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-10 main" >> /etc/apt/sources.list
+          echo "deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-11 main" >> /etc/apt/sources.list
           apt-get update
-          apt-get install -y clang-10
+          apt-get install -y clang-11
       - uses: actions/cache@v2
         with:
           path: |
