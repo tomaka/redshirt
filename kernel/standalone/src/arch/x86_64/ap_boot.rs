@@ -493,10 +493,10 @@ struct Allocation<'a, T: alloc::alloc::AllocRef> {
 
 impl<'a, T: alloc::alloc::AllocRef> Allocation<'a, T> {
     fn new(alloc: &'a mut T, layout: Layout) -> Self {
-        let block = alloc.alloc(layout).unwrap();
+        let inner = alloc.alloc(layout).unwrap();
         Allocation {
             alloc,
-            inner: block.ptr,
+            inner: inner.cast(),
             layout,
         }
     }
