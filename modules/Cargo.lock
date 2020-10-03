@@ -882,6 +882,15 @@ dependencies = [
 
 [[package]]
 name = "hashbrown"
+version = "0.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "96282e96bfcd3da0d3aa9938bedf1e50df3269b6db08b4876d2da0bb1a0841cf"
+dependencies = [
+ "autocfg",
+]
+
+[[package]]
+name = "hashbrown"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "00d63df3d41950fb462ed38308eea019113ad1508da725bbedcd0fa5a85ef5f7"
@@ -1513,7 +1522,7 @@ version = "0.1.0"
 dependencies = [
  "fnv 1.0.7",
  "futures",
- "hashbrown",
+ "hashbrown 0.9.0",
  "log",
  "parity-scale-codec",
  "rand 0.7.3",
@@ -1711,7 +1720,7 @@ name = "pci-printer"
 version = "0.1.0"
 dependencies = [
  "fnv 1.0.6",
- "hashbrown",
+ "hashbrown 0.9.0",
  "lazy_static",
  "log",
  "parity-scale-codec",
@@ -2095,7 +2104,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "generic-array 0.13.2",
- "hashbrown",
+ "hashbrown 0.9.0",
  "lazy_static",
  "nohash-hasher",
  "parity-scale-codec",
