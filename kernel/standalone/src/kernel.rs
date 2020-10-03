@@ -87,6 +87,7 @@ where
             // TODO: actually implement system-time and remove this dummy; https://github.com/tomaka/redshirt/issues/542
             .with_startup_process(build_wasm_module!("../../../modules/dummy-system-time"))
             .with_startup_process(build_wasm_module!("../../../modules/log-to-kernel"))
+            .with_startup_process(build_wasm_module!("../../../modules/vga-vbe"))
             .with_startup_process(build_wasm_module!("../../../modules/http-server"))
             .with_startup_process(build_wasm_module!("../../../modules/hello-world"))
             .with_startup_process(build_wasm_module!("../../../modules/network-manager"))

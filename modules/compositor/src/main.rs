@@ -42,7 +42,7 @@ async fn async_main() {
     }
 
     let mut video_outputs = Vec::<VideoOutput>::new();
-    let mut next_frame = Delay::new(Duration::from_secs(5)).fuse(); // TODO:
+    let mut next_frame = Delay::new(Duration::from_secs(0)).fuse();
 
     loop {
         futures::select! {
@@ -104,7 +104,7 @@ async fn async_main() {
                                 screen_x_len: video_output.width,
                                 screen_y_start: 0,
                                 pixels: (0..video_output.height).map(|_| {
-                                    (0..video_output.width * 3).map(|_| 0xffu8).collect::<Vec<_>>()
+                                    (0..video_output.width * 4).map(|_| 0xffu8).collect::<Vec<_>>()
                                 }).collect(),
                             }]
                         },
