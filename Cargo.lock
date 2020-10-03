@@ -1036,9 +1036,9 @@ dependencies = [
 
 [[package]]
 name = "linked_list_allocator"
-version = "0.8.4"
+version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e70e46c13c0e8374c26cec5752e3347ca1087d9711de8f45aa513a7700efd73d"
+checksum = "84565678e403453d1a27a0886882b3b271701e65146d972d9d7d9a4c4a0ff498"
 dependencies = [
  "spinning_top",
 ]
