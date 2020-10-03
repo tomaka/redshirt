@@ -222,6 +222,6 @@ jobs:
             target
           key: intra-doc-links-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Check core intra-doc links
-        run: RUSTDOCFLAGS="--deny intra_doc_link_resolution_failure" cargo doc --verbose --workspace --no-deps --document-private-items
+        run: RUSTDOCFLAGS="--deny broken_intra_doc_links" cargo doc --verbose --workspace --no-deps --document-private-items
       - name: Check modules intra-doc links
-        run: RUSTDOCFLAGS="--deny intra_doc_link_resolution_failure" cargo doc --verbose --manifest-path modules/Cargo.toml --workspace --no-deps --document-private-items
+        run: RUSTDOCFLAGS="--deny broken_intra_doc_links" cargo doc --verbose --manifest-path modules/Cargo.toml --workspace --no-deps --document-private-items
