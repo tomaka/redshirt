@@ -19,7 +19,7 @@ jobs:
     - name: Install Rust
       uses: actions-rs/toolchain@v1
       with:
-        toolchain: nightly-2020-10-01
+        toolchain: nightly-2020-09-15
         target: wasm32-wasi
         override: true
     - name: Install a recent version of clang
@@ -58,7 +58,7 @@ jobs:
     - name: Install Rust
       uses: actions-rs/toolchain@v1
       with:
-        toolchain: nightly-2020-10-01
+        toolchain: nightly-2020-09-15
         target: wasm32-wasi
         override: true
     - name: Install a recent version of clang
@@ -125,7 +125,7 @@ jobs:
     - name: Install nightly Rust
       uses: actions-rs/toolchain@v1
       with:
-        toolchain: nightly-2020-10-01
+        toolchain: nightly-2020-09-15
         target: wasm32-wasi
         override: true
     - name: Install rust-src
@@ -203,7 +203,7 @@ jobs:
       - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2020-10-01
+          toolchain: nightly-2020-09-15
           target: wasm32-wasi
           override: true
       - name: Install a recent version of clang
