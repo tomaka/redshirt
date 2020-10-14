@@ -5,3 +5,11 @@ pull_request_rules:
     actions:
       merge:
         method: merge
+
+  - name: automatic merge if author is dependabot
+    conditions:
+      - author~=^dependabot(|-preview)\[bot\]$
+      - base=develop
+    actions:
+      merge:
+        method: merge
