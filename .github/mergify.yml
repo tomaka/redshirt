@@ -5,7 +5,8 @@ pull_request_rules:
       - base=develop
     actions:
       merge:
-        method: merge
+        strict: true
+        method: squash
 
   - name: automatic merge if author is dependabot
     conditions:
@@ -13,4 +14,5 @@ pull_request_rules:
       - base=develop
     actions:
       merge:
-        method: merge
+        strict: true
+        method: squash
