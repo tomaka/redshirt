@@ -19,16 +19,14 @@ use parity_scale_codec::DecodeAll;
 use std::time::Duration;
 
 fn main() {
-    redshirt_log_interface::init();
+    // TODO: too verbose
+    //redshirt_log_interface::init();
     redshirt_syscalls::block_on(async_main())
 }
 
 async fn async_main() {
-    redshirt_time_interface::monotonic_wait(Duration::from_secs(5)).await;
-
-    redshirt_interface_interface::register_interface(redshirt_loader_interface::ffi::INTERFACE)
-        .await
-        .unwrap();
+    // True if we have already registered ourselves as the "loader" interface handler.
+    let mut registered = false;
 
     let mut network = Network::start(Default::default()).unwrap();
 
@@ -48,18 +46,34 @@ async fn async_main() {
             future::Either::Left(
                 redshirt_syscalls::DecodedInterfaceOrDestroyed::ProcessDestroyed(_),
             ) => continue,
+            future::Either::Right(NetworkEvent::Readiness(true)) => {
+                if !registered {
+                    registered = true;
+                    let _ = redshirt_interface_interface::register_interface(
+                        redshirt_loader_interface::ffi::INTERFACE,
+                    )
+                    .await;
+                }
+                continue;
+            }
+            future::Either::Right(NetworkEvent::Readiness(false)) => {
+                continue;
+            }
             future::Either::Right(NetworkEvent::FetchSuccess { data, user_data }) => {
+                assert!(registered);
                 let rp = redshirt_loader_interface::ffi::LoadResponse { result: Ok(data) };
                 redshirt_syscalls::emit_answer(user_data, &rp);
                 continue;
             }
             future::Either::Right(NetworkEvent::FetchFail { user_data }) => {
+                assert!(registered);
                 let rp = redshirt_loader_interface::ffi::LoadResponse { result: Err(()) };
                 redshirt_syscalls::emit_answer(user_data, &rp);
                 continue;
             }
         };
 
+        assert!(registered);
         assert_eq!(msg.interface, redshirt_loader_interface::ffi::INTERFACE);
         let msg_data =
             redshirt_loader_interface::ffi::LoaderMessage::decode_all(&msg.actual_data.0).unwrap();

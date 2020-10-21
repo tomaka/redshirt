@@ -13,12 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use std::{
-    fs,
-    io::{self, Write as _},
-    path::{Path, PathBuf},
-    process::Command,
-};
+use std::{io, path::Path, process::Command};
 use tempdir::TempDir;
 
 /// Configuration for running the kernel in an emulator.
@@ -78,9 +73,8 @@ pub fn run_kernel(cfg: Config) -> Result<(), Error> {
                 .args(&["-m", "1024"])
                 .arg("-cdrom")
                 .arg(build_dir.path().join("image"))
-                .args(&["-netdev", "bridge,id=nd0,br=virbr0"])
-                .args(&["-device", "ne2k_pci,netdev=nd0"])
                 .args(&["-smp", "cpus=4"])
+                .args(&["-enable-kvm", "-cpu", "host"])
                 .status()
                 .map_err(Error::EmulatorNotFound)?;
             // TODO: stdout/stderr

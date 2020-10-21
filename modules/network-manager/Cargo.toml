@@ -1,0 +1,27 @@
+[package]
+name = "network-manager"
+version = "0.1.0"
+license = "GPL-3.0-or-later"
+authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
+edition = "2018"
+publish = false
+
+[dependencies]
+fnv = { version = "1.0.7", default-features = false }
+futures = "0.3"
+hashbrown = { version = "0.9.0", default-features = false }
+log = "0.4"
+parity-scale-codec = "1.0.5"
+rand = "0.7.3"
+redshirt-ethernet-interface = { path = "../../interfaces/ethernet" }
+redshirt-interface-interface = { path = "../../interfaces/interface" }
+redshirt-log-interface = { path = "../../interfaces/log" } # TODO: remove
+redshirt-syscalls = { path = "../../interfaces/syscalls" }
+redshirt-tcp-interface = { path = "../../interfaces/tcp" }
+redshirt-time-interface = { path = "../../interfaces/time" }
+thiserror = "1.0.9"
+
+[dependencies.smoltcp]
+version = "0.6.0"
+default-features = false
+features = ["ethernet", "proto-dhcpv4", "proto-ipv4", "proto-ipv6", "socket-udp", "socket-tcp", "std"]

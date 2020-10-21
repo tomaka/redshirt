@@ -107,7 +107,7 @@ unsafe fn cpu_enter() -> ! {
     panic!("We pre-emptively panic because running the kernel is known to overflow the stack");
 
     // Run the kernel. This call never returns.
-    executor::block_on(kernel.run())
+    executor::block_on(kernel.run(0))
 }
 
 // TODO: why is this symbol required?
@@ -159,6 +159,7 @@ struct PlatformSpecificImpl {}
 
 impl PlatformSpecific for PlatformSpecificImpl {
     type TimerFuture = future::Pending<()>;
+    type IrqFuture = future::Pending<()>;
 
     fn num_cpus(self: Pin<&Self>) -> NonZeroU32 {
         // TODO:
@@ -204,6 +205,10 @@ impl PlatformSpecific for PlatformSpecificImpl {
 
     fn timer(self: Pin<&Self>, deadline: u128) -> Self::TimerFuture {
         unimplemented!()
+    }
+
+    fn next_irq(self: Pin<&Self>) -> Self::IrqFuture {
+        future::pending()
     }
 
     fn write_log(&self, message: &str) {

@@ -11,17 +11,18 @@ default = []
 nightly = ["redshirt-core-proc-macros/nightly"]
 
 [dependencies]
+atomic = "0.4.6"
 blake3 = { version = "0.2.2", default-features = false }
 bs58 = { version = "0.3.0", default-features = false, features = ["alloc"] }
 crossbeam-queue = { version = "0.2.1", default-features = false, features = ["alloc"] }
 either = { version = "1.5.3", default-features = false }
 fnv = { git = "https://github.com/dflemstr/rust-fnv", default-features = false }    # TODO: https://github.com/servo/rust-fnv/pull/22
 futures = { version = "0.3.4", default-features = false }
-hashbrown = { version = "0.7.1", default-features = false }
+hashbrown = { version = "0.9.0", default-features = false }
 nohash-hasher = { version = "0.2.0", default-features = false }
-proc-macro-hack = "0.5.11"
 redshirt-core-proc-macros = { path = "../core-proc-macros" }
 redshirt-interface-interface = { path = "../interfaces/interface", default-features = false }
+redshirt-kernel-debug-interface = { path = "../interfaces/kernel-debug", default-features = false }
 redshirt-loader-interface = { path = "../interfaces/loader", default-features = false }
 redshirt-log-interface = { path = "../interfaces/log", default-features = false }
 redshirt-random-interface = { path = "../interfaces/random", default-features = false }

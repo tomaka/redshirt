@@ -14,7 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
-    env, fs, io,
+    fs, io,
     path::{Path, PathBuf},
     process::Command,
 };

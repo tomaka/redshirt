@@ -3,7 +3,7 @@ name: Node deployment
 on:
   push:
     branches:    
-      - master
+      - develop
 
 jobs:
   build-push-docker-image:
@@ -33,4 +33,4 @@ jobs:
       # TODO: use `--prune`?
       run: kubectl --kubeconfig=.kubeconfig apply -f .maintain/node-deploy-kube-config.yml
     - name: Verify deployment
-      run: kubectl --kubeconfig=.kubeconfig rollout status deployment/passive-node
+      run: kubectl --kubeconfig=.kubeconfig rollout status statefulsets/passive-node

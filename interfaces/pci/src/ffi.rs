@@ -45,6 +45,18 @@ pub enum PciMessage {
     /// Answers all the pending [`PciMessage::NextInterrupt`] messages for this device.
     UnlockDevice(PciDeviceBdf),
 
+    /// Sets the `COMMAND` register.
+    ///
+    /// Has no effect if the device wasn't locked by the current process.
+    ///
+    /// Doesn't return any answer.
+    SetCommand {
+        location: PciDeviceBdf,
+        bus_master: bool,
+        memory_space: bool,
+        io_space: bool,
+    },
+
     /// Produces a [`NextInterruptResponse`] answer when the next interrupt from the PCI device
     /// happens. The PCI must have been locked.
     ///
@@ -141,7 +153,7 @@ pub struct PciDeviceInfo {
 // TODO: actually figure out PCI and adjust this
 #[derive(Debug, Clone, Encode, Decode)]
 pub enum PciBaseAddressRegister {
-    Memory { base_address: u32 },
+    Memory { base_address: u64 },
     Io { base_address: u32 },
 }
 

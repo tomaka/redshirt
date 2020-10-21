@@ -17,9 +17,10 @@
 //!
 //! See https://en.wikipedia.org/wiki/PCI_configuration_space
 
-use alloc::{borrow::Cow, collections::VecDeque, vec::Vec};
+use alloc::{collections::VecDeque, vec::Vec};
 use core::{convert::TryFrom as _, iter};
-use fnv::FnvBuildHasher;
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use x86_64::structures::port::{PortRead as _, PortWrite as _};
 
 /// Initializes PCI the "legacy" way, by reading and writing CPU I/O ports.
@@ -78,6 +79,25 @@ pub struct Device<'a> {
 }
 
 impl<'a> Device<'a> {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    pub fn set_command(&mut self, bus_master: bool, memory_space: bool, io_space: bool) {
+        let command: u16 = if bus_master { 1 << 2 } else { 0 }
+            | if memory_space { 1 << 1 } else { 0 }
+            | if io_space { 1 << 0 } else { 0 };
+
+        // TODO: that overwrites status, is that ok?
+        pci_cfg_write_u32(
+            &self.parent.known_devices[self.index].bdf,
+            0x4,
+            u32::from(command),
+        );
+    }
+
+    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+    pub fn set_command(&mut self, _: bool, _: bool, _: bool) {
+        unreachable!()
+    }
+
     pub fn bus(&self) -> u8 {
         self.parent.known_devices[self.index].bdf.bus
     }
@@ -134,6 +154,13 @@ pub enum BaseAddressRegister {
 }
 
 /// Scans all the PCI devices.
+#[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+fn scan_all_buses() -> Vec<DeviceInfo> {
+    Vec::new()
+}
+
+/// Scans all the PCI devices.
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 fn scan_all_buses() -> Vec<DeviceInfo> {
     // TODO: apparently it's possible to have multiple PCI controllers
     //       see https://wiki.osdev.org/PCI#Recursive_Scan
@@ -166,6 +193,7 @@ fn scan_all_buses() -> Vec<DeviceInfo> {
 }
 
 /// Scans all the devices on a certain PCI bus.
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 fn scan_bus(bus: u8) -> impl Iterator<Item = ScanResult> {
     (0..32).flat_map(move |device_idx| scan_device(bus, device_idx))
 }
@@ -175,6 +203,7 @@ fn scan_bus(bus: u8) -> impl Iterator<Item = ScanResult> {
 /// # Panic
 ///
 /// Panics if the device is out of range.
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 fn scan_device(bus: u8, device: u8) -> impl Iterator<Item = ScanResult> {
     assert!(device < 32);
 
@@ -207,6 +236,7 @@ fn scan_device(bus: u8, device: u8) -> impl Iterator<Item = ScanResult> {
 }
 
 /// Output of [`scan_function`].
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[derive(Debug)]
 enum ScanResult {
     /// Function is a device description.
@@ -225,6 +255,7 @@ enum ScanResult {
 /// # Panic
 ///
 /// Panics if the device is out of range.
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 fn scan_function(bdf: &DeviceBdf) -> Option<ScanResult> {
     let (vendor_id, device_id) = {
         let vendor_device = pci_cfg_read_u32(bdf, 0);
@@ -243,7 +274,7 @@ fn scan_function(bdf: &DeviceBdf) -> Option<ScanResult> {
         (bytes[0], bytes[1], bytes[2], bytes[3])
     };
 
-    let (_bist, header_ty, latency, cache_line) = {
+    let (_bist, header_ty, _latency, _cache_line) = {
         let val = pci_cfg_read_u32(bdf, 0xc);
         let bytes = val.to_be_bytes();
         (bytes[0], bytes[1], bytes[2], bytes[3])
@@ -275,20 +306,47 @@ fn scan_function(bdf: &DeviceBdf) -> Option<ScanResult> {
         revision_id,
         base_address_registers: {
             let mut list = Vec::with_capacity(6);
-            for bar_n in 0..6 {
+
+            let mut bar_n = 0;
+            loop {
+                if bar_n >= 6 {
+                    break;
+                }
+
                 let bar = pci_cfg_read_u32(bdf, 0x10 + bar_n * 0x4);
-                list.push(if (bar & 0x1) == 0 {
+                if (bar & 0x1) == 0 {
+                    let ty = (bar >> 1) & 0b11;
                     let prefetchable = (bar & (1 << 3)) != 0;
-                    let base_address = usize::try_from(bar & !0b1111).unwrap();
-                    BaseAddressRegister::Memory {
-                        base_address,
-                        prefetchable,
+                    let base_address = bar & !0b1111;
+
+                    if ty == 0 {
+                        // 32 bits memory BAR
+                        list.push(BaseAddressRegister::Memory {
+                            base_address: usize::try_from(base_address).unwrap(),
+                            prefetchable,
+                        });
+                        bar_n += 1;
+                    } else if ty == 2 {
+                        // 64 bits memory BAR. The higher 32 bits are located in the next BAR.
+                        let addr_hi = pci_cfg_read_u32(bdf, 0x10 + (bar_n + 1) * 0x4);
+                        let address = (u64::from(addr_hi) << 32) | u64::from(base_address);
+                        if let Ok(address) = usize::try_from(address) {
+                            list.push(BaseAddressRegister::Memory {
+                                base_address: address,
+                                prefetchable,
+                            });
+                        }
+                        bar_n += 2;
                     }
                 } else {
-                    let base_address = u16::try_from(bar & !0b11).unwrap();
-                    BaseAddressRegister::Io { base_address }
-                });
+                    // TODO: this ` & 0xffff` is normally not needed, but it seems like on real
+                    // hardware the value is higher than 0xffff
+                    let base_address = u16::try_from((bar & !0b11) & 0xffff).unwrap();
+                    list.push(BaseAddressRegister::Io { base_address });
+                    bar_n += 1;
+                }
             }
+
             list
         },
     }))
@@ -303,7 +361,43 @@ fn scan_function(bdf: &DeviceBdf) -> Option<ScanResult> {
 /// Panics if the device or function are out of range.
 /// Panics if `offset` is not 4-bytes aligned.
 ///
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 fn pci_cfg_read_u32(bdf: &DeviceBdf, offset: u8) -> u32 {
+    pci_cfg_prepare_port(bdf, offset);
+
+    unsafe {
+        if cfg!(target_endian = "little") {
+            u32::read_from_port(0xcfc)
+        } else {
+            u32::read_from_port(0xcfc).swap_bytes()
+        }
+    }
+}
+
+/// Writes the configuration space of the given device.
+///
+/// Automatically swaps bytes on big-endian platforms.
+///
+/// # Panic
+///
+/// Panics if the device or function are out of range.
+/// Panics if `offset` is not 4-bytes aligned.
+///
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+fn pci_cfg_write_u32(bdf: &DeviceBdf, offset: u8, data: u32) {
+    pci_cfg_prepare_port(bdf, offset);
+
+    unsafe {
+        if cfg!(target_endian = "little") {
+            u32::write_to_port(0xcfc, data)
+        } else {
+            u32::write_to_port(0xcfc, data.swap_bytes())
+        }
+    }
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+fn pci_cfg_prepare_port(bdf: &DeviceBdf, offset: u8) {
     assert!(bdf.device < 32);
     assert!(bdf.function < 8);
     assert_eq!(offset % 4, 0);
@@ -316,10 +410,5 @@ fn pci_cfg_read_u32(bdf: &DeviceBdf, offset: u8) -> u32 {
 
     unsafe {
         u32::write_to_port(0xcf8, addr);
-        if cfg!(target_endian = "little") {
-            u32::read_from_port(0xcfc)
-        } else {
-            u32::read_from_port(0xcfc).swap_bytes()
-        }
     }
 }

@@ -36,7 +36,7 @@ pub enum HardwareMessage {
         /// Alignment of the pointer to return.
         ///
         /// The returned value modulo `alignment` must be equal to 0.
-        alignment: u8,
+        alignment: u64,
     },
     /// Opposite of malloc.
     Free {

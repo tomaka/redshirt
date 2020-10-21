@@ -13,6 +13,7 @@ members = [
     "interfaces/framebuffer",
     "interfaces/hardware",
     "interfaces/interface",
+    "interfaces/kernel-debug",
     "interfaces/kernel-log",
     "interfaces/loader",
     "interfaces/log",
@@ -22,20 +23,16 @@ members = [
     "interfaces/system-time",
     "interfaces/tcp",
     "interfaces/time",
+    "interfaces/video-output",
 ]
 
 [profile.dev]
 opt-level = 1
 
-[profile.dev.package.hashbrown]
+[profile.dev.package."*"]
 opt-level = 3
-[profile.dev.package.rand_jitter]
-opt-level = 3
-[profile.dev.package.wasmi]
-opt-level = 3
-[profile.dev.package.wasmi-validation]
-opt-level = 3
-[profile.dev.package.wat]
+
+[profile.test.package."*"]
 opt-level = 3
 
 [profile.release]

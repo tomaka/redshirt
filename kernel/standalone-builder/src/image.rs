@@ -16,7 +16,7 @@
 use std::{
     fs,
     io::{self, Read, Seek, SeekFrom, Write},
-    path::{Path, PathBuf},
+    path::Path,
     process::Command,
 };
 use tempdir::TempDir;
@@ -151,8 +151,6 @@ fn build_x86_multiboot2_cdrom_iso(
         &br#"
 set timeout=5
 set default=0
-set gfxmode=auto
-set gfxpayload=auto
 
 menuentry "redshirt" {
     insmod all_video

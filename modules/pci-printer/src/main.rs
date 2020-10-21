@@ -18,8 +18,7 @@
 //! This program is nothing more than a small debugging utility.
 
 use fnv::FnvBuildHasher;
-use parity_scale_codec::DecodeAll;
-use std::{borrow::Cow, convert::TryFrom as _};
+use std::borrow::Cow;
 
 include!(concat!(env!("OUT_DIR"), "/build-pci.rs"));
 

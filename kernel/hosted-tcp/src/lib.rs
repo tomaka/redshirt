@@ -15,6 +15,8 @@
 
 //! Implements the TCP interface.
 
+// TODO: this entire code is very work-in-progress
+
 use async_std::{
     net::{TcpListener, TcpStream},
     sync::Mutex,
@@ -72,6 +74,9 @@ enum FrontToBackSocket {
         message_id: MessageId,
         data: Vec<u8>,
     },
+    Close {
+        message_id: MessageId,
+    },
 }
 
 /// Message sent from the main task to the background task for listeners.
@@ -95,11 +100,15 @@ enum BackToFront {
     },
     Read {
         message_id: MessageId,
-        result: Result<Vec<u8>, ()>,
+        result: Result<Vec<u8>, redshirt_tcp_interface::ffi::TcpReadError>,
     },
     Write {
         message_id: MessageId,
-        result: Result<(), ()>,
+        result: Result<(), redshirt_tcp_interface::ffi::TcpWriteError>,
+    },
+    Close {
+        message_id: MessageId,
+        result: Result<(), redshirt_tcp_interface::ffi::TcpCloseError>,
     },
 }
 
@@ -202,6 +211,15 @@ impl<'a> NativeProgramRef<'a> for &'a TcpHandler {
                         ),
                     }
                 }
+
+                BackToFront::Close { message_id, result } => {
+                    return NativeProgramEvent::Answer {
+                        message_id,
+                        answer: Ok(
+                            redshirt_tcp_interface::ffi::TcpCloseResponse { result }.encode()
+                        ),
+                    }
+                }
             }
         })
     }
@@ -285,7 +303,18 @@ impl<'a> NativeProgramRef<'a> for &'a TcpHandler {
             }
 
             ffi::TcpMessage::Close(close) => {
-                let _ = sockets.remove(&close.socket_id);
+                let message_id = match message_id {
+                    Some(m) => m,
+                    None => return,
+                };
+
+                sockets
+                    .get_mut(&close.socket_id)
+                    .unwrap() // TODO: don't unwrap; but what to do?
+                    .as_mut_connected()
+                    .unwrap()
+                    .unbounded_send(FrontToBackSocket::Close { message_id })
+                    .unwrap(); // TODO: don't unwrap; but what to do?
             }
 
             ffi::TcpMessage::Read(read) => {
@@ -319,6 +348,10 @@ impl<'a> NativeProgramRef<'a> for &'a TcpHandler {
                         data: write.data,
                     })
                     .unwrap(); // TODO: don't unwrap; but what to do?
+            }
+
+            ffi::TcpMessage::Destroy(id) => {
+                let _ = sockets.remove(&id);
             }
         }
     }
@@ -398,7 +431,7 @@ async fn socket_task(
 
 /// Function executed in the background for each TCP socket.
 async fn open_socket_task(
-    socket: TcpStream,
+    mut socket: TcpStream,
     mut commands_rx: mpsc::UnboundedReceiver<FrontToBackSocket>,
     mut back_to_front: mpsc::Sender<BackToFront>,
 ) {
@@ -424,6 +457,9 @@ async fn open_socket_task(
             WriteCmd {
                 message_id: MessageId,
                 data: Vec<u8>,
+            },
+            CloseCmd {
+                message_id: MessageId,
             },
             ReadFinished,
             WriteFinished,
@@ -469,6 +505,9 @@ async fn open_socket_task(
                 future::Either::Right((Some(FrontToBackSocket::Write { message_id, data }), _)) => {
                     WhatHappened::WriteCmd { message_id, data }
                 }
+                future::Either::Right((Some(FrontToBackSocket::Close { message_id }), _)) => {
+                    WhatHappened::CloseCmd { message_id }
+                }
                 future::Either::Right((None, _)) => {
                     // `commands_rx` is closed, so let's stop the task.
                     return;
@@ -505,6 +544,17 @@ async fn open_socket_task(
                 write_message = Some(message_id);
                 write_buffer = data;
                 write_buffer_offset = 0;
+            }
+
+            WhatHappened::CloseCmd { message_id } => {
+                socket.close();
+                let msg_to_front = BackToFront::Close {
+                    message_id,
+                    result: Ok(()),
+                };
+                if back_to_front.send(msg_to_front).await.is_err() {
+                    return;
+                }
             }
 
             WhatHappened::WriteFinished => {
