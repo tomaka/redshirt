@@ -2,24 +2,28 @@ version: 2
 updates:
 - package-ecosystem: github-actions
   directory: "/"
+  labels: [ ]
   schedule:
     interval: daily
     time: "04:00"
   open-pull-requests-limit: 10
 - package-ecosystem: cargo
   directory: "/kernel/standalone-builder"
+  labels: [ ]
   schedule:
     interval: daily
     time: "04:00"
   open-pull-requests-limit: 10
 - package-ecosystem: cargo
   directory: "/modules"
+  labels: [ ]
   schedule:
     interval: daily
     time: "04:00"
   open-pull-requests-limit: 10
 - package-ecosystem: cargo
   directory: "/"
+  labels: [ ]
   schedule:
     interval: daily
     time: "04:00"
