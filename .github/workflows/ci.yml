@@ -225,3 +225,27 @@ jobs:
         run: RUSTDOCFLAGS="--deny broken_intra_doc_links" cargo doc --verbose --workspace --no-deps --document-private-items
       - name: Check modules intra-doc links
         run: RUSTDOCFLAGS="--deny broken_intra_doc_links" cargo doc --verbose --manifest-path modules/Cargo.toml --workspace --no-deps --document-private-items
+
+  cargo-deny:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        checks:
+          - advisories
+          - bans licenses sources
+    # Prevent sudden announcement of a new advisory from failing ci
+    continue-on-error: ${{ matrix.checks == 'advisories' }}
+    steps:
+    - uses: actions/checkout@v2
+    - uses: EmbarkStudios/cargo-deny-action@v1
+      with:
+        command: check ${{ matrix.checks }}
+        arguments: --workspace --all-features --manifest-path=./Cargo.toml
+    - uses: EmbarkStudios/cargo-deny-action@v1
+      with:
+        command: check ${{ matrix.checks }}
+        arguments: --workspace --all-features --manifest-path=./modules/Cargo.toml
+    - uses: EmbarkStudios/cargo-deny-action@v1
+      with:
+        command: check ${{ matrix.checks }}
+        arguments: --workspace --all-features --manifest-path=./kernel/standalone-builder/Cargo.toml

@@ -1,0 +1,14 @@
+[advisories]
+vulnerability = "deny"
+unmaintained = "warn"
+yanked = "warn"
+notice = "warn"
+
+[licenses]
+unlicensed = "deny"
+copyleft = "allow"
+allow-osi-fsf-free = "either"
+default = "deny"
+
+[bans]
+multiple-versions = "warn"
