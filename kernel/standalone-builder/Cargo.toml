@@ -9,7 +9,7 @@ publish = false
 [workspace]
 
 [dependencies]
-fatfs = "0.3.3"
+fatfs = "0.3.4"
 fscommon = "0.1.0"
 cargo_metadata = "0.9"
 mbrman = { git = "https://github.com/cecton/mbrman" }    # TODO: waiting for a publication

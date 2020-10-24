@@ -127,9 +127,9 @@ checksum = "bb1f6b1ce1c140482ea30ddd3335fc0024ac7ee112895426e0a629a6c20adfe3"
 
 [[package]]
 name = "fatfs"
-version = "0.3.3"
+version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f6d1df9e4503954f60504a5ee4fc435cd65cc42e98b2081f7f421be5f2e68e7d"
+checksum = "93079df23039e52059e1f03b4c29fb0c72da2c792aad91bb2236c9fb81d3592e"
 dependencies = [
  "bitflags",
  "byteorder",
