@@ -13,7 +13,7 @@ fatfs = "0.3.3"
 fscommon = "0.1.0"
 cargo_metadata = "0.9"
 mbrman = { git = "https://github.com/cecton/mbrman" }    # TODO: waiting for a publication
-serde_json = "1.0.48"
+serde_json = "1.0.59"
 structopt = "0.3.11"
 tempdir = "0.3.7"
 thiserror = "1.0"
