@@ -239,13 +239,13 @@ jobs:
     - uses: actions/checkout@v2
     - uses: EmbarkStudios/cargo-deny-action@v1
       with:
-        command: check ${{ matrix.checks }}
+        command: check --config ./.github/workflows/cargo-deny.toml ${{ matrix.checks }}
         arguments: --workspace --all-features --manifest-path=./Cargo.toml
     - uses: EmbarkStudios/cargo-deny-action@v1
       with:
-        command: check ${{ matrix.checks }}
+        command: check --config ./.github/workflows/cargo-deny.toml ${{ matrix.checks }}
         arguments: --workspace --all-features --manifest-path=./modules/Cargo.toml
     - uses: EmbarkStudios/cargo-deny-action@v1
       with:
-        command: check ${{ matrix.checks }}
+        command: check --config ./.github/workflows/cargo-deny.toml ${{ matrix.checks }}
         arguments: --workspace --all-features --manifest-path=./kernel/standalone-builder/Cargo.toml
