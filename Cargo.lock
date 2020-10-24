@@ -747,7 +747,7 @@ checksum = "7abc8dd8451921606d809ba32e95b6111925cd2906060d2dcc29c070220503eb"
 dependencies = [
  "cfg-if",
  "libc",
- "wasi",
+ "wasi 0.9.0+wasi-snapshot-preview1",
 ]
 
 [[package]]
@@ -1606,7 +1606,7 @@ dependencies = [
  "redshirt-time-hosted",
  "structopt",
  "walkdir",
- "wasi",
+ "wasi 0.10.0+wasi-snapshot-preview1",
 ]
 
 [[package]]
@@ -1639,7 +1639,7 @@ dependencies = [
  "slab 0.4.2 (git+https://github.com/baloo/slab?rev=88b456131de20750e785655d1e62cd0b6e10d44b)",
  "smallvec",
  "spinning_top",
- "wasi",
+ "wasi 0.10.0+wasi-snapshot-preview1",
  "wasmi",
 ]
 
@@ -2307,6 +2307,11 @@ name = "wasi"
 version = "0.9.0+wasi-snapshot-preview1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cccddf32554fecc6acb585f82a32a72e28b48f8c4c1883ddfeeeaa96f7d8e519"
+
+[[package]]
+name = "wasi"
+version = "0.10.0+wasi-snapshot-preview1"
+source = "git+https://github.com/bytecodealliance/wasi?rev=45536ac956a6211e3cff047f36cf19d6da82fd95#45536ac956a6211e3cff047f36cf19d6da82fd95"
 
 [[package]]
 name = "wasm-bindgen"
