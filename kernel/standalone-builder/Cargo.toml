@@ -11,7 +11,7 @@ publish = false
 [dependencies]
 fatfs = "0.3.3"
 fscommon = "0.1.0"
-cargo_metadata = "0.9"
+cargo_metadata = "0.12"
 mbrman = { git = "https://github.com/cecton/mbrman" }    # TODO: waiting for a publication
 serde_json = "1.0.48"
 structopt = "0.3.11"
