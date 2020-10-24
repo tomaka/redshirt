@@ -10,7 +10,7 @@ default = []
 git = ["git2", "notify", "openssl-sys"]
 
 [dependencies]
-base64 = { version = "0.11.0", default-features = false, features = ["alloc"] }
+base64 = { version = "0.13.0", default-features = false, features = ["alloc"] }
 blake3 = { version = "0.2.2", default-features = false }
 bs58 = "0.3.0"
 futures = "0.3"
@@ -26,7 +26,7 @@ tempdir = "0.3.7"
 walkdir = "2.3.1"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-env_logger = "0.7.1"
+env_logger = "0.8.1"
 libp2p-tcp = { version = "0.20.0", default-features = false, features = ["async-std"] }
 # TODO: use the version below once cargo has fixed the associated bug
 #libp2p = { version = "0.21.1", default-features = false, features = ["tcp"] }

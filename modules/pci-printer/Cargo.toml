@@ -8,7 +8,7 @@ publish = false
 
 [dependencies]
 fnv = { git = "https://github.com/dflemstr/rust-fnv", default-features = false }    # TODO: https://github.com/servo/rust-fnv/pull/22
-hashbrown = { version = "0.9.0", default-features = false }
+hashbrown = { version = "0.9.1", default-features = false }
 lazy_static = "1"
 log = "0.4"
 redshirt-pci-interface = { path = "../../interfaces/pci" }

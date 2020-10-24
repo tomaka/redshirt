@@ -7,9 +7,9 @@ edition = "2018"
 publish = false
 
 [dependencies]
-derive_more = "0.99.8"
+derive_more = "0.99.11"
 fnv = { git = "https://github.com/dflemstr/rust-fnv", default-features = false }    # TODO: https://github.com/servo/rust-fnv/pull/22
-hashbrown = { version = "0.7.1", default-features = false }
+hashbrown = { version = "0.9.1", default-features = false }
 iced-x86 = { version = "1.2.0", default-features = false, features = ["decoder", "instr_info", "std"] }
 lazy_static = "1"
 log = "0.4"
