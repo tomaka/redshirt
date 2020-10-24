@@ -148,7 +148,7 @@ where
                     while let Ok(hash) = self.programs_to_load.pop() {
                         // TODO: can this not fail if the handler crashed in parallel in a
                         // multithreaded situation?
-                        let message_id = self.core.emit_interface_message_answer(
+                        let message_id = self.core.emit_message_answer(
                             self.load_source_virtual_pid,
                             redshirt_loader_interface::ffi::INTERFACE,
                             redshirt_loader_interface::ffi::LoaderMessage::Load(From::from(hash)),
@@ -193,14 +193,14 @@ where
                     } => {
                         // The native programs want to emit a message in the kernel.
                         if let Some(message_id_write) = message_id_write {
-                            let message_id = self.core.emit_interface_message_answer(
+                            let message_id = self.core.emit_message_answer(
                                 emitter_pid,
                                 interface,
                                 message,
                             );
                             message_id_write.acknowledge(message_id);
                         } else {
-                            self.core.emit_interface_message_no_answer(
+                            self.core.emit_message_no_answer(
                                 emitter_pid,
                                 interface,
                                 message,
@@ -295,6 +295,7 @@ where
                         }
                     }
                     Ok(redshirt_interface_interface::ffi::InterfaceMessage::NextMessage(registration_id)) => {
+                        //self.core.add_interface_message();
                         todo!()
                     },
                     Err(_) => {

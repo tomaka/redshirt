@@ -31,7 +31,6 @@ use smallvec::SmallVec;
 use spinning_top::Spinlock;
 
 mod active_messages;
-mod interface_handlers;
 mod notifications_queue;
 mod waiting_threads;
 
@@ -39,13 +38,10 @@ mod waiting_threads;
 //
 // This struct synchronizes the following components in a lock-free way:
 //
-// - The underlying VMs.
-// - A list of interfaces (akin to a `map<interface_hash, ...>`), associated with either the PID
-//   of the handler, or a list of threads waiting to deliver a message/notifications waiting to
-//   be delivered.
-// - For each process, a list of notifications waiting to be delivered.
-// - For each process, a list of threads blocked waiting for notifications and that we have failed
-//   to resume in the past.
+// - The underlying VMs, with processes and threads.
+// - For each process, a list of answers waiting to be delivered.
+// - For each process, a list of threads blocked waiting for answers and that we have failed to
+//   resume in the past.
 // - A list of active messages waiting to be answered.
 //
 // While each of these components is updated atomically, there exists no synchronization between
@@ -58,6 +54,7 @@ mod waiting_threads;
 // from the fact that he process ID is no longer valid. This wouldn't be possible if process IDs
 // were reused.
 //
+// TODO: finish updating this section ^
 pub struct Core<TExt: Extrinsics> {
     /// Queue of events to return in priority when `run` is called.
     pending_events: SegQueue<CoreRunOutcome>,
@@ -70,18 +67,15 @@ pub struct Core<TExt: Extrinsics> {
     /// Never modified after initialization.
     reserved_pids: HashSet<Pid, BuildNoHashHasher<u64>>,
 
-    /// For each interface, which program is fulfilling it.
-    interfaces: interface_handlers::InterfaceHandlers,
-
     /// List of messages that are waiting for an answer. Associates messages to their senders.
     active_messages: active_messages::ActiveMessages,
 }
 
 /// Prototype for a `Core` under construction.
 pub struct CoreBuilder<TExt: Extrinsics> {
-    /// See the corresponding field in `Core`.
+    /// See the corresponding field in [`Core`].
     reserved_pids: HashSet<Pid, BuildNoHashHasher<u64>>,
-    /// Builder for the [`processes`][Core::processes] field in `Core`.
+    /// Builder for the [`processes`][Core::processes] field in [`Core`].
     inner_builder: extrinsics::Builder<TExt>,
 }
 
@@ -93,39 +87,40 @@ pub enum CoreRunOutcome {
     ProgramFinished {
         /// Id of the program that has stopped.
         pid: Pid,
-
-        /// List of interfaces that were registered by the process and no longer are.
-        unregistered_interfaces: Vec<InterfaceHash>,
-
+        /// List of messages sent using [`Core::allocate_message_answerer`] that the process was
+        /// responsible for answering.
+        ///
+        /// One should treat the messages in this list as if a [`CoreRunOutcome::AnsweredMessage`]
+        /// with `answer` equal to `Err(())` had been emitted for each of them.
+        unanswered_messages: Vec<MessageId>,
         /// How the program ended. If `Ok`, it has gracefully terminated. If `Err`, something
         /// bad happened.
         // TODO: force Ok to i32?
         outcome: Result<Option<crate::WasmValue>, wasmi::Trap>,
     },
 
-    /// Thread has tried to emit a message on an interface that isn't registered. The thread is
-    /// now in sleep mode. You can either wake it up by calling [`Core::set_interface_handler`].
-    ThreadWaitUnavailableInterface {
-        /// Thread that emitted the message.
-        thread_id: ThreadId,
-
-        /// Interface that the thread is trying to access.
-        interface: InterfaceHash,
-    },
-
-    /// A process has emitted a message on an interface registered with a reserved PID.
-    ReservedPidInterfaceMessage {
+    /// A process has emitted a message on an interface.
+    ///
+    /// If the `message_id` is `Some`, you must call either [`CoreRunOutcome::set_answerer`] or
+    /// [`CoreRunOutcome::answer_message`].
+    InterfaceMessage {
+        /// Id of the program that has emitted the message.
         pid: Pid,
+        /// Identifier of the message that has been emitted. `None` if no answer is expected.
         message_id: Option<MessageId>,
+        /// Which interface the message has been emitted on.
         interface: InterfaceHash,
+        /// Message itself, as opaque bytes.
         message: EncodedMessage,
     },
 
-    /// Response to a message emitted using [`Core::emit_interface_message_answer`].
-    MessageResponse {
+    /// A process answered a message sent using [`Core::allocate_message_answerer`].
+    AnsweredMessage {
+        /// Answered message.
         message_id: MessageId,
-        response: Result<EncodedMessage, ()>,
-    },
+        /// The answer in question.
+        answer: Result<EncodedMessage, ()>,
+    }
 }
 
 /// Additional information about a process.
@@ -181,14 +176,6 @@ impl<TExt: Extrinsics> Core<TExt> {
                 dead_threads: _,
                 user_data,
             } => {
-                // Unregister the interfaces this program had registered.
-                let mut unregistered_interfaces = Vec::new();
-                for interface in user_data.registered_interfaces.into_inner() {
-                    let _interface = self.interfaces.unregister(interface.clone());
-                    debug_assert_eq!(_interface, Some(pid));
-                    unregistered_interfaces.push(interface);
-                }
-
                 // TODO: send message errors for interface messages that the process has received
                 //       but not answered
                 // TODO: empty the content of active_messages?
@@ -221,7 +208,7 @@ impl<TExt: Extrinsics> Core<TExt> {
 
                 Some(CoreRunOutcome::ProgramFinished {
                     pid,
-                    unregistered_interfaces,
+                    unanswered_messages: Vec::new(), // TODO:
                     outcome,
                 })
             }
@@ -343,204 +330,34 @@ impl<TExt: Extrinsics> Core<TExt> {
         Some(CoreProcess { process: p })
     }
 
-    /// Sets which process is the handler of which interface.
-    // TODO: better API
-    pub fn set_interface_handler(
-        &self,
-        interface: InterfaceHash,
-        new_handler_pid: Pid,
-    ) -> Result<(), ()> {
-        // Start by checking whether the process is alive.
-        let new_handler = match self.processes.process_by_id(new_handler_pid) {
-            Some(p) => Some(p),
-            None if !self.reserved_pids.contains(&new_handler_pid) => return Err(()),
-            None => None,
-        };
-
-        // Registering the interface. We have stored a list of things to deliver to that interface
-        // as soon as it is registered.
-        for requested in self
-            .interfaces
-            .set_interface_handler(interface.clone(), new_handler_pid)?
-        {
-            match requested {
-                // A thread is blocked waiting to deliver a message on this interface.
-                interface_handlers::WaitingForInterface::Thread(thread_id) => {
-                    // Lock the thread that wants to deliver the message.
-                    let mut thread = match self.processes.interrupted_thread_by_id(thread_id) {
-                        Ok(extrinsics::ThreadAccess::EmitMessage(t)) => t,
-                        // It is possible for the process that owns the thread has crashed or
-                        // terminated since then.
-                        Err(extrinsics::ThreadByIdErr::RunningOrDead) => continue,
-                        // There's no reason to lock this thread except to resume it after the
-                        // interface is registered (which we're doing right now).
-                        Err(extrinsics::ThreadByIdErr::AlreadyLocked) => unreachable!(),
-                        // The thread must be in the `EmitMessage` state, otherwise there's a
-                        // state inconsistency.
-                        Ok(_) => unreachable!(),
-                    };
-
-                    debug_assert_eq!(*thread.emit_interface(), interface);
-                    let emitter_pid = thread.pid();
-
-                    let message_id = if thread.needs_answer() {
-                        Some(self.active_messages.add_message(emitter_pid))
-                    } else {
-                        None
-                    };
-
-                    let message = thread.accept_emit(message_id);
-
-                    if let Some(new_handler) = &new_handler {
-                        new_handler
-                            .user_data()
-                            .notifications_queue
-                            .push_interface_notification(
-                                &interface,
-                                message_id,
-                                emitter_pid,
-                                message,
-                            );
-                    } else {
-                        debug_assert!(self.reserved_pids.contains(&new_handler_pid));
-                        self.pending_events
-                            .push(CoreRunOutcome::ReservedPidInterfaceMessage {
-                                pid: emitter_pid,
-                                message_id,
-                                interface: interface.clone(),
-                                message,
-                            });
-                    }
-                }
-
-                interface_handlers::WaitingForInterface::ImmediateDelivery {
-                    emitter_pid,
-                    message_id,
-                    message,
-                } => match &new_handler {
-                    Some(p) => p
-                        .user_data()
-                        .notifications_queue
-                        .push_interface_notification(&interface, message_id, emitter_pid, message),
-                    None => self
-                        .pending_events
-                        .push(CoreRunOutcome::ReservedPidInterfaceMessage {
-                            pid: new_handler_pid,
-                            message_id,
-                            interface: interface.clone(),
-                            message,
-                        }),
-                },
-            }
-        }
-
-        // Attempt to wake up the threads that were waiting for a notification.
-        if let Some(new_handler) = new_handler {
-            self.try_resume_notification_wait(new_handler);
-        }
-
-        Ok(())
+    /// Allocates a new message ID. The returned value is guaranteed to not be used for any further
+    /// message.
+    ///
+    /// This [`MessageId`] isn't tracked by the [`Core`].
+    pub fn allocate_untracked_message(&self) -> MessageId {
+        todo!()
     }
 
-    /// Emits a message for the handler of the given interface.
+    /// Allocates a new message ID. The given process is responsible for answering the message,
+    /// similar to when [`Core::set_answerer`] is called.
     ///
-    /// The message doesn't expect any answer.
-    // TODO: better API
-    pub fn emit_interface_message_no_answer(
-        &self,
-        emitter_pid: Pid,
-        interface: InterfaceHash,
-        message: impl Encode,
-    ) {
-        assert!(self.reserved_pids.contains(&emitter_pid));
-        let _out =
-            self.emit_interface_message_inner(interface, emitter_pid, message.encode(), false);
-        debug_assert!(_out.is_none());
+    /// A [`CoreRunOutcome::AnsweredMessage`] will later be generated when the process answers
+    /// this message.
+    pub fn allocate_message_answerer(&self, answerer: Pid) -> MessageId {
+        todo!()
     }
 
-    /// Emits a message for the handler of the given interface.
+    /// After [`CoreRunOutcome::InterfaceMessage`] is generated, use this method to set the process
+    /// that has the rights to answer this message.
     ///
-    /// The message does expect an answer. The answer will be sent back as
-    /// [`MessageResponse`](CoreRunOutcome::MessageResponse) event.
-    // TODO: better API
-    pub fn emit_interface_message_answer(
-        &self,
-        emitter_pid: Pid,
-        interface: InterfaceHash,
-        message: impl Encode,
-    ) -> MessageId {
-        assert!(self.reserved_pids.contains(&emitter_pid));
-        match self.emit_interface_message_inner(interface, emitter_pid, message.encode(), true) {
-            Some(m) => m,
-            None => unreachable!(),
-        }
+    /// > **Note**: The way the process in question is informed of the message is out of scope of
+    /// >           this module.
+    pub fn set_answerer(&self, message_id: MessageId, pid: Pid) {
+        todo!()
     }
 
-    /// Cancels a message previously emitted with [`Core::emit_interface_message_no_answer`] or
-    /// [`Core::emit_interface_message_answer`].
-    pub fn cancel_message(&self, message_id: MessageId) {
-        unimplemented!() // TODO:
-    }
-
-    /// Common function for emitting a message on an interface from the public API.
-    ///
-    /// If `needs_answer` is true, then `Some` is always returned. If `needs_answer` is false
-    /// then `None` is always returned.
-    fn emit_interface_message_inner(
-        &self,
-        interface: InterfaceHash,
-        emitter_pid: Pid,
-        message: EncodedMessage,
-        needs_answer: bool,
-    ) -> Option<MessageId> {
-        let message_id = if needs_answer {
-            Some(self.active_messages.add_message(emitter_pid))
-        } else {
-            None
-        };
-
-        match self.interfaces.get(&interface) {
-            interface_handlers::Interface::Registered(handler_pid) => {
-                if let Some(handler_process) = self.processes.process_by_id(handler_pid) {
-                    handler_process
-                        .user_data()
-                        .notifications_queue
-                        .push_interface_notification(&interface, message_id, emitter_pid, message);
-                    self.try_resume_notification_wait(handler_process);
-                } else if self.reserved_pids.contains(&emitter_pid) {
-                    self.pending_events
-                        .push(CoreRunOutcome::ReservedPidInterfaceMessage {
-                            pid: emitter_pid,
-                            message_id: None,
-                            interface,
-                            message: message.encode(),
-                        });
-                } else {
-                    // This situation can be reached if the program that was registered as the
-                    // interface handler has stopped running, and we have not yet removed it from
-                    // its role of interface handler.
-                    //
-                    // This is equivalent to the situation where the message has been sent
-                    // successfully but the program stopped afterwards. Consequently, we handle
-                    // it the same way: by reporting an error to the emitter.
-                    if let Some(message_id) = message_id {
-                        self.answer_message_inner(message_id, Err(()));
-                    }
-                };
-            }
-            interface_handlers::Interface::Unregistered(interface) => {
-                interface.insert_waiting_message(emitter_pid, message_id, message);
-            }
-        }
-
-        message_id
-    }
-
-    ///
-    ///
-    /// It is forbidden to answer messages created using [`Core::emit_interface_message_answer`] or
-    /// [`Core::emit_interface_message_no_answer`]. Only messages generated by processes can be
-    /// answered through this method.
+    /// After [`CoreRunOutcome::InterfaceMessage`] is generated, use this method to send back an
+    /// answer to that message.
     // TODO: better API
     pub fn answer_message(&self, message_id: MessageId, response: Result<EncodedMessage, ()>) {
         self.answer_message_inner(message_id, response);
@@ -660,7 +477,6 @@ impl<TExt: Extrinsics> CoreBuilder<TExt> {
         Core {
             pending_events: SegQueue::new(),
             processes: self.inner_builder.build(),
-            interfaces: interface_handlers::InterfaceHandlers::new(),
             reserved_pids: self.reserved_pids,
             active_messages: active_messages::ActiveMessages::new(),
         }
