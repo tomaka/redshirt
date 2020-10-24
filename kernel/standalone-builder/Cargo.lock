@@ -139,9 +139,9 @@ dependencies = [
 
 [[package]]
 name = "fscommon"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a84b4c932d50705767a650d5933446acd532e6c2bdb00179c2f145018612368f"
+checksum = "315ce685aca5ddcc5a3e7e436ef47d4a5d0064462849b6f0f628c28140103531"
 dependencies = [
  "log",
 ]
