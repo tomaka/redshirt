@@ -1,9 +1,14 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+    name: redshirt-bootnodes
 ---
 # Nodes running a peer-to-peer node expose their TCP port 30333.
 kind: Service
 apiVersion: v1
 metadata:
   name: passive-node
+  namespace: redshirt-bootnodes
 spec:
   type: NodePort
   ports:
@@ -20,6 +25,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: p2p-loader-private-key-base
+  namespace: redshirt-bootnodes
 type: Opaque
 data:
   # Note: the application expects a base64-encoded value, and Kubernetes expects you to give
@@ -31,6 +37,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: passive-node
+  namespace: redshirt-bootnodes
 spec:
   serviceName: passive-node
   replicas: 2
