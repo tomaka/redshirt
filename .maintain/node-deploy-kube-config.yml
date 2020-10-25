@@ -59,7 +59,7 @@ spec:
       containers:
       - name: passive-node
         # Note: `<TAG>` is replaced by a script before deployment
-        image: tomaka/redshirt-passive-node:<TAG>
+        image: docker.pkg.github.com/tomaka/redshirt/passive-node:<TAG>
         # TODO: shouldn't be necessary, for some reason fails if we don't do that
         command: ["/usr/local/bin/passive-node"]
         args: ["--git-watch", "https://github.com/tomaka/redshirt-packages"]
