@@ -62,19 +62,12 @@ pub struct Core<TExt: Extrinsics> {
     /// List of running processes.
     processes: extrinsics::ProcessesCollectionExtrinsics<Process, (), TExt>,
 
-    /// List of [`Pid`]s that have been reserved during the construction.
-    ///
-    /// Never modified after initialization.
-    reserved_pids: HashSet<Pid, BuildNoHashHasher<u64>>,
-
     /// List of messages that are waiting for an answer. Associates messages to their senders.
     active_messages: active_messages::ActiveMessages,
 }
 
 /// Prototype for a `Core` under construction.
 pub struct CoreBuilder<TExt: Extrinsics> {
-    /// See the corresponding field in [`Core`].
-    reserved_pids: HashSet<Pid, BuildNoHashHasher<u64>>,
     /// Builder for the [`processes`][Core::processes] field in [`Core`].
     inner_builder: extrinsics::Builder<TExt>,
 }
@@ -120,7 +113,7 @@ pub enum CoreRunOutcome {
         message_id: MessageId,
         /// The answer in question.
         answer: Result<EncodedMessage, ()>,
-    }
+    },
 }
 
 /// Additional information about a process.
@@ -129,15 +122,8 @@ struct Process {
     /// Notifications available for retrieval by the process by calling `next_notification`.
     notifications_queue: notifications_queue::NotificationsQueue,
 
-    /// Interfaces that the process has registered.
-    registered_interfaces: Spinlock<SmallVec<[InterfaceHash; 1]>>,
-
     /// List of threads that are frozen waiting for new notifications.
     wait_notifications_threads: waiting_threads::WaitingThreads,
-
-    /// List of interfaces that this process has used. When the process dies, we notify all the
-    /// handlers about it.
-    used_interfaces: HashSet<InterfaceHash, FnvBuildHasher>,
 
     /// List of messages that the process is expected to answer.
     messages_to_answer: SmallVec<[MessageId; 8]>,
@@ -393,8 +379,6 @@ impl<TExt: Extrinsics> Core<TExt> {
     pub fn execute(&self, module: &Module) -> Result<(CoreProcess<TExt>, ThreadId), vm::NewErr> {
         let proc_metadata = Process {
             notifications_queue: notifications_queue::NotificationsQueue::new(),
-            registered_interfaces: Spinlock::new(SmallVec::new()),
-            used_interfaces: HashSet::with_hasher(Default::default()),
             messages_to_answer: SmallVec::new(),
             wait_notifications_threads: waiting_threads::WaitingThreads::new(),
         };
@@ -452,7 +436,6 @@ impl<TExt: Extrinsics> CoreBuilder<TExt> {
     /// Initializes a new [`CoreBuilder`].
     pub fn new() -> CoreBuilder<TExt> {
         CoreBuilder {
-            reserved_pids: HashSet::with_hasher(Default::default()),
             inner_builder: extrinsics::Builder::default(),
         }
     }
@@ -464,10 +447,7 @@ impl<TExt: Extrinsics> CoreBuilder<TExt> {
     /// >           method that frees such an allocated `Pid`. If there is ever a need to free
     /// >           these `Pid`s, such a method should be added.
     pub fn reserve_pid(&mut self) -> Pid {
-        let pid = self.inner_builder.reserve_pid();
-        let _was_inserted = self.reserved_pids.insert(pid);
-        debug_assert!(_was_inserted);
-        pid
+        self.inner_builder.reserve_pid()
     }
 
     /// Turns the builder into a [`Core`].
@@ -477,7 +457,6 @@ impl<TExt: Extrinsics> CoreBuilder<TExt> {
         Core {
             pending_events: SegQueue::new(),
             processes: self.inner_builder.build(),
-            reserved_pids: self.reserved_pids,
             active_messages: active_messages::ActiveMessages::new(),
         }
     }

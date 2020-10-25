@@ -27,12 +27,13 @@ use crate::extrinsics;
 use crate::module::{Module, ModuleHash};
 use crate::native::{self, NativeProgramMessageIdWrite as _};
 use crate::scheduler::{Core, CoreBuilder, CoreRunOutcome, NewErr};
+use crate::InterfaceHash;
 
-use alloc::{format, vec::Vec};
+use alloc::{collections::VecDeque, format, vec::Vec};
 use core::{convert::TryFrom as _, fmt, iter, num::NonZeroU64, sync::atomic::Ordering, task::Poll};
 use crossbeam_queue::SegQueue;
 use futures::prelude::*;
-use hashbrown::HashSet;
+use hashbrown::{hash_map::Entry, HashMap, HashSet};
 use nohash_hasher::BuildNoHashHasher;
 use redshirt_syscalls::{Decode, Encode, EncodedMessage, MessageId, Pid};
 use spinning_top::Spinlock;
@@ -44,6 +45,9 @@ use spinning_top::Spinlock;
 pub struct System<'a, TExtr: extrinsics::Extrinsics> {
     /// Inner system with inter-process communications.
     core: Core<TExtr>,
+
+    /// For each interface, which program is fulfilling it.
+    interfaces: Spinlock<Interfaces>,
 
     /// Total number of processes that have been spawned since initialization.
     num_processes_started: atomic::Atomic<u64>,
@@ -75,22 +79,22 @@ pub struct System<'a, TExtr: extrinsics::Extrinsics> {
     loading_programs: Spinlock<HashSet<MessageId, BuildNoHashHasher<u64>>>,
 }
 
+#[derive(Debug)]
+struct Interfaces {
+    interfaces: HashMap<InterfaceHash, usize, fnv::FnvBuildHasher>,
+    registrations: slab::Slab<(Pid, VecDeque<MessageId>)>,
+}
+
 /// Prototype for a [`System`].
 pub struct SystemBuilder<'a, TExtr: extrinsics::Extrinsics> {
     /// Builder for the inner core.
     core: CoreBuilder<TExtr>,
 
-    /// Native programs.
-    native_programs: native::NativeProgramsCollection<'a>,
-
-    /// "Virtual" pid for handling messages on the `interface` interface.
-    interface_interface_pid: Pid,
-
     /// "Virtual" pid for the process that sends messages towards the loader.
     load_source_virtual_pid: Pid,
 
-    /// "Virtual" pid for handling messages on the `kernel_debug` interface.
-    kernel_debug_interface_pid: Pid,
+    /// Native programs.
+    native_programs: native::NativeProgramsCollection<'a>,
 
     /// List of programs to start executing immediately after construction.
     startup_processes: Vec<Module>,
@@ -193,18 +197,13 @@ where
                     } => {
                         // The native programs want to emit a message in the kernel.
                         if let Some(message_id_write) = message_id_write {
-                            let message_id = self.core.emit_message_answer(
-                                emitter_pid,
-                                interface,
-                                message,
-                            );
+                            let message_id =
+                                self.core
+                                    .emit_message_answer(emitter_pid, interface, message);
                             message_id_write.acknowledge(message_id);
                         } else {
-                            self.core.emit_message_no_answer(
-                                emitter_pid,
-                                interface,
-                                message,
-                            );
+                            self.core
+                                .emit_message_no_answer(emitter_pid, interface, message);
                         }
                     }
                     native::NativeProgramsCollectionEvent::CancelMessage { message_id } => {
@@ -240,16 +239,10 @@ where
                 });
             }
 
-            CoreRunOutcome::ThreadWaitUnavailableInterface { .. } => {} // TODO: lazy-loading
-
-            CoreRunOutcome::MessageResponse {
-                message_id,
-                response,
-                ..
-            } => {
+            CoreRunOutcome::AnsweredMessage { message_id, answer } => {
                 if self.loading_programs.lock().remove(&message_id) {
                     let redshirt_loader_interface::ffi::LoadResponse { result } =
-                        Decode::decode(response.unwrap()).unwrap();
+                        Decode::decode(answer.unwrap()).unwrap();
                     // TODO: don't unwrap
                     let module = Module::from_bytes(&result.expect("loader returned error"))
                         .expect("module isn't proper wasm");
@@ -259,11 +252,11 @@ where
                         Err(_) => panic!(),
                     }
                 } else {
-                    self.native_programs.message_response(message_id, response);
+                    self.native_programs.message_response(message_id, answer);
                 }
             }
 
-            CoreRunOutcome::ReservedPidInterfaceMessage {
+            CoreRunOutcome::InterfaceMessage {
                 pid,
                 message_id,
                 interface,
@@ -275,10 +268,24 @@ where
                         interface_hash,
                     )) => {
                         // Set the process as interface handler, if possible.
-                        let result = self.core.set_interface_handler(interface_hash.clone(), pid);
+                        let result = {
+                            let mut interfaces = self.interfaces.lock();
+                            let interfaces = &mut *interfaces;
+                            match interfaces.interfaces.entry(interface_hash.clone()) {
+                                Entry::Occupied(_) => {
+                                    Err(redshirt_interface_interface::ffi::InterfaceRegisterError::AlreadyRegistered)
+                                }
+                                Entry::Vacant(e) => {
+                                    let id = interfaces.registrations.insert((pid, VecDeque::new()));
+                                    e.insert(id);
+                                    Ok(u64::try_from(id).unwrap())
+                                }
+                            }
+                        };
+
                         let response =
                             redshirt_interface_interface::ffi::InterfaceRegisterResponse {
-                                result: result.clone().map_err(|()| redshirt_interface_interface::ffi::InterfaceRegisterError::AlreadyRegistered),
+                                result: result.clone(),
                             };
                         if let Some(message_id) = message_id {
                             self.core.answer_message(message_id, Ok(response.encode()));
@@ -294,10 +301,29 @@ where
                             return RunOnceOutcome::LoopAgainNow;
                         }
                     }
-                    Ok(redshirt_interface_interface::ffi::InterfaceMessage::NextMessage(registration_id)) => {
-                        //self.core.add_interface_message();
-                        todo!()
-                    },
+                    Ok(redshirt_interface_interface::ffi::InterfaceMessage::NextMessage(
+                        registration_id,
+                    )) => {
+                        let mut interfaces = self.interfaces.lock();
+
+                        if let Some(message_id) = message_id {
+                            if let Ok(registration_id) = usize::try_from(registration_id) {
+                                if let Some((expected_pid, messages)) =
+                                    interfaces.registrations.get_mut(registration_id)
+                                {
+                                    if *expected_pid == pid {
+                                        messages.push_back(message_id);
+                                    } else {
+                                        self.core.answer_message(message_id, Err(()));
+                                    }
+                                } else {
+                                    self.core.answer_message(message_id, Err(()));
+                                }
+                            } else {
+                                self.core.answer_message(message_id, Err(()));
+                            }
+                        }
+                    }
                     Err(_) => {
                         if let Some(message_id) = message_id {
                             self.core.answer_message(message_id, Err(()));
@@ -306,7 +332,7 @@ where
                 }
             }
 
-            CoreRunOutcome::ReservedPidInterfaceMessage {
+            CoreRunOutcome::InterfaceMessage {
                 pid,
                 message_id,
                 interface,
@@ -329,12 +355,22 @@ where
                 }
             }
 
-            CoreRunOutcome::ReservedPidInterfaceMessage {
+            CoreRunOutcome::InterfaceMessage {
                 pid,
                 message_id,
                 interface,
                 message,
             } => {
+                let mut interfaces = self.interfaces.lock();
+                if let Some(registration_id) = interfaces.interfaces.get(&interface) {
+                    // TODO:
+                    /*let (pid, messages) = interfaces.registrations[*registration_id];
+                    let message = messages.pop_front();
+                    self.core.answer_message(message, response)*/
+                }
+
+
+                // TODO: no
                 self.native_programs
                     .interface_message(interface, message_id, pid, message);
             }
@@ -420,18 +456,13 @@ where
 {
     /// Starts a new builder.
     pub fn new(extrinsics: TExtr) -> Self {
-        // We handle some low-level interfaces here.
         let mut core = CoreBuilder::new();
-        let interface_interface_pid = core.reserve_pid();
         let load_source_virtual_pid = core.reserve_pid();
-        let kernel_debug_interface_pid = core.reserve_pid();
 
         SystemBuilder {
             core,
-            interface_interface_pid,
-            load_source_virtual_pid,
-            kernel_debug_interface_pid,
             startup_processes: Vec::new(),
+            load_source_virtual_pid,
             programs_to_load: SegQueue::new(),
             native_programs: native::NativeProgramsCollection::new(),
         }
@@ -491,25 +522,6 @@ where
     pub fn build(self) -> Result<System<'a, TExtr>, NewErr> {
         let core = self.core.build();
 
-        // We ask the core to redirect messages for the `interface` interface towards our
-        // "virtual" `Pid`.
-        match core.set_interface_handler(
-            redshirt_interface_interface::ffi::INTERFACE,
-            self.interface_interface_pid,
-        ) {
-            Ok(()) => {}
-            Err(_) => unreachable!(),
-        };
-
-        // Same for the `kernel-debug` interface.
-        match core.set_interface_handler(
-            redshirt_kernel_debug_interface::ffi::INTERFACE,
-            self.kernel_debug_interface_pid,
-        ) {
-            Ok(()) => {}
-            Err(_) => unreachable!(),
-        };
-
         let num_processes_started = u64::try_from(self.startup_processes.len()).unwrap();
         for program in self.startup_processes {
             core.execute(&program)?;
@@ -517,12 +529,16 @@ where
 
         Ok(System {
             core,
+            load_source_virtual_pid: self.load_source_virtual_pid,
+            interfaces: Spinlock::new(Interfaces {
+                interfaces: Default::default(),
+                registrations: Default::default(),
+            }),
             num_processes_started: atomic::Atomic::new(num_processes_started),
             num_processes_finished: atomic::Atomic::new(0),
             num_processes_trap: atomic::Atomic::new(0),
             native_programs: self.native_programs,
             loader_pid: atomic::Atomic::new(None),
-            load_source_virtual_pid: self.load_source_virtual_pid,
             loading_programs: Spinlock::new(Default::default()),
             programs_to_load: self.programs_to_load,
         })

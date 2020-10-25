@@ -34,7 +34,7 @@ pub struct InterfaceRegisterResponse {
     pub result: Result<u64, InterfaceRegisterError>,
 }
 
-#[derive(Debug, parity_scale_codec::Encode, parity_scale_codec::Decode)]
+#[derive(Debug, Clone, parity_scale_codec::Encode, parity_scale_codec::Decode)]
 pub enum InterfaceRegisterError {
     /// There already exists a process registered for this interface.
     AlreadyRegistered,
