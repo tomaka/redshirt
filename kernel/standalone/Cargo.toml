@@ -33,7 +33,7 @@ redshirt-random-interface = { path = "../../interfaces/random", default-features
 redshirt-syscalls = { path = "../../interfaces/syscalls", default-features = false }
 redshirt-time-interface = { path = "../../interfaces/time", default-features = false }
 rlibc = "1.0.0"
-smallvec = { version = "1.2.0", default-features = false }
+smallvec = { version = "1.4.2", default-features = false }
 spinning_top = "0.1.0"
 
 [build-dependencies]
