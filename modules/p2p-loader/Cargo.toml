@@ -19,7 +19,7 @@ libp2p = { version = "0.23.0", default-features = false, features = ["kad", "noi
 log = "0.4"
 notify = { version = "4.0.15", optional = true }
 # openssl-sys is not used directly, but we want to pass the "vendored" feature
-openssl-sys = { version = "0.9.55", features = ["vendored"], optional = true }
+openssl-sys = { version = "0.9.58", features = ["vendored"], optional = true }
 parity-scale-codec = "1.0.5"
 structopt = "0.3.20"
 tempdir = "0.3.7"
