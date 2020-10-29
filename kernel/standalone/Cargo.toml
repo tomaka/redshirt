@@ -42,6 +42,6 @@ rusttype = "0.8.2"
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 acpi = "0.8.0"
 crossbeam-utils = { version = "0.7.2", default-features = false }
-multiboot2 = "0.8.1"
+multiboot2 = "0.9.0"
 rdrand = { version = "0.7.0", default-features = false }
 x86_64 = "0.11.0"
