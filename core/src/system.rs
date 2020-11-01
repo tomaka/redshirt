@@ -145,7 +145,7 @@ where
             loop {
                 // If we have a handler for the loader interface, start loading pending programs.
                 if self.loader_pid.load(Ordering::Relaxed).is_some() {
-                    while let Ok(hash) = self.programs_to_load.pop() {
+                    while let Some(hash) = self.programs_to_load.pop() {
                         // TODO: can this not fail if the handler crashed in parallel in a
                         // multithreaded situation?
                         let message_id = self.core.emit_interface_message_answer(
