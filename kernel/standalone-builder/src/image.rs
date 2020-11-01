@@ -16,7 +16,7 @@
 use std::{
     fs,
     io::{self, Read, Seek, SeekFrom, Write},
-    path::{Path, PathBuf},
+    path::Path,
     process::Command,
 };
 use tempdir::TempDir;

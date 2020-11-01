@@ -19,7 +19,6 @@ use crate::{arch::PlatformSpecific, future_channel};
 
 use alloc::{boxed::Box, sync::Arc};
 use core::{pin::Pin, sync::atomic, task::Poll};
-use crossbeam_queue::SegQueue;
 use futures::{prelude::*, stream::FuturesUnordered};
 use redshirt_core::native::{DummyMessageIdWrite, NativeProgramEvent, NativeProgramRef};
 use redshirt_core::{Decode as _, Encode as _, EncodedMessage, InterfaceHash, MessageId, Pid};
@@ -109,7 +108,7 @@ where
         self,
         interface: InterfaceHash,
         message_id: Option<MessageId>,
-        emitter_pid: Pid,
+        _emitter_pid: Pid,
         message: EncodedMessage,
     ) {
         debug_assert_eq!(interface, INTERFACE);

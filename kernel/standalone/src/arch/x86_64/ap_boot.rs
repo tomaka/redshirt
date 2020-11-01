@@ -30,11 +30,7 @@
 use crate::arch::x86_64::apic::{local::LocalApicsControl, timers::Timers, tsc_sync, ApicId};
 use crate::arch::x86_64::{executor, interrupts};
 
-use alloc::{
-    alloc::{AllocInit, Layout},
-    boxed::Box,
-    sync::Arc,
-};
+use alloc::{alloc::Layout, boxed::Box, sync::Arc};
 use core::{convert::TryFrom as _, fmt, ops::Range, ptr, slice, time::Duration};
 use futures::{channel::oneshot, prelude::*};
 
@@ -283,7 +279,7 @@ pub unsafe fn boot_associated_processor(
         // Write the location of marker 2 into the constant at marker 1.
         let ljmp_target_ptr = (ap_boot_marker1_loc.add(2)) as *mut u32;
         assert_eq!(ljmp_target_ptr.read_unaligned(), 0xdeaddead);
-        ljmp_target_ptr.write_unaligned({ u32::try_from(ap_boot_marker2_loc as usize).unwrap() });
+        ljmp_target_ptr.write_unaligned(u32::try_from(ap_boot_marker2_loc as usize).unwrap());
 
         // Write the value of our `cr3` register to the constant at marker 3.
         let pml_addr_ptr = (ap_boot_marker3_loc.add(2)) as *mut u32;
@@ -497,10 +493,10 @@ struct Allocation<'a, T: alloc::alloc::AllocRef> {
 
 impl<'a, T: alloc::alloc::AllocRef> Allocation<'a, T> {
     fn new(alloc: &'a mut T, layout: Layout) -> Self {
-        let block = alloc.alloc(layout, AllocInit::Uninitialized).unwrap();
+        let inner = alloc.alloc(layout).unwrap();
         Allocation {
             alloc,
-            inner: block.ptr,
+            inner: inner.cast(),
             layout,
         }
     }
