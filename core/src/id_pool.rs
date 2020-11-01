@@ -56,7 +56,7 @@ impl IdPool {
     /// The returned value must implement the `TryFrom<u64>` trait. `u64`s are rolled as long as
     /// as calling `TryFrom` returns an error.
     pub fn assign<T: TryFrom<u64>>(&self) -> T {
-        if let Ok(mut rng) = self.rngs.pop() {
+        if let Some(mut rng) = self.rngs.pop() {
             return loop {
                 let raw_id = self.distribution.sample(&mut rng);
                 if let Ok(id) = TryFrom::try_from(raw_id) {
