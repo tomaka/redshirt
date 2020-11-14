@@ -8,8 +8,8 @@ publish = false
 
 [dependencies]
 futures = "0.3.0"
-glium = "0.26.0"
-parking_lot = "0.10.0"
+glium = "0.28.0"
+parking_lot = "0.11.0"
 redshirt-core = { path = "../../core" }
 redshirt-framebuffer-interface = { path = "../../interfaces/framebuffer" }
 redshirt-interface-interface = { path = "../../interfaces/interface" }

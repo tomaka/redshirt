@@ -381,7 +381,7 @@ where
     /// Internal. Similar to [`run`](ProcessesCollectionExtrinsics::run). Should be called
     /// repeatidly as long as it returns `None`.
     async fn run_once<'a>(&'a self) -> Option<RunOneOutcome<'a, TPud, TTud, TExt>> {
-        while let Ok(tid) = self.local_run_queue.pop() {
+        while let Some(tid) = self.local_run_queue.pop() {
             // It is possible that the thread no longer exists, for example if the process crashed.
             let mut thread = self.inner.interrupted_thread_by_id(tid)?;
             match mem::replace(
