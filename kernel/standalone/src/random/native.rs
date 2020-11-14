@@ -104,7 +104,7 @@ where
             Ok(RandomMessage::Generate { len }) => {
                 let mut out = vec![0; usize::from(len)];
 
-                let mut rng = if let Ok(rng) = self.rngs.pop() {
+                let mut rng = if let Some(rng) = self.rngs.pop() {
                     rng
                 } else {
                     KernelRng::new(self.platform_specific.clone())

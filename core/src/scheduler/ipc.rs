@@ -167,7 +167,7 @@ impl<TExt: Extrinsics> Core<TExt> {
     /// Same as [`Core::run`]. Returns `None` if no event should be returned and we should loop
     /// again.
     async fn run_inner(&self) -> Option<CoreRunOutcome> {
-        if let Ok(ev) = self.pending_events.pop() {
+        if let Some(ev) = self.pending_events.pop() {
             return Some(ev);
         }
 

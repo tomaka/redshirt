@@ -84,7 +84,7 @@ impl<T> UnboundedReceiver<T> {
     }
 
     pub fn poll_next(&self, cx: &mut Context) -> Poll<T> {
-        if let Ok(item) = self.shared.queue.pop() {
+        if let Some(item) = self.shared.queue.pop() {
             return Poll::Ready(item);
         }
 
@@ -96,7 +96,7 @@ impl<T> UnboundedReceiver<T> {
                 .register(cx.waker());
         }
 
-        if let Ok(item) = self.shared.queue.pop() {
+        if let Some(item) = self.shared.queue.pop() {
             return Poll::Ready(item);
         }
 

@@ -96,7 +96,7 @@ pub enum ReserveErr {
 /// Wake up all the wakers that have been marked as ready by all the interrupt(s) that have
 /// happened since the last call to this function.
 pub fn process_wakers() {
-    while let Ok(waker) = WAKERS_QUEUE.pop() {
+    while let Some(waker) = WAKERS_QUEUE.pop() {
         waker.wake();
     }
 }
