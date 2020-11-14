@@ -14,5 +14,4 @@ pull_request_rules:
       - base=develop
     actions:
       merge:
-        strict: true
         method: squash
