@@ -219,13 +219,14 @@ where
         match self.core.run().await {
             CoreRunOutcome::ProgramFinished { pid, outcome, .. } => {
                 // TODO: cancel interface registrations ; update loader_registration_id
+                // TODO: notify interface registrations of process destruction
 
                 if outcome.is_ok() {
                     self.num_processes_finished.fetch_add(1, Ordering::Relaxed);
                 } else {
                     self.num_processes_trap.fetch_add(1, Ordering::Relaxed);
                 }
-                self.native_programs.process_destroyed(pid);
+
                 return RunOnceOutcome::Report(SystemRunOutcome::ProgramFinished {
                     pid,
                     outcome: outcome.map(|_| ()).map_err(|err| err.into()),

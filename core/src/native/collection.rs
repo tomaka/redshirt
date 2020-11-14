@@ -21,8 +21,7 @@ use fnv::FnvBuildHasher;
 use futures::prelude::*;
 use hashbrown::HashSet;
 use nohash_hasher::BuildNoHashHasher;
-use redshirt_interface_interface::ffi::InterfaceMessage;
-use redshirt_syscalls::{Decode as _, EncodedMessage, InterfaceHash, MessageId, Pid};
+use redshirt_syscalls::{EncodedMessage, InterfaceHash, MessageId, Pid};
 use spinning_top::Spinlock;
 
 /// Collection of objects that implement the [`NativeProgramRef`] trait.
@@ -79,19 +78,11 @@ trait AdapterAbstract {
         &'col self,
         cx: &mut Context,
     ) -> Poll<NativeProgramEvent<Box<dyn AbstractMessageIdWrite + 'col>>>;
-    fn deliver_interface_message(
-        &self,
-        interface: InterfaceHash,
-        message_id: Option<MessageId>,
-        emitter_pid: Pid,
-        message: EncodedMessage,
-    ) -> Result<(), EncodedMessage>;
     fn deliver_response(
         &self,
         message_id: MessageId,
         response: Result<EncodedMessage, ()>,
     ) -> Result<(), Result<EncodedMessage, ()>>;
-    fn process_destroyed(&self, pid: Pid);
 }
 
 trait AbstractMessageIdWrite {
@@ -185,34 +176,6 @@ impl<'ext> NativeProgramsCollection<'ext> {
         })
     }
 
-    /// Notify the [`NativeProgramRef`] that a message has arrived on one of the interface that
-    /// it has registered.
-    pub fn interface_message(
-        &self,
-        interface: InterfaceHash,
-        message_id: Option<MessageId>,
-        emitter_pid: Pid,
-        mut message: EncodedMessage,
-    ) {
-        for (_, process) in &self.processes {
-            let msg = mem::replace(&mut message, EncodedMessage(Vec::new()));
-            match process.deliver_interface_message(interface.clone(), message_id, emitter_pid, msg)
-            {
-                Ok(_) => return,
-                Err(msg) => message = msg,
-            }
-        }
-
-        panic!() // TODO: what to do here?
-    }
-
-    /// Notify the [`NativeProgramRef`]s that the program with the given [`Pid`] has terminated.
-    pub fn process_destroyed(&self, pid: Pid) {
-        for (_, process) in &self.processes {
-            process.process_destroyed(pid);
-        }
-    }
-
     /// Notify the appropriate [`NativeProgramRef`] of a response to a message that it has
     /// previously emitted.
     pub fn message_response(
@@ -248,15 +211,6 @@ where
                 message_id_write,
                 message,
             }) => {
-                if interface == redshirt_interface_interface::ffi::INTERFACE {
-                    // TODO: check whether registration succeeds, but hard if `message_id_write` is `None
-                    if let Ok(msg) = InterfaceMessage::decode(message.clone()) {
-                        let InterfaceMessage::Register(to_reg) = msg;
-                        let mut registered_interfaces = self.registered_interfaces.lock();
-                        registered_interfaces.insert(to_reg);
-                    }
-                }
-
                 let message_id_write = message_id_write.map(|inner| {
                     Box::new(MessageIdWriteAdapter {
                         inner: Some(inner),
@@ -280,23 +234,6 @@ where
         }
     }
 
-    fn deliver_interface_message(
-        &self,
-        interface: InterfaceHash,
-        message_id: Option<MessageId>,
-        emitter_pid: Pid,
-        message: EncodedMessage,
-    ) -> Result<(), EncodedMessage> {
-        let registered_interfaces = self.registered_interfaces.lock();
-        if registered_interfaces.contains(&interface) {
-            self.inner
-                .interface_message(interface, message_id, emitter_pid, message);
-            Ok(())
-        } else {
-            Err(message)
-        }
-    }
-
     fn deliver_response(
         &self,
         message_id: MessageId,
@@ -309,10 +246,6 @@ where
         } else {
             Err(response)
         }
-    }
-
-    fn process_destroyed(&self, pid: Pid) {
-        self.inner.process_destroyed(pid);
     }
 }
 
