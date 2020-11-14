@@ -11,7 +11,7 @@ git = ["git2", "notify", "openssl-sys"]
 
 [dependencies]
 base64 = { version = "0.13.0", default-features = false, features = ["alloc"] }
-blake3 = { version = "0.2.2", default-features = false }
+blake3 = { version = "0.3.7", default-features = false }
 bs58 = "0.3.0"
 futures = "0.3"
 git2 = { version = "0.13.12", optional = true }

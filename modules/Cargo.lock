@@ -220,17 +220,17 @@ dependencies = [
 
 [[package]]
 name = "blake3"
-version = "0.2.3"
+version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "667d945f23cefed0b5f973af35c4bc3319caa6776fbda270e4897d8504afa8e4"
+checksum = "e9ff35b701f3914bdb8fad3368d822c766ef2858b2583198e41639b936f09d3f"
 dependencies = [
  "arrayref",
  "arrayvec",
  "cc",
  "cfg-if",
  "constant_time_eq",
- "crypto-mac 0.7.0",
- "digest 0.8.1",
+ "crypto-mac 0.8.0",
+ "digest 0.9.0",
 ]
 
 [[package]]
