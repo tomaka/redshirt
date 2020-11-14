@@ -39,6 +39,13 @@ impl ActiveMessages {
         }
     }
 
+    /// Allocates an identifier that isn't tracked by this struct.
+    ///
+    /// > **Note**: This method is expected to be used in order to avoid accidental conflicts.
+    pub fn allocate_untracked_id(&self) -> MessageId {
+        self.id_pool.assign()
+    }
+
     /// Creates a new message, emitted by the given [`Pid`].
     pub fn add_message(&self, emitter: Pid) -> MessageId {
         loop {

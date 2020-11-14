@@ -258,11 +258,13 @@ where
 
             CoreRunOutcome::InterfaceMessage {
                 pid,
+                needs_answer,
+                immediate,
                 message_id,
                 interface,
-                message,
             } if interface == redshirt_interface_interface::ffi::INTERFACE => {
                 // Handling messages on the `interface` interface.
+                let message = self.core.accept_interface_message(message_id);
                 match redshirt_interface_interface::ffi::InterfaceMessage::decode(message) {
                     Ok(redshirt_interface_interface::ffi::InterfaceMessage::Register(
                         interface_hash,
@@ -287,7 +289,7 @@ where
                             redshirt_interface_interface::ffi::InterfaceRegisterResponse {
                                 result: result.clone(),
                             };
-                        if let Some(message_id) = message_id {
+                        if needs_answer {
                             self.core.answer_message(message_id, Ok(response.encode()));
                         }
 
@@ -306,7 +308,7 @@ where
                     )) => {
                         let mut interfaces = self.interfaces.lock();
 
-                        if let Some(message_id) = message_id {
+                        if needs_answer {
                             if let Ok(registration_id) = usize::try_from(registration_id) {
                                 if let Some((expected_pid, messages)) =
                                     interfaces.registrations.get_mut(registration_id)
@@ -325,7 +327,7 @@ where
                         }
                     }
                     Err(_) => {
-                        if let Some(message_id) = message_id {
+                        if needs_answer {
                             self.core.answer_message(message_id, Err(()));
                         }
                     }
@@ -334,12 +336,14 @@ where
 
             CoreRunOutcome::InterfaceMessage {
                 pid,
+                needs_answer,
+                immediate,
                 message_id,
                 interface,
-                message,
             } if interface == redshirt_kernel_debug_interface::ffi::INTERFACE => {
                 // Handling messages on the `kernel_debug` interface.
-                if let Some(message_id) = message_id {
+                let message = self.core.accept_interface_message(message_id);
+                if needs_answer {
                     if message.0.is_empty() {
                         return RunOnceOutcome::Report(
                             SystemRunOutcome::KernelDebugMetricsRequest(
@@ -357,9 +361,10 @@ where
 
             CoreRunOutcome::InterfaceMessage {
                 pid,
+                needs_answer,
+                immediate,
                 message_id,
                 interface,
-                message,
             } => {
                 let mut interfaces = self.interfaces.lock();
                 if let Some(registration_id) = interfaces.interfaces.get(&interface) {
@@ -368,7 +373,6 @@ where
                     let message = messages.pop_front();
                     self.core.answer_message(message, response)*/
                 }
-
 
                 // TODO: no
                 self.native_programs

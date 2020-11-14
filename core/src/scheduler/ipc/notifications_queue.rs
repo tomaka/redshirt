@@ -14,7 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use crate::scheduler::extrinsics::WaitEntry;
-use crate::{EncodedMessage, InterfaceHash, MessageId, Pid};
+use crate::{EncodedMessage, MessageId};
 
 use alloc::collections::VecDeque;
 use core::convert::TryFrom as _;
@@ -27,8 +27,7 @@ pub struct NotificationsQueue {
     /// The actual list.
     ///
     /// The [`DecodedNotification::index_in_list`](redshirt_syscalls::ffi::DecodedNotification::index_in_list)
-    /// and [`DecodedInterfaceNotification::index_in_list`](redshirt_syscalls::ffi::DecodedInterfaceNotification::index_in_list)
-    /// fields are set to a dummy value, and will be filled before actually delivering the
+    /// field is set to a dummy value, and will be filled before actually delivering the
     /// notification.
     // TODO: call shrink_to_fit from time to time
     // TODO: baka Mutex
@@ -52,7 +51,7 @@ impl NotificationsQueue {
         }
     }
 
-    /// Pushes a response notification at the end of the queue.
+    /// Pushes a notification at the end of the queue.
     pub fn push(&self, message_id: MessageId, response: Result<EncodedMessage, ()>) {
         let notif = redshirt_syscalls::ffi::build_notification(
             message_id,
@@ -72,6 +71,7 @@ impl NotificationsQueue {
     /// If an entry is found, its corresponding index within `indices` is stored in the returned
     /// `Entry`.
     // TODO: something better than a slice as parameter?
+    // TODO: O(n²) complexity!
     pub fn find(&self, indices: &[WaitEntry]) -> Option<Entry> {
         let notifications_queue = self.notifications_queue.lock();
 
@@ -82,7 +82,7 @@ impl NotificationsQueue {
                 return None;
             }
 
-            let expected = WaitEntry::Answer(response.message_id());
+            let expected = WaitEntry::Answer(notifications_queue[index_in_queue].message_id());
             if let Some(p) = indices.iter().position(|id| *id == expected) {
                 break p;
             }
