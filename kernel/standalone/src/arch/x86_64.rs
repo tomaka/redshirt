@@ -156,8 +156,8 @@ unsafe fn after_boot(multiboot_info: usize) -> ! {
 
     // The ACPI tables indicate us information about how to interface with the I/O APICs.
     // We use this information and initialize the I/O APICs.
-    let mut io_apics = match &acpi_tables.interrupt_model {
-        Some(::acpi::interrupt::InterruptModel::Apic(apic)) => {
+    let mut io_apics = match &acpi_tables.platform_info().ok().map(|i| i.interrupt_model) {
+        Some(::acpi::platform::InterruptModel::Apic(apic)) => {
             // The PIC is the legacy equivalent of I/O APICs.
             apic::pic::init_and_disable_pic();
             apic::io_apics::init_from_acpi(apic)
@@ -212,14 +212,20 @@ unsafe fn after_boot(multiboot_info: usize) -> ! {
     // This Vec will contain one `oneshort::Sender<Arc<Kernel>>` for each associated processor
     // that has been started. Once the kernel is initialized, we send a reference-counted copy of
     // it to each sender.
-    let mut kernel_channels = Vec::with_capacity(acpi_tables.application_processors.len());
+    let application_processors = acpi_tables
+        .platform_info()
+        .unwrap()
+        .processor_info
+        .unwrap()
+        .application_processors;
+    let mut kernel_channels = Vec::with_capacity(application_processors.len());
 
     writeln!(logger.log_printer(), "initializing associated processors").unwrap();
-    for ap in acpi_tables.application_processors.iter() {
+    for ap in application_processors.iter() {
         debug_assert!(ap.is_ap);
         // It is possible for some associated processors to be in a disabled state, in which case
         // they **must not** be started. This is generally the case of defective processors.
-        if ap.state != ::acpi::ProcessorState::WaitingForSipi {
+        if ap.state != ::acpi::platform::ProcessorState::WaitingForSipi {
             continue;
         }
 
