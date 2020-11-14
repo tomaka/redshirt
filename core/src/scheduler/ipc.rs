@@ -13,24 +13,26 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::extrinsics::Extrinsics;
-use crate::module::Module;
-use crate::scheduler::{
-    extrinsics::{self, ThreadAccessAccess as _},
-    vm,
+use crate::{
+    extrinsics::Extrinsics,
+    id_pool::IdPool,
+    module::Module,
+    scheduler::{
+        extrinsics::{self, ThreadAccessAccess as _},
+        vm,
+    },
+    InterfaceHash,
 };
-use crate::InterfaceHash;
 
 use alloc::vec::Vec;
 use crossbeam_queue::SegQueue;
 use fnv::FnvBuildHasher;
-use hashbrown::{HashMap, HashSet};
+use hashbrown::{HashMap, HashSet, hash_map::Entry};
 use nohash_hasher::BuildNoHashHasher;
 use redshirt_syscalls::{Encode, EncodedMessage, MessageId, Pid, ThreadId};
 use smallvec::SmallVec;
 use spinning_top::Spinlock;
 
-mod active_messages;
 mod notifications_queue;
 mod waiting_threads;
 
@@ -87,19 +89,24 @@ mod waiting_threads;
 //
 // TODO: finish updating this section ^
 pub struct Core<TExt: Extrinsics> {
+    /// Pool of identifiers where `MessageId`s are allocated.
+    id_pool: IdPool,
+
     /// Queue of events to return in priority when `run` is called.
     pending_events: SegQueue<CoreRunOutcome>,
 
     /// List of running processes.
     processes: extrinsics::ProcessesCollectionExtrinsics<Process, (), TExt>,
 
-    /// List of messages that are waiting for an answer. Associates messages to their senders.
-    active_messages: active_messages::ActiveMessages,
-
     /// List of messages that have been emitted by a thread but haven't been accepted or refused
-    /// yet.
+    /// yet. Stores the emitter of the message.
     pending_accept_messages:
         Spinlock<HashMap<MessageId, (Pid, ThreadId), nohash_hasher::BuildNoHashHasher<u64>>>,
+
+    /// List of messages that have been emitted by a process but haven't been answered yet. Stores
+    /// the emitter of the message.
+    pending_answer_messages:
+        Spinlock<HashMap<MessageId, Pid, nohash_hasher::BuildNoHashHasher<u64>>>,
 }
 
 /// Prototype for a `Core` under construction.
@@ -245,12 +252,9 @@ impl<TExt: Extrinsics> Core<TExt> {
                 let emitter_pid = thread.pid();
                 let interface = thread.emit_interface().clone();
                 let needs_answer = thread.needs_answer();
+                let message_id = self.id_pool.assign();
 
-                let message_id = if thread.needs_answer() {
-                    Some(self.active_messages.add_message(thread.pid()))
-                } else {
-                    None
-                };
+                self.pending_accept_messages.lock().insert(message_id, (emitter_pid, thread.tid()));
 
                 Some(CoreRunOutcome::InterfaceMessage {
                     pid: emitter_pid,
@@ -278,7 +282,6 @@ impl<TExt: Extrinsics> Core<TExt> {
                 }
 
                 let response = response.clone(); // TODO: why clone?
-                drop(run_outcome);
                 self.answer_message_inner(message_id, Ok(response));
                 None
             }
@@ -298,7 +301,6 @@ impl<TExt: Extrinsics> Core<TExt> {
                     }
                 }
 
-                drop(run_outcome);
                 self.answer_message_inner(message_id, Err(()));
                 None
             }
@@ -308,11 +310,13 @@ impl<TExt: Extrinsics> Core<TExt> {
                 process,
                 ..
             } => {
-                // Cancelling a message is implemented by simply removing it from the list of
-                // active messages. For the sake of simplicity, no effort is for example being
-                // made to maybe remove the notification destined to the interface handler.
-                self.active_messages
-                    .remove_if_emitted_by(message_id, process.pid());
+                let mut pending_answer_messages = self.pending_answer_messages.lock();
+                if let Entry::Occupied(entry) = pending_answer_messages.entry(message_id) {
+                    if *entry.get() == process.pid() {
+                        entry.remove();
+                    }
+                }
+
                 None
             }
         }
@@ -327,7 +331,19 @@ impl<TExt: Extrinsics> Core<TExt> {
     /// After [`CoreRunOutcome::InterfaceMessage`] is generated, use this method to accept the
     /// message. The message must later be answered with [`Core::answer_message`].
     pub fn accept_interface_message(&self, message_id: MessageId) -> EncodedMessage {
-        todo!()
+        // TODO: shouldn't unwrap if the process is already dead, but then what to return?
+
+        let (pid, tid) = self.pending_accept_messages.lock().remove(&message_id).unwrap();
+        match self.processes.interrupted_thread_by_id(tid).unwrap() {
+            extrinsics::ThreadAccess::EmitMessage(thread) => {
+                if thread.needs_answer() {
+                    thread.accept_emit(Some(message_id))
+                } else {
+                    thread.accept_emit(None)
+                }
+            },
+            _ => unreachable!()
+        }
     }
 
     /// After [`CoreRunOutcome::InterfaceMessage`] is generated, use this method to set the process
@@ -356,8 +372,26 @@ impl<TExt: Extrinsics> Core<TExt> {
 
     /// After [`CoreRunOutcome::InterfaceMessage`] is generated where `immediate` is true, use
     /// this method to notify that the message cannot be accepted at the moment.
+    ///
+    /// # Panic
+    ///
+    /// Panics if [`CoreRunOutcome::InterfaceMessage::immediate`] was false.
+    /// Might panic if the message is in the wrong state.
+    ///
     pub fn reject_immediate_interface_message(&self, message_id: MessageId) {
-        todo!()
+        let (pid, tid) = match self.pending_accept_messages.lock().remove(&message_id) {
+            Some(v) => v,
+            None => return,
+        };
+
+        match self.processes.interrupted_thread_by_id(tid) {
+            Ok(extrinsics::ThreadAccess::EmitMessage(thread)) => {
+                assert!(!thread.allow_delay());
+                thread.refuse_emit();
+            },
+            Err(extrinsics::ThreadByIdErr::RunningOrDead) => {},
+            _ => unreachable!()
+        }
     }
 
     /// Allocates a new message ID. The returned value is guaranteed to not be used for any further
@@ -365,7 +399,7 @@ impl<TExt: Extrinsics> Core<TExt> {
     ///
     /// This [`MessageId`] isn't tracked by the [`Core`].
     pub fn allocate_untracked_message(&self) -> MessageId {
-        self.active_messages.allocate_untracked_id()
+        self.id_pool.assign()
     }
 
     /// Allocates a new message ID. The given process is responsible for answering the message,
@@ -374,7 +408,7 @@ impl<TExt: Extrinsics> Core<TExt> {
     /// A [`CoreRunOutcome::AnsweredMessage`] will later be generated when the process answers
     /// this message.
     pub fn allocate_message_answerer(&self, answerer: Pid) -> MessageId {
-        let message_id = self.active_messages.allocate_untracked_id();
+        let message_id = self.id_pool.assign();
         self.processes
             .process_by_id(answerer)
             .unwrap() // TODO: immediately fail the message instead of unwrapping
@@ -393,7 +427,7 @@ impl<TExt: Extrinsics> Core<TExt> {
 
     /// Common function for answering a message.
     fn answer_message_inner(&self, message_id: MessageId, response: Result<EncodedMessage, ()>) {
-        let emitter_pid = match self.active_messages.remove(message_id) {
+        let emitter_pid = match self.pending_answer_messages.lock().remove(&message_id) {
             Some(pid) => pid,
             None => return,
         };
@@ -492,7 +526,9 @@ impl<TExt: Extrinsics> CoreBuilder<TExt> {
         Core {
             pending_events: SegQueue::new(),
             processes: self.inner_builder.build(),
-            active_messages: active_messages::ActiveMessages::new(),
+            id_pool: IdPool::new(),
+            pending_accept_messages: Spinlock::new(HashMap::default()),
+            pending_answer_messages: Spinlock::new(HashMap::default()),
         }
     }
 }
