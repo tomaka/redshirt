@@ -30,7 +30,7 @@ use crate::scheduler::{Core, CoreBuilder, CoreRunOutcome, NewErr};
 use crate::InterfaceHash;
 
 use alloc::{collections::VecDeque, format, vec::Vec};
-use core::{convert::TryFrom as _, fmt, iter, num::NonZeroU64, sync::atomic::Ordering, task::Poll};
+use core::{convert::TryFrom as _, fmt, iter, sync::atomic::Ordering, task::Poll};
 use crossbeam_queue::SegQueue;
 use futures::prelude::*;
 use hashbrown::{hash_map::Entry, HashMap, HashSet};
@@ -62,10 +62,10 @@ pub struct System<'a, TExtr: extrinsics::Extrinsics> {
     /// Can communicate with the WASM programs that are within `core`.
     native_programs: native::NativeProgramsCollection<'a>,
 
-    /// PID of the program that handles the `loader` interface, or `None` is no such program
-    /// exists yet.
+    /// Registration ID (i.e. index in [`Interfaces::registrations`]) that handles the `loader`
+    /// interface, or `None` is no such program exists yet.
     // TODO: add timeout for loader interface availability?
-    loader_pid: atomic::Atomic<Option<NonZeroU64>>,
+    loader_registration_id: atomic::Atomic<Option<usize>>,
 
     /// List of programs to load if the loader interface handler is available.
     programs_to_load: SegQueue<ModuleHash>,
@@ -82,7 +82,18 @@ pub struct System<'a, TExtr: extrinsics::Extrinsics> {
 #[derive(Debug)]
 struct Interfaces {
     interfaces: HashMap<InterfaceHash, usize, fnv::FnvBuildHasher>,
-    registrations: slab::Slab<(Pid, VecDeque<MessageId>)>,
+    registrations: slab::Slab<InterfaceRegistration>,
+}
+
+#[derive(Debug)]
+struct InterfaceRegistration {
+    pid: Pid,
+    /// Messages of type `NextMessage` sent on the interface interface and that must be answered
+    /// with the next interface message.
+    queries: VecDeque<MessageId>,
+    /// If [`InterfaceRegistration::queries`] is empty, messages emitted by programs and that
+    /// haven't been accepted yet are pushed to this field.
+    pending_accept: VecDeque<MessageId>,
 }
 
 /// Prototype for a [`System`].
@@ -147,20 +158,6 @@ where
         // TODO: We use a `poll_fn` because async/await don't work in no_std yet.
         future::poll_fn(move |cx| {
             loop {
-                // If we have a handler for the loader interface, start loading pending programs.
-                if self.loader_pid.load(Ordering::Relaxed).is_some() {
-                    while let Ok(hash) = self.programs_to_load.pop() {
-                        // TODO: can this not fail if the handler crashed in parallel in a
-                        // multithreaded situation?
-                        let message_id = self.core.emit_message_answer(
-                            self.load_source_virtual_pid,
-                            redshirt_loader_interface::ffi::INTERFACE,
-                            redshirt_loader_interface::ffi::LoaderMessage::Load(From::from(hash)),
-                        );
-                        self.loading_programs.lock().insert(message_id);
-                    }
-                }
-
                 // TODO: put an await here instead
                 let run_once_outcome = {
                     let fut = self.run_once();
@@ -221,12 +218,8 @@ where
     async fn run_once<'b>(&'b self) -> RunOnceOutcome<'a, 'b, TExtr> {
         match self.core.run().await {
             CoreRunOutcome::ProgramFinished { pid, outcome, .. } => {
-                self.loader_pid.compare_exchange(
-                    Some(NonZeroU64::new(u64::from(pid)).unwrap()),
-                    None,
-                    Ordering::Acquire,
-                    Ordering::Relaxed,
-                );
+                // TODO: cancel interface registrations ; update loader_registration_id
+
                 if outcome.is_ok() {
                     self.num_processes_finished.fetch_add(1, Ordering::Relaxed);
                 } else {
@@ -278,7 +271,18 @@ where
                                     Err(redshirt_interface_interface::ffi::InterfaceRegisterError::AlreadyRegistered)
                                 }
                                 Entry::Vacant(e) => {
-                                    let id = interfaces.registrations.insert((pid, VecDeque::new()));
+                                    let mut pending_accept = VecDeque::with_capacity(16); // TODO: be less magic
+                                    if interface_hash == redshirt_loader_interface::ffi::INTERFACE {
+                                        while let Ok(h) = self.programs_to_load.pop() {
+                                            todo!()  // TODO:
+                                        }
+                                    }
+
+                                    let id = interfaces.registrations.insert(InterfaceRegistration {
+                                        pid,
+                                        queries: VecDeque::with_capacity(16),  // TODO: be less magic
+                                        pending_accept,
+                                    });
                                     e.insert(id);
                                     Ok(u64::try_from(id).unwrap())
                                 }
@@ -294,13 +298,14 @@ where
                         }
 
                         // Special handling if the registered interface is the loader.
-                        if result.is_ok()
-                            && interface_hash == redshirt_loader_interface::ffi::INTERFACE
-                        {
-                            debug_assert_ne!(u64::from(pid), 0);
-                            self.loader_pid
-                                .store(NonZeroU64::new(u64::from(pid)), Ordering::Release);
-                            return RunOnceOutcome::LoopAgainNow;
+                        if interface_hash == redshirt_loader_interface::ffi::INTERFACE {
+                            if let Ok(registration_id) = result {
+                                self.loader_registration_id.store(
+                                    Some(usize::try_from(registration_id).unwrap()),
+                                    Ordering::Release,
+                                );
+                                return RunOnceOutcome::LoopAgainNow;
+                            }
                         }
                     }
                     Ok(redshirt_interface_interface::ffi::InterfaceMessage::NextMessage(
@@ -310,11 +315,11 @@ where
 
                         if needs_answer {
                             if let Ok(registration_id) = usize::try_from(registration_id) {
-                                if let Some((expected_pid, messages)) =
+                                if let Some(registration) =
                                     interfaces.registrations.get_mut(registration_id)
                                 {
-                                    if *expected_pid == pid {
-                                        messages.push_back(message_id);
+                                    if registration.pid == pid {
+                                        registration.queries.push_back(message_id);
                                     } else {
                                         self.core.answer_message(message_id, Err(()));
                                     }
@@ -368,15 +373,31 @@ where
             } => {
                 let mut interfaces = self.interfaces.lock();
                 if let Some(registration_id) = interfaces.interfaces.get(&interface) {
-                    // TODO:
-                    /*let (pid, messages) = interfaces.registrations[*registration_id];
-                    let message = messages.pop_front();
-                    self.core.answer_message(message, response)*/
+                    let registration = interfaces.registrations[*registration_id];
+                    if let Some(interface_message) = registration.queries.pop_front() {
+                        let message = self.core.accept_interface_message_answerer(message_id, pid);
+                        let answer =
+                            redshirt_interface_interface::ffi::build_interface_notification(
+                                &interface,
+                                if needs_answer { Some(message_id) } else { None },
+                                pid,
+                                0,
+                                &message,
+                            );
+                        self.core.answer_message(
+                            interface_message,
+                            Ok(EncodedMessage(answer.into_bytes())),
+                        );
+                    } else if immediate {
+                        self.core.reject_immediate_interface_message(message_id);
+                    } else {
+                        registration.pending_accept.push_back(message_id);
+                    }
+                } else {
+                    // TODO: no; add interface to list
+                    self.native_programs
+                        .interface_message(interface, message_id, pid, message);
                 }
-
-                // TODO: no
-                self.native_programs
-                    .interface_message(interface, message_id, pid, message);
             }
         }
 
@@ -542,7 +563,7 @@ where
             num_processes_finished: atomic::Atomic::new(0),
             num_processes_trap: atomic::Atomic::new(0),
             native_programs: self.native_programs,
-            loader_pid: atomic::Atomic::new(None),
+            loader_registration_id: atomic::Atomic::new(None),
             loading_programs: Spinlock::new(Default::default()),
             programs_to_load: self.programs_to_load,
         })

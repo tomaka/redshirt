@@ -115,7 +115,7 @@ impl InterfaceNotificationBuilder {
         self.data.len()
     }
 
-    pub fn into_bytes(self) -> Vec<u8> {
+    pub fn into_bytes(self) -> Vec<u8> {  // TODO: return EncodedMessage
         self.data
     }
 }
@@ -155,6 +155,7 @@ pub fn decode_interface_notification(buffer: &[u8]) -> Result<DecodedInterfaceNo
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DecodedInterfaceNotification {
     /// Interface the message concerns.
+    // TODO: remove
     pub interface: InterfaceHash,
     /// Id of the message. Can be used for answering. `None` if no answer is expected.
     pub message_id: Option<MessageId>,
@@ -164,6 +165,7 @@ pub struct DecodedInterfaceNotification {
     /// resources.
     pub emitter_pid: Pid,
     /// Index within the list to poll where this message was.
+    // TODO: remove
     pub index_in_list: u32,
     pub actual_data: EncodedMessage,
 }

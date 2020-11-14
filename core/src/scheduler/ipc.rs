@@ -27,7 +27,7 @@ use crate::{
 use alloc::vec::Vec;
 use crossbeam_queue::SegQueue;
 use fnv::FnvBuildHasher;
-use hashbrown::{HashMap, HashSet, hash_map::Entry};
+use hashbrown::{hash_map::Entry, HashMap, HashSet};
 use nohash_hasher::BuildNoHashHasher;
 use redshirt_syscalls::{Encode, EncodedMessage, MessageId, Pid, ThreadId};
 use smallvec::SmallVec;
@@ -254,7 +254,9 @@ impl<TExt: Extrinsics> Core<TExt> {
                 let needs_answer = thread.needs_answer();
                 let message_id = self.id_pool.assign();
 
-                self.pending_accept_messages.lock().insert(message_id, (emitter_pid, thread.tid()));
+                self.pending_accept_messages
+                    .lock()
+                    .insert(message_id, (emitter_pid, thread.tid()));
 
                 Some(CoreRunOutcome::InterfaceMessage {
                     pid: emitter_pid,
@@ -333,7 +335,11 @@ impl<TExt: Extrinsics> Core<TExt> {
     pub fn accept_interface_message(&self, message_id: MessageId) -> EncodedMessage {
         // TODO: shouldn't unwrap if the process is already dead, but then what to return?
 
-        let (pid, tid) = self.pending_accept_messages.lock().remove(&message_id).unwrap();
+        let (pid, tid) = self
+            .pending_accept_messages
+            .lock()
+            .remove(&message_id)
+            .unwrap();
         match self.processes.interrupted_thread_by_id(tid).unwrap() {
             extrinsics::ThreadAccess::EmitMessage(thread) => {
                 if thread.needs_answer() {
@@ -341,8 +347,8 @@ impl<TExt: Extrinsics> Core<TExt> {
                 } else {
                     thread.accept_emit(None)
                 }
-            },
-            _ => unreachable!()
+            }
+            _ => unreachable!(),
         }
     }
 
@@ -357,17 +363,45 @@ impl<TExt: Extrinsics> Core<TExt> {
     pub fn accept_interface_message_answerer(
         &self,
         message_id: MessageId,
-        pid: Pid,
+        answerer_pid: Pid,
     ) -> EncodedMessage {
+        // TODO: don't unwrap
+        // TODO: is emitter_pid needed?
+        let (emitter_pid, emitter_tid) = self
+            .pending_accept_messages
+            .lock()
+            .remove(&message_id)
+            .unwrap();
+
+        let message = match self
+            .processes
+            .interrupted_thread_by_id(emitter_tid)
+            .unwrap()
+        {
+            // TODO: don't unwrap
+            extrinsics::ThreadAccess::EmitMessage(thread) => {
+                if thread.needs_answer() {
+                    thread.accept_emit(Some(message_id))
+                } else {
+                    thread.accept_emit(None)
+                }
+            }
+            _ => unreachable!(),
+        };
+
+        self.pending_answer_messages
+            .lock()
+            .insert(message_id, emitter_pid);
+
         self.processes
-            .process_by_id(pid)
+            .process_by_id(answerer_pid)
             .unwrap() // TODO: immediately fail the message instead of unwrapping
             .user_data()
             .messages_to_answer
             .lock()
             .push(message_id);
 
-        todo!()
+        message
     }
 
     /// After [`CoreRunOutcome::InterfaceMessage`] is generated where `immediate` is true, use
@@ -388,9 +422,9 @@ impl<TExt: Extrinsics> Core<TExt> {
             Ok(extrinsics::ThreadAccess::EmitMessage(thread)) => {
                 assert!(!thread.allow_delay());
                 thread.refuse_emit();
-            },
-            Err(extrinsics::ThreadByIdErr::RunningOrDead) => {},
-            _ => unreachable!()
+            }
+            Err(extrinsics::ThreadByIdErr::RunningOrDead) => {}
+            _ => unreachable!(),
         }
     }
 
