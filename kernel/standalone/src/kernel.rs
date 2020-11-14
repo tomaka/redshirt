@@ -82,6 +82,8 @@ where
                 "../../../modules/p2p-loader",
                 "modules-loader"
             ))
+            // TODO: just for testing ; this desktop.wasm is hard to build at the moment
+            .with_startup_process(redshirt_core::Module::from_bytes(include_bytes!("../../../modules/target/wasm32-wasi/release/desktop.wasm")).unwrap())
             .with_startup_process(build_wasm_module!("../../../modules/compositor"))
             .with_startup_process(build_wasm_module!("../../../modules/pci-printer"))
             // TODO: actually implement system-time and remove this dummy; https://github.com/tomaka/redshirt/issues/542
