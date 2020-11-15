@@ -269,7 +269,7 @@ impl<TExt: Extrinsics> Core<TExt> {
 
             extrinsics::RunOneOutcome::ThreadEmitAnswer {
                 message_id,
-                process,
+                ref process,
                 ref response,
                 ..
             } => {
@@ -341,7 +341,7 @@ impl<TExt: Extrinsics> Core<TExt> {
             .remove(&message_id)
             .unwrap();
         match self.processes.interrupted_thread_by_id(tid).unwrap() {
-            extrinsics::ThreadAccess::EmitMessage(thread) => {
+            extrinsics::ThreadAccess::EmitMessage(mut thread) => {
                 if thread.needs_answer() {
                     thread.accept_emit(Some(message_id))
                 } else {
@@ -379,7 +379,7 @@ impl<TExt: Extrinsics> Core<TExt> {
             .unwrap()
         {
             // TODO: don't unwrap
-            extrinsics::ThreadAccess::EmitMessage(thread) => {
+            extrinsics::ThreadAccess::EmitMessage(mut thread) => {
                 if thread.needs_answer() {
                     thread.accept_emit(Some(message_id))
                 } else {
@@ -419,7 +419,7 @@ impl<TExt: Extrinsics> Core<TExt> {
         };
 
         match self.processes.interrupted_thread_by_id(tid) {
-            Ok(extrinsics::ThreadAccess::EmitMessage(thread)) => {
+            Ok(extrinsics::ThreadAccess::EmitMessage(mut thread)) => {
                 assert!(!thread.allow_delay());
                 thread.refuse_emit();
             }
@@ -556,7 +556,7 @@ impl<TExt: Extrinsics> CoreBuilder<TExt> {
     }
 
     /// Turns the builder into a [`Core`].
-    pub fn build(mut self) -> Core<TExt> {
+    pub fn build(self) -> Core<TExt> {
         Core {
             pending_events: SegQueue::new(),
             processes: self.inner_builder.build(),

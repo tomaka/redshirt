@@ -30,7 +30,7 @@ use crate::scheduler::{Core, CoreBuilder, CoreRunOutcome, NewErr};
 use crate::InterfaceHash;
 
 use alloc::{collections::VecDeque, format, vec::Vec};
-use core::{convert::TryFrom as _, fmt, iter, sync::atomic::Ordering, task::Poll};
+use core::{convert::TryFrom as _, fmt, iter, mem, sync::atomic::Ordering, task::Poll};
 use crossbeam_queue::SegQueue;
 use futures::prelude::*;
 use hashbrown::{hash_map::Entry, HashMap, HashSet};
@@ -81,8 +81,19 @@ pub struct System<'a, TExtr: extrinsics::Extrinsics> {
 
 #[derive(Debug)]
 struct Interfaces {
-    interfaces: HashMap<InterfaceHash, usize, fnv::FnvBuildHasher>,
+    interfaces: HashMap<InterfaceHash, Interface, fnv::FnvBuildHasher>,
     registrations: slab::Slab<InterfaceRegistration>,
+}
+
+#[derive(Debug)]
+enum Interface {
+    /// Contains an index within [`Interfaces::registrations`].
+    Registered(usize),
+    NotRegistered {
+        /// Messages emitted by programs and that haven't been accepted yet are pushed to this
+        /// field.
+        pending_accept: VecDeque<MessageId>,
+    },
 }
 
 #[derive(Debug)]
@@ -192,7 +203,9 @@ where
                         message,
                         message_id_write,
                     } => {
-                        // The native programs want to emit a message in the kernel.
+                        // TODO:
+                        todo!()
+                        /*// The native programs want to emit a message in the kernel.
                         if let Some(message_id_write) = message_id_write {
                             let message_id =
                                 self.core
@@ -201,11 +214,13 @@ where
                         } else {
                             self.core
                                 .emit_message_no_answer(emitter_pid, interface, message);
-                        }
+                        }*/
                     }
                     native::NativeProgramsCollectionEvent::CancelMessage { message_id } => {
+                        // TODO:
+                        todo!()
                         // The native programs want to cancel a previously-emitted message.
-                        self.core.cancel_message(message_id);
+                        //self.core.cancel_message(message_id);
                     }
                     native::NativeProgramsCollectionEvent::Answer { message_id, answer } => {
                         self.core.answer_message(message_id, answer);
@@ -268,27 +283,41 @@ where
                             let mut interfaces = self.interfaces.lock();
                             let interfaces = &mut *interfaces;
                             match interfaces.interfaces.entry(interface_hash.clone()) {
-                                Entry::Occupied(_) => {
-                                    Err(redshirt_interface_interface::ffi::InterfaceRegisterError::AlreadyRegistered)
-                                }
-                                Entry::Vacant(e) => {
-                                    let mut pending_accept = VecDeque::with_capacity(16); // TODO: be less magic
-                                    if interface_hash == redshirt_loader_interface::ffi::INTERFACE {
-                                        while let Ok(h) = self.programs_to_load.pop() {
-                                            todo!()  // TODO:
+                                Entry::Occupied(mut entry) => {
+                                    match entry.get_mut() {
+                                        Interface::Registered(_) =>
+                                            Err(redshirt_interface_interface::ffi::InterfaceRegisterError::AlreadyRegistered),
+                                        Interface::NotRegistered { pending_accept } => {
+                                            let id = interfaces.registrations.insert(InterfaceRegistration {
+                                                pid,
+                                                queries: VecDeque::with_capacity(16),  // TODO: be less magic with capacity
+                                                pending_accept: mem::replace(pending_accept, Default::default()),
+                                            });
+                                            entry.insert(Interface::Registered(id));
+                                            Ok(u64::try_from(id).unwrap())
                                         }
                                     }
-
-                                    let id = interfaces.registrations.insert(InterfaceRegistration {
-                                        pid,
-                                        queries: VecDeque::with_capacity(16),  // TODO: be less magic
-                                        pending_accept,
-                                    });
-                                    e.insert(id);
+                                }
+                                Entry::Vacant(entry) => {
+                                    let id =
+                                        interfaces.registrations.insert(InterfaceRegistration {
+                                            pid,
+                                            queries: VecDeque::with_capacity(16), // TODO: be less magic with capacity
+                                            pending_accept: VecDeque::with_capacity(16), // TODO: be less magic with capacity
+                                        });
+                                    entry.insert(Interface::Registered(id));
                                     Ok(u64::try_from(id).unwrap())
                                 }
                             }
                         };
+
+                        if interface_hash == redshirt_loader_interface::ffi::INTERFACE {
+                            if let Ok(registration_id) = result {
+                                while let Some(h) = self.programs_to_load.pop() {
+                                    todo!() // TODO:
+                                }
+                            }
+                        }
 
                         let response =
                             redshirt_interface_interface::ffi::InterfaceRegisterResponse {
@@ -373,31 +402,45 @@ where
                 interface,
             } => {
                 let mut interfaces = self.interfaces.lock();
-                if let Some(registration_id) = interfaces.interfaces.get(&interface) {
-                    let registration = interfaces.registrations[*registration_id];
-                    if let Some(interface_message) = registration.queries.pop_front() {
-                        let message = self.core.accept_interface_message_answerer(message_id, pid);
-                        let answer =
-                            redshirt_interface_interface::ffi::build_interface_notification(
-                                &interface,
-                                if needs_answer { Some(message_id) } else { None },
-                                pid,
-                                0,
-                                &message,
+                let interfaces = &mut *interfaces; // Avoids borrow errors.
+
+                match interfaces
+                    .interfaces
+                    .entry(interface.clone())
+                    .or_insert_with(|| Interface::NotRegistered {
+                        pending_accept: VecDeque::with_capacity(16), /* TODO: capacity */
+                    }) {
+                    Interface::Registered(registration_id) => {
+                        let registration = &mut interfaces.registrations[*registration_id];
+                        if let Some(interface_message) = registration.queries.pop_front() {
+                            let message =
+                                self.core.accept_interface_message_answerer(message_id, pid);
+                            let answer =
+                                redshirt_interface_interface::ffi::build_interface_notification(
+                                    &interface,
+                                    if needs_answer { Some(message_id) } else { None },
+                                    pid,
+                                    0,
+                                    &message,
+                                );
+                            self.core.answer_message(
+                                interface_message,
+                                Ok(EncodedMessage(answer.into_bytes())),
                             );
-                        self.core.answer_message(
-                            interface_message,
-                            Ok(EncodedMessage(answer.into_bytes())),
-                        );
-                    } else if immediate {
-                        self.core.reject_immediate_interface_message(message_id);
-                    } else {
-                        registration.pending_accept.push_back(message_id);
+                        } else if immediate {
+                            self.core.reject_immediate_interface_message(message_id);
+                        } else {
+                            registration.pending_accept.push_back(message_id);
+                        }
                     }
-                } else {
-                    // TODO: no; add interface to list
-                    self.native_programs
-                        .interface_message(interface, message_id, pid, message);
+                    Interface::NotRegistered { pending_accept } => {
+                        if immediate {
+                            self.core.reject_immediate_interface_message(message_id);
+                        } else {
+                            // TODO: add some limit?
+                            pending_accept.push_back(message_id);
+                        }
+                    }
                 }
             }
         }
