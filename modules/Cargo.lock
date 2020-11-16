@@ -292,6 +292,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "476e9cd489f9e121e02ffa6014a8ef220ecb15c05ed23fc34cca13925dc283fb"
 
 [[package]]
+name = "bs58"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "771fe0050b883fcc3ea2359b1a96bcfbc090b7116eae7c3c512c7a083fdf23d3"
+
+[[package]]
 name = "bumpalo"
 version = "3.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1200,7 +1206,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "11ca8d5a64a5d19b45e00e8f24afda6b8e1b605fb25ad7bcf62a42ecf19d7ff3"
 dependencies = [
  "asn1_der",
- "bs58",
+ "bs58 0.3.1",
  "ed25519-dalek",
  "either",
  "fnv 1.0.7",
@@ -1620,7 +1626,7 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "blake3",
- "bs58",
+ "bs58 0.4.0",
  "env_logger",
  "futures",
  "git2",
@@ -1648,7 +1654,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cc20af3143a62c16e7c9e92ea5c6ae49f7d271d97d4d8fe73afc28f0514a3d0f"
 dependencies = [
  "arrayref",
- "bs58",
+ "bs58 0.3.1",
  "byteorder",
  "data-encoding",
  "multihash",
