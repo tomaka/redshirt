@@ -26,6 +26,8 @@
 //! This module defines the [`NativeProgramRef`] trait that should be implemented on native
 //! programs.
 
+// TODO: native programs should be refactored by returning events out of `System` rather than injecting a trait
+
 pub use self::collection::{
     NativeProgramsCollection, NativeProgramsCollectionEvent, NativeProgramsCollectionMessageIdWrite,
 };

@@ -73,7 +73,7 @@ impl Registration {
     pub async fn next_message_raw(&mut self) -> DecodedInterfaceOrDestroyed {
         let message = self.messages.next().await.unwrap();
         self.add_message();
-        todo!() // TODO: message
+        ffi::decode_notification(&message.0).unwrap()
     }
 
     fn add_message(&mut self) {

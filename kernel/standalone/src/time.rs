@@ -138,11 +138,12 @@ where
         }
     }
 
-    fn process_destroyed(self, _: Pid) {
-        // TODO:
-    }
+    fn message_response(self, _: MessageId, response: Result<EncodedMessage, ()>) {
+        let message = match redshirt_interface_interface::ffi::decode_interface_notification(&response.unwrap().0) {
+            redshirt_interface_interface::DecodedInterfaceOrDestroyed::Interface(n) => n.actual_data,
+            _ => return,
+        };
 
-    fn message_response(self, _: MessageId, _: Result<EncodedMessage, ()>) {
         unreachable!()
     }
 }

@@ -14,7 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use core::future::Future;
-use redshirt_syscalls::{EncodedMessage, InterfaceHash, MessageId, Pid};
+use redshirt_syscalls::{EncodedMessage, InterfaceHash, MessageId};
 
 /// Reference to a native program.
 ///
