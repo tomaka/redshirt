@@ -258,9 +258,9 @@ checksum = "3e2e65a1a2e43cfcb47a895c4c8b10d1f4a61097f9f254f183aee60cad9c651d"
 
 [[package]]
 name = "mbrman"
-version = "0.3.2"
+version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4485c29cc0e8433f36e9b033f1339bacddf8b174452cd53159f6d745a96e9764"
+checksum = "14931c7d5ec55fd5187785ad90db80dfeaa35d69093e5dd957a200508ff1911c"
 dependencies = [
  "bincode",
  "bitvec",
