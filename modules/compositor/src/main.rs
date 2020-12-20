@@ -16,7 +16,8 @@
 #![recursion_limit = "2048"]
 
 use futures::prelude::*;
-use redshirt_syscalls::{ffi::DecodedInterfaceOrDestroyed, Decode as _, MessageId, Pid};
+use redshirt_interface_interface::DecodedInterfaceOrDestroyed;
+use redshirt_syscalls::{Decode as _, MessageId, Pid};
 use redshirt_time_interface::Delay;
 use redshirt_video_output_interface::ffi as vid_ffi;
 use std::{collections::VecDeque, time::Duration};
@@ -28,8 +29,8 @@ fn main() {
 async fn async_main() {
     // Register the interfaces.
     let mut registration = redshirt_interface_interface::register_interface(vid_ffi::INTERFACE)
-    .await
-    .unwrap();
+        .await
+        .unwrap();
 
     struct VideoOutput {
         pid: Pid,
