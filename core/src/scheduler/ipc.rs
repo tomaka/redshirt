@@ -332,7 +332,7 @@ impl<TExt: Extrinsics> Core<TExt> {
 
     /// After [`CoreRunOutcome::InterfaceMessage`] is generated, use this method to accept the
     /// message. The message must later be answered with [`Core::answer_message`].
-    pub fn accept_interface_message(&self, message_id: MessageId) -> EncodedMessage {
+    pub fn accept_interface_message(&self, message_id: MessageId) -> (Pid, EncodedMessage) {
         // TODO: shouldn't unwrap if the process is already dead, but then what to return?
 
         let (pid, tid) = self
@@ -342,11 +342,13 @@ impl<TExt: Extrinsics> Core<TExt> {
             .unwrap();
         match self.processes.interrupted_thread_by_id(tid).unwrap() {
             extrinsics::ThreadAccess::EmitMessage(mut thread) => {
-                if thread.needs_answer() {
+                let message = if thread.needs_answer() {
                     thread.accept_emit(Some(message_id))
                 } else {
                     thread.accept_emit(None)
-                }
+                };
+
+                (pid, message)
             }
             _ => unreachable!(),
         }
@@ -364,7 +366,7 @@ impl<TExt: Extrinsics> Core<TExt> {
         &self,
         message_id: MessageId,
         answerer_pid: Pid,
-    ) -> EncodedMessage {
+    ) -> (Pid, EncodedMessage) {
         // TODO: don't unwrap
         // TODO: is emitter_pid needed?
         let (emitter_pid, emitter_tid) = self
@@ -401,7 +403,7 @@ impl<TExt: Extrinsics> Core<TExt> {
             .lock()
             .push(message_id);
 
-        message
+        (emitter_pid, message)
     }
 
     /// After [`CoreRunOutcome::InterfaceMessage`] is generated where `immediate` is true, use
