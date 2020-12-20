@@ -204,6 +204,72 @@ where
                         emitter_pid,
                         message,
                         message_id_write,
+                    } if interface == redshirt_interface_interface::ffi::INTERFACE => {
+                        match redshirt_interface_interface::ffi::InterfaceMessage::decode(message) {
+                            Ok(redshirt_interface_interface::ffi::InterfaceMessage::Register(
+                                interface_hash,
+                            )) => {
+                                // Set the process as interface handler, if possible.
+                                let result =
+                                    self.set_interface_handler(&interface_hash, emitter_pid);
+
+                                let response =
+                                    redshirt_interface_interface::ffi::InterfaceRegisterResponse {
+                                        result: result.clone(),
+                                    };
+                                if let Some(message_id_write) = message_id_write {
+                                    let message_id = self.core.allocate_untracked_message();
+                                    message_id_write.acknowledge(message_id);
+                                    self.native_programs
+                                        .message_response(message_id, Ok(response.encode()));
+                                }
+                            }
+                            Ok(
+                                redshirt_interface_interface::ffi::InterfaceMessage::NextMessage(
+                                    registration_id,
+                                ),
+                            ) => {
+                                let mut interfaces = self.interfaces.lock();
+
+                                if let Some(message_id_write) = message_id_write {
+                                    let message_id = self.core.allocate_untracked_message();
+                                    message_id_write.acknowledge(message_id);
+
+                                    if let Ok(registration_id) =
+                                        usize::try_from(registration_id.get())
+                                    {
+                                        if let Some(registration) =
+                                            interfaces.registrations.get_mut(registration_id)
+                                        {
+                                            if registration.pid == emitter_pid {
+                                                registration.queries.push_back(message_id);
+                                            } else {
+                                                self.native_programs
+                                                    .message_response(message_id, Err(()));
+                                            }
+                                        } else {
+                                            self.native_programs
+                                                .message_response(message_id, Err(()));
+                                        }
+                                    } else {
+                                        self.native_programs.message_response(message_id, Err(()));
+                                    }
+                                }
+                            }
+                            Err(_) => {
+                                if let Some(message_id_write) = message_id_write {
+                                    let message_id = self.core.allocate_untracked_message();
+                                    message_id_write.acknowledge(message_id);
+                                    self.native_programs.message_response(message_id, Err(()));
+                                }
+                            }
+                        }
+                    }
+                    native::NativeProgramsCollectionEvent::Emit {
+                        interface,
+                        emitter_pid,
+                        message,
+                        message_id_write,
                     } => {
                         // TODO:
                         todo!()
@@ -270,7 +336,7 @@ where
             CoreRunOutcome::InterfaceMessage {
                 pid,
                 needs_answer,
-                immediate,
+                immediate: _,
                 message_id,
                 interface,
             } if interface == redshirt_interface_interface::ffi::INTERFACE => {
@@ -281,45 +347,7 @@ where
                         interface_hash,
                     )) => {
                         // Set the process as interface handler, if possible.
-                        let result = {
-                            let mut interfaces = self.interfaces.lock();
-                            let interfaces = &mut *interfaces;
-                            match interfaces.interfaces.entry(interface_hash.clone()) {
-                                Entry::Occupied(mut entry) => {
-                                    match entry.get_mut() {
-                                        Interface::Registered(_) =>
-                                            Err(redshirt_interface_interface::ffi::InterfaceRegisterError::AlreadyRegistered),
-                                        Interface::NotRegistered { pending_accept } => {
-                                            let id = interfaces.registrations.insert(InterfaceRegistration {
-                                                pid,
-                                                queries: VecDeque::with_capacity(16),  // TODO: be less magic with capacity
-                                                pending_accept: mem::replace(pending_accept, Default::default()),
-                                            });
-                                            entry.insert(Interface::Registered(id));
-                                            Ok(NonZeroU64::new(u64::try_from(id).unwrap()).unwrap())
-                                        }
-                                    }
-                                }
-                                Entry::Vacant(entry) => {
-                                    let id =
-                                        interfaces.registrations.insert(InterfaceRegistration {
-                                            pid,
-                                            queries: VecDeque::with_capacity(16), // TODO: be less magic with capacity
-                                            pending_accept: VecDeque::with_capacity(16), // TODO: be less magic with capacity
-                                        });
-                                    entry.insert(Interface::Registered(id));
-                                    Ok(NonZeroU64::new(u64::try_from(id).unwrap()).unwrap())
-                                }
-                            }
-                        };
-
-                        if interface_hash == redshirt_loader_interface::ffi::INTERFACE {
-                            if let Ok(registration_id) = result {
-                                while let Some(h) = self.programs_to_load.pop() {
-                                    todo!() // TODO:
-                                }
-                            }
-                        }
+                        let result = self.set_interface_handler(&interface_hash, pid);
 
                         let response =
                             redshirt_interface_interface::ffi::InterfaceRegisterResponse {
@@ -332,10 +360,6 @@ where
                         // Special handling if the registered interface is the loader.
                         if interface_hash == redshirt_loader_interface::ffi::INTERFACE {
                             if let Ok(registration_id) = result {
-                                self.loader_registration_id.store(
-                                    Some(usize::try_from(registration_id.get()).unwrap()),
-                                    Ordering::Release,
-                                );
                                 return RunOnceOutcome::LoopAgainNow;
                             }
                         }
@@ -448,6 +472,63 @@ where
         }
 
         RunOnceOutcome::LoopAgain
+    }
+
+    fn set_interface_handler(
+        &self,
+        interface_hash: &InterfaceHash,
+        pid: Pid,
+    ) -> Result<NonZeroU64, redshirt_interface_interface::ffi::InterfaceRegisterError> {
+        let result = {
+            let mut interfaces = self.interfaces.lock();
+            let interfaces = &mut *interfaces;
+            match interfaces.interfaces.entry(interface_hash.clone()) {
+                Entry::Occupied(mut entry) => {
+                    match entry.get_mut() {
+                        Interface::Registered(_) =>
+                            Err(redshirt_interface_interface::ffi::InterfaceRegisterError::AlreadyRegistered),
+                        Interface::NotRegistered { pending_accept } => {
+                            let id = interfaces.registrations.insert(InterfaceRegistration {
+                                pid,
+                                queries: VecDeque::with_capacity(16),  // TODO: be less magic with capacity
+                                pending_accept: mem::replace(pending_accept, Default::default()),
+                            });
+                            entry.insert(Interface::Registered(id));
+                            Ok(NonZeroU64::new(u64::try_from(id).unwrap()).unwrap())
+                        }
+                    }
+                }
+                Entry::Vacant(entry) => {
+                    let id = interfaces.registrations.insert(InterfaceRegistration {
+                        pid,
+                        queries: VecDeque::with_capacity(16), // TODO: be less magic with capacity
+                        pending_accept: VecDeque::with_capacity(16), // TODO: be less magic with capacity
+                    });
+                    entry.insert(Interface::Registered(id));
+                    Ok(NonZeroU64::new(u64::try_from(id).unwrap()).unwrap())
+                }
+            }
+        };
+
+        if *interface_hash == redshirt_loader_interface::ffi::INTERFACE {
+            if let Ok(registration_id) = result {
+                while let Some(h) = self.programs_to_load.pop() {
+                    todo!() // TODO:
+                }
+            }
+        }
+
+        // Special handling if the registered interface is the loader.
+        if *interface_hash == redshirt_loader_interface::ffi::INTERFACE {
+            if let Ok(registration_id) = result {
+                self.loader_registration_id.store(
+                    Some(usize::try_from(registration_id.get()).unwrap()),
+                    Ordering::Release,
+                );
+            }
+        }
+
+        result
     }
 }
 
