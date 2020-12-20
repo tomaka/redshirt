@@ -6,8 +6,8 @@ edition = "2018"
 publish = false
 
 [dependencies]
-futures = "0.3.7"
-hyper = { version = "0.13.1", default-features = false }
+futures = "0.3.8"
+hyper = { version = "0.13.9", default-features = false }
 log = "0.4.11"
 redshirt-kernel-debug-interface = { path = "../../interfaces/kernel-debug" }
 redshirt-log-interface = { path = "../../interfaces/log" }
