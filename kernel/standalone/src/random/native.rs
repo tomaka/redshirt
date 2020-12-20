@@ -18,18 +18,22 @@
 use crate::{arch::PlatformSpecific, future_channel, random::rng::KernelRng};
 
 use alloc::{boxed::Box, sync::Arc, vec};
-use core::{pin::Pin, sync::atomic, task::Poll};
+use core::{num::NonZeroU64, pin::Pin, task::Poll};
 use crossbeam_queue::SegQueue;
 use futures::prelude::*;
 use rand_core::RngCore as _;
 use redshirt_core::native::{DummyMessageIdWrite, NativeProgramEvent, NativeProgramRef};
-use redshirt_core::{Decode as _, Encode as _, EncodedMessage, InterfaceHash, MessageId, Pid};
+use redshirt_core::{Decode as _, Encode as _, EncodedMessage, InterfaceHash, MessageId};
 use redshirt_random_interface::ffi::{GenerateResponse, RandomMessage, INTERFACE};
 
 /// State machine for `random` interface messages handling.
 pub struct RandomNativeProgram<TPlat> {
     /// If true, we have sent the interface registration message.
-    registered: atomic::AtomicBool,
+    registered: atomic::Atomic<bool>,
+    /// If `Some`, contains the registration ID towards the `interface` interface.
+    registration_id: atomic::Atomic<Option<NonZeroU64>>,
+    /// Number of message requests that need to be emitted.
+    pending_message_requests: atomic::Atomic<u8>,
     /// Queue of random number generators. If it is empty, we generate a new one.
     rngs: SegQueue<KernelRng>,
     /// Sending side of `pending_messages`.
@@ -45,7 +49,9 @@ impl<TPlat> RandomNativeProgram<TPlat> {
     pub fn new(platform_specific: Pin<Arc<TPlat>>) -> Self {
         let (pending_messages_tx, pending_messages) = future_channel::channel();
         RandomNativeProgram {
-            registered: atomic::AtomicBool::new(false),
+            registered: atomic::Atomic::new(false),
+            registration_id: atomic::Atomic::new(None),
+            pending_message_requests: atomic::Atomic::new(16),
             rngs: SegQueue::new(),
             pending_messages_tx,
             pending_messages,
@@ -67,12 +73,44 @@ where
             if !self.registered.swap(true, atomic::Ordering::Relaxed) {
                 return NativeProgramEvent::Emit {
                     interface: redshirt_interface_interface::ffi::INTERFACE,
-                    message_id_write: None,
+                    message_id_write: Some(DummyMessageIdWrite),
                     message: redshirt_interface_interface::ffi::InterfaceMessage::Register(
                         INTERFACE,
                     )
                     .encode(),
                 };
+            }
+
+            if let Some(registration_id) = self.registration_id.load(atomic::Ordering::Relaxed) {
+                loop {
+                    let v = self
+                        .pending_message_requests
+                        .load(atomic::Ordering::Relaxed);
+                    if v == 0 {
+                        break;
+                    }
+                    if self
+                        .pending_message_requests
+                        .compare_exchange(
+                            v,
+                            v - 1,
+                            atomic::Ordering::Relaxed,
+                            atomic::Ordering::Relaxed,
+                        )
+                        .is_err()
+                    {
+                        continue;
+                    }
+
+                    return NativeProgramEvent::Emit {
+                        interface: redshirt_interface_interface::ffi::INTERFACE,
+                        message_id_write: Some(DummyMessageIdWrite),
+                        message: redshirt_interface_interface::ffi::InterfaceMessage::NextMessage(
+                            registration_id,
+                        )
+                        .encode(),
+                    };
+                }
             }
 
             future::poll_fn(move |cx| {
@@ -86,21 +124,51 @@ where
         })
     }
 
-    fn interface_message(
-        self,
-        interface: InterfaceHash,
-        message_id: Option<MessageId>,
-        _emitter_pid: Pid,
-        message: EncodedMessage,
-    ) {
-        debug_assert_eq!(interface, INTERFACE);
+    fn message_response(self, _: MessageId, response: Result<EncodedMessage, ()>) {
+        debug_assert!(self.registered.load(atomic::Ordering::Relaxed));
 
-        let message_id = match message_id {
+        // The first ever message response that can be received is the interface registration.
+        if self
+            .registration_id
+            .load(atomic::Ordering::Relaxed)
+            .is_none()
+        {
+            let registration_id =
+                match redshirt_interface_interface::ffi::InterfaceRegisterResponse::decode(
+                    response.unwrap(),
+                )
+                .unwrap()
+                .result
+                {
+                    Ok(id) => id,
+                    // A registration error means the interface has already been registered. Returning
+                    // here stalls this state machine forever.
+                    Err(_) => return,
+                };
+
+            self.registration_id
+                .store(Some(registration_id), atomic::Ordering::Relaxed);
+            return;
+        }
+
+        // If this is reached, the response is a response to a message request.
+        self.pending_message_requests
+            .fetch_add(1, atomic::Ordering::Relaxed);
+
+        let notification =
+            match redshirt_interface_interface::ffi::decode_notification(&response.unwrap().0)
+                .unwrap()
+            {
+                redshirt_interface_interface::DecodedInterfaceOrDestroyed::Interface(n) => n,
+                _ => return,
+            };
+
+        let message_id = match notification.message_id {
             Some(m) => m,
             None => return,
         };
 
-        match RandomMessage::decode(message) {
+        match RandomMessage::decode(notification.actual_data) {
             Ok(RandomMessage::Generate { len }) => {
                 let mut out = vec![0; usize::from(len)];
 
@@ -120,11 +188,5 @@ where
                 .pending_messages_tx
                 .unbounded_send((message_id, Err(()))),
         }
-    }
-
-    fn process_destroyed(self, _: Pid) {}
-
-    fn message_response(self, _: MessageId, _: Result<EncodedMessage, ()>) {
-        unreachable!()
     }
 }
