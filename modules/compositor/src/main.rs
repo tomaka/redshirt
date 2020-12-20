@@ -27,9 +27,9 @@ fn main() {
 
 async fn async_main() {
     // Register the interfaces.
-    redshirt_interface_interface::register_interface(vid_ffi::INTERFACE)
-        .await
-        .unwrap();
+    let mut registration = redshirt_interface_interface::register_interface(vid_ffi::INTERFACE)
+    .await
+    .unwrap();
 
     struct VideoOutput {
         pid: Pid,
@@ -46,7 +46,7 @@ async fn async_main() {
 
     loop {
         futures::select! {
-            interface_event = redshirt_syscalls::next_interface_message().fuse() => {
+            interface_event = registration.next_message_raw().fuse() => {
                 match interface_event {
                     DecodedInterfaceOrDestroyed::Interface(msg) => {
                         if msg.interface == vid_ffi::INTERFACE {
