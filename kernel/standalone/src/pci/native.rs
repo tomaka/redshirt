@@ -248,10 +248,11 @@ where
             }
 
             Ok(ffi::PciMessage::UnlockDevice(bdf)) => {
+                let emitter_pid = notification.emitter_pid;
                 let mut locked_devices = self.locked_devices.lock();
                 if let Some(pos) = locked_devices
                     .iter_mut()
-                    .position(|dev| dev.owner == notification.emitter_pid && dev.bdf == bdf)
+                    .position(|dev| dev.owner == emitter_pid && dev.bdf == bdf)
                 {
                     let locked_device = locked_devices.remove(pos);
                     for m in locked_device.next_interrupt_messages {
@@ -267,10 +268,11 @@ where
                 memory_space,
                 bus_master,
             }) => {
+                let emitter_pid = notification.emitter_pid;
                 let locked_devices = self.locked_devices.lock();
                 if locked_devices
                     .iter()
-                    .any(|dev| dev.owner == notification.emitter_pid && dev.bdf == location)
+                    .any(|dev| dev.owner == emitter_pid && dev.bdf == location)
                 {
                     self.devices
                         .devices()
@@ -287,10 +289,11 @@ where
             Ok(ffi::PciMessage::NextInterrupt(bdf)) => {
                 // TODO: actually make these interrupts work
                 if let Some(message_id) = notification.message_id {
+                    let emitter_pid = notification.emitter_pid;
                     let mut locked_devices = self.locked_devices.lock();
                     if let Some(dev) = locked_devices
                         .iter_mut()
-                        .find(|dev| dev.owner == notification.emitter_pid && dev.bdf == bdf)
+                        .find(|dev| dev.owner == emitter_pid && dev.bdf == bdf)
                     {
                         dev.next_interrupt_messages.push_back(message_id);
                     } else {
