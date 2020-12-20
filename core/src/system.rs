@@ -30,7 +30,9 @@ use crate::scheduler::{Core, CoreBuilder, CoreRunOutcome, NewErr};
 use crate::InterfaceHash;
 
 use alloc::{collections::VecDeque, format, vec::Vec};
-use core::{convert::TryFrom as _, fmt, iter, mem, sync::atomic::Ordering, task::Poll};
+use core::{
+    convert::TryFrom as _, fmt, iter, mem, num::NonZeroU64, sync::atomic::Ordering, task::Poll,
+};
 use crossbeam_queue::SegQueue;
 use futures::prelude::*;
 use hashbrown::{hash_map::Entry, HashMap, HashSet};
@@ -294,7 +296,7 @@ where
                                                 pending_accept: mem::replace(pending_accept, Default::default()),
                                             });
                                             entry.insert(Interface::Registered(id));
-                                            Ok(u64::try_from(id).unwrap())
+                                            Ok(NonZeroU64::new(u64::try_from(id).unwrap()).unwrap())
                                         }
                                     }
                                 }
@@ -306,7 +308,7 @@ where
                                             pending_accept: VecDeque::with_capacity(16), // TODO: be less magic with capacity
                                         });
                                     entry.insert(Interface::Registered(id));
-                                    Ok(u64::try_from(id).unwrap())
+                                    Ok(NonZeroU64::new(u64::try_from(id).unwrap()).unwrap())
                                 }
                             }
                         };
@@ -331,7 +333,7 @@ where
                         if interface_hash == redshirt_loader_interface::ffi::INTERFACE {
                             if let Ok(registration_id) = result {
                                 self.loader_registration_id.store(
-                                    Some(usize::try_from(registration_id).unwrap()),
+                                    Some(usize::try_from(registration_id.get()).unwrap()),
                                     Ordering::Release,
                                 );
                                 return RunOnceOutcome::LoopAgainNow;
@@ -344,7 +346,7 @@ where
                         let mut interfaces = self.interfaces.lock();
 
                         if needs_answer {
-                            if let Ok(registration_id) = usize::try_from(registration_id) {
+                            if let Ok(registration_id) = usize::try_from(registration_id.get()) {
                                 if let Some(registration) =
                                     interfaces.registrations.get_mut(registration_id)
                                 {
@@ -601,7 +603,19 @@ where
             load_source_virtual_pid: self.load_source_virtual_pid,
             interfaces: Spinlock::new(Interfaces {
                 interfaces: Default::default(),
-                registrations: Default::default(),
+                registrations: {
+                    // Registration IDs are of the type `NonZeroU64`.
+                    // The list of registrations starts with an entry at index `0` in order for
+                    // generated registration IDs to never be equal to 0.
+                    let mut registrations = slab::Slab::default();
+                    let _id = registrations.insert(InterfaceRegistration {
+                        pid: Pid::try_from(1234).unwrap(), // TODO: ?!
+                        queries: VecDeque::new(),
+                        pending_accept: VecDeque::new(),
+                    });
+                    assert_eq!(_id, 0);
+                    registrations
+                },
             }),
             num_processes_started: atomic::Atomic::new(num_processes_started),
             num_processes_finished: atomic::Atomic::new(0),

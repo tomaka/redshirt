@@ -18,7 +18,7 @@
 use crate::{arch::PlatformSpecific, future_channel};
 
 use alloc::{boxed::Box, sync::Arc};
-use core::{pin::Pin, sync::atomic, task::Poll};
+use core::{num::NonZeroU64, pin::Pin, task::Poll};
 use futures::{prelude::*, stream::FuturesUnordered};
 use redshirt_core::native::{DummyMessageIdWrite, NativeProgramEvent, NativeProgramRef};
 use redshirt_core::{Decode as _, Encode as _, EncodedMessage, InterfaceHash, MessageId, Pid};
@@ -28,7 +28,11 @@ use spinning_top::Spinlock;
 /// State machine for `time` interface messages handling.
 pub struct TimeHandler<TPlat> {
     /// If true, we have sent the interface registration message.
-    registered: atomic::AtomicBool,
+    registered: atomic::Atomic<bool>,
+    /// If `Some`, contains the registration ID towards the `interface` interface.
+    registration_id: atomic::Atomic<Option<NonZeroU64>>,
+    /// Number of message requests that need to be emitted.
+    pending_message_requests: atomic::Atomic<u8>,
     /// Platform-specific hooks.
     platform_specific: Pin<Arc<TPlat>>,
     /// Sending side of `pending_messages`.
@@ -49,7 +53,9 @@ impl<TPlat> TimeHandler<TPlat> {
         let (pending_messages_tx, pending_messages) = future_channel::channel();
 
         TimeHandler {
-            registered: atomic::AtomicBool::new(false),
+            registered: atomic::Atomic::new(false),
+            registration_id: atomic::Atomic::new(None),
+            pending_message_requests: atomic::Atomic::new(16),
             platform_specific,
             pending_messages_tx,
             pending_messages,
@@ -79,6 +85,38 @@ where
                 };
             }
 
+            if let Some(registration_id) = self.registration_id.load(atomic::Ordering::Relaxed) {
+                loop {
+                    let v = self
+                        .pending_message_requests
+                        .load(atomic::Ordering::Relaxed);
+                    if v == 0 {
+                        break;
+                    }
+                    if self
+                        .pending_message_requests
+                        .compare_exchange(
+                            v,
+                            v - 1,
+                            atomic::Ordering::Relaxed,
+                            atomic::Ordering::Relaxed,
+                        )
+                        .is_err()
+                    {
+                        continue;
+                    }
+
+                    return NativeProgramEvent::Emit {
+                        interface: redshirt_interface_interface::ffi::INTERFACE,
+                        message_id_write: None,
+                        message: redshirt_interface_interface::ffi::InterfaceMessage::NextMessage(
+                            registration_id,
+                        )
+                        .encode(),
+                    };
+                }
+            }
+
             future::poll_fn(move |cx| {
                 while let Poll::Ready(msg) = self.pending_messages.poll_next(cx) {
                     if let Some((message_id, answer)) = msg {
@@ -104,23 +142,62 @@ where
         })
     }
 
-    fn interface_message(
-        self,
-        interface: InterfaceHash,
-        message_id: Option<MessageId>,
-        _emitter_pid: Pid,
-        message: EncodedMessage,
-    ) {
-        debug_assert_eq!(interface, INTERFACE);
+    fn message_response(self, _: MessageId, response: Result<EncodedMessage, ()>) {
+        debug_assert!(self.registered.load(atomic::Ordering::Relaxed));
 
-        match TimeMessage::decode(message) {
+        // The first ever message response that can be received is the interface registration.
+        if self
+            .registration_id
+            .load(atomic::Ordering::Relaxed)
+            .is_none()
+        {
+            let registration_id =
+                match redshirt_interface_interface::ffi::InterfaceRegisterResponse::decode(
+                    response.unwrap(),
+                )
+                .unwrap()
+                .result
+                {
+                    Ok(id) => id,
+                    // A registration error means the interface has already been registered. Returning
+                    // here stalls this state machine forever.
+                    Err(_) => return,
+                };
+
+            self.registration_id
+                .store(Some(registration_id), atomic::Ordering::Relaxed);
+            return;
+        }
+
+        // If this is reached, the response is a response to a message request.
+        self.pending_message_requests
+            .fetch_add(1, atomic::Ordering::Relaxed);
+
+        let notification =
+            match redshirt_interface_interface::ffi::decode_notification(&response.unwrap().0)
+                .unwrap()
+            {
+                redshirt_interface_interface::DecodedInterfaceOrDestroyed::Interface(n) => n,
+                _ => return,
+            };
+
+        match TimeMessage::decode(notification.actual_data) {
             Ok(TimeMessage::GetMonotonic) => {
+                let message_id = match notification.message_id {
+                    Some(id) => id,
+                    None => return,
+                };
+
                 let now = self.platform_specific.as_ref().monotonic_clock();
                 self.pending_messages_tx
-                    .unbounded_send(Some((message_id.unwrap(), Ok(now.encode()))));
+                    .unbounded_send(Some((message_id, Ok(now.encode()))));
             }
             Ok(TimeMessage::WaitMonotonic(value)) => {
-                let message_id = message_id.unwrap();
+                let message_id = match notification.message_id {
+                    Some(id) => id,
+                    None => return,
+                };
+
                 let timers = self.timers.lock();
                 timers.push(
                     self.platform_specific
@@ -132,18 +209,11 @@ where
                 self.pending_messages_tx.unbounded_send(None);
             }
             Err(_) => {
-                self.pending_messages_tx
-                    .unbounded_send(Some((message_id.unwrap(), Err(()))));
+                if let Some(message_id) = notification.message_id {
+                    self.pending_messages_tx
+                        .unbounded_send(Some((message_id, Err(()))));
+                }
             }
         }
-    }
-
-    fn message_response(self, _: MessageId, response: Result<EncodedMessage, ()>) {
-        let message = match redshirt_interface_interface::ffi::decode_interface_notification(&response.unwrap().0) {
-            redshirt_interface_interface::DecodedInterfaceOrDestroyed::Interface(n) => n.actual_data,
-            _ => return,
-        };
-
-        unreachable!()
     }
 }

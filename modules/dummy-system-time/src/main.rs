@@ -13,7 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use redshirt_syscalls::{ffi::DecodedInterfaceOrDestroyed, Decode as _};
+use redshirt_interface_interface::DecodedInterfaceOrDestroyed;
+use redshirt_syscalls::Decode as _;
 use redshirt_system_time_interface::ffi as sys_time_ffi;
 
 fn main() {
@@ -21,12 +22,12 @@ fn main() {
 }
 
 async fn async_main() {
-    redshirt_interface_interface::register_interface(sys_time_ffi::INTERFACE)
+    let mut registration = redshirt_interface_interface::register_interface(sys_time_ffi::INTERFACE)
         .await
         .unwrap();
 
     loop {
-        let interface_event = redshirt_syscalls::next_interface_message().await;
+        let interface_event = registration.next_message_raw().await;
         let msg = match interface_event {
             DecodedInterfaceOrDestroyed::Interface(msg) => msg,
             DecodedInterfaceOrDestroyed::ProcessDestroyed(_) => continue,

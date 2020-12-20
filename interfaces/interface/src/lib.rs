@@ -19,7 +19,7 @@
 
 extern crate alloc;
 
-use core::convert::TryFrom as _;
+use core::num::NonZeroU64;
 use futures::prelude::*;
 use parity_scale_codec::Encode as _;
 use redshirt_syscalls::{EncodedMessage, InterfaceHash};
@@ -63,7 +63,7 @@ pub async fn register_interface(
 // TODO: unregister it if dropped? unregistrations aren't supported at the moment
 pub struct Registration {
     /// Identifier of the interface registration.
-    id: u64,
+    id: NonZeroU64,
     /// Futures that will resolve when we receive a message on the interface.
     messages: stream::FuturesOrdered<redshirt_syscalls::MessageResponseFuture<EncodedMessage>>,
 }

@@ -191,7 +191,9 @@ impl<'ext> NativeProgramsCollection<'ext> {
             }
         }
 
-        panic!() // TODO: what to do here?
+        // Can only be reached if received a response to a message that hasn't been emitted
+        // earlier. Indicates a bug somewhere in the code.
+        unreachable!()
     }
 }
 

@@ -14,7 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use alloc::vec::Vec;
-use core::convert::TryFrom as _;
+use core::{convert::TryFrom as _, num::NonZeroU64};
 use redshirt_syscalls::{Encode as _, EncodedMessage, InterfaceHash, MessageId, Pid};
 
 // TODO: this has been randomly generated; instead should be a hash or something
@@ -26,12 +26,12 @@ pub const INTERFACE: InterfaceHash = InterfaceHash::from_raw_hash([
 #[derive(Debug, parity_scale_codec::Encode, parity_scale_codec::Decode)]
 pub enum InterfaceMessage {
     Register(InterfaceHash),
-    NextMessage(u64),
+    NextMessage(NonZeroU64),
 }
 
 #[derive(Debug, parity_scale_codec::Encode, parity_scale_codec::Decode)]
 pub struct InterfaceRegisterResponse {
-    pub result: Result<u64, InterfaceRegisterError>,
+    pub result: Result<NonZeroU64, InterfaceRegisterError>,
 }
 
 #[derive(Debug, Clone, parity_scale_codec::Encode, parity_scale_codec::Decode)]
