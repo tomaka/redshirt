@@ -291,6 +291,7 @@ where
                         //self.core.cancel_message(message_id);
                     }
                     native::NativeProgramsCollectionEvent::Answer { message_id, answer } => {
+                        // TODO: could be a native program answer instead
                         self.core.answer_message(message_id, answer);
                     }
                 }
