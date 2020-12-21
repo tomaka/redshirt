@@ -241,12 +241,13 @@ where
                                                 if let Some((msg, needs_answer)) =
                                                     registration.pending_accept.pop_front()
                                                 {
+                                                    debug_assert!(registration.queries.is_empty());
                                                     let (pid, message) =
                                                         self.core.accept_interface_message(msg);
                                                     let answer =
                                                         redshirt_interface_interface::ffi::build_interface_notification(
                                                             &interface,
-                                                            if needs_answer { Some(message_id) } else { None },
+                                                            if needs_answer { Some(msg) } else { None },
                                                             pid,
                                                             &message,
                                                         );
@@ -383,6 +384,7 @@ where
                     )) => {
                         let mut interfaces = self.interfaces.lock();
 
+                        // TODO: silently discard a message if !needs_answer?
                         if needs_answer {
                             if let Ok(registration_id) = usize::try_from(registration_id.get()) {
                                 if let Some(registration) =
@@ -392,13 +394,14 @@ where
                                         if let Some((msg, needs_answer)) =
                                             registration.pending_accept.pop_front()
                                         {
+                                            debug_assert!(registration.queries.is_empty());
                                             debug_assert!(!registration.is_native);
                                             let (pid2, message) =
                                                 self.core.accept_interface_message(msg);
                                             let answer =
                                                 redshirt_interface_interface::ffi::build_interface_notification(
                                                     &interface,
-                                                    if needs_answer { Some(message_id) } else { None },
+                                                    if needs_answer { Some(msg) } else { None },
                                                     pid2,
                                                     &message,
                                                 );
@@ -433,9 +436,9 @@ where
             }
 
             CoreRunOutcome::InterfaceMessage {
-                pid,
+                pid: _,
                 needs_answer,
-                immediate,
+                immediate: _,
                 message_id,
                 interface,
             } if interface == redshirt_kernel_debug_interface::ffi::INTERFACE => {

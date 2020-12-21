@@ -92,6 +92,7 @@ pub fn emit_answer(message_id: MessageId, msg: impl Encode) {
     #[cfg(target_arch = "wasm32")] // TODO: we should have a proper operating system name instead
     fn imp(message_id: MessageId, msg: impl Encode) {
         unsafe {
+            // TODO: more optimized version ; right now there's extra copies below
             redshirt_syscalls::emit_message_without_response(
                 &ffi::INTERFACE,
                 ffi::InterfaceMessage::Answer(message_id, Ok(msg.encode().0)),
@@ -110,6 +111,7 @@ pub fn emit_message_error(message_id: MessageId) {
     #[cfg(target_arch = "wasm32")] // TODO: we should have a proper operating system name instead
     fn imp(message_id: MessageId) {
         unsafe {
+            // TODO: more optimized version ; right now there's extra copies below
             redshirt_syscalls::emit_message_without_response(
                 &ffi::INTERFACE,
                 ffi::InterfaceMessage::Answer(message_id, Err(())),
