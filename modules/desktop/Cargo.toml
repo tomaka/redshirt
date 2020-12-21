@@ -1,0 +1,23 @@
+[package]
+name = "desktop"
+version = "0.1.0"
+license = "GPL-3.0-or-later"
+authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
+edition = "2018"
+publish = false
+
+[dependencies]
+cgmath = "0.17.0"
+futures = "0.3"
+imgui = { git = "https://github.com/tomaka/imgui-rs", branch = "wasi" } # TODO: fork needed because of https://github.com/rust-lang/rust/issues/71871
+redshirt-framebuffer-interface = { path = "../../interfaces/framebuffer" }
+redshirt-pci-interface = { path = "../../interfaces/pci" }
+redshirt-syscalls = { path = "../../interfaces/syscalls" }
+redshirt-time-interface = { path = "../../interfaces/time" }
+
+[dependencies.image]
+version = "0.23.4"
+# If you presume that `image` is a simple CPU-only decoding library, you'd be mistaken. The library
+# tries to spawn background threads, unless you disable some features.
+default-features = false
+features = ["jpeg"]

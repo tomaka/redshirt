@@ -120,10 +120,9 @@ impl Framebuffer {
     }
 
     /// Returns the next event that the framebuffer receives.
-    // TODO: proper return type
-    pub async fn next_event(&mut self) -> u32 {
+    pub async fn next_event(&mut self) -> ffi::Event {
         if let Some(first_event) = self.event_messages.front() {
-            let event: u32 = redshirt_syscalls::message_response(*first_event).await; // TODO: proper event type
+            let event = redshirt_syscalls::message_response(*first_event).await;
             self.event_messages.pop_front();
             self.fill_event_messages();
             event

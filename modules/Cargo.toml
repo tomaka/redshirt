@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "compositor",
+    "desktop",
     "dummy-system-time",
     "e1000",
     "hello-world",
