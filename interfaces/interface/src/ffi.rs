@@ -15,7 +15,7 @@
 
 use alloc::vec::Vec;
 use core::{convert::TryFrom as _, num::NonZeroU64};
-use redshirt_syscalls::{Encode as _, EncodedMessage, InterfaceHash, MessageId, Pid};
+use redshirt_syscalls::{EncodedMessage, InterfaceHash, MessageId, Pid};
 
 // TODO: this has been randomly generated; instead should be a hash or something
 pub const INTERFACE: InterfaceHash = InterfaceHash::from_raw_hash([
@@ -69,7 +69,6 @@ pub fn build_interface_notification(
     interface: &InterfaceHash,
     message_id: Option<MessageId>,
     emitter_pid: Pid,
-    index_in_list: u32,
     actual_data: &EncodedMessage,
 ) -> InterfaceNotificationBuilder {
     let mut buffer = Vec::with_capacity(1 + 32 + 8 + 8 + 4 + actual_data.0.len());
@@ -77,7 +76,7 @@ pub fn build_interface_notification(
     buffer.extend_from_slice(interface.as_ref());
     buffer.extend_from_slice(&message_id.map(u64::from).unwrap_or(0).to_le_bytes());
     buffer.extend_from_slice(&u64::from(emitter_pid).to_le_bytes());
-    buffer.extend_from_slice(&index_in_list.to_le_bytes());
+    buffer.extend_from_slice(&0u32.to_le_bytes());  // TODO: remove field entirely
     buffer.extend_from_slice(&actual_data.0);
 
     debug_assert_eq!(buffer.capacity(), buffer.len());
@@ -90,11 +89,6 @@ pub struct InterfaceNotificationBuilder {
 }
 
 impl InterfaceNotificationBuilder {
-    /// Updates the `index_in_list` field of the message.
-    pub fn set_index_in_list(&mut self, value: u32) {
-        self.data[49..53].copy_from_slice(&value.to_le_bytes());
-    }
-
     /// Returns the [`MessageId`] that was put in the builder.
     pub fn message_id(&self) -> Option<MessageId> {
         let id = u64::from_le_bytes([
@@ -147,7 +141,6 @@ pub fn decode_interface_notification(buffer: &[u8]) -> Result<DecodedInterfaceNo
             buffer[41], buffer[42], buffer[43], buffer[44], buffer[45], buffer[46], buffer[47],
             buffer[48],
         ])),
-        index_in_list: u32::from_le_bytes([buffer[49], buffer[50], buffer[51], buffer[52]]),
         actual_data: EncodedMessage(buffer[53..].to_vec()),
     })
 }
@@ -164,20 +157,16 @@ pub struct DecodedInterfaceNotification {
     /// This should be used for security purposes, so that a process can't modify another process'
     /// resources.
     pub emitter_pid: Pid,
-    /// Index within the list to poll where this message was.
-    // TODO: remove
-    pub index_in_list: u32,
     pub actual_data: EncodedMessage,
 }
 
 pub fn build_process_destroyed_notification(
     pid: Pid,
-    index_in_list: u32,
 ) -> ProcessDestroyedNotificationBuilder {
     let mut buffer = Vec::with_capacity(1 + 8 + 4);
     buffer.push(2);
     buffer.extend_from_slice(&u64::from(pid).to_le_bytes());
-    buffer.extend_from_slice(&index_in_list.to_le_bytes());
+    buffer.extend_from_slice(&0u32.to_le_bytes());  // TODO: remove field entirely
 
     debug_assert_eq!(buffer.capacity(), buffer.len());
     ProcessDestroyedNotificationBuilder { data: buffer }
@@ -189,11 +178,6 @@ pub struct ProcessDestroyedNotificationBuilder {
 }
 
 impl ProcessDestroyedNotificationBuilder {
-    /// Updates the `index_in_list` field of the message.
-    pub fn set_index_in_list(&mut self, value: u32) {
-        self.data[9..13].copy_from_slice(&value.to_le_bytes());
-    }
-
     pub fn len(&self) -> usize {
         self.data.len()
     }
@@ -217,8 +201,7 @@ pub fn decode_process_destroyed_notification(
     Ok(DecodedProcessDestroyedNotification {
         pid: From::from(u64::from_le_bytes([
             buffer[1], buffer[2], buffer[3], buffer[4], buffer[5], buffer[6], buffer[7], buffer[8],
-        ])),
-        index_in_list: u32::from_le_bytes([buffer[9], buffer[10], buffer[11], buffer[12]]),
+        ]))
     })
 }
 
@@ -226,6 +209,4 @@ pub fn decode_process_destroyed_notification(
 pub struct DecodedProcessDestroyedNotification {
     /// Identifier of the process that got destroyed.
     pub pid: Pid,
-    /// Index within the list to poll where this message was.
-    pub index_in_list: u32,
 }

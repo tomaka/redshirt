@@ -340,6 +340,9 @@ impl<TExt: Extrinsics> Core<TExt> {
             .lock()
             .remove(&message_id)
             .unwrap();
+
+        self.pending_answer_messages.lock().insert(message_id, pid);
+
         match self.processes.interrupted_thread_by_id(tid).unwrap() {
             extrinsics::ThreadAccess::EmitMessage(mut thread) => {
                 let message = if thread.needs_answer() {
