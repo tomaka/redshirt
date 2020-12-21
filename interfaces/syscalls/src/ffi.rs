@@ -99,29 +99,6 @@ extern "C" {
         message_id_out: *mut u64,
     ) -> u32;
 
-    /// Sends an answer back to the emitter of given `message_id`.
-    ///
-    /// Has no effect if the message id is zero or refers to an invalid message. This can
-    /// legitimately happen if the process that emitted the message has crashed or stopped.
-    ///
-    /// When this function is being called, a "lock" is being held on the memory pointed by
-    /// `message_id` and `msg`. In particular, it is invalid to modify these buffers while the
-    /// function is running.
-    pub(crate) fn emit_answer(message_id: *const u64, msg: *const u8, msg_len: u32);
-
-    /// Notifies the kernel that the given message is invalid and cannot reasonably be answered.
-    ///
-    /// Has no effect if the message id is zero or refers to an invalid message. This can
-    /// legitimately happen if the process that emitted the message has crashed or stopped.
-    ///
-    /// This should be used in situations where a message we receive fails to parse or is generally
-    /// invalid. In other words, this should only be used in case of misbehaviour by the sender.
-    ///
-    /// When this function is being called, a "lock" is being held on the memory pointed by
-    /// `message_id`. In particular, it is invalid to modify these buffers while the function is
-    /// running.
-    pub(crate) fn emit_message_error(message_id: *const u64);
-
     /// Cancel an expected answer.
     ///
     /// After a message that needs an answer has been emitted using `emit_message`,

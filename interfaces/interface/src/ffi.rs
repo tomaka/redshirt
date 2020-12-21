@@ -27,6 +27,7 @@ pub const INTERFACE: InterfaceHash = InterfaceHash::from_raw_hash([
 pub enum InterfaceMessage {
     Register(InterfaceHash),
     NextMessage(NonZeroU64),
+    Answer(MessageId, Result<Vec<u8>, ()>),
 }
 
 #[derive(Debug, parity_scale_codec::Encode, parity_scale_codec::Decode)]
@@ -57,9 +58,8 @@ pub fn decode_notification(buffer: &[u8]) -> Result<DecodedInterfaceOrDestroyed,
 
     match buffer[0] {
         0 => decode_interface_notification(buffer).map(DecodedInterfaceOrDestroyed::Interface),
-        2 => {
-            decode_process_destroyed_notification(buffer).map(DecodedInterfaceOrDestroyed::ProcessDestroyed)
-        }
+        2 => decode_process_destroyed_notification(buffer)
+            .map(DecodedInterfaceOrDestroyed::ProcessDestroyed),
         _ => Err(()),
     }
 }
@@ -76,7 +76,7 @@ pub fn build_interface_notification(
     buffer.extend_from_slice(interface.as_ref());
     buffer.extend_from_slice(&message_id.map(u64::from).unwrap_or(0).to_le_bytes());
     buffer.extend_from_slice(&u64::from(emitter_pid).to_le_bytes());
-    buffer.extend_from_slice(&0u32.to_le_bytes());  // TODO: remove field entirely
+    buffer.extend_from_slice(&0u32.to_le_bytes()); // TODO: remove field entirely
     buffer.extend_from_slice(&actual_data.0);
 
     debug_assert_eq!(buffer.capacity(), buffer.len());
@@ -109,7 +109,8 @@ impl InterfaceNotificationBuilder {
         self.data.len()
     }
 
-    pub fn into_bytes(self) -> Vec<u8> {  // TODO: return EncodedMessage
+    pub fn into_bytes(self) -> Vec<u8> {
+        // TODO: return EncodedMessage
         self.data
     }
 }
@@ -160,13 +161,11 @@ pub struct DecodedInterfaceNotification {
     pub actual_data: EncodedMessage,
 }
 
-pub fn build_process_destroyed_notification(
-    pid: Pid,
-) -> ProcessDestroyedNotificationBuilder {
+pub fn build_process_destroyed_notification(pid: Pid) -> ProcessDestroyedNotificationBuilder {
     let mut buffer = Vec::with_capacity(1 + 8 + 4);
     buffer.push(2);
     buffer.extend_from_slice(&u64::from(pid).to_le_bytes());
-    buffer.extend_from_slice(&0u32.to_le_bytes());  // TODO: remove field entirely
+    buffer.extend_from_slice(&0u32.to_le_bytes()); // TODO: remove field entirely
 
     debug_assert_eq!(buffer.capacity(), buffer.len());
     ProcessDestroyedNotificationBuilder { data: buffer }
@@ -201,7 +200,7 @@ pub fn decode_process_destroyed_notification(
     Ok(DecodedProcessDestroyedNotification {
         pid: From::from(u64::from_le_bytes([
             buffer[1], buffer[2], buffer[3], buffer[4], buffer[5], buffer[6], buffer[7], buffer[8],
-        ]))
+        ])),
     })
 }
 

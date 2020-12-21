@@ -96,7 +96,7 @@ async fn async_main() {
                         None => continue,
                     };
 
-                    redshirt_syscalls::emit_answer(message_id, vid_ffi::NextImage {
+                    redshirt_interface_interface::emit_answer(message_id, vid_ffi::NextImage {
                         changes: if video_output.cleared {
                             Vec::new()
                         } else {

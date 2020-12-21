@@ -74,7 +74,7 @@ async fn async_main() {
                                 // TODO: back-pressure here as well?
                                 network.interface_by_id((msg.emitter_pid, id)).unwrap().inject_data(buf);
                                 if let Some(message_id) = msg.message_id {
-                                    redshirt_syscalls::emit_answer(message_id, &());
+                                    redshirt_interface_interface::emit_answer(message_id, &());
                                 }
                             }
                             eth_ffi::NetworkMessage::InterfaceWaitData(id) => {
@@ -82,7 +82,7 @@ async fn async_main() {
                                 .interface_by_id((msg.emitter_pid, id)).unwrap().read_ethernet_cable_out();
                                 if !data.is_empty() {
                                     // TODO: don't unwrap message_id
-                                    redshirt_syscalls::emit_answer(msg.message_id.unwrap(), &data);
+                                    redshirt_interface_interface::emit_answer(msg.message_id.unwrap(), &data);
                                 } else {
                                     // TODO: don't unwrap message_id
                                     network
@@ -141,7 +141,7 @@ async fn async_main() {
                                     let mut socket = network.tcp_socket_by_id(&inner_id).unwrap();
                                     if socket.closed() {
                                         if let Some(message_id) = msg.message_id {
-                                            redshirt_syscalls::emit_answer(
+                                            redshirt_interface_interface::emit_answer(
                                                 message_id,
                                                 &tcp_ffi::TcpCloseResponse {
                                                     result: Err(tcp_ffi::TcpCloseError::ConnectionFinished),
@@ -153,13 +153,13 @@ async fn async_main() {
 
                                     if socket.close().is_ok() {
                                         if let Some(message_id) = msg.message_id {
-                                            redshirt_syscalls::emit_answer(
+                                            redshirt_interface_interface::emit_answer(
                                                 message_id,
                                                 &tcp_ffi::TcpCloseResponse { result: Ok(()) },
                                             );
                                         }
                                     } else if let Some(message_id) = msg.message_id {
-                                        redshirt_syscalls::emit_answer(
+                                        redshirt_interface_interface::emit_answer(
                                             message_id,
                                             &tcp_ffi::TcpCloseResponse {
                                                 result: Err(tcp_ffi::TcpCloseError::FinAlreaySent),
@@ -167,7 +167,7 @@ async fn async_main() {
                                         );
                                     }
                                 } else if let Some(message_id) = msg.message_id {
-                                    redshirt_syscalls::emit_answer(
+                                    redshirt_interface_interface::emit_answer(
                                         message_id,
                                         &tcp_ffi::TcpCloseResponse {
                                             result: Err(tcp_ffi::TcpCloseError::InvalidSocket),
@@ -184,7 +184,7 @@ async fn async_main() {
                                 if let Some(inner_socket_id) = sockets.get_mut(&read.socket_id) {
                                     let mut inner_socket = network.tcp_socket_by_id(inner_socket_id).unwrap();
                                     if inner_socket.closed() {
-                                        redshirt_syscalls::emit_answer(
+                                        redshirt_interface_interface::emit_answer(
                                             message_id,
                                             &tcp_ffi::TcpReadResponse {
                                                 result: Err(tcp_ffi::TcpReadError::ConnectionFinished),
@@ -196,7 +196,7 @@ async fn async_main() {
                                     // TODO: handle errors
                                     let available = inner_socket.read();
                                     if !available.is_empty() {
-                                        redshirt_syscalls::emit_answer(
+                                        redshirt_interface_interface::emit_answer(
                                             message_id,
                                             &tcp_ffi::TcpReadResponse {
                                                 result: Ok(available),
@@ -206,7 +206,7 @@ async fn async_main() {
                                         inner_socket.user_data_mut().read_message = Some(message_id);
                                     }
                                 } else {
-                                    redshirt_syscalls::emit_answer(
+                                    redshirt_interface_interface::emit_answer(
                                         message_id,
                                         &tcp_ffi::TcpReadResponse {
                                             result: Err(tcp_ffi::TcpReadError::InvalidSocket),
@@ -219,7 +219,7 @@ async fn async_main() {
                                     let mut inner_socket = network.tcp_socket_by_id(inner_socket_id).unwrap();
                                     if inner_socket.closed() {
                                         if let Some(message_id) = msg.message_id {
-                                            redshirt_syscalls::emit_answer(
+                                            redshirt_interface_interface::emit_answer(
                                                 message_id,
                                                 &tcp_ffi::TcpWriteResponse {
                                                     result: Err(tcp_ffi::TcpWriteError::ConnectionFinished),
@@ -230,7 +230,7 @@ async fn async_main() {
                                     }
                                     if inner_socket.close_called() {
                                         if let Some(message_id) = msg.message_id {
-                                            redshirt_syscalls::emit_answer(
+                                            redshirt_interface_interface::emit_answer(
                                                 message_id,
                                                 &tcp_ffi::TcpWriteResponse {
                                                     result: Err(tcp_ffi::TcpWriteError::FinAlreaySent),
@@ -244,7 +244,7 @@ async fn async_main() {
                                     let _ = inner_socket.set_write_buffer(write.data);
                                     inner_socket.user_data_mut().write_finished_message = msg.message_id;
                                 } else if let Some(message_id) = msg.message_id {
-                                    redshirt_syscalls::emit_answer(
+                                    redshirt_interface_interface::emit_answer(
                                         message_id,
                                         &tcp_ffi::TcpWriteResponse {
                                             result: Err(tcp_ffi::TcpWriteError::InvalidSocket),
@@ -259,7 +259,7 @@ async fn async_main() {
                                     // TODO: connected_message should be None, or the user
                                     // managed to guess an ID that hasn't been reported yet
                                     if let Some(message_id) = local_state.read_message.take() {
-                                        redshirt_syscalls::emit_answer(
+                                        redshirt_interface_interface::emit_answer(
                                             message_id,
                                             &tcp_ffi::TcpReadResponse {
                                                 result: Err(tcp_ffi::TcpReadError::InvalidSocket),
@@ -267,7 +267,7 @@ async fn async_main() {
                                         );
                                     }
                                     if let Some(message_id) = local_state.write_finished_message.take() {
-                                        redshirt_syscalls::emit_answer(
+                                        redshirt_interface_interface::emit_answer(
                                             message_id,
                                             &tcp_ffi::TcpWriteResponse {
                                                 result: Err(tcp_ffi::TcpWriteError::InvalidSocket),
@@ -298,7 +298,7 @@ async fn async_main() {
                         if let Some(msg_id) = interface.user_data().pop_front() {
                             let buffer = interface.read_ethernet_cable_out();
                             debug_assert!(!buffer.is_empty());
-                            redshirt_syscalls::emit_answer(msg_id, &buffer);
+                            redshirt_interface_interface::emit_answer(msg_id, &buffer);
                         }
                     }
                     NetworkManagerEvent::TcpConnected {
@@ -308,7 +308,7 @@ async fn async_main() {
                     } => {
                         let state = socket.user_data_mut();
                         let message_id = state.connected_message.take().unwrap();
-                        redshirt_syscalls::emit_answer(
+                        redshirt_interface_interface::emit_answer(
                             message_id,
                             &tcp_ffi::TcpOpenResponse {
                                 result: Ok(tcp_ffi::TcpSocketOpen {
@@ -330,13 +330,13 @@ async fn async_main() {
                     NetworkManagerEvent::TcpClosed(mut socket) => {
                         let state = socket.user_data_mut();
                         if let Some(message_id) = state.connected_message.take() {
-                            redshirt_syscalls::emit_answer(
+                            redshirt_interface_interface::emit_answer(
                                 message_id,
                                 &tcp_ffi::TcpOpenResponse { result: Err(()) },
                             );
                         }
                         if let Some(message_id) = state.read_message.take() {
-                            redshirt_syscalls::emit_answer(
+                            redshirt_interface_interface::emit_answer(
                                 message_id,
                                 &tcp_ffi::TcpReadResponse {
                                     result: Err(tcp_ffi::TcpReadError::ConnectionFinished),
@@ -344,7 +344,7 @@ async fn async_main() {
                             );
                         }
                         if let Some(message_id) = state.write_finished_message.take() {
-                            redshirt_syscalls::emit_answer(
+                            redshirt_interface_interface::emit_answer(
                                 message_id,
                                 &tcp_ffi::TcpWriteResponse {
                                     result: Err(tcp_ffi::TcpWriteError::ConnectionFinished),
@@ -357,7 +357,7 @@ async fn async_main() {
                         if let Some(message_id) = state.read_message.take() {
                             let data = socket.read();
                             debug_assert!(!data.is_empty());
-                            redshirt_syscalls::emit_answer(
+                            redshirt_interface_interface::emit_answer(
                                 message_id,
                                 &tcp_ffi::TcpReadResponse { result: Ok(data) },
                             );
@@ -366,7 +366,7 @@ async fn async_main() {
                     NetworkManagerEvent::TcpWriteFinished(mut socket) => {
                         let state = socket.user_data_mut();
                         if let Some(message_id) = state.write_finished_message.take() {
-                            redshirt_syscalls::emit_answer(
+                            redshirt_interface_interface::emit_answer(
                                 message_id,
                                 &tcp_ffi::TcpWriteResponse { result: Ok(()) },
                             );

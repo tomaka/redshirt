@@ -49,14 +49,6 @@ pub enum NativeProgramsCollectionEvent<'col> {
         /// Message to cancel.
         message_id: MessageId,
     },
-    /// Request to answer a message received with
-    /// [`interface_message`](NativeProgramsCollection::interface_message).
-    Answer {
-        /// Message to answer.
-        message_id: MessageId,
-        /// The produced answer, or an `Err` if the message is invalid.
-        answer: Result<EncodedMessage, ()>,
-    },
 }
 
 /// Allows writing back a [`MessageId`] when a message is emitted.
@@ -163,12 +155,6 @@ impl<'ext> NativeProgramsCollection<'ext> {
                             message_id,
                         })
                     }
-                    Poll::Ready(NativeProgramEvent::Answer { message_id, answer }) => {
-                        return Poll::Ready(NativeProgramsCollectionEvent::Answer {
-                            message_id,
-                            answer,
-                        })
-                    }
                 }
             }
 
@@ -228,9 +214,6 @@ where
             }
             Poll::Ready(NativeProgramEvent::CancelMessage { message_id }) => {
                 Poll::Ready(NativeProgramEvent::CancelMessage { message_id })
-            }
-            Poll::Ready(NativeProgramEvent::Answer { message_id, answer }) => {
-                Poll::Ready(NativeProgramEvent::Answer { message_id, answer })
             }
             Poll::Pending => Poll::Pending,
         }

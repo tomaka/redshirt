@@ -120,16 +120,29 @@ where
             future::poll_fn(move |cx| {
                 while let Poll::Ready(msg) = self.pending_messages.poll_next(cx) {
                     if let Some((message_id, answer)) = msg {
-                        return Poll::Ready(NativeProgramEvent::Answer { message_id, answer });
+                        return Poll::Ready(NativeProgramEvent::Emit {
+                            interface: redshirt_interface_interface::ffi::INTERFACE,
+                            message_id_write: None,
+                            message: redshirt_interface_interface::ffi::InterfaceMessage::Answer(
+                                message_id,
+                                answer.map(|m| m.0),
+                            )
+                            .encode(),
+                        });
                     }
                 }
 
                 let mut timers = self.timers.lock();
                 if !timers.is_empty() {
                     match Stream::poll_next(Pin::new(&mut *timers), cx) {
-                        Poll::Ready(Some(message_id)) => Poll::Ready(NativeProgramEvent::Answer {
-                            message_id,
-                            answer: Ok(().encode()),
+                        Poll::Ready(Some(message_id)) => Poll::Ready(NativeProgramEvent::Emit {
+                            interface: redshirt_interface_interface::ffi::INTERFACE,
+                            message_id_write: None,
+                            message: redshirt_interface_interface::ffi::InterfaceMessage::Answer(
+                                message_id,
+                                Ok(().encode().0),
+                            )
+                            .encode(),
                         }),
                         Poll::Ready(None) => unreachable!(),
                         Poll::Pending => Poll::Pending,

@@ -61,13 +61,6 @@ pub enum NativeProgramEvent<TMsgIdWrite> {
         /// Message to cancel.
         message_id: MessageId,
     },
-    /// Answer a message previously received with [`NativeProgramRef::interface_message`].
-    Answer {
-        /// Message to answer.
-        message_id: MessageId,
-        /// Answer to the message. Can be an error if the message is invalid.
-        answer: Result<EncodedMessage, ()>,
-    },
 }
 
 /// Trait used to write back the [`MessageId`] when the program emits a message.

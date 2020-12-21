@@ -16,7 +16,7 @@
 //! Implements the log interface by redirecting the logs as kernel logs.
 
 use redshirt_log_interface::ffi;
-use redshirt_syscalls::{Decode as _};
+use redshirt_syscalls::Decode as _;
 
 fn main() {
     redshirt_syscalls::block_on(async_main());
@@ -30,7 +30,9 @@ async fn async_main() -> ! {
     loop {
         let msg = match registration.next_message_raw().await {
             redshirt_interface_interface::DecodedInterfaceOrDestroyed::Interface(m) => m,
-            redshirt_interface_interface::DecodedInterfaceOrDestroyed::ProcessDestroyed(_) => continue,
+            redshirt_interface_interface::DecodedInterfaceOrDestroyed::ProcessDestroyed(_) => {
+                continue
+            }
         };
 
         assert_eq!(msg.interface, ffi::INTERFACE);

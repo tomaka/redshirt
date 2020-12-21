@@ -160,8 +160,6 @@ pub enum ThreadByIdErr {
 enum Extrinsic<TExtId> {
     NextMessage,
     EmitMessage,
-    EmitMessageError,
-    EmitAnswer,
     CancelMessage,
     Other(TExtId),
 }
@@ -287,33 +285,6 @@ pub enum RunOneOutcome<'a, TPud, TTud, TExt: Extrinsics> {
 
     /// A thread in a process is waiting for an incoming message.
     ThreadWaitNotification(ThreadWaitNotif<'a, TPud, TTud, TExt>),
-
-    /// A thread in a process wants to answer a message.
-    ThreadEmitAnswer {
-        /// Thread that wants to emit an answer.
-        thread_id: ThreadId,
-
-        /// Process that the thread belongs to.
-        process: ProcAccess<'a, TPud, TTud, TExt>,
-
-        /// Message to answer.
-        message_id: MessageId,
-
-        /// The answer it self.
-        response: EncodedMessage,
-    },
-
-    /// A thread in a process wants to notify that a message is erroneous.
-    ThreadEmitMessageError {
-        /// Thread that wants to emit a message error.
-        thread_id: ThreadId,
-
-        /// Process that the thread belongs to.
-        process: ProcAccess<'a, TPud, TTud, TExt>,
-
-        /// Message that is erroneous.
-        message_id: MessageId,
-    },
 
     /// A thread in a process wants to notify that a message is to be cancelled.
     ThreadCancelMessage {
@@ -519,61 +490,6 @@ where
 
             processes::RunOneOutcome::Interrupted {
                 mut thread,
-                id: Extrinsic::EmitAnswer,
-                params,
-            } => {
-                debug_assert!(thread.user_data().state.is_ready_to_run());
-                match calls::parse_extrinsic_emit_answer(&mut thread, params) {
-                    Ok(emit_resp) => {
-                        let process = thread.process();
-                        let thread_id = thread.tid();
-                        thread.resume(None);
-                        Some(RunOneOutcome::ThreadEmitAnswer {
-                            process: ProcAccess {
-                                parent: self,
-                                inner: process,
-                            },
-                            thread_id,
-                            message_id: emit_resp.message_id,
-                            response: emit_resp.response,
-                        })
-                    }
-                    Err(_) => {
-                        thread.process().abort();
-                        None
-                    }
-                }
-            }
-
-            processes::RunOneOutcome::Interrupted {
-                mut thread,
-                id: Extrinsic::EmitMessageError,
-                params,
-            } => {
-                debug_assert!(thread.user_data().state.is_ready_to_run());
-                match calls::parse_extrinsic_emit_message_error(&mut thread, params) {
-                    Ok(emit_msg_error) => {
-                        let process = thread.process();
-                        let thread_id = thread.tid();
-                        thread.resume(None);
-                        Some(RunOneOutcome::ThreadEmitMessageError {
-                            process: ProcAccess {
-                                parent: self,
-                                inner: process,
-                            },
-                            thread_id,
-                            message_id: emit_msg_error,
-                        })
-                    }
-                    Err(_) => {
-                        thread.process().abort();
-                        None
-                    }
-                }
-            }
-
-            processes::RunOneOutcome::Interrupted {
-                mut thread,
                 id: Extrinsic::CancelMessage,
                 params,
             } => {
@@ -699,18 +615,6 @@ where
                 "emit_message",
                 sig!((I32, I32, I32, I64, I32) -> I32),
                 Extrinsic::EmitMessage,
-            )
-            .with_extrinsic(
-                "redshirt",
-                "emit_message_error",
-                sig!((I32)),
-                Extrinsic::EmitMessageError,
-            )
-            .with_extrinsic(
-                "redshirt",
-                "emit_answer",
-                sig!((I32, I32, I32)),
-                Extrinsic::EmitAnswer,
             )
             .with_extrinsic(
                 "redshirt",

@@ -62,13 +62,13 @@ async fn async_main() {
             future::Either::Right(NetworkEvent::FetchSuccess { data, user_data }) => {
                 assert!(registered);
                 let rp = redshirt_loader_interface::ffi::LoadResponse { result: Ok(data) };
-                redshirt_syscalls::emit_answer(user_data, &rp);
+                redshirt_interface_interface::emit_answer(user_data, &rp);
                 continue;
             }
             future::Either::Right(NetworkEvent::FetchFail { user_data }) => {
                 assert!(registered);
                 let rp = redshirt_loader_interface::ffi::LoadResponse { result: Err(()) };
-                redshirt_syscalls::emit_answer(user_data, &rp);
+                redshirt_interface_interface::emit_answer(user_data, &rp);
                 continue;
             }
         };

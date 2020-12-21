@@ -88,7 +88,6 @@ pub use emit::{
     cancel_message, emit_message_with_response, emit_message_without_response, MessageBuilder,
 };
 pub use ffi::DecodedNotification;
-pub use interface_message::{emit_answer, emit_message_error};
 pub use response::{message_response, message_response_sync_raw, MessageResponseFuture};
 pub use traits::{Decode, Encode, EncodedMessage};
 
@@ -96,7 +95,6 @@ use core::{cmp::PartialEq, convert::TryFrom, fmt, num::NonZeroU64};
 
 mod block_on;
 mod emit;
-mod interface_message;
 mod response;
 mod traits;
 

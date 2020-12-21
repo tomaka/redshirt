@@ -22,9 +22,10 @@ fn main() {
 }
 
 async fn async_main() {
-    let mut registration = redshirt_interface_interface::register_interface(sys_time_ffi::INTERFACE)
-        .await
-        .unwrap();
+    let mut registration =
+        redshirt_interface_interface::register_interface(sys_time_ffi::INTERFACE)
+            .await
+            .unwrap();
 
     loop {
         let interface_event = registration.next_message_raw().await;
@@ -37,7 +38,7 @@ async fn async_main() {
         let sys_time_ffi::TimeMessage::GetSystem = msg_data;
 
         if let Some(id) = msg.message_id {
-            redshirt_syscalls::emit_answer(id, &0u128);
+            redshirt_interface_interface::emit_answer(id, &0u128);
         }
     }
 }

@@ -26,10 +26,8 @@ use crate::{
 
 use alloc::vec::Vec;
 use crossbeam_queue::SegQueue;
-use fnv::FnvBuildHasher;
-use hashbrown::{hash_map::Entry, HashMap, HashSet};
-use nohash_hasher::BuildNoHashHasher;
-use redshirt_syscalls::{Encode, EncodedMessage, MessageId, Pid, ThreadId};
+use hashbrown::{hash_map::Entry, HashMap};
+use redshirt_syscalls::{EncodedMessage, MessageId, Pid, ThreadId};
 use smallvec::SmallVec;
 use spinning_top::Spinlock;
 
@@ -165,14 +163,6 @@ pub enum CoreRunOutcome {
         /// Which interface the message has been emitted on.
         interface: InterfaceHash,
     },
-
-    /// A process answered a message sent using [`Core::allocate_message_answerer`].
-    AnsweredMessage {
-        /// Answered message.
-        message_id: MessageId,
-        /// The answer in question.
-        answer: Result<EncodedMessage, ()>,
-    },
 }
 
 /// Additional information about a process.
@@ -183,10 +173,6 @@ struct Process {
 
     /// List of threads that are frozen waiting for new notifications.
     wait_notifications_threads: waiting_threads::WaitingThreads,
-
-    /// List of messages that the process is expected to answer.
-    // TODO: do this in a smarter way
-    messages_to_answer: Spinlock<SmallVec<[MessageId; 8]>>,
 }
 
 /// Access to a process within the core.
@@ -267,46 +253,6 @@ impl<TExt: Extrinsics> Core<TExt> {
                 })
             }
 
-            extrinsics::RunOneOutcome::ThreadEmitAnswer {
-                message_id,
-                ref process,
-                ref response,
-                ..
-            } => {
-                {
-                    let mut messages_to_answer = process.user_data().messages_to_answer.lock();
-                    if let Some(pos) = messages_to_answer.iter().position(|m| *m == message_id) {
-                        messages_to_answer.remove(pos);
-                    } else {
-                        // TODO: crash the program? in any way, shouldn't panic
-                        panic!()
-                    }
-                }
-
-                let response = response.clone(); // TODO: why clone?
-                self.answer_message_inner(message_id, Ok(response));
-                None
-            }
-
-            extrinsics::RunOneOutcome::ThreadEmitMessageError {
-                message_id,
-                process,
-                ..
-            } => {
-                {
-                    let mut messages_to_answer = process.user_data().messages_to_answer.lock();
-                    if let Some(pos) = messages_to_answer.iter().position(|m| *m == message_id) {
-                        messages_to_answer.remove(pos);
-                    } else {
-                        // TODO: crash the program? in any way, shouldn't panic
-                        panic!()
-                    }
-                }
-
-                self.answer_message_inner(message_id, Err(()));
-                None
-            }
-
             extrinsics::RunOneOutcome::ThreadCancelMessage {
                 message_id,
                 process,
@@ -357,58 +303,6 @@ impl<TExt: Extrinsics> Core<TExt> {
         }
     }
 
-    /// After [`CoreRunOutcome::InterfaceMessage`] is generated, use this method to set the process
-    /// that has the rights to answer this message.
-    ///
-    /// Unlocks the thread that was trying to emit the message, and returns the body of the
-    /// message.
-    ///
-    /// > **Note**: The way the process in question is informed of the message is out of scope of
-    /// >           this module.
-    pub fn accept_interface_message_answerer(
-        &self,
-        message_id: MessageId,
-        answerer_pid: Pid,
-    ) -> (Pid, EncodedMessage) {
-        // TODO: don't unwrap
-        // TODO: is emitter_pid needed?
-        let (emitter_pid, emitter_tid) = self
-            .pending_accept_messages
-            .lock()
-            .remove(&message_id)
-            .unwrap();
-
-        let message = match self
-            .processes
-            .interrupted_thread_by_id(emitter_tid)
-            .unwrap()
-        {
-            // TODO: don't unwrap
-            extrinsics::ThreadAccess::EmitMessage(mut thread) => {
-                if thread.needs_answer() {
-                    thread.accept_emit(Some(message_id))
-                } else {
-                    thread.accept_emit(None)
-                }
-            }
-            _ => unreachable!(),
-        };
-
-        self.pending_answer_messages
-            .lock()
-            .insert(message_id, emitter_pid);
-
-        self.processes
-            .process_by_id(answerer_pid)
-            .unwrap() // TODO: immediately fail the message instead of unwrapping
-            .user_data()
-            .messages_to_answer
-            .lock()
-            .push(message_id);
-
-        (emitter_pid, message)
-    }
-
     /// After [`CoreRunOutcome::InterfaceMessage`] is generated where `immediate` is true, use
     /// this method to notify that the message cannot be accepted at the moment.
     ///
@@ -439,23 +333,6 @@ impl<TExt: Extrinsics> Core<TExt> {
     /// This [`MessageId`] isn't tracked by the [`Core`].
     pub fn allocate_untracked_message(&self) -> MessageId {
         self.id_pool.assign()
-    }
-
-    /// Allocates a new message ID. The given process is responsible for answering the message,
-    /// similar to when [`Core::accept_interface_message_answerer`] is called.
-    ///
-    /// A [`CoreRunOutcome::AnsweredMessage`] will later be generated when the process answers
-    /// this message.
-    pub fn allocate_message_answerer(&self, answerer: Pid) -> MessageId {
-        let message_id = self.id_pool.assign();
-        self.processes
-            .process_by_id(answerer)
-            .unwrap() // TODO: immediately fail the message instead of unwrapping
-            .user_data()
-            .messages_to_answer
-            .lock()
-            .push(message_id);
-        message_id
     }
 
     /// Set the answer to a message previously passed to [`Core::accept_interface_message`].
@@ -489,7 +366,6 @@ impl<TExt: Extrinsics> Core<TExt> {
     pub fn execute(&self, module: &Module) -> Result<(CoreProcess<TExt>, ThreadId), vm::NewErr> {
         let proc_metadata = Process {
             notifications_queue: notifications_queue::NotificationsQueue::new(),
-            messages_to_answer: Spinlock::new(SmallVec::new()),
             wait_notifications_threads: waiting_threads::WaitingThreads::new(),
         };
 

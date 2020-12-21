@@ -21,8 +21,7 @@ extern crate alloc;
 
 use core::num::NonZeroU64;
 use futures::prelude::*;
-use parity_scale_codec::Encode as _;
-use redshirt_syscalls::{EncodedMessage, InterfaceHash};
+use redshirt_syscalls::{Encode, EncodedMessage, InterfaceHash, MessageId};
 
 pub use ffi::{DecodedInterfaceOrDestroyed, InterfaceRegisterError};
 
@@ -80,10 +79,46 @@ impl Registration {
         self.messages.push(unsafe {
             let message = ffi::InterfaceMessage::NextMessage(self.id).encode();
             let msg_id = redshirt_syscalls::MessageBuilder::new()
-                .add_data(&EncodedMessage(message))
+                .add_data(&EncodedMessage(message.0))
                 .emit_with_response_raw(&ffi::INTERFACE)
                 .unwrap();
             redshirt_syscalls::message_response(msg_id)
         });
     }
+}
+
+/// Answers the given message.
+pub fn emit_answer(message_id: MessageId, msg: impl Encode) {
+    #[cfg(target_arch = "wasm32")] // TODO: we should have a proper operating system name instead
+    fn imp(message_id: MessageId, msg: impl Encode) {
+        unsafe {
+            redshirt_syscalls::emit_message_without_response(
+                &ffi::INTERFACE,
+                ffi::InterfaceMessage::Answer(message_id, Ok(msg.encode().0)),
+            ).unwrap()
+        }
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    fn imp(_: MessageId, _: impl Encode) {
+        unreachable!()
+    }
+    imp(message_id, msg)
+}
+
+/// Answers the given message by notifying of an error in the message.
+pub fn emit_message_error(message_id: MessageId) {
+    #[cfg(target_arch = "wasm32")] // TODO: we should have a proper operating system name instead
+    fn imp(message_id: MessageId) {
+        unsafe {
+            redshirt_syscalls::emit_message_without_response(
+                &ffi::INTERFACE,
+                ffi::InterfaceMessage::Answer(message_id, Err(())),
+            ).unwrap()
+        }
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    fn imp(_: MessageId) {
+        unreachable!()
+    }
+    imp(message_id)
 }

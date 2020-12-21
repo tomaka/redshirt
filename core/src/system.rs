@@ -270,6 +270,16 @@ where
                                     }
                                 }
                             }
+                            Ok(redshirt_interface_interface::ffi::InterfaceMessage::Answer(
+                                answered_message_id,
+                                answer_bytes,
+                            )) => {
+                                // TODO: could be a native program answer instead
+                                self.core.answer_message(
+                                    answered_message_id,
+                                    answer_bytes.map(EncodedMessage),
+                                );
+                            }
                             Err(_) => {
                                 if let Some(message_id_write) = message_id_write {
                                     let message_id = self.core.allocate_untracked_message();
@@ -304,10 +314,6 @@ where
                         // The native programs want to cancel a previously-emitted message.
                         //self.core.cancel_message(message_id);
                     }
-                    native::NativeProgramsCollectionEvent::Answer { message_id, answer } => {
-                        // TODO: could be a native program answer instead
-                        self.core.answer_message(message_id, answer);
-                    }
                 }
             }
         })
@@ -331,7 +337,8 @@ where
                 });
             }
 
-            CoreRunOutcome::AnsweredMessage { message_id, answer } => {
+            // TODO: reimplemented
+            /*CoreRunOutcome::AnsweredMessage { message_id, answer } => {
                 if self.loading_programs.lock().remove(&message_id) {
                     let redshirt_loader_interface::ffi::LoadResponse { result } =
                         Decode::decode(answer.unwrap()).unwrap();
@@ -346,8 +353,7 @@ where
                 } else {
                     self.native_programs.message_response(message_id, answer);
                 }
-            }
-
+            }*/
             CoreRunOutcome::InterfaceMessage {
                 pid,
                 needs_answer,
@@ -387,9 +393,8 @@ where
                                             registration.pending_accept.pop_front()
                                         {
                                             debug_assert!(!registration.is_native);
-                                            let (pid2, message) = self
-                                                .core
-                                                .accept_interface_message_answerer(msg, pid);
+                                            let (pid2, message) =
+                                                self.core.accept_interface_message(msg);
                                             let answer =
                                                 redshirt_interface_interface::ffi::build_interface_notification(
                                                     &interface,
@@ -415,6 +420,10 @@ where
                             }
                         }
                     }
+                    Ok(redshirt_interface_interface::ffi::InterfaceMessage::Answer(
+                        answered_message_id,
+                        answer_bytes,
+                    )) => todo!(),
                     Err(_) => {
                         if needs_answer {
                             self.core.answer_message(message_id, Err(()));
@@ -483,8 +492,7 @@ where
                                     Ok(EncodedMessage(answer.into_bytes())),
                                 );
                             } else {
-                                let (_, message) =
-                                    self.core.accept_interface_message_answerer(message_id, pid);
+                                let (_, message) = self.core.accept_interface_message(message_id);
                                 let answer =
                                     redshirt_interface_interface::ffi::build_interface_notification(
                                         &interface,
@@ -716,7 +724,9 @@ where
     ///
     /// Returns an error if any of the programs passed through
     /// [`SystemBuilder::with_startup_process`] fails to start.
-    pub fn build(self) -> Result<System<'a, TExtr>, NewErr> {
+    pub fn build(mut self) -> Result<System<'a, TExtr>, NewErr> {
+        let dummy_pid = self.core.reserve_pid();
+
         let core = self.core.build();
 
         let num_processes_started = u64::try_from(self.startup_processes.len()).unwrap();
@@ -735,7 +745,7 @@ where
                     // generated registration IDs to never be equal to 0.
                     let mut registrations = slab::Slab::default();
                     let _id = registrations.insert(InterfaceRegistration {
-                        pid: Pid::try_from(1234).unwrap(), // TODO: ?!
+                        pid: dummy_pid,
                         is_native: true,
                         queries: VecDeque::new(),
                         pending_accept: VecDeque::new(),

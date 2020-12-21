@@ -110,7 +110,15 @@ where
 
             future::poll_fn(move |cx| {
                 if let Poll::Ready((message_id, answer)) = self.pending_messages.poll_next(cx) {
-                    return Poll::Ready(NativeProgramEvent::Answer { message_id, answer });
+                    return Poll::Ready(NativeProgramEvent::Emit {
+                        interface: redshirt_interface_interface::ffi::INTERFACE,
+                        message_id_write: None,
+                        message: redshirt_interface_interface::ffi::InterfaceMessage::Answer(
+                            message_id,
+                            answer.map(|m| m.0),
+                        )
+                        .encode(),
+                    });
                 }
 
                 Poll::Pending
