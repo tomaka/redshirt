@@ -31,14 +31,18 @@ use std::{
     collections::{hash_map::Entry, VecDeque},
     fmt, mem,
     net::{Ipv6Addr, SocketAddr},
+    num::NonZeroU64,
     pin::Pin,
-    sync::atomic,
 };
 
 /// Native process for TCP/IP connections that use the host operating system.
 pub struct TcpHandler {
     /// If true, we have sent the interface registration message.
-    registered: atomic::AtomicBool,
+    registered: atomic::Atomic<bool>,
+    /// If `Some`, contains the registration ID towards the `interface` interface.
+    registration_id: atomic::Atomic<Option<NonZeroU64>>,
+    /// Number of message requests that need to be emitted.
+    pending_message_requests: atomic::Atomic<u8>,
 
     /// Receives messages from the sockets background tasks.
     receiver: Mutex<mpsc::Receiver<BackToFront>>,
@@ -118,7 +122,9 @@ impl TcpHandler {
         let (sender, receiver) = mpsc::channel(32);
 
         TcpHandler {
-            registered: atomic::AtomicBool::new(false),
+            registered: atomic::Atomic::new(false),
+            registration_id: atomic::Atomic::new(None),
+            pending_message_requests: atomic::Atomic::new(16),
             sockets: parking_lot::Mutex::new(FnvHashMap::default()),
             listeners: parking_lot::Mutex::new(FnvHashMap::default()),
             receiver: Mutex::new(receiver),
@@ -137,12 +143,44 @@ impl<'a> NativeProgramRef<'a> for &'a TcpHandler {
             if !self.registered.swap(true, atomic::Ordering::Relaxed) {
                 return NativeProgramEvent::Emit {
                     interface: redshirt_interface_interface::ffi::INTERFACE,
-                    message_id_write: None,
+                    message_id_write: Some(DummyMessageIdWrite),
                     message: redshirt_interface_interface::ffi::InterfaceMessage::Register(
                         ffi::INTERFACE,
                     )
                     .encode(),
                 };
+            }
+
+            if let Some(registration_id) = self.registration_id.load(atomic::Ordering::Relaxed) {
+                loop {
+                    let v = self
+                        .pending_message_requests
+                        .load(atomic::Ordering::Relaxed);
+                    if v == 0 {
+                        break;
+                    }
+                    if self
+                        .pending_message_requests
+                        .compare_exchange(
+                            v,
+                            v - 1,
+                            atomic::Ordering::Relaxed,
+                            atomic::Ordering::Relaxed,
+                        )
+                        .is_err()
+                    {
+                        continue;
+                    }
+
+                    return NativeProgramEvent::Emit {
+                        interface: redshirt_interface_interface::ffi::INTERFACE,
+                        message_id_write: Some(DummyMessageIdWrite),
+                        message: redshirt_interface_interface::ffi::InterfaceMessage::NextMessage(
+                            registration_id,
+                        )
+                        .encode(),
+                    };
+                }
             }
 
             let message = {
@@ -161,18 +199,23 @@ impl<'a> NativeProgramRef<'a> for &'a TcpHandler {
                     // TODO: debug_assert is orphan
                     *front_state = FrontSocketState::Connected(sender);
 
-                    return NativeProgramEvent::Answer {
-                        message_id: open_message_id,
-                        answer: Ok(redshirt_tcp_interface::ffi::TcpOpenResponse {
-                            result: Ok(redshirt_tcp_interface::ffi::TcpSocketOpen {
-                                socket_id,
-                                local_ip: [0; 8],  // FIXME:
-                                local_port: 0,     // FIXME:
-                                remote_ip: [0; 8], // FIXME:
-                                remote_port: 0,    // FIXME:
-                            }),
-                        }
-                        .encode()),
+                    return NativeProgramEvent::Emit {
+                        interface: redshirt_interface_interface::ffi::INTERFACE,
+                        message_id_write: None,
+                        message: redshirt_interface_interface::ffi::InterfaceMessage::Answer(
+                            open_message_id,
+                            Ok(redshirt_tcp_interface::ffi::TcpOpenResponse {
+                                result: Ok(redshirt_tcp_interface::ffi::TcpSocketOpen {
+                                    socket_id,
+                                    local_ip: [0; 8],  // FIXME:
+                                    local_port: 0,     // FIXME:
+                                    remote_ip: [0; 8], // FIXME:
+                                    remote_port: 0,    // FIXME:
+                                }),
+                            }
+                            .encode().0),
+                        )
+                        .encode(),
                     };
                 }
 
@@ -187,53 +230,101 @@ impl<'a> NativeProgramRef<'a> for &'a TcpHandler {
                         _ => false,
                     });
 
-                    return NativeProgramEvent::Answer {
-                        message_id: open_message_id,
-                        answer: Ok(redshirt_tcp_interface::ffi::TcpOpenResponse {
-                            result: Err(()),
-                        }
-                        .encode()),
+                    return NativeProgramEvent::Emit {
+                        interface: redshirt_interface_interface::ffi::INTERFACE,
+                        message_id_write: None,
+                        message: redshirt_interface_interface::ffi::InterfaceMessage::Answer(
+                            open_message_id,
+                            Ok(redshirt_tcp_interface::ffi::TcpOpenResponse {
+                                result: Err(()),
+                            }.encode().0),
+                        )
+                        .encode(),
                     };
                 }
 
                 BackToFront::Read { message_id, result } => {
-                    return NativeProgramEvent::Answer {
-                        message_id,
-                        answer: Ok(redshirt_tcp_interface::ffi::TcpReadResponse { result }.encode()),
-                    }
+                    return NativeProgramEvent::Emit {
+                        interface: redshirt_interface_interface::ffi::INTERFACE,
+                        message_id_write: None,
+                        message: redshirt_interface_interface::ffi::InterfaceMessage::Answer(
+                            message_id,
+                            Ok(redshirt_tcp_interface::ffi::TcpReadResponse { result }.encode().0),
+                        )
+                        .encode(),
+                    };
                 }
 
                 BackToFront::Write { message_id, result } => {
-                    return NativeProgramEvent::Answer {
-                        message_id,
-                        answer: Ok(
-                            redshirt_tcp_interface::ffi::TcpWriteResponse { result }.encode()
-                        ),
-                    }
+                    return NativeProgramEvent::Emit {
+                        interface: redshirt_interface_interface::ffi::INTERFACE,
+                        message_id_write: None,
+                        message: redshirt_interface_interface::ffi::InterfaceMessage::Answer(
+                            message_id,
+                            Ok(redshirt_tcp_interface::ffi::TcpWriteResponse { result }.encode().encode().0),
+                        )
+                        .encode(),
+                    };
                 }
 
                 BackToFront::Close { message_id, result } => {
-                    return NativeProgramEvent::Answer {
-                        message_id,
-                        answer: Ok(
-                            redshirt_tcp_interface::ffi::TcpCloseResponse { result }.encode()
-                        ),
-                    }
+                    return NativeProgramEvent::Emit {
+                        interface: redshirt_interface_interface::ffi::INTERFACE,
+                        message_id_write: None,
+                        message: redshirt_interface_interface::ffi::InterfaceMessage::Answer(
+                            message_id,
+                            Ok(redshirt_tcp_interface::ffi::TcpCloseResponse { result }.encode().0),
+                        )
+                        .encode(),
+                    };
                 }
             }
         })
     }
 
-    fn interface_message(
-        self,
-        interface: InterfaceHash,
-        message_id: Option<MessageId>,
-        _emitter_pid: Pid, // TODO: use to check ownership of sockets
-        message: EncodedMessage,
-    ) {
-        debug_assert_eq!(interface, ffi::INTERFACE);
+    fn message_response(self, _: MessageId, response: Result<EncodedMessage, ()>) {
+        debug_assert!(self.registered.load(atomic::Ordering::Relaxed));
 
-        let message = match ffi::TcpMessage::decode(message) {
+        // The first ever message response that can be received is the interface registration.
+        if self
+            .registration_id
+            .load(atomic::Ordering::Relaxed)
+            .is_none()
+        {
+            let registration_id =
+                match redshirt_interface_interface::ffi::InterfaceRegisterResponse::decode(
+                    response.unwrap(),
+                )
+                .unwrap()
+                .result
+                {
+                    Ok(id) => id,
+                    // A registration error means the interface has already been registered. Returning
+                    // here stalls this state machine forever.
+                    Err(_) => return,
+                };
+
+            self.registration_id
+                .store(Some(registration_id), atomic::Ordering::Relaxed);
+            return;
+        }
+
+        // If this is reached, the response is a response to a message request.
+        self.pending_message_requests
+            .fetch_add(1, atomic::Ordering::Relaxed);
+
+        let notification =
+            match redshirt_interface_interface::ffi::decode_notification(&response.unwrap().0)
+                .unwrap()
+            {
+                redshirt_interface_interface::DecodedInterfaceOrDestroyed::Interface(n) => n,
+                _ => {
+                    // TODO: implement
+                    return
+                },
+            };
+
+        let message = match ffi::TcpMessage::decode(notification.actual_data) {
             Ok(msg) => msg,
             Err(_) => return, // TODO: produce error
         };
@@ -242,7 +333,7 @@ impl<'a> NativeProgramRef<'a> for &'a TcpHandler {
 
         match message {
             ffi::TcpMessage::Open(open) => {
-                let message_id = match message_id {
+                let message_id = match notification.message_id {
                     Some(m) => m,
                     None => return,
                 };
@@ -303,7 +394,7 @@ impl<'a> NativeProgramRef<'a> for &'a TcpHandler {
             }
 
             ffi::TcpMessage::Close(close) => {
-                let message_id = match message_id {
+                let message_id = match notification.message_id {
                     Some(m) => m,
                     None => return,
                 };
@@ -318,7 +409,7 @@ impl<'a> NativeProgramRef<'a> for &'a TcpHandler {
             }
 
             ffi::TcpMessage::Read(read) => {
-                let message_id = match message_id {
+                let message_id = match notification.message_id {
                     Some(m) => m,
                     None => return,
                 };
@@ -333,7 +424,7 @@ impl<'a> NativeProgramRef<'a> for &'a TcpHandler {
             }
 
             ffi::TcpMessage::Write(write) => {
-                let message_id = match message_id {
+                let message_id = match notification.message_id {
                     Some(m) => m,
                     None => return,
                 };
@@ -354,14 +445,6 @@ impl<'a> NativeProgramRef<'a> for &'a TcpHandler {
                 let _ = sockets.remove(&id);
             }
         }
-    }
-
-    fn process_destroyed(self, _: Pid) {
-        // TODO: implement
-    }
-
-    fn message_response(self, _: MessageId, _: Result<EncodedMessage, ()>) {
-        unreachable!()
     }
 }
 

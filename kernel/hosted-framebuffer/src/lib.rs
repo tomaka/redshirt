@@ -30,13 +30,14 @@ use glium::glutin::event::{ElementState, Event, MouseButton, StartCause, WindowE
 use glium::glutin::event_loop::{ControlFlow, EventLoop, EventLoopProxy, EventLoopWindowTarget};
 use parking_lot::Mutex;
 use redshirt_core::native::{DummyMessageIdWrite, NativeProgramEvent, NativeProgramRef};
-use redshirt_core::{Encode as _, EncodedMessage, InterfaceHash, MessageId, Pid};
+use redshirt_core::{Decode as _, Encode as _, EncodedMessage, InterfaceHash, MessageId, Pid};
 use redshirt_framebuffer_interface::ffi;
 use std::{
     collections::{hash_map::Entry, HashMap, VecDeque},
     convert::TryFrom as _,
+    num::NonZeroU64,
     pin::Pin,
-    sync::{atomic, Arc},
+    sync::Arc,
     task::{Context, Poll},
 };
 
@@ -53,7 +54,11 @@ pub struct FramebufferContext {
 /// Native program for `log` interface messages handling.
 pub struct FramebufferHandler {
     /// If true, we have sent the interface registration message.
-    registered: atomic::AtomicBool,
+    registered: atomic::Atomic<bool>,
+    /// If `Some`, contains the registration ID towards the `interface` interface.
+    registration_id: atomic::Atomic<Option<NonZeroU64>>,
+    /// Number of message requests that need to be emitted.
+    pending_message_requests: atomic::Atomic<u8>,
     to_context: mpsc::UnboundedSender<HandlerToContext>,
     from_context: FutureMutex<mpsc::UnboundedReceiver<ContextToHandler>>,
 }
@@ -290,7 +295,9 @@ impl FramebufferHandler {
         FramebufferHandler {
             to_context: ctxt.to_context.clone(),
             from_context: FutureMutex::new(from_context),
-            registered: atomic::AtomicBool::new(false),
+            registered: atomic::Atomic::new(false),
+            registration_id: atomic::Atomic::new(None),
+            pending_message_requests: atomic::Atomic::new(16),
         }
     }
 }
@@ -305,7 +312,7 @@ impl<'a> NativeProgramRef<'a> for &'a FramebufferHandler {
             if !self.registered.swap(true, atomic::Ordering::Relaxed) {
                 return NativeProgramEvent::Emit {
                     interface: redshirt_interface_interface::ffi::INTERFACE,
-                    message_id_write: None,
+                    message_id_write: Some(DummyMessageIdWrite),
                     message: redshirt_interface_interface::ffi::InterfaceMessage::Register(
                         ffi::INTERFACE_WITH_EVENTS,
                     )
@@ -313,43 +320,109 @@ impl<'a> NativeProgramRef<'a> for &'a FramebufferHandler {
                 };
             }
 
+            if let Some(registration_id) = self.registration_id.load(atomic::Ordering::Relaxed) {
+                loop {
+                    let v = self
+                        .pending_message_requests
+                        .load(atomic::Ordering::Relaxed);
+                    if v == 0 {
+                        break;
+                    }
+                    if self
+                        .pending_message_requests
+                        .compare_exchange(
+                            v,
+                            v - 1,
+                            atomic::Ordering::Relaxed,
+                            atomic::Ordering::Relaxed,
+                        )
+                        .is_err()
+                    {
+                        continue;
+                    }
+
+                    return NativeProgramEvent::Emit {
+                        interface: redshirt_interface_interface::ffi::INTERFACE,
+                        message_id_write: Some(DummyMessageIdWrite),
+                        message: redshirt_interface_interface::ffi::InterfaceMessage::NextMessage(
+                            registration_id,
+                        )
+                        .encode(),
+                    };
+                }
+            }
+
             loop {
                 let mut lock = self.from_context.lock().await;
                 // TODO: document the behaviour of this unwrap()
                 match lock.next().await.unwrap() {
                     ContextToHandler::MessageAnswer { message_id, answer } => {
-                        return NativeProgramEvent::Answer { message_id, answer };
+                        return NativeProgramEvent::Emit {
+                            interface: redshirt_interface_interface::ffi::INTERFACE,
+                            message_id_write: None,
+                            message: redshirt_interface_interface::ffi::InterfaceMessage::Answer(
+                                message_id,
+                                answer.map(|m| m.0),
+                            )
+                            .encode(),
+                        };
                     }
                 }
             }
         })
     }
 
-    fn interface_message(
-        self,
-        interface: InterfaceHash,
-        message_id: Option<MessageId>,
-        emitter_pid: Pid,
-        message: EncodedMessage,
-    ) {
-        debug_assert_eq!(interface, ffi::INTERFACE_WITH_EVENTS);
-        self.to_context
-            .unbounded_send(HandlerToContext::InterfaceMessage {
-                emitter_pid,
-                message_id,
-                message,
-            })
-            .unwrap(); // TODO: document the behaviour of this unwrap()
-    }
+    fn message_response(self, _: MessageId, response: Result<EncodedMessage, ()>) {
+        debug_assert!(self.registered.load(atomic::Ordering::Relaxed));
 
-    fn process_destroyed(self, pid: Pid) {
-        self.to_context
-            .unbounded_send(HandlerToContext::ProcessDestroyed(pid))
-            .unwrap(); // TODO: document the behaviour of this unwrap()
-    }
+        // The first ever message response that can be received is the interface registration.
+        if self
+            .registration_id
+            .load(atomic::Ordering::Relaxed)
+            .is_none()
+        {
+            let registration_id =
+                match redshirt_interface_interface::ffi::InterfaceRegisterResponse::decode(
+                    response.unwrap(),
+                )
+                .unwrap()
+                .result
+                {
+                    Ok(id) => id,
+                    // A registration error means the interface has already been registered. Returning
+                    // here stalls this state machine forever.
+                    Err(_) => return,
+                };
 
-    fn message_response(self, _: MessageId, _: Result<EncodedMessage, ()>) {
-        unreachable!()
+            self.registration_id
+                .store(Some(registration_id), atomic::Ordering::Relaxed);
+            return;
+        }
+
+        // If this is reached, the response is a response to a message request.
+        self.pending_message_requests
+            .fetch_add(1, atomic::Ordering::Relaxed);
+
+        let notification =
+            match redshirt_interface_interface::ffi::decode_notification(&response.unwrap().0)
+                .unwrap()
+            {
+                redshirt_interface_interface::DecodedInterfaceOrDestroyed::Interface(n) => n,
+                redshirt_interface_interface::DecodedInterfaceOrDestroyed::ProcessDestroyed(n) => {
+                    self.to_context
+                        .unbounded_send(HandlerToContext::ProcessDestroyed(n.pid))
+                        .unwrap(); // TODO: document the behaviour of this unwrap()
+                    return
+                },
+            };
+
+        self.to_context
+        .unbounded_send(HandlerToContext::InterfaceMessage {
+            emitter_pid: notification.emitter_pid,
+            message_id: notification.message_id,
+            message: notification.actual_data,
+        })
+        .unwrap(); // TODO: document the behaviour of this unwrap()
     }
 }
 

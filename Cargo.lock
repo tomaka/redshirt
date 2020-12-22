@@ -1936,6 +1936,7 @@ dependencies = [
 name = "redshirt-framebuffer-hosted"
 version = "0.1.0"
 dependencies = [
+ "atomic 0.5.0",
  "futures",
  "glium",
  "parking_lot",
@@ -2030,6 +2031,7 @@ dependencies = [
 name = "redshirt-random-hosted"
 version = "0.1.0"
 dependencies = [
+ "atomic 0.5.0",
  "futures",
  "rand",
  "redshirt-core",
@@ -2114,6 +2116,7 @@ name = "redshirt-tcp-hosted"
 version = "0.1.0"
 dependencies = [
  "async-std",
+ "atomic 0.5.0",
  "fnv 1.0.7",
  "futures",
  "parity-scale-codec",
@@ -2139,6 +2142,7 @@ dependencies = [
 name = "redshirt-time-hosted"
 version = "0.1.0"
 dependencies = [
+ "atomic 0.5.0",
  "futures",
  "futures-timer",
  "lazy_static",
