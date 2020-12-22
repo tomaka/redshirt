@@ -328,7 +328,7 @@ impl Interpreter {
 
     /// Same as [`Interpreter::run_one`] but doesn't care about any `REP`/`REPE`/`REPNE` prefix.
     fn run_one_no_rep(&mut self, instruction: &iced_x86::Instruction) -> Result<(), Error> {
-        if instruction.is_protected_mode() {
+        if !instruction.op_code().mode16() {
             return Err(Error::InvalidInstruction);
         }
 

@@ -7,10 +7,10 @@ edition = "2018"
 publish = false
 
 [dependencies]
-futures = "0.3.7"
+futures = "0.3.8"
 redshirt-ethernet-interface = { path = "../../interfaces/ethernet" }
 redshirt-hardware-interface = { path = "../../interfaces/hardware" }
 redshirt-pci-interface = { path = "../../interfaces/pci" }
 redshirt-syscalls = { path = "../../interfaces/syscalls" }
 redshirt-time-interface = { path = "../../interfaces/time" }
-smallvec = "1.4.2"
+smallvec = "1.5.0"
