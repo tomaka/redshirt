@@ -10,7 +10,7 @@ publish = false
 derive_more = "0.99.11"
 fnv = { git = "https://github.com/dflemstr/rust-fnv", default-features = false }    # TODO: https://github.com/servo/rust-fnv/pull/22
 hashbrown = { version = "0.9.1", default-features = false }
-iced-x86 = { version = "1.9.1", default-features = false, features = ["decoder", "instr_info", "op_code_info", "std"] }
+iced-x86 = { version = "1.10.0", default-features = false, features = ["decoder", "instr_info", "op_code_info", "std"] }
 lazy_static = "1"
 log = "0.4"
 redshirt-hardware-interface = { path = "../../interfaces/hardware" }
