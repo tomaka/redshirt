@@ -73,7 +73,7 @@ async fn async_main() {
                                         if let Some(vo) = video_outputs.iter_mut().find(|vo| vo.pid == emitter_pid && vo.id == id) {
                                             vo.next_frame_messages.push_back(message_id)
                                         } else {
-                                            redshirt_syscalls::emit_message_error(message_id);
+                                            redshirt_interface_interface::emit_message_error(message_id);
                                         }
                                     }
                                 }

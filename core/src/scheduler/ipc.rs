@@ -122,17 +122,6 @@ pub enum CoreRunOutcome {
         /// Id of the program that has stopped.
         pid: Pid,
 
-        /// List of messages allocated using [`Core::allocate_message_answerer`] that the process
-        /// was responsible for answering.
-        ///
-        /// One should treat the messages in this list as if a [`CoreRunOutcome::AnsweredMessage`]
-        /// with `answer` equal to `Err(())` had been emitted for each of them.
-        ///
-        /// > **Note**: Messages passed to [`Core::accept_interface_message_answerer`] are *not*
-        /// >           in this list. The emitter of the message is directly informed of the
-        /// >           message failing.
-        unanswered_messages: Vec<MessageId>,
-
         /// How the program ended. If `Ok`, it has gracefully terminated. If `Err`, something
         /// bad happened.
         // TODO: force Ok to i32?
@@ -210,7 +199,6 @@ impl<TExt: Extrinsics> Core<TExt> {
             } => {
                 Some(CoreRunOutcome::ProgramFinished {
                     pid,
-                    unanswered_messages: Vec::new(), // TODO:
                     outcome,
                 })
             }
@@ -221,9 +209,11 @@ impl<TExt: Extrinsics> Core<TExt> {
             }
 
             extrinsics::RunOneOutcome::ThreadWaitNotification(thread) => {
-                // We immediately try to resume the thread with a notification.
+                // Immediately try to resume the thread in case a suitable notification is
+                // available.
                 if let Err(thread) = try_resume_notification_wait_thread(thread) {
-                    // If the thread couldn't be resumed, we add it to a list for later.
+                    // The thread couldn't be resumed. Add it to a list for later.
+                    // TODO: racy! a notification can be pushed during this little interval
                     let tid = thread.tid();
                     thread
                         .process_user_data()
@@ -312,9 +302,9 @@ impl<TExt: Extrinsics> Core<TExt> {
     /// Might panic if the message is in the wrong state.
     ///
     pub fn reject_immediate_interface_message(&self, message_id: MessageId) {
-        let (pid, tid) = match self.pending_accept_messages.lock().remove(&message_id) {
+        let (_, tid) = match self.pending_accept_messages.lock().remove(&message_id) {
             Some(v) => v,
-            None => return,
+            None => return, // Process might have been killed in-between.
         };
 
         match self.processes.interrupted_thread_by_id(tid) {
@@ -338,11 +328,6 @@ impl<TExt: Extrinsics> Core<TExt> {
     /// Set the answer to a message previously passed to [`Core::accept_interface_message`].
     // TODO: better API
     pub fn answer_message(&self, message_id: MessageId, response: Result<EncodedMessage, ()>) {
-        self.answer_message_inner(message_id, response);
-    }
-
-    /// Common function for answering a message.
-    fn answer_message_inner(&self, message_id: MessageId, response: Result<EncodedMessage, ()>) {
         let emitter_pid = match self.pending_answer_messages.lock().remove(&message_id) {
             Some(pid) => pid,
             None => return,

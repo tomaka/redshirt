@@ -19,7 +19,7 @@
 
 extern crate alloc;
 
-use core::num::NonZeroU64;
+use core::{mem, num::NonZeroU64};
 use futures::prelude::*;
 use redshirt_syscalls::{Encode, EncodedMessage, InterfaceHash, MessageId};
 
@@ -59,11 +59,10 @@ pub async fn register_interface(
 }
 
 /// Registered interface.
-// TODO: unregister it if dropped? unregistrations aren't supported at the moment
 pub struct Registration {
     /// Identifier of the interface registration.
     id: NonZeroU64,
-    /// Futures that will resolve when we receive a message on the interface.
+    /// Futures that will resolve when a message is received on the interface.
     messages: stream::FuturesOrdered<redshirt_syscalls::MessageResponseFuture<EncodedMessage>>,
 }
 
@@ -84,6 +83,15 @@ impl Registration {
                 .unwrap();
             redshirt_syscalls::message_response(msg_id)
         });
+    }
+}
+
+impl Drop for Registration {
+    fn drop(&mut self) {
+        // Before dropping the registration, cancel all existing messages.
+        let _ = mem::take(&mut self.messages);
+
+        // TODO: unregister; unregistrations aren't supported at the moment
     }
 }
 
