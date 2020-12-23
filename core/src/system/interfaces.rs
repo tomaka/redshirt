@@ -13,14 +13,15 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+// TODO: doc
+
 use alloc::collections::VecDeque;
-use core::{
-    convert::TryFrom as _, mem, num::NonZeroU64,
-};
+use core::{convert::TryFrom as _, mem, num::NonZeroU64};
 use hashbrown::{hash_map::Entry, HashMap};
 use redshirt_syscalls::{InterfaceHash, MessageId, Pid};
 
 pub struct Interfaces {
+    // TODO: do something smarter than a spinning lock?
     inner: spinning_top::Spinlock<Inner>,
 }
 
@@ -52,6 +53,7 @@ enum Interface {
 
 #[derive(Debug)]
 struct InterfaceRegistration {
+    interface: InterfaceHash,
     pid: Pid,
     is_native: bool,
     /// Messages of type `NextMessage` sent on the interface interface and that must be answered
@@ -73,6 +75,7 @@ impl Interfaces {
                     // generated registration IDs to never be equal to 0.
                     let mut registrations = slab::Slab::default();
                     let _id = registrations.insert(InterfaceRegistration {
+                        interface: InterfaceHash::from_raw_hash(Default::default()),
                         pid: 0xdeadbeef.into(), // TODO: ?!
                         is_native: true,
                         queries: VecDeque::new(),
@@ -110,6 +113,7 @@ impl Interfaces {
                     debug_assert!(registration.pending_accept.is_empty());
                     EmitInterfaceMessage::Deliver(MessageDelivery {
                         to_deliver_message_id: message_id,
+                        interface: registration.interface.clone(),
                         needs_answer,
                         query_message_id,
                         recipient_pid: registration.pid,
@@ -163,6 +167,7 @@ impl Interfaces {
                     debug_assert!(registration.queries.is_empty());
                     Ok(Some(MessageDelivery {
                         to_deliver_message_id: msg,
+                        interface: registration.interface.clone(),
                         needs_answer,
                         query_message_id,
                         recipient_pid: registration.pid,
@@ -196,6 +201,7 @@ impl Interfaces {
 
         match interfaces.interfaces.entry(interface_hash) {
             Entry::Occupied(mut entry) => {
+                let interface = entry.key().clone();
                 match entry.get_mut() {
                     Interface::Registered(_) =>
                         Err(redshirt_interface_interface::ffi::InterfaceRegisterError::AlreadyRegistered),
@@ -203,6 +209,7 @@ impl Interfaces {
                         let id = interfaces.registrations.insert(InterfaceRegistration {
                             pid,
                             is_native,
+                            interface,
                             queries: VecDeque::with_capacity(16),  // TODO: be less magic with capacity
                             pending_accept: mem::take(pending_accept),
                         });
@@ -215,6 +222,7 @@ impl Interfaces {
                 let id = interfaces.registrations.insert(InterfaceRegistration {
                     pid,
                     is_native,
+                    interface: entry.key().clone(),
                     queries: VecDeque::with_capacity(16), // TODO: be less magic with capacity
                     pending_accept: VecDeque::with_capacity(16), // TODO: be less magic with capacity
                 });
@@ -235,6 +243,9 @@ impl Default for Interfaces {
 pub struct MessageDelivery {
     /// Identifier of the message to be delivered.
     pub to_deliver_message_id: MessageId,
+    /// Registered interface the message concerns.
+    // TODO: is this needed? programs should be able to deduce this from the message id
+    pub interface: InterfaceHash,
     /// True if the message in `to_deliver_message_id` expects an answer.
     pub needs_answer: bool,
     pub query_message_id: MessageId,

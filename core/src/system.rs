@@ -30,11 +30,10 @@ use crate::scheduler::{Core, CoreBuilder, CoreRunOutcome, NewErr};
 use crate::InterfaceHash;
 
 mod interfaces;
+mod pending_answers;
 
 use alloc::{collections::VecDeque, format, vec::Vec};
-use core::{
-    convert::TryFrom as _, fmt, iter, num::NonZeroU64, sync::atomic::Ordering, task::Poll,
-};
+use core::{convert::TryFrom as _, fmt, iter, num::NonZeroU64, sync::atomic::Ordering, task::Poll};
 use crossbeam_queue::SegQueue;
 use futures::prelude::*;
 use hashbrown::{HashMap, HashSet};
@@ -52,6 +51,9 @@ pub struct System<'a, TExtr: extrinsics::Extrinsics> {
 
     /// For each interface, which program is fulfilling it.
     interfaces: interfaces::Interfaces,
+
+    /// Collection of messages that have been delivered but are waiting to be answered.
+    pending_answers: pending_answers::PendingAnswers,
 
     /// Total number of processes that have been spawned since initialization.
     num_processes_started: atomic::Atomic<u64>,
@@ -247,27 +249,10 @@ where
                                             emitter_pid,
                                         ) {
                                             Ok(Some(delivery)) => {
-                                                let (emitter_pid, message) =
-                                                    match self.core.accept_interface_message(
-                                                        delivery.to_deliver_message_id,
-                                                    ) {
-                                                        Some(msg) => msg,
-                                                        None => continue,
-                                                    };
-
-                                                let answer =
-                                                    redshirt_interface_interface::ffi::build_interface_notification(
-                                                        &interface,
-                                                        if delivery.needs_answer { Some(delivery.to_deliver_message_id) } else { None },
-                                                        emitter_pid,
-                                                        &message,
-                                                    );
-
                                                 debug_assert!(delivery.recipient_is_native);
-                                                self.native_programs.message_response(
-                                                    delivery.query_message_id,
-                                                    Ok(EncodedMessage(answer.into_bytes())),
-                                                );
+                                                if self.deliver(delivery).is_err() {
+                                                    continue;
+                                                }
                                             }
                                             Ok(None) => {}
                                             Err(()) => {
@@ -337,6 +322,10 @@ where
                 // TODO: cancel interface registrations ; update loader_registration_id
                 // TODO: notify interface registrations of process destruction
 
+                for _message_id in self.pending_answers.drain_by_answerer(&pid) {
+                    // TODO: notify emitter of cancellation
+                }
+
                 if outcome.is_ok() {
                     self.num_processes_finished.fetch_add(1, Ordering::Relaxed);
                 } else {
@@ -390,26 +379,10 @@ where
                                     pid,
                                 ) {
                                     Ok(Some(delivery)) => {
-                                        let (emitter_pid, message) =
-                                            match self.core.accept_interface_message(
-                                                delivery.to_deliver_message_id,
-                                            ) {
-                                                Some(v) => v,
-                                                None => continue,
-                                            };
-                                        let answer =
-                                            redshirt_interface_interface::ffi::build_interface_notification(
-                                                &interface,
-                                                if delivery.needs_answer { Some(delivery.to_deliver_message_id) } else { None },
-                                                emitter_pid,
-                                                &message,
-                                            );
-
                                         debug_assert!(!delivery.recipient_is_native);
-                                        self.core.answer_message(
-                                            message_id,
-                                            Ok(EncodedMessage(answer.into_bytes())),
-                                        );
+                                        if self.deliver(delivery).is_err() {
+                                            continue;
+                                        }
                                     }
                                     Ok(None) => {}
                                     Err(()) => {
@@ -427,6 +400,20 @@ where
                         answered_message_id,
                         answer_bytes,
                     )) => {
+                        // TODO: handle errors here
+                        // TODO: handle `needs_answer` equal true?
+                        if self
+                            .pending_answers
+                            .remove(&answered_message_id, &pid)
+                            .is_ok()
+                        {
+                            // TODO: must handle emitter is native
+                            self.core.answer_message(
+                                answered_message_id,
+                                answer_bytes.map(EncodedMessage),
+                            );
+                        }
+
                         // TODO: reimplement
                         /*if self.loading_programs.lock().remove(&message_id) {
                             let redshirt_loader_interface::ffi::LoadResponse { result } =
@@ -439,10 +426,7 @@ where
                                 Ok(_) => {}
                                 Err(_) => panic!(),
                             }
-                        } else {
-                            self.native_programs.message_response(message_id, answer);
                         }*/
-                        todo!()
                     }
                     Err(_) => {
                         if needs_answer {
@@ -496,36 +480,9 @@ where
                     immediate,
                 ) {
                     interfaces::EmitInterfaceMessage::Deliver(delivery) => {
-                        let (_, message) = match self
-                            .core
-                            .accept_interface_message(delivery.to_deliver_message_id)
-                        {
-                            Some(v) => v,
-                            None => todo!(), // TODO: ouch, that is complex
-                        };
-
-                        let answer =
-                            redshirt_interface_interface::ffi::build_interface_notification(
-                                &interface,
-                                if delivery.needs_answer {
-                                    Some(delivery.to_deliver_message_id)
-                                } else {
-                                    None
-                                },
-                                pid,
-                                &message,
-                            );
-
-                        if delivery.recipient_is_native {
-                            self.native_programs.message_response(
-                                delivery.query_message_id,
-                                Ok(EncodedMessage(answer.into_bytes())),
-                            );
-                        } else {
-                            self.core.answer_message(
-                                delivery.query_message_id,
-                                Ok(EncodedMessage(answer.into_bytes())),
-                            );
+                        match self.deliver(delivery) {
+                            Ok(()) => {}
+                            Err(()) => todo!(), // TODO: ouch, that is complex
                         }
                     }
                     interfaces::EmitInterfaceMessage::Reject => {
@@ -567,6 +524,51 @@ where
         }
 
         result
+    }
+
+    /// Applies an [`interfaces::MessageDelivery`].
+    ///
+    /// Returns `Ok` if the message still exists, or an error if the message to deliver was no
+    /// longer valid.
+    fn deliver(&self, delivery: interfaces::MessageDelivery) -> Result<(), ()> {
+        let (emitter_pid, message) = match self
+            .core
+            .accept_interface_message(delivery.to_deliver_message_id)
+        {
+            Some(v) => v,
+            None => return Err(()),
+        };
+
+        let notification = redshirt_interface_interface::ffi::build_interface_notification(
+            &delivery.interface,
+            if delivery.needs_answer {
+                Some(delivery.to_deliver_message_id)
+            } else {
+                None
+            },
+            emitter_pid,
+            &message,
+        );
+
+        // The message is added to `pending_answers` before being actually delivered, in order to
+        // avoid a situation where the recipient manages to answer the message before it is added
+        // to `pending_answers`.
+        self.pending_answers
+            .add(delivery.to_deliver_message_id, delivery.recipient_pid);
+
+        if delivery.recipient_is_native {
+            self.native_programs.message_response(
+                delivery.query_message_id,
+                Ok(EncodedMessage(notification.into_bytes())),
+            );
+        } else {
+            self.core.answer_message(
+                delivery.query_message_id,
+                Ok(EncodedMessage(notification.into_bytes())),
+            );
+        }
+
+        Ok(())
     }
 }
 
@@ -721,6 +723,7 @@ where
             core,
             load_source_virtual_pid: self.load_source_virtual_pid,
             interfaces: Default::default(),
+            pending_answers: Default::default(),
             num_processes_started: atomic::Atomic::new(num_processes_started),
             num_processes_finished: atomic::Atomic::new(0),
             num_processes_trap: atomic::Atomic::new(0),
