@@ -262,14 +262,14 @@ impl<TExt: Extrinsics> Core<TExt> {
     ///
     /// If the message [expects an answer](`CoreRunOutcome::InterfaceMessage::needs_answer`), it
     /// must later be answered with [`Core::answer_message`].
-    pub fn accept_interface_message(&self, message_id: MessageId) -> (Pid, EncodedMessage) {
-        // TODO: shouldn't unwrap if the process is already dead, but then what to return?
-
+    ///
+    /// Returns `None` if the message doesn't exist or no longer exists, which can typically
+    /// happen if the program has been aborted in parallel.
+    pub fn accept_interface_message(&self, message_id: MessageId) -> Option<(Pid, EncodedMessage)> {
         let (pid, tid) = self
             .pending_accept_messages
             .lock()
-            .remove(&message_id)
-            .unwrap();
+            .remove(&message_id)?;
 
         self.pending_answer_messages.lock().insert(message_id, pid);
 
@@ -281,7 +281,7 @@ impl<TExt: Extrinsics> Core<TExt> {
                     thread.accept_emit(None)
                 };
 
-                (pid, message)
+                Some((pid, message))
             }
             _ => unreachable!(),
         }
