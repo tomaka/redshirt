@@ -266,10 +266,7 @@ impl<TExt: Extrinsics> Core<TExt> {
     /// Returns `None` if the message doesn't exist or no longer exists, which can typically
     /// happen if the program has been aborted in parallel.
     pub fn accept_interface_message(&self, message_id: MessageId) -> Option<(Pid, EncodedMessage)> {
-        let (pid, tid) = self
-            .pending_accept_messages
-            .lock()
-            .remove(&message_id)?;
+        let (pid, tid) = self.pending_accept_messages.lock().remove(&message_id)?;
 
         self.pending_answer_messages.lock().insert(message_id, pid);
 

@@ -50,7 +50,9 @@ async fn async_main() {
         };
 
         let msg = match event {
-            future::Either::Left(redshirt_interface_interface::DecodedInterfaceOrDestroyed::Interface(m)) => m,
+            future::Either::Left(
+                redshirt_interface_interface::DecodedInterfaceOrDestroyed::Interface(m),
+            ) => m,
             future::Either::Left(
                 redshirt_interface_interface::DecodedInterfaceOrDestroyed::ProcessDestroyed(_),
             ) => continue,
@@ -59,7 +61,8 @@ async fn async_main() {
                     registration = redshirt_interface_interface::register_interface(
                         redshirt_loader_interface::ffi::INTERFACE,
                     )
-                    .await.ok();
+                    .await
+                    .ok();
                 }
                 continue;
             }

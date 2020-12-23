@@ -412,17 +412,17 @@ impl<'a> NativeProgramRef<'a> for &'a FramebufferHandler {
                     self.to_context
                         .unbounded_send(HandlerToContext::ProcessDestroyed(n.pid))
                         .unwrap(); // TODO: document the behaviour of this unwrap()
-                    return
-                },
+                    return;
+                }
             };
 
         self.to_context
-        .unbounded_send(HandlerToContext::InterfaceMessage {
-            emitter_pid: notification.emitter_pid,
-            message_id: notification.message_id,
-            message: notification.actual_data,
-        })
-        .unwrap(); // TODO: document the behaviour of this unwrap()
+            .unbounded_send(HandlerToContext::InterfaceMessage {
+                emitter_pid: notification.emitter_pid,
+                message_id: notification.message_id,
+                message: notification.actual_data,
+            })
+            .unwrap(); // TODO: document the behaviour of this unwrap()
     }
 }
 

@@ -104,7 +104,8 @@ pub fn emit_answer(message_id: MessageId, msg: impl Encode) {
             redshirt_syscalls::emit_message_without_response(
                 &ffi::INTERFACE,
                 ffi::InterfaceMessage::Answer(message_id, Ok(msg.encode().0)),
-            ).unwrap()
+            )
+            .unwrap()
         }
     }
     #[cfg(not(target_arch = "wasm32"))]
@@ -123,7 +124,8 @@ pub fn emit_message_error(message_id: MessageId) {
             redshirt_syscalls::emit_message_without_response(
                 &ffi::INTERFACE,
                 ffi::InterfaceMessage::Answer(message_id, Err(())),
-            ).unwrap()
+            )
+            .unwrap()
         }
     }
     #[cfg(not(target_arch = "wasm32"))]

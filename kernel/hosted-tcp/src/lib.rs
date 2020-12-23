@@ -213,7 +213,8 @@ impl<'a> NativeProgramRef<'a> for &'a TcpHandler {
                                     remote_port: 0,    // FIXME:
                                 }),
                             }
-                            .encode().0),
+                            .encode()
+                            .0),
                         )
                         .encode(),
                     };
@@ -235,9 +236,11 @@ impl<'a> NativeProgramRef<'a> for &'a TcpHandler {
                         message_id_write: None,
                         message: redshirt_interface_interface::ffi::InterfaceMessage::Answer(
                             open_message_id,
-                            Ok(redshirt_tcp_interface::ffi::TcpOpenResponse {
-                                result: Err(()),
-                            }.encode().0),
+                            Ok(
+                                redshirt_tcp_interface::ffi::TcpOpenResponse { result: Err(()) }
+                                    .encode()
+                                    .0,
+                            ),
                         )
                         .encode(),
                     };
@@ -249,7 +252,9 @@ impl<'a> NativeProgramRef<'a> for &'a TcpHandler {
                         message_id_write: None,
                         message: redshirt_interface_interface::ffi::InterfaceMessage::Answer(
                             message_id,
-                            Ok(redshirt_tcp_interface::ffi::TcpReadResponse { result }.encode().0),
+                            Ok(redshirt_tcp_interface::ffi::TcpReadResponse { result }
+                                .encode()
+                                .0),
                         )
                         .encode(),
                     };
@@ -261,7 +266,10 @@ impl<'a> NativeProgramRef<'a> for &'a TcpHandler {
                         message_id_write: None,
                         message: redshirt_interface_interface::ffi::InterfaceMessage::Answer(
                             message_id,
-                            Ok(redshirt_tcp_interface::ffi::TcpWriteResponse { result }.encode().encode().0),
+                            Ok(redshirt_tcp_interface::ffi::TcpWriteResponse { result }
+                                .encode()
+                                .encode()
+                                .0),
                         )
                         .encode(),
                     };
@@ -273,7 +281,9 @@ impl<'a> NativeProgramRef<'a> for &'a TcpHandler {
                         message_id_write: None,
                         message: redshirt_interface_interface::ffi::InterfaceMessage::Answer(
                             message_id,
-                            Ok(redshirt_tcp_interface::ffi::TcpCloseResponse { result }.encode().0),
+                            Ok(redshirt_tcp_interface::ffi::TcpCloseResponse { result }
+                                .encode()
+                                .0),
                         )
                         .encode(),
                     };
@@ -320,8 +330,8 @@ impl<'a> NativeProgramRef<'a> for &'a TcpHandler {
                 redshirt_interface_interface::DecodedInterfaceOrDestroyed::Interface(n) => n,
                 _ => {
                     // TODO: implement
-                    return
-                },
+                    return;
+                }
             };
 
         let message = match ffi::TcpMessage::decode(notification.actual_data) {
