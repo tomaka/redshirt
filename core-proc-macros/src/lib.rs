@@ -158,7 +158,7 @@ pub fn build_wasm_module(tokens: proc_macro::TokenStream) -> proc_macro::TokenSt
             let target = bin_targets_iter.next().unwrap();
             if bin_targets_iter.next().is_some() {
                 return format!(
-                    "Multiple binary targets available, please mention the one you want:\n\n{}",
+                    "compile_error!(\"Multiple binary targets available, please mention the one you want:\n{}\")",
                     package
                         .targets
                         .iter()
