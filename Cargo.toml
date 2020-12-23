@@ -7,7 +7,6 @@ members = [
     "kernel/hosted-log",
     "kernel/hosted-random",
     "kernel/hosted-tcp",
-    "kernel/hosted-time",
     "kernel/standalone",
     "interfaces/ethernet",
     "interfaces/framebuffer",
