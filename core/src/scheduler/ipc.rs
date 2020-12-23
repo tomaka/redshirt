@@ -28,7 +28,6 @@ use alloc::vec::Vec;
 use crossbeam_queue::SegQueue;
 use hashbrown::{hash_map::Entry, HashMap};
 use redshirt_syscalls::{EncodedMessage, MessageId, Pid, ThreadId};
-use smallvec::SmallVec;
 use spinning_top::Spinlock;
 
 mod notifications_queue;
@@ -131,13 +130,11 @@ pub enum CoreRunOutcome {
 
     /// A process wants to emit a message on an interface.
     ///
-    /// If the `needs_answer` is `true`, you must call
-    /// [`CoreRunOutcome::accept_interface_message`] or
-    /// [`Core::accept_interface_message_answerer`]. If `needs_answer` is false, you must call
-    /// [`Core::accept_interface_message`].
+    /// If `immediate` is `true`, either [`Core::accept_interface_message`]
+    /// or [`Core::reject_immediate_interface_message`] should be called as soon as possible.
     ///
-    /// If `immediate` is true, you can additionally call
-    /// [`Core::reject_immediate_interface_message`].
+    /// If `immediate` is `false`, [`Core::accept_interface_message`] must be called,
+    /// but this can be delayed indefinitely.
     InterfaceMessage {
         /// Id of the program that has emitted the message.
         pid: Pid,
@@ -148,6 +145,8 @@ pub enum CoreRunOutcome {
         message_id: MessageId,
         /// True if the message is expecting an answer.
         needs_answer: bool,
+        /// True if the caller requires an immediate answer by calling either
+        /// [`Core::accept_interface_message`] or [`Core::reject_immediate_interface_message`].
         immediate: bool,
         /// Which interface the message has been emitted on.
         interface: InterfaceHash,
@@ -191,16 +190,8 @@ impl<TExt: Extrinsics> Core<TExt> {
         // issues. Feel free to try to remove it if you manage.
         let run_outcome = self.processes.run().await;
         match run_outcome {
-            extrinsics::RunOneOutcome::ProcessFinished {
-                pid,
-                outcome,
-                dead_threads: _,
-                user_data,
-            } => {
-                Some(CoreRunOutcome::ProgramFinished {
-                    pid,
-                    outcome,
-                })
+            extrinsics::RunOneOutcome::ProcessFinished { pid, outcome, .. } => {
+                Some(CoreRunOutcome::ProgramFinished { pid, outcome })
             }
 
             extrinsics::RunOneOutcome::ThreadFinished { .. } => {
@@ -267,7 +258,10 @@ impl<TExt: Extrinsics> Core<TExt> {
     }
 
     /// After [`CoreRunOutcome::InterfaceMessage`] is generated, use this method to accept the
-    /// message. The message must later be answered with [`Core::answer_message`].
+    /// message and resume the thread that is emitting the message.
+    ///
+    /// If the message [expects an answer](`CoreRunOutcome::InterfaceMessage::needs_answer`), it
+    /// must later be answered with [`Core::answer_message`].
     pub fn accept_interface_message(&self, message_id: MessageId) -> (Pid, EncodedMessage) {
         // TODO: shouldn't unwrap if the process is already dead, but then what to return?
 
@@ -326,11 +320,18 @@ impl<TExt: Extrinsics> Core<TExt> {
     }
 
     /// Set the answer to a message previously passed to [`Core::accept_interface_message`].
+    ///
+    /// This pushes a notification to the process.
     // TODO: better API
     pub fn answer_message(&self, message_id: MessageId, response: Result<EncodedMessage, ()>) {
         let emitter_pid = match self.pending_answer_messages.lock().remove(&message_id) {
             Some(pid) => pid,
-            None => return,
+            None => {
+                // Should happen if and only if the process that emitted the message has been
+                // aborted. MessageIds are never reused, therefore guaranteeing that this answer
+                // cannot reach the wrong message by accident.
+                return;
+            }
         };
 
         if let Some(process) = self.processes.process_by_id(emitter_pid) {
