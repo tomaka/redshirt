@@ -38,16 +38,9 @@
 //!
 //! # Interface handling
 //!
-//! If your program is registered as an interface handler (using the `interface` interface, not
-//! covered here), it needs to emit messages which will be answered by the messages received on
-//! that interface.
-//!
-//! The received message can later be optionally be answered using the [`emit_answer`] function.
-//! If the mesage is malformed, you can also use the [`emit_message_error`] function.
-//!
-//! There is no way for an interface handler to pro-actively send data to a process. Communication
-//! can only be done as a response to a message. This must be taken into account when designing
-//! interfaces.
+//! A program can register itself as an interface handler. This can be done by sending a message
+//! on a special-cased interface, called the "interface" interface. This is out of scoope of this
+//! crate. See the `redshirt_interface_interface` crate instead.
 //!
 //! # About threads
 //!
