@@ -58,7 +58,7 @@ impl NotificationsQueue {
             // We use a dummy value here and fill it up later when actually delivering the notif.
             0,
             match &response {
-                Ok(r) => Ok(r),
+                Ok(r) => Ok(From::from(r)),
                 Err(()) => Err(()),
             },
         );

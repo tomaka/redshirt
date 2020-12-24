@@ -34,6 +34,7 @@ pub trait Decode {
     type Error: fmt::Debug;
 
     /// Decode the raw data passed as parameter.
+    // TODO: consider EncodedMessageRef?
     fn decode(buffer: EncodedMessage) -> Result<Self, Self::Error>
     where
         Self: Sized;
@@ -79,7 +80,47 @@ where
     }
 }
 
+impl<'a> From<EncodedMessageRef<'a>> for EncodedMessage {
+    fn from(msg: EncodedMessageRef<'a>) -> Self {
+        EncodedMessage(msg.0.into())
+    }
+}
+
+impl AsRef<[u8]> for EncodedMessage {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
 impl fmt::Debug for EncodedMessage {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Debug::fmt(&self.0, f)
+    }
+}
+
+/// Reference to an [`EncodedMessage`].
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub struct EncodedMessageRef<'a>(&'a [u8]);
+
+impl<'a> From<&'a [u8]> for EncodedMessageRef<'a> {
+    fn from(buf: &'a [u8]) -> EncodedMessageRef<'a> {
+        EncodedMessageRef(buf)
+    }
+}
+
+impl<'a> AsRef<[u8]> for EncodedMessageRef<'a> {
+    fn as_ref(&self) -> &[u8] {
+        self.0
+    }
+}
+
+impl<'a> From<&'a EncodedMessage> for EncodedMessageRef<'a> {
+    fn from(msg: &'a EncodedMessage) -> Self {
+        EncodedMessageRef(&msg.0)
+    }
+}
+
+impl<'a> fmt::Debug for EncodedMessageRef<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(&self.0, f)
     }

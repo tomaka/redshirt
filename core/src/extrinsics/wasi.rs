@@ -19,7 +19,7 @@
 // https://github.com/WebAssembly/wasi-libc/blob/e1149ab0677317c6c981bcbb5e4c159e4d2b9669/libc-bottom-half/headers/public/wasi/api.h
 
 use crate::extrinsics::{Extrinsics, ExtrinsicsAction, ExtrinsicsMemoryAccess, SupportedExtrinsic};
-use crate::{sig, Encode as _, EncodedMessage, ThreadId, WasmValue};
+use crate::{sig, Encode as _, EncodedMessage, EncodedMessageRef, ThreadId, WasmValue};
 
 use alloc::{
     borrow::Cow,
@@ -351,13 +351,14 @@ impl Extrinsics for WasiExtrinsics {
     fn inject_message_response(
         &self,
         ctxt: &mut Self::Context,
-        response: Option<EncodedMessage>,
+        response: Option<EncodedMessageRef>,
         mem_access: &mut impl ExtrinsicsMemoryAccess,
     ) -> ExtrinsicsAction {
         match ctxt.0 {
             ContextInner::WaitClockVal { out_ptr } => {
                 let response = response.unwrap();
-                let value: u128 = match response.decode() {
+                // TODO: extra copy
+                let value: u128 = match EncodedMessage::from(response).decode() {
                     Ok(v) => v,
                     Err(_) => return ExtrinsicsAction::ProgramCrash,
                 };
@@ -377,8 +378,9 @@ impl Extrinsics for WasiExtrinsics {
                 mut remaining_len,
             } => {
                 let response = response.unwrap();
+                // TODO: extra copy
                 let value: redshirt_random_interface::ffi::GenerateResponse =
-                    match response.decode() {
+                    match EncodedMessage::from(response).decode() {
                         Ok(v) => v,
                         Err(_) => return ExtrinsicsAction::ProgramCrash,
                     };

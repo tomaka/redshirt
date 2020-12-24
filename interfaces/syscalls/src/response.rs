@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::{Decode, EncodedMessage, MessageId};
+use crate::{ffi, Decode, EncodedMessage, MessageId};
 
 use core::{
     marker::PhantomData,
@@ -27,10 +27,12 @@ use futures::prelude::*;
 /// Returns the undecoded response.
 // TODO: two futures for the same message will compete with each other; document that?
 pub fn message_response_sync_raw(msg_id: MessageId) -> EncodedMessage {
-    crate::block_on::next_notification(&mut [msg_id.into()], true)
+    let notification = crate::block_on::next_notification(&mut [msg_id.into()], true).unwrap();
+    ffi::decode_notification(&notification)
         .unwrap()
         .actual_data
         .unwrap()
+        .into()
 }
 
 /// Returns a future that is ready when a response to the given message comes back.
@@ -72,7 +74,8 @@ where
 
         if let Some(response) = crate::block_on::peek_response(self.msg_id) {
             self.finished = true;
-            return Poll::Ready(Decode::decode(response.actual_data.unwrap()).unwrap());
+            let decoded = ffi::decode_notification(&response).unwrap();
+            return Poll::Ready(Decode::decode(decoded.actual_data.unwrap().into()).unwrap());
             // TODO: don't unwrap here?
         }
 
@@ -85,11 +88,12 @@ where
         // module. But before doing that, we do a peeking syscall to see if a response has already
         // arrived. This makes it possible for code such as `future.now_or_never()` to work.
         if let Some(notif) = crate::block_on::next_notification(&mut [self.msg_id.into()], false) {
-            debug_assert_eq!(notif.index_in_list, 0);
-            debug_assert_eq!(notif.message_id, self.msg_id);
+            let decoded = ffi::decode_notification(&notif).unwrap();
+            debug_assert_eq!(decoded.index_in_list, 0);
+            debug_assert_eq!(decoded.message_id, self.msg_id);
 
             self.finished = true;
-            return Poll::Ready(Decode::decode(notif.actual_data.unwrap()).unwrap());
+            return Poll::Ready(Decode::decode(decoded.actual_data.unwrap().into()).unwrap());
             // TODO: don't unwrap here?
         }
 
