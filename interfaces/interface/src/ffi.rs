@@ -71,12 +71,11 @@ pub fn build_interface_notification(
     emitter_pid: Pid,
     actual_data: &EncodedMessage,
 ) -> InterfaceNotificationBuilder {
-    let mut buffer = Vec::with_capacity(1 + 32 + 8 + 8 + 4 + actual_data.0.len());
+    let mut buffer = Vec::with_capacity(1 + 32 + 8 + 8 + actual_data.0.len());
     buffer.push(0);
     buffer.extend_from_slice(interface.as_ref());
     buffer.extend_from_slice(&message_id.map(u64::from).unwrap_or(0).to_le_bytes());
     buffer.extend_from_slice(&u64::from(emitter_pid).to_le_bytes());
-    buffer.extend_from_slice(&0u32.to_le_bytes()); // TODO: remove field entirely
     buffer.extend_from_slice(&actual_data.0);
 
     debug_assert_eq!(buffer.capacity(), buffer.len());
@@ -116,7 +115,7 @@ impl InterfaceNotificationBuilder {
 }
 
 pub fn decode_interface_notification(buffer: &[u8]) -> Result<DecodedInterfaceNotification, ()> {
-    if buffer.len() < 1 + 32 + 8 + 8 + 4 {
+    if buffer.len() < 1 + 32 + 8 + 8 {
         return Err(());
     }
 
@@ -142,7 +141,7 @@ pub fn decode_interface_notification(buffer: &[u8]) -> Result<DecodedInterfaceNo
             buffer[41], buffer[42], buffer[43], buffer[44], buffer[45], buffer[46], buffer[47],
             buffer[48],
         ])),
-        actual_data: EncodedMessage(buffer[53..].to_vec()),
+        actual_data: EncodedMessage(buffer[49..].to_vec()),
     })
 }
 
@@ -162,10 +161,9 @@ pub struct DecodedInterfaceNotification {
 }
 
 pub fn build_process_destroyed_notification(pid: Pid) -> ProcessDestroyedNotificationBuilder {
-    let mut buffer = Vec::with_capacity(1 + 8 + 4);
+    let mut buffer = Vec::with_capacity(1 + 8);
     buffer.push(2);
     buffer.extend_from_slice(&u64::from(pid).to_le_bytes());
-    buffer.extend_from_slice(&0u32.to_le_bytes()); // TODO: remove field entirely
 
     debug_assert_eq!(buffer.capacity(), buffer.len());
     ProcessDestroyedNotificationBuilder { data: buffer }
@@ -189,7 +187,7 @@ impl ProcessDestroyedNotificationBuilder {
 pub fn decode_process_destroyed_notification(
     buffer: &[u8],
 ) -> Result<DecodedProcessDestroyedNotification, ()> {
-    if buffer.len() != 1 + 8 + 4 {
+    if buffer.len() != 1 + 8 {
         return Err(());
     }
 
