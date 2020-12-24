@@ -175,41 +175,44 @@ where
                     let mut out = String::new();
 
                     // cpu_idle_seconds_total
-                    out.push_str("# HELP cpu_idle_seconds_total Total number of seconds during which each CPU has been idle.\n");
-                    out.push_str("# TYPE cpu_idle_seconds_total counter\n");
+                    out.push_str("# HELP redshirt_cpu_idle_seconds_total Total number of seconds during which each CPU has been idle.\n");
+                    out.push_str("# TYPE redshirt_cpu_idle_seconds_total counter\n");
                     for (cpu_n, cpu) in self.cpu_busy_counters.iter().enumerate() {
                         let as_secs =
                             cpu.idle_ticks.load(Ordering::Relaxed) as f64 / 1_000_000_000.0;
                         out.push_str(&format!(
-                            "cpu_idle_seconds_total{{cpu=\"{}\"}} {}\n",
+                            "redshirt_cpu_idle_seconds_total{{cpu=\"{}\"}} {}\n",
                             cpu_n, as_secs
                         ));
                     }
                     out.push_str("\n");
 
                     // cpu_busy_seconds_total
-                    out.push_str("# HELP cpu_busy_seconds_total Total number of seconds during which each CPU has been busy.\n");
-                    out.push_str("# TYPE cpu_busy_seconds_total counter\n");
+                    out.push_str("# HELP redshirt_cpu_busy_seconds_total Total number of seconds during which each CPU has been busy.\n");
+                    out.push_str("# TYPE redshirt_cpu_busy_seconds_total counter\n");
                     for (cpu_n, cpu) in self.cpu_busy_counters.iter().enumerate() {
                         let as_secs =
                             cpu.busy_ticks.load(Ordering::Relaxed) as f64 / 1_000_000_000.0;
                         out.push_str(&format!(
-                            "cpu_busy_seconds_total{{cpu=\"{}\"}} {}\n",
+                            "redshirt_cpu_busy_seconds_total{{cpu=\"{}\"}} {}\n",
                             cpu_n, as_secs
                         ));
                     }
                     out.push_str("\n");
 
                     // monotonic_clock
-                    out.push_str("# HELP monotonic_clock Value of the monotonic clock.\n");
-                    out.push_str("# TYPE monotonic_clock counter\n");
-                    out.push_str(&format!("monotonic_clock {}\n", now));
+                    out.push_str("# HELP redshirt_monotonic_clock Value of the monotonic clock.\n");
+                    out.push_str("# TYPE redshirt_monotonic_clock counter\n");
+                    out.push_str(&format!("redshirt_monotonic_clock {}\n", now));
                     out.push_str("\n");
 
                     // num_cpus
-                    out.push_str("# HELP num_cpus Number of CPUs on the machine.\n");
-                    out.push_str("# TYPE num_cpus counter\n");
-                    out.push_str(&format!("num_cpus {}\n", self.cpu_busy_counters.len()));
+                    out.push_str("# HELP redshirt_num_cpus Number of CPUs on the machine.\n");
+                    out.push_str("# TYPE redshirt_num_cpus counter\n");
+                    out.push_str(&format!(
+                        "redshirt_num_cpus {}\n",
+                        self.cpu_busy_counters.len()
+                    ));
                     out.push_str("\n");
 
                     report.respond(&out);

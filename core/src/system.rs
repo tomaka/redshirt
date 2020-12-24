@@ -590,13 +590,13 @@ impl<'a, 'b, TExtr: extrinsics::Extrinsics> KernelDebugMetricsRequest<'a, 'b, TE
 
         // `processes_started_total`
         metrics_bytes.extend_from_slice(
-            b"# HELP processes_started_total Number of processes that have \
+            b"# HELP redshirt_processes_started_total Number of processes that have \
             been spawned since initialization.\n",
         );
-        metrics_bytes.extend_from_slice(b"# TYPE processes_started_total counter\n");
+        metrics_bytes.extend_from_slice(b"# TYPE redshirt_processes_started_total counter\n");
         metrics_bytes.extend_from_slice(
             format!(
-                "processes_started_total {}\n",
+                "redshirt_processes_started_total {}\n",
                 self.system.num_processes_started.load(Ordering::Relaxed)
             )
             .as_bytes(),
@@ -605,20 +605,20 @@ impl<'a, 'b, TExtr: extrinsics::Extrinsics> KernelDebugMetricsRequest<'a, 'b, TE
 
         // `processes_ended_total`
         metrics_bytes.extend_from_slice(
-            b"# HELP processes_ended_total Number of processes that have \
+            b"# HELP redshirt_processes_ended_total Number of processes that have \
             ended, since initialization.\n",
         );
-        metrics_bytes.extend_from_slice(b"# TYPE processes_ended_total counter\n");
+        metrics_bytes.extend_from_slice(b"# TYPE redshirt_processes_ended_total counter\n");
         metrics_bytes.extend_from_slice(
             format!(
-                "processes_ended_total{{reason=\"graceful\"}} {}\n",
+                "redshirt_processes_ended_total{{reason=\"graceful\"}} {}\n",
                 self.system.num_processes_finished.load(Ordering::Relaxed)
             )
             .as_bytes(),
         );
         metrics_bytes.extend_from_slice(
             format!(
-                "processes_ended_total{{reason=\"crash\"}} {}\n",
+                "redshirt_processes_ended_total{{reason=\"crash\"}} {}\n",
                 self.system.num_processes_trap.load(Ordering::Relaxed)
             )
             .as_bytes(),
