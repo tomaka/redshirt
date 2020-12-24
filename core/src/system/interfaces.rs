@@ -146,8 +146,8 @@ impl Interfaces {
     /// belong to. The method verifies that the ownership matches.
     ///
     /// On success, can return a [`MessageDelivery`] representing a delivery of a certain
-    /// message earlier pushed using [`Interfaces::TODO`] to `expected_registrer_pid` by answering
-    /// `query_message_id`.
+    /// message earlier pushed using [`Interfaces::emit_interface_message`] to
+    /// `expected_registrer_pid` by answering `query_message_id`.
     pub fn emit_message_query(
         &self,
         registration_id: RegistrationId,

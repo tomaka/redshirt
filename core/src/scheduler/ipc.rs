@@ -44,17 +44,13 @@ mod waiting_threads;
 ///   "immediate-delivery" flag on, it can then be refused by calling
 ///   [`Core::reject_immediate_interface_message`]. The emitting thread is resumed with an error.
 ///
-/// - Accepted "internally" by calling [`Core::accept_interface_message_answerer`] on a
-///   not-accepted-yet message that expects an answer (in which case the thread that has emitted
-///   the message is resumed), or by calling [`Core::allocate_message_answerer`]. The process
-///   passed as parameter to either method is later responsible for answering that message. In the
-///   case of [`Core::allocate_message_answerer`], this answer is delivered through a
-///   [`CoreRunOutcome::AnsweredMessage`].
+/// - Accepted by calling [`Core::accept_interface_message`] on a not-accepted-yet message. The
+///   thread that has emitted the message is resumed, and, if the message expects an answer, the
+///   user is responsible for later answering the message with [`Core::answer_message`].
 ///
-/// - Accepted "externally" by calling [`Core::accept_interface_message`] on a not-accepted-yet
-///   message. The thread that has emitted the message is resumed, and, if the message expects an
-///   answer, the user is responsible for later answering the message with
-///   [`Core::answer_message`].
+/// - Answer queued. After calling [`Core::answer_message`], the answer to the message is added
+///   to the queue of notifications that the original emitter of the message can receive. Any
+///   thread that is sleeping waiting for notifications is potentially resumed.
 ///
 /// Note that when a program emits a message that doesn't need an answer, this message is assigned
 /// a [`MessageId`] for API-related purposes. This [`MessageId`] isn't expected to ever reach a
@@ -84,7 +80,6 @@ mod waiting_threads;
 // from the fact that he process ID is no longer valid. This wouldn't be possible if process IDs
 // were reused.
 //
-// TODO: finish updating this section ^
 pub struct Core<TExt: Extrinsics> {
     /// Pool of identifiers where `MessageId`s are allocated.
     id_pool: IdPool,
