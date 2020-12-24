@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::{ffi::DecodedNotification, Decode, EncodedMessage, MessageId};
+use crate::{Decode, EncodedMessage, MessageId};
 
 use core::{
     marker::PhantomData,
@@ -27,10 +27,10 @@ use futures::prelude::*;
 /// Returns the undecoded response.
 // TODO: two futures for the same message will compete with each other; document that?
 pub fn message_response_sync_raw(msg_id: MessageId) -> EncodedMessage {
-    match crate::block_on::next_notification(&mut [msg_id.into()], true).unwrap() {
-        DecodedNotification::Response(m) => m.actual_data.unwrap(),
-        _ => panic!(),
-    }
+    crate::block_on::next_notification(&mut [msg_id.into()], true)
+        .unwrap()
+        .actual_data
+        .unwrap()
 }
 
 /// Returns a future that is ready when a response to the given message comes back.
@@ -85,16 +85,11 @@ where
         // module. But before doing that, we do a peeking syscall to see if a response has already
         // arrived. This makes it possible for code such as `future.now_or_never()` to work.
         if let Some(notif) = crate::block_on::next_notification(&mut [self.msg_id.into()], false) {
-            let response = match notif {
-                DecodedNotification::Response(response) => response,
-                _ => unreachable!(),
-            };
-
-            debug_assert_eq!(response.index_in_list, 0);
-            debug_assert_eq!(response.message_id, self.msg_id);
+            debug_assert_eq!(notif.index_in_list, 0);
+            debug_assert_eq!(notif.message_id, self.msg_id);
 
             self.finished = true;
-            return Poll::Ready(Decode::decode(response.actual_data.unwrap()).unwrap());
+            return Poll::Ready(Decode::decode(notif.actual_data.unwrap()).unwrap());
             // TODO: don't unwrap here?
         }
 

@@ -38,16 +38,9 @@
 //!
 //! # Interface handling
 //!
-//! If your program is registered as an interface handler (using the `interface` interface, not
-//! covered here), then it can receive interface messages using the [`next_interface_message`]
-//! function.
-//!
-//! The message can later be optionally be answered using the [`emit_answer`] function. If the
-//! mesage is malformed, you can also use the [`emit_message_error`] function.
-//!
-//! There is no way for an interface handler to pro-actively send data to a process. Communication
-//! can only be done as a response to a message. This must be taken into account when designing
-//! interfaces.
+//! A program can register itself as an interface handler. This can be done by sending a message
+//! on a special-cased interface, called the "interface" interface. This is out of scoope of this
+//! crate. See the `redshirt_interface_interface` crate instead.
 //!
 //! # About threads
 //!
@@ -87,13 +80,7 @@ pub use block_on::block_on;
 pub use emit::{
     cancel_message, emit_message_with_response, emit_message_without_response, MessageBuilder,
 };
-pub use ffi::{
-    DecodedInterfaceNotification, DecodedInterfaceOrDestroyed, DecodedNotification,
-    DecodedResponseNotification,
-};
-pub use interface_message::{
-    emit_answer, emit_message_error, next_interface_message, InterfaceMessageFuture,
-};
+pub use ffi::DecodedNotification;
 pub use response::{message_response, message_response_sync_raw, MessageResponseFuture};
 pub use traits::{Decode, Encode, EncodedMessage};
 
@@ -101,7 +88,6 @@ use core::{cmp::PartialEq, convert::TryFrom, fmt, num::NonZeroU64};
 
 mod block_on;
 mod emit;
-mod interface_message;
 mod response;
 mod traits;
 
@@ -183,7 +169,7 @@ impl MessageId {
     ///
     /// # Safety
     ///
-    /// `id` must not be equal to 0 or 1.
+    /// `id` must not be equal to 0.
     pub unsafe fn from_u64_unchecked(id: u64) -> Self {
         MessageId(NonZeroU64::new_unchecked(id))
     }
@@ -194,7 +180,7 @@ impl TryFrom<u64> for MessageId {
 
     fn try_from(id: u64) -> Result<Self, Self::Error> {
         match id {
-            0 | 1 => Err(InvalidMessageIdErr),
+            0 => Err(InvalidMessageIdErr),
             n => Ok(MessageId(NonZeroU64::new(n).unwrap())),
         }
     }
@@ -204,10 +190,6 @@ impl TryFrom<NonZeroU64> for MessageId {
     type Error = InvalidMessageIdErr;
 
     fn try_from(id: NonZeroU64) -> Result<Self, Self::Error> {
-        if id.get() == 1 {
-            return Err(InvalidMessageIdErr);
-        }
-
         Ok(MessageId(id))
     }
 }
@@ -248,6 +230,12 @@ impl InterfaceHash {
     /// Builds the [`InterfaceHash`] given the raw bytes.
     pub const fn from_raw_hash(hash: [u8; 32]) -> Self {
         InterfaceHash(hash)
+    }
+}
+
+impl AsRef<[u8]> for InterfaceHash {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
     }
 }
 

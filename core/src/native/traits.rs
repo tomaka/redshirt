@@ -14,7 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use core::future::Future;
-use redshirt_syscalls::{EncodedMessage, InterfaceHash, MessageId, Pid};
+use redshirt_syscalls::{EncodedMessage, InterfaceHash, MessageId};
 
 /// Reference to a native program.
 ///
@@ -35,19 +35,6 @@ pub trait NativeProgramRef<'a>: Clone {
 
     /// Returns a `Future` resolving to when the [`NativeProgramRef`] wants to do something.
     fn next_event(self) -> Self::Future;
-
-    /// Notify the [`NativeProgramRef`] that a message has arrived on one of the interface that
-    /// it has registered.
-    fn interface_message(
-        self,
-        interface: InterfaceHash,
-        message_id: Option<MessageId>,
-        emitter_pid: Pid,
-        message: EncodedMessage,
-    );
-
-    /// Notify the [`NativeProgramRef`] that the program with the given [`Pid`] has terminated.
-    fn process_destroyed(self, pid: Pid);
 
     /// Notify the [`NativeProgramRef`] of a response to a message that it has previously emitted.
     fn message_response(self, message_id: MessageId, response: Result<EncodedMessage, ()>);
@@ -73,13 +60,6 @@ pub enum NativeProgramEvent<TMsgIdWrite> {
     CancelMessage {
         /// Message to cancel.
         message_id: MessageId,
-    },
-    /// Answer a message previously received with [`NativeProgramRef::interface_message`].
-    Answer {
-        /// Message to answer.
-        message_id: MessageId,
-        /// Answer to the message. Can be an error if the message is invalid.
-        answer: Result<EncodedMessage, ()>,
     },
 }
 

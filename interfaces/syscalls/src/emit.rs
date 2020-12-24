@@ -19,7 +19,6 @@ use core::{
     fmt,
     marker::PhantomData,
     mem::MaybeUninit,
-    num::NonZeroU64,
     pin::Pin,
     task::{Context, Poll},
 };

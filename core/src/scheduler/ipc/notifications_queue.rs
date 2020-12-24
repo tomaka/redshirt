@@ -14,7 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use crate::scheduler::extrinsics::WaitEntry;
-use crate::{EncodedMessage, InterfaceHash, MessageId, Pid};
+use crate::{EncodedMessage, MessageId};
 
 use alloc::collections::VecDeque;
 use core::convert::TryFrom as _;
@@ -26,9 +26,8 @@ use spinning_top::{Spinlock, SpinlockGuard};
 pub struct NotificationsQueue {
     /// The actual list.
     ///
-    /// The [`DecodedResponseNotification::index_in_list`](redshirt_syscalls::ffi::DecodedResponseNotification::index_in_list)
-    /// and [`DecodedInterfaceNotification::index_in_list`](redshirt_syscalls::ffi::DecodedInterfaceNotification::index_in_list)
-    /// fields are set to a dummy value, and will be filled before actually delivering the
+    /// The [`DecodedNotification::index_in_list`](redshirt_syscalls::ffi::DecodedNotification::index_in_list)
+    /// field is set to a dummy value, and will be filled before actually delivering the
     /// notification.
     // TODO: call shrink_to_fit from time to time
     // TODO: baka Mutex
@@ -52,42 +51,9 @@ impl NotificationsQueue {
         }
     }
 
-    /// Destroys `self` and returns the list of all interface notifications in the queue
-    /// containing a `MessageId`.
-    pub fn into_pending_interface_notifications_messages(self) -> impl Iterator<Item = MessageId> {
-        let notifications_queue = self.notifications_queue.into_inner();
-        notifications_queue.into_iter().filter_map(|notif| {
-            if let NotificationBuilder::Interface(notif) = notif {
-                notif.message_id()
-            } else {
-                None
-            }
-        })
-    }
-
-    /// Adds an interface notification at the end of the queue.
-    pub fn push_interface_notification(
-        &self,
-        interface: &InterfaceHash,
-        message_id: Option<MessageId>,
-        emitter_pid: Pid,
-        message: EncodedMessage,
-    ) {
-        let notif = redshirt_syscalls::ffi::build_interface_notification(
-            &interface,
-            message_id,
-            emitter_pid,
-            // We use a dummy value here and fill it up later when actually delivering the notif.
-            0,
-            &message,
-        );
-
-        self.notifications_queue.lock().push_back(From::from(notif));
-    }
-
-    /// Pushes a response notification at the end of the queue.
-    pub fn push_response(&self, message_id: MessageId, response: Result<EncodedMessage, ()>) {
-        let notif = redshirt_syscalls::ffi::build_response_notification(
+    /// Pushes a notification at the end of the queue.
+    pub fn push(&self, message_id: MessageId, response: Result<EncodedMessage, ()>) {
+        let notif = redshirt_syscalls::ffi::build_notification(
             message_id,
             // We use a dummy value here and fill it up later when actually delivering the notif.
             0,
@@ -100,22 +66,12 @@ impl NotificationsQueue {
         self.notifications_queue.lock().push_back(From::from(notif));
     }
 
-    /// Pushes a notification about a process being destroyed at the end of the queue.
-    pub fn push_process_destroyed_notification(&self, pid: Pid) {
-        let notif = redshirt_syscalls::ffi::build_process_destroyed_notification(
-            pid,
-            // We use a dummy value here and fill it up later when actually delivering the notif.
-            0,
-        );
-
-        self.notifications_queue.lock().push_back(From::from(notif));
-    }
-
     /// Finds a notification in the list that matches the given indices.
     ///
     /// If an entry is found, its corresponding index within `indices` is stored in the returned
     /// `Entry`.
     // TODO: something better than a slice as parameter?
+    // TODO: O(n²) complexity!
     pub fn find(&self, indices: &[WaitEntry]) -> Option<Entry> {
         let notifications_queue = self.notifications_queue.lock();
 
@@ -126,19 +82,8 @@ impl NotificationsQueue {
                 return None;
             }
 
-            // For that notification in queue, build the value that must be in `msg_ids` in order
-            // to match.
-            let wait_entry = match &notifications_queue[index_in_queue] {
-                NotificationBuilder::Interface(_) | NotificationBuilder::ProcessDestroyed(_) => {
-                    WaitEntry::InterfaceOrProcDestroyed
-                }
-                NotificationBuilder::Response(response) => {
-                    debug_assert!(u64::from(response.message_id()) >= 2);
-                    WaitEntry::Answer(response.message_id())
-                }
-            };
-
-            if let Some(p) = indices.iter().position(|id| *id == wait_entry) {
+            let expected = WaitEntry::Answer(notifications_queue[index_in_queue].message_id());
+            if let Some(p) = indices.iter().position(|id| *id == expected) {
                 break p;
             }
 

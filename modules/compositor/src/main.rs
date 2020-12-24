@@ -16,7 +16,8 @@
 #![recursion_limit = "2048"]
 
 use futures::prelude::*;
-use redshirt_syscalls::{ffi::DecodedInterfaceOrDestroyed, Decode as _, MessageId, Pid};
+use redshirt_interface_interface::DecodedInterfaceOrDestroyed;
+use redshirt_syscalls::{Decode as _, MessageId, Pid};
 use redshirt_time_interface::Delay;
 use redshirt_video_output_interface::ffi as vid_ffi;
 use std::{collections::VecDeque, time::Duration};
@@ -27,7 +28,7 @@ fn main() {
 
 async fn async_main() {
     // Register the interfaces.
-    redshirt_interface_interface::register_interface(vid_ffi::INTERFACE)
+    let mut registration = redshirt_interface_interface::register_interface(vid_ffi::INTERFACE)
         .await
         .unwrap();
 
@@ -46,7 +47,7 @@ async fn async_main() {
 
     loop {
         futures::select! {
-            interface_event = redshirt_syscalls::next_interface_message().fuse() => {
+            interface_event = registration.next_message_raw().fuse() => {
                 match interface_event {
                     DecodedInterfaceOrDestroyed::Interface(msg) => {
                         if msg.interface == vid_ffi::INTERFACE {
@@ -72,7 +73,7 @@ async fn async_main() {
                                         if let Some(vo) = video_outputs.iter_mut().find(|vo| vo.pid == emitter_pid && vo.id == id) {
                                             vo.next_frame_messages.push_back(message_id)
                                         } else {
-                                            redshirt_syscalls::emit_message_error(message_id);
+                                            redshirt_interface_interface::emit_message_error(message_id);
                                         }
                                     }
                                 }
@@ -95,7 +96,7 @@ async fn async_main() {
                         None => continue,
                     };
 
-                    redshirt_syscalls::emit_answer(message_id, vid_ffi::NextImage {
+                    redshirt_interface_interface::emit_answer(message_id, vid_ffi::NextImage {
                         changes: if video_output.cleared {
                             Vec::new()
                         } else {
