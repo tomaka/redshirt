@@ -26,7 +26,7 @@ use spinning_top::{Spinlock, SpinlockGuard};
 pub struct NotificationsQueue {
     /// The actual list.
     ///
-    /// The [`DecodedNotification::index_in_list`](redshirt_syscalls::ffi::DecodedNotification::index_in_list)
+    /// The [`DecodedNotificationRef::index_in_list`](redshirt_syscalls::ffi::DecodedNotificationRef::index_in_list)
     /// field is set to a dummy value, and will be filled before actually delivering the
     /// notification.
     // TODO: call shrink_to_fit from time to time
@@ -58,7 +58,7 @@ impl NotificationsQueue {
             // We use a dummy value here and fill it up later when actually delivering the notif.
             0,
             match &response {
-                Ok(r) => Ok(r),
+                Ok(r) => Ok(From::from(r)),
                 Err(()) => Err(()),
             },
         );

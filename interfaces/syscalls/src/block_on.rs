@@ -34,10 +34,9 @@
 //!   Repeat until the `Future` has ended.
 //!
 
-use crate::{ffi, DecodedNotification, MessageId};
+use crate::{ffi, MessageId};
 use alloc::{sync::Arc, vec::Vec};
 use core::{
-    slice,
     sync::atomic::{AtomicBool, Ordering},
     task::{Context, Poll, Waker},
 };
@@ -67,7 +66,7 @@ pub(crate) fn register_message_waker(message_id: MessageId, waker: Waker) -> Wak
 }
 
 /// If a response to this message ID has previously been obtained, extracts it for processing.
-pub(crate) fn peek_response(msg_id: MessageId) -> Option<DecodedNotification> {
+pub(crate) fn peek_response(msg_id: MessageId) -> Option<Vec<u8>> {
     let mut state = (&*STATE).lock();
     state.pending_messages.remove(&msg_id)
 }
@@ -145,8 +144,10 @@ pub fn block_on<T>(future: impl Future<Output = T>) -> T {
         let mut block = true;
 
         // We process in a loop all pending messages.
-        while let Some(msg) = next_notification(&mut state.message_ids, block) {
+        while let Some(raw) = next_notification(&mut state.message_ids, block) {
             block = false;
+
+            let msg = ffi::decode_notification(&raw).unwrap();
 
             // Value is zero-ed by the kernel.
             debug_assert_eq!(state.message_ids[msg.index_in_list as usize], 0);
@@ -154,7 +155,7 @@ pub fn block_on<T>(future: impl Future<Output = T>) -> T {
                 waker.wake();
             }
 
-            let _was_in = state.pending_messages.insert(msg.message_id, msg);
+            let _was_in = state.pending_messages.insert(msg.message_id, raw);
             debug_assert!(_was_in.is_none());
         }
 
@@ -192,7 +193,7 @@ struct BlockOnState {
     /// > **Note**: We have to maintain this queue as a global variable rather than a per-future
     /// >           channel, otherwise dropping a `Future` would silently drop messages that have
     /// >           already been received.
-    pending_messages: HashMap<MessageId, DecodedNotification, BuildNoHashHasher<u64>>,
+    pending_messages: HashMap<MessageId, Vec<u8>, BuildNoHashHasher<u64>>,
 }
 
 /// Checks whether a new message arrives, optionally blocking the thread.
@@ -200,12 +201,12 @@ struct BlockOnState {
 /// If `block` is true, then the return value is always `Some`.
 ///
 /// See the `next_notification` FFI function for the semantics of `to_poll`.
-pub(crate) fn next_notification(to_poll: &mut [u64], block: bool) -> Option<DecodedNotification> {
+pub(crate) fn next_notification(to_poll: &mut [u64], block: bool) -> Option<Vec<u8>> {
     next_notification_impl(to_poll, block)
 }
 
 #[cfg(target_arch = "wasm32")] // TODO: we should have a proper operating system name instead
-fn next_notification_impl(to_poll: &mut [u64], block: bool) -> Option<DecodedNotification> {
+fn next_notification_impl(to_poll: &mut [u64], block: bool) -> Option<Vec<u8>> {
     unsafe {
         let flags = if block { 1 } else { 0 };
 
@@ -226,13 +227,14 @@ fn next_notification_impl(to_poll: &mut [u64], block: bool) -> Option<DecodedNot
                 out.reserve(8 * (1 + (ret - 1) / 8));
                 continue;
             }
-            let out_slice = slice::from_raw_parts(out.as_ptr() as *const u8, ret);
-            return Some(ffi::decode_notification(&out_slice).unwrap());
+            let out_slice = core::slice::from_raw_parts(out.as_ptr() as *const u8, ret);
+            // TODO: don't use to_vec(), ideally
+            return Some(out_slice.to_vec());
         }
     }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn next_notification_impl(_: &mut [u64], _: bool) -> Option<DecodedNotification> {
+fn next_notification_impl(_: &mut [u64], _: bool) -> Option<Vec<u8>> {
     unimplemented!()
 }

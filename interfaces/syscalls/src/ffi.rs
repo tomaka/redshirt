@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::{EncodedMessage, MessageId};
+use crate::{EncodedMessageRef, MessageId};
 
 use alloc::vec::Vec;
 use core::convert::TryFrom as _;
@@ -120,16 +120,17 @@ extern "C" {
 pub fn build_notification(
     message_id: MessageId,
     index_in_list: u32,
-    actual_data: Result<&EncodedMessage, ()>,
+    actual_data: Result<EncodedMessageRef, ()>,
 ) -> NotificationBuilder {
-    let mut buffer =
-        Vec::with_capacity(1 + 8 + 4 + 1 + actual_data.map(|m| m.0.len()).unwrap_or(0));
+    let mut buffer = Vec::with_capacity(
+        1 + 8 + 4 + 1 + actual_data.as_ref().map(|m| m.as_ref().len()).unwrap_or(0),
+    );
     buffer.push(1);
     buffer.extend_from_slice(&u64::from(message_id).to_le_bytes());
     buffer.extend_from_slice(&index_in_list.to_le_bytes());
     if let Ok(actual_data) = actual_data {
         buffer.push(0);
-        buffer.extend_from_slice(&actual_data.0);
+        buffer.extend_from_slice(actual_data.as_ref());
     } else {
         buffer.push(1);
     }
@@ -172,7 +173,7 @@ impl NotificationBuilder {
     }
 }
 
-pub fn decode_notification(buffer: &[u8]) -> Result<DecodedNotification, ()> {
+pub fn decode_notification(buffer: &[u8]) -> Result<DecodedNotificationRef, ()> {
     if buffer.len() < 1 + 8 + 4 + 1 {
         return Err(());
     }
@@ -186,7 +187,7 @@ pub fn decode_notification(buffer: &[u8]) -> Result<DecodedNotification, ()> {
         return Err(());
     }
 
-    Ok(DecodedNotification {
+    Ok(DecodedNotificationRef {
         message_id: MessageId::try_from({
             u64::from_le_bytes([
                 buffer[1], buffer[2], buffer[3], buffer[4], buffer[5], buffer[6], buffer[7],
@@ -196,7 +197,7 @@ pub fn decode_notification(buffer: &[u8]) -> Result<DecodedNotification, ()> {
         .map_err(|_| ())?,
         index_in_list: u32::from_le_bytes([buffer[9], buffer[10], buffer[11], buffer[12]]),
         actual_data: if success {
-            Ok(EncodedMessage(buffer[14..].to_vec()))
+            Ok(EncodedMessageRef::from(&buffer[14..]))
         } else {
             Err(())
         },
@@ -204,7 +205,7 @@ pub fn decode_notification(buffer: &[u8]) -> Result<DecodedNotification, ()> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DecodedNotification {
+pub struct DecodedNotificationRef<'a> {
     /// Identifier of the message whose answer we are receiving.
     pub message_id: MessageId,
 
@@ -216,26 +217,26 @@ pub struct DecodedNotification {
     /// - The interface handler has crashed.
     /// - The interface handler marked our message as invalid.
     ///
-    pub actual_data: Result<EncodedMessage, ()>,
+    pub actual_data: Result<EncodedMessageRef<'a>, ()>,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloc::vec;
-    use core::{convert::TryFrom, num::NonZeroU64};
+    use core::convert::TryFrom;
 
     #[test]
     fn response_message_encode_decode() {
         let message_id = TryFrom::try_from(0x0123456789abcdef).unwrap();
         let index_in_list = 0xdeadbeef;
-        let message = EncodedMessage(vec![8, 7, 9]);
+        let message = EncodedMessageRef::from(&[8, 7, 9][..]);
 
-        let mut resp_notif = build_notification(message_id, 0xf00baa, Ok(&message));
+        let mut resp_notif = build_notification(message_id, 0xf00baa, Ok(message));
         resp_notif.set_index_in_list(index_in_list);
         assert_eq!(resp_notif.message_id(), message_id);
 
-        let decoded = decode_notification(&resp_notif.into_bytes()).unwrap();
+        let encoded = resp_notif.into_bytes();
+        let decoded = decode_notification(&encoded).unwrap();
         assert_eq!(decoded.message_id, message_id);
         assert_eq!(decoded.index_in_list, index_in_list);
         assert_eq!(decoded.actual_data, Ok(message));

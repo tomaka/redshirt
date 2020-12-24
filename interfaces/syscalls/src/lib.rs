@@ -80,9 +80,9 @@ pub use block_on::block_on;
 pub use emit::{
     cancel_message, emit_message_with_response, emit_message_without_response, MessageBuilder,
 };
-pub use ffi::DecodedNotification;
+pub use ffi::DecodedNotificationRef;
 pub use response::{message_response, message_response_sync_raw, MessageResponseFuture};
-pub use traits::{Decode, Encode, EncodedMessage};
+pub use traits::{Decode, Encode, EncodedMessage, EncodedMessageRef};
 
 use core::{cmp::PartialEq, convert::TryFrom, fmt, num::NonZeroU64};
 
