@@ -15,10 +15,6 @@ jobs:
     - uses: actions/checkout@v2
     - name: Install Rust
       uses: actions-rs/toolchain@v1
-      with:
-        toolchain: nightly-2020-09-15
-        target: wasm32-wasi
-        override: true
     - name: Install a recent version of clang
       run: |
         wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
@@ -54,10 +50,6 @@ jobs:
     - uses: actions/checkout@v2
     - name: Install Rust
       uses: actions-rs/toolchain@v1
-      with:
-        toolchain: nightly-2020-09-15
-        target: wasm32-wasi
-        override: true
     - name: Install a recent version of clang
       run: |
         wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
@@ -121,10 +113,6 @@ jobs:
         key: standalone-kernel-cargo-${{ hashFiles('**/Cargo.lock') }}
     - name: Install nightly Rust
       uses: actions-rs/toolchain@v1
-      with:
-        toolchain: nightly-2020-09-15
-        target: wasm32-wasi
-        override: true
     - name: Install rust-src
       run: rustup component add rust-src
     - name: Build kernel
@@ -144,9 +132,6 @@ jobs:
     - uses: actions/checkout@v2
     - name: Install Rust
       uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        override: true
     - name: Cache cargo registry
       uses: actions/cache@v2
       with:
@@ -166,9 +151,6 @@ jobs:
         uses: actions/checkout@v2
       - name: Install stable toolchain
         uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
       - name: Install rustfmt
         run: rustup component add rustfmt
       - name: Run cargo fmt on root workspace
@@ -199,10 +181,6 @@ jobs:
         uses: actions/checkout@v2
       - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
-        with:
-          toolchain: nightly-2020-09-15
-          target: wasm32-wasi
-          override: true
       - name: Install a recent version of clang
         run: |
           wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
