@@ -553,6 +553,7 @@ dependencies = [
 name = "e1000"
 version = "0.1.0"
 dependencies = [
+ "derive_more",
  "futures",
  "redshirt-ethernet-interface",
  "redshirt-hardware-interface",
