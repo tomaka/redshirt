@@ -140,7 +140,7 @@ struct TransmitDescriptor {
 impl Device {
     /// Assumes that a e1000 device is mapped starting at `base_port` and reinitializes it
     /// to a starting state.
-    pub async unsafe fn reset(regs_base_address: u64) -> DevicePrototype {
+    pub async unsafe fn reset(regs_base_address: u64) -> Result<DevicePrototype, InitErr> {
         // Set the RST flag in order to reset the device.
         redshirt_hardware_interface::write_one_u32(
             regs_base_address + REGS_CTRL,
@@ -157,8 +157,7 @@ impl Device {
             loop {
                 attempts += 1;
                 if attempts >= 1000 {
-                    // TODO: error instead of panicking
-                    panic!("timeout during timeout")
+                    return Err(InitErr::Timeout);
                 }
 
                 let val =
@@ -171,7 +170,7 @@ impl Device {
             }
         }
 
-        DevicePrototype { regs_base_address }
+        Ok(DevicePrototype { regs_base_address })
     }
 
     /// Returns the MAC address of the device.
@@ -373,6 +372,13 @@ impl Drop for Device {
     }
 }
 
+/// Error that can happen during [`Device::reset`] or [`DevicePrototype::init`].
+#[derive(Debug, derive_more::Display)]
+pub enum InitErr {
+    /// Device is taking too long to respond.
+    Timeout,
+}
+
 /// A device after it has been reinitialized but before it is active.
 pub struct DevicePrototype {
     /// Base physical address of the mapped memory of this device.
@@ -381,7 +387,7 @@ pub struct DevicePrototype {
 
 impl DevicePrototype {
     /// Finish initializing the device.
-    pub async fn init(self) -> Device {
+    pub async fn init(self) -> Result<Device, InitErr> {
         unsafe {
             // Documentation mentions that we should write 0 to the flow control registers if
             // we don't use flow control.
@@ -630,8 +636,7 @@ impl DevicePrototype {
                 loop {
                     attempts += 1;
                     if attempts >= 1000 {
-                        // TODO: error instead of panicking
-                        panic!("timeout during link up wait")
+                        return Err(InitErr::Timeout);
                     }
 
                     let val = redshirt_hardware_interface::read_one_u32(
@@ -663,7 +668,7 @@ impl DevicePrototype {
                 }),
             };
             mem::forget(self);
-            device
+            Ok(device)
         }
     }
 }
