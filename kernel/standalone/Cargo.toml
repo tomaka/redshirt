@@ -12,7 +12,7 @@ blake3 = { version = "0.3.7", default-features = false }
 crossbeam-queue = { version = "0.3.0", default-features = false, features = ["alloc"] }
 derive_more = "0.99.11"
 either = { version = "1.6.1", default-features = false }
-fnv = { git = "https://github.com/dflemstr/rust-fnv", default-features = false }    # TODO: https://github.com/servo/rust-fnv/pull/22
+fnv = { version = "1.0.7", default-features = false }
 futures = { version = "0.3.2", default-features = false, features = ["alloc"] }
 hashbrown = { version = "0.9.1", default-features = false }
 lazy_static = "1.4"
