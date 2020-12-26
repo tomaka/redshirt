@@ -1,10 +1,10 @@
 [workspace]
 members = [
     "compositor",
+    "diagnostics-http-server",
     "dummy-system-time",
     "e1000",
     "hello-world",
-    "http-server",
     "network-manager",
     "log-to-kernel",
     "p2p-loader",

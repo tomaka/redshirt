@@ -510,6 +510,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "diagnostics-http-server"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "hyper",
+ "log",
+ "redshirt-kernel-debug-interface",
+ "redshirt-log-interface",
+ "redshirt-syscalls",
+ "redshirt-tcp-interface",
+]
+
+[[package]]
 name = "digest"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -971,19 +984,6 @@ checksum = "13d5ff830006f7646652e057693569bfe0d51760c0085a071769d142a205111b"
 dependencies = [
  "bytes",
  "http",
-]
-
-[[package]]
-name = "http-server"
-version = "0.1.0"
-dependencies = [
- "futures",
- "hyper",
- "log",
- "redshirt-kernel-debug-interface",
- "redshirt-log-interface",
- "redshirt-syscalls",
- "redshirt-tcp-interface",
 ]
 
 [[package]]
