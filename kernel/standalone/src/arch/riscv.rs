@@ -35,39 +35,43 @@ mod log;
 mod misc;
 
 /// This is the main entry point of the kernel for RISC-V architectures.
-global_asm!(
-    r#"
-.global _start
-_start:
-    // Disable interrupts and clear pending interrupts.
-    csrw mie, 0
-    csrw mip, 0
+///
+/// Do **not** call manually.
+#[naked]
+#[no_mangle]
+unsafe extern "C" fn _start() {
+    asm!(r#"
+        // Disable interrupts and clear pending interrupts.
+        csrw mie, 0
+        csrw mip, 0
 
-    // TODO: ???
-    .option push
-    .option norelax
-    la gp, __global_pointer$
-    .option pop
+        // TODO: ???
+        .option push
+        .option norelax
+        la gp, __global_pointer$
+        .option pop
 
-    // Zero the BSS segment.
-    la a0, __bss_start
-    la a1, __bss_end
-.L0:sb zero, 0(a0)
-    addi a0, a0, 1
-    bltu a0, a1, .L0
+        // Zero the BSS segment.
+        la a0, __bss_start
+        la a1, __bss_end
+    .L0:sb zero, 0(a0)
+        addi a0, a0, 1
+        bltu a0, a1, .L0
 
-    // Set up the stack.
-    // TODO: make stack size configurable
-    // TODO: we don't have any stack protection in place
-    .comm stack, 0x2000, 8
-    la sp, stack
-    li t0, 0x2000
-    add sp, sp, t0
-    add fp, sp, zero
+        // Set up the stack.
+        // TODO: make stack size configurable
+        // TODO: we don't have any stack protection in place
+        .comm stack, 0x2000, 8
+        la sp, stack
+        li t0, 0x2000
+        add sp, sp, t0
+        add fp, sp, zero
 
-    j cpu_enter
-"#
-);
+        j {after_boot}
+    "#,
+        after_boot = sym after_boot,
+        options(noreturn));
+}
 
 // TODO: remove this
 extern "C" {
@@ -77,7 +81,7 @@ extern "C" {
 
 /// Main Rust entry point.
 #[no_mangle]
-unsafe fn cpu_enter() -> ! {
+unsafe fn after_boot() -> ! {
     // Initialize the logging system.
     log::set_logger(KLogger::new(KernelLogMethod {
         enabled: true,
@@ -115,8 +119,9 @@ unsafe fn cpu_enter() -> ! {
 fn abort() -> ! {
     loop {
         unsafe {
-            llvm_asm!("ebreak");
-            llvm_asm!("wfi");
+            // TODO: review asm attributes
+            asm!("ebreak");
+            asm!("wfi");
         }
     }
 }
