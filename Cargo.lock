@@ -665,7 +665,7 @@ version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f0c960ae2da4de88a91b2d920c2a7233b400bc33cb28453a2987822d8392519b"
 dependencies = [
- "fnv 1.0.7",
+ "fnv",
  "ident_case",
  "proc-macro2",
  "quote",
@@ -756,11 +756,6 @@ checksum = "ca5faf057445ce5c9d4329e382b2ce7ca38550ef3b73a5348362d5f24e0c7fe3"
 dependencies = [
  "instant",
 ]
-
-[[package]]
-name = "fnv"
-version = "1.0.6"
-source = "git+https://github.com/dflemstr/rust-fnv#bfc842cc68cd3a2628915f46d3bffa555e4b712d"
 
 [[package]]
 name = "fnv"
@@ -974,7 +969,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7eeec7b733d14519e2541f4cc8a1230de9143d4ec439dd51b6c048d8ec991759"
 dependencies = [
  "backtrace",
- "fnv 1.0.7",
+ "fnv",
  "gl_generator 0.14.0",
  "glutin",
  "lazy_static",
@@ -1880,7 +1875,7 @@ dependencies = [
  "criterion",
  "crossbeam-queue 0.3.0",
  "either",
- "fnv 1.0.6",
+ "fnv",
  "futures",
  "hashbrown",
  "nohash-hasher",
@@ -2051,7 +2046,7 @@ dependencies = [
  "crossbeam-utils 0.7.2",
  "derive_more",
  "either",
- "fnv 1.0.6",
+ "fnv",
  "futures",
  "hashbrown",
  "lazy_static",
@@ -2110,7 +2105,7 @@ version = "0.1.0"
 dependencies = [
  "async-std",
  "atomic 0.5.0",
- "fnv 1.0.7",
+ "fnv",
  "futures",
  "parity-scale-codec",
  "parking_lot",
