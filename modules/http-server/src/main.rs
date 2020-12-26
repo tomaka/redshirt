@@ -13,6 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+//! Starts an HTTP server listening on 0.0.0.0:8000 and reporting Prometheus metrics.
+
 use futures::{channel::mpsc, prelude::*};
 use std::{pin::Pin, task::Context, task::Poll};
 
@@ -24,7 +26,7 @@ fn main() {
             .await
             .unwrap();
 
-        log::info!("Kernel Prometheus metrics now available on http://127.0.0.1:8000/metrics");
+        log::info!("Kernel Prometheus metrics now available on http://0.0.0.0:8000/metrics");
 
         let stream = stream::unfold(listener, |l| async move {
             let connec = l.accept().await.0;
