@@ -255,7 +255,7 @@ async fn async_main() {
                             tcp_ffi::TcpMessage::Destroy(socket_id) => {
                                 if let Some(inner_id) = sockets.remove(&socket_id) {
                                     let mut socket = network.tcp_socket_by_id(&inner_id).unwrap();
-                                    let mut local_state = socket.user_data_mut();
+                                    let local_state = socket.user_data_mut();
                                     // TODO: connected_message should be None, or the user
                                     // managed to guess an ID that hasn't been reported yet
                                     if let Some(message_id) = local_state.read_message.take() {
