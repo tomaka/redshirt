@@ -222,3 +222,11 @@ jobs:
         run: RUSTDOCFLAGS="--deny broken_intra_doc_links" cargo doc --verbose --workspace --no-deps --document-private-items
       - name: Check modules intra-doc links
         run: RUSTDOCFLAGS="--deny broken_intra_doc_links" cargo doc --verbose --manifest-path modules/Cargo.toml --workspace --no-deps --document-private-items
+
+  all-ci:
+    # This dummy job depends on all the mandatory checks. It succeeds if and only if CI is
+    # considered successful.
+    needs: [build-hosted, build-standalone, check-passive-node, fmt, intra-doc-links]
+    runs-on: ubuntu-latest
+    steps:
+     - run: echo Success
