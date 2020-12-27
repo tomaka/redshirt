@@ -31,7 +31,7 @@ fn main() {
 /// In other words, the returned data is 128 * 8 * 8 bytes.
 fn gen_font() -> Vec<u8> {
     let font_data: &[u8] = include_bytes!("vcr_osd_mono.ttf");
-    let font = rusttype::Font::from_bytes(font_data).unwrap();
+    let font = rusttype::Font::try_from_bytes(font_data).unwrap();
 
     let mut out_data = vec![0; 128 * 8 * 8];
     for ascii_chr in 0..128u8 {
