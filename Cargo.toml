@@ -8,6 +8,7 @@ members = [
     "kernel/hosted-random",
     "kernel/hosted-tcp",
     "kernel/standalone",
+    "interfaces/disk",
     "interfaces/ethernet",
     "interfaces/framebuffer",
     "interfaces/hardware",
