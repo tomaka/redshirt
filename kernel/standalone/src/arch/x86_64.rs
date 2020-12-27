@@ -138,7 +138,7 @@ unsafe fn after_boot(multiboot_info: usize) -> ! {
 
     // If a panic happens, we want it to use the logging system we just created.
     panic::set_logger(logger.clone());
-    writeln!(logger.log_printer(), "basic initialization ok").unwrap();
+    writeln!(logger.log_printer(), "[boot] basic initialization ok").unwrap();
 
     // The first thing that gets executed when a x86 or x86_64 machine starts up is the
     // motherboard's firmware. Before giving control to the operating system, this firmware writes
@@ -220,7 +220,7 @@ unsafe fn after_boot(multiboot_info: usize) -> ! {
         .application_processors;
     let mut kernel_channels = Vec::with_capacity(application_processors.len());
 
-    writeln!(logger.log_printer(), "initializing associated processors").unwrap();
+    writeln!(logger.log_printer(), "[boot] initializing associated processors").unwrap();
     for ap in application_processors.iter() {
         debug_assert!(ap.is_ap);
         // It is possible for some associated processors to be in a disabled state, in which case
@@ -254,7 +254,7 @@ unsafe fn after_boot(multiboot_info: usize) -> ! {
             Ok(()) => kernel_channels.push(kernel_tx),
             Err(err) => writeln!(
                 logger.log_printer(),
-                "error while initializing AP#{}: {}",
+                "[boot] error while initializing AP#{}: {}",
                 ap.processor_uid,
                 err
             )
@@ -322,7 +322,7 @@ unsafe fn after_boot(multiboot_info: usize) -> ! {
         Arc::new(crate::kernel::Kernel::init(platform_specific))
     };
 
-    writeln!(logger.log_printer(), "boot successful").unwrap();
+    writeln!(logger.log_printer(), "[boot] boot successful").unwrap();
 
     // Send an `Arc<Kernel>` to the other processors so that they can run it too.
     for tx in kernel_channels {
