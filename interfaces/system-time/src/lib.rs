@@ -19,7 +19,6 @@
 
 extern crate alloc;
 
-use core::time::Duration;
 use futures::prelude::*;
 
 pub mod ffi;
