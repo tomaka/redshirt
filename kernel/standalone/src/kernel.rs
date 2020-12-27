@@ -88,7 +88,9 @@ where
             .with_startup_process(build_wasm_module!("../../../modules/dummy-system-time"))
             .with_startup_process(build_wasm_module!("../../../modules/log-to-kernel"))
             .with_startup_process(build_wasm_module!("../../../modules/vga-vbe"))
-            .with_startup_process(build_wasm_module!("../../../modules/diagnostics-http-server"))
+            .with_startup_process(build_wasm_module!(
+                "../../../modules/diagnostics-http-server"
+            ))
             .with_startup_process(build_wasm_module!("../../../modules/hello-world"))
             .with_startup_process(build_wasm_module!("../../../modules/network-manager"))
             .with_startup_process(build_wasm_module!("../../../modules/e1000"));
