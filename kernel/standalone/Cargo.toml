@@ -34,7 +34,7 @@ redshirt-syscalls = { path = "../../interfaces/syscalls", default-features = fal
 redshirt-time-interface = { path = "../../interfaces/time", default-features = false }
 rlibc = "1.0.0"
 smallvec = { version = "1.4.2", default-features = false }
-spinning_top = "0.1.0"
+spinning_top = { version = "0.2.2", features = ["nightly"] }    # TODO: `nightly` feature needed for const initialization
 
 [build-dependencies]
 rusttype = "0.9.2"
