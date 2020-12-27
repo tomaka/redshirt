@@ -228,3 +228,4 @@ jobs:
     # considered successful.
     needs: [build-hosted, build-standalone, check-passive-node, fmt, intra-doc-links]
     runs-on: ubuntu-latest
+    steps:
