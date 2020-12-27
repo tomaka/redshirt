@@ -220,7 +220,11 @@ unsafe fn after_boot(multiboot_info: usize) -> ! {
         .application_processors;
     let mut kernel_channels = Vec::with_capacity(application_processors.len());
 
-    writeln!(logger.log_printer(), "[boot] initializing associated processors").unwrap();
+    writeln!(
+        logger.log_printer(),
+        "[boot] initializing associated processors"
+    )
+    .unwrap();
     for ap in application_processors.iter() {
         debug_assert!(ap.is_ap);
         // It is possible for some associated processors to be in a disabled state, in which case
