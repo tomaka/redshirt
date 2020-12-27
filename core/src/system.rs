@@ -442,7 +442,7 @@ where
                 immediate: _,
                 message_id,
                 interface,
-            } if interface == redshirt_kernel_debug_interface::ffi::INTERFACE => {
+            } if interface == redshirt_kernel_debug_interface::INTERFACE => {
                 // Handling messages on the `kernel_debug` interface.
                 let (_, message) = match self.core.accept_interface_message(message_id) {
                     Some(v) => v,

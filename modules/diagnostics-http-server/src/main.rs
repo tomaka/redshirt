@@ -49,7 +49,7 @@ fn main() {
         .serve(hyper::service::make_service_fn(|_| async {
             Ok::<_, hyper::Error>(hyper::service::service_fn(|req| async move {
                 if req.uri().path() == "/metrics" {
-                    let metrics = redshirt_kernel_debug_interface::get_metrics().await;
+                    let metrics = redshirt_kernel_debug_interface::get_prometheus_metrics().await;
                     hyper::Response::builder()
                         .status(hyper::StatusCode::OK)
                         .header("Content-Type", "text/plain; version=0.0.4")
