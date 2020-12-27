@@ -16,24 +16,33 @@
 use futures::prelude::*;
 use p2p_loader::{Network, NetworkEvent};
 use parity_scale_codec::DecodeAll;
-use std::time::Duration;
 
 fn main() {
-    redshirt_log_interface::init();
+    // TODO: too verbose
+    //redshirt_log_interface::init();
     redshirt_syscalls::block_on(async_main())
 }
 
 async fn async_main() {
-    // True if we have already registered ourselves as the "loader" interface handler.
-    let mut registered = false;
+    // `Some` if the current process has already registered itself as the "loader" interface
+    // handler.
+    let mut registration = None::<redshirt_interface_interface::Registration>;
 
     let mut network = Network::start(Default::default()).unwrap();
 
     loop {
-        let next_interface = redshirt_syscalls::next_interface_message();
         let event = {
+            let next_interface = async {
+                if let Some(registration) = registration.as_mut() {
+                    registration.next_message_raw().await
+                } else {
+                    loop {
+                        futures::pending!()
+                    }
+                }
+            };
             let next_net_event = network.next_event();
-            futures::pin_mut!(next_net_event);
+            futures::pin_mut!(next_interface, next_net_event);
             match future::select(next_interface, next_net_event).await {
                 future::Either::Left((v, _)) => future::Either::Left(v),
                 future::Either::Right((v, _)) => future::Either::Right(v),
@@ -41,18 +50,19 @@ async fn async_main() {
         };
 
         let msg = match event {
-            future::Either::Left(redshirt_syscalls::DecodedInterfaceOrDestroyed::Interface(m)) => m,
             future::Either::Left(
-                redshirt_syscalls::DecodedInterfaceOrDestroyed::ProcessDestroyed(_),
+                redshirt_interface_interface::DecodedInterfaceOrDestroyed::Interface(m),
+            ) => m,
+            future::Either::Left(
+                redshirt_interface_interface::DecodedInterfaceOrDestroyed::ProcessDestroyed(_),
             ) => continue,
             future::Either::Right(NetworkEvent::Readiness(true)) => {
-                if !registered {
-                    registered = true;
-                    redshirt_interface_interface::register_interface(
+                if registration.is_none() {
+                    registration = redshirt_interface_interface::register_interface(
                         redshirt_loader_interface::ffi::INTERFACE,
                     )
                     .await
-                    .unwrap();
+                    .ok();
                 }
                 continue;
             }
@@ -60,17 +70,20 @@ async fn async_main() {
                 continue;
             }
             future::Either::Right(NetworkEvent::FetchSuccess { data, user_data }) => {
+                assert!(registration.is_some());
                 let rp = redshirt_loader_interface::ffi::LoadResponse { result: Ok(data) };
-                redshirt_syscalls::emit_answer(user_data, &rp);
+                redshirt_interface_interface::emit_answer(user_data, &rp);
                 continue;
             }
             future::Either::Right(NetworkEvent::FetchFail { user_data }) => {
+                assert!(registration.is_some());
                 let rp = redshirt_loader_interface::ffi::LoadResponse { result: Err(()) };
-                redshirt_syscalls::emit_answer(user_data, &rp);
+                redshirt_interface_interface::emit_answer(user_data, &rp);
                 continue;
             }
         };
 
+        assert!(registration.is_some());
         assert_eq!(msg.interface, redshirt_loader_interface::ffi::INTERFACE);
         let msg_data =
             redshirt_loader_interface::ffi::LoaderMessage::decode_all(&msg.actual_data.0).unwrap();

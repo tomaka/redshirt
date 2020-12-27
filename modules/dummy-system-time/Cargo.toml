@@ -1,5 +1,5 @@
 [package]
-name = "redshirt-time-hosted"
+name = "dummy-system-time"
 version = "0.1.0"
 license = "GPL-3.0-or-later"
 authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
@@ -7,10 +7,6 @@ edition = "2018"
 publish = false
 
 [dependencies]
-futures = "0.3.0"
-futures-timer = "3.0"
-redshirt-core = { path = "../../core" }
 redshirt-interface-interface = { path = "../../interfaces/interface" }
+redshirt-syscalls = { path = "../../interfaces/syscalls" }
 redshirt-system-time-interface = { path = "../../interfaces/system-time" }
-redshirt-time-interface = { path = "../../interfaces/time" }
-lazy_static = "1.4"

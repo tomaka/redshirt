@@ -22,7 +22,18 @@ use std::{env, fs, path::Path, process::Command};
 pub fn wat_to_bin(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let wat = syn::parse_macro_input!(tokens as syn::LitStr);
     let wat = wat.value();
-    let wasm = wat::parse_bytes(wat.as_ref()).unwrap();
+
+    let wasm = match wat::parse_bytes(wat.as_ref()) {
+        Ok(w) => w,
+        Err(err) => {
+            return format!(
+                "compile_error!(\"Failed to convert WAT to Wasm.\n\n{}\")",
+                err
+            )
+            .parse()
+            .unwrap();
+        }
+    };
 
     // Final output.
     let rust_out = format!(
@@ -48,7 +59,6 @@ pub fn wat_to_bin(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
 /// Must be passed the path to a directory containing a `Cargo.toml`.
 /// Can be passed an optional second argument containing the binary name to compile. Mandatory if
 /// the package contains multiple binaries.
-// TODO: show better errors
 #[cfg(feature = "nightly")]
 #[proc_macro]
 pub fn build_wasm_module(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -134,20 +144,31 @@ pub fn build_wasm_module(tokens: proc_macro::TokenStream) -> proc_macro::TokenSt
         let bin_target = if let Some(requested_bin_target) = requested_bin_target {
             match bin_targets_iter.find(|t| t.name == requested_bin_target) {
                 Some(t) => t.name.clone(),
-                None => panic!("Can't find binary target {:?}", requested_bin_target),
+                None => {
+                    return format!(
+                        "compile_error!(\"Can't find binary target `{}` in `{}`\")",
+                        requested_bin_target,
+                        wasm_crate_path.display()
+                    )
+                    .parse()
+                    .unwrap();
+                }
             }
         } else {
             let target = bin_targets_iter.next().unwrap();
             if bin_targets_iter.next().is_some() {
-                panic!(
-                    "Multiple binary targets available, please mention the one you want: {:?}",
+                return format!(
+                    "compile_error!(\"Multiple binary targets available, please mention the one you want:\n{}\")",
                     package
                         .targets
                         .iter()
                         .filter(|t| t.kind.iter().any(|k| k == "bin"))
-                        .map(|t| &t.name)
+                        .map(|t| format!("- {}", t.name))
                         .collect::<Vec<_>>()
-                );
+                        .join("\n")
+                )
+                .parse()
+                .unwrap();
             }
             target.name.clone()
         };
@@ -163,6 +184,7 @@ pub fn build_wasm_module(tokens: proc_macro::TokenStream) -> proc_macro::TokenSt
     // Actually build the module.
     let build_status = Command::new(env::var("CARGO").unwrap())
         .arg("rustc")
+        .args(&["--color", "always"]) // TODO: enable conditionnally?
         .args(&["--bin", &bin_target])
         .arg("--release")
         .args(&["--target", "wasm32-wasi"])
@@ -172,7 +194,15 @@ pub fn build_wasm_module(tokens: proc_macro::TokenStream) -> proc_macro::TokenSt
         .current_dir(&wasm_crate_path)
         .status()
         .unwrap();
-    assert!(build_status.success());
+
+    if !build_status.success() {
+        return format!(
+            "compile_error!(\"Failed to compile module `{}`. See above errors.\")",
+            wasm_crate_path.display()
+        )
+        .parse()
+        .unwrap();
+    }
 
     // Read the list of source files that we must depend upon.
     let dependended_files: Vec<String> = {

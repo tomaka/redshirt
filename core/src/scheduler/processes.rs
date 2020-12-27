@@ -615,7 +615,7 @@ impl<'a, TExtr, TPud, TTud> Future for RunFuture<'a, TExtr, TPud, TTud> {
             );
 
             // Items are pushed on `death_reports` when a `Process` struct is destroyed.
-            if let Ok((pid, user_data, dead_threads, outcome)) = this.death_reports.pop() {
+            if let Some((pid, user_data, dead_threads, outcome)) = this.death_reports.pop() {
                 return Poll::Ready(RunOneOutcome::ProcessFinished {
                     pid,
                     user_data,
@@ -627,8 +627,8 @@ impl<'a, TExtr, TPud, TTud> Future for RunFuture<'a, TExtr, TPud, TTud> {
             // We start by finding a process that is ready to run and lock it by extracting the
             // state machine.
             let process = match this.execution_queue.pop() {
-                Ok(p) => p,
-                Err(_) => {
+                Some(p) => p,
+                None => {
                     self.1.set_waker(cx.waker());
                     return Poll::Pending;
                 }

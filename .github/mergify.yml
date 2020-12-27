@@ -1,0 +1,17 @@
+pull_request_rules:
+  - name: automatic merge when GitHub branch protection passes on develop
+    conditions:
+      - label=automerge
+      - base=develop
+    actions:
+      merge:
+        strict: true
+        method: squash
+
+  - name: automatic merge if author is dependabot
+    conditions:
+      - author~=^dependabot(|-preview)\[bot\]$
+      - base=develop
+    actions:
+      merge:
+        method: squash

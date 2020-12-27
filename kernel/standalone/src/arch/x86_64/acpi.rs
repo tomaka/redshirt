@@ -13,7 +13,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use acpi::handler::PhysicalMapping;
 use core::ptr::NonNull;
 
 /// Loads ACPI tables from physical memory.
@@ -23,39 +22,43 @@ use core::ptr::NonNull;
 /// Panics if the multiboot header doesn't contain any information about the ACPI tables, or if
 /// the ACPI tables are invalid.
 ///
-pub fn load_acpi_tables(multiboot_info: &multiboot2::BootInformation) -> acpi::Acpi {
-    let mut err = None;
+pub fn load_acpi_tables(
+    multiboot_info: &multiboot2::BootInformation,
+) -> acpi::AcpiTables<DummyHandler> {
+    unsafe {
+        let mut err = None;
 
-    if let Some(rsdp_v2) = multiboot_info.rsdp_v2_tag() {
-        match acpi::parse_rsdt(
-            &mut DummyHandler,
-            rsdp_v2.revision(),
-            rsdp_v2.xsdt_address(),
-        ) {
-            Ok(acpi) => return acpi,
-            Err(e) => err = Some(e),
+        if let Some(rsdp_v2) = multiboot_info.rsdp_v2_tag() {
+            match acpi::AcpiTables::from_rsdt(
+                DummyHandler,
+                rsdp_v2.revision(),
+                rsdp_v2.xsdt_address(),
+            ) {
+                Ok(acpi) => return acpi,
+                Err(e) => err = Some(e),
+            }
         }
-    }
 
-    if let Some(rsdp_v1) = multiboot_info.rsdp_v1_tag() {
-        match acpi::parse_rsdt(
-            &mut DummyHandler,
-            rsdp_v1.revision(),
-            rsdp_v1.rsdt_address(),
-        ) {
-            Ok(acpi) => return acpi,
-            Err(e) => {
-                if err.is_none() {
-                    err = Some(e);
+        if let Some(rsdp_v1) = multiboot_info.rsdp_v1_tag() {
+            match acpi::AcpiTables::from_rsdt(
+                DummyHandler,
+                rsdp_v1.revision(),
+                rsdp_v1.rsdt_address(),
+            ) {
+                Ok(acpi) => return acpi,
+                Err(e) => {
+                    if err.is_none() {
+                        err = Some(e);
+                    }
                 }
             }
         }
-    }
 
-    if let Some(err) = err {
-        panic!("Couldn't parse ACPI tables: {:?}", err)
-    } else {
-        panic!("Can't find ACPI tables")
+        if let Some(err) = err {
+            panic!("Couldn't parse ACPI tables: {:?}", err)
+        } else {
+            panic!("Can't find ACPI tables")
+        }
     }
 }
 
@@ -63,16 +66,22 @@ pub fn load_acpi_tables(multiboot_info: &multiboot2::BootInformation) -> acpi::A
 /// into virtual memory.
 ///
 /// We use identity mapping over the whole address space, therefore this is a dummy.
-struct DummyHandler;
-impl acpi::handler::AcpiHandler for DummyHandler {
-    fn map_physical_region<T>(&mut self, addr: usize, size: usize) -> PhysicalMapping<T> {
-        PhysicalMapping {
+#[derive(Debug, Clone)]
+pub struct DummyHandler;
+impl acpi::AcpiHandler for DummyHandler {
+    unsafe fn map_physical_region<T>(
+        &self,
+        addr: usize,
+        size: usize,
+    ) -> acpi::PhysicalMapping<DummyHandler, T> {
+        acpi::PhysicalMapping {
             physical_start: addr,
             virtual_start: NonNull::new(addr as *mut _).unwrap(),
             region_length: size,
             mapped_length: size,
+            handler: self.clone(),
         }
     }
 
-    fn unmap_physical_region<T>(&mut self, _: PhysicalMapping<T>) {}
+    fn unmap_physical_region<T>(&self, _: &acpi::PhysicalMapping<DummyHandler, T>) {}
 }

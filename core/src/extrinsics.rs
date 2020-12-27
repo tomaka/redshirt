@@ -23,7 +23,7 @@
 //! TODO: write doc on how to implement this trait
 
 use crate::primitives::{Signature, WasmValue};
-use crate::{EncodedMessage, InterfaceHash, ThreadId};
+use crate::{EncodedMessage, EncodedMessageRef, InterfaceHash, ThreadId};
 
 use alloc::{borrow::Cow, vec::Vec};
 use core::{fmt, iter, ops::Range};
@@ -80,7 +80,7 @@ pub trait Extrinsics: Default {
     fn inject_message_response(
         &self,
         ctxt: &mut Self::Context,
-        response: Option<EncodedMessage>,
+        response: Option<EncodedMessageRef>,
         proc_access: &mut impl ExtrinsicsMemoryAccess,
     ) -> ExtrinsicsAction;
 }
@@ -186,7 +186,7 @@ impl Extrinsics for NoExtrinsics {
     fn inject_message_response(
         &self,
         ctxt: &mut Self::Context,
-        _: Option<EncodedMessage>,
+        _: Option<EncodedMessageRef>,
         _: &mut impl ExtrinsicsMemoryAccess,
     ) -> ExtrinsicsAction {
         match *ctxt {} // unreachable

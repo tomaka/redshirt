@@ -41,7 +41,7 @@ impl Executor {
     /// Initializes a new [`Executor`].
     pub fn new(local_apic: &'static LocalApicsControl) -> Self {
         Executor {
-            interrupt_vector: interrupts::reserve_any_vector(true).unwrap(),
+            interrupt_vector: interrupts::reserve_any_vector(0).unwrap(),
             apic: local_apic,
         }
     }

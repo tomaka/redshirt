@@ -17,18 +17,11 @@
 
 use crate::{arch::PlatformSpecific, future_channel, pci::pci};
 
-use alloc::{boxed::Box, collections::VecDeque, sync::Arc, vec, vec::Vec};
-use core::{
-    convert::TryFrom as _,
-    pin::Pin,
-    sync::atomic,
-    task::{Context, Poll},
-};
-use crossbeam_queue::SegQueue;
+use alloc::{boxed::Box, collections::VecDeque, sync::Arc, vec::Vec};
+use core::{convert::TryFrom as _, num::NonZeroU64, pin::Pin, task::Poll};
 use futures::prelude::*;
-use rand_core::RngCore as _;
 use redshirt_core::native::{DummyMessageIdWrite, NativeProgramEvent, NativeProgramRef};
-use redshirt_core::{Decode as _, Encode as _, EncodedMessage, InterfaceHash, MessageId, Pid};
+use redshirt_core::{Decode as _, Encode as _, EncodedMessage, MessageId, Pid};
 use redshirt_pci_interface::ffi;
 use spinning_top::Spinlock;
 
@@ -46,7 +39,11 @@ pub struct PciNativeProgram<TPlat> {
     locked_devices: Spinlock<Vec<LockedDevice>>,
 
     /// If true, we have sent the interface registration message.
-    registered: atomic::AtomicBool,
+    registered: atomic::Atomic<bool>,
+    /// If `Some`, contains the registration ID towards the `interface` interface.
+    registration_id: atomic::Atomic<Option<NonZeroU64>>,
+    /// Number of message requests that need to be emitted.
+    pending_message_requests: atomic::Atomic<u8>,
     /// Sending side of `pending_messages`.
     pending_messages_tx: future_channel::UnboundedSender<(MessageId, Result<EncodedMessage, ()>)>,
     /// List of messages waiting to be emitted with `next_event`.
@@ -78,7 +75,9 @@ where
             next_irq,
             devices,
             locked_devices: Spinlock::new(Vec::new()),
-            registered: atomic::AtomicBool::new(false),
+            registered: atomic::Atomic::new(false),
+            registration_id: atomic::Atomic::new(None),
+            pending_message_requests: atomic::Atomic::new(16),
             pending_messages_tx,
             pending_messages,
         }
@@ -99,12 +98,44 @@ where
             if !self.registered.swap(true, atomic::Ordering::Relaxed) {
                 return NativeProgramEvent::Emit {
                     interface: redshirt_interface_interface::ffi::INTERFACE,
-                    message_id_write: None,
+                    message_id_write: Some(DummyMessageIdWrite),
                     message: redshirt_interface_interface::ffi::InterfaceMessage::Register(
                         ffi::INTERFACE,
                     )
                     .encode(),
                 };
+            }
+
+            if let Some(registration_id) = self.registration_id.load(atomic::Ordering::Relaxed) {
+                loop {
+                    let v = self
+                        .pending_message_requests
+                        .load(atomic::Ordering::Relaxed);
+                    if v == 0 {
+                        break;
+                    }
+                    if self
+                        .pending_message_requests
+                        .compare_exchange(
+                            v,
+                            v - 1,
+                            atomic::Ordering::Relaxed,
+                            atomic::Ordering::Relaxed,
+                        )
+                        .is_err()
+                    {
+                        continue;
+                    }
+
+                    return NativeProgramEvent::Emit {
+                        interface: redshirt_interface_interface::ffi::INTERFACE,
+                        message_id_write: Some(DummyMessageIdWrite),
+                        message: redshirt_interface_interface::ffi::InterfaceMessage::NextMessage(
+                            registration_id,
+                        )
+                        .encode(),
+                    };
+                }
             }
 
             loop {
@@ -116,9 +147,14 @@ where
                     }
 
                     if let Poll::Ready((message_id, answer)) = self.pending_messages.poll_next(cx) {
-                        return Poll::Ready(Some(NativeProgramEvent::Answer {
-                            message_id,
-                            answer,
+                        return Poll::Ready(Some(NativeProgramEvent::Emit {
+                            interface: redshirt_interface_interface::ffi::INTERFACE,
+                            message_id_write: None,
+                            message: redshirt_interface_interface::ffi::InterfaceMessage::Answer(
+                                message_id,
+                                answer.map(|m| m.0),
+                            )
+                            .encode(),
                         }));
                     }
 
@@ -151,32 +187,65 @@ where
         })
     }
 
-    fn interface_message(
-        self,
-        interface: InterfaceHash,
-        message_id: Option<MessageId>,
-        emitter_pid: Pid,
-        message: EncodedMessage,
-    ) {
-        debug_assert_eq!(interface, ffi::INTERFACE);
+    fn message_response(self, _: MessageId, response: Result<EncodedMessage, ()>) {
+        debug_assert!(self.registered.load(atomic::Ordering::Relaxed));
 
-        match ffi::PciMessage::decode(message) {
+        // The first ever message response that can be received is the interface registration.
+        if self
+            .registration_id
+            .load(atomic::Ordering::Relaxed)
+            .is_none()
+        {
+            let registration_id =
+                match redshirt_interface_interface::ffi::InterfaceRegisterResponse::decode(
+                    response.unwrap(),
+                )
+                .unwrap()
+                .result
+                {
+                    Ok(id) => id,
+                    // A registration error means the interface has already been registered. Returning
+                    // here stalls this state machine forever.
+                    Err(_) => return,
+                };
+
+            self.registration_id
+                .store(Some(registration_id), atomic::Ordering::Relaxed);
+            return;
+        }
+
+        // If this is reached, the response is a response to a message request.
+        self.pending_message_requests
+            .fetch_add(1, atomic::Ordering::Relaxed);
+
+        let notification =
+            match redshirt_interface_interface::ffi::decode_notification(&response.unwrap().0)
+                .unwrap()
+            {
+                redshirt_interface_interface::DecodedInterfaceOrDestroyed::Interface(n) => n,
+                redshirt_interface_interface::DecodedInterfaceOrDestroyed::ProcessDestroyed(n) => {
+                    self.locked_devices.lock().retain(|dev| dev.owner != n.pid);
+                    return;
+                }
+            };
+
+        match ffi::PciMessage::decode(notification.actual_data) {
             Ok(ffi::PciMessage::LockDevice(bdf)) => {
                 let mut locked_devices = self.locked_devices.lock();
                 if locked_devices.iter().any(|dev| dev.bdf == bdf) {
-                    if let Some(message_id) = message_id {
+                    if let Some(message_id) = notification.message_id {
                         self.pending_messages_tx
                             .unbounded_send((message_id, Ok(Result::<(), _>::Err(()).encode())));
                     }
                 } else {
                     // TODO: check device validity
                     locked_devices.push(LockedDevice {
-                        owner: emitter_pid,
+                        owner: notification.emitter_pid,
                         bdf,
                         next_interrupt_messages: VecDeque::new(),
                     });
 
-                    if let Some(message_id) = message_id {
+                    if let Some(message_id) = notification.message_id {
                         self.pending_messages_tx
                             .unbounded_send((message_id, Ok(Result::<_, ()>::Ok(()).encode())));
                     }
@@ -184,6 +253,7 @@ where
             }
 
             Ok(ffi::PciMessage::UnlockDevice(bdf)) => {
+                let emitter_pid = notification.emitter_pid;
                 let mut locked_devices = self.locked_devices.lock();
                 if let Some(pos) = locked_devices
                     .iter_mut()
@@ -203,10 +273,11 @@ where
                 memory_space,
                 bus_master,
             }) => {
-                let mut locked_devices = self.locked_devices.lock();
-                if let Some(dev) = locked_devices
-                    .iter_mut()
-                    .find(|dev| dev.owner == emitter_pid && dev.bdf == location)
+                let emitter_pid = notification.emitter_pid;
+                let locked_devices = self.locked_devices.lock();
+                if locked_devices
+                    .iter()
+                    .any(|dev| dev.owner == emitter_pid && dev.bdf == location)
                 {
                     self.devices
                         .devices()
@@ -222,7 +293,8 @@ where
 
             Ok(ffi::PciMessage::NextInterrupt(bdf)) => {
                 // TODO: actually make these interrupts work
-                if let Some(message_id) = message_id {
+                if let Some(message_id) = notification.message_id {
+                    let emitter_pid = notification.emitter_pid;
                     let mut locked_devices = self.locked_devices.lock();
                     if let Some(dev) = locked_devices
                         .iter_mut()
@@ -239,7 +311,7 @@ where
             }
 
             Ok(ffi::PciMessage::GetDevicesList) => {
-                if let Some(message_id) = message_id {
+                if let Some(message_id) = notification.message_id {
                     let response = ffi::GetDevicesListResponse {
                         devices: self
                             .devices
@@ -283,19 +355,11 @@ where
             Ok(_) => unimplemented!(),
 
             Err(_) => {
-                if let Some(message_id) = message_id {
+                if let Some(message_id) = notification.message_id {
                     self.pending_messages_tx
                         .unbounded_send((message_id, Err(())))
                 }
             }
         }
-    }
-
-    fn process_destroyed(self, pid: Pid) {
-        self.locked_devices.lock().retain(|dev| dev.owner != pid);
-    }
-
-    fn message_response(self, _: MessageId, _: Result<EncodedMessage, ()>) {
-        unreachable!()
     }
 }

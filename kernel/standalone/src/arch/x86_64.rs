@@ -32,7 +32,7 @@ use core::{
     time::Duration,
 };
 use futures::channel::oneshot;
-use hashbrown::{hash_map::Entry, HashMap};
+use hashbrown::HashMap;
 use redshirt_kernel_log_interface::ffi::{FramebufferFormat, FramebufferInfo, KernelLogMethod};
 use spinning_top::Spinlock;
 use x86_64::structures::port::{PortRead as _, PortWrite as _};
@@ -42,6 +42,7 @@ mod ap_boot;
 mod apic;
 mod boot;
 mod executor;
+mod gdt;
 mod interrupts;
 mod panic;
 mod pit;
@@ -71,8 +72,7 @@ const DEFAULT_LOG_METHOD: KernelLogMethod = KernelLogMethod {
 ///
 /// `multiboot_info` must be a valid memory address that contains valid information.
 ///
-#[no_mangle]
-unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
+unsafe fn after_boot(multiboot_info: usize) -> ! {
     let multiboot_info = multiboot2::load(multiboot_info);
 
     // Initialization of the memory allocator.
@@ -156,8 +156,8 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
 
     // The ACPI tables indicate us information about how to interface with the I/O APICs.
     // We use this information and initialize the I/O APICs.
-    let mut io_apics = match &acpi_tables.interrupt_model {
-        Some(::acpi::interrupt::InterruptModel::Apic(apic)) => {
+    let mut io_apics = match &acpi_tables.platform_info().ok().map(|i| i.interrupt_model) {
+        Some(::acpi::platform::InterruptModel::Apic(apic)) => {
             // The PIC is the legacy equivalent of I/O APICs.
             apic::pic::init_and_disable_pic();
             apic::io_apics::init_from_acpi(apic)
@@ -169,6 +169,7 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
     // We then initialize the local APIC.
     // `Box::leak` gives us a `&'static` reference to the object.
     let local_apics = Box::leak(Box::new(apic::local::init()));
+    local_apics.init_local();
 
     // Initialize an object that can execute futures between CPUs.
     let executor = Box::leak(Box::new(executor::Executor::new(&*local_apics)));
@@ -196,7 +197,7 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
     // redirecting all IRQs to a single interrupt vector. This single interrupt vector, when
     // triggered, notifies all the components that were waiting for a PCI interrupt.
     // TODO: make this better ^
-    let pci_interrupt_vector = interrupts::reserve_any_vector(true).unwrap();
+    let pci_interrupt_vector = interrupts::reserve_any_vector(40).unwrap();
     for irq in io_apics.irqs().collect::<Vec<_>>() {
         io_apics.irq(irq).unwrap().set_destination(
             local_apics.current_apic_id(),
@@ -211,18 +212,25 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
     // This Vec will contain one `oneshort::Sender<Arc<Kernel>>` for each associated processor
     // that has been started. Once the kernel is initialized, we send a reference-counted copy of
     // it to each sender.
-    let mut kernel_channels = Vec::with_capacity(acpi_tables.application_processors.len());
+    let application_processors = acpi_tables
+        .platform_info()
+        .unwrap()
+        .processor_info
+        .unwrap()
+        .application_processors;
+    let mut kernel_channels = Vec::with_capacity(application_processors.len());
 
     writeln!(logger.log_printer(), "initializing associated processors").unwrap();
-    for ap in acpi_tables.application_processors.iter() {
+    for ap in application_processors.iter() {
         debug_assert!(ap.is_ap);
         // It is possible for some associated processors to be in a disabled state, in which case
         // they **must not** be started. This is generally the case of defective processors.
-        if ap.state != ::acpi::ProcessorState::WaitingForSipi {
+        if ap.state != ::acpi::platform::ProcessorState::WaitingForSipi {
             continue;
         }
 
         let (kernel_tx, kernel_rx) = oneshot::channel::<Arc<crate::kernel::Kernel<_>>>();
+        let cpu_num = kernel_channels.len().checked_add(1).unwrap();
 
         let ap_boot_result = ap_boot::boot_associated_processor(
             &mut ap_boot_alloc,
@@ -233,9 +241,11 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
             {
                 let executor = &*executor;
                 move || {
-                    let kernel = executor.block_on(kernel_rx).unwrap();
-                    // The `run()` method never returns.
-                    executor.block_on(kernel.run())
+                    executor.block_on(async move {
+                        let kernel = kernel_rx.await.unwrap();
+                        // The `run()` method never returns.
+                        kernel.run(cpu_num).await
+                    })
                 }
             },
         );
@@ -323,7 +333,7 @@ unsafe extern "C" fn after_boot(multiboot_info: usize) -> ! {
 
     // Start the kernel on the boot processor too.
     // This function never returns.
-    executor.block_on(kernel.run())
+    executor.block_on(kernel.run(0))
 }
 
 /// Reads the boot information and find the memory ranges that can be used as a heap.
@@ -452,7 +462,9 @@ impl PlatformSpecific for PlatformSpecificImpl {
     }
 
     fn timer(self: Pin<&Self>, clock_value: u128) -> Self::TimerFuture {
-        self.timers.register_timer({
+        self.timers.register_timer_at({
+            // `unwrap_or(u64::max_value())` means that any wait longer than 2^64 seconds will be
+            // clamped to 2^64 seconds. We don't expect any system to ever run for 2^64 seconds.
             let secs = u64::try_from(clock_value / 1_000_000_000).unwrap_or(u64::max_value());
             let nanos = u32::try_from(clock_value % 1_000_000_000).unwrap();
             Duration::new(secs, nanos)

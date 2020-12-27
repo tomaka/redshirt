@@ -25,7 +25,7 @@ The `emit_message` syscall requires passing:
 
 If an answer is expected, a `MessageId` gets assigned and is returned to the caller.
 
-If no interface handler exists for the target interface, or if the queue of messages of the interface handler is full, the function will either wait or immediately return with an error, depending on the function parameters.
+If no interface handler exists for the target interface, or if the interface handler isn't capable of accepting a message at the moment, the function will either wait or immediately return with an error, depending on the function parameters.
 
 ## System initialization
 
@@ -49,22 +49,18 @@ Note that this limit is not supposed to be normally reached under normal circums
 
 # Waiting for notifications
 
-Each process is characterized by a queue of notifications that can be retrieved using this function. A notification consists of either an answer to a previously-emitted message, a message received on a registered interface, or a notification about a process being destroyed.
+Each process is characterized by a queue of notifications that can be retrieved using this function. A notification only consists, at the moment, of an answer to a previously-emitted message.
 
 The `next_notification` syscall allows querying the operating system for notifications. It is similar to `epoll` in the Linux world.
 
 The parameters of this syscall are:
 
-- A list of `MessageId`s whose answer to query, or the special value `1` that represents "an interface message or a process destroyed notification".
+- A list of `MessageId`s whose answer to query.
 - A flag indicating whether to wait or not.
 
-If an notification in the queue matches one of the elements in the list, then this notification is retrieved. Otherwise, the function will block if the flag is set or return immediately if it is not.
+If a notification in the queue matches one of the elements in the list, then this notification is retrieved. Otherwise, the function will block if the flag is set or return immediately if it is not.
 
-Notifications about an answer contain the `MessageId`, whether the message has been successful or not, and the body of the answer.
-
-Notifications about an interface message contain the interface hash, the emitter PID, the `MessageId`, and the body of the message.
-
-Notifications about a destroyed process contain the PID of the process that has been destroyed. Destroyed process messages are used for interface handlers to free resources that might have been allocated for a specific process. They are emitted only for processes that have in the past sent a message on a registered interface.
+Notifications contain the `MessageId`, whether the message has been successful or not, and the body of the answer.
 
 ## Limit to the queue size
 

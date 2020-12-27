@@ -5,7 +5,7 @@ authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-pin-project = "0.4.6"
+pin-project = "1.0.2"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 futures-timer = "2.0"

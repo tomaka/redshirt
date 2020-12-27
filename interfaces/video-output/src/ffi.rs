@@ -52,6 +52,7 @@ pub struct NextImage {
 #[derive(Debug, Encode, Decode, Clone)]
 pub struct NextImageChange {
     pub screen_x_start: u32,
+    // TODO: not necessary?
     pub screen_x_len: u32,
     pub screen_y_start: u32,
     /// Rows of pixels.

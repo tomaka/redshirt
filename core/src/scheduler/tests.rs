@@ -19,7 +19,6 @@ use crate::extrinsics::NoExtrinsics;
 
 mod basic_module;
 mod emit_not_available;
-mod emit_reserved_pid;
 mod trapping_module;
 
 #[test]

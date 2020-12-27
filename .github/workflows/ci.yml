@@ -2,9 +2,6 @@ name: Continuous integration
 
 on:
   pull_request:
-  push:
-    branches:    
-      - develop
 
 jobs:
   build-modules:
@@ -13,21 +10,21 @@ jobs:
     container:
       image: rust
       env:
-        CC: clang-10
+        CC: clang-11
     steps:
     - uses: actions/checkout@v2
     - name: Install Rust
       uses: actions-rs/toolchain@v1
       with:
-        toolchain: nightly-2020-05-31
+        toolchain: nightly-2020-09-15
         target: wasm32-wasi
         override: true
     - name: Install a recent version of clang
       run: |
         wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
-        echo "deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-10 main" >> /etc/apt/sources.list
+        echo "deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-11 main" >> /etc/apt/sources.list
         apt-get update
-        apt-get install -y clang-10
+        apt-get install -y clang-11
     - name: Install CMake
       run: apt-get install -y cmake
     - uses: actions/cache@v2
@@ -40,7 +37,7 @@ jobs:
     - name: Build modules
       run: cargo build --manifest-path ./modules/Cargo.toml --workspace --exclude stub --locked --verbose --release --target=wasm32-wasi
     - name: Upload WASM modules
-      uses: actions/upload-artifact@v1
+      uses: actions/upload-artifact@v2.2.1
       with:
         name: wasm-modules
         path: modules/target
@@ -52,21 +49,21 @@ jobs:
     container:
       image: rust
       env:
-        CC: clang-10
+        CC: clang-11
     steps:
     - uses: actions/checkout@v2
     - name: Install Rust
       uses: actions-rs/toolchain@v1
       with:
-        toolchain: nightly-2020-05-31
+        toolchain: nightly-2020-09-15
         target: wasm32-wasi
         override: true
     - name: Install a recent version of clang
       run: |
         wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
-        echo "deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-10 main" >> /etc/apt/sources.list
+        echo "deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-11 main" >> /etc/apt/sources.list
         apt-get update
-        apt-get install -y clang-10
+        apt-get install -y clang-11
     - name: Download WASM modules
       uses: actions/download-artifact@v2
       with:
@@ -93,7 +90,7 @@ jobs:
     container:
       image: rust
       env:
-        CC: clang-10
+        CC: clang-11
     strategy:
       matrix:
         #target: [x86_64-multiboot2, arm-rpi3, riscv-hifive]  # TODO: not implemented
@@ -111,9 +108,9 @@ jobs:
     - name: Install a recent version of clang
       run: |
         wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
-        echo "deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-10 main" >> /etc/apt/sources.list
+        echo "deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-11 main" >> /etc/apt/sources.list
         apt-get update
-        apt-get install -y clang-10
+        apt-get install -y clang-11
     - uses: actions/cache@v2
       with:
         path: |
@@ -125,7 +122,7 @@ jobs:
     - name: Install nightly Rust
       uses: actions-rs/toolchain@v1
       with:
-        toolchain: nightly-2020-05-31
+        toolchain: nightly-2020-09-15
         target: wasm32-wasi
         override: true
     - name: Install rust-src
@@ -133,7 +130,7 @@ jobs:
     - name: Build kernel
       run: cargo run --manifest-path=./kernel/standalone-builder/Cargo.toml -- build-image --target ${{ matrix.target }} --device-type cdrom --out image
     - name: Upload generated kernel
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v2.2.1
       with:
         name: kernel-${{ matrix.target }}
         path: image
@@ -196,22 +193,22 @@ jobs:
     container:
       image: rust
       env:
-        CC: clang-10
+        CC: clang-11
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
       - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2020-05-31
+          toolchain: nightly-2020-09-15
           target: wasm32-wasi
           override: true
       - name: Install a recent version of clang
         run: |
           wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
-          echo "deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-10 main" >> /etc/apt/sources.list
+          echo "deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-11 main" >> /etc/apt/sources.list
           apt-get update
-          apt-get install -y clang-10
+          apt-get install -y clang-11
       - uses: actions/cache@v2
         with:
           path: |
@@ -222,6 +219,6 @@ jobs:
             target
           key: intra-doc-links-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Check core intra-doc links
-        run: RUSTDOCFLAGS="--deny intra_doc_link_resolution_failure" cargo doc --verbose --workspace --no-deps --document-private-items
+        run: RUSTDOCFLAGS="--deny broken_intra_doc_links" cargo doc --verbose --workspace --no-deps --document-private-items
       - name: Check modules intra-doc links
-        run: RUSTDOCFLAGS="--deny intra_doc_link_resolution_failure" cargo doc --verbose --manifest-path modules/Cargo.toml --workspace --no-deps --document-private-items
+        run: RUSTDOCFLAGS="--deny broken_intra_doc_links" cargo doc --verbose --manifest-path modules/Cargo.toml --workspace --no-deps --document-private-items

@@ -100,7 +100,7 @@ fn emit_not_available() {
     core.execute(&module).unwrap();
 
     match core.run().now_or_never() {
-        Some(CoreRunOutcome::ThreadWaitUnavailableInterface { interface, .. }) => {
+        Some(CoreRunOutcome::InterfaceMessage { interface, .. }) => {
             assert_eq!(
                 interface,
                 InterfaceHash::from_raw_hash([
