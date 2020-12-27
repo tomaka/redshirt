@@ -1884,6 +1884,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "redshirt-disk-interface"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "parity-scale-codec",
+ "rand",
+ "redshirt-syscalls",
+]
+
+[[package]]
 name = "redshirt-ethernet-interface"
 version = "0.1.0"
 dependencies = [
