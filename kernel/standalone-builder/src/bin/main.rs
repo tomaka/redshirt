@@ -169,7 +169,7 @@ fn main() -> Result<(), Box<dyn error::Error + Send + Sync + 'static>> {
             kernel_cargo_toml,
             release,
             out,
-            device_type: _,  // TODO: ?!
+            device_type: _, // TODO: ?!
             target,
         } => {
             redshirt_standalone_builder::image::build_image(
