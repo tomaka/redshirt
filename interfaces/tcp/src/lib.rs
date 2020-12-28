@@ -344,13 +344,13 @@ impl tokio::io::AsyncRead for TcpStream {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context,
-        buf: &mut [u8],
-    ) -> Poll<Result<usize, io::Error>> {
-        AsyncRead::poll_read(self, cx, buf)
-    }
-
-    unsafe fn prepare_uninitialized_buffer(&self, _: &mut [mem::MaybeUninit<u8>]) -> bool {
-        false
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> Poll<Result<(), io::Error>> {
+        let result = AsyncRead::poll_read(self, cx, buf.initialize_unfilled());
+        if let Poll::Ready(Ok(n)) = result {
+            buf.advance(n);
+        }
+        result.map_ok(|_| ())
     }
 }
 

@@ -26,7 +26,7 @@ use futures::prelude::*;
 use hashbrown::HashMap;
 use nohash_hasher::BuildNoHashHasher;
 use redshirt_core::native::{DummyMessageIdWrite, NativeProgramEvent, NativeProgramRef};
-use redshirt_core::{Decode as _, Encode as _, EncodedMessage, InterfaceHash, MessageId, Pid};
+use redshirt_core::{Decode as _, Encode as _, EncodedMessage, MessageId, Pid};
 use redshirt_hardware_interface::ffi::{
     HardwareAccessResponse, HardwareMessage, Operation, INTERFACE,
 };

@@ -21,7 +21,7 @@ use alloc::{boxed::Box, sync::Arc};
 use core::{num::NonZeroU64, pin::Pin, task::Poll};
 use futures::{prelude::*, stream::FuturesUnordered};
 use redshirt_core::native::{DummyMessageIdWrite, NativeProgramEvent, NativeProgramRef};
-use redshirt_core::{Decode as _, Encode as _, EncodedMessage, InterfaceHash, MessageId};
+use redshirt_core::{Decode as _, Encode as _, EncodedMessage, MessageId};
 use redshirt_time_interface::ffi::{TimeMessage, INTERFACE};
 use spinning_top::Spinlock;
 

@@ -21,8 +21,8 @@ use alloc::{boxed::Box, sync::Arc};
 use core::{num::NonZeroU64, pin::Pin, str, task::Poll};
 use futures::prelude::*;
 use redshirt_core::native::{DummyMessageIdWrite, NativeProgramEvent, NativeProgramRef};
-use redshirt_core::{Decode as _, Encode as _, EncodedMessage, InterfaceHash, MessageId};
-use redshirt_kernel_log_interface::ffi::{KernelLogMethod, INTERFACE};
+use redshirt_core::{Decode as _, Encode as _, EncodedMessage, MessageId};
+use redshirt_kernel_log_interface::ffi::INTERFACE;
 
 /// State machine for `random` interface messages handling.
 pub struct KernelLogNativeProgram<TPlat> {
