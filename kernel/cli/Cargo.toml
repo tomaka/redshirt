@@ -18,7 +18,7 @@ redshirt-random-hosted = { path = "../hosted-random" }
 redshirt-syscalls = { path = "../../interfaces/syscalls" }
 redshirt-tcp-hosted = { path = "../hosted-tcp" }
 parity-scale-codec = "1.0.5"
-structopt = "0.3.20"
+structopt = "0.3.21"
 wasi = { git = "https://github.com/bytecodealliance/wasi", rev = "45536ac956a6211e3cff047f36cf19d6da82fd95" } # TODO: dependabot cannot parse the versioning scheme (`0.10.0+wasi-snapshot-preview1`) of this crate on crates.io
 
 [build-dependencies]
