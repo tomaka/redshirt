@@ -17,7 +17,7 @@ futures = { version = "0.3.2", default-features = false, features = ["alloc"] }
 hashbrown = { version = "0.9.1", default-features = false }
 lazy_static = "1.4"
 libm = "0.2.1"
-linked_list_allocator = { version = "0.8.2", features = ["alloc_ref"] }
+linked_list_allocator = { version = "0.8.9", features = ["alloc_ref"] }
 nohash-hasher = { version = "0.2.0", default-features = false }
 rand_chacha = { version = "0.2.1", default-features = false }
 rand_core = { version = "0.5.1", default-features = false }
@@ -44,4 +44,4 @@ acpi = "2.0.0"
 crossbeam-utils = { version = "0.7.2", default-features = false }
 multiboot2 = "0.9.0"
 rdrand = { version = "0.7.0", default-features = false }
-x86_64 = "0.11.0"
+x86_64 = "0.12.3"
