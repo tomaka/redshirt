@@ -2026,7 +2026,7 @@ dependencies = [
  "atomic 0.4.6",
  "blake3",
  "crossbeam-queue 0.3.0",
- "crossbeam-utils 0.7.2",
+ "crossbeam-utils 0.8.0",
  "derive_more",
  "either",
  "fnv",
