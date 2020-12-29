@@ -44,5 +44,3 @@ panic = 'abort'
 [patch.crates-io]
 # TODO: waiting for the release of https://github.com/paritytech/parity-scale-codec/pull/199
 parity-scale-codec = { git = "https://github.com/paritytech/parity-scale-codec" }
-# TODO: needs a release of https://github.com/rust-osdev/x86_64/pull/218
-x86_64 = { git = "https://github.com/tomaka/x86_64", rev = "a9c55de9d0b18e06c28330724d1c6425ff1012bf" }

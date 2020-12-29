@@ -2908,8 +2908,9 @@ dependencies = [
 
 [[package]]
 name = "x86_64"
-version = "0.12.3"
-source = "git+https://github.com/tomaka/x86_64?rev=a9c55de9d0b18e06c28330724d1c6425ff1012bf#a9c55de9d0b18e06c28330724d1c6425ff1012bf"
+version = "0.12.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f3a6840d540b8dbe400f4ed5afe5816105ee5edebe485299a761d0d8b43cef7"
 dependencies = [
  "bit_field 0.9.0",
  "bitflags",
