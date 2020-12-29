@@ -1220,9 +1220,9 @@ dependencies = [
 
 [[package]]
 name = "log"
-version = "0.4.8"
+version = "0.4.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "14b6052be84e6b71ab17edffc2eeabf5c2c3ae1fdb464aae35ac50c67a44e1f7"
+checksum = "4fabed175da42fed1fa0746b0ea71f412aa9d35e76e95e59b192c64b9dc2bf8b"
 dependencies = [
  "cfg-if 0.1.10",
 ]
@@ -2038,7 +2038,7 @@ dependencies = [
  "atomic 0.4.6",
  "blake3",
  "crossbeam-queue 0.3.0",
- "crossbeam-utils 0.7.2",
+ "crossbeam-utils 0.8.0",
  "derive_more",
  "either",
  "fnv",
@@ -2920,8 +2920,9 @@ dependencies = [
 
 [[package]]
 name = "x86_64"
-version = "0.12.3"
-source = "git+https://github.com/tomaka/x86_64?rev=a9c55de9d0b18e06c28330724d1c6425ff1012bf#a9c55de9d0b18e06c28330724d1c6425ff1012bf"
+version = "0.12.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f3a6840d540b8dbe400f4ed5afe5816105ee5edebe485299a761d0d8b43cef7"
 dependencies = [
  "bit_field 0.9.0",
  "bitflags",
