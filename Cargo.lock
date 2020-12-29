@@ -27,6 +27,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "aml"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "45c1b12889aa22efe6fddefa6f729e21dc60e75ea66c66edc7bcefba51935a0a"
+dependencies = [
+ "bit_field 0.10.0",
+ "byteorder",
+ "log",
+]
+
+[[package]]
 name = "andrew"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2023,6 +2034,7 @@ name = "redshirt-standalone-kernel"
 version = "0.1.0"
 dependencies = [
  "acpi",
+ "aml",
  "atomic 0.4.6",
  "blake3",
  "crossbeam-queue 0.3.0",

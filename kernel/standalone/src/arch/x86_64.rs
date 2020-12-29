@@ -152,7 +152,7 @@ unsafe fn after_boot(multiboot_info: usize) -> ! {
     // TODO: remove these tables from the memory ranges used as heap? `acpi_tables` is a copy of
     // the table, so once we are past this line there's no problem anymore. But in theory,
     // the `acpi_tables` variable might allocate over the actual ACPI tables.
-    let acpi_tables = acpi::load_acpi_tables(&multiboot_info);
+    let acpi_tables = acpi::parse_acpi_tables(&multiboot_info);
 
     // The ACPI tables indicate us information about how to interface with the I/O APICs.
     // We use this information and initialize the I/O APICs.
