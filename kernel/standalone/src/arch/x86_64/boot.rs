@@ -185,7 +185,7 @@ macro_rules! __gen_boot {
                     bss_start = sym $bss_start,
                     bss_end = sym $bss_end,
                     gdt_ptr = sym $crate::arch::x86_64::gdt::GDT_POINTER,
-                    multiboot_info_ptr = sym $crate::arch::x86_64::boot::MULTIBOOT_INFO_PTR,
+                    multiboot_info_ptr = sym MULTIBOOT_INFO_PTR,
                     stack = sym $crate::arch::x86_64::boot::MAIN_PROCESSOR_STACK,
                     stack_size = const $crate::arch::x86_64::boot::MAIN_PROCESSOR_STACK_SIZE,
                     pml4 = sym $crate::arch::x86_64::boot::PML4,
@@ -210,12 +210,12 @@ macro_rules! __gen_boot {
             unsafe fn entry_point_step2(multiboot_info: usize) -> ! {
                 $crate::arch::x86_64::entry_point_step3(multiboot_info, $entry)
             }
+
+            // TODO: the kernel breaks if the linker puts this symbol too far away ; make this fool proof
+            static mut MULTIBOOT_INFO_PTR: u64 = 0;
         };
     }
 }
-
-#[doc(hidden)]
-pub static mut MULTIBOOT_INFO_PTR: u64 = 0;
 
 #[doc(hidden)]
 pub const MAIN_PROCESSOR_STACK_SIZE: usize = 0x800000;
