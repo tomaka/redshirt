@@ -31,8 +31,8 @@ mod misc;
 ///
 /// Do **not** call manually.
 #[naked]
-#[no_mangle]
-unsafe extern "C" fn _start() {
+#[export_name = "_start"]
+unsafe extern "C" fn entry_point() {
     asm!(r#"
         // Disable interrupts and clear pending interrupts.
         csrw mie, 0
@@ -75,7 +75,6 @@ extern "C" {
 }
 
 /// Main Rust entry point.
-#[no_mangle]
 unsafe fn after_boot() -> ! {
     // Initialize the logging system.
     log::set_logger(KLogger::new(KernelLogMethod {
