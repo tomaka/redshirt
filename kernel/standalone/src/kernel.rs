@@ -93,10 +93,8 @@ impl Kernel {
         // TODO: remove the cfg guards once rpi-framebuffer is capable of auto-detecting whether
         // it should enable itself
         #[cfg(any(target_arch = "arm", target_arch = "aarch64"))]
-        {
-            system_builder = system_builder
-                .with_startup_process(build_wasm_module!("../../../modules/rpi-framebuffer"))
-        }
+        let system_builder = system_builder
+            .with_startup_process(build_wasm_module!("../../../modules/rpi-framebuffer"));
 
         // TODO: temporary; uncomment to test
         /*system_builder = system_builder.with_main_program(
