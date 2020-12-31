@@ -18,14 +18,7 @@
 use crate::arch::{PlatformSpecific, PortErr};
 use crate::klog::KLogger;
 
-use alloc::sync::Arc;
-use core::{
-    convert::TryFrom as _,
-    fmt::{self, Write as _},
-    iter,
-    num::NonZeroU32,
-    pin::Pin,
-};
+use core::{iter, num::NonZeroU32, pin::Pin};
 use futures::prelude::*;
 use redshirt_kernel_log_interface::ffi::{KernelLogMethod, UartInfo};
 
@@ -52,8 +45,8 @@ unsafe extern "C" fn _start() {
         .option pop
 
         // Zero the BSS segment.
-        la a0, __bss_start
-        la a1, __bss_end
+        la a0, {bss_start}
+        la a1, {bss_end}
     .L0:sb zero, 0(a0)
         addi a0, a0, 1
         bltu a0, a1, .L0
@@ -69,11 +62,13 @@ unsafe extern "C" fn _start() {
 
         j {after_boot}
     "#,
+        bss_start = sym __bss_start,
+        bss_end = sym __bss_end,
         after_boot = sym after_boot,
         options(noreturn));
 }
 
-// TODO: remove this
+// TODO: remove this?
 extern "C" {
     static mut __bss_start: u8;
     static mut __bss_end: u8;
@@ -119,9 +114,10 @@ unsafe fn after_boot() -> ! {
 fn abort() -> ! {
     loop {
         unsafe {
-            // TODO: review asm attributes
-            asm!("ebreak");
-            asm!("wfi");
+            asm!(
+                "ebreak ; wfi",
+                options(nomem, nostack, preserves_flags, noreturn)
+            );
         }
     }
 }
@@ -208,8 +204,8 @@ impl PlatformSpecific for PlatformSpecificImpl {
         }
     }
 
-    fn timer(self: Pin<&Self>, deadline: u128) -> Self::TimerFuture {
-        unimplemented!()
+    fn timer(self: Pin<&Self>, _deadline: u128) -> Self::TimerFuture {
+        todo!()
     }
 
     fn next_irq(self: Pin<&Self>) -> Self::IrqFuture {

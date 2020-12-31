@@ -15,15 +15,12 @@
 
 //! Interrupts handling for RISC-V.
 
-use alloc::string::String;
-use core::fmt::{self, Write};
-
 pub unsafe fn init() -> Interrupts {
     let value = trap_handler as unsafe extern "C" fn() as usize;
     assert_eq!(value % 4, 0);
     // The 4 lower bits defined the mode. We keep 0, which means that all exceptions/interrupts
     // go to the same handler.
-    llvm_asm!("csrw mtvec, $0"::"r"(value)::"volatile");
+    asm!("csrw mtvec, {}", in(reg) value, options(nomem, nostack, preserves_flags));
     Interrupts {}
 }
 
@@ -38,10 +35,9 @@ impl Drop for Interrupts {
 
 #[cfg(target_pointer_width = "32")]
 #[naked]
-// TODO: somehow ensure that the symbol is 4-aligned?
 unsafe extern "C" fn trap_handler() {
-    // TODO: review asm attributes
     asm!(r#"
+    .align 4
         addi sp, sp, -56
 
         sw x1, 0(sp)
@@ -107,11 +103,12 @@ unsafe extern "C" fn trap_handler() {
         addi sp, sp, 56
         mret
     "#,
-        trap_handler_rust = sym trap_handler_rust);
+        trap_handler_rust = sym trap_handler_rust,
+        options(noreturn));
 }
 
 unsafe extern "C" fn trap_handler_rust() {
     let mcause: usize;
-    llvm_asm!("csrr $0, mcause":"=r"(mcause));
+    asm!("csrr {}, mcause", out(reg) mcause, options(nomem, nostack, preserves_flags));
     panic!("Interrupt with mcause = 0x{:x}", mcause);
 }
