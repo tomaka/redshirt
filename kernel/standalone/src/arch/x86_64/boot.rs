@@ -32,8 +32,8 @@
 ///
 /// Do **not** call manually.
 #[naked]
-#[no_mangle]
-unsafe extern "C" fn _start() {
+#[export_name = "_start"]
+unsafe extern "C" fn entry_point() {
     asm!(r#"
     .code32
         // Disabling interruptions as long as we are not ready to accept them.

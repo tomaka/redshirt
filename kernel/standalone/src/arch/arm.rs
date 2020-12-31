@@ -36,9 +36,9 @@ mod time_arm;
 
 /// This is the main entry point of the kernel for ARM 32bits architectures.
 #[cfg(target_arch = "arm")]
-#[no_mangle]
+#[export_name = "_start"]
 #[naked]
-unsafe extern "C" fn _start() -> ! {
+unsafe extern "C" fn entry_point_arm32() -> ! {
     // TODO: always fails :-/
     /*#[cfg(not(any(target_feature = "armv7-a", target_feature = "armv7-r")))]
     compile_error!("The ARMv7-A or ARMv7-R instruction sets must be enabled");*/
@@ -78,9 +78,9 @@ unsafe extern "C" fn _start() -> ! {
 
 /// This is the main entry point of the kernel for ARM 64bits architectures.
 #[cfg(target_arch = "aarch64")]
-#[no_mangle]
+#[export_name = "_start"]
 #[naked]
-unsafe extern "C" fn _start() -> ! {
+unsafe extern "C" fn entry_point_arm64() -> ! {
     // TODO: review this
     llvm_asm!(r#"
     mrs x6, MPIDR_EL1
@@ -194,7 +194,7 @@ impl PlatformSpecific for PlatformSpecificImpl {
     }
 }
 
-// TODO: no_mangle and naked because it's called at initialization; attributes should eventually be removed
+// TODO: remove no_mangle after transitionning from `llvm_asm!` to `asm!` above
 #[no_mangle]
 #[naked]
 fn halt() -> ! {
