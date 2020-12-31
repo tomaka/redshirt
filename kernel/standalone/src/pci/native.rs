@@ -26,9 +26,9 @@ use redshirt_pci_interface::ffi;
 use spinning_top::Spinlock;
 
 /// State machine for `pci` interface messages handling.
-pub struct PciNativeProgram<TPlat> {
+pub struct PciNativeProgram {
     /// Platform-specific hooks.
-    platform_specific: Pin<Arc<TPlat>>,
+    platform_specific: Pin<Arc<PlatformSpecific>>,
     /// Future triggered the next time a PCI device generates an interrupt.
     // TODO: at the moment we don't differentiate between devices
     next_irq: Spinlock<Pin<Box<dyn Future<Output = ()> + Send>>>,
@@ -59,14 +59,12 @@ struct LockedDevice {
     next_interrupt_messages: VecDeque<MessageId>,
 }
 
-impl<TPlat> PciNativeProgram<TPlat>
-where
-    TPlat: PlatformSpecific,
-{
+impl PciNativeProgram {
     /// Initializes the new state machine for PCI messages handling.
-    pub fn new(devices: pci::PciDevices, platform_specific: Pin<Arc<TPlat>>) -> Self {
-        let next_irq =
-            Spinlock::new(Box::pin(TPlat::next_irq(platform_specific.as_ref())) as Pin<Box<_>>);
+    pub fn new(devices: pci::PciDevices, platform_specific: Pin<Arc<PlatformSpecific>>) -> Self {
+        let next_irq = Spinlock::new(Box::pin(PlatformSpecific::next_irq(
+            platform_specific.as_ref(),
+        )) as Pin<Box<_>>);
 
         let (pending_messages_tx, pending_messages) = future_channel::channel();
 
@@ -84,10 +82,7 @@ where
     }
 }
 
-impl<'a, TPlat> NativeProgramRef<'a> for &'a PciNativeProgram<TPlat>
-where
-    TPlat: PlatformSpecific,
-{
+impl<'a> NativeProgramRef<'a> for &'a PciNativeProgram {
     type Future =
         Pin<Box<dyn Future<Output = NativeProgramEvent<Self::MessageIdWrite>> + Send + 'a>>;
     type MessageIdWrite = DummyMessageIdWrite;
@@ -172,7 +167,8 @@ where
                 // We grab the next IRQ future now, in order to not miss any IRQ happening
                 // while `locked_devices` is processed below.
                 *self.next_irq.lock() =
-                    Box::pin(TPlat::next_irq(self.platform_specific.as_ref())) as Pin<Box<_>>;
+                    Box::pin(PlatformSpecific::next_irq(self.platform_specific.as_ref()))
+                        as Pin<Box<_>>;
 
                 // Wake up all the devices.
                 let mut locked_devices = self.locked_devices.lock();

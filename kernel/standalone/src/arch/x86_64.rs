@@ -13,9 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#![cfg(target_arch = "x86_64")]
-
-use crate::arch::{PlatformSpecific, PortErr};
+use crate::arch::PortErr;
 use crate::klog::KLogger;
 
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
@@ -37,12 +35,20 @@ use redshirt_kernel_log_interface::ffi::{FramebufferFormat, FramebufferInfo, Ker
 use spinning_top::Spinlock;
 use x86_64::structures::port::{PortRead as _, PortWrite as _};
 
+use super::PlatformSpecific;
+
+// Modules that are used by the macro must be public, but their content isn't meant to be used
+// apart from the macro.
+#[macro_use]
+#[doc(hidden)]
+pub mod boot;
+#[doc(hidden)]
+pub mod gdt;
+
 mod acpi;
 mod ap_boot;
 mod apic;
-mod boot;
 mod executor;
-mod gdt;
 mod interrupts;
 mod panic;
 mod pit;
@@ -72,7 +78,15 @@ const DEFAULT_LOG_METHOD: KernelLogMethod = KernelLogMethod {
 ///
 /// `multiboot_info` must be a valid memory address that contains valid information.
 ///
-unsafe fn after_boot(multiboot_info: usize) -> ! {
+#[doc(hidden)]
+// TODO: use `Future<Output = !>` once stable
+pub unsafe fn entry_point_step3<
+    F: Fn(Pin<Arc<super::PlatformSpecific>>) -> C + Clone + Send + 'static,
+    C: Future,
+>(
+    multiboot_info: usize,
+    run: F,
+) -> ! {
     let multiboot_info = multiboot2::load(multiboot_info);
 
     // Initialization of the memory allocator.
@@ -218,7 +232,7 @@ unsafe fn after_boot(multiboot_info: usize) -> ! {
         .processor_info
         .unwrap()
         .application_processors;
-    let mut kernel_channels = Vec::with_capacity(application_processors.len());
+    let mut barrier_channels = Vec::with_capacity(application_processors.len());
 
     writeln!(
         logger.log_printer(),
@@ -233,8 +247,7 @@ unsafe fn after_boot(multiboot_info: usize) -> ! {
             continue;
         }
 
-        let (kernel_tx, kernel_rx) = oneshot::channel::<Arc<crate::kernel::Kernel<_>>>();
-        let cpu_num = kernel_channels.len().checked_add(1).unwrap();
+        let (plat_spec_tx, plat_spec_rx) = oneshot::channel::<Pin<Arc<PlatformSpecific>>>();
 
         let ap_boot_result = ap_boot::boot_associated_processor(
             &mut ap_boot_alloc,
@@ -244,18 +257,19 @@ unsafe fn after_boot(multiboot_info: usize) -> ! {
             apic::ApicId::from_unchecked(ap.local_apic_id),
             {
                 let executor = &*executor;
+                let run = run.clone();
                 move || {
                     executor.block_on(async move {
-                        let kernel = kernel_rx.await.unwrap();
-                        // The `run()` method never returns.
-                        kernel.run(cpu_num).await
+                        let platform_specific = plat_spec_rx.await.unwrap();
+                        let _ = run(platform_specific).await;
+                        unreachable!() // TODO: remove after `!` is stable
                     })
                 }
             },
         );
 
         match ap_boot_result {
-            Ok(()) => kernel_channels.push(kernel_tx),
+            Ok(()) => barrier_channels.push(plat_spec_tx),
             Err(err) => writeln!(
                 logger.log_printer(),
                 "[boot] error while initializing AP#{}: {}",
@@ -267,8 +281,8 @@ unsafe fn after_boot(multiboot_info: usize) -> ! {
     }
 
     // Now that everything has been initialized and all the processors started, we can initialize
-    // the kernel.
-    let kernel = {
+    // the platform-specific object.
+    let platform_specific = {
         /// Waker registered for `pci_interrupt_vector`. Re-registers itself automatically
         /// whenever it is woken up.
         struct NextIrqWaker {
@@ -312,7 +326,7 @@ unsafe fn after_boot(multiboot_info: usize) -> ! {
         let platform_specific = PlatformSpecificImpl {
             timers,
             num_cpus: NonZeroU32::new(
-                u32::try_from(kernel_channels.len())
+                u32::try_from(barrier_channels.len())
                     .unwrap()
                     .checked_add(1)
                     .unwrap(),
@@ -323,21 +337,22 @@ unsafe fn after_boot(multiboot_info: usize) -> ! {
             next_next_irq_id: From::from(0),
         };
 
-        Arc::new(crate::kernel::Kernel::init(platform_specific))
+        Arc::pin(super::PlatformSpecific::from(platform_specific))
     };
 
     writeln!(logger.log_printer(), "[boot] boot successful").unwrap();
 
     // Send an `Arc<Kernel>` to the other processors so that they can run it too.
-    for tx in kernel_channels {
-        if tx.send(kernel.clone()).is_err() {
+    for tx in barrier_channels {
+        if tx.send(platform_specific.clone()).is_err() {
             panic!("failed to send kernel to associated processor");
         }
     }
 
     // Start the kernel on the boot processor too.
     // This function never returns.
-    executor.block_on(kernel.run(0))
+    let _ = executor.block_on(run(platform_specific));
+    unreachable!() // TODO: remove after `!` is stable
 }
 
 /// Reads the boot information and find the memory ranges that can be used as a heap.
@@ -441,7 +456,7 @@ fn find_free_memory_ranges<'a>(
 }
 
 /// Implementation of [`PlatformSpecific`].
-struct PlatformSpecificImpl {
+pub struct PlatformSpecificImpl {
     timers: Arc<apic::timers::Timers>,
     num_cpus: NonZeroU32,
     logger: Arc<KLogger>,
@@ -453,19 +468,22 @@ struct PlatformSpecificImpl {
         Arc<Spinlock<HashMap<u64, (Arc<atomic::AtomicBool>, Option<Waker>), fnv::FnvBuildHasher>>>,
 }
 
-impl PlatformSpecific for PlatformSpecificImpl {
-    type TimerFuture = apic::timers::TimerFuture;
-    type IrqFuture = NextIrqFuture;
+impl From<PlatformSpecificImpl> for super::PlatformSpecific {
+    fn from(ps: PlatformSpecificImpl) -> Self {
+        Self(ps)
+    }
+}
 
-    fn num_cpus(self: Pin<&Self>) -> NonZeroU32 {
+impl PlatformSpecificImpl {
+    pub fn num_cpus(self: Pin<&Self>) -> NonZeroU32 {
         self.num_cpus
     }
 
-    fn monotonic_clock(self: Pin<&Self>) -> u128 {
+    pub fn monotonic_clock(self: Pin<&Self>) -> u128 {
         self.timers.monotonic_clock().as_nanos()
     }
 
-    fn timer(self: Pin<&Self>, clock_value: u128) -> Self::TimerFuture {
+    pub fn timer(self: Pin<&Self>, clock_value: u128) -> TimerFuture {
         self.timers.register_timer_at({
             // `unwrap_or(u64::max_value())` means that any wait longer than 2^64 seconds will be
             // clamped to 2^64 seconds. We don't expect any system to ever run for 2^64 seconds.
@@ -475,7 +493,7 @@ impl PlatformSpecific for PlatformSpecificImpl {
         })
     }
 
-    fn next_irq(self: Pin<&Self>) -> Self::IrqFuture {
+    pub fn next_irq(self: Pin<&Self>) -> IrqFuture {
         let done = Arc::new(atomic::AtomicBool::new(false));
         let id = self
             .next_next_irq_id
@@ -487,22 +505,22 @@ impl PlatformSpecific for PlatformSpecificImpl {
             .lock()
             .insert(id, (done.clone(), None));
 
-        NextIrqFuture {
+        IrqFuture {
             next_irq_futures: self.next_irq_futures.clone(),
             done,
             id,
         }
     }
 
-    fn write_log(&self, message: &str) {
+    pub fn write_log(&self, message: &str) {
         writeln!(self.logger.log_printer(), "{}", message).unwrap();
     }
 
-    fn set_logger_method(&self, method: KernelLogMethod) {
+    pub fn set_logger_method(&self, method: KernelLogMethod) {
         self.logger.set_method(method)
     }
 
-    unsafe fn write_port_u8(self: Pin<&Self>, port: u32, data: u8) -> Result<(), PortErr> {
+    pub unsafe fn write_port_u8(self: Pin<&Self>, port: u32, data: u8) -> Result<(), PortErr> {
         if let Ok(port) = u16::try_from(port) {
             u8::write_to_port(port, data);
             Ok(())
@@ -511,7 +529,7 @@ impl PlatformSpecific for PlatformSpecificImpl {
         }
     }
 
-    unsafe fn write_port_u16(self: Pin<&Self>, port: u32, data: u16) -> Result<(), PortErr> {
+    pub unsafe fn write_port_u16(self: Pin<&Self>, port: u32, data: u16) -> Result<(), PortErr> {
         if let Ok(port) = u16::try_from(port) {
             u16::write_to_port(port, data);
             Ok(())
@@ -520,7 +538,7 @@ impl PlatformSpecific for PlatformSpecificImpl {
         }
     }
 
-    unsafe fn write_port_u32(self: Pin<&Self>, port: u32, data: u32) -> Result<(), PortErr> {
+    pub unsafe fn write_port_u32(self: Pin<&Self>, port: u32, data: u32) -> Result<(), PortErr> {
         if let Ok(port) = u16::try_from(port) {
             u32::write_to_port(port, data);
             Ok(())
@@ -529,7 +547,7 @@ impl PlatformSpecific for PlatformSpecificImpl {
         }
     }
 
-    unsafe fn read_port_u8(self: Pin<&Self>, port: u32) -> Result<u8, PortErr> {
+    pub unsafe fn read_port_u8(self: Pin<&Self>, port: u32) -> Result<u8, PortErr> {
         if let Ok(port) = u16::try_from(port) {
             Ok(u8::read_from_port(port))
         } else {
@@ -537,7 +555,7 @@ impl PlatformSpecific for PlatformSpecificImpl {
         }
     }
 
-    unsafe fn read_port_u16(self: Pin<&Self>, port: u32) -> Result<u16, PortErr> {
+    pub unsafe fn read_port_u16(self: Pin<&Self>, port: u32) -> Result<u16, PortErr> {
         if let Ok(port) = u16::try_from(port) {
             Ok(u16::read_from_port(port))
         } else {
@@ -545,7 +563,7 @@ impl PlatformSpecific for PlatformSpecificImpl {
         }
     }
 
-    unsafe fn read_port_u32(self: Pin<&Self>, port: u32) -> Result<u32, PortErr> {
+    pub unsafe fn read_port_u32(self: Pin<&Self>, port: u32) -> Result<u32, PortErr> {
         if let Ok(port) = u16::try_from(port) {
             Ok(u32::read_from_port(port))
         } else {
@@ -554,14 +572,16 @@ impl PlatformSpecific for PlatformSpecificImpl {
     }
 }
 
-struct NextIrqFuture {
+pub type TimerFuture = apic::timers::TimerFuture;
+
+pub struct IrqFuture {
     next_irq_futures:
         Arc<Spinlock<HashMap<u64, (Arc<atomic::AtomicBool>, Option<Waker>), fnv::FnvBuildHasher>>>,
     done: Arc<atomic::AtomicBool>,
     id: u64,
 }
 
-impl Future for NextIrqFuture {
+impl Future for IrqFuture {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<()> {
@@ -592,7 +612,7 @@ impl Future for NextIrqFuture {
     }
 }
 
-impl Drop for NextIrqFuture {
+impl Drop for IrqFuture {
     fn drop(&mut self) {
         let mut next_irq_futures = self.next_irq_futures.lock();
         let _ = next_irq_futures.remove(&self.id);

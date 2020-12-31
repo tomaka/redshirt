@@ -55,7 +55,7 @@ pub struct KernelRng {
 
 impl KernelRng {
     /// Initializes a new [`KernelRng`].
-    pub fn new(platform_specific: Pin<Arc<impl PlatformSpecific>>) -> KernelRng {
+    pub fn new(platform_specific: Pin<Arc<PlatformSpecific>>) -> KernelRng {
         // Initialize the `JitterRng`.
         let mut jitter = {
             let mut rng = JitterRng::new_with_timer(move || {

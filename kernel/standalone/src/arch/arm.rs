@@ -13,8 +13,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#![cfg(any(target_arch = "arm", target_arch = "aarch64"))]
-
 use crate::arch::{PlatformSpecific, PortErr};
 use crate::klog::KLogger;
 
@@ -139,60 +137,66 @@ struct PlatformSpecificImpl {
     time: Arc<time::TimeControl>,
 }
 
-impl PlatformSpecific for PlatformSpecificImpl {
-    type TimerFuture = time::TimerFuture;
-    type IrqFuture = future::Pending<()>;
+impl From<PlatformSpecificImpl> for super::PlatformSpecific {
+    fn from(ps: PlatformSpecificImpl) -> Self {
+        Self(ps)
+    }
+}
 
-    fn num_cpus(self: Pin<&Self>) -> NonZeroU32 {
+impl PlatformSpecificImpl {
+    pub fn num_cpus(self: Pin<&Self>) -> NonZeroU32 {
         NonZeroU32::new(1).unwrap()
     }
 
-    fn monotonic_clock(self: Pin<&Self>) -> u128 {
+    pub fn monotonic_clock(self: Pin<&Self>) -> u128 {
         self.time.monotonic_clock()
     }
 
-    fn timer(self: Pin<&Self>, deadline: u128) -> Self::TimerFuture {
+    pub fn timer(self: Pin<&Self>, deadline: u128) -> TimerFuture {
         self.time.timer(deadline)
     }
 
-    fn next_irq(self: Pin<&Self>) -> Self::IrqFuture {
+    pub fn next_irq(self: Pin<&Self>) -> IrqFuture {
         future::pending()
     }
 
-    fn write_log(&self, message: &str) {
+    pub fn write_log(&self, message: &str) {
         log::write_log(message);
     }
 
-    fn set_logger_method(&self, method: KernelLogMethod) {
+    pub fn set_logger_method(&self, method: KernelLogMethod) {
         unsafe {
             log::set_logger(KLogger::new(method));
         }
     }
 
-    unsafe fn write_port_u8(self: Pin<&Self>, _: u32, _: u8) -> Result<(), PortErr> {
+    pub unsafe fn write_port_u8(self: Pin<&Self>, _: u32, _: u8) -> Result<(), PortErr> {
         Err(PortErr::Unsupported)
     }
 
-    unsafe fn write_port_u16(self: Pin<&Self>, _: u32, _: u16) -> Result<(), PortErr> {
+    pub unsafe fn write_port_u16(self: Pin<&Self>, _: u32, _: u16) -> Result<(), PortErr> {
         Err(PortErr::Unsupported)
     }
 
-    unsafe fn write_port_u32(self: Pin<&Self>, _: u32, _: u32) -> Result<(), PortErr> {
+    pub unsafe fn write_port_u32(self: Pin<&Self>, _: u32, _: u32) -> Result<(), PortErr> {
         Err(PortErr::Unsupported)
     }
 
-    unsafe fn read_port_u8(self: Pin<&Self>, _: u32) -> Result<u8, PortErr> {
+    pub unsafe fn read_port_u8(self: Pin<&Self>, _: u32) -> Result<u8, PortErr> {
         Err(PortErr::Unsupported)
     }
 
-    unsafe fn read_port_u16(self: Pin<&Self>, _: u32) -> Result<u16, PortErr> {
+    pub unsafe fn read_port_u16(self: Pin<&Self>, _: u32) -> Result<u16, PortErr> {
         Err(PortErr::Unsupported)
     }
 
-    unsafe fn read_port_u32(self: Pin<&Self>, _: u32) -> Result<u32, PortErr> {
+    pub unsafe fn read_port_u32(self: Pin<&Self>, _: u32) -> Result<u32, PortErr> {
         Err(PortErr::Unsupported)
     }
 }
+
+type TimerFuture = time::TimerFuture;
+type IrqFuture = future::Pending<()>;
 
 // TODO: remove no_mangle after transitionning from `llvm_asm!` to `asm!` above
 #[no_mangle]

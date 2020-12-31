@@ -25,7 +25,7 @@ use redshirt_core::{Decode as _, Encode as _, EncodedMessage, MessageId};
 use redshirt_kernel_log_interface::ffi::INTERFACE;
 
 /// State machine for `random` interface messages handling.
-pub struct KernelLogNativeProgram<TPlat> {
+pub struct KernelLogNativeProgram {
     /// If true, we have sent the interface registration message.
     registered: atomic::Atomic<bool>,
     /// If `Some`, contains the registration ID towards the `interface` interface.
@@ -37,12 +37,12 @@ pub struct KernelLogNativeProgram<TPlat> {
     /// List of messages waiting to be emitted with `next_event`.
     pending_messages: future_channel::UnboundedReceiver<(MessageId, Result<EncodedMessage, ()>)>,
     /// Platform-specific hooks.
-    platform_specific: Pin<Arc<TPlat>>,
+    platform_specific: Pin<Arc<PlatformSpecific>>,
 }
 
-impl<TPlat> KernelLogNativeProgram<TPlat> {
+impl KernelLogNativeProgram {
     /// Initializes the native program.
-    pub fn new(platform_specific: Pin<Arc<TPlat>>) -> Self {
+    pub fn new(platform_specific: Pin<Arc<PlatformSpecific>>) -> Self {
         let (pending_messages_tx, pending_messages) = future_channel::channel();
         KernelLogNativeProgram {
             registered: atomic::Atomic::new(false),
@@ -55,10 +55,7 @@ impl<TPlat> KernelLogNativeProgram<TPlat> {
     }
 }
 
-impl<'a, TPlat> NativeProgramRef<'a> for &'a KernelLogNativeProgram<TPlat>
-where
-    TPlat: PlatformSpecific,
-{
+impl<'a> NativeProgramRef<'a> for &'a KernelLogNativeProgram {
     type Future =
         Pin<Box<dyn Future<Output = NativeProgramEvent<Self::MessageIdWrite>> + Send + 'a>>;
     type MessageIdWrite = DummyMessageIdWrite;

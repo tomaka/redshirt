@@ -28,7 +28,12 @@
 extern crate alloc;
 extern crate rlibc; // TODO: necessary as a work-around for some linking issue; needs to be investigated
 
+use alloc::sync::Arc;
+use core::{pin::Pin, sync::atomic};
+
+#[macro_use]
 mod arch;
+
 mod future_channel;
 mod hardware;
 mod kernel;
@@ -38,5 +43,39 @@ mod pci;
 mod random;
 mod time;
 
-// This contains nothing. As the main entry point of the kernel is platform-specific, it is
-// located in the `arch` module rather than here.
+async fn main(platform_specific: Pin<Arc<arch::PlatformSpecific>>) -> ! {
+    // Initialize the kernel once for all cores.
+    static KERNEL: spinning_top::Spinlock<Option<Arc<kernel::Kernel>>> =
+        spinning_top::Spinlock::new(None);
+
+    // Initialize the kernel.
+    // TODO: do this better than spinlocking, as initialization might be expensive
+    let kernel = {
+        let mut lock = KERNEL.lock();
+        if let Some(existing_kernel) = lock.as_ref() {
+            existing_kernel.clone()
+        } else {
+            let new_kernel = Arc::new(kernel::Kernel::init(platform_specific));
+            *lock = Some(new_kernel.clone());
+            new_kernel
+        }
+    };
+
+    // Assign an index to each CPU.
+    static CPU_INDEX: atomic::AtomicUsize = atomic::AtomicUsize::new(0);
+    let cpu_index = CPU_INDEX.fetch_add(1, atomic::Ordering::Relaxed);
+
+    // Run the kernel. This call never returns.
+    kernel.run(cpu_index).await
+}
+
+__gen_boot! {
+    entry: main,
+    bss_start: __bss_start,
+    bss_end: __bss_end,
+}
+
+extern "C" {
+    static mut __bss_start: u8;
+    static mut __bss_end: u8;
+}
