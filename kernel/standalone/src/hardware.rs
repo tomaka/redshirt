@@ -33,7 +33,7 @@ use redshirt_hardware_interface::ffi::{
 use spinning_top::Spinlock;
 
 /// State machine for `hardware` interface messages handling.
-pub struct HardwareHandler<TPlat> {
+pub struct HardwareHandler {
     /// If true, we have sent the interface registration message.
     registered: atomic::Atomic<bool>,
     /// If `Some`, contains the registration ID towards the `interface` interface.
@@ -41,7 +41,7 @@ pub struct HardwareHandler<TPlat> {
     /// Number of message requests that need to be emitted.
     pending_message_requests: atomic::Atomic<u8>,
     /// Platform-specific hooks.
-    platform_specific: Pin<Arc<TPlat>>,
+    platform_specific: Pin<Arc<PlatformSpecific>>,
     /// For each PID, a list of memory allocations.
     // TODO: optimize
     allocations: Spinlock<HashMap<Pid, Vec<Vec<u8>>, BuildNoHashHasher<u64>>>,
@@ -51,9 +51,9 @@ pub struct HardwareHandler<TPlat> {
     pending_messages: future_channel::UnboundedReceiver<(MessageId, Result<EncodedMessage, ()>)>,
 }
 
-impl<TPlat> HardwareHandler<TPlat> {
+impl HardwareHandler {
     /// Initializes the new state machine for hardware accesses.
-    pub fn new(platform_specific: Pin<Arc<TPlat>>) -> Self {
+    pub fn new(platform_specific: Pin<Arc<PlatformSpecific>>) -> Self {
         let (pending_messages_tx, pending_messages) = future_channel::channel();
         HardwareHandler {
             registered: atomic::Atomic::new(false),
@@ -67,10 +67,7 @@ impl<TPlat> HardwareHandler<TPlat> {
     }
 }
 
-impl<'a, TPlat> NativeProgramRef<'a> for &'a HardwareHandler<TPlat>
-where
-    TPlat: PlatformSpecific,
-{
+impl<'a> NativeProgramRef<'a> for &'a HardwareHandler {
     type Future =
         Pin<Box<dyn Future<Output = NativeProgramEvent<Self::MessageIdWrite>> + Send + 'a>>;
     type MessageIdWrite = DummyMessageIdWrite;
@@ -253,12 +250,11 @@ where
     }
 }
 
-unsafe fn perform_operation<TPlat>(
-    platform_specific: Pin<&TPlat>,
+unsafe fn perform_operation(
+    platform_specific: Pin<&PlatformSpecific>,
     operation: Operation,
 ) -> Option<HardwareAccessResponse>
 where
-    TPlat: PlatformSpecific,
 {
     match operation {
         Operation::PhysicalMemoryMemset {

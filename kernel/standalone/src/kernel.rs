@@ -32,13 +32,13 @@ use redshirt_core::{build_wasm_module, extrinsics::wasi::WasiExtrinsics, System}
 use spinning_top::Spinlock;
 
 /// Main struct of this crate. Runs everything.
-pub struct Kernel<TPlat> {
+pub struct Kernel {
     /// Contains the list of all processes, threads, interfaces, messages, and so on.
     system: System<'static, WasiExtrinsics>,
     /// Has one entry for each CPU. Never resized.
     cpu_busy_counters: Vec<CpuCounter>,
     /// Platform-specific getters. Passed at initialization.
-    platform_specific: Pin<Arc<TPlat>>,
+    platform_specific: Pin<Arc<PlatformSpecific>>,
     /// List of CPUs for which [`Kernel::run`] hasn't been called yet. Also makes it possible to
     /// make sure that [`Kernel::run`] isn't called twice with the same CPU index.
     not_started_cpus: Spinlock<HashSet<usize, fnv::FnvBuildHasher>>,
@@ -52,14 +52,9 @@ struct CpuCounter {
     idle_ticks: atomic::Atomic<u128>,
 }
 
-impl<TPlat> Kernel<TPlat>
-where
-    TPlat: PlatformSpecific,
-{
+impl Kernel {
     /// Initializes a new `Kernel`.
-    pub fn init(platform_specific: TPlat) -> Self {
-        let platform_specific = Arc::pin(platform_specific);
-
+    pub fn init(platform_specific: Pin<Arc<PlatformSpecific>>) -> Self {
         // TODO: don't do this on platforms that don't have PCI?
         let pci_devices = unsafe { crate::pci::pci::init_cam_pci() };
 
@@ -98,10 +93,8 @@ where
         // TODO: remove the cfg guards once rpi-framebuffer is capable of auto-detecting whether
         // it should enable itself
         #[cfg(any(target_arch = "arm", target_arch = "aarch64"))]
-        {
-            system_builder = system_builder
-                .with_startup_process(build_wasm_module!("../../../modules/rpi-framebuffer"))
-        }
+        let system_builder = system_builder
+            .with_startup_process(build_wasm_module!("../../../modules/rpi-framebuffer"));
 
         // TODO: temporary; uncomment to test
         /*system_builder = system_builder.with_main_program(

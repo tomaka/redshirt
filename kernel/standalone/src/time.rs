@@ -26,7 +26,7 @@ use redshirt_time_interface::ffi::{TimeMessage, INTERFACE};
 use spinning_top::Spinlock;
 
 /// State machine for `time` interface messages handling.
-pub struct TimeHandler<TPlat> {
+pub struct TimeHandler {
     /// If true, we have sent the interface registration message.
     registered: atomic::Atomic<bool>,
     /// If `Some`, contains the registration ID towards the `interface` interface.
@@ -34,7 +34,7 @@ pub struct TimeHandler<TPlat> {
     /// Number of message requests that need to be emitted.
     pending_message_requests: atomic::Atomic<u8>,
     /// Platform-specific hooks.
-    platform_specific: Pin<Arc<TPlat>>,
+    platform_specific: Pin<Arc<PlatformSpecific>>,
     /// Sending side of `pending_messages`.
     pending_messages_tx:
         future_channel::UnboundedSender<Option<(MessageId, Result<EncodedMessage, ()>)>>,
@@ -47,9 +47,9 @@ pub struct TimeHandler<TPlat> {
     timers: Spinlock<FuturesUnordered<Pin<Box<dyn Future<Output = MessageId> + Send>>>>,
 }
 
-impl<TPlat> TimeHandler<TPlat> {
+impl TimeHandler {
     /// Initializes the new state machine for time accesses.
-    pub fn new(platform_specific: Pin<Arc<TPlat>>) -> Self {
+    pub fn new(platform_specific: Pin<Arc<PlatformSpecific>>) -> Self {
         let (pending_messages_tx, pending_messages) = future_channel::channel();
 
         TimeHandler {
@@ -64,10 +64,7 @@ impl<TPlat> TimeHandler<TPlat> {
     }
 }
 
-impl<'a, TPlat> NativeProgramRef<'a> for &'a TimeHandler<TPlat>
-where
-    TPlat: PlatformSpecific,
-{
+impl<'a> NativeProgramRef<'a> for &'a TimeHandler {
     type Future =
         Pin<Box<dyn Future<Output = NativeProgramEvent<Self::MessageIdWrite>> + Send + 'a>>;
     type MessageIdWrite = DummyMessageIdWrite;

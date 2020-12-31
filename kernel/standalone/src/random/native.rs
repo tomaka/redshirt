@@ -27,7 +27,7 @@ use redshirt_core::{Decode as _, Encode as _, EncodedMessage, MessageId};
 use redshirt_random_interface::ffi::{GenerateResponse, RandomMessage, INTERFACE};
 
 /// State machine for `random` interface messages handling.
-pub struct RandomNativeProgram<TPlat> {
+pub struct RandomNativeProgram {
     /// If true, we have sent the interface registration message.
     registered: atomic::Atomic<bool>,
     /// If `Some`, contains the registration ID towards the `interface` interface.
@@ -41,12 +41,12 @@ pub struct RandomNativeProgram<TPlat> {
     /// List of messages waiting to be emitted with `next_event`.
     pending_messages: future_channel::UnboundedReceiver<(MessageId, Result<EncodedMessage, ()>)>,
     /// Platform-specific hooks.
-    platform_specific: Pin<Arc<TPlat>>,
+    platform_specific: Pin<Arc<PlatformSpecific>>,
 }
 
-impl<TPlat> RandomNativeProgram<TPlat> {
+impl RandomNativeProgram {
     /// Initializes the new state machine for random messages handling.
-    pub fn new(platform_specific: Pin<Arc<TPlat>>) -> Self {
+    pub fn new(platform_specific: Pin<Arc<PlatformSpecific>>) -> Self {
         let (pending_messages_tx, pending_messages) = future_channel::channel();
         RandomNativeProgram {
             registered: atomic::Atomic::new(false),
@@ -60,10 +60,7 @@ impl<TPlat> RandomNativeProgram<TPlat> {
     }
 }
 
-impl<'a, TPlat> NativeProgramRef<'a> for &'a RandomNativeProgram<TPlat>
-where
-    TPlat: PlatformSpecific,
-{
+impl<'a> NativeProgramRef<'a> for &'a RandomNativeProgram {
     type Future =
         Pin<Box<dyn Future<Output = NativeProgramEvent<Self::MessageIdWrite>> + Send + 'a>>;
     type MessageIdWrite = DummyMessageIdWrite;

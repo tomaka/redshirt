@@ -893,7 +893,7 @@ dependencies = [
  "futures-sink",
  "futures-task",
  "memchr",
- "pin-project",
+ "pin-project 0.4.20",
  "pin-utils",
  "proc-macro-hack",
  "proc-macro-nested",
@@ -1604,7 +1604,16 @@ version = "0.4.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e75373ff9037d112bb19bc61333a06a159eaeb217660dcfbea7d88e1db823919"
 dependencies = [
- "pin-project-internal",
+ "pin-project-internal 0.4.20",
+]
+
+[[package]]
+name = "pin-project"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9ccc2237c2c489783abd8c4c80e5450fc0e98644555b1364da68cc29aa151ca7"
+dependencies = [
+ "pin-project-internal 1.0.2",
 ]
 
 [[package]]
@@ -1612,6 +1621,17 @@ name = "pin-project-internal"
 version = "0.4.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "10b4b44893d3c370407a1d6a5cfde7c41ae0478e31c516c85f67eb3adc51be6d"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "pin-project-internal"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f8e8d2bf0b23038a4424865103a4df472855692821aab4e4f5c3312d461d9e5f"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1709,9 +1729,9 @@ checksum = "8e946095f9d3ed29ec38de908c22f95d9ac008e424c7bcae54c75a79c527c694"
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.18"
+version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "beae6331a816b1f65d04c45b078fd8e6c93e8071771f41b8163255bbd8d7c8fa"
+checksum = "1e0704ee1a7e00d7bb417d0770ea303c1bccbabf0ef1667dae92b5967f5f8a71"
 dependencies = [
  "unicode-xid",
 ]
@@ -2049,6 +2069,7 @@ dependencies = [
  "linked_list_allocator",
  "multiboot2",
  "nohash-hasher",
+ "pin-project 1.0.2",
  "rand_chacha",
  "rand_core",
  "rand_jitter",
@@ -2079,7 +2100,7 @@ dependencies = [
  "lazy_static",
  "nohash-hasher",
  "parity-scale-codec",
- "pin-project",
+ "pin-project 0.4.20",
  "slab 0.4.2 (git+https://github.com/baloo/slab?rev=88b456131de20750e785655d1e62cd0b6e10d44b)",
  "spinning_top 0.2.2",
 ]
@@ -2090,7 +2111,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "parity-scale-codec",
- "pin-project",
+ "pin-project 0.4.20",
  "redshirt-syscalls",
 ]
 
@@ -2127,7 +2148,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "parity-scale-codec",
- "pin-project",
+ "pin-project 0.4.20",
  "redshirt-syscalls",
 ]
 
@@ -2455,9 +2476,9 @@ checksum = "343f3f510c2915908f155e94f17220b19ccfacf2a64a2a5d8004f2c3e311e7fd"
 
 [[package]]
 name = "syn"
-version = "1.0.30"
+version = "1.0.56"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "93a56fabc59dce20fe48b6c832cc249c713e7ed88fa28b0ee0a3bfcaae5fe4e2"
+checksum = "a9802ddde94170d186eeee5005b798d9c159fa970403f1be19976d0cfb939b72"
 dependencies = [
  "proc-macro2",
  "quote",
