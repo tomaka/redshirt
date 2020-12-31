@@ -41,8 +41,8 @@ macro_rules! __gen_boot {
                 asm!(r#"
                 .code32
                     // Disabling interruptions as long as we are not ready to accept them.
-                    // This is normally already done by the bootloader, but it costs nothing to do it here
-                    // again just in case.
+                    // This is normally already done by the bootloader, but it costs nothing to
+                    // do it here again just in case.
                     cli
                 
                     // Check that we have been loaded by a multiboot2 bootloader.
@@ -78,17 +78,17 @@ macro_rules! __gen_boot {
                 
                     // Fill the first PML4 entry to point to the PDPT.
                     movl ${pdpt}, %eax
-                    or $(1 << 0), %eax      // Present bit. Indicates that the entry is valid.
-                    or $(1 << 1), %eax      // Read/write bit. Indicates that the entry is writable.
+                    or $(1 << 0), %eax    // Present bit. Indicates that the entry is valid.
+                    or $(1 << 1), %eax    // Read/write bit. Indicates that the entry is writable.
                     movl %eax, {pml4}
                 
                     // Fill the PDPT entries to point to the PDs.
                     mov $0, %ecx
                 2:  mov %ecx, %eax
-                    shl $12, %eax                   // EAX <- ECX * 4096
-                    addl ${pds}, %eax                 // EAX <- address of `pds` + ECX * 4096
-                    or $(1 << 0), %eax              // Present bit. Indicates that the entry is valid.
-                    or $(1 << 1), %eax              // Read/write bit. Indicates that the entry is writable.
+                    shl $12, %eax           // EAX <- ECX * 4096
+                    addl ${pds}, %eax       // EAX <- address of `pds` + ECX * 4096
+                    or $(1 << 0), %eax      // Present bit. Indicates that the entry is valid.
+                    or $(1 << 1), %eax      // Read/write bit. Indicates that the entry is writable.
                     movl %eax, {pdpt}(, %ecx, 8)      // PDPT[ECX * 8] <- EAX
                     inc %ecx
                     cmp $32, %ecx
@@ -97,13 +97,13 @@ macro_rules! __gen_boot {
                     // Fill the PD entries to point to 2MiB pages.
                     mov $0, %ecx
                 3:  mov %ecx, %eax
-                    shr $12, %eax                   // EAX <- ECX >> 12
+                    shr $12, %eax          // EAX <- ECX >> 12
                     movl %eax, {pds}+4(, %ecx, 8)     // PDs[4 + ECX * 8] <- EAX
-                    mov %ecx, %eax                  // EAX <- ECX
-                    shl $21, %eax                   // EAX <- ECX << 21
-                    or $(1 << 0), %eax              // Present bit. Indicates that the entry is valid.
-                    or $(1 << 1), %eax              // Read/write bit. Indicates that the entry is writable.
-                    or $(1 << 7), %eax              // Indicates a 2MiB page.
+                    mov %ecx, %eax         // EAX <- ECX
+                    shl $21, %eax          // EAX <- ECX << 21
+                    or $(1 << 0), %eax     // Present bit. Indicates that the entry is valid.
+                    or $(1 << 1), %eax     // Read/write bit. Indicates that the entry is writable.
+                    or $(1 << 7), %eax     // Indicates a 2MiB page.
                     movl %eax, {pds}(, %ecx, 8)       // PDs[ECX * 8] <- EAX
                     inc %ecx
                     cmp $(32 * 512), %ecx
@@ -139,9 +139,9 @@ macro_rules! __gen_boot {
                     or $(1 << 1), %eax              // Set co-processor bit.
                     or $(1 << 4), %eax              // Set co-processor extension bit.
                     or $(1 << 31), %eax             // Set paging bit.
-                    // The official manual says that instruction right after long mode switch must be a
-                    // branch. Tutorials typically don't do that and it might not be strictly necessary,
-                    // but to be safe let's follow what the manual says.
+                    // The official manual says that instruction right after long mode switch must
+                    // be a branch. Tutorials typically don't do that and it might not be strictly
+                    // necessary, but to be safe let's follow what the manual says.
                     movl %eax, %cr0
                 
                     ljmp $8, $4f
