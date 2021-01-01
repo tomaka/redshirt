@@ -192,9 +192,9 @@ impl PlatformSpecificImpl {
                 let hi1: u32;
                 let hi2: u32;
 
-                // Note that we put all three instructions in the same `llvm_asm!`, to prevent the
-                // compiler from reordering them.
-                llvm_asm!("rdtimeh $0 ; rdtime $1 ; rdtimeh $2" : "=r"(hi1), "=r"(lo), "=r"(hi2));
+                // Note that we put all three instructions in the same `asm!`, to prevent the
+                // compiler from possibly reordering them.
+                asm!("rdtimeh {} ; rdtime {} ; rdtimeh {}", out(reg) hi1, out(reg) lo, out(reg) hi2);
 
                 if hi1 == hi2 {
                     break (u64::from(hi1) << 32) | u64::from(lo);
@@ -211,7 +211,7 @@ impl PlatformSpecificImpl {
         // TODO: this is only supported in the "I" version of RISC-V; check that
         unsafe {
             let val: u64;
-            llvm_asm!("rdtime $0" : "=r"(val));
+            asm!("rdtime {}", out(reg) reg);
             u128::from(val)
         }
     }

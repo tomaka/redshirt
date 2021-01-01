@@ -20,7 +20,6 @@
 #![feature(allocator_api)] // TODO: https://github.com/rust-lang/rust/issues/32838
 #![feature(alloc_error_handler)] // TODO: https://github.com/rust-lang/rust/issues/66741
 #![feature(asm)] // TODO: https://github.com/rust-lang/rust/issues/72016
-#![feature(llvm_asm)] // TODO: replace all occurrences of `llvm_asm!` with `asm!`
 #![feature(naked_functions)] // TODO: https://github.com/rust-lang/rust/issues/32408
 #![feature(panic_info_message)] // TODO: https://github.com/rust-lang/rust/issues/66745
 #![cfg_attr(target_arch = "x86_64", feature(abi_x86_interrupt))] // TODO: https://github.com/rust-lang/rust/issues/40180

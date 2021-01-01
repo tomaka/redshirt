@@ -61,31 +61,37 @@ macro_rules! __gen_boot {
                 // (ARMv7-A and ARMv7-R edition).
                 //
                 // This is specific to ARMv7-A and ARMv7-R, hence the compile_error! above.
-        llvm_asm!(
-                            r#"
-                        mrc p15, 0, r5, c0, c0, 5
-                        and r5, r5, #3
-                        cmp r5, #0
-                        bne halt
-                        "#::::"volatile");
+                asm!(
+                    "
+                    mrc p15, 0, r5, c0, c0, 5
+                    and r5, r5, #3
+                    cmp r5, #0
+                    bne {}
+                    ",
+                    sym halt,
+                    out("r3") _, out("r5") _,
+                    options(nomem, nostack, preserves_flags)
+                );
 
                 // Only one CPU reaches here.
 
                 // Zero the BSS segment.
-                // TODO: we pray here that the compiler doesn't use the stack
-                let mut ptr = &mut __bss_start as *mut u8;
-                while ptr < &mut __bss_end as *mut u8 {
+                // TODO: that's illegal ; naked functions must only contain an asm! block (for good reasons)
+                let mut ptr = &mut $bss_start as *mut u8;
+                while ptr < &mut $bss_end as *mut u8 {
                     ptr.write_volatile(0);
                     ptr = ptr.add(1);
                 }
 
-                // Set up the stack.
-        llvm_asm!(r#"
-                        .comm stack, 0x400000, 8
-                        ldr sp, =stack+0x400000"#:::"memory":"volatile");
-
-        llvm_asm!(r#"b cpu_enter"#:::"volatile");
-                core::hint::unreachable_unchecked()
+                // Set up the stack and jump to the entry point.
+                asm!("
+                    .comm stack, 0x400000, 8
+                    ldr sp, =stack+0x400000
+                    b {}
+                    ",
+                    sym cpu_enter,
+                    options(noreturn)
+                )
             }
 
             /// This is the main entry point of the kernel for ARM 64bits architectures.
@@ -94,37 +100,37 @@ macro_rules! __gen_boot {
             #[naked]
             unsafe extern "C" fn entry_point_arm64() -> ! {
                 // TODO: review this
-        llvm_asm!(r#"
+                asm!(
+                    "
                         mrs x6, MPIDR_EL1
                         and x6, x6, #0x3
                         cbz x6, L0
-                        b halt
+                        b {}
                     L0: nop
-                        "#::::"volatile");
+                        ",
+                    sym halt,
+                    out("x6") _,
+                    options(nomem, nostack)
+                );
 
                 // Only one CPU reaches here.
 
                 // Zero the BSS segment.
-                // TODO: we pray here that the compiler doesn't use the stack
-                let mut ptr = &mut __bss_start as *mut u8;
-                while ptr < &mut __bss_end as *mut u8 {
+                // TODO: that's illegal ; naked functions must only contain an asm! block (for good reasons)
+                let mut ptr = &mut $bss_start as *mut u8;
+                while ptr < &mut $bss_end as *mut u8 {
                     ptr.write_volatile(0);
                     ptr = ptr.add(1);
                 }
 
-                // Set up the stack.
-        llvm_asm!(r#"
+                // Set up the stack and jump to `cpu_enter`.
+        asm!(
+                    "
                         .comm stack, 0x400000, 8
-                        ldr x5, =stack+0x400000; mov sp, x5"#:::"memory":"volatile");
-
-        llvm_asm!(r#"b cpu_enter"#:::"volatile");
-                core::hint::unreachable_unchecked()
-            }
-
-            // TODO: remove in favour of the values passed by user of the macro
-            extern "C" {
-                static mut __bss_start: u8;
-                static mut __bss_end: u8;
+                        ldr x5, =stack+0x400000
+                        mov sp, x5
+                        b {}
+                ", sym cpu_enter, options(noreturn))
             }
 
             /// Main Rust entry point.
@@ -149,13 +155,11 @@ macro_rules! __gen_boot {
                 $crate::arch::arm::executor::block_on($entry(platform))
             }
 
-            // TODO: remove no_mangle after transitionning from `llvm_asm!` to `asm!` above
-            #[no_mangle]
             #[naked]
             fn halt() -> ! {
                 unsafe {
                     loop {
-                        llvm_asm!(r#"wfe"#);
+                        asm!("wfe", options(nomem, nostack, preserves_flags));
                     }
                 }
             }
@@ -270,7 +274,7 @@ pub fn init_uart() -> UartInfo {
 fn delay(count: i32) {
     unsafe {
         for _ in 0..count {
-            llvm_asm!("nop" ::: "volatile");
+            asm!("nop", options(nostack, nomem, preserves_flags));
         }
     }
 }
