@@ -33,18 +33,21 @@ pub mod time_arm;
 
 mod misc;
 
+#[macro_export]
 macro_rules! __gen_boot {
     (
-        entry: $entry:ident,
-        bss_start: $bss_start:ident,
-        bss_end: $bss_end:ident,
+        entry: $entry:path,
+        memory_zeroing_start: $memory_zeroing_start:path,
+        memory_zeroing_end: $memory_zeroing_end:path,
     ) => {
         const _: () = {
-            use crate::klog::KLogger;
+            extern crate alloc;
+
             use alloc::sync::Arc;
             use core::{convert::TryFrom as _, iter, num::NonZeroU32, pin::Pin};
-            use futures::prelude::*;
-            use redshirt_kernel_log_interface::ffi::{KernelLogMethod, UartInfo};
+            use $crate::futures::prelude::*;
+            use $crate::klog::KLogger;
+            use $crate::redshirt_kernel_log_interface::ffi::{KernelLogMethod, UartInfo};
 
             /// This is the main entry point of the kernel for ARM 32bits architectures.
             #[cfg(target_arch = "arm")]
@@ -75,10 +78,10 @@ macro_rules! __gen_boot {
 
                 // Only one CPU reaches here.
 
-                // Zero the BSS segment.
+                // Zero the memory requested to be zero'ed.
                 // TODO: that's illegal ; naked functions must only contain an asm! block (for good reasons)
-                let mut ptr = &mut $bss_start as *mut u8;
-                while ptr < &mut $bss_end as *mut u8 {
+                let mut ptr = &mut $memory_zeroing_start as *mut u8;
+                while ptr < &mut $memory_zeroing_end as *mut u8 {
                     ptr.write_volatile(0);
                     ptr = ptr.add(1);
                 }
@@ -115,10 +118,10 @@ macro_rules! __gen_boot {
 
                 // Only one CPU reaches here.
 
-                // Zero the BSS segment.
+                // Zero the memory requested to be zero'ed.
                 // TODO: that's illegal ; naked functions must only contain an asm! block (for good reasons)
-                let mut ptr = &mut $bss_start as *mut u8;
-                while ptr < &mut $bss_end as *mut u8 {
+                let mut ptr = &mut $memory_zeroing_start as *mut u8;
+                while ptr < &mut $memory_zeroing_end as *mut u8 {
                     ptr.write_volatile(0);
                     ptr = ptr.add(1);
                 }
@@ -145,7 +148,7 @@ macro_rules! __gen_boot {
 
                 // TODO: RAM starts at 0, but we start later to avoid the kernel
                 // TODO: make this is a cleaner way
-                crate::mem_alloc::initialize(iter::once(0xa000000..0x40000000));
+                $crate::mem_alloc::initialize(iter::once(0xa000000..0x40000000));
 
                 let time = $crate::arch::arm::time::TimeControl::init();
 
