@@ -28,11 +28,12 @@
 //! needed to run freestanding 64bits Rust code (i.e. a stack, paging, long mode), and call the
 //! [`super::entry_point_step3`] Rust function.
 
+#[macro_export]
 macro_rules! __gen_boot {
     (
-        entry: $entry:ident,
-        bss_start: $bss_start:ident,
-        bss_end: $bss_end:ident,
+        entry: $entry:path,
+        memory_zeroing_start: $memory_zeroing_start:path,
+        memory_zeroing_end: $memory_zeroing_end:path,
     ) => {
         const _: () = {
             #[naked]
@@ -49,11 +50,14 @@ macro_rules! __gen_boot {
                     cmp $0x36d76289, %eax
                     jne 5f
 
-                    // Clear the BSS segment.
-                    // While this is normally not required, we do it anyway "just in case".
-                    mov ${bss_start}, %edi
-                    mov ${bss_end}, %ecx
-                    sub ${bss_start}, %ecx
+                    // Zero the memory requested to be zero'ed.
+                    // While the code here is generic, this is typically the BSS segment of the
+                    // generated ELF executable. Clearing the BSS segment is normally not
+                    // required (it has already been done by the bootloader), but we do it
+                    // anyway "just in case".
+                    mov ${memory_zeroing_start}, %edi
+                    mov ${memory_zeroing_end}, %ecx
+                    sub ${memory_zeroing_start}, %ecx
                     jb 5f
                     mov $0, %al
                     cld
@@ -182,15 +186,15 @@ macro_rules! __gen_boot {
                     hlt
                 "#,
                     entry_point_step2 = sym entry_point_step2,
-                    bss_start = sym $bss_start,
-                    bss_end = sym $bss_end,
+                    memory_zeroing_start = sym $memory_zeroing_start,
+                    memory_zeroing_end = sym $memory_zeroing_end,
                     gdt_ptr = sym $crate::arch::x86_64::gdt::GDT_POINTER,
                     multiboot_info_ptr = sym MULTIBOOT_INFO_PTR,
-                    stack = sym $crate::arch::x86_64::boot::MAIN_PROCESSOR_STACK,
-                    stack_size = const $crate::arch::x86_64::boot::MAIN_PROCESSOR_STACK_SIZE,
-                    pml4 = sym $crate::arch::x86_64::boot::PML4,
-                    pdpt = sym $crate::arch::x86_64::boot::PDPT,
-                    pds = sym $crate::arch::x86_64::boot::PDS,
+                    stack = sym MAIN_PROCESSOR_STACK,
+                    stack_size = const MAIN_PROCESSOR_STACK_SIZE,
+                    pml4 = sym PML4,
+                    pdpt = sym PDPT,
+                    pds = sym PDS,
                     options(noreturn, att_syntax)); // TODO: convert to Intel syntax
             }
 
@@ -211,38 +215,33 @@ macro_rules! __gen_boot {
                 $crate::arch::x86_64::entry_point_step3(multiboot_info, $entry)
             }
 
-            // TODO: the kernel breaks if the linker puts this symbol too far away ; make this fool proof
+            // TODO: the kernel breaks if the linker puts the symbols below too far away ; make this fool proof
+
             static mut MULTIBOOT_INFO_PTR: u64 = 0;
+
+            #[doc(hidden)]
+            const MAIN_PROCESSOR_STACK_SIZE: usize = 0x800000;
+
+            /// Stack used by the main processor.
+            #[repr(align(8), C)]
+            struct Stack([u8; MAIN_PROCESSOR_STACK_SIZE]);
+            static mut MAIN_PROCESSOR_STACK: Stack = Stack([0; MAIN_PROCESSOR_STACK_SIZE]);
+
+            // TODO: handle this in a more proper way
+            // TODO: fill the paging from the Rust code, and not in assembly
+
+            #[repr(align(0x1000), C)]
+            #[derive(Copy, Clone)]
+            struct PagingEntry([u8; 0x1000]);
+            /// PML4. The entry point for our paging system.
+            static mut PML4: PagingEntry = PagingEntry([0; 0x1000]);
+            /// One PDPT. Maps 512GB of memory. Only the first thirty-two entries are used.
+            static mut PDPT: PagingEntry = PagingEntry([0; 0x1000]);
+            /// Thirty-two PDs for the first thirty-two entries in the PDPT. Each PD maps 1GB of memory.
+            static mut PDS: [PagingEntry; 32] = [PagingEntry([0; 0x1000]); 32];
         };
     }
 }
-
-#[doc(hidden)]
-pub const MAIN_PROCESSOR_STACK_SIZE: usize = 0x800000;
-
-/// Stack used by the main processor.
-#[repr(align(8), C)]
-#[doc(hidden)]
-pub struct Stack([u8; MAIN_PROCESSOR_STACK_SIZE]);
-#[doc(hidden)]
-pub static mut MAIN_PROCESSOR_STACK: Stack = Stack([0; MAIN_PROCESSOR_STACK_SIZE]);
-
-// TODO: handle this in a more proper way
-// TODO: fill the paging from the Rust code, and not in assembly
-
-#[repr(align(0x1000), C)]
-#[derive(Copy, Clone)]
-#[doc(hidden)]
-pub struct PagingEntry([u8; 0x1000]);
-/// PML4. The entry point for our paging system.
-#[doc(hidden)]
-pub static mut PML4: PagingEntry = PagingEntry([0; 0x1000]);
-/// One PDPT. Maps 512GB of memory. Only the first thirty-two entries are used.
-#[doc(hidden)]
-pub static mut PDPT: PagingEntry = PagingEntry([0; 0x1000]);
-/// Thirty-two PDs for the first thirty-two entries in the PDPT. Each PD maps 1GB of memory.
-#[doc(hidden)]
-pub static mut PDS: [PagingEntry; 32] = [PagingEntry([0; 0x1000]); 32];
 
 // TODO: figure out how to remove these
 #[no_mangle]

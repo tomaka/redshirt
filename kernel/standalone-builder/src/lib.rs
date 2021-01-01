@@ -14,51 +14,6 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 //! Collection of commands that can build a kernel.
-//!
-//! # Kernel environment
-//!
-//! This crate doesn't contain the source code of the kernel. Instead, many of the commands require
-//! you to pass the location of a `Cargo.toml` that will build this kernel.
-//!
-//! This crate, however, is responsible for building bootable images and setting up the boot
-//! process on various targets. It therefore sets up an environment that the kernel can expect
-//! to be there.
-//!
-//! This environment is the following:
-//!
-//! - The kernel must provide a symbol named `_start`. Execution will jump to this symbol, after
-//! which the kernel is in total control of the hardware.
-//! - The kernel cannot make any assumption about the state of the registers, memory, or hardware
-//! when `_start` is executed, with some exceptions depending on the target.
-//! - The symbols `__bss_start` and `__bss_end` exist and correspond to the beginning and end
-//! of the BSS section (see below).
-//!
-//! ## BSS section
-//!
-//! The BSS section is the section, in an ELF binary, where all the static variables whose initial
-//! value is all zeroes are located.
-//!
-//! Normally, it is the role of the ELF loader (e.g. the Linux kernel) to ensure that this section
-//! is initialized with zeroes. Operating systems, however, are generally not loaded by an ELF
-//! loader.
-//!
-//! Consequently, when the kernel starts, it **must** write the memory between the `__bss_start`
-//! and `__bss_end` symbols with all zeroes.
-//!
-//! This can be done like this:
-//!
-//! ```norun
-//! let mut ptr = &mut __bss_start as *mut u8;
-//! while ptr < &mut __bss_end as *mut u8 {
-//!     ptr.write_volatile(0);
-//!     ptr = ptr.add(1);
-//! }
-//!
-//! extern "C" {
-//!     static mut __bss_start: u8;
-//!     static mut __bss_end: u8;
-//! }
-//! ```
 
 pub mod binary;
 pub mod build;

@@ -31,20 +31,24 @@ pub mod log;
 
 mod misc;
 
+#[macro_export]
 macro_rules! __gen_boot {
     (
-        entry: $entry:ident,
-        bss_start: $bss_start:ident,
-        bss_end: $bss_end:ident,
+        entry: $entry:path,
+        memory_zeroing_start: $memory_zeroing_start:path,
+        memory_zeroing_end: $memory_zeroing_end:path,
     ) => {
         const _: () = {
+            extern crate alloc;
+
             use $crate::arch::{PlatformSpecific, PortErr};
             use $crate::arch::riscv::*;
             use $crate::klog::KLogger;
 
+            use alloc::sync::Arc;
             use core::{iter, num::NonZeroU32, pin::Pin};
-            use futures::prelude::*;
-            use redshirt_kernel_log_interface::ffi::{KernelLogMethod, UartInfo};
+            use $crate::futures::prelude::*;
+            use $crate::redshirt_kernel_log_interface::ffi::{KernelLogMethod, UartInfo};
 
             /// This is the main entry point of the kernel for RISC-V architectures.
             #[naked]
@@ -61,9 +65,9 @@ macro_rules! __gen_boot {
                     la gp, __global_pointer$
                     .option pop
 
-                    // Zero the BSS segment.
-                    la a0, {bss_start}
-                    la a1, {bss_end}
+                    // Zero the memory requested to be zero'ed.
+                    la a0, {memory_zeroing_start}
+                    la a1, {memory_zeroing_end}
                 .L0:sb zero, 0(a0)
                     addi a0, a0, 1
                     bltu a0, a1, .L0
@@ -79,8 +83,8 @@ macro_rules! __gen_boot {
 
                     j {after_boot}
                 "#,
-                    bss_start = sym $bss_start,
-                    bss_end = sym $bss_end,
+                    memory_zeroing_start = sym $memory_zeroing_start,
+                    memory_zeroing_end = sym $memory_zeroing_end,
                     after_boot = sym after_boot,
                     options(noreturn));
             }
@@ -96,8 +100,8 @@ macro_rules! __gen_boot {
 
                 // Initialize the memory allocator.
                 // TODO: make this is a cleaner way; this is specific to the hifive
-                crate::mem_alloc::initialize(iter::once({
-                    let free_mem_start = &$bss_end as *const u8 as usize;
+                $crate::mem_alloc::initialize(iter::once({
+                    let free_mem_start = &$memory_zeroing_end as *const u8 as usize;
                     let ram_end = 0x80000000 + 16 * 1024;
                     free_mem_start..ram_end
                 }));

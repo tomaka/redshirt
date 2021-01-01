@@ -28,10 +28,13 @@ use structopt::StructOpt;
 enum CliOptions {
     /// Builds and runs the kernel in an emulator.
     EmulatorRun {
-        /// Location of the Cargo.toml of the standalone kernel.
+        /// Location of the Cargo.toml of the standalone kernel library.
         ///
         /// If no value is passed, this the file structure is the one of the upstream repository
         /// and try to find the path in a sibling directory.
+        ///
+        /// It is intended that in the future this can be substituted with the path to a build
+        /// directory, in which case the standalone kernel library gets fetched from crates.io.
         #[structopt(long, parse(from_os_str))]
         kernel_cargo_toml: Option<PathBuf>,
 
@@ -50,10 +53,13 @@ enum CliOptions {
 
     /// Builds a bootable image.
     BuildImage {
-        /// Location of the Cargo.toml of the standalone kernel.
+        /// Location of the Cargo.toml of the standalone kernel library.
         ///
         /// If no value is passed, this the file structure is the one of the upstream repository
         /// and try to find the path in a sibling directory.
+        ///
+        /// It is intended that in the future this can be substituted with the path to a build
+        /// directory, in which case the standalone kernel library gets fetched from crates.io.
         #[structopt(long, parse(from_os_str))]
         kernel_cargo_toml: Option<PathBuf>,
 
