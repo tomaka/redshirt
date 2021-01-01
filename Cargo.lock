@@ -139,12 +139,6 @@ checksum = "c17772156ef2829aadc587461c7753af20b7e8db1529bc66855add962a3b35d3"
 
 [[package]]
 name = "atomic"
-version = "0.4.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "64f46ca51dca4837f1520754d1c8c36636356b81553d928dc9c177025369a06e"
-
-[[package]]
-name = "atomic"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3410529e8288c463bedb5930f82833bc0c90e5d2fe639a56582a4d09220b281"
@@ -1898,7 +1892,7 @@ dependencies = [
 name = "redshirt-core"
 version = "0.1.0"
 dependencies = [
- "atomic 0.4.6",
+ "atomic",
  "blake3",
  "bs58",
  "criterion",
@@ -1963,7 +1957,7 @@ dependencies = [
 name = "redshirt-framebuffer-hosted"
 version = "0.1.0"
 dependencies = [
- "atomic 0.5.0",
+ "atomic",
  "futures",
  "glium",
  "parking_lot",
@@ -2029,7 +2023,7 @@ name = "redshirt-log-hosted"
 version = "0.1.0"
 dependencies = [
  "ansi_term 0.12.1",
- "atomic 0.5.0",
+ "atomic",
  "atty",
  "futures",
  "redshirt-core",
@@ -2058,7 +2052,7 @@ dependencies = [
 name = "redshirt-random-hosted"
 version = "0.1.0"
 dependencies = [
- "atomic 0.5.0",
+ "atomic",
  "futures",
  "rand",
  "redshirt-core",
@@ -2080,7 +2074,7 @@ version = "0.1.0"
 dependencies = [
  "acpi",
  "aml",
- "atomic 0.4.6",
+ "atomic",
  "blake3",
  "crossbeam-queue 0.3.0",
  "crossbeam-utils 0.8.0",
@@ -2145,7 +2139,7 @@ name = "redshirt-tcp-hosted"
 version = "0.1.0"
 dependencies = [
  "async-std",
- "atomic 0.5.0",
+ "atomic",
  "fnv",
  "futures",
  "parity-scale-codec",
