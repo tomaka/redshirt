@@ -63,8 +63,8 @@ macro_rules! __gen_boot {
                     cld
                     rep stosb %al, (%edi)
 
-                    // Now that the BSS is clear, we can put the value of EBX there.
-                    mov %ebx, ({multiboot_info_ptr})
+                    // Put the value of EBX in a temporary location, to retrieve it later.
+                    mov %ebx, (6f)
                 
                     // Check that our CPU supports extended CPUID instructions.
                     mov $0x80000000, %eax
@@ -147,10 +147,11 @@ macro_rules! __gen_boot {
                     // be a branch. Tutorials typically don't do that and it might not be strictly
                     // necessary, but to be safe let's follow what the manual says.
                     movl %eax, %cr0
-                
+
                     ljmp $8, $4f
 
                 .code64
+                .align 8
                 4:
                     // Set up the stack.
                     movq ${stack} + {stack_size}, %rsp
@@ -162,9 +163,10 @@ macro_rules! __gen_boot {
                     movw %ax, %gs
                     movw %ax, %ss
 
-                    // Jump to our Rust code
-                    // Pass as parameter the content of `multiboot_info_ptr`
-                    mov ({multiboot_info_ptr}), %rdi
+                    // Jump to our Rust code.
+                    // Pass as parameter the value that the `ebx` register had at initialization,
+                    // which is where the multiboot information will be found.
+                    mov (6f), %rdi
                     call {entry_point_step2}
                     cli
                     hlt
@@ -184,12 +186,24 @@ macro_rules! __gen_boot {
                     movb $0xf, 0xb8009
                     cli
                     hlt
+
+                // Used as a temporary global variable.
+                // While it would be cleaner to use an externally-defined symbol, doing so has
+                // been the cause of a couple of headaches in the past. It seems that when the
+                // symbol is too far away from the `_start` function, the value isn't properly
+                // stored or retreieved. This happens despite the encoding of the instruction
+                // being exactly the same between the working and non-working version apart from
+                // the address.
+                // It might be that the assembly code above accidentally writes over the symbol,
+                // in which case this could be revisited later.
+                6:
+                    .align 8
+                    .fill 8
                 "#,
                     entry_point_step2 = sym entry_point_step2,
                     memory_zeroing_start = sym $memory_zeroing_start,
                     memory_zeroing_end = sym $memory_zeroing_end,
                     gdt_ptr = sym $crate::arch::x86_64::gdt::GDT_POINTER,
-                    multiboot_info_ptr = sym MULTIBOOT_INFO_PTR,
                     stack = sym MAIN_PROCESSOR_STACK,
                     stack_size = const MAIN_PROCESSOR_STACK_SIZE,
                     pml4 = sym PML4,
@@ -216,8 +230,6 @@ macro_rules! __gen_boot {
             }
 
             // TODO: the kernel breaks if the linker puts the symbols below too far away ; make this fool proof
-
-            static mut MULTIBOOT_INFO_PTR: u64 = 0;
 
             #[doc(hidden)]
             const MAIN_PROCESSOR_STACK_SIZE: usize = 0x800000;
