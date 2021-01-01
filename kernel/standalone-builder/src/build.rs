@@ -78,7 +78,10 @@ pub fn build(cfg: Config) -> Result<BuildOutput, Error> {
             .exec()
             .map_err(|_| Error::MetadataFailed)?;
 
-        let target_dir_with_target = metadata.target_directory.join(cfg.target_name).join("project");
+        let target_dir_with_target = metadata
+            .target_directory
+            .join(cfg.target_name)
+            .join("project");
 
         let output_file = target_dir_with_target
             .join("target")

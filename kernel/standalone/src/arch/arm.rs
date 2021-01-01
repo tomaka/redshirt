@@ -43,10 +43,10 @@ macro_rules! __gen_boot {
         const _: () = {
             extern crate alloc;
 
-            use $crate::klog::KLogger;
             use alloc::sync::Arc;
             use core::{convert::TryFrom as _, iter, num::NonZeroU32, pin::Pin};
             use $crate::futures::prelude::*;
+            use $crate::klog::KLogger;
             use $crate::redshirt_kernel_log_interface::ffi::{KernelLogMethod, UartInfo};
 
             /// This is the main entry point of the kernel for ARM 32bits architectures.
