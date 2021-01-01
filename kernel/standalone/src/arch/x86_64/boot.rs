@@ -45,7 +45,7 @@ macro_rules! __gen_boot {
                     // This is normally already done by the bootloader, but it costs nothing to
                     // do it here again just in case.
                     cli
-                
+
                     // Check that we have been loaded by a multiboot2 bootloader.
                     cmp $0x36d76289, %eax
                     jne 5f
@@ -65,27 +65,27 @@ macro_rules! __gen_boot {
 
                     // Put the value of EBX in a temporary location, to retrieve it later.
                     mov %ebx, (6f)
-                
+
                     // Check that our CPU supports extended CPUID instructions.
                     mov $0x80000000, %eax
                     cpuid
                     cmp $0x80000001, %eax
                     jb 5f
-                
+
                     // Check that our CPU supports the features that we need.
                     mov $0x80000001, %eax
                     cpuid
                     test $(1 << 29), %edx     // Test for long mode.
                     jz 5f
-                
+
                     // Everything is good. CPU is compatible.
-                
+
                     // Fill the first PML4 entry to point to the PDPT.
                     movl ${pdpt}, %eax
                     or $(1 << 0), %eax    // Present bit. Indicates that the entry is valid.
                     or $(1 << 1), %eax    // Read/write bit. Indicates that the entry is writable.
                     movl %eax, {pml4}
-                
+
                     // Fill the PDPT entries to point to the PDs.
                     mov $0, %ecx
                 2:  mov %ecx, %eax
@@ -97,7 +97,7 @@ macro_rules! __gen_boot {
                     inc %ecx
                     cmp $32, %ecx
                     jne 2b
-                
+
                     // Fill the PD entries to point to 2MiB pages.
                     mov $0, %ecx
                 3:  mov %ecx, %eax
@@ -112,22 +112,22 @@ macro_rules! __gen_boot {
                     inc %ecx
                     cmp $(32 * 512), %ecx
                     jne 3b
-                
+
                     // Set up the control registers.
                     mov %cr0, %eax
                     and $(~(1 << 2)), %eax          // Clear emulation bit.
                     and $(~(1 << 31)), %eax         // Clear paging bit.
                     movl %eax, %cr0
-                
+
                     movl ${pml4}, %eax
                     movl %eax, %cr3
-                
+
                     movl $0, %eax
                     or $(1 << 10), %eax             // Set SIMD floating point exceptions bit.
                     or $(1 << 9), %eax              // Set OSFXSR bit, which enables SIMD.
                     or $(1 << 5), %eax              // Set physical address extension (PAE) bit.
                     movl %eax, %cr4
-                
+
                     // Set long mode with the EFER bit.
                     movl $0xc0000080, %ecx
                     rdmsr
@@ -155,7 +155,7 @@ macro_rules! __gen_boot {
                 4:
                     // Set up the stack.
                     movq ${stack} + {stack_size}, %rsp
-                
+
                     movw $0, %ax
                     movw %ax, %ds
                     movw %ax, %es
@@ -191,11 +191,12 @@ macro_rules! __gen_boot {
                 // While it would be cleaner to use an externally-defined symbol, doing so has
                 // been the cause of a couple of headaches in the past. It seems that when the
                 // symbol is too far away from the `_start` function, the value isn't properly
-                // stored or retreieved. This happens despite the encoding of the instruction
-                // being exactly the same between the working and non-working version apart from
+                // stored or retrieved. This happens despite the encoding of the instruction
+                // being exactly the same between the working and non-working versions apart from
                 // the address.
-                // It might be that the assembly code above accidentally writes over the symbol,
-                // in which case this could be revisited later.
+                // It might be that the assembly code above accidentally writes over the symbol
+                // while initializing the page tables, in which case this could be revisited
+                // later.
                 6:
                     .align 8
                     .fill 8
