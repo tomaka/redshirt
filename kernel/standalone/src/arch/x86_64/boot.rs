@@ -230,7 +230,7 @@ macro_rules! __gen_boot {
                 $crate::arch::x86_64::entry_point_step3(multiboot_info, $entry)
             }
 
-            // TODO: the kernel breaks if the linker puts the symbols below too far away ; make this fool proof
+            // TODO: consider moving this out of the macro (but make sure the kernel doesn't break)
 
             #[doc(hidden)]
             const MAIN_PROCESSOR_STACK_SIZE: usize = 0x800000;
