@@ -43,7 +43,13 @@ pub fn block_on<R>(future: impl Future<Output = R>) -> R {
         loop {
             if local_wake
                 .woken_up
-                .compare_and_swap(true, false, atomic::Ordering::Acquire)
+                .compare_exchange(
+                    true,
+                    false,
+                    atomic::Ordering::Acquire,
+                    atomic::Ordering::Acquire,
+                )
+                .is_ok()
             {
                 break;
             }
