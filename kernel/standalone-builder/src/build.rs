@@ -93,15 +93,23 @@ pub fn build(cfg: Config) -> Result<BuildOutput, Error> {
     };
 
     // Create and fill the directory where various source files are put.
+    // If `cargo_clean_needed` is set to true, the build will later be done from scratch.
+    let mut cargo_clean_needed = false;
     fs::create_dir_all(&target_dir_with_target)?;
-    write_if_changed(
+    if write_if_changed(
         (&target_dir_with_target).join(format!("{}.json", cfg.target_name)),
         cfg.target_specs.as_bytes(),
-    )?;
-    write_if_changed(
+    )? {
+        cargo_clean_needed = true;
+    }
+    if write_if_changed(
         (&target_dir_with_target).join("link.ld"),
         cfg.link_script.as_bytes(),
-    )?;
+    )? {
+        // Note: this is overly conservative. Only the linking step needs to be done again, but
+        // there isn't any easy way to retrigger only the linking.
+        cargo_clean_needed = true;
+    }
     {
         let mut cargo_toml_prototype = toml::value::Table::new();
         // TODO: should write `[profile]` in there
@@ -161,6 +169,19 @@ pub fn build(cfg: Config) -> Result<BuildOutput, Error> {
         write_if_changed(target_dir_with_target.join("src").join("main.rs"), src)?;
     }
 
+    if cargo_clean_needed {
+        let status = Command::new("cargo")
+            .arg("clean")
+            .arg("--manifest-path")
+            .arg(target_dir_with_target.join("Cargo.toml"))
+            .status()
+            .map_err(Error::CargoNotFound)?;
+        // TODO: should we make it configurable where the stdout/stderr outputs go?
+        if !status.success() {
+            return Err(Error::BuildError);
+        }
+    }
+
     // Actually build the kernel.
     let build_status = Command::new("cargo")
         .arg("build")
@@ -201,12 +222,15 @@ pub fn build(cfg: Config) -> Result<BuildOutput, Error> {
 
 /// Write to the given `file` if the `content` is different.
 ///
+/// Returns `true` if the content was indeed different and a write has been performed.
+///
 /// This function is used in order to not make Cargo trigger a rebuild by writing over a file
 /// with the same content as it already has.
-fn write_if_changed(file: impl AsRef<Path>, content: impl AsRef<[u8]>) -> Result<(), io::Error> {
+fn write_if_changed(file: impl AsRef<Path>, content: impl AsRef<[u8]>) -> Result<bool, io::Error> {
     if fs::read(file.as_ref()).ok().as_deref() != Some(content.as_ref()) {
         fs::write(file, content.as_ref())?;
+        Ok(true)
+    } else {
+        Ok(false)
     }
-
-    Ok(())
 }
