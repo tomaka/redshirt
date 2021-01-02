@@ -137,6 +137,23 @@ pub fn build(cfg: Config) -> Result<BuildOutput, Error> {
             });
             dependencies.into()
         });
+        cargo_toml_prototype.insert("profile".into(), {
+            let mut profiles = toml::value::Table::new();
+            profiles.insert("release".into(), {
+                let mut profile = toml::value::Table::new();
+                profile.insert("panic".into(), "abort".into());
+                profile.insert("lto".into(), true.into());
+                profile.insert("opt-level".into(), 3.into());
+                profile.into()
+            });
+            profiles.insert("dev".into(), {
+                let mut profile = toml::value::Table::new();
+                profile.insert("panic".into(), "abort".into());
+                profile.insert("opt-level".into(), 2.into());
+                profile.into()
+            });
+            profiles.into()
+        });
         cargo_toml_prototype.insert("workspace".into(), toml::value::Table::new().into());
         write_if_changed(
             target_dir_with_target.join("Cargo.toml"),
