@@ -146,6 +146,8 @@ macro_rules! __gen_boot {
                     uart: Some($crate::arch::arm::init_uart()),
                 }));
 
+                panic!("test");
+
                 // TODO: RAM starts at 0, but we start later to avoid the kernel
                 // TODO: make this is a cleaner way
                 $crate::mem_alloc::initialize(iter::once(0xa000000..0x40000000));
