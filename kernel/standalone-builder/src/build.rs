@@ -155,6 +155,21 @@ pub fn build(cfg: Config) -> Result<BuildOutput, Error> {
             profiles.into()
         });
         cargo_toml_prototype.insert("workspace".into(), toml::value::Table::new().into());
+        cargo_toml_prototype.insert("patch".into(), {
+            let mut patches = toml::value::Table::new();
+            patches.insert("crates-io".into(), {
+                let crates = toml::value::Table::new();
+                // Uncomment this in order to overwrite dependencies used during the kernel
+                // compilation.
+                /*crates.insert("foo".into(), {
+                    let mut val = toml::value::Table::new();
+                    val.insert("path".into(), "/path/to/foot".into());
+                    val.into()
+                });*/
+                crates.into()
+            });
+            patches.into()
+        });
         write_if_changed(
             target_dir_with_target.join("Cargo.toml"),
             toml::to_string_pretty(&cargo_toml_prototype).unwrap(),
