@@ -8,7 +8,7 @@ publish = false
 
 [dependencies]
 atomic = "0.5.0"
-futures = "0.3.0"
+futures = "0.3.8"
 rand = "0.7.3"
 redshirt-core = { path = "../../core" }
 redshirt-interface-interface = { path = "../../interfaces/interface" }
