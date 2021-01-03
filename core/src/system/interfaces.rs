@@ -100,13 +100,19 @@ impl Interfaces {
         let mut interfaces = self.inner.lock();
         let interfaces = &mut *interfaces; // Avoids borrow errors.
 
-        match interfaces
-            .interfaces
-            .entry(interface_hash.clone())
-            // TODO: don't call or_insert_with if `!immediate`?
-            .or_insert_with(|| Interface::NotRegistered {
-                pending_accept: VecDeque::with_capacity(16), /* TODO: capacity */
-            }) {
+        let entry = match interfaces.interfaces.entry(interface_hash.clone()) {
+            Entry::Occupied(e) => e.into_mut(),
+            Entry::Vacant(_) if immediate => {
+                return EmitInterfaceMessage::Reject;
+            }
+            Entry::Vacant(e) => {
+                e.insert(Interface::NotRegistered {
+                    pending_accept: VecDeque::with_capacity(16), // TODO: capacity
+                })
+            }
+        };
+
+        match entry {
             Interface::Registered(registration_id) => {
                 let registration = &mut interfaces.registrations[*registration_id];
                 if let Some(query_message_id) = registration.queries.pop_front() {
@@ -132,6 +138,7 @@ impl Interfaces {
                 if immediate {
                     EmitInterfaceMessage::Reject
                 } else {
+                    // TODO: is this unbounded queue attackable?
                     pending_accept.push_back((message_id, needs_answer));
                     EmitInterfaceMessage::Queued
                 }
