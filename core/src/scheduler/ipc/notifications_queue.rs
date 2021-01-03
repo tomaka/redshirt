@@ -16,12 +16,14 @@
 use crate::scheduler::extrinsics::WaitEntry;
 use crate::{EncodedMessage, MessageId};
 
-use alloc::collections::VecDeque;
 use core::convert::TryFrom as _;
+use hashbrown::HashMap;
 use redshirt_syscalls::ffi::NotificationBuilder;
 use spinning_top::{Spinlock, SpinlockGuard};
 
 /// Queue of notifications waiting to be delivered.
+///
+/// One instance of this struct exists for each alive process.
 #[derive(Debug)]
 pub struct NotificationsQueue {
     /// The actual list.
@@ -29,16 +31,19 @@ pub struct NotificationsQueue {
     /// The [`DecodedNotificationRef::index_in_list`](redshirt_syscalls::ffi::DecodedNotificationRef::index_in_list)
     /// field is set to a dummy value, and will be filled before actually delivering the
     /// notification.
-    // TODO: call shrink_to_fit from time to time
     // TODO: baka Mutex
-    notifications_queue: Spinlock<VecDeque<NotificationBuilder>>,
+    notifications_queue:
+        Spinlock<HashMap<MessageId, NotificationBuilder, nohash_hasher::BuildNoHashHasher<u64>>>,
 }
 
 /// An entry in the notifications queue.
 #[must_use]
 pub struct Entry<'a> {
-    queue: SpinlockGuard<'a, VecDeque<NotificationBuilder>>,
-    index_in_queue: usize,
+    queue: SpinlockGuard<
+        'a,
+        HashMap<MessageId, NotificationBuilder, nohash_hasher::BuildNoHashHasher<u64>>,
+    >,
+    message_id: MessageId,
     /// Index within the list that was passed as parameter to [`NotificationsQueue::find`].
     index_in_msg_ids: usize,
 }
@@ -47,7 +52,7 @@ impl NotificationsQueue {
     /// Builds a new empty queue.
     pub fn new() -> NotificationsQueue {
         NotificationsQueue {
-            notifications_queue: Spinlock::new(VecDeque::new()),
+            notifications_queue: Spinlock::new(Default::default()),
         }
     }
 
@@ -63,36 +68,33 @@ impl NotificationsQueue {
             },
         );
 
-        self.notifications_queue.lock().push_back(From::from(notif));
+        self.notifications_queue
+            .lock()
+            .insert(message_id, From::from(notif));
     }
 
     /// Finds a notification in the list that matches the given indices.
     ///
     /// If an entry is found, its corresponding index within `indices` is stored in the returned
     /// `Entry`.
-    // TODO: something better than a slice as parameter?
-    // TODO: O(n²) complexity!
-    pub fn find(&self, indices: &[WaitEntry]) -> Option<Entry> {
+    // TODO: O(n) complexity!
+    pub fn find<'a>(&self, indices: impl IntoIterator<Item = &'a WaitEntry>) -> Option<Entry> {
         let notifications_queue = self.notifications_queue.lock();
 
-        let mut index_in_queue = 0;
-        let index_in_msg_ids = loop {
-            if index_in_queue >= notifications_queue.len() {
-                // No notification found.
-                return None;
-            }
-
-            let expected = WaitEntry::Answer(notifications_queue[index_in_queue].message_id());
-            if let Some(p) = indices.iter().position(|id| *id == expected) {
-                break p;
-            }
-
-            index_in_queue += 1;
+        let (index_in_msg_ids, message_id) = {
+            indices
+                .into_iter()
+                .enumerate()
+                .filter_map(|(n, e)| match e {
+                    WaitEntry::Answer(id) => Some((n, *id)),
+                    WaitEntry::Empty => None,
+                })
+                .find(|(_, id)| notifications_queue.contains_key(id))?
         };
 
         Some(Entry {
             queue: notifications_queue,
-            index_in_queue,
+            message_id,
             index_in_msg_ids,
         })
     }
@@ -101,7 +103,7 @@ impl NotificationsQueue {
 impl<'a> Entry<'a> {
     /// Returns the size in bytes of the notification.
     pub fn size(&self) -> usize {
-        self.queue[self.index_in_queue].len()
+        self.queue.get(&self.message_id).unwrap().len()
     }
 
     // TODO: better method name and doc
@@ -111,7 +113,13 @@ impl<'a> Entry<'a> {
 
     // TODO: shouldn't be an `EncodedMessage`, that's wrong
     pub fn extract(mut self) -> EncodedMessage {
-        let mut notification = self.queue.remove(self.index_in_queue).unwrap();
+        let mut notification = self.queue.remove(&self.message_id).unwrap();
+
+        // Some heuristics in order to reduce memory consumption.
+        if self.queue.capacity() >= 256 && self.queue.len() < self.queue.capacity() / 10 {
+            self.queue.shrink_to_fit();
+        }
+
         notification.set_index_in_list(u32::try_from(self.index_in_msg_ids).unwrap());
         EncodedMessage(notification.into_bytes())
     }
