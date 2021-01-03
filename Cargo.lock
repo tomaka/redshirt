@@ -1883,8 +1883,8 @@ dependencies = [
  "getrandom",
  "libc",
  "rand_chacha",
- "rand_core",
- "rand_hc",
+ "rand_core 0.5.1",
+ "rand_hc 0.2.0",
 ]
 
 [[package]]
@@ -1894,7 +1894,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f4c8ed856279c9737206bf725bf36935d8666ead7aa69b52be55af369d193402"
 dependencies = [
  "ppv-lite86",
- "rand_core",
+ "rand_core 0.5.1",
 ]
 
 [[package]]
@@ -1907,12 +1907,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "rand_core"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a8b34ba8cfb21243bd8df91854c830ff0d785fff2e82ebd4434c2644cb9ada18"
+
+[[package]]
 name = "rand_hc"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ca3129af7b92a17112d59ad498c6f81eaf463253766b90396d39ea7a39d6613c"
 dependencies = [
- "rand_core",
+ "rand_core 0.5.1",
+]
+
+[[package]]
+name = "rand_hc"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3190ef7066a446f2e7f42e239d161e905420ccab01eb967c9eb27d21b2322a73"
+dependencies = [
+ "rand_core 0.6.0",
 ]
 
 [[package]]
@@ -1921,7 +1936,7 @@ version = "0.2.1"
 source = "git+https://github.com/tomaka/rngs?branch=new-with-timer-less-cumbersome#49657d82dc4af29871a354ea988db4785f1dadb6"
 dependencies = [
  "libc",
- "rand_core",
+ "rand_core 0.5.1",
  "winapi 0.3.8",
 ]
 
@@ -1964,7 +1979,7 @@ version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fd1906cddd9702301a60db95e6e752f74028866c4dea818267709be31747b360"
 dependencies = [
- "rand_core",
+ "rand_core 0.5.1",
 ]
 
 [[package]]
@@ -2008,8 +2023,8 @@ dependencies = [
  "nohash-hasher",
  "rand",
  "rand_chacha",
- "rand_core",
- "rand_hc",
+ "rand_core 0.5.1",
+ "rand_hc 0.3.0",
  "redshirt-core-proc-macros",
  "redshirt-interface-interface",
  "redshirt-kernel-debug-interface",
@@ -2194,7 +2209,7 @@ dependencies = [
  "nohash-hasher",
  "pin-project 1.0.2",
  "rand_chacha",
- "rand_core",
+ "rand_core 0.5.1",
  "rand_jitter",
  "rdrand",
  "redshirt-core",
