@@ -14,7 +14,7 @@
     "llvm-target": "x86_64-unknown-none",
     "max-atomic-width": 64,
     "no-compiler-rt": true,
-    "os": "unknown",
+    "os": "none",
     "panic-strategy": "abort",
     "relocation-model": "static",
     "singlethread": false,
