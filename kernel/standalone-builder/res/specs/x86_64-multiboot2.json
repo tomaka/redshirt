@@ -21,6 +21,5 @@
     "stack-probes": true,
     "target-c-int-width": "32",
     "target-endian": "little",
-    "target-pointer-width": "64",
-    "vendor": "unknown"
+    "target-pointer-width": "64"
 }

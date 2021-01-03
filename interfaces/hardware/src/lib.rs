@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -218,6 +218,15 @@ impl<'a> HardwareOperationsBuilder<'a> {
             len: out.len() as u32, // TODO: don't use `as`
         });
         self.out.push(Out::MemReadU8(out));
+    }
+
+    pub unsafe fn read_u16(&mut self, address: u64, out: &'a mut (impl ?Sized + AsMut<[u16]>)) {
+        let out = out.as_mut();
+        self.operations.push(ffi::Operation::PhysicalMemoryReadU16 {
+            address,
+            len: out.len() as u32, // TODO: don't use `as`
+        });
+        self.out.push(Out::MemReadU16(out));
     }
 
     pub unsafe fn read_u32(&mut self, address: u64, out: &'a mut (impl ?Sized + AsMut<[u32]>)) {

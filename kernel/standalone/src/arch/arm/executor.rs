@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -43,7 +43,13 @@ pub fn block_on<R>(future: impl Future<Output = R>) -> R {
         loop {
             if local_wake
                 .woken_up
-                .compare_and_swap(true, false, atomic::Ordering::Acquire)
+                .compare_exchange(
+                    true,
+                    false,
+                    atomic::Ordering::Acquire,
+                    atomic::Ordering::Acquire,
+                )
+                .is_ok()
             {
                 break;
             }
