@@ -37,7 +37,7 @@ jobs:
     - name: Build modules
       run: cargo build --manifest-path ./modules/Cargo.toml --workspace --exclude stub --locked --verbose --release --target=wasm32-wasi
     - name: Upload WASM modules
-      uses: actions/upload-artifact@v2.2.1
+      uses: actions/upload-artifact@v2.2.2
       with:
         name: wasm-modules
         path: modules/target
@@ -130,7 +130,7 @@ jobs:
     - name: Build kernel
       run: cargo run --manifest-path=./kernel/standalone-builder/Cargo.toml -- build-image --target ${{ matrix.target }} --device-type cdrom --out image
     - name: Upload generated kernel
-      uses: actions/upload-artifact@v2.2.1
+      uses: actions/upload-artifact@v2.2.2
       with:
         name: kernel-${{ matrix.target }}
         path: image
