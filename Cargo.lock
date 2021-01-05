@@ -615,9 +615,9 @@ dependencies = [
 
 [[package]]
 name = "crossbeam-queue"
-version = "0.3.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b2a58563f049aa3bae172bc4120f093b5901161c629f280a1f40ba55317d774"
+checksum = "0f6cb3c7f5b8e51bc3ebb73a2327ad4abdbd119dc13223f14f961d2f38486756"
 dependencies = [
  "cfg-if 1.0.0",
  "crossbeam-utils 0.8.1",
@@ -1987,7 +1987,7 @@ dependencies = [
  "blake3",
  "bs58",
  "criterion",
- "crossbeam-queue 0.3.0",
+ "crossbeam-queue 0.3.1",
  "either",
  "fnv",
  "futures",
@@ -2167,7 +2167,7 @@ dependencies = [
  "aml",
  "atomic",
  "blake3",
- "crossbeam-queue 0.3.0",
+ "crossbeam-queue 0.3.1",
  "crossbeam-utils 0.8.1",
  "derive_more",
  "either",
@@ -2430,9 +2430,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.59"
+version = "1.0.61"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dcac07dbffa1c65e7f816ab9eba78eb142c6d44410f4eeba1e26e4f5dfa56b95"
+checksum = "4fceb2595057b6891a4ee808f70054bd2d12f0e97f1cbb78689b59f676df325a"
 dependencies = [
  "itoa",
  "ryu",

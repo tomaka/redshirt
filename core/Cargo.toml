@@ -14,7 +14,7 @@ nightly = ["redshirt-core-proc-macros/nightly"]
 atomic = "0.5.0"
 blake3 = { version = "0.3.7", default-features = false }
 bs58 = { version = "0.4.0", default-features = false, features = ["alloc"] }
-crossbeam-queue = { version = "0.3.0", default-features = false, features = ["alloc"] }
+crossbeam-queue = { version = "0.3.1", default-features = false, features = ["alloc"] }
 either = { version = "1.6.1", default-features = false }
 fnv = { version = "1.0.7", default-features = false }
 futures = { version = "0.3.8", default-features = false }
