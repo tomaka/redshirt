@@ -45,8 +45,8 @@ impl Transport for TcpConfig {
     type Listener = Pin<
         Box<
             dyn Stream<
-                Item = Result<ListenerEvent<Self::ListenerUpgrade, Self::Error>, Self::Error>,
-            > + Send,
+                    Item = Result<ListenerEvent<Self::ListenerUpgrade, Self::Error>, Self::Error>,
+                > + Send,
         >,
     >;
     type ListenerUpgrade = future::Ready<Result<Self::Output, Self::Error>>;
