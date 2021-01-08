@@ -14,6 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use futures::{channel::mpsc, prelude::*};
+use rand::RngCore as _;
 use redshirt_core::{build_wasm_module, extrinsics::wasi::WasiExtrinsics, module::ModuleHash};
 use std::{fs, path::PathBuf, process, sync::Arc};
 use structopt::StructOpt;
@@ -67,8 +68,15 @@ fn main() {
 
     let framebuffer_context = redshirt_framebuffer_hosted::FramebufferContext::new();
 
+    let randomness_seed = {
+        // As of the time of writing of this code, `rand::random::<[u8; 64]>()` doesn't compile.
+        let mut bytes = [0; 64];
+        rand::thread_rng().fill_bytes(&mut bytes);
+        bytes
+    };
+
     let system =
-        redshirt_core::system::SystemBuilder::new(WasiExtrinsics::default(), rand::random())
+        redshirt_core::system::SystemBuilder::new(WasiExtrinsics::default(), randomness_seed)
             .with_native_program(redshirt_tcp_hosted::TcpHandler::new())
             .with_native_program(redshirt_log_hosted::LogHandler::new())
             .with_native_program(redshirt_framebuffer_hosted::FramebufferHandler::new(
