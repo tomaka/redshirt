@@ -67,7 +67,7 @@ fn main() {
 
     let framebuffer_context = redshirt_framebuffer_hosted::FramebufferContext::new();
 
-    let system = redshirt_core::system::SystemBuilder::new(WasiExtrinsics::default())
+    let system = redshirt_core::system::SystemBuilder::new(WasiExtrinsics::default(), rand::random())
         .with_native_program(redshirt_tcp_hosted::TcpHandler::new())
         .with_native_program(redshirt_log_hosted::LogHandler::new())
         .with_native_program(redshirt_framebuffer_hosted::FramebufferHandler::new(

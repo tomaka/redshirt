@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use core::{convert::TryFrom, fmt, num::NonZeroU64};
+use core::{convert::TryFrom, fmt};
 use crossbeam_queue::SegQueue;
 use rand::distributions::{Distribution as _, Uniform};
 use rand_chacha::ChaCha20Rng;
@@ -43,11 +43,11 @@ pub struct IdPool {
 
 impl IdPool {
     /// Initializes a new pool.
-    pub fn new() -> Self {
+    pub fn with_seed(seed: [u8; 32]) -> Self {
         IdPool {
             rngs: SegQueue::new(),
             distribution: Uniform::from(0..=u64::max_value()),
-            master_rng: Spinlock::new(Hc128Rng::from_seed([0; 32])), // FIXME: proper seed
+            master_rng: Spinlock::new(Hc128Rng::from_seed(seed)),
         }
     }
 

@@ -58,6 +58,18 @@ impl RandomNativeProgram {
             platform_specific,
         }
     }
+
+    /// Fills the given buffer with random bytes.
+    pub fn fill_bytes(&self, out: &mut [u8]) {
+        let mut rng = if let Some(rng) = self.rngs.pop() {
+            rng
+        } else {
+            KernelRng::new(self.platform_specific.clone())
+        };
+
+        rng.fill_bytes(out);
+        self.rngs.push(rng);
+    }
 }
 
 impl<'a> NativeProgramRef<'a> for &'a RandomNativeProgram {
@@ -176,15 +188,8 @@ impl<'a> NativeProgramRef<'a> for &'a RandomNativeProgram {
         match RandomMessage::decode(notification.actual_data) {
             Ok(RandomMessage::Generate { len }) => {
                 let mut out = vec![0; usize::from(len)];
+                self.fill_bytes(&mut out);
 
-                let mut rng = if let Some(rng) = self.rngs.pop() {
-                    rng
-                } else {
-                    KernelRng::new(self.platform_specific.clone())
-                };
-
-                rng.fill_bytes(&mut out);
-                self.rngs.push(rng);
                 let response = GenerateResponse { result: out };
                 self.pending_messages_tx
                     .unbounded_send((message_id, Ok(response.encode())));

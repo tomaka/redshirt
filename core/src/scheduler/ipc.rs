@@ -25,6 +25,7 @@ use crate::{
 };
 
 use alloc::vec::Vec;
+use core::convert::TryFrom as _;
 use crossbeam_queue::SegQueue;
 use hashbrown::{hash_map::Entry, HashMap};
 use redshirt_syscalls::{EncodedMessage, MessageId, Pid, ThreadId};
@@ -105,6 +106,9 @@ pub struct Core<TExt: Extrinsics> {
 pub struct CoreBuilder<TExt: Extrinsics> {
     /// Builder for the [`processes`][Core::processes] field in [`Core`].
     inner_builder: extrinsics::Builder<TExt>,
+
+    /// Randomness seed used to initialize [`Core::id_pool`].
+    seed: [u8; 32],
 }
 
 /// Outcome of calling [`run`](Core::run).
@@ -397,10 +401,14 @@ impl<'a, TExt: Extrinsics> CoreProcess<'a, TExt> {
 }
 
 impl<TExt: Extrinsics> CoreBuilder<TExt> {
-    /// Initializes a new [`CoreBuilder`].
-    pub fn new() -> CoreBuilder<TExt> {
+    /// Initializes a new [`CoreBuilder`] using the given random seed.
+    ///
+    /// The seed is used in determine how [`Pid`]s and [`MessageId`]s are generated. The same
+    /// seed will result in the same sequence of [`Pid`]s and [`MessageId`]s.
+    pub fn with_seed(seed: [u8; 64]) -> CoreBuilder<TExt> {
         CoreBuilder {
-            inner_builder: extrinsics::Builder::default(),
+            inner_builder: extrinsics::Builder::with_seed(<[u8; 32]>::try_from(&seed[..32]).unwrap()),
+            seed: <[u8; 32]>::try_from(&seed[32..]).unwrap(),
         }
     }
 
@@ -419,7 +427,7 @@ impl<TExt: Extrinsics> CoreBuilder<TExt> {
         Core {
             pending_events: SegQueue::new(),
             processes: self.inner_builder.build(),
-            id_pool: IdPool::new(),
+            id_pool: IdPool::with_seed(self.seed),
             pending_accept_messages: Spinlock::new(HashMap::default()),
             pending_answer_messages: Spinlock::new(HashMap::default()),
         }

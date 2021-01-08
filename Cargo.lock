@@ -977,6 +977,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "getrandom"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4060f4657be78b8e766215b02b18a2e862d83745545de804638e2b545e81aee6"
+dependencies = [
+ "cfg-if 1.0.0",
+ "libc",
+ "wasi 0.10.0+wasi-snapshot-preview1 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "gimli"
 version = "0.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1867,11 +1878,23 @@ version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6a6b1679d49b24bbfe0c803429aa1874472f50d9b363131f0e89fc356b544d03"
 dependencies = [
- "getrandom",
+ "getrandom 0.1.14",
  "libc",
- "rand_chacha",
- "rand_core",
- "rand_hc",
+ "rand_chacha 0.2.2",
+ "rand_core 0.5.1",
+ "rand_hc 0.2.0",
+]
+
+[[package]]
+name = "rand"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c24fcd450d3fa2b592732565aa4f17a27a61c65ece4726353e000939b0edee34"
+dependencies = [
+ "libc",
+ "rand_chacha 0.3.0",
+ "rand_core 0.6.1",
+ "rand_hc 0.3.0",
 ]
 
 [[package]]
@@ -1881,7 +1904,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f4c8ed856279c9737206bf725bf36935d8666ead7aa69b52be55af369d193402"
 dependencies = [
  "ppv-lite86",
- "rand_core",
+ "rand_core 0.5.1",
+]
+
+[[package]]
+name = "rand_chacha"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e12735cf05c9e10bf21534da50a147b924d555dc7a547c42e6bb2d5b6017ae0d"
+dependencies = [
+ "ppv-lite86",
+ "rand_core 0.6.1",
 ]
 
 [[package]]
@@ -1890,7 +1923,16 @@ version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "90bde5296fc891b0cef12a6d03ddccc162ce7b2aff54160af9338f8d40df6d19"
 dependencies = [
- "getrandom",
+ "getrandom 0.1.14",
+]
+
+[[package]]
+name = "rand_core"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c026d7df8b298d90ccbbc5190bd04d85e159eaf5576caeacf8741da93ccbd2e5"
+dependencies = [
+ "getrandom 0.2.1",
 ]
 
 [[package]]
@@ -1899,7 +1941,16 @@ version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ca3129af7b92a17112d59ad498c6f81eaf463253766b90396d39ea7a39d6613c"
 dependencies = [
- "rand_core",
+ "rand_core 0.5.1",
+]
+
+[[package]]
+name = "rand_hc"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3190ef7066a446f2e7f42e239d161e905420ccab01eb967c9eb27d21b2322a73"
+dependencies = [
+ "rand_core 0.6.1",
 ]
 
 [[package]]
@@ -1908,7 +1959,7 @@ version = "0.2.1"
 source = "git+https://github.com/tomaka/rngs?branch=new-with-timer-less-cumbersome#49657d82dc4af29871a354ea988db4785f1dadb6"
 dependencies = [
  "libc",
- "rand_core",
+ "rand_core 0.5.1",
  "winapi 0.3.8",
 ]
 
@@ -1951,7 +2002,7 @@ version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fd1906cddd9702301a60db95e6e752f74028866c4dea818267709be31747b360"
 dependencies = [
- "rand_core",
+ "rand_core 0.5.1",
 ]
 
 [[package]]
@@ -1968,6 +2019,7 @@ dependencies = [
  "futures",
  "num_cpus",
  "parity-scale-codec",
+ "rand 0.8.1",
  "redshirt-core",
  "redshirt-framebuffer-hosted",
  "redshirt-log-hosted",
@@ -1976,7 +2028,7 @@ dependencies = [
  "redshirt-tcp-hosted",
  "structopt",
  "walkdir",
- "wasi 0.10.0+wasi-snapshot-preview1",
+ "wasi 0.10.0+wasi-snapshot-preview1 (git+https://github.com/bytecodealliance/wasi?rev=45536ac956a6211e3cff047f36cf19d6da82fd95)",
 ]
 
 [[package]]
@@ -1993,10 +2045,10 @@ dependencies = [
  "futures",
  "hashbrown",
  "nohash-hasher",
- "rand",
- "rand_chacha",
- "rand_core",
- "rand_hc",
+ "rand 0.7.3",
+ "rand_chacha 0.2.2",
+ "rand_core 0.5.1",
+ "rand_hc 0.2.0",
  "redshirt-core-proc-macros",
  "redshirt-interface-interface",
  "redshirt-kernel-debug-interface",
@@ -2009,7 +2061,7 @@ dependencies = [
  "slab 0.4.2 (git+https://github.com/baloo/slab?rev=88b456131de20750e785655d1e62cd0b6e10d44b)",
  "smallvec",
  "spinning_top 0.2.2",
- "wasi 0.10.0+wasi-snapshot-preview1",
+ "wasi 0.10.0+wasi-snapshot-preview1 (git+https://github.com/bytecodealliance/wasi?rev=45536ac956a6211e3cff047f36cf19d6da82fd95)",
  "wasmi",
 ]
 
@@ -2030,7 +2082,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "parity-scale-codec",
- "rand",
+ "rand 0.7.3",
  "redshirt-syscalls",
 ]
 
@@ -2040,7 +2092,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "parity-scale-codec",
- "rand",
+ "rand 0.7.3",
  "redshirt-syscalls",
 ]
 
@@ -2145,7 +2197,7 @@ version = "0.1.0"
 dependencies = [
  "atomic",
  "futures",
- "rand",
+ "rand 0.7.3",
  "redshirt-core",
  "redshirt-interface-interface",
  "redshirt-random-interface",
@@ -2180,8 +2232,8 @@ dependencies = [
  "multiboot2",
  "nohash-hasher",
  "pin-project 1.0.2",
- "rand_chacha",
- "rand_core",
+ "rand_chacha 0.2.2",
+ "rand_core 0.5.1",
  "rand_jitter",
  "rdrand",
  "redshirt-core",
@@ -2235,7 +2287,7 @@ dependencies = [
  "futures",
  "parity-scale-codec",
  "parking_lot",
- "rand",
+ "rand 0.7.3",
  "redshirt-core",
  "redshirt-interface-interface",
  "redshirt-tcp-interface",
@@ -2753,6 +2805,12 @@ name = "wasi"
 version = "0.9.0+wasi-snapshot-preview1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cccddf32554fecc6acb585f82a32a72e28b48f8c4c1883ddfeeeaa96f7d8e519"
+
+[[package]]
+name = "wasi"
+version = "0.10.0+wasi-snapshot-preview1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1a143597ca7c7793eff794def352d41792a93c481eb1042423ff7ff72ba2c31f"
 
 [[package]]
 name = "wasi"
