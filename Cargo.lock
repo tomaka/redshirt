@@ -1388,9 +1388,9 @@ dependencies = [
 
 [[package]]
 name = "multiboot2"
-version = "0.9.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e9a649a4ee63c693e6f1cdc048e80136f9863c75952c72508b8305b0b8889759"
+checksum = "13e9fc890ff2ef2ded9084c964b950da1bc9e26d480e446ae721607b899db1fd"
 dependencies = [
  "bitflags",
 ]
