@@ -67,21 +67,22 @@ fn main() {
 
     let framebuffer_context = redshirt_framebuffer_hosted::FramebufferContext::new();
 
-    let system = redshirt_core::system::SystemBuilder::new(WasiExtrinsics::default(), rand::random())
-        .with_native_program(redshirt_tcp_hosted::TcpHandler::new())
-        .with_native_program(redshirt_log_hosted::LogHandler::new())
-        .with_native_program(redshirt_framebuffer_hosted::FramebufferHandler::new(
-            &framebuffer_context,
-        ))
-        .with_native_program(redshirt_random_hosted::RandomNativeProgram::new())
-        .with_startup_process(build_wasm_module!(
-            "../../../modules/p2p-loader",
-            "modules-loader"
-        ))
-        .with_main_programs(cli_opts.module_hash)
-        .with_main_programs(cli_opts.background_module_hash)
-        .build()
-        .expect("Failed to start system");
+    let system =
+        redshirt_core::system::SystemBuilder::new(WasiExtrinsics::default(), rand::random())
+            .with_native_program(redshirt_tcp_hosted::TcpHandler::new())
+            .with_native_program(redshirt_log_hosted::LogHandler::new())
+            .with_native_program(redshirt_framebuffer_hosted::FramebufferHandler::new(
+                &framebuffer_context,
+            ))
+            .with_native_program(redshirt_random_hosted::RandomNativeProgram::new())
+            .with_startup_process(build_wasm_module!(
+                "../../../modules/p2p-loader",
+                "modules-loader"
+            ))
+            .with_main_programs(cli_opts.module_hash)
+            .with_main_programs(cli_opts.background_module_hash)
+            .build()
+            .expect("Failed to start system");
 
     let mut cli_pids = Vec::with_capacity(cli_requested_processes.len());
     // TODO: should also contain the `module_hash`es

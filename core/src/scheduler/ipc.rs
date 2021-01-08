@@ -407,7 +407,9 @@ impl<TExt: Extrinsics> CoreBuilder<TExt> {
     /// seed will result in the same sequence of [`Pid`]s and [`MessageId`]s.
     pub fn with_seed(seed: [u8; 64]) -> CoreBuilder<TExt> {
         CoreBuilder {
-            inner_builder: extrinsics::Builder::with_seed(<[u8; 32]>::try_from(&seed[..32]).unwrap()),
+            inner_builder: extrinsics::Builder::with_seed(
+                <[u8; 32]>::try_from(&seed[..32]).unwrap(),
+            ),
             seed: <[u8; 32]>::try_from(&seed[32..]).unwrap(),
         }
     }
