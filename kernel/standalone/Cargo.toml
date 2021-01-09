@@ -46,4 +46,4 @@ aml = "0.10.0"
 crossbeam-utils = { version = "0.8.1", default-features = false }
 multiboot2 = "0.10.1"
 rdrand = { version = "0.7.0", default-features = false }
-x86_64 = "0.12.4"
+x86_64 = "0.13.1"
