@@ -1,2 +1,11 @@
+# Note: this file exists in order to provide a more convenient development environment in the
+# redshirt repository. It is not mandatory to put a similar file next to modules developed for
+# redshirt. The redshirt modules builder automatically makes sure (in `redshirt-core`) makes sure
+# that the module is built with the appropriate options.
+
+[build]
+target = "wasm32-wasi"
+
 [target.'wasm32-wasi']
 runner = "cargo run --release --manifest-path=../../kernel/cli/Cargo.toml -- --module-path "
+rustflags = ["-C", "link-arg=--export-table", "-C", "link-arg=--import-memory"]
