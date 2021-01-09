@@ -95,7 +95,7 @@ mod tests {
     #[test]
     fn ids_different() {
         let mut ids = hashbrown::HashSet::<u64, BuildNoHashHasher<u64>>::default();
-        let pool = super::IdPool::new();
+        let pool = super::IdPool::with_seed([0; 32]);
         for _ in 0..5000 {
             assert!(ids.insert(pool.assign()));
         }
