@@ -455,17 +455,19 @@ pub struct ProcessesCollectionBuilder<TExtr> {
         HashMap<(Cow<'static, str>, Cow<'static, str>), (usize, Signature), FnvBuildHasher>,
 }
 
-impl<TExtr> Default for ProcessesCollectionBuilder<TExtr> {
-    fn default() -> ProcessesCollectionBuilder<TExtr> {
+impl<TExtr> ProcessesCollectionBuilder<TExtr> {
+    /// Initializes a new builder using the given random seed.
+    ///
+    /// The seed is used in determine how [`Pid`]s are generated. The same seed will result in
+    /// the same sequence of [`Pid`]s.
+    pub fn with_seed(seed: [u8; 32]) -> ProcessesCollectionBuilder<TExtr> {
         ProcessesCollectionBuilder {
-            pid_tid_pool: IdPool::new(),
+            pid_tid_pool: IdPool::with_seed(seed),
             extrinsics: Default::default(),
             extrinsics_id_assign: Default::default(),
         }
     }
-}
 
-impl<TExtr> ProcessesCollectionBuilder<TExtr> {
     /// Allocates a `Pid` that will not be used by any process.
     ///
     /// > **Note**: As of the writing of this comment, this feature is only ever used to allocate
