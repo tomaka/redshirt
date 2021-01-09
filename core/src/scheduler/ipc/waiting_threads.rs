@@ -180,7 +180,7 @@ mod tests {
     fn fuzz_unique_entry() {
         let queue = Arc::new(WaitingThreads::new());
         let current_accesses = Arc::new(Mutex::new(HashSet::new()));
-        let id_pool = Arc::new(IdPool::new());
+        let id_pool = Arc::new(IdPool::with_seed([0; 32]));
 
         let mut threads = Vec::new();
 
@@ -217,7 +217,7 @@ mod tests {
     #[test]
     fn access_checks_again_when_active() {
         let queue = WaitingThreads::new();
-        let id_pool = IdPool::new();
+        let id_pool = IdPool::with_seed([0; 32]);
 
         let tid1: ThreadId = id_pool.assign();
         queue.push(tid1.clone());
@@ -241,7 +241,7 @@ mod tests {
         let queue = Arc::new(WaitingThreads::new());
         let mut remaining_to_access = HashSet::new();
 
-        let id_pool = IdPool::new();
+        let id_pool = IdPool::with_seed([0; 32]);
         for _ in 0..32768 {
             let tid: ThreadId = id_pool.assign();
             assert!(remaining_to_access.insert(tid));

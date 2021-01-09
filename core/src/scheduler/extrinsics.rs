@@ -598,12 +598,16 @@ where
     }
 }
 
-impl<TExt> Default for Builder<TExt>
+impl<TExt> Builder<TExt>
 where
     TExt: Extrinsics,
 {
-    fn default() -> Self {
-        let mut inner = processes::ProcessesCollectionBuilder::default()
+    /// Initializes a new builder using the given random seed.
+    ///
+    /// The seed is used in determine how [`Pid`]s are generated. The same seed will result in
+    /// the same sequence of [`Pid`]s.
+    pub fn with_seed(seed: [u8; 32]) -> Self {
+        let mut inner = processes::ProcessesCollectionBuilder::with_seed(seed)
             .with_extrinsic(
                 "redshirt",
                 "next_notification",
@@ -634,9 +638,7 @@ where
 
         Builder { inner }
     }
-}
 
-impl<TExt: Extrinsics> Builder<TExt> {
     /// Allocates a `Pid` that will not be used by any process.
     ///
     /// > **Note**: As of the writing of this comment, this feature is only ever used to allocate

@@ -28,7 +28,7 @@ fn trapping_module() {
     "#
     );
 
-    let core = CoreBuilder::<NoExtrinsics>::new().build();
+    let core = CoreBuilder::<NoExtrinsics>::with_seed([0; 64]).build();
     let expected_pid = core.execute(&module).unwrap().0.pid();
 
     match core.run().now_or_never() {

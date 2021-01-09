@@ -646,9 +646,12 @@ impl<'a, TExtr> SystemBuilder<'a, TExtr>
 where
     TExtr: extrinsics::Extrinsics,
 {
-    /// Starts a new builder.
-    pub fn new(extrinsics: TExtr) -> Self {
-        let mut core = CoreBuilder::new();
+    /// Initializes a new builder.
+    ///
+    /// The seed is used in determine how [`Pid`]s and [`MessageId`]s are generated. The same
+    /// seed will result in the same sequence of [`Pid`]s and [`MessageId`]s.
+    pub fn new(extrinsics: TExtr, seed: [u8; 64]) -> Self {
+        let mut core = CoreBuilder::with_seed(seed);
         let load_source_virtual_pid = core.reserve_pid();
 
         SystemBuilder {
@@ -734,16 +737,6 @@ where
         })
     }
 }
-
-impl<'a, TExtr> Default for SystemBuilder<'a, TExtr>
-where
-    TExtr: extrinsics::Extrinsics + Default,
-{
-    fn default() -> Self {
-        SystemBuilder::new(Default::default())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use crate::extrinsics;
