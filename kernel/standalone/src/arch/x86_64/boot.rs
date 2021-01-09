@@ -64,7 +64,9 @@ macro_rules! __gen_boot {
                     rep stosb %al, (%edi)
 
                     // Put the value of EBX in a temporary location, to retrieve it later.
-                    mov %ebx, (6f)
+                    // Note that this is done after the memory zero-ing, as it is likely that this
+                    // symbol is included in the zero-ing.
+                    mov %ebx, ({multiboot_info_ptr})
 
                     // Check that our CPU supports extended CPUID instructions.
                     mov $0x80000000, %eax
@@ -166,7 +168,7 @@ macro_rules! __gen_boot {
                     // Jump to our Rust code.
                     // Pass as parameter the value that the `ebx` register had at initialization,
                     // which is where the multiboot information will be found.
-                    mov (6f), %rdi
+                    mov ({multiboot_info_ptr}), %rdi
                     call {entry_point_step2}
                     cli
                     hlt
@@ -186,24 +188,11 @@ macro_rules! __gen_boot {
                     movb $0xf, 0xb8009
                     cli
                     hlt
-
-                // Used as a temporary global variable.
-                // While it would be cleaner to use an externally-defined symbol, doing so has
-                // been the cause of a couple of headaches in the past. It seems that when the
-                // symbol is too far away from the `_start` function, the value isn't properly
-                // stored or retrieved. This happens despite the encoding of the instruction
-                // being exactly the same between the working and non-working versions apart from
-                // the address.
-                // It might be that the assembly code above accidentally writes over the symbol
-                // while initializing the page tables, in which case this could be revisited
-                // later.
-                6:
-                    .align 8
-                    .fill 8
                 "#,
                     entry_point_step2 = sym entry_point_step2,
                     memory_zeroing_start = sym $memory_zeroing_start,
                     memory_zeroing_end = sym $memory_zeroing_end,
+                    multiboot_info_ptr = sym $crate::arch::x86_64::boot::MULTIBOOT_INFO_PTR,
                     gdt_ptr = sym $crate::arch::x86_64::gdt::GDT_POINTER,
                     stack = sym $crate::arch::x86_64::boot::MAIN_PROCESSOR_STACK,
                     stack_size = const $crate::arch::x86_64::boot::MAIN_PROCESSOR_STACK_SIZE,
@@ -232,6 +221,10 @@ macro_rules! __gen_boot {
         };
     }
 }
+
+/// Used as a temporary variable during the boot process.
+#[doc(hidden)]
+pub static mut MULTIBOOT_INFO_PTR: u64 = 0;
 
 #[doc(hidden)]
 pub const MAIN_PROCESSOR_STACK_SIZE: usize = 0x800000;
