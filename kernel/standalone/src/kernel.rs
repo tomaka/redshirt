@@ -58,37 +58,41 @@ impl Kernel {
         // TODO: don't do this on platforms that don't have PCI?
         let pci_devices = unsafe { crate::pci::pci::init_cam_pci() };
 
-        let system_builder = redshirt_core::system::SystemBuilder::new(WasiExtrinsics::default())
-            .with_native_program(crate::hardware::HardwareHandler::new(
-                platform_specific.clone(),
-            ))
-            .with_native_program(crate::time::TimeHandler::new(platform_specific.clone()))
-            .with_native_program(crate::random::native::RandomNativeProgram::new(
-                platform_specific.clone(),
-            ))
-            .with_native_program(crate::pci::native::PciNativeProgram::new(
-                pci_devices,
-                platform_specific.clone(),
-            ))
-            .with_native_program(crate::klog::KernelLogNativeProgram::new(
-                platform_specific.clone(),
-            ))
-            .with_startup_process(build_wasm_module!(
-                "../../../modules/p2p-loader",
-                "modules-loader"
-            ))
-            .with_startup_process(build_wasm_module!("../../../modules/compositor"))
-            .with_startup_process(build_wasm_module!("../../../modules/pci-printer"))
-            // TODO: actually implement system-time and remove this dummy; https://github.com/tomaka/redshirt/issues/542
-            .with_startup_process(build_wasm_module!("../../../modules/dummy-system-time"))
-            .with_startup_process(build_wasm_module!("../../../modules/log-to-kernel"))
-            .with_startup_process(build_wasm_module!("../../../modules/vga-vbe"))
-            .with_startup_process(build_wasm_module!(
-                "../../../modules/diagnostics-http-server"
-            ))
-            .with_startup_process(build_wasm_module!("../../../modules/hello-world"))
-            .with_startup_process(build_wasm_module!("../../../modules/network-manager"))
-            .with_startup_process(build_wasm_module!("../../../modules/e1000"));
+        let randomness = crate::random::native::RandomNativeProgram::new(platform_specific.clone());
+
+        let mut rng_seed = [0; 64];
+        randomness.fill_bytes(&mut rng_seed);
+
+        let system_builder =
+            redshirt_core::system::SystemBuilder::new(WasiExtrinsics::default(), rng_seed)
+                .with_native_program(crate::hardware::HardwareHandler::new(
+                    platform_specific.clone(),
+                ))
+                .with_native_program(crate::time::TimeHandler::new(platform_specific.clone()))
+                .with_native_program(randomness)
+                .with_native_program(crate::pci::native::PciNativeProgram::new(
+                    pci_devices,
+                    platform_specific.clone(),
+                ))
+                .with_native_program(crate::klog::KernelLogNativeProgram::new(
+                    platform_specific.clone(),
+                ))
+                .with_startup_process(build_wasm_module!(
+                    "../../../modules/p2p-loader",
+                    "modules-loader"
+                ))
+                .with_startup_process(build_wasm_module!("../../../modules/compositor"))
+                .with_startup_process(build_wasm_module!("../../../modules/pci-printer"))
+                // TODO: actually implement system-time and remove this dummy; https://github.com/tomaka/redshirt/issues/542
+                .with_startup_process(build_wasm_module!("../../../modules/dummy-system-time"))
+                .with_startup_process(build_wasm_module!("../../../modules/log-to-kernel"))
+                .with_startup_process(build_wasm_module!("../../../modules/vga-vbe"))
+                .with_startup_process(build_wasm_module!(
+                    "../../../modules/diagnostics-http-server"
+                ))
+                .with_startup_process(build_wasm_module!("../../../modules/hello-world"))
+                .with_startup_process(build_wasm_module!("../../../modules/network-manager"))
+                .with_startup_process(build_wasm_module!("../../../modules/e1000"));
 
         // TODO: remove the cfg guards once rpi-framebuffer is capable of auto-detecting whether
         // it should enable itself

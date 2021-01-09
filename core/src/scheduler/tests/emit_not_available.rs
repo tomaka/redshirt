@@ -96,7 +96,7 @@ fn emit_not_available() {
     (data (i32.const 1048576) "\01\02\03\04\05\06\07\08"))"#
     );
 
-    let core = CoreBuilder::<NoExtrinsics>::new().build();
+    let core = CoreBuilder::<NoExtrinsics>::with_seed([0; 64]).build();
     core.execute(&module).unwrap();
 
     match core.run().now_or_never() {
