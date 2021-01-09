@@ -34,7 +34,7 @@ rand_chacha = { version = "0.2.1", default-features = false }
 rand_core = { version = "0.5.0", default-features = false }
 rand_hc = { version = "0.2.0", default-features = false }
 slab = { git = "https://github.com/baloo/slab", rev = "88b456131de20750e785655d1e62cd0b6e10d44b" }
-smallvec = { version = "1.6.0", default-features = false }
+smallvec = { version = "1.6.1", default-features = false }
 spinning_top = "0.2.2"
 wasi = { git = "https://github.com/bytecodealliance/wasi", rev = "45536ac956a6211e3cff047f36cf19d6da82fd95", default-features = false }# TODO: dependabot cannot parse the versioning scheme (`0.10.0+wasi-snapshot-preview1`) of this crate on crates.io
 # TODO: https://github.com/paritytech/wasmi/issues/218
