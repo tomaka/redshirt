@@ -1,9 +1,9 @@
 pull_request_rules:
-  - name: automatic merge when GitHub branch protection passes on develop
+  - name: automatic merge when GitHub branch protection passes on main
     conditions:
       - check-success=all-ci
       - label=automerge
-      - base=develop
+      - base=main
     actions:
       merge:
         strict: true

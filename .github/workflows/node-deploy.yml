@@ -3,7 +3,7 @@ name: Node deployment
 on:
   push:
     branches:
-      - develop
+      - main
 
 jobs:
   build-push-docker-image:
