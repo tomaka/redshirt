@@ -8,9 +8,9 @@ checksum = "d9fe5e32de01730eb1f6b7f5b51c17e03e2325bf40a74f754f04f130043affff"
 
 [[package]]
 name = "acpi"
-version = "2.0.0"
+version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d3ab3839b59d4b1e84c92950661ead1ce3ac606d6639bb8442c4e38a59000ebf"
+checksum = "588edec856d4efbd20b3a04279e3ceada79d652c7b459fa094881dd946998790"
 dependencies = [
  "bit_field 0.10.0",
  "log",
