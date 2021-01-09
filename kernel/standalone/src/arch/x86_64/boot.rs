@@ -237,8 +237,11 @@ macro_rules! __gen_boot {
 pub const MAIN_PROCESSOR_STACK_SIZE: usize = 0x800000;
 
 /// Stack used by the main processor.
+///
+/// As per x64 calling convention, the stack pointer must always be a multiple of 16. The stack
+/// must therefore have an alignment of 16 as well.
 #[doc(hidden)]
-#[repr(align(8), C)]
+#[repr(align(16), C)]
 pub struct Stack([u8; MAIN_PROCESSOR_STACK_SIZE]);
 pub static mut MAIN_PROCESSOR_STACK: Stack = Stack([0; MAIN_PROCESSOR_STACK_SIZE]);
 
