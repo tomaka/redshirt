@@ -17,4 +17,4 @@ redshirt-syscalls = { path = "../../interfaces/syscalls" }
 parity-scale-codec = { version = "1.0.5", default-features = false }
 
 [build-dependencies]
-regex = "1.4.2"
+regex = "1.4.3"
