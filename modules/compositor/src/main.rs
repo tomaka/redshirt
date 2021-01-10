@@ -128,6 +128,7 @@ async fn async_main() {
                                     }
                                 }
                             }
+                            // TODO: Some(2) handling
                             Some(3) if msg.actual_data.0.len() == 5 => {
                                 let fb_id = u32::from_le_bytes(<[u8; 4]>::try_from(&msg.actual_data.0[1..5]).unwrap());
                                 if let Some(message_id) = msg.message_id {
