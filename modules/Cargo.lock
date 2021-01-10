@@ -55,6 +55,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ahash"
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a75b7e6a93ecd6dbd2c225154d0fa7f86205574ecaa6c87429fb5f66ee677c44"
+dependencies = [
+ "getrandom 0.2.0",
+ "lazy_static",
+ "version_check",
+]
+
+[[package]]
 name = "aho-corasick"
 version = "0.7.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -420,7 +431,11 @@ dependencies = [
 name = "compositor"
 version = "0.1.0"
 dependencies = [
+ "ahash",
  "futures",
+ "hashbrown",
+ "rand 0.8.1",
+ "redshirt-framebuffer-interface",
  "redshirt-interface-interface",
  "redshirt-syscalls",
  "redshirt-time-interface",
@@ -2080,6 +2095,16 @@ dependencies = [
  "futures",
  "parity-scale-codec",
  "rand 0.7.3",
+ "redshirt-syscalls",
+]
+
+[[package]]
+name = "redshirt-framebuffer-interface"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "parity-scale-codec",
+ "redshirt-random-interface",
  "redshirt-syscalls",
 ]
 

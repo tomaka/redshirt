@@ -16,11 +16,13 @@
 #![recursion_limit = "2048"]
 
 use futures::prelude::*;
+use rand::RngCore as _;
+use redshirt_framebuffer_interface::ffi as fb_ffi;
 use redshirt_interface_interface::DecodedInterfaceOrDestroyed;
 use redshirt_syscalls::{Decode as _, MessageId, Pid};
 use redshirt_time_interface::Delay;
 use redshirt_video_output_interface::ffi as vid_ffi;
-use std::{collections::VecDeque, time::Duration};
+use std::{collections::VecDeque, convert::TryFrom as _, time::Duration};
 
 fn main() {
     redshirt_syscalls::block_on(async_main())
@@ -28,87 +30,154 @@ fn main() {
 
 async fn async_main() {
     // Register the interfaces.
-    let mut registration = redshirt_interface_interface::register_interface(vid_ffi::INTERFACE)
-        .await
-        .unwrap();
+    let mut video_registration =
+        redshirt_interface_interface::register_interface(vid_ffi::INTERFACE)
+            .await
+            .unwrap();
+    let mut framebuffer_events_registration =
+        redshirt_interface_interface::register_interface(fb_ffi::INTERFACE_WITH_EVENTS)
+            .await
+            .unwrap();
+    let mut framebuffer_noevents_registration =
+        redshirt_interface_interface::register_interface(fb_ffi::INTERFACE_WITHOUT_EVENTS)
+            .await
+            .unwrap();
+
+    // Main state machine holding all the information used below.
+    let mut compositor = compositor::Compositor::with_seed({
+        let mut seed = [0; 64];
+        rand::thread_rng().fill_bytes(&mut seed);
+        seed
+    });
 
     struct VideoOutput {
-        pid: Pid,
-        id: u64,
-        cleared: bool,
-        width: u32,
-        height: u32,
-        format: vid_ffi::Format,
         next_frame_messages: VecDeque<MessageId>,
     }
 
-    let mut video_outputs = Vec::<VideoOutput>::new();
+    struct Framebuffer {
+        next_event_messages: VecDeque<MessageId>,
+    }
+
     let mut next_frame = Delay::new(Duration::from_secs(0)).fuse();
 
     loop {
         futures::select! {
-            interface_event = registration.next_message_raw().fuse() => {
-                match interface_event {
+            video_output_event = video_registration.next_message_raw().fuse() => {
+                match video_output_event {
                     DecodedInterfaceOrDestroyed::Interface(msg) => {
-                        if msg.interface == vid_ffi::INTERFACE {
-                            let emitter_pid = msg.emitter_pid;
-                            let msg_data = vid_ffi::VideoOutputMessage::decode(msg.actual_data).unwrap();
-                            match msg_data {
-                                vid_ffi::VideoOutputMessage::Register { id, width, height, format } => {
-                                    video_outputs.push(VideoOutput {
-                                        pid: msg.emitter_pid,
-                                        id,
-                                        cleared: false,
-                                        width,
-                                        height,
-                                        format,
-                                        next_frame_messages: VecDeque::with_capacity(16),
-                                    });
-                                }
-                                vid_ffi::VideoOutputMessage::Unregister(id) => {
-                                    video_outputs.retain(|vo| vo.pid != emitter_pid || vo.id != id);
-                                }
-                                vid_ffi::VideoOutputMessage::NextImage(id) => {
-                                    if let Some(message_id) = msg.message_id {
-                                        if let Some(vo) = video_outputs.iter_mut().find(|vo| vo.pid == emitter_pid && vo.id == id) {
-                                            vo.next_frame_messages.push_back(message_id)
-                                        } else {
-                                            redshirt_interface_interface::emit_message_error(message_id);
-                                        }
+                        match vid_ffi::VideoOutputMessage::decode(msg.actual_data).unwrap() {
+                            vid_ffi::VideoOutputMessage::Register { id, width, height, format } => {
+                                let format = match format {
+                                    vid_ffi::Format::R8G8B8X8 => compositor::Format::R8G8B8X8,
+                                };
+
+                                compositor.add_video_output((msg.emitter_pid, id), width, height, format, VideoOutput {
+                                    next_frame_messages: VecDeque::with_capacity(16),
+                                });
+                            }
+                            vid_ffi::VideoOutputMessage::Unregister(id) => {
+                                if let Some(vo) = compositor.video_output_by_id(&(msg.emitter_pid, id)) {
+                                    let video_output = vo.remove();
+                                    for message_id in video_output.next_frame_messages {
+                                        redshirt_interface_interface::emit_message_error(message_id);
                                     }
                                 }
                             }
-                        } else {
-                            unreachable!()
+                            vid_ffi::VideoOutputMessage::NextImage(id) => {
+                                if let Some(message_id) = msg.message_id {
+                                    if let Some(mut vo) = compositor.video_output_by_id(&(msg.emitter_pid, id)) {
+                                        // TODO: add some limit to the number of events
+                                        vo.user_data_mut().next_frame_messages.push_back(message_id)
+                                    } else {
+                                        redshirt_interface_interface::emit_message_error(message_id)
+                                    }
+                                }
+                            }
                         }
                     },
                     DecodedInterfaceOrDestroyed::ProcessDestroyed(destroyed) => {
-                        video_outputs.retain(|vo| vo.pid != destroyed.pid);
+                        for video_output_id in compositor.video_outputs().cloned().collect::<Vec<_>>() {
+                            if video_output_id.0 != destroyed.pid {
+                                continue;
+                            }
+
+                            compositor.video_output_by_id(&video_output_id).unwrap().remove();
+                        }
                     }
                 }
             },
-            _ = next_frame => {
-                println!("frame!");
-                next_frame = Delay::new(Duration::from_secs(1)).fuse();        // TODO:
-                for video_output in &mut video_outputs {
-                    let message_id = match video_output.next_frame_messages.pop_front() {
+
+            framebuffer_event = framebuffer_events_registration.next_message_raw().fuse() => {
+                match framebuffer_event {
+                    DecodedInterfaceOrDestroyed::Interface(msg) => {
+                        match msg.actual_data.0.get(0) {
+                            Some(0) if msg.actual_data.0.len() == 13 => {
+                                let fb_id = u32::from_le_bytes(<[u8; 4]>::try_from(&msg.actual_data.0[1..5]).unwrap());
+                                let width = u32::from_le_bytes(<[u8; 4]>::try_from(&msg.actual_data.0[5..9]).unwrap());
+                                let height = u32::from_le_bytes(<[u8; 4]>::try_from(&msg.actual_data.0[9..13]).unwrap());
+                                compositor.add_framebuffer((msg.emitter_pid, fb_id), width, height, Framebuffer {
+                                    next_event_messages: VecDeque::with_capacity(16),
+                                });
+                            }
+                            Some(1) if msg.actual_data.0.len() == 5 => {
+                                let fb_id = u32::from_le_bytes(<[u8; 4]>::try_from(&msg.actual_data.0[1..5]).unwrap());
+                                if let Some(fb) = compositor.framebuffer_by_id(&(msg.emitter_pid, fb_id)) {
+                                    let framebuffer = fb.remove();
+                                    for message_id in framebuffer.next_event_messages {
+                                        redshirt_interface_interface::emit_message_error(message_id);
+                                    }
+                                }
+                            }
+                            Some(3) if msg.actual_data.0.len() == 5 => {
+                                let fb_id = u32::from_le_bytes(<[u8; 4]>::try_from(&msg.actual_data.0[1..5]).unwrap());
+                                if let Some(message_id) = msg.message_id {
+                                    if let Some(mut fb) = compositor.framebuffer_by_id(&(msg.emitter_pid, fb_id)) {
+                                        // TODO: add some limit to the number of events
+                                        fb.user_data_mut().next_event_messages.push_back(message_id);
+                                    } else {
+                                        redshirt_interface_interface::emit_message_error(message_id);
+                                    }
+                                }
+                            }
+                            _ => {
+                                if let Some(message_id) = msg.message_id {
+                                    redshirt_interface_interface::emit_message_error(message_id);
+                                }
+                            }
+                        }
+                    },
+                    DecodedInterfaceOrDestroyed::ProcessDestroyed(destroyed) => {
+                        for framebuffer_id in compositor.framebuffers().cloned().collect::<Vec<_>>() {
+                            if framebuffer_id.0 != destroyed.pid {
+                                continue;
+                            }
+
+                            compositor.framebuffer_by_id(&framebuffer_id).unwrap().remove();
+                        }
+                    }
+                }
+            },
+
+            () = next_frame => {
+                compositor.next_frame();
+                next_frame = Delay::new(Duration::new(0, 16666667)).fuse();
+                for video_output_id in compositor.video_outputs().cloned().collect::<Vec<_>>() {
+                    let mut video_output = compositor.video_output_by_id(&video_output_id).unwrap();
+
+                    let message_id = match video_output.user_data_mut().next_frame_messages.pop_front() {
                         Some(m) => m,
                         None => continue,
                     };
 
                     redshirt_interface_interface::emit_answer(message_id, vid_ffi::NextImage {
-                        changes: if video_output.cleared {
-                            Vec::new()
-                        } else {
-                            vec![vid_ffi::NextImageChange {
-                                screen_x_start: 0,
-                                screen_x_len: video_output.width,
-                                screen_y_start: 0,
-                                pixels: (0..video_output.height).map(|_| {
-                                    (0..video_output.width * 4).map(|_| 0xffu8).collect::<Vec<_>>()
-                                }).collect(),
-                            }]
-                        },
+                        changes: video_output.drain_pending_changes().map(|change| {
+                            vid_ffi::NextImageChange {
+                                screen_x_start: change.screen_x_start,
+                                screen_x_len: change.screen_x_len,
+                                screen_y_start: change.screen_y_start,
+                                pixels: change.pixels,
+                            }
+                        }).collect(),
                     });
                 }
             }
