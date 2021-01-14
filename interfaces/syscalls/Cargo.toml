@@ -11,7 +11,7 @@ generic-array = { version = "0.14.4", default-features = false }
 hashbrown = { version = "0.9.1", default-features = false }
 lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
 nohash-hasher = { version = "0.2.0", default-features = false }
-parity-scale-codec = { version = "1.3.5", default-features = false, features = ["derive"] }
+parity-scale-codec = { version = "1.3.6", default-features = false, features = ["derive"] }
 pin-project = "0.4.6"
 slab = { git = "https://github.com/baloo/slab", rev = "88b456131de20750e785655d1e62cd0b6e10d44b" }
 spinning_top = "0.2.2"
