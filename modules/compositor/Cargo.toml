@@ -8,7 +8,7 @@ publish = false
 
 [dependencies]
 ahash = { version = "0.6.2", default-features = false }
-futures = "0.3.10"
+futures = "0.3.11"
 hashbrown = { version = "0.9.1", default-features = false }
 rand = "0.8.2"
 redshirt-framebuffer-interface = { path = "../../interfaces/framebuffer" }
