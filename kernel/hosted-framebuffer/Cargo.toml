@@ -8,7 +8,7 @@ publish = false
 
 [dependencies]
 atomic = "0.5.0"
-futures = "0.3.9"
+futures = "0.3.11"
 glium = "0.29.0"
 parking_lot = "0.11.1"
 redshirt-core = { path = "../../core" }
