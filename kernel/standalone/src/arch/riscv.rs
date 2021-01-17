@@ -119,19 +119,6 @@ macro_rules! __gen_boot {
                 executor::block_on($entry(platform_specific))
             }
 
-            // TODO: why is this symbol required?
-            #[no_mangle]
-            fn abort() -> ! {
-                loop {
-                    unsafe {
-                        asm!(
-                            "ebreak ; wfi",
-                            options(nomem, nostack, preserves_flags, noreturn)
-                        );
-                    }
-                }
-            }
-
             // TODO: this is architecture-specific and very hacky
             fn init_uart() -> UartInfo {
                 unsafe {

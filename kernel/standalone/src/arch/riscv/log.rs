@@ -56,7 +56,7 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
     // Freeze forever.
     loop {
         unsafe {
-            asm!("wfi", options(nomem, nostack, preserves_flags));
+            asm!("ebreak ; wfi", options(nomem, nostack, preserves_flags));
         }
     }
 }
