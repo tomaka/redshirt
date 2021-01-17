@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -57,7 +57,7 @@ fn bench(c: &mut Criterion) {
     let module = Module::from_bytes(&include_bytes!("keccak.wasm")[..]).unwrap();
 
     c.bench_function("keccak-4096-bytes", |b| {
-        let system = SystemBuilder::new(WasiExtrinsics::default())
+        let system = SystemBuilder::new(WasiExtrinsics::default(), [0; 64])
             .build()
             .unwrap();
         b.iter(|| {

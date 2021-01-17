@@ -7,7 +7,11 @@ edition = "2018"
 publish = false
 
 [dependencies]
-futures = "0.3.8"
+ahash = { version = "0.6.2", default-features = false }
+futures = "0.3.11"
+hashbrown = { version = "0.9.1", default-features = false }
+rand = "0.8.2"
+redshirt-framebuffer-interface = { path = "../../interfaces/framebuffer" }
 redshirt-interface-interface = { path = "../../interfaces/interface" }
 redshirt-syscalls = { path = "../../interfaces/syscalls" }
 redshirt-time-interface = { path = "../../interfaces/time" }

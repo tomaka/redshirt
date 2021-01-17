@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -123,7 +123,8 @@ pub use self::module::Module;
 pub use self::system::{System, SystemBuilder, SystemRunOutcome};
 pub use primitives::{ValueType, WasmValue};
 pub use redshirt_syscalls::{
-    Decode, Encode, EncodedMessage, InterfaceHash, InvalidMessageIdErr, MessageId, Pid, ThreadId,
+    Decode, Encode, EncodedMessage, EncodedMessageRef, InterfaceHash, InvalidMessageIdErr,
+    MessageId, Pid, ThreadId,
 };
 
 /// Compiles a WASM module and includes it similar to `include_bytes!`.

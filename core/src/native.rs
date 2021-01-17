@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -25,6 +25,8 @@
 //!
 //! This module defines the [`NativeProgramRef`] trait that should be implemented on native
 //! programs.
+
+// TODO: native programs should be refactored by returning events out of `System` rather than injecting a trait
 
 pub use self::collection::{
     NativeProgramsCollection, NativeProgramsCollectionEvent, NativeProgramsCollectionMessageIdWrite,

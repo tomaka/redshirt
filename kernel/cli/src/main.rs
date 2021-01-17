@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -14,6 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use futures::{channel::mpsc, prelude::*};
+use rand::RngCore as _;
 use redshirt_core::{build_wasm_module, extrinsics::wasi::WasiExtrinsics, module::ModuleHash};
 use std::{fs, path::PathBuf, process, sync::Arc};
 use structopt::StructOpt;
@@ -67,22 +68,29 @@ fn main() {
 
     let framebuffer_context = redshirt_framebuffer_hosted::FramebufferContext::new();
 
-    let system = redshirt_core::system::SystemBuilder::new(WasiExtrinsics::default())
-        .with_native_program(redshirt_time_hosted::TimerHandler::new())
-        .with_native_program(redshirt_tcp_hosted::TcpHandler::new())
-        .with_native_program(redshirt_log_hosted::LogHandler::new())
-        .with_native_program(redshirt_framebuffer_hosted::FramebufferHandler::new(
-            &framebuffer_context,
-        ))
-        .with_native_program(redshirt_random_hosted::RandomNativeProgram::new())
-        .with_startup_process(build_wasm_module!(
-            "../../../modules/p2p-loader",
-            "modules-loader"
-        ))
-        .with_main_programs(cli_opts.module_hash)
-        .with_main_programs(cli_opts.background_module_hash)
-        .build()
-        .expect("Failed to start system");
+    let randomness_seed = {
+        // As of the time of writing of this code, `rand::random::<[u8; 64]>()` doesn't compile.
+        let mut bytes = [0; 64];
+        rand::thread_rng().fill_bytes(&mut bytes);
+        bytes
+    };
+
+    let system =
+        redshirt_core::system::SystemBuilder::new(WasiExtrinsics::default(), randomness_seed)
+            .with_native_program(redshirt_tcp_hosted::TcpHandler::new())
+            .with_native_program(redshirt_log_hosted::LogHandler::new())
+            .with_native_program(redshirt_framebuffer_hosted::FramebufferHandler::new(
+                &framebuffer_context,
+            ))
+            .with_native_program(redshirt_random_hosted::RandomNativeProgram::new())
+            .with_startup_process(build_wasm_module!(
+                "../../../modules/p2p-loader",
+                "modules-loader"
+            ))
+            .with_main_programs(cli_opts.module_hash)
+            .with_main_programs(cli_opts.background_module_hash)
+            .build()
+            .expect("Failed to start system");
 
     let mut cli_pids = Vec::with_capacity(cli_requested_processes.len());
     // TODO: should also contain the `module_hash`es

@@ -2,8 +2,8 @@ name: Node deployment
 
 on:
   push:
-    branches:    
-      - develop
+    branches:
+      - main
 
 jobs:
   build-push-docker-image:

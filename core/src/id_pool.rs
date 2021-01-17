@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use core::{convert::TryFrom, fmt, num::NonZeroU64};
+use core::{convert::TryFrom, fmt};
 use crossbeam_queue::SegQueue;
 use rand::distributions::{Distribution as _, Uniform};
 use rand_chacha::ChaCha20Rng;
@@ -43,11 +43,11 @@ pub struct IdPool {
 
 impl IdPool {
     /// Initializes a new pool.
-    pub fn new() -> Self {
+    pub fn with_seed(seed: [u8; 32]) -> Self {
         IdPool {
             rngs: SegQueue::new(),
             distribution: Uniform::from(0..=u64::max_value()),
-            master_rng: Spinlock::new(Hc128Rng::from_seed([0; 32])), // FIXME: proper seed
+            master_rng: Spinlock::new(Hc128Rng::from_seed(seed)),
         }
     }
 
@@ -95,7 +95,7 @@ mod tests {
     #[test]
     fn ids_different() {
         let mut ids = hashbrown::HashSet::<u64, BuildNoHashHasher<u64>>::default();
-        let pool = super::IdPool::new();
+        let pool = super::IdPool::with_seed([0; 32]);
         for _ in 0..5000 {
             assert!(ids.insert(pool.assign()));
         }

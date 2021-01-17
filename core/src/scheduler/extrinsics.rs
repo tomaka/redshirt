@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -160,8 +160,6 @@ pub enum ThreadByIdErr {
 enum Extrinsic<TExtId> {
     NextMessage,
     EmitMessage,
-    EmitMessageError,
-    EmitAnswer,
     CancelMessage,
     Other(TExtId),
 }
@@ -287,33 +285,6 @@ pub enum RunOneOutcome<'a, TPud, TTud, TExt: Extrinsics> {
 
     /// A thread in a process is waiting for an incoming message.
     ThreadWaitNotification(ThreadWaitNotif<'a, TPud, TTud, TExt>),
-
-    /// A thread in a process wants to answer a message.
-    ThreadEmitAnswer {
-        /// Thread that wants to emit an answer.
-        thread_id: ThreadId,
-
-        /// Process that the thread belongs to.
-        process: ProcAccess<'a, TPud, TTud, TExt>,
-
-        /// Message to answer.
-        message_id: MessageId,
-
-        /// The answer it self.
-        response: EncodedMessage,
-    },
-
-    /// A thread in a process wants to notify that a message is erroneous.
-    ThreadEmitMessageError {
-        /// Thread that wants to emit a message error.
-        thread_id: ThreadId,
-
-        /// Process that the thread belongs to.
-        process: ProcAccess<'a, TPud, TTud, TExt>,
-
-        /// Message that is erroneous.
-        message_id: MessageId,
-    },
 
     /// A thread in a process wants to notify that a message is to be cancelled.
     ThreadCancelMessage {
@@ -519,61 +490,6 @@ where
 
             processes::RunOneOutcome::Interrupted {
                 mut thread,
-                id: Extrinsic::EmitAnswer,
-                params,
-            } => {
-                debug_assert!(thread.user_data().state.is_ready_to_run());
-                match calls::parse_extrinsic_emit_answer(&mut thread, params) {
-                    Ok(emit_resp) => {
-                        let process = thread.process();
-                        let thread_id = thread.tid();
-                        thread.resume(None);
-                        Some(RunOneOutcome::ThreadEmitAnswer {
-                            process: ProcAccess {
-                                parent: self,
-                                inner: process,
-                            },
-                            thread_id,
-                            message_id: emit_resp.message_id,
-                            response: emit_resp.response,
-                        })
-                    }
-                    Err(_) => {
-                        thread.process().abort();
-                        None
-                    }
-                }
-            }
-
-            processes::RunOneOutcome::Interrupted {
-                mut thread,
-                id: Extrinsic::EmitMessageError,
-                params,
-            } => {
-                debug_assert!(thread.user_data().state.is_ready_to_run());
-                match calls::parse_extrinsic_emit_message_error(&mut thread, params) {
-                    Ok(emit_msg_error) => {
-                        let process = thread.process();
-                        let thread_id = thread.tid();
-                        thread.resume(None);
-                        Some(RunOneOutcome::ThreadEmitMessageError {
-                            process: ProcAccess {
-                                parent: self,
-                                inner: process,
-                            },
-                            thread_id,
-                            message_id: emit_msg_error,
-                        })
-                    }
-                    Err(_) => {
-                        thread.process().abort();
-                        None
-                    }
-                }
-            }
-
-            processes::RunOneOutcome::Interrupted {
-                mut thread,
                 id: Extrinsic::CancelMessage,
                 params,
             } => {
@@ -682,12 +598,16 @@ where
     }
 }
 
-impl<TExt> Default for Builder<TExt>
+impl<TExt> Builder<TExt>
 where
     TExt: Extrinsics,
 {
-    fn default() -> Self {
-        let mut inner = processes::ProcessesCollectionBuilder::default()
+    /// Initializes a new builder using the given random seed.
+    ///
+    /// The seed is used in determine how [`Pid`]s are generated. The same seed will result in
+    /// the same sequence of [`Pid`]s.
+    pub fn with_seed(seed: [u8; 32]) -> Self {
+        let mut inner = processes::ProcessesCollectionBuilder::with_seed(seed)
             .with_extrinsic(
                 "redshirt",
                 "next_notification",
@@ -699,18 +619,6 @@ where
                 "emit_message",
                 sig!((I32, I32, I32, I64, I32) -> I32),
                 Extrinsic::EmitMessage,
-            )
-            .with_extrinsic(
-                "redshirt",
-                "emit_message_error",
-                sig!((I32)),
-                Extrinsic::EmitMessageError,
-            )
-            .with_extrinsic(
-                "redshirt",
-                "emit_answer",
-                sig!((I32, I32, I32)),
-                Extrinsic::EmitAnswer,
             )
             .with_extrinsic(
                 "redshirt",
@@ -730,9 +638,7 @@ where
 
         Builder { inner }
     }
-}
 
-impl<TExt: Extrinsics> Builder<TExt> {
     /// Allocates a `Pid` that will not be used by any process.
     ///
     /// > **Note**: As of the writing of this comment, this feature is only ever used to allocate
@@ -1107,12 +1013,7 @@ impl<'a, TPud, TTud, TExt: Extrinsics> ThreadWaitNotif<'a, TPud, TTud, TExt> {
                 // TODO: the way this is handled is clearly not great; the API of this method
                 // should be improved
                 let decoded = redshirt_syscalls::ffi::decode_notification(&notif.0).unwrap();
-                let message = match decoded {
-                    redshirt_syscalls::ffi::DecodedNotification::Response(response) => {
-                        response.actual_data.unwrap()
-                    } // TODO: don't unwrap
-                    _ => panic!(),
-                };
+                let message = decoded.actual_data.unwrap();
 
                 assert_eq!(index, 0);
                 let action = self

@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -13,6 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+//! Starts an HTTP server listening on 0.0.0.0:8000 and reporting Prometheus metrics.
+
 use futures::{channel::mpsc, prelude::*};
 use std::{pin::Pin, task::Context, task::Poll};
 
@@ -24,7 +26,7 @@ fn main() {
             .await
             .unwrap();
 
-        log::info!("Kernel Prometheus metrics now available on http://127.0.0.1:8000/metrics");
+        log::info!("Kernel Prometheus metrics now available on http://0.0.0.0:8000/metrics");
 
         let stream = stream::unfold(listener, |l| async move {
             let connec = l.accept().await.0;
@@ -47,7 +49,7 @@ fn main() {
         .serve(hyper::service::make_service_fn(|_| async {
             Ok::<_, hyper::Error>(hyper::service::service_fn(|req| async move {
                 if req.uri().path() == "/metrics" {
-                    let metrics = redshirt_kernel_debug_interface::get_metrics().await;
+                    let metrics = redshirt_kernel_debug_interface::get_prometheus_metrics().await;
                     hyper::Response::builder()
                         .status(hyper::StatusCode::OK)
                         .header("Content-Type", "text/plain; version=0.0.4")

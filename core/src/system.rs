@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -27,12 +27,16 @@ use crate::extrinsics;
 use crate::module::{Module, ModuleHash};
 use crate::native::{self, NativeProgramMessageIdWrite as _};
 use crate::scheduler::{Core, CoreBuilder, CoreRunOutcome, NewErr};
+use crate::InterfaceHash;
 
-use alloc::{format, vec::Vec};
+mod interfaces;
+mod pending_answers;
+
+use alloc::{collections::VecDeque, format, vec::Vec};
 use core::{convert::TryFrom as _, fmt, iter, num::NonZeroU64, sync::atomic::Ordering, task::Poll};
 use crossbeam_queue::SegQueue;
 use futures::prelude::*;
-use hashbrown::HashSet;
+use hashbrown::{HashMap, HashSet};
 use nohash_hasher::BuildNoHashHasher;
 use redshirt_syscalls::{Decode, Encode, EncodedMessage, MessageId, Pid};
 use spinning_top::Spinlock;
@@ -44,6 +48,12 @@ use spinning_top::Spinlock;
 pub struct System<'a, TExtr: extrinsics::Extrinsics> {
     /// Inner system with inter-process communications.
     core: Core<TExtr>,
+
+    /// For each interface, which program is fulfilling it.
+    interfaces: interfaces::Interfaces,
+
+    /// Collection of messages that have been delivered but are waiting to be answered.
+    pending_answers: pending_answers::PendingAnswers,
 
     /// Total number of processes that have been spawned since initialization.
     num_processes_started: atomic::Atomic<u64>,
@@ -58,10 +68,10 @@ pub struct System<'a, TExtr: extrinsics::Extrinsics> {
     /// Can communicate with the WASM programs that are within `core`.
     native_programs: native::NativeProgramsCollection<'a>,
 
-    /// PID of the program that handles the `loader` interface, or `None` is no such program
-    /// exists yet.
+    /// Registration ID (i.e. index in [`Interfaces::registrations`]) that handles the `loader`
+    /// interface, or `None` is no such program exists yet.
     // TODO: add timeout for loader interface availability?
-    loader_pid: atomic::Atomic<Option<NonZeroU64>>,
+    loader_registration_id: atomic::Atomic<Option<usize>>,
 
     /// List of programs to load if the loader interface handler is available.
     programs_to_load: SegQueue<ModuleHash>,
@@ -75,22 +85,54 @@ pub struct System<'a, TExtr: extrinsics::Extrinsics> {
     loading_programs: Spinlock<HashSet<MessageId, BuildNoHashHasher<u64>>>,
 }
 
+#[derive(Debug)]
+struct Interfaces {
+    interfaces: HashMap<InterfaceHash, Interface, fnv::FnvBuildHasher>,
+    registrations: slab::Slab<InterfaceRegistration>,
+}
+
+#[derive(Debug)]
+enum Interface {
+    /// Interface has a registered handler.
+    ///
+    /// Contains an index within [`Interfaces::registrations`].
+    Registered(usize),
+
+    /// Interface has no registered handler yet.
+    NotRegistered {
+        /// Messages emitted by programs and that haven't been accepted yet are pushed to this
+        /// field.
+        ///
+        /// No limit is enforced on the size of this container. However, since each entry
+        /// corresponds to a thread currently being paused, the total number of entries across
+        /// all `pending_accept` fields is bounded by the total number of threads across all
+        /// processes.
+        pending_accept: VecDeque<(MessageId, bool)>,
+    },
+}
+
+#[derive(Debug)]
+struct InterfaceRegistration {
+    pid: Pid,
+    is_native: bool,
+    /// Messages of type `NextMessage` sent on the interface interface and that must be answered
+    /// with the next interface message.
+    queries: VecDeque<MessageId>,
+    /// If [`InterfaceRegistration::queries`] is empty, messages emitted by programs and that
+    /// haven't been accepted yet are pushed to this field.
+    pending_accept: VecDeque<(MessageId, bool)>,
+}
+
 /// Prototype for a [`System`].
 pub struct SystemBuilder<'a, TExtr: extrinsics::Extrinsics> {
     /// Builder for the inner core.
     core: CoreBuilder<TExtr>,
 
-    /// Native programs.
-    native_programs: native::NativeProgramsCollection<'a>,
-
-    /// "Virtual" pid for handling messages on the `interface` interface.
-    interface_interface_pid: Pid,
-
     /// "Virtual" pid for the process that sends messages towards the loader.
     load_source_virtual_pid: Pid,
 
-    /// "Virtual" pid for handling messages on the `kernel_debug` interface.
-    kernel_debug_interface_pid: Pid,
+    /// Native programs.
+    native_programs: native::NativeProgramsCollection<'a>,
 
     /// List of programs to start executing immediately after construction.
     startup_processes: Vec<Module>,
@@ -120,7 +162,6 @@ pub enum SystemRunOutcome<'a, 'b, TExtr: extrinsics::Extrinsics> {
 enum RunOnceOutcome<'a, 'b, TExtr: extrinsics::Extrinsics> {
     Report(SystemRunOutcome<'a, 'b, TExtr>),
     LoopAgain,
-    LoopAgainNow,
 }
 
 impl<'a, TExtr> System<'a, TExtr>
@@ -143,20 +184,6 @@ where
         // TODO: We use a `poll_fn` because async/await don't work in no_std yet.
         future::poll_fn(move |cx| {
             loop {
-                // If we have a handler for the loader interface, start loading pending programs.
-                if self.loader_pid.load(Ordering::Relaxed).is_some() {
-                    while let Some(hash) = self.programs_to_load.pop() {
-                        // TODO: can this not fail if the handler crashed in parallel in a
-                        // multithreaded situation?
-                        let message_id = self.core.emit_interface_message_answer(
-                            self.load_source_virtual_pid,
-                            redshirt_loader_interface::ffi::INTERFACE,
-                            redshirt_loader_interface::ffi::LoaderMessage::Load(From::from(hash)),
-                        );
-                        self.loading_programs.lock().insert(message_id);
-                    }
-                }
-
                 // TODO: put an await here instead
                 let run_once_outcome = {
                     let fut = self.run_once();
@@ -166,10 +193,6 @@ where
 
                 if let Poll::Ready(RunOnceOutcome::Report(out)) = run_once_outcome {
                     return Poll::Ready(out);
-                }
-
-                if let Poll::Ready(RunOnceOutcome::LoopAgainNow) = run_once_outcome {
-                    continue;
                 }
 
                 let next_event = self.native_programs.next_event();
@@ -190,29 +213,103 @@ where
                         emitter_pid,
                         message,
                         message_id_write,
-                    } => {
-                        // The native programs want to emit a message in the kernel.
-                        if let Some(message_id_write) = message_id_write {
-                            let message_id = self.core.emit_interface_message_answer(
-                                emitter_pid,
-                                interface,
-                                message,
-                            );
-                            message_id_write.acknowledge(message_id);
-                        } else {
-                            self.core.emit_interface_message_no_answer(
-                                emitter_pid,
-                                interface,
-                                message,
-                            );
+                    } if interface == redshirt_interface_interface::ffi::INTERFACE => {
+                        match redshirt_interface_interface::ffi::InterfaceMessage::decode(message) {
+                            Ok(redshirt_interface_interface::ffi::InterfaceMessage::Register(
+                                interface_hash,
+                            )) => {
+                                // Set the process as interface handler, if possible.
+                                let result =
+                                    self.set_interface_handler(&interface_hash, emitter_pid, true);
+
+                                let response =
+                                    redshirt_interface_interface::ffi::InterfaceRegisterResponse {
+                                        result: result.clone(),
+                                    };
+                                if let Some(message_id_write) = message_id_write {
+                                    let message_id = self.core.allocate_untracked_message();
+                                    message_id_write.acknowledge(message_id);
+                                    self.native_programs
+                                        .message_response(message_id, Ok(response.encode()));
+                                }
+                            }
+                            Ok(
+                                redshirt_interface_interface::ffi::InterfaceMessage::NextMessage(
+                                    registration_id,
+                                ),
+                            ) => {
+                                if let Some(message_id_write) = message_id_write {
+                                    let query_message_id = self.core.allocate_untracked_message();
+                                    message_id_write.acknowledge(query_message_id);
+
+                                    loop {
+                                        match self.interfaces.emit_message_query(
+                                            registration_id.into(),
+                                            query_message_id,
+                                            emitter_pid,
+                                        ) {
+                                            Ok(Some(delivery)) => {
+                                                debug_assert!(delivery.recipient_is_native);
+                                                if self.deliver(delivery).is_err() {
+                                                    continue;
+                                                }
+                                            }
+                                            Ok(None) => {}
+                                            Err(()) => {
+                                                self.native_programs
+                                                    .message_response(query_message_id, Err(()));
+                                            }
+                                        };
+
+                                        break;
+                                    }
+                                } else {
+                                    panic!(); // TODO: handle properly?
+                                }
+                            }
+                            Ok(redshirt_interface_interface::ffi::InterfaceMessage::Answer(
+                                answered_message_id,
+                                answer_bytes,
+                            )) => {
+                                // TODO: could be a native program answer instead
+                                self.core.answer_message(
+                                    answered_message_id,
+                                    answer_bytes.map(EncodedMessage),
+                                );
+                            }
+                            Err(_) => {
+                                if let Some(message_id_write) = message_id_write {
+                                    let message_id = self.core.allocate_untracked_message();
+                                    message_id_write.acknowledge(message_id);
+                                    self.native_programs.message_response(message_id, Err(()));
+                                }
+                            }
                         }
                     }
-                    native::NativeProgramsCollectionEvent::CancelMessage { message_id } => {
-                        // The native programs want to cancel a previously-emitted message.
-                        self.core.cancel_message(message_id);
+                    native::NativeProgramsCollectionEvent::Emit {
+                        interface,
+                        emitter_pid,
+                        message,
+                        message_id_write,
+                    } => {
+                        // TODO:
+                        todo!()
+                        /*// The native programs want to emit a message in the kernel.
+                        if let Some(message_id_write) = message_id_write {
+                            let message_id =
+                                self.core
+                                    .emit_message_answer(emitter_pid, interface, message);
+                            message_id_write.acknowledge(message_id);
+                        } else {
+                            self.core
+                                .emit_message_no_answer(emitter_pid, interface, message);
+                        }*/
                     }
-                    native::NativeProgramsCollectionEvent::Answer { message_id, answer } => {
-                        self.core.answer_message(message_id, answer);
+                    native::NativeProgramsCollectionEvent::CancelMessage { message_id } => {
+                        // TODO:
+                        todo!()
+                        // The native programs want to cancel a previously-emitted message.
+                        //self.core.cancel_message(message_id);
                     }
                 }
             }
@@ -222,94 +319,137 @@ where
     async fn run_once<'b>(&'b self) -> RunOnceOutcome<'a, 'b, TExtr> {
         match self.core.run().await {
             CoreRunOutcome::ProgramFinished { pid, outcome, .. } => {
-                self.loader_pid.compare_exchange(
-                    Some(NonZeroU64::new(u64::from(pid)).unwrap()),
-                    None,
-                    Ordering::Acquire,
-                    Ordering::Relaxed,
-                );
+                // TODO: cancel interface registrations ; update loader_registration_id
+                // TODO: notify interface registrations of process destruction
+
+                for _message_id in self.pending_answers.drain_by_answerer(&pid) {
+                    // TODO: notify emitter of cancellation
+                }
+
                 if outcome.is_ok() {
                     self.num_processes_finished.fetch_add(1, Ordering::Relaxed);
                 } else {
                     self.num_processes_trap.fetch_add(1, Ordering::Relaxed);
                 }
-                self.native_programs.process_destroyed(pid);
+
                 return RunOnceOutcome::Report(SystemRunOutcome::ProgramFinished {
                     pid,
                     outcome: outcome.map(|_| ()).map_err(|err| err.into()),
                 });
             }
 
-            CoreRunOutcome::ThreadWaitUnavailableInterface { .. } => {} // TODO: lazy-loading
-
-            CoreRunOutcome::MessageResponse {
-                message_id,
-                response,
-                ..
-            } => {
-                if self.loading_programs.lock().remove(&message_id) {
-                    let redshirt_loader_interface::ffi::LoadResponse { result } =
-                        Decode::decode(response.unwrap()).unwrap();
-                    // TODO: don't unwrap
-                    let module = Module::from_bytes(&result.expect("loader returned error"))
-                        .expect("module isn't proper wasm");
-                    self.num_processes_started.fetch_add(1, Ordering::Relaxed);
-                    match self.core.execute(&module) {
-                        Ok(_) => {}
-                        Err(_) => panic!(),
-                    }
-                } else {
-                    self.native_programs.message_response(message_id, response);
-                }
-            }
-
-            CoreRunOutcome::ReservedPidInterfaceMessage {
+            CoreRunOutcome::InterfaceMessage {
                 pid,
+                needs_answer,
+                immediate: _,
                 message_id,
                 interface,
-                message,
             } if interface == redshirt_interface_interface::ffi::INTERFACE => {
                 // Handling messages on the `interface` interface.
+                let (_, message) = match self.core.accept_interface_message(message_id) {
+                    Some(v) => v,
+                    None => return RunOnceOutcome::LoopAgain,
+                };
+
                 match redshirt_interface_interface::ffi::InterfaceMessage::decode(message) {
                     Ok(redshirt_interface_interface::ffi::InterfaceMessage::Register(
                         interface_hash,
                     )) => {
                         // Set the process as interface handler, if possible.
-                        let result = self.core.set_interface_handler(interface_hash.clone(), pid);
+                        let result = self.set_interface_handler(&interface_hash, pid, false);
+
                         let response =
                             redshirt_interface_interface::ffi::InterfaceRegisterResponse {
-                                result: result.clone().map_err(|()| redshirt_interface_interface::ffi::InterfaceRegisterError::AlreadyRegistered),
+                                result: result.clone(),
                             };
-                        if let Some(message_id) = message_id {
+                        if needs_answer {
                             self.core.answer_message(message_id, Ok(response.encode()));
                         }
+                    }
+                    Ok(redshirt_interface_interface::ffi::InterfaceMessage::NextMessage(
+                        registration_id,
+                    )) => {
+                        // TODO: silently discard a message if !needs_answer?
+                        if needs_answer {
+                            loop {
+                                // TODO: immediate not taken into account
+                                match self.interfaces.emit_message_query(
+                                    registration_id.into(),
+                                    message_id,
+                                    pid,
+                                ) {
+                                    Ok(Some(delivery)) => {
+                                        debug_assert!(!delivery.recipient_is_native);
+                                        if self.deliver(delivery).is_err() {
+                                            continue;
+                                        }
+                                    }
+                                    Ok(None) => {}
+                                    Err(()) => {
+                                        self.core.answer_message(message_id, Err(()));
+                                    }
+                                }
 
-                        // Special handling if the registered interface is the loader.
-                        if result.is_ok()
-                            && interface_hash == redshirt_loader_interface::ffi::INTERFACE
-                        {
-                            debug_assert_ne!(u64::from(pid), 0);
-                            self.loader_pid
-                                .store(NonZeroU64::new(u64::from(pid)), Ordering::Release);
-                            return RunOnceOutcome::LoopAgainNow;
+                                break;
+                            }
+                        } else {
+                            todo!()
                         }
                     }
+                    Ok(redshirt_interface_interface::ffi::InterfaceMessage::Answer(
+                        answered_message_id,
+                        answer_bytes,
+                    )) => {
+                        // TODO: handle errors here
+                        // TODO: handle `needs_answer` equal true?
+                        if self
+                            .pending_answers
+                            .remove(&answered_message_id, &pid)
+                            .is_ok()
+                        {
+                            // TODO: must handle emitter is native
+                            self.core.answer_message(
+                                answered_message_id,
+                                answer_bytes.map(EncodedMessage),
+                            );
+                        }
+
+                        // TODO: reimplement
+                        /*if self.loading_programs.lock().remove(&message_id) {
+                            let redshirt_loader_interface::ffi::LoadResponse { result } =
+                                Decode::decode(answer.unwrap()).unwrap();
+                            // TODO: don't unwrap
+                            let module = Module::from_bytes(&result.expect("loader returned error"))
+                                .expect("module isn't proper wasm");
+                            self.num_processes_started.fetch_add(1, Ordering::Relaxed);
+                            match self.core.execute(&module) {
+                                Ok(_) => {}
+                                Err(_) => panic!(),
+                            }
+                        }*/
+                    }
                     Err(_) => {
-                        if let Some(message_id) = message_id {
+                        if needs_answer {
                             self.core.answer_message(message_id, Err(()));
                         }
                     }
                 }
             }
 
-            CoreRunOutcome::ReservedPidInterfaceMessage {
-                pid,
+            CoreRunOutcome::InterfaceMessage {
+                pid: _,
+                needs_answer,
+                immediate: _,
                 message_id,
                 interface,
-                message,
-            } if interface == redshirt_kernel_debug_interface::ffi::INTERFACE => {
+            } if interface == redshirt_kernel_debug_interface::INTERFACE => {
                 // Handling messages on the `kernel_debug` interface.
-                if let Some(message_id) = message_id {
+                let (_, message) = match self.core.accept_interface_message(message_id) {
+                    Some(v) => v,
+                    None => return RunOnceOutcome::LoopAgain,
+                };
+
+                if needs_answer {
                     if message.0.is_empty() {
                         return RunOnceOutcome::Report(
                             SystemRunOutcome::KernelDebugMetricsRequest(
@@ -325,18 +465,110 @@ where
                 }
             }
 
-            CoreRunOutcome::ReservedPidInterfaceMessage {
+            CoreRunOutcome::InterfaceMessage {
                 pid,
+                needs_answer,
+                immediate,
                 message_id,
                 interface,
-                message,
             } => {
-                self.native_programs
-                    .interface_message(interface, message_id, pid, message);
+                match self.interfaces.emit_interface_message(
+                    &interface,
+                    message_id,
+                    pid,
+                    needs_answer,
+                    immediate,
+                ) {
+                    interfaces::EmitInterfaceMessage::Deliver(delivery) => {
+                        match self.deliver(delivery) {
+                            Ok(()) => {}
+                            Err(()) => todo!(), // TODO: ouch, that is complex
+                        }
+                    }
+                    interfaces::EmitInterfaceMessage::Reject => {
+                        debug_assert!(immediate);
+                        self.core.reject_immediate_interface_message(message_id);
+                    }
+                    interfaces::EmitInterfaceMessage::Queued => {
+                        debug_assert!(!immediate);
+                    }
+                }
             }
         }
 
         RunOnceOutcome::LoopAgain
+    }
+
+    fn set_interface_handler(
+        &self,
+        interface_hash: &InterfaceHash,
+        pid: Pid,
+        is_native: bool,
+    ) -> Result<NonZeroU64, redshirt_interface_interface::ffi::InterfaceRegisterError> {
+        let result = self
+            .interfaces
+            .set_interface_handler(interface_hash.clone(), pid, is_native);
+
+        // Special handling if the registered interface is the loader.
+        if *interface_hash == redshirt_loader_interface::ffi::INTERFACE {
+            if let Ok(registration_id) = result {
+                self.loader_registration_id.store(
+                    Some(usize::try_from(registration_id.get()).unwrap()),
+                    Ordering::Release,
+                );
+
+                while let Some(h) = self.programs_to_load.pop() {
+                    todo!() // TODO:
+                }
+            }
+        }
+
+        result
+    }
+
+    /// Applies an [`interfaces::MessageDelivery`].
+    ///
+    /// Returns `Ok` if the message still exists, or an error if the message to deliver was no
+    /// longer valid.
+    fn deliver(&self, delivery: interfaces::MessageDelivery) -> Result<(), ()> {
+        let (emitter_pid, message) = match self
+            .core
+            .accept_interface_message(delivery.to_deliver_message_id)
+        {
+            Some(v) => v,
+            None => return Err(()),
+        };
+
+        let notification = redshirt_interface_interface::ffi::build_interface_notification(
+            &delivery.interface,
+            if delivery.needs_answer {
+                Some(delivery.to_deliver_message_id)
+            } else {
+                None
+            },
+            emitter_pid,
+            &message,
+        );
+
+        // The message is added to `pending_answers` before being actually delivered, in order to
+        // avoid a situation where the recipient manages to answer the message before it is added
+        // to `pending_answers`.
+        self.pending_answers
+            .add(delivery.to_deliver_message_id, delivery.recipient_pid);
+
+        if delivery.recipient_is_native {
+            self.native_programs.message_response(
+                delivery.query_message_id,
+                Ok(EncodedMessage(notification.into_bytes())),
+            );
+        } else {
+            self.core.answer_message(
+                delivery.query_message_id,
+                Ok(EncodedMessage(notification.into_bytes())),
+            );
+        }
+
+        Ok(())
     }
 }
 
@@ -358,13 +590,13 @@ impl<'a, 'b, TExtr: extrinsics::Extrinsics> KernelDebugMetricsRequest<'a, 'b, TE
 
         // `processes_started_total`
         metrics_bytes.extend_from_slice(
-            b"# HELP processes_started_total Number of processes that have \
+            b"# HELP redshirt_processes_started_total Number of processes that have \
             been spawned since initialization.\n",
         );
-        metrics_bytes.extend_from_slice(b"# TYPE processes_started_total counter\n");
+        metrics_bytes.extend_from_slice(b"# TYPE redshirt_processes_started_total counter\n");
         metrics_bytes.extend_from_slice(
             format!(
-                "processes_started_total {}\n",
+                "redshirt_processes_started_total {}\n",
                 self.system.num_processes_started.load(Ordering::Relaxed)
             )
             .as_bytes(),
@@ -373,20 +605,20 @@ impl<'a, 'b, TExtr: extrinsics::Extrinsics> KernelDebugMetricsRequest<'a, 'b, TE
 
         // `processes_ended_total`
         metrics_bytes.extend_from_slice(
-            b"# HELP processes_ended_total Number of processes that have \
+            b"# HELP redshirt_processes_ended_total Number of processes that have \
             ended, since initialization.\n",
         );
-        metrics_bytes.extend_from_slice(b"# TYPE processes_ended_total counter\n");
+        metrics_bytes.extend_from_slice(b"# TYPE redshirt_processes_ended_total counter\n");
         metrics_bytes.extend_from_slice(
             format!(
-                "processes_ended_total{{reason=\"graceful\"}} {}\n",
+                "redshirt_processes_ended_total{{reason=\"graceful\"}} {}\n",
                 self.system.num_processes_finished.load(Ordering::Relaxed)
             )
             .as_bytes(),
         );
         metrics_bytes.extend_from_slice(
             format!(
-                "processes_ended_total{{reason=\"crash\"}} {}\n",
+                "redshirt_processes_ended_total{{reason=\"crash\"}} {}\n",
                 self.system.num_processes_trap.load(Ordering::Relaxed)
             )
             .as_bytes(),
@@ -414,20 +646,18 @@ impl<'a, TExtr> SystemBuilder<'a, TExtr>
 where
     TExtr: extrinsics::Extrinsics,
 {
-    /// Starts a new builder.
-    pub fn new(extrinsics: TExtr) -> Self {
-        // We handle some low-level interfaces here.
-        let mut core = CoreBuilder::new();
-        let interface_interface_pid = core.reserve_pid();
+    /// Initializes a new builder.
+    ///
+    /// The seed is used in determine how [`Pid`]s and [`MessageId`]s are generated. The same
+    /// seed will result in the same sequence of [`Pid`]s and [`MessageId`]s.
+    pub fn new(extrinsics: TExtr, seed: [u8; 64]) -> Self {
+        let mut core = CoreBuilder::with_seed(seed);
         let load_source_virtual_pid = core.reserve_pid();
-        let kernel_debug_interface_pid = core.reserve_pid();
 
         SystemBuilder {
             core,
-            interface_interface_pid,
-            load_source_virtual_pid,
-            kernel_debug_interface_pid,
             startup_processes: Vec::new(),
+            load_source_virtual_pid,
             programs_to_load: SegQueue::new(),
             native_programs: native::NativeProgramsCollection::new(),
         }
@@ -487,25 +717,6 @@ where
     pub fn build(self) -> Result<System<'a, TExtr>, NewErr> {
         let core = self.core.build();
 
-        // We ask the core to redirect messages for the `interface` interface towards our
-        // "virtual" `Pid`.
-        match core.set_interface_handler(
-            redshirt_interface_interface::ffi::INTERFACE,
-            self.interface_interface_pid,
-        ) {
-            Ok(()) => {}
-            Err(_) => unreachable!(),
-        };
-
-        // Same for the `kernel-debug` interface.
-        match core.set_interface_handler(
-            redshirt_kernel_debug_interface::ffi::INTERFACE,
-            self.kernel_debug_interface_pid,
-        ) {
-            Ok(()) => {}
-            Err(_) => unreachable!(),
-        };
-
         let num_processes_started = u64::try_from(self.startup_processes.len()).unwrap();
         for program in self.startup_processes {
             core.execute(&program)?;
@@ -513,27 +724,19 @@ where
 
         Ok(System {
             core,
+            load_source_virtual_pid: self.load_source_virtual_pid,
+            interfaces: Default::default(),
+            pending_answers: Default::default(),
             num_processes_started: atomic::Atomic::new(num_processes_started),
             num_processes_finished: atomic::Atomic::new(0),
             num_processes_trap: atomic::Atomic::new(0),
             native_programs: self.native_programs,
-            loader_pid: atomic::Atomic::new(None),
-            load_source_virtual_pid: self.load_source_virtual_pid,
+            loader_registration_id: atomic::Atomic::new(None),
             loading_programs: Spinlock::new(Default::default()),
             programs_to_load: self.programs_to_load,
         })
     }
 }
-
-impl<'a, TExtr> Default for SystemBuilder<'a, TExtr>
-where
-    TExtr: extrinsics::Extrinsics + Default,
-{
-    fn default() -> Self {
-        SystemBuilder::new(Default::default())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use crate::extrinsics;

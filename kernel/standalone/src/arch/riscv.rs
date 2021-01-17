@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -13,161 +13,178 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#![cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
-
 use crate::arch::{PlatformSpecific, PortErr};
 use crate::klog::KLogger;
 
-use alloc::sync::Arc;
-use core::{
-    convert::TryFrom as _,
-    fmt::{self, Write as _},
-    iter,
-    num::NonZeroU32,
-    pin::Pin,
-};
+use core::{iter, num::NonZeroU32, pin::Pin};
 use futures::prelude::*;
 use redshirt_kernel_log_interface::ffi::{KernelLogMethod, UartInfo};
 
-mod executor;
-mod interrupts;
-mod log;
+// Modules that are used by the macro must be public, but their content isn't meant to be used
+// apart from the macro.
+#[doc(hidden)]
+pub mod executor;
+#[doc(hidden)]
+pub mod interrupts;
+#[doc(hidden)]
+pub mod log;
+
 mod misc;
 
-/// This is the main entry point of the kernel for RISC-V architectures.
-global_asm!(
-    r#"
-.global _start
-_start:
-    // Disable interrupts and clear pending interrupts.
-    csrw mie, 0
-    csrw mip, 0
+#[macro_export]
+macro_rules! __gen_boot {
+    (
+        entry: $entry:path,
+        memory_zeroing_start: $memory_zeroing_start:path,
+        memory_zeroing_end: $memory_zeroing_end:path,
+    ) => {
+        const _: () = {
+            extern crate alloc;
 
-    // TODO: ???
-    .option push
-    .option norelax
-    la gp, __global_pointer$
-    .option pop
+            use $crate::arch::{PlatformSpecific, PortErr};
+            use $crate::arch::riscv::*;
+            use $crate::klog::KLogger;
 
-    // Zero the BSS segment.
-    la a0, __bss_start
-    la a1, __bss_end
-.L0:sb zero, 0(a0)
-    addi a0, a0, 1
-    bltu a0, a1, .L0
+            use alloc::sync::Arc;
+            use core::{iter, num::NonZeroU32, pin::Pin};
+            use $crate::futures::prelude::*;
+            use $crate::redshirt_kernel_log_interface::ffi::{KernelLogMethod, UartInfo};
 
-    // Set up the stack.
-    // TODO: make stack size configurable
-    // TODO: we don't have any stack protection in place
-    .comm stack, 0x2000, 8
-    la sp, stack
-    li t0, 0x2000
-    add sp, sp, t0
-    add fp, sp, zero
+            /// This is the main entry point of the kernel for RISC-V architectures.
+            #[naked]
+            #[export_name = "_start"]
+            unsafe extern "C" fn entry_point() {
+                asm!(r#"
+                    // Disable interrupts and clear pending interrupts.
+                    csrw mie, 0
+                    csrw mip, 0
 
-    j cpu_enter
-"#
-);
+                    // TODO: ???
+                    .option push
+                    .option norelax
+                    la gp, __global_pointer$
+                    .option pop
 
-// TODO: remove this
-extern "C" {
-    static mut __bss_start: u8;
-    static mut __bss_end: u8;
-}
+                    // Zero the memory requested to be zero'ed.
+                    la a0, {memory_zeroing_start}
+                    la a1, {memory_zeroing_end}
+                .L0:sb zero, 0(a0)
+                    addi a0, a0, 1
+                    bltu a0, a1, .L0
 
-/// Main Rust entry point.
-#[no_mangle]
-unsafe fn cpu_enter() -> ! {
-    // Initialize the logging system.
-    log::set_logger(KLogger::new(KernelLogMethod {
-        enabled: true,
-        framebuffer: None,
-        uart: Some(init_uart()),
-    }));
+                    // Set up the stack.
+                    // TODO: make stack size configurable
+                    // TODO: we don't have any stack protection in place
+                    .comm stack, 0x2000, 8
+                    la sp, stack
+                    li t0, 0x2000
+                    add sp, sp, t0
+                    add fp, sp, zero
 
-    // Initialize the memory allocator.
-    // TODO: make this is a cleaner way; this is specific to the hifive
-    crate::mem_alloc::initialize(iter::once({
-        let free_mem_start = &__bss_end as *const u8 as usize;
-        let ram_end = 0x80000000 + 16 * 1024;
-        free_mem_start..ram_end
-    }));
+                    j {after_boot}
+                "#,
+                    memory_zeroing_start = sym $memory_zeroing_start,
+                    memory_zeroing_end = sym $memory_zeroing_end,
+                    after_boot = sym after_boot,
+                    options(noreturn));
+            }
 
-    // Initialize interrupts.
-    let _interrupts = interrupts::init();
+            /// Main Rust entry point.
+            unsafe fn after_boot() -> ! {
+                // Initialize the logging system.
+                log::set_logger(KLogger::new(KernelLogMethod {
+                    enabled: true,
+                    framebuffer: None,
+                    uart: Some(init_uart()),
+                }));
 
-    // Initialize the kernel.
-    let kernel = {
-        let platform_specific = PlatformSpecificImpl {};
-        crate::kernel::Kernel::init(platform_specific)
-    };
+                // Initialize the memory allocator.
+                // TODO: make this is a cleaner way; this is specific to the hifive
+                $crate::mem_alloc::initialize(iter::once({
+                    let free_mem_start = &$memory_zeroing_end as *const u8 as usize;
+                    let ram_end = 0x80000000 + 16 * 1024;
+                    free_mem_start..ram_end
+                }));
 
-    // TODO: there's a stack overflow in practice when we call `kernel.run()`; the interrupt
-    // handler fails to show that because it uses the stack
-    panic!("We pre-emptively panic because running the kernel is known to overflow the stack");
+                // Initialize interrupts.
+                let _interrupts = interrupts::init();
 
-    // Run the kernel. This call never returns.
-    executor::block_on(kernel.run(0))
-}
+                // TODO: there's a stack overflow in practice when we call `kernel.run()`; the interrupt
+                // handler fails to show that because it uses the stack
+                panic!("We pre-emptively panic because running the kernel is known to overflow the stack");
 
-// TODO: why is this symbol required?
-#[no_mangle]
-fn abort() -> ! {
-    loop {
-        unsafe {
-            llvm_asm!("ebreak");
-            llvm_asm!("wfi");
-        }
-    }
-}
+                // Call the entry point specified by the user of the macro.
+                // `` is used in order to jump out of the `__gen_boot` macro.
+                let platform_specific = Arc::pin(PlatformSpecific::from(PlatformSpecificImpl {}));
+                executor::block_on($entry(platform_specific))
+            }
 
-// TODO: this is architecture-specific and very hacky
-fn init_uart() -> UartInfo {
-    unsafe {
-        let prci_hfrosccfg = (0x10008000 as *mut u32).read_volatile();
-        (0x10008000 as *mut u32).write_volatile(prci_hfrosccfg | (1 << 30));
+            // TODO: why is this symbol required?
+            #[no_mangle]
+            fn abort() -> ! {
+                loop {
+                    unsafe {
+                        asm!(
+                            "ebreak ; wfi",
+                            options(nomem, nostack, preserves_flags, noreturn)
+                        );
+                    }
+                }
+            }
 
-        let prci_pllcfg = (0x10008008 as *mut u32).read_volatile();
-        (0x10008008 as *mut u32).write_volatile(prci_pllcfg | (1 << 18) | (1 << 17));
-        let prci_pllcfg = (0x10008008 as *mut u32).read_volatile();
-        (0x10008008 as *mut u32).write_volatile(prci_pllcfg | (1 << 16));
+            // TODO: this is architecture-specific and very hacky
+            fn init_uart() -> UartInfo {
+                unsafe {
+                    let prci_hfrosccfg = (0x10008000 as *mut u32).read_volatile();
+                    (0x10008000 as *mut u32).write_volatile(prci_hfrosccfg | (1 << 30));
 
-        let prci_hfrosccfg = (0x10008000 as *mut u32).read_volatile();
-        (0x10008000 as *mut u32).write_volatile(prci_hfrosccfg & !(1 << 30));
+                    let prci_pllcfg = (0x10008008 as *mut u32).read_volatile();
+                    (0x10008008 as *mut u32).write_volatile(prci_pllcfg | (1 << 18) | (1 << 17));
+                    let prci_pllcfg = (0x10008008 as *mut u32).read_volatile();
+                    (0x10008008 as *mut u32).write_volatile(prci_pllcfg | (1 << 16));
 
-        let gpio_iof_sel = (0x1001203c as *mut u32).read_volatile();
-        (0x1001203c as *mut u32).write_volatile(gpio_iof_sel & !0x00030000);
+                    let prci_hfrosccfg = (0x10008000 as *mut u32).read_volatile();
+                    (0x10008000 as *mut u32).write_volatile(prci_hfrosccfg & !(1 << 30));
 
-        let gpio_iof_en = (0x10012038 as *mut u32).read_volatile();
-        (0x10012038 as *mut u32).write_volatile(gpio_iof_en | 0x00030000);
+                    let gpio_iof_sel = (0x1001203c as *mut u32).read_volatile();
+                    (0x1001203c as *mut u32).write_volatile(gpio_iof_sel & !0x00030000);
 
-        (0x10013018 as *mut u32).write_volatile(138);
+                    let gpio_iof_en = (0x10012038 as *mut u32).read_volatile();
+                    (0x10012038 as *mut u32).write_volatile(gpio_iof_en | 0x00030000);
 
-        let uart_reg_tx_ctrl = (0x10013008 as *mut u32).read_volatile();
-        (0x10013008 as *mut u32).write_volatile(uart_reg_tx_ctrl | 1);
+                    (0x10013018 as *mut u32).write_volatile(138);
 
-        UartInfo {
-            wait_low_address: 0x10013000,
-            wait_low_mask: 0x80000000,
-            write_address: 0x10013000,
-        }
+                    let uart_reg_tx_ctrl = (0x10013008 as *mut u32).read_volatile();
+                    (0x10013008 as *mut u32).write_volatile(uart_reg_tx_ctrl | 1);
+
+                    UartInfo {
+                        wait_low_address: 0x10013000,
+                        wait_low_mask: 0x80000000,
+                        write_address: 0x10013000,
+                    }
+                }
+            }
+        };
     }
 }
 
 /// Implementation of [`PlatformSpecific`].
-struct PlatformSpecificImpl {}
+pub struct PlatformSpecificImpl {}
 
-impl PlatformSpecific for PlatformSpecificImpl {
-    type TimerFuture = future::Pending<()>;
-    type IrqFuture = future::Pending<()>;
+impl From<PlatformSpecificImpl> for super::PlatformSpecific {
+    fn from(ps: PlatformSpecificImpl) -> Self {
+        Self(ps)
+    }
+}
 
-    fn num_cpus(self: Pin<&Self>) -> NonZeroU32 {
+impl PlatformSpecificImpl {
+    pub fn num_cpus(self: Pin<&Self>) -> NonZeroU32 {
         // TODO:
         NonZeroU32::new(1).unwrap()
     }
 
     #[cfg(target_pointer_width = "32")]
-    fn monotonic_clock(self: Pin<&Self>) -> u128 {
+    pub fn monotonic_clock(self: Pin<&Self>) -> u128 {
         // TODO: unit is probably the wrong unit; we're supposed to return nanoseconds
         // TODO: this is only supported in the "I" version of RISC-V; check that
         unsafe {
@@ -179,9 +196,9 @@ impl PlatformSpecific for PlatformSpecificImpl {
                 let hi1: u32;
                 let hi2: u32;
 
-                // Note that we put all three instructions in the same `llvm_asm!`, to prevent the
-                // compiler from reordering them.
-                llvm_asm!("rdtimeh $0 ; rdtime $1 ; rdtimeh $2" : "=r"(hi1), "=r"(lo), "=r"(hi2));
+                // Note that we put all three instructions in the same `asm!`, to prevent the
+                // compiler from possibly reordering them.
+                asm!("rdtimeh {} ; rdtime {} ; rdtimeh {}", out(reg) hi1, out(reg) lo, out(reg) hi2);
 
                 if hi1 == hi2 {
                     break (u64::from(hi1) << 32) | u64::from(lo);
@@ -193,55 +210,58 @@ impl PlatformSpecific for PlatformSpecificImpl {
     }
 
     #[cfg(target_pointer_width = "64")]
-    fn monotonic_clock(self: Pin<&Self>) -> u128 {
+    pub fn monotonic_clock(self: Pin<&Self>) -> u128 {
         // TODO: unit is probably the wrong unit; we're supposed to return nanoseconds
         // TODO: this is only supported in the "I" version of RISC-V; check that
         unsafe {
             let val: u64;
-            llvm_asm!("rdtime $0" : "=r"(val));
+            asm!("rdtime {}", out(reg) reg);
             u128::from(val)
         }
     }
 
-    fn timer(self: Pin<&Self>, deadline: u128) -> Self::TimerFuture {
-        unimplemented!()
+    pub fn timer(self: Pin<&Self>, _deadline: u128) -> TimerFuture {
+        todo!()
     }
 
-    fn next_irq(self: Pin<&Self>) -> Self::IrqFuture {
+    pub fn next_irq(self: Pin<&Self>) -> IrqFuture {
         future::pending()
     }
 
-    fn write_log(&self, message: &str) {
+    pub fn write_log(&self, message: &str) {
         log::write_log(message);
     }
 
-    fn set_logger_method(&self, method: KernelLogMethod) {
+    pub fn set_logger_method(&self, method: KernelLogMethod) {
         unsafe {
             log::set_logger(KLogger::new(method));
         }
     }
 
-    unsafe fn write_port_u8(self: Pin<&Self>, _: u32, _: u8) -> Result<(), PortErr> {
+    pub unsafe fn write_port_u8(self: Pin<&Self>, _: u32, _: u8) -> Result<(), PortErr> {
         Err(PortErr::Unsupported)
     }
 
-    unsafe fn write_port_u16(self: Pin<&Self>, _: u32, _: u16) -> Result<(), PortErr> {
+    pub unsafe fn write_port_u16(self: Pin<&Self>, _: u32, _: u16) -> Result<(), PortErr> {
         Err(PortErr::Unsupported)
     }
 
-    unsafe fn write_port_u32(self: Pin<&Self>, _: u32, _: u32) -> Result<(), PortErr> {
+    pub unsafe fn write_port_u32(self: Pin<&Self>, _: u32, _: u32) -> Result<(), PortErr> {
         Err(PortErr::Unsupported)
     }
 
-    unsafe fn read_port_u8(self: Pin<&Self>, _: u32) -> Result<u8, PortErr> {
+    pub unsafe fn read_port_u8(self: Pin<&Self>, _: u32) -> Result<u8, PortErr> {
         Err(PortErr::Unsupported)
     }
 
-    unsafe fn read_port_u16(self: Pin<&Self>, _: u32) -> Result<u16, PortErr> {
+    pub unsafe fn read_port_u16(self: Pin<&Self>, _: u32) -> Result<u16, PortErr> {
         Err(PortErr::Unsupported)
     }
 
-    unsafe fn read_port_u32(self: Pin<&Self>, _: u32) -> Result<u32, PortErr> {
+    pub unsafe fn read_port_u32(self: Pin<&Self>, _: u32) -> Result<u32, PortErr> {
         Err(PortErr::Unsupported)
     }
 }
+
+pub type TimerFuture = future::Pending<()>;
+pub type IrqFuture = future::Pending<()>;

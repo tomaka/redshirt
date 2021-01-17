@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -58,7 +58,7 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
     // Freeze forever.
     unsafe {
         loop {
-            llvm_asm!(r#"wfe"#);
+            asm!("wfe", options(nomem, nostack, preserves_flags));
         }
     }
 }

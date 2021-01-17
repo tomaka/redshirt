@@ -26,6 +26,8 @@ pub struct Delay {
     #[cfg(not(target_arch = "wasm32"))]
     #[pin]
     inner: futures_timer::Delay,
+    #[cfg(not(target_arch = "wasm32"))]
+    when: Instant,
     #[cfg(target_arch = "wasm32")]
     #[pin]
     inner: redshirt_time_interface::Delay,
@@ -61,26 +63,30 @@ impl Delay {
 #[cfg(not(target_arch = "wasm32"))]
 impl Delay {
     pub fn new(dur: Duration) -> Delay {
+        // Instant is grabbed before creating the future.
+        let when = Instant::now() + dur;
         Delay {
             inner: futures_timer::Delay::new(dur),
+            when,
         }
     }
 
     pub fn new_at(at: Instant) -> Delay {
+        let now = Instant::now();
         Delay {
             inner: futures_timer::Delay::new({
-                let now = Instant::now();
                 if at > now {
                     at - now
                 } else {
                     Duration::new(0, 0)
                 }
             }),
+            when: at,
         }
     }
 
     pub fn when(&self) -> Instant {
-        self.inner.when()
+        self.when
     }
 
     pub fn reset(&mut self, dur: Duration) {

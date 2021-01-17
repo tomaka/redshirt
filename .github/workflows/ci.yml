@@ -16,7 +16,7 @@ jobs:
     - name: Install Rust
       uses: actions-rs/toolchain@v1
       with:
-        toolchain: nightly-2020-09-15
+        toolchain: nightly-2020-12-28
         target: wasm32-wasi
         override: true
     - name: Install a recent version of clang
@@ -37,7 +37,7 @@ jobs:
     - name: Build modules
       run: cargo build --manifest-path ./modules/Cargo.toml --workspace --exclude stub --locked --verbose --release --target=wasm32-wasi
     - name: Upload WASM modules
-      uses: actions/upload-artifact@v2.2.1
+      uses: actions/upload-artifact@v2.2.2
       with:
         name: wasm-modules
         path: modules/target
@@ -55,7 +55,7 @@ jobs:
     - name: Install Rust
       uses: actions-rs/toolchain@v1
       with:
-        toolchain: nightly-2020-09-15
+        toolchain: nightly-2020-12-28
         target: wasm32-wasi
         override: true
     - name: Install a recent version of clang
@@ -122,7 +122,7 @@ jobs:
     - name: Install nightly Rust
       uses: actions-rs/toolchain@v1
       with:
-        toolchain: nightly-2020-09-15
+        toolchain: nightly-2020-12-28
         target: wasm32-wasi
         override: true
     - name: Install rust-src
@@ -130,7 +130,7 @@ jobs:
     - name: Build kernel
       run: cargo run --manifest-path=./kernel/standalone-builder/Cargo.toml -- build-image --target ${{ matrix.target }} --device-type cdrom --out image
     - name: Upload generated kernel
-      uses: actions/upload-artifact@v2.2.1
+      uses: actions/upload-artifact@v2.2.2
       with:
         name: kernel-${{ matrix.target }}
         path: image
@@ -200,7 +200,7 @@ jobs:
       - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2020-09-15
+          toolchain: nightly-2020-12-28
           target: wasm32-wasi
           override: true
       - name: Install a recent version of clang
@@ -246,3 +246,11 @@ jobs:
       with:
         command: check --config ./.github/workflows/cargo-deny.toml ${{ matrix.checks }}
         arguments: --workspace --all-features --manifest-path=./kernel/standalone-builder/Cargo.toml
+
+  all-ci:
+    # This dummy job depends on all the mandatory checks. It succeeds if and only if CI is
+    # considered successful.
+    needs: [build-hosted, build-standalone, check-passive-node, fmt, intra-doc-links, cargo-deny]
+    runs-on: ubuntu-latest
+    steps:
+     - run: echo Success

@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -213,7 +213,10 @@ pub fn build_wasm_module(tokens: proc_macro::TokenStream) -> proc_macro::TokenSt
                                   // TODO: this is missing Cargo.tomls and stuff I think
         list_iter
             .filter_map(|file| {
-                if Path::new(file).exists() {
+                if !Path::new(file).is_absolute() {
+                    // TODO: relative paths cause issues ; figure out why some paths are relative
+                    None
+                } else if Path::new(file).exists() {
                     // TODO: figure out why some files are missing
                     Some(file.to_owned())
                 } else {

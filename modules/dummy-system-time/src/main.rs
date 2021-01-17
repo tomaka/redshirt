@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -13,7 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use redshirt_syscalls::{ffi::DecodedInterfaceOrDestroyed, Decode as _};
+use redshirt_interface_interface::DecodedInterfaceOrDestroyed;
+use redshirt_syscalls::Decode as _;
 use redshirt_system_time_interface::ffi as sys_time_ffi;
 
 fn main() {
@@ -21,12 +22,13 @@ fn main() {
 }
 
 async fn async_main() {
-    redshirt_interface_interface::register_interface(sys_time_ffi::INTERFACE)
-        .await
-        .unwrap();
+    let mut registration =
+        redshirt_interface_interface::register_interface(sys_time_ffi::INTERFACE)
+            .await
+            .unwrap();
 
     loop {
-        let interface_event = redshirt_syscalls::next_interface_message().await;
+        let interface_event = registration.next_message_raw().await;
         let msg = match interface_event {
             DecodedInterfaceOrDestroyed::Interface(msg) => msg,
             DecodedInterfaceOrDestroyed::ProcessDestroyed(_) => continue,
@@ -36,7 +38,7 @@ async fn async_main() {
         let sys_time_ffi::TimeMessage::GetSystem = msg_data;
 
         if let Some(id) = msg.message_id {
-            redshirt_syscalls::emit_answer(id, &0u128);
+            redshirt_interface_interface::emit_answer(id, &0u128);
         }
     }
 }

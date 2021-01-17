@@ -7,9 +7,10 @@ edition = "2018"
 publish = false
 
 [dependencies]
-futures = "0.3.0"
-glium = "0.28.0"
-parking_lot = "0.11.0"
+atomic = "0.5.0"
+futures = "0.3.11"
+glium = "0.29.0"
+parking_lot = "0.11.1"
 redshirt-core = { path = "../../core" }
 redshirt-framebuffer-interface = { path = "../../interfaces/framebuffer" }
 redshirt-interface-interface = { path = "../../interfaces/interface" }

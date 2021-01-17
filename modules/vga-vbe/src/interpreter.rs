@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -280,12 +280,13 @@ impl Interpreter {
 
         // Determining whether to use CX or ECX is surprinsingly impossible with the iced-x86
         // library.
-        let use_ecx = (0..instruction.op_count()).any(|op_n| match instruction.op_kind(op_n) {
-            iced_x86::OpKind::MemorySegEDI => true,
-            iced_x86::OpKind::MemorySegESI => true,
-            iced_x86::OpKind::MemoryESEDI => true,
-            _ => false,
-        });
+        let use_ecx =
+            (0..instruction.op_count()).any(|op_n| match instruction.try_op_kind(op_n).unwrap() {
+                iced_x86::OpKind::MemorySegEDI => true,
+                iced_x86::OpKind::MemorySegESI => true,
+                iced_x86::OpKind::MemoryESEDI => true,
+                _ => false,
+            });
 
         loop {
             if (use_ecx && self.regs.ecx == 0) || (!use_ecx && self.cx() == 0) {
@@ -871,7 +872,7 @@ impl Interpreter {
                 // TODO: review this
                 let val = self.fetch_operand_value(&instruction, 1);
 
-                let use_esi = match instruction.op_kind(1) {
+                let use_esi = match instruction.try_op_kind(1).unwrap() {
                     iced_x86::OpKind::MemorySegSI => false,
                     iced_x86::OpKind::MemorySegESI => true,
                     _ => unreachable!(),
@@ -941,8 +942,8 @@ impl Interpreter {
             iced_x86::Mnemonic::Mov => {
                 // When executing `mov reg, sreg`, the upper bits of `reg` are zeroed on modern
                 // processors.
-                if let iced_x86::OpKind::Register = instruction.op_kind(1) {
-                    match instruction.op_register(1) {
+                if let iced_x86::OpKind::Register = instruction.try_op_kind(1).unwrap() {
+                    match instruction.try_op_register(1).unwrap() {
                         iced_x86::Register::ES
                         | iced_x86::Register::CS
                         | iced_x86::Register::SS
@@ -1469,7 +1470,7 @@ impl Interpreter {
                 self.flags_set_overflow(overflow != temp.most_significant_bit());
                 // TODO: the adjust flag
 
-                let use_edi = match instruction.op_kind(1) {
+                let use_edi = match instruction.try_op_kind(1).unwrap() {
                     iced_x86::OpKind::MemorySegDI => false,
                     iced_x86::OpKind::MemorySegEDI => true,
                     iced_x86::OpKind::MemoryESDI => false,
@@ -1530,7 +1531,7 @@ impl Interpreter {
                 // TODO: review this
                 let val = self.fetch_operand_value(&instruction, 1);
 
-                let use_edi = match instruction.op_kind(0) {
+                let use_edi = match instruction.try_op_kind(0).unwrap() {
                     iced_x86::OpKind::MemorySegDI => false,
                     iced_x86::OpKind::MemorySegEDI => true,
                     iced_x86::OpKind::MemoryESDI => false,
@@ -1651,7 +1652,7 @@ impl Interpreter {
     fn apply_jump(&mut self, instruction: &iced_x86::Instruction) {
         assert_eq!(instruction.op_count(), 1);
 
-        match instruction.op_kind(0) {
+        match instruction.try_op_kind(0).unwrap() {
             iced_x86::OpKind::NearBranch16 => {
                 self.regs.eip = u32::from(instruction.near_branch16());
             }
@@ -1925,7 +1926,7 @@ impl Interpreter {
     ///
     fn memory_operand_pointer(&self, instruction: &iced_x86::Instruction, op_n: u32) -> u16 {
         assert!(matches!(
-            instruction.op_kind(op_n),
+            instruction.try_op_kind(op_n).unwrap(),
             iced_x86::OpKind::Memory
         ));
 
@@ -1965,14 +1966,15 @@ impl Interpreter {
     /// Panics if the operand index is out of range of the instruction.
     ///
     fn operand_size(&mut self, instruction: &iced_x86::Instruction, op_n: u32) -> u8 {
-        match instruction.op_kind(op_n) {
+        match instruction.try_op_kind(op_n).unwrap() {
             // TODO: lazy way to implement this
             iced_x86::OpKind::Register => {
                 debug_assert!(!matches!(
-                    instruction.op_register(op_n),
+                    instruction.try_op_register(op_n).unwrap(),
                     iced_x86::Register::None
                 ));
-                self.register(instruction.op_register(op_n)).size()
+                self.register(instruction.try_op_register(op_n).unwrap())
+                    .size()
             }
             iced_x86::OpKind::Immediate8 => 1,
             iced_x86::OpKind::Immediate16 => 2,
@@ -1995,18 +1997,23 @@ impl Interpreter {
     /// Panics if the operand index is out of range of the instruction.
     ///
     fn fetch_operand_value(&mut self, instruction: &iced_x86::Instruction, op_n: u32) -> Value {
-        let (segment, pointer) = match instruction.op_kind(op_n) {
+        let (segment, pointer) = match instruction.try_op_kind(op_n).unwrap() {
             iced_x86::OpKind::Register => {
                 debug_assert!(
-                    !matches!(instruction.op_register(op_n), iced_x86::Register::None),
+                    !matches!(
+                        instruction.try_op_register(op_n).unwrap(),
+                        iced_x86::Register::None
+                    ),
                     "{:?} with {:?}",
                     instruction.code(),
                     op_n
                 );
-                return self.register(instruction.op_register(op_n));
+                return self.register(instruction.try_op_register(op_n).unwrap());
             }
             iced_x86::OpKind::Immediate8 => {
-                if (0..op_n).any(|n| instruction.op_kind(n) == iced_x86::OpKind::Immediate8) {
+                if (0..op_n)
+                    .any(|n| instruction.try_op_kind(n).unwrap() == iced_x86::OpKind::Immediate8)
+                {
                     return Value::U8(instruction.immediate8_2nd());
                 } else {
                     return Value::U8(instruction.immediate8());
@@ -2123,9 +2130,9 @@ impl Interpreter {
     /// Panics if the operand designates a register and this register is of the wrong size.
     ///
     fn store_in_operand(&mut self, instruction: &iced_x86::Instruction, op_n: u32, val: Value) {
-        let (segment, pointer) = match instruction.op_kind(op_n) {
+        let (segment, pointer) = match instruction.try_op_kind(op_n).unwrap() {
             iced_x86::OpKind::Register => {
-                return self.store_in_register(instruction.op_register(op_n), val);
+                return self.store_in_register(instruction.try_op_register(op_n).unwrap(), val);
             }
             iced_x86::OpKind::MemoryESDI => {
                 (self.regs.es, u16::try_from(self.regs.edi & 0xffff).unwrap())

@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -19,7 +19,6 @@ use core::{
     fmt,
     marker::PhantomData,
     mem::MaybeUninit,
-    num::NonZeroU64,
     pin::Pin,
     task::{Context, Poll},
 };
@@ -265,7 +264,7 @@ pub fn cancel_message(message_id: MessageId) {
         unsafe { crate::ffi::cancel_message(&u64::from(message_id)) }
     }
     #[cfg(not(target_arch = "wasm32"))]
-    fn imp(message_id: MessageId) {
+    fn imp(_: MessageId) {
         unreachable!()
     }
     imp(message_id)

@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -55,7 +55,7 @@ pub struct KernelRng {
 
 impl KernelRng {
     /// Initializes a new [`KernelRng`].
-    pub fn new(platform_specific: Pin<Arc<impl PlatformSpecific>>) -> KernelRng {
+    pub fn new(platform_specific: Pin<Arc<PlatformSpecific>>) -> KernelRng {
         // Initialize the `JitterRng`.
         let mut jitter = {
             let mut rng = JitterRng::new_with_timer(move || {

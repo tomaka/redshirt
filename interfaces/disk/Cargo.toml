@@ -1,0 +1,12 @@
+[package]
+name = "redshirt-disk-interface"
+version = "0.1.0"
+license = "GPL-3.0-or-later"
+authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+futures = "0.3.11"
+redshirt-syscalls = { path = "../syscalls" }
+parity-scale-codec = { version = "1.3.6", features = ["derive"] }
+rand = "0.7.3"
