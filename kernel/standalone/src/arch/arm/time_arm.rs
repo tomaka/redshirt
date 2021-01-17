@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -98,7 +98,7 @@ impl TimeControl {
     pub unsafe fn init() -> Arc<TimeControl> {
         // Initialize the physical counter frequency.
         // TODO: I think this is a global setting, but make sure it's the case?
-        llvm_asm!("mcr p15, 0, $0, c14, c0, 0"::"r"(CNTFRQ)::"volatile");
+        asm!("mcr p15, 0, {}, c14, c0, 0", in(reg) CNTFRQ, options(nomem, nostack, preserves_flags));
 
         // TODO: this code doesn't work, as we have to register some IRQ handler or something to
         //       check the state of the timers and fire the wakers
@@ -229,7 +229,7 @@ fn physical_counter() -> u64 {
     unsafe {
         let lo: u32;
         let hi: u32;
-        llvm_asm!("mrrc p15, 0, $0, $1, c14": "=r"(lo), "=r"(hi) ::: "volatile");
+        asm!("mrrc p15, 0, {}, {}, c14", out(reg) lo, out(reg) hi, options(nostack, nomem, preserves_flags));
         u64::from(hi) << 32 | u64::from(lo)
     }
 }
@@ -243,13 +243,13 @@ fn update_hardware(timers: &mut Vec<Timer>) {
         // If there's no active timer, disable the timer firing by updating the `CNTP_CTL`
         // register.
         if timers.is_empty() {
-            llvm_asm!("mcr p15, 0, $0, c14, c2, 1" :: "r"(0));
+            asm!("mcr p15, 0, {}, c14, c2, 1", in(reg) 0);
             return;
         }
 
         // Make sure that the timer is enabled by updating the `CNTP_CTL` register.
         // TODO: don't do this every single time
-        llvm_asm!("mcr p15, 0, $0, c14, c2, 1" :: "r"(0b01));
+        asm!("mcr p15, 0, {}, c14, c2, 1", in(reg) 0b01);
 
         // Write the `CNTP_CVAL` register with the value to compare with.
         // The timer will fire when the physical counter (`CNTPCT`) reaches the given value.
@@ -257,7 +257,7 @@ fn update_hardware(timers: &mut Vec<Timer>) {
             let cmp_value = timers.get(0).unwrap().counter_value;
             let lo = u32::try_from(cmp_value & 0xffffffff).unwrap();
             let hi = u32::try_from(cmp_value >> 32).unwrap();
-            llvm_asm!("mcrr p15, 2, $0, $1, c14" :: "r"(lo), "r"(hi));
+            asm!("mcrr p15, 2, {}, {}, c14", in(reg) lo, in(reg) hi);
         }
     }
 }

@@ -7,10 +7,11 @@ edition = "2018"
 publish = false
 
 [dependencies]
-futures = "0.3.1"
+derive_more = "0.99.11"
+futures = "0.3.11"
 redshirt-ethernet-interface = { path = "../../interfaces/ethernet" }
 redshirt-hardware-interface = { path = "../../interfaces/hardware" }
 redshirt-pci-interface = { path = "../../interfaces/pci" }
 redshirt-syscalls = { path = "../../interfaces/syscalls" }
 redshirt-time-interface = { path = "../../interfaces/time" }
-smallvec = "1.0.0"
+smallvec = "1.6.1"

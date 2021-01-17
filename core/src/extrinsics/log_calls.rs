@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -17,7 +17,7 @@
 //! all the calls to the `log` interface for debugging.
 
 use crate::extrinsics::{Extrinsics, ExtrinsicsAction, ExtrinsicsMemoryAccess, SupportedExtrinsic};
-use crate::{EncodedMessage, ThreadId, WasmValue};
+use crate::{EncodedMessage, EncodedMessageRef, ThreadId, WasmValue};
 
 use alloc::{borrow::Cow, format, string::String, vec, vec::Vec};
 use core::mem;
@@ -155,7 +155,7 @@ where
     fn inject_message_response(
         &self,
         ctxt: &mut Self::Context,
-        response: Option<EncodedMessage>,
+        response: Option<EncodedMessageRef>,
         mem_access: &mut impl ExtrinsicsMemoryAccess,
     ) -> ExtrinsicsAction {
         if let Some(waiting_for_log_message) = ctxt.waiting_for_log_message.take() {

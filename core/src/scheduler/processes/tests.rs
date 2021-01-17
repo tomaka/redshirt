@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -26,7 +26,7 @@ use std::{
 #[test]
 #[should_panic]
 fn panic_duplicate_extrinsic() {
-    ProcessesCollectionBuilder::<()>::default()
+    ProcessesCollectionBuilder::<()>::with_seed([0; 32])
         .with_extrinsic("foo", "test", sig!(()), ())
         .with_extrinsic("foo", "test", sig!(()), ());
 }
@@ -41,7 +41,7 @@ fn basic() {
         (export "_start" (func $_start)))
     "#
     );
-    let processes = ProcessesCollectionBuilder::<()>::default().build();
+    let processes = ProcessesCollectionBuilder::<()>::with_seed([0; 32]).build();
     processes.execute(&module, (), ()).unwrap();
     match futures::executor::block_on(processes.run()) {
         RunOneOutcome::ProcessFinished { outcome, .. } => {
@@ -61,7 +61,7 @@ fn aborting_works() {
         (export "_start" (func $_start)))
     "#
     );
-    let processes = ProcessesCollectionBuilder::<()>::default().build();
+    let processes = ProcessesCollectionBuilder::<()>::with_seed([0; 32]).build();
     processes.execute(&module, (), ()).unwrap().0.abort();
     match futures::executor::block_on(processes.run()) {
         RunOneOutcome::ProcessFinished {
@@ -86,7 +86,7 @@ fn many_processes() {
     let num_threads = 8;
 
     let processes = Arc::new(
-        ProcessesCollectionBuilder::<i32>::default()
+        ProcessesCollectionBuilder::<i32>::with_seed([0; 32])
             .with_extrinsic("", "test", sig!(() -> I32), 98)
             .build(),
     );

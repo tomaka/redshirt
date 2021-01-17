@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -43,7 +43,13 @@ pub fn block_on<R>(future: impl Future<Output = R>) -> R {
         loop {
             if local_wake
                 .woken_up
-                .compare_and_swap(true, false, atomic::Ordering::Acquire)
+                .compare_exchange(
+                    true,
+                    false,
+                    atomic::Ordering::Acquire,
+                    atomic::Ordering::Acquire,
+                )
+                .is_ok()
             {
                 break;
             }
@@ -52,7 +58,7 @@ pub fn block_on<R>(future: impl Future<Output = R>) -> R {
             // TODO: can an interrupt happen between `local_wake` and here?
             // contrary to other platforms, the manual doesn't mention anything about enabling
             // instructions having a delay
-            unsafe { llvm_asm!("wfi" :::: "volatile") }
+            unsafe { asm!("wfi", options(nomem, nostack, preserves_flags)) }
         }
     }
 }
@@ -63,10 +69,8 @@ struct LocalWake {
 
 impl ArcWake for LocalWake {
     fn wake_by_ref(arc_self: &Arc<Self>) {
-        unsafe {
-            arc_self.woken_up.store(true, atomic::Ordering::Release);
-            // TODO: there doesn't seem to be a standard way to wake up another processor
-            // For now we are single-CPUed.
-        }
+        arc_self.woken_up.store(true, atomic::Ordering::Release);
+        // TODO: there doesn't seem to be a standard way to wake up another processor
+        // For now we are single-CPUed.
     }
 }

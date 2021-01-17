@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -43,7 +43,13 @@ pub fn block_on<R>(future: impl Future<Output = R>) -> R {
         loop {
             if local_wake
                 .woken_up
-                .compare_and_swap(true, false, atomic::Ordering::Acquire)
+                .compare_exchange(
+                    true,
+                    false,
+                    atomic::Ordering::Acquire,
+                    atomic::Ordering::Acquire,
+                )
+                .is_ok()
             {
                 break;
             }
@@ -56,7 +62,7 @@ pub fn block_on<R>(future: impl Future<Output = R>) -> R {
             // Thanks to this, if an event happens between the moment when we check the value of
             // `local_waken.woken_up` and the moment when we call `wfe`, then the `wfe`
             // instruction will immediately return and we will check the value again.
-            unsafe { llvm_asm!("wfe" :::: "volatile") }
+            unsafe { asm!("wfe", options(nomem, nostack, preserves_flags)) }
         }
     }
 }
@@ -72,7 +78,7 @@ impl ArcWake for LocalWake {
             // Wakes up all the CPUs that called `wfe`.
             // Note that this wakes up *all* CPUs, but the ARM architecture doesn't provide any
             // way to target a single CPU for wake-up.
-            llvm_asm!("dsb sy ; sev" :::: "volatile")
+            asm!("dsb sy ; sev", options(nomem, nostack, preserves_flags))
         }
     }
 }

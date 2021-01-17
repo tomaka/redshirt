@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -14,14 +14,11 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
-    error, fs,
-    io::{self, Write as _},
+    error,
     path::{Path, PathBuf},
-    process::Command,
     str::FromStr,
 };
 use structopt::StructOpt;
-use tempdir::TempDir;
 
 #[derive(Debug, StructOpt)]
 #[structopt(
@@ -31,10 +28,13 @@ use tempdir::TempDir;
 enum CliOptions {
     /// Builds and runs the kernel in an emulator.
     EmulatorRun {
-        /// Location of the Cargo.toml of the standalone kernel.
+        /// Location of the Cargo.toml of the standalone kernel library.
         ///
         /// If no value is passed, this the file structure is the one of the upstream repository
         /// and try to find the path in a sibling directory.
+        ///
+        /// It is intended that in the future this can be substituted with the path to a build
+        /// directory, in which case the standalone kernel library gets fetched from crates.io.
         #[structopt(long, parse(from_os_str))]
         kernel_cargo_toml: Option<PathBuf>,
 
@@ -53,10 +53,13 @@ enum CliOptions {
 
     /// Builds a bootable image.
     BuildImage {
-        /// Location of the Cargo.toml of the standalone kernel.
+        /// Location of the Cargo.toml of the standalone kernel library.
         ///
         /// If no value is passed, this the file structure is the one of the upstream repository
         /// and try to find the path in a sibling directory.
+        ///
+        /// It is intended that in the future this can be substituted with the path to a build
+        /// directory, in which case the standalone kernel library gets fetched from crates.io.
         #[structopt(long, parse(from_os_str))]
         kernel_cargo_toml: Option<PathBuf>,
 
@@ -172,7 +175,7 @@ fn main() -> Result<(), Box<dyn error::Error + Send + Sync + 'static>> {
             kernel_cargo_toml,
             release,
             out,
-            device_type,
+            device_type: _, // TODO: ?!
             target,
         } => {
             redshirt_standalone_builder::image::build_image(

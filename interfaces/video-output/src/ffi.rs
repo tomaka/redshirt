@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -52,6 +52,7 @@ pub struct NextImage {
 #[derive(Debug, Encode, Decode, Clone)]
 pub struct NextImageChange {
     pub screen_x_start: u32,
+    // TODO: not necessary?
     pub screen_x_len: u32,
     pub screen_y_start: u32,
     /// Rows of pixels.

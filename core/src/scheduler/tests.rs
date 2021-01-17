@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -19,7 +19,6 @@ use crate::extrinsics::NoExtrinsics;
 
 mod basic_module;
 mod emit_not_available;
-mod emit_reserved_pid;
 mod trapping_module;
 
 #[test]

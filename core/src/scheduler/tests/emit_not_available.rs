@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -96,11 +96,11 @@ fn emit_not_available() {
     (data (i32.const 1048576) "\01\02\03\04\05\06\07\08"))"#
     );
 
-    let core = CoreBuilder::<NoExtrinsics>::new().build();
+    let core = CoreBuilder::<NoExtrinsics>::with_seed([0; 64]).build();
     core.execute(&module).unwrap();
 
     match core.run().now_or_never() {
-        Some(CoreRunOutcome::ThreadWaitUnavailableInterface { interface, .. }) => {
+        Some(CoreRunOutcome::InterfaceMessage { interface, .. }) => {
             assert_eq!(
                 interface,
                 InterfaceHash::from_raw_hash([

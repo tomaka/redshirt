@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -92,7 +92,10 @@ async fn async_main() {
         };
 
         // Start by resetting the device, in case it was active.
-        let device_prototype = unsafe { device::Device::reset(base_address.into()) }.await;
+        let device_prototype = match unsafe { device::Device::reset(base_address.into()) }.await {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
 
         // We need to inform the PCI bus that this device needs access to RAM.
         // We only do this *after* resetting the device, otherwise it might have accidentally been
@@ -100,7 +103,10 @@ async fn async_main() {
         pci_lock.set_command(true, true, false);
 
         // Now that the device has access to memory, finish initialization.
-        let device = device_prototype.init().await;
+        let device = match device_prototype.init().await {
+            Ok(d) => d,
+            Err(_) => continue,
+        };
 
         // Inform the Ethernet interface that a device is available.
         let registration = interface::register_interface(interface::InterfaceConfig {

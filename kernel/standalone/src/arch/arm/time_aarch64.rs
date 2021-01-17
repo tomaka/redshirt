@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -38,7 +38,7 @@ impl TimeControl {
         unsafe {
             // TODO: stub
             let val: u64;
-            llvm_asm!("mrs $0, CNTPCT_EL0": "=r"(val) ::: "volatile");
+            asm!("mrs {}, CNTPCT_EL0", out(reg) val, options(nostack, nomem, preserves_flags));
             u128::from(val)
         }
     }

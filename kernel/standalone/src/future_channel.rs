@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -84,7 +84,7 @@ impl<T> UnboundedReceiver<T> {
     }
 
     pub fn poll_next(&self, cx: &mut Context) -> Poll<T> {
-        if let Ok(item) = self.shared.queue.pop() {
+        if let Some(item) = self.shared.queue.pop() {
             return Poll::Ready(item);
         }
 
@@ -96,7 +96,7 @@ impl<T> UnboundedReceiver<T> {
                 .register(cx.waker());
         }
 
-        if let Ok(item) = self.shared.queue.pop() {
+        if let Some(item) = self.shared.queue.pop() {
             return Poll::Ready(item);
         }
 

@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -22,6 +22,7 @@
 extern crate alloc;
 
 use alloc::{vec, vec::Vec};
+use core::convert::TryFrom as _;
 use futures::prelude::*;
 
 pub mod ffi;
@@ -102,6 +103,24 @@ pub unsafe fn write(address: u64, data: impl Into<Vec<u8>>) {
     builder.send();
 }
 
+/// Reads memory to a buffer.
+pub async unsafe fn read_to(address: u64, mut out: &mut [u8]) {
+    let mut ops = HardwareOperationsBuilder::new();
+    ops.read(address, &mut out);
+    ops.send().await;
+}
+
+/// Reads memory.
+pub async unsafe fn read(address: u64, len: u32) -> Vec<u8> {
+    let len_usize = usize::try_from(len).unwrap();
+    let mut out = Vec::with_capacity(len_usize);
+    out.set_len(len_usize);
+    let mut ops = HardwareOperationsBuilder::new();
+    ops.read(address, &mut out);
+    ops.send().await;
+    out
+}
+
 /// Reads a single `u32` from the given memory address.
 #[cfg(feature = "std")]
 pub async unsafe fn read_one_u32(address: u64) -> u32 {
@@ -124,12 +143,39 @@ pub unsafe fn port_write_u8(port: u32, data: u8) {
     builder.send();
 }
 
+pub unsafe fn port_write_u16(port: u32, data: u16) {
+    let mut builder = HardwareWriteOperationsBuilder::with_capacity(1);
+    builder.port_write_u16(port, data);
+    builder.send();
+}
+
+pub unsafe fn port_write_u32(port: u32, data: u32) {
+    let mut builder = HardwareWriteOperationsBuilder::with_capacity(1);
+    builder.port_write_u32(port, data);
+    builder.send();
+}
+
 /// Reads the given port.
-#[cfg(feature = "std")]
 pub async unsafe fn port_read_u8(port: u32) -> u8 {
     let mut builder = HardwareOperationsBuilder::with_capacity(1);
     let mut out = 0;
     builder.port_read_u8(port, &mut out);
+    builder.send().await;
+    out
+}
+
+pub async unsafe fn port_read_u16(port: u32) -> u16 {
+    let mut builder = HardwareOperationsBuilder::with_capacity(1);
+    let mut out = 0;
+    builder.port_read_u16(port, &mut out);
+    builder.send().await;
+    out
+}
+
+pub async unsafe fn port_read_u32(port: u32) -> u32 {
+    let mut builder = HardwareOperationsBuilder::with_capacity(1);
+    let mut out = 0;
+    builder.port_read_u32(port, &mut out);
     builder.send().await;
     out
 }
@@ -172,6 +218,15 @@ impl<'a> HardwareOperationsBuilder<'a> {
             len: out.len() as u32, // TODO: don't use `as`
         });
         self.out.push(Out::MemReadU8(out));
+    }
+
+    pub unsafe fn read_u16(&mut self, address: u64, out: &'a mut (impl ?Sized + AsMut<[u16]>)) {
+        let out = out.as_mut();
+        self.operations.push(ffi::Operation::PhysicalMemoryReadU16 {
+            address,
+            len: out.len() as u32, // TODO: don't use `as`
+        });
+        self.out.push(Out::MemReadU16(out));
     }
 
     pub unsafe fn read_u32(&mut self, address: u64, out: &'a mut (impl ?Sized + AsMut<[u32]>)) {

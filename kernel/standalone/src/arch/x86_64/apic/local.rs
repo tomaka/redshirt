@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -68,7 +68,7 @@ pub unsafe fn init() -> LocalApicsControl {
     error_interrupt_vector.register_waker(&{
         struct ErrWaker;
         impl futures::task::ArcWake for ErrWaker {
-            fn wake_by_ref(arc_self: &Arc<Self>) {
+            fn wake_by_ref(_: &Arc<Self>) {
                 unsafe {
                     // The errors reported are found in the Error Status Register (ESR).
                     let esr_addr = usize::try_from(APIC_BASE_ADDR + 0xf0).unwrap() as *mut u32;

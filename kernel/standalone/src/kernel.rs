@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -25,26 +25,20 @@
 use crate::arch::PlatformSpecific;
 
 use alloc::{format, string::String, sync::Arc, vec::Vec};
-use core::{
-    convert::TryFrom as _,
-    pin::Pin,
-    sync::atomic::{AtomicBool, AtomicU64, Ordering},
-};
+use core::{convert::TryFrom as _, pin::Pin, sync::atomic::Ordering};
 use futures::prelude::*;
 use hashbrown::HashSet;
-use redshirt_core::{
-    build_wasm_module, extrinsics::wasi::WasiExtrinsics, module::ModuleHash, System,
-};
+use redshirt_core::{build_wasm_module, extrinsics::wasi::WasiExtrinsics, System};
 use spinning_top::Spinlock;
 
 /// Main struct of this crate. Runs everything.
-pub struct Kernel<TPlat> {
+pub struct Kernel {
     /// Contains the list of all processes, threads, interfaces, messages, and so on.
     system: System<'static, WasiExtrinsics>,
     /// Has one entry for each CPU. Never resized.
     cpu_busy_counters: Vec<CpuCounter>,
     /// Platform-specific getters. Passed at initialization.
-    platform_specific: Pin<Arc<TPlat>>,
+    platform_specific: Pin<Arc<PlatformSpecific>>,
     /// List of CPUs for which [`Kernel::run`] hasn't been called yet. Also makes it possible to
     /// make sure that [`Kernel::run`] isn't called twice with the same CPU index.
     not_started_cpus: Spinlock<HashSet<usize, fnv::FnvBuildHasher>>,
@@ -58,26 +52,24 @@ struct CpuCounter {
     idle_ticks: atomic::Atomic<u128>,
 }
 
-impl<TPlat> Kernel<TPlat>
-where
-    TPlat: PlatformSpecific,
-{
+impl Kernel {
     /// Initializes a new `Kernel`.
-    pub fn init(platform_specific: TPlat) -> Self {
-        let platform_specific = Arc::pin(platform_specific);
-
+    pub fn init(platform_specific: Pin<Arc<PlatformSpecific>>) -> Self {
         // TODO: don't do this on platforms that don't have PCI?
         let pci_devices = unsafe { crate::pci::pci::init_cam_pci() };
 
-        let mut system_builder =
-            redshirt_core::system::SystemBuilder::new(WasiExtrinsics::default())
+        let randomness = crate::random::native::RandomNativeProgram::new(platform_specific.clone());
+
+        let mut rng_seed = [0; 64];
+        randomness.fill_bytes(&mut rng_seed);
+
+        let system_builder =
+            redshirt_core::system::SystemBuilder::new(WasiExtrinsics::default(), rng_seed)
                 .with_native_program(crate::hardware::HardwareHandler::new(
                     platform_specific.clone(),
                 ))
                 .with_native_program(crate::time::TimeHandler::new(platform_specific.clone()))
-                .with_native_program(crate::random::native::RandomNativeProgram::new(
-                    platform_specific.clone(),
-                ))
+                .with_native_program(randomness)
                 .with_native_program(crate::pci::native::PciNativeProgram::new(
                     pci_devices,
                     platform_specific.clone(),
@@ -91,9 +83,13 @@ where
                 ))
                 .with_startup_process(build_wasm_module!("../../../modules/compositor"))
                 .with_startup_process(build_wasm_module!("../../../modules/pci-printer"))
-                .with_startup_process(build_wasm_module!("../../../modules/kernel-debug-printer"))
+                // TODO: actually implement system-time and remove this dummy; https://github.com/tomaka/redshirt/issues/542
+                .with_startup_process(build_wasm_module!("../../../modules/dummy-system-time"))
                 .with_startup_process(build_wasm_module!("../../../modules/log-to-kernel"))
-                .with_startup_process(build_wasm_module!("../../../modules/http-server"))
+                .with_startup_process(build_wasm_module!("../../../modules/vga-vbe"))
+                .with_startup_process(build_wasm_module!(
+                    "../../../modules/diagnostics-http-server"
+                ))
                 .with_startup_process(build_wasm_module!("../../../modules/hello-world"))
                 .with_startup_process(build_wasm_module!("../../../modules/network-manager"))
                 .with_startup_process(build_wasm_module!("../../../modules/e1000"));
@@ -101,10 +97,8 @@ where
         // TODO: remove the cfg guards once rpi-framebuffer is capable of auto-detecting whether
         // it should enable itself
         #[cfg(any(target_arch = "arm", target_arch = "aarch64"))]
-        {
-            system_builder = system_builder
-                .with_startup_process(build_wasm_module!("../../../modules/rpi-framebuffer"))
-        }
+        let system_builder = system_builder
+            .with_startup_process(build_wasm_module!("../../../modules/rpi-framebuffer"));
 
         // TODO: temporary; uncomment to test
         /*system_builder = system_builder.with_main_program(
@@ -180,41 +174,44 @@ where
                     let mut out = String::new();
 
                     // cpu_idle_seconds_total
-                    out.push_str("# HELP cpu_idle_seconds_total Total number of seconds during which each CPU has been idle.\n");
-                    out.push_str("# TYPE cpu_idle_seconds_total counter\n");
+                    out.push_str("# HELP redshirt_cpu_idle_seconds_total Total number of seconds during which each CPU has been idle.\n");
+                    out.push_str("# TYPE redshirt_cpu_idle_seconds_total counter\n");
                     for (cpu_n, cpu) in self.cpu_busy_counters.iter().enumerate() {
                         let as_secs =
                             cpu.idle_ticks.load(Ordering::Relaxed) as f64 / 1_000_000_000.0;
                         out.push_str(&format!(
-                            "cpu_idle_seconds_total{{cpu=\"{}\"}} {}\n",
+                            "redshirt_cpu_idle_seconds_total{{cpu=\"{}\"}} {}\n",
                             cpu_n, as_secs
                         ));
                     }
                     out.push_str("\n");
 
                     // cpu_busy_seconds_total
-                    out.push_str("# HELP cpu_busy_seconds_total Total number of seconds during which each CPU has been busy.\n");
-                    out.push_str("# TYPE cpu_busy_seconds_total counter\n");
+                    out.push_str("# HELP redshirt_cpu_busy_seconds_total Total number of seconds during which each CPU has been busy.\n");
+                    out.push_str("# TYPE redshirt_cpu_busy_seconds_total counter\n");
                     for (cpu_n, cpu) in self.cpu_busy_counters.iter().enumerate() {
                         let as_secs =
                             cpu.busy_ticks.load(Ordering::Relaxed) as f64 / 1_000_000_000.0;
                         out.push_str(&format!(
-                            "cpu_busy_seconds_total{{cpu=\"{}\"}} {}\n",
+                            "redshirt_cpu_busy_seconds_total{{cpu=\"{}\"}} {}\n",
                             cpu_n, as_secs
                         ));
                     }
                     out.push_str("\n");
 
                     // monotonic_clock
-                    out.push_str("# HELP monotonic_clock Value of the monotonic clock.\n");
-                    out.push_str("# TYPE monotonic_clock counter\n");
-                    out.push_str(&format!("monotonic_clock {}\n", now));
+                    out.push_str("# HELP redshirt_monotonic_clock Value of the monotonic clock.\n");
+                    out.push_str("# TYPE redshirt_monotonic_clock counter\n");
+                    out.push_str(&format!("redshirt_monotonic_clock {}\n", now));
                     out.push_str("\n");
 
                     // num_cpus
-                    out.push_str("# HELP num_cpus Number of CPUs on the machine.\n");
-                    out.push_str("# TYPE num_cpus counter\n");
-                    out.push_str(&format!("num_cpus {}\n", self.cpu_busy_counters.len()));
+                    out.push_str("# HELP redshirt_num_cpus Number of CPUs on the machine.\n");
+                    out.push_str("# TYPE redshirt_num_cpus counter\n");
+                    out.push_str(&format!(
+                        "redshirt_num_cpus {}\n",
+                        self.cpu_busy_counters.len()
+                    ));
                     out.push_str("\n");
 
                     report.respond(&out);

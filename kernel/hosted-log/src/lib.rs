@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -17,14 +17,18 @@
 
 use futures::prelude::*;
 use redshirt_core::native::{DummyMessageIdWrite, NativeProgramEvent, NativeProgramRef};
-use redshirt_core::{Decode as _, Encode as _, EncodedMessage, InterfaceHash, MessageId, Pid};
+use redshirt_core::{Decode as _, Encode as _, EncodedMessage, MessageId};
 use redshirt_log_interface::ffi::{DecodedLogMessage, Level, INTERFACE};
-use std::{borrow::Cow, pin::Pin, sync::atomic};
+use std::{borrow::Cow, num::NonZeroU64, pin::Pin};
 
 /// Native program for `log` interface messages handling.
 pub struct LogHandler {
     /// If true, we have sent the interface registration message.
-    registered: atomic::AtomicBool,
+    registered: atomic::Atomic<bool>,
+    /// If `Some`, contains the registration ID towards the `interface` interface.
+    registration_id: atomic::Atomic<Option<NonZeroU64>>,
+    /// Number of message requests that need to be emitted.
+    pending_message_requests: atomic::Atomic<u8>,
     /// If true, enable terminal colors when printing the log messages.
     enable_colors: bool,
 }
@@ -33,7 +37,9 @@ impl LogHandler {
     /// Initializes the new state machine for logging.
     pub fn new() -> Self {
         LogHandler {
-            registered: atomic::AtomicBool::new(false),
+            registered: atomic::Atomic::new(false),
+            registration_id: atomic::Atomic::new(None),
+            pending_message_requests: atomic::Atomic::new(16),
             enable_colors: atty::is(atty::Stream::Stdout),
         }
     }
@@ -49,12 +55,44 @@ impl<'a> NativeProgramRef<'a> for &'a LogHandler {
             if !self.registered.swap(true, atomic::Ordering::Relaxed) {
                 return NativeProgramEvent::Emit {
                     interface: redshirt_interface_interface::ffi::INTERFACE,
-                    message_id_write: None,
+                    message_id_write: Some(DummyMessageIdWrite),
                     message: redshirt_interface_interface::ffi::InterfaceMessage::Register(
                         INTERFACE,
                     )
                     .encode(),
                 };
+            }
+
+            if let Some(registration_id) = self.registration_id.load(atomic::Ordering::Relaxed) {
+                loop {
+                    let v = self
+                        .pending_message_requests
+                        .load(atomic::Ordering::Relaxed);
+                    if v == 0 {
+                        break;
+                    }
+                    if self
+                        .pending_message_requests
+                        .compare_exchange(
+                            v,
+                            v - 1,
+                            atomic::Ordering::Relaxed,
+                            atomic::Ordering::Relaxed,
+                        )
+                        .is_err()
+                    {
+                        continue;
+                    }
+
+                    return NativeProgramEvent::Emit {
+                        interface: redshirt_interface_interface::ffi::INTERFACE,
+                        message_id_write: Some(DummyMessageIdWrite),
+                        message: redshirt_interface_interface::ffi::InterfaceMessage::NextMessage(
+                            registration_id,
+                        )
+                        .encode(),
+                    };
+                }
             }
 
             loop {
@@ -63,16 +101,46 @@ impl<'a> NativeProgramRef<'a> for &'a LogHandler {
         })
     }
 
-    fn interface_message(
-        self,
-        interface: InterfaceHash,
-        _: Option<MessageId>,
-        emitter_pid: Pid,
-        message: EncodedMessage,
-    ) {
-        debug_assert_eq!(interface, INTERFACE);
+    fn message_response(self, _: MessageId, response: Result<EncodedMessage, ()>) {
+        debug_assert!(self.registered.load(atomic::Ordering::Relaxed));
 
-        match DecodedLogMessage::decode(message) {
+        // The first ever message response that can be received is the interface registration.
+        if self
+            .registration_id
+            .load(atomic::Ordering::Relaxed)
+            .is_none()
+        {
+            let registration_id =
+                match redshirt_interface_interface::ffi::InterfaceRegisterResponse::decode(
+                    response.unwrap(),
+                )
+                .unwrap()
+                .result
+                {
+                    Ok(id) => id,
+                    // A registration error means the interface has already been registered. Returning
+                    // here stalls this state machine forever.
+                    Err(_) => return,
+                };
+
+            self.registration_id
+                .store(Some(registration_id), atomic::Ordering::Relaxed);
+            return;
+        }
+
+        // If this is reached, the response is a response to a message request.
+        self.pending_message_requests
+            .fetch_add(1, atomic::Ordering::Relaxed);
+
+        let notification =
+            match redshirt_interface_interface::ffi::decode_notification(&response.unwrap().0)
+                .unwrap()
+            {
+                redshirt_interface_interface::DecodedInterfaceOrDestroyed::Interface(n) => n,
+                _ => return,
+            };
+
+        match DecodedLogMessage::decode(notification.actual_data) {
             Ok(decoded) => {
                 // Remove any control character from log messages, in order to prevent programs
                 // from polluting the terminal.
@@ -101,19 +169,13 @@ impl<'a> NativeProgramRef<'a> for &'a LogHandler {
                 println!(
                     "{}[{:?}] [{}]{} {}",
                     header_style.prefix(),
-                    emitter_pid,
+                    notification.emitter_pid,
                     level,
                     header_style.suffix(),
                     message
                 );
             }
-            Err(_) => println!("bad log message from {:?}", emitter_pid),
+            Err(_) => println!("bad log message from {:?}", notification.emitter_pid),
         }
-    }
-
-    fn process_destroyed(self, _: Pid) {}
-
-    fn message_response(self, _: MessageId, _: Result<EncodedMessage, ()>) {
-        unreachable!()
     }
 }

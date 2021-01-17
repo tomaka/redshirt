@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -78,7 +78,7 @@ pub unsafe fn init_io_apics(
 /// guaranteed to be authentic.
 ///
 // TODO: meh for this method; depends on external library
-pub unsafe fn init_from_acpi(info: &acpi::interrupt::Apic) -> IoApicsControl {
+pub unsafe fn init_from_acpi(info: &acpi::platform::Apic) -> IoApicsControl {
     init_io_apics(
         info.io_apics
             .iter()

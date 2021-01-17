@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -96,7 +96,7 @@ pub enum ReserveErr {
 /// Wake up all the wakers that have been marked as ready by all the interrupt(s) that have
 /// happened since the last call to this function.
 pub fn process_wakers() {
-    while let Ok(waker) = WAKERS_QUEUE.pop() {
+    while let Some(waker) = WAKERS_QUEUE.pop() {
         waker.wake();
     }
 }

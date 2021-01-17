@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -30,17 +30,13 @@
 use crate::arch::x86_64::apic::{local::LocalApicsControl, timers::Timers, tsc_sync, ApicId};
 use crate::arch::x86_64::{executor, interrupts};
 
-use alloc::{
-    alloc::{AllocInit, Layout},
-    boxed::Box,
-    sync::Arc,
-};
+use alloc::{alloc::Layout, boxed::Box, sync::Arc};
 use core::{convert::TryFrom as _, fmt, ops::Range, ptr, slice, time::Duration};
 use futures::{channel::oneshot, prelude::*};
 
 /// Allocator required by the [`boot_associated_processor`] function.
 pub struct ApBootAlloc {
-    inner: linked_list_allocator::Heap,
+    inner: linked_list_allocator::LockedHeap,
 }
 
 /// Accepts as input an iterator to a list of free memory ranges. If the `Option` is `None`,
@@ -77,7 +73,7 @@ pub unsafe fn filter_build_ap_boot_alloc<'a>(
             let range_size = range.end.checked_sub(range.start).unwrap();
             if range.start.saturating_add(WANTED) <= 0x100000 && range_size >= WANTED {
                 *alloc = Some(ApBootAlloc {
-                    inner: linked_list_allocator::Heap::new(range.start, WANTED),
+                    inner: linked_list_allocator::LockedHeap::new(range.start, WANTED),
                 });
                 if range_size > WANTED {
                     return Some(range.start + WANTED..range.end);
@@ -283,7 +279,7 @@ pub unsafe fn boot_associated_processor(
         // Write the location of marker 2 into the constant at marker 1.
         let ljmp_target_ptr = (ap_boot_marker1_loc.add(2)) as *mut u32;
         assert_eq!(ljmp_target_ptr.read_unaligned(), 0xdeaddead);
-        ljmp_target_ptr.write_unaligned({ u32::try_from(ap_boot_marker2_loc as usize).unwrap() });
+        ljmp_target_ptr.write_unaligned(u32::try_from(ap_boot_marker2_loc as usize).unwrap());
 
         // Write the value of our `cr3` register to the constant at marker 3.
         let pml_addr_ptr = (ap_boot_marker3_loc.add(2)) as *mut u32;
@@ -489,18 +485,18 @@ fn get_template() -> Template {
 ///
 /// There is surprisingly no type in the Rust standard library that keeps track of an allocation.
 // TODO: use a `Box` or something once it's possible to pass a custom allocator
-struct Allocation<'a, T: alloc::alloc::AllocRef> {
+struct Allocation<'a, T: alloc::alloc::Allocator> {
     alloc: &'a mut T,
     inner: ptr::NonNull<u8>,
     layout: Layout,
 }
 
-impl<'a, T: alloc::alloc::AllocRef> Allocation<'a, T> {
+impl<'a, T: alloc::alloc::Allocator> Allocation<'a, T> {
     fn new(alloc: &'a mut T, layout: Layout) -> Self {
-        let block = alloc.alloc(layout, AllocInit::Uninitialized).unwrap();
+        let inner = alloc.allocate(layout).unwrap();
         Allocation {
             alloc,
-            inner: block.ptr,
+            inner: inner.cast(),
             layout,
         }
     }
@@ -514,9 +510,9 @@ impl<'a, T: alloc::alloc::AllocRef> Allocation<'a, T> {
     }
 }
 
-impl<'a, T: alloc::alloc::AllocRef> Drop for Allocation<'a, T> {
+impl<'a, T: alloc::alloc::Allocator> Drop for Allocation<'a, T> {
     fn drop(&mut self) {
-        unsafe { self.alloc.dealloc(self.inner, self.layout) }
+        unsafe { self.alloc.deallocate(self.inner, self.layout) }
     }
 }
 

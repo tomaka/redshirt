@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -64,7 +64,6 @@ pub fn parse_extrinsic_next_notification<TExtr, TPud, TTud>(
             let id = u64::from_le_bytes(<[u8; 8]>::try_from(i).unwrap());
             out.push(match id {
                 0 => WaitEntry::Empty,
-                1 => WaitEntry::InterfaceOrProcDestroyed,
                 _ => WaitEntry::Answer(MessageId::try_from(id).unwrap()),
             });
         }
@@ -117,14 +116,11 @@ pub struct NotificationWait {
 }
 
 /// What a thread is waiting upon.
-// TODO: would be cool if this representation of that was just a u64
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WaitEntry {
     /// An empty entry. Serves no purpose but it might be convenient for the user of this call
     /// to leave entries empty.
     Empty,
-    /// Waiting for either an interface notification or a process destroyed notification.
-    InterfaceOrProcDestroyed,
     /// Waiting for an answer to the given message.
     Answer(MessageId),
 }
@@ -260,119 +256,6 @@ pub struct EmitMessage {
 pub enum ExtrinsicEmitMessageErr {
     /// Bad type or invalid value for a parameter.
     BadParameter,
-}
-
-/// Analyzes a call to `emit_answer` made by the given thread.
-///
-/// The `thread` parameter is only used in order to read memory from the process. This function
-/// has no side effect.
-///
-/// Returns an error if the call is invalid.
-pub fn parse_extrinsic_emit_answer<TExtr, TPud, TTud>(
-    thread: &mut processes::ThreadAccess<TExtr, TPud, TTud>,
-    params: Vec<crate::WasmValue>,
-) -> Result<EmitAnswer, ExtrinsicEmitAnswerErr> {
-    // We use an assert here rather than a runtime check because the WASM VM (rather than us) is
-    // supposed to check the function signature.
-    assert_eq!(params.len(), 3);
-
-    let message_id = {
-        let addr = u32::try_from(
-            params[0]
-                .into_i32()
-                .ok_or(ExtrinsicEmitAnswerErr::BadParameter)?,
-        )
-        .map_err(|_| ExtrinsicEmitAnswerErr::BadParameter)?;
-        let buf = thread
-            .read_memory(addr, 8)
-            .map_err(|_| ExtrinsicEmitAnswerErr::BadParameter)?;
-        let id = u64::from_le_bytes(<[u8; 8]>::try_from(&buf[..]).unwrap());
-        MessageId::try_from(id).map_err(ExtrinsicEmitAnswerErr::InvalidMessageId)?
-    };
-
-    let response = {
-        let addr = u32::try_from(
-            params[1]
-                .into_i32()
-                .ok_or(ExtrinsicEmitAnswerErr::BadParameter)?,
-        )
-        .map_err(|_| ExtrinsicEmitAnswerErr::BadParameter)?;
-        let sz = u32::try_from(
-            params[2]
-                .into_i32()
-                .ok_or(ExtrinsicEmitAnswerErr::BadParameter)?,
-        )
-        .map_err(|_| ExtrinsicEmitAnswerErr::BadParameter)?;
-        EncodedMessage(
-            thread
-                .read_memory(addr, sz)
-                .map_err(|_| ExtrinsicEmitAnswerErr::BadParameter)?,
-        )
-    };
-
-    Ok(EmitAnswer {
-        message_id,
-        response,
-    })
-}
-
-/// How a process is emitting a response.
-#[derive(Debug, PartialEq, Eq)]
-pub struct EmitAnswer {
-    /// Identifier of the message to answer.
-    pub message_id: MessageId,
-    /// The response itself.
-    pub response: EncodedMessage,
-}
-
-/// Error that [`parse_extrinsic_emit_answer`] can return.
-#[derive(Debug)]
-pub enum ExtrinsicEmitAnswerErr {
-    /// Bad type or invalid value for a parameter.
-    BadParameter,
-    /// The message id is invalid.
-    InvalidMessageId(InvalidMessageIdErr),
-}
-
-/// Analyzes a call to `emit_message_error` made by the given thread.
-/// Returns the message for which to notify of an error.
-///
-/// The `thread` parameter is only used in order to read memory from the process. This function
-/// has no side effect.
-///
-/// Returns an error if the call is invalid.
-pub fn parse_extrinsic_emit_message_error<TExtr, TPud, TTud>(
-    thread: &mut processes::ThreadAccess<TExtr, TPud, TTud>,
-    params: Vec<crate::WasmValue>,
-) -> Result<MessageId, ExtrinsicEmitMessageErrorErr> {
-    // We use an assert here rather than a runtime check because the WASM VM (rather than us) is
-    // supposed to check the function signature.
-    assert_eq!(params.len(), 1);
-
-    let msg_id = {
-        let addr = u32::try_from(
-            params[0]
-                .into_i32()
-                .ok_or(ExtrinsicEmitMessageErrorErr::BadParameter)?,
-        )
-        .map_err(|_| ExtrinsicEmitMessageErrorErr::BadParameter)?;
-        let buf = thread
-            .read_memory(addr, 8)
-            .map_err(|_| ExtrinsicEmitMessageErrorErr::BadParameter)?;
-        let id = u64::from_le_bytes(<[u8; 8]>::try_from(&buf[..]).unwrap());
-        MessageId::try_from(id).map_err(ExtrinsicEmitMessageErrorErr::InvalidMessageId)?
-    };
-
-    Ok(msg_id)
-}
-
-/// Error that [`parse_extrinsic_emit_message_error`] can return.
-#[derive(Debug)]
-pub enum ExtrinsicEmitMessageErrorErr {
-    /// Bad type or invalid value for a parameter.
-    BadParameter,
-    /// The message id is invalid.
-    InvalidMessageId(InvalidMessageIdErr),
 }
 
 /// Analyzes a call to `cancel_message` made by the given thread.

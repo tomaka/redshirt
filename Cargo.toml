@@ -7,8 +7,8 @@ members = [
     "kernel/hosted-log",
     "kernel/hosted-random",
     "kernel/hosted-tcp",
-    "kernel/hosted-time",
     "kernel/standalone",
+    "interfaces/disk",
     "interfaces/ethernet",
     "interfaces/framebuffer",
     "interfaces/hardware",
@@ -40,7 +40,3 @@ opt-level = 3
 lto = true
 codegen-units = 1
 panic = 'abort'
-
-[patch.crates-io]
-# TODO: waiting for the release of https://github.com/paritytech/parity-scale-codec/pull/199
-parity-scale-codec = { git = "https://github.com/paritytech/parity-scale-codec" }

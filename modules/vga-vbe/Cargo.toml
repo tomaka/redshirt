@@ -1,0 +1,25 @@
+[package]
+name = "vga-vbe"
+version = "0.1.0"
+license = "GPL-3.0-or-later"
+authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
+edition = "2018"
+publish = false
+
+[dependencies]
+derive_more = "0.99.11"
+fnv = { version = "1.0.7", default-features = false }
+hashbrown = { version = "0.9.1", default-features = false }
+iced-x86 = { version = "1.10.0", default-features = false, features = ["decoder", "instr_info", "op_code_info", "std"] }
+lazy_static = "1"
+log = "0.4"
+redshirt-hardware-interface = { path = "../../interfaces/hardware" }
+redshirt-interface-interface = { path = "../../interfaces/interface" }
+redshirt-kernel-log-interface = { path = "../../interfaces/kernel-log" }
+redshirt-log-interface = { path = "../../interfaces/log" }
+redshirt-pci-interface = { path = "../../interfaces/pci" }
+redshirt-syscalls = { path = "../../interfaces/syscalls" }
+redshirt-video-output-interface = { path = "../../interfaces/video-output" }
+
+[dev-dependencies]
+futures = "0.3.11"
