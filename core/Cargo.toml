@@ -43,6 +43,7 @@ wasmi = { git = "https://github.com/tomaka/wasmi", branch = "no-std", default-fe
 [dev-dependencies]
 criterion = "0.3"
 futures = { version = "0.3.11", default-features = false, features = ["executor"] }
+tiny-keccak = { version = "2.0.2", features = ["keccak"] }
 
 [[bench]]
 name = "keccak"
