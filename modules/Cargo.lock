@@ -2185,7 +2185,7 @@ dependencies = [
  "lazy_static",
  "nohash-hasher",
  "parity-scale-codec",
- "pin-project 0.4.27",
+ "pin-project 1.0.4",
  "slab 0.4.2 (git+https://github.com/baloo/slab?rev=88b456131de20750e785655d1e62cd0b6e10d44b)",
  "spinning_top",
 ]
@@ -2196,7 +2196,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "parity-scale-codec",
- "pin-project 0.4.27",
+ "pin-project 1.0.4",
  "redshirt-syscalls",
 ]
 
@@ -2217,7 +2217,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "parity-scale-codec",
- "pin-project 0.4.27",
+ "pin-project 1.0.4",
  "redshirt-syscalls",
 ]
 
