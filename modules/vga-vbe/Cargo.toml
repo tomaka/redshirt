@@ -9,7 +9,7 @@ publish = false
 [dependencies]
 derive_more = "0.99.11"
 fnv = { version = "1.0.7", default-features = false }
-hashbrown = { version = "0.9.1", default-features = false }
+hashbrown = { version = "0.10.0", default-features = false }
 iced-x86 = { version = "1.10.0", default-features = false, features = ["decoder", "instr_info", "op_code_info", "std"] }
 lazy_static = "1"
 log = "0.4"
