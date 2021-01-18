@@ -9,7 +9,7 @@ default-run = "redshirt-cli-kernel"
 
 [dependencies]
 async-std = { version = "1.6", features = ["attributes"] }
-futures = "0.3.11"
+futures = "0.3.12"
 num_cpus = "1.13.0"
 rand = "0.8.1"
 redshirt-core = { path = "../../core", features = ["nightly"] }
