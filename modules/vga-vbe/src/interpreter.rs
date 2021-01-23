@@ -346,11 +346,12 @@ impl Interpreter {
                 let value0 = self.fetch_operand_value(&instruction, 0);
                 let value1 = self.fetch_operand_value(&instruction, 1);
 
-                let carry = if instruction.mnemonic() == iced_x86::Mnemonic::Adc && self.flags_is_carry() {
-                    1
-                } else {
-                    0u8
-                };
+                let carry =
+                    if instruction.mnemonic() == iced_x86::Mnemonic::Adc && self.flags_is_carry() {
+                        1
+                    } else {
+                        0u8
+                    };
 
                 let (temp, overflow) = match (value0, value1) {
                     (Value::U8(value0), Value::U8(value1)) => {
