@@ -342,24 +342,31 @@ impl Interpreter {
             iced_x86::Mnemonic::Aam => todo!(),
             iced_x86::Mnemonic::Aas => todo!(),
 
-            iced_x86::Mnemonic::Adc => todo!(),
-
-            iced_x86::Mnemonic::Add => {
+            iced_x86::Mnemonic::Adc | iced_x86::Mnemonic::Add => {
                 let value0 = self.fetch_operand_value(&instruction, 0);
                 let value1 = self.fetch_operand_value(&instruction, 1);
+
+                let carry = if instruction.mnemonic() == iced_x86::Mnemonic::Adc && self.flags_is_carry() {
+                    1
+                } else {
+                    0u8
+                };
 
                 let (temp, overflow) = match (value0, value1) {
                     (Value::U8(value0), Value::U8(value1)) => {
                         let (v, o) = value0.overflowing_add(value1);
-                        (Value::U8(v), o)
+                        let (v, o2) = v.overflowing_add(carry);
+                        (Value::U8(v), o || o2)
                     }
                     (Value::U16(value0), Value::U16(value1)) => {
                         let (v, o) = value0.overflowing_add(value1);
-                        (Value::U16(v), o)
+                        let (v, o2) = v.overflowing_add(u16::from(carry));
+                        (Value::U16(v), o || o2)
                     }
                     (Value::U32(value0), Value::U32(value1)) => {
                         let (v, o) = value0.overflowing_add(value1);
-                        (Value::U32(v), o)
+                        let (v, o2) = v.overflowing_add(u32::from(carry));
+                        (Value::U32(v), o || o2)
                     }
                     _ => unreachable!(),
                 };

@@ -150,6 +150,7 @@ async fn async_main() {
         (red_mask_size + green_mask_size + blue_mask_size + reserved_mask_size) / 8;
 
     vbe.set_current_mode(chosen_mode_num).await.unwrap();
+    log::info!("Successfully set VESA mode");
 
     // Register the framebuffer as a video output.
     let video_output_registration = redshirt_video_output_interface::video_output::register(
