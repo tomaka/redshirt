@@ -90,10 +90,14 @@ impl VideoOutputRegistration {
         let mut frames = self.frames.lock().await;
 
         let mut out = frames.next().await.unwrap();
-        while let Some(next_frame) = frames.next().now_or_never() {
-            let next_frame = next_frame.unwrap();
+        while let Some(next_frame) = frames.select_next_some().now_or_never() {
             out.changes.extend(next_frame.changes);
         }
+
+        while frames.len() < 10 {
+            frames.push(build_frame_future(self.id));
+        }
+
         out
     }
 }
