@@ -16,4 +16,4 @@ redshirt-core = { path = "../../core" }
 redshirt-interface-interface = { path = "../../interfaces/interface" }
 redshirt-tcp-interface = { path = "../../interfaces/tcp" }
 parity-scale-codec = "1.3.6"
-rand = "0.7"
+rand = "0.8"
