@@ -15,7 +15,7 @@
 
 use crate::klog::video;
 
-use core::{convert::TryFrom as _, fmt};
+use core::{convert::TryFrom as _, fmt, hint};
 use redshirt_kernel_log_interface::ffi::{KernelLogMethod, UartAccess, UartInfo};
 use spinning_top::{Spinlock, SpinlockGuard};
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -119,6 +119,8 @@ impl<'a> fmt::Write for Printer<'a> {
                                 if (v & uart.wait_mask) == uart.wait_compare_equal_if_ready {
                                     break;
                                 }
+
+                                hint::spin_loop();
                             }
 
                             match uart.write_address {
