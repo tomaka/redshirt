@@ -50,6 +50,8 @@ mod ap_boot;
 mod apic;
 mod executor;
 mod interrupts;
+mod mtrr;
+mod paging;
 mod panic;
 mod pit;
 
@@ -108,6 +110,8 @@ pub unsafe fn entry_point_step3<
             None => panic!("Couldn't find free memory range for the AP allocator"),
         }
     };
+
+    let _paging = paging::load_identity_mapping();
 
     // Now that we have a memory allocator, initialize the logging system .
     let logger = Arc::new(KLogger::new({
