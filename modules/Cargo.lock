@@ -433,7 +433,7 @@ version = "0.1.0"
 dependencies = [
  "ahash",
  "futures",
- "hashbrown",
+ "hashbrown 0.9.1",
  "rand 0.8.2",
  "redshirt-framebuffer-interface",
  "redshirt-interface-interface",
@@ -897,6 +897,15 @@ dependencies = [
  "openssl-probe",
  "openssl-sys",
  "url",
+]
+
+[[package]]
+name = "hashbrown"
+version = "0.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "96282e96bfcd3da0d3aa9938bedf1e50df3269b6db08b4876d2da0bb1a0841cf"
+dependencies = [
+ "autocfg",
 ]
 
 [[package]]
@@ -1527,7 +1536,7 @@ version = "0.1.0"
 dependencies = [
  "fnv",
  "futures",
- "hashbrown",
+ "hashbrown 0.9.1",
  "log",
  "parity-scale-codec",
  "rand 0.8.2",
@@ -1727,7 +1736,7 @@ name = "pci-printer"
 version = "0.1.0"
 dependencies = [
  "fnv",
- "hashbrown",
+ "hashbrown 0.9.1",
  "lazy_static",
  "log",
  "parity-scale-codec",
@@ -2181,7 +2190,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "generic-array 0.14.4",
- "hashbrown",
+ "hashbrown 0.9.1",
  "lazy_static",
  "nohash-hasher",
  "parity-scale-codec",
@@ -2826,7 +2835,7 @@ version = "0.1.0"
 dependencies = [
  "arrayvec",
  "derive_more",
- "fnv 1.0.7",
+ "fnv",
  "futures",
  "hashbrown 0.7.2",
  "lazy_static",
@@ -2864,7 +2873,7 @@ dependencies = [
  "derive_more",
  "fnv",
  "futures",
- "hashbrown",
+ "hashbrown 0.9.1",
  "iced-x86",
  "lazy_static",
  "log",
