@@ -458,7 +458,8 @@ fn find_free_memory_ranges<'a>(
     })
 }
 
-/// Initializes a COM interface for latter usage.
+/// Initializes a COM port for later usage. Returns a [`UartInfo`] suitable for the klogging
+/// system that will output logs to that COM port.
 ///
 /// Code taken from https://wiki.osdev.org/Serial_Ports#Example_Code.
 ///
