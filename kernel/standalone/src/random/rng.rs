@@ -37,8 +37,6 @@
 //! are available.
 //!
 
-// TODO: I'm not a cryptographer nor a mathematician, but I guess that a ChaCha alone is a bit naive?
-
 use crate::arch::PlatformSpecific;
 
 use alloc::sync::Arc;
