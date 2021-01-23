@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -455,17 +455,19 @@ pub struct ProcessesCollectionBuilder<TExtr> {
         HashMap<(Cow<'static, str>, Cow<'static, str>), (usize, Signature), FnvBuildHasher>,
 }
 
-impl<TExtr> Default for ProcessesCollectionBuilder<TExtr> {
-    fn default() -> ProcessesCollectionBuilder<TExtr> {
+impl<TExtr> ProcessesCollectionBuilder<TExtr> {
+    /// Initializes a new builder using the given random seed.
+    ///
+    /// The seed is used in determine how [`Pid`]s are generated. The same seed will result in
+    /// the same sequence of [`Pid`]s.
+    pub fn with_seed(seed: [u8; 32]) -> ProcessesCollectionBuilder<TExtr> {
         ProcessesCollectionBuilder {
-            pid_tid_pool: IdPool::new(),
+            pid_tid_pool: IdPool::with_seed(seed),
             extrinsics: Default::default(),
             extrinsics_id_assign: Default::default(),
         }
     }
-}
 
-impl<TExtr> ProcessesCollectionBuilder<TExtr> {
     /// Allocates a `Pid` that will not be used by any process.
     ///
     /// > **Note**: As of the writing of this comment, this feature is only ever used to allocate
@@ -615,7 +617,7 @@ impl<'a, TExtr, TPud, TTud> Future for RunFuture<'a, TExtr, TPud, TTud> {
             );
 
             // Items are pushed on `death_reports` when a `Process` struct is destroyed.
-            if let Ok((pid, user_data, dead_threads, outcome)) = this.death_reports.pop() {
+            if let Some((pid, user_data, dead_threads, outcome)) = this.death_reports.pop() {
                 return Poll::Ready(RunOneOutcome::ProcessFinished {
                     pid,
                     user_data,
@@ -627,8 +629,8 @@ impl<'a, TExtr, TPud, TTud> Future for RunFuture<'a, TExtr, TPud, TTud> {
             // We start by finding a process that is ready to run and lock it by extracting the
             // state machine.
             let process = match this.execution_queue.pop() {
-                Ok(p) => p,
-                Err(_) => {
+                Some(p) => p,
+                None => {
                     self.1.set_waker(cx.waker());
                     return Poll::Pending;
                 }

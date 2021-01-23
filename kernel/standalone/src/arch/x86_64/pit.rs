@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -75,7 +75,7 @@ pub fn init_pit(
     local_apics: &local::LocalApicsControl,
     io_apics: &mut io_apics::IoApicsControl,
 ) -> PitControl {
-    let interrupt_vector = interrupts::reserve_any_vector(true).unwrap();
+    let interrupt_vector = interrupts::reserve_any_vector(224).unwrap();
     io_apics.isa_irq(0).unwrap().set_destination(
         local_apics.current_apic_id(), // TODO: instead dispatch to any CPU?
         interrupt_vector.interrupt_num(),

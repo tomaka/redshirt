@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -56,8 +56,8 @@ fn bench(c: &mut Criterion) {
     */
     let module = Module::from_bytes(&include_bytes!("keccak.wasm")[..]).unwrap();
 
-    c.bench_function("keccak-4096-bytes", |b| {
-        let system = SystemBuilder::new(WasiExtrinsics::default())
+    c.bench_function("keccak-wasm-4096-bytes", |b| {
+        let system = SystemBuilder::new(WasiExtrinsics::default(), [0; 64])
             .build()
             .unwrap();
         b.iter(|| {
@@ -71,6 +71,21 @@ fn bench(c: &mut Criterion) {
                 }
             })
             .unwrap();
+        })
+    });
+
+    c.bench_function("keccak-native-4096-bytes", |b| {
+        b.iter(|| {
+            use tiny_keccak::*;
+
+            let data = [254u8; 4096];
+
+            let mut res: [u8; 32] = [0; 32];
+            let mut keccak = tiny_keccak::Keccak::v256();
+            keccak.update(&data);
+            keccak.finalize(&mut res);
+
+            assert_ne!(res[0] as isize, 0);
         })
     });
 }

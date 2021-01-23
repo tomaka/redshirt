@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -28,7 +28,7 @@ fn trapping_module() {
     "#
     );
 
-    let core = CoreBuilder::<NoExtrinsics>::new().build();
+    let core = CoreBuilder::<NoExtrinsics>::with_seed([0; 64]).build();
     let expected_pid = core.execute(&module).unwrap().0.pid();
 
     match core.run().now_or_never() {

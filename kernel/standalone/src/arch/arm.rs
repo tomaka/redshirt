@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -13,8 +13,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#![cfg(any(target_arch = "arm", target_arch = "aarch64"))]
-
 use crate::arch::{PlatformSpecific, PortErr};
 use crate::klog::KLogger;
 
@@ -24,191 +22,227 @@ use futures::prelude::*;
 use redshirt_kernel_log_interface::ffi::{KernelLogMethod, UartInfo};
 
 #[cfg(target_arch = "aarch64")]
-use time_aarch64 as time;
+pub use time_aarch64 as time;
 #[cfg(target_arch = "arm")]
-use time_arm as time;
+pub use time_arm as time;
 
-mod executor;
-mod log;
+pub mod executor;
+pub mod log;
+pub mod time_aarch64;
+pub mod time_arm;
+
 mod misc;
-mod time_aarch64;
-mod time_arm;
 
-/// This is the main entry point of the kernel for ARM 32bits architectures.
-#[cfg(target_arch = "arm")]
-#[no_mangle]
-#[naked]
-unsafe extern "C" fn _start() -> ! {
-    // TODO: always fails :-/
-    /*#[cfg(not(any(target_feature = "armv7-a", target_feature = "armv7-r")))]
-    compile_error!("The ARMv7-A or ARMv7-R instruction sets must be enabled");*/
+#[macro_export]
+macro_rules! __gen_boot {
+    (
+        entry: $entry:path,
+        memory_zeroing_start: $memory_zeroing_start:path,
+        memory_zeroing_end: $memory_zeroing_end:path,
+    ) => {
+        const _: () = {
+            extern crate alloc;
 
-    // Detect which CPU we are.
-    //
-    // See sections B4.1.106 and B6.1.67 of the ARM® Architecture Reference Manual
-    // (ARMv7-A and ARMv7-R edition).
-    //
-    // This is specific to ARMv7-A and ARMv7-R, hence the compile_error! above.
-    llvm_asm!(
-        r#"
-    mrc p15, 0, r5, c0, c0, 5
-    and r5, r5, #3
-    cmp r5, #0
-    bne halt
-    "#::::"volatile");
+            use alloc::sync::Arc;
+            use core::{convert::TryFrom as _, iter, num::NonZeroU32, pin::Pin};
+            use $crate::futures::prelude::*;
+            use $crate::klog::KLogger;
+            use $crate::redshirt_kernel_log_interface::ffi::{KernelLogMethod, UartInfo};
 
-    // Only one CPU reaches here.
+            /// This is the main entry point of the kernel for ARM 32bits architectures.
+            #[cfg(target_arch = "arm")]
+            #[export_name = "_start"]
+            #[naked]
+            unsafe extern "C" fn entry_point_arm32() -> ! {
+                // TODO: always fails :-/
+                /*#[cfg(not(any(target_feature = "armv7-a", target_feature = "armv7-r")))]
+                compile_error!("The ARMv7-A or ARMv7-R instruction sets must be enabled");*/
 
-    // Zero the BSS segment.
-    // TODO: we pray here that the compiler doesn't use the stack
-    let mut ptr = &mut __bss_start as *mut u8;
-    while ptr < &mut __bss_end as *mut u8 {
-        ptr.write_volatile(0);
-        ptr = ptr.add(1);
-    }
+                // Detect which CPU we are.
+                //
+                // See sections B4.1.106 and B6.1.67 of the ARM® Architecture Reference Manual
+                // (ARMv7-A and ARMv7-R edition).
+                //
+                // This is specific to ARMv7-A and ARMv7-R, hence the compile_error! above.
+                asm!(
+                    "
+                    mrc p15, 0, r5, c0, c0, 5
+                    and r5, r5, #3
+                    cmp r5, #0
+                    bne {}
+                    ",
+                    sym halt,
+                    out("r3") _, out("r5") _,
+                    options(nomem, nostack, preserves_flags)
+                );
 
-    // Set up the stack.
-    llvm_asm!(r#"
-    .comm stack, 0x400000, 8
-    ldr sp, =stack+0x400000"#:::"memory":"volatile");
+                // Only one CPU reaches here.
 
-    llvm_asm!(r#"b cpu_enter"#:::"volatile");
-    core::hint::unreachable_unchecked()
-}
+                // Zero the memory requested to be zero'ed.
+                // TODO: that's illegal ; naked functions must only contain an asm! block (for good reasons)
+                let mut ptr = &mut $memory_zeroing_start as *mut u8;
+                while ptr < &mut $memory_zeroing_end as *mut u8 {
+                    ptr.write_volatile(0);
+                    ptr = ptr.add(1);
+                }
 
-/// This is the main entry point of the kernel for ARM 64bits architectures.
-#[cfg(target_arch = "aarch64")]
-#[no_mangle]
-#[naked]
-unsafe extern "C" fn _start() -> ! {
-    // TODO: review this
-    llvm_asm!(r#"
-    mrs x6, MPIDR_EL1
-    and x6, x6, #0x3
-    cbz x6, L0
-    b halt
-L0: nop
-    "#::::"volatile");
+                // Set up the stack and jump to the entry point.
+                asm!("
+                    .comm stack, 0x400000, 8
+                    ldr sp, =stack+0x400000
+                    b {}
+                    ",
+                    sym cpu_enter,
+                    options(noreturn)
+                )
+            }
 
-    // Only one CPU reaches here.
+            /// This is the main entry point of the kernel for ARM 64bits architectures.
+            #[cfg(target_arch = "aarch64")]
+            #[export_name = "_start"]
+            #[naked]
+            unsafe extern "C" fn entry_point_arm64() -> ! {
+                // TODO: review this
+                asm!(
+                    "
+                        mrs x6, MPIDR_EL1
+                        and x6, x6, #0x3
+                        cbz x6, L0
+                        b {}
+                    L0: nop
+                        ",
+                    sym halt,
+                    out("x6") _,
+                    options(nomem, nostack)
+                );
 
-    // Zero the BSS segment.
-    // TODO: we pray here that the compiler doesn't use the stack
-    let mut ptr = &mut __bss_start as *mut u8;
-    while ptr < &mut __bss_end as *mut u8 {
-        ptr.write_volatile(0);
-        ptr = ptr.add(1);
-    }
+                // Only one CPU reaches here.
 
-    // Set up the stack.
-    llvm_asm!(r#"
-    .comm stack, 0x400000, 8
-    ldr x5, =stack+0x400000; mov sp, x5"#:::"memory":"volatile");
+                // Zero the memory requested to be zero'ed.
+                // TODO: that's illegal ; naked functions must only contain an asm! block (for good reasons)
+                let mut ptr = &mut $memory_zeroing_start as *mut u8;
+                while ptr < &mut $memory_zeroing_end as *mut u8 {
+                    ptr.write_volatile(0);
+                    ptr = ptr.add(1);
+                }
 
-    llvm_asm!(r#"b cpu_enter"#:::"volatile");
-    core::hint::unreachable_unchecked()
-}
+                // Set up the stack and jump to `cpu_enter`.
+        asm!(
+                    "
+                        .comm stack, 0x400000, 8
+                        ldr x5, =stack+0x400000
+                        mov sp, x5
+                        b {}
+                ", sym cpu_enter, options(noreturn))
+            }
 
-extern "C" {
-    static mut __bss_start: u8;
-    static mut __bss_end: u8;
-}
+            /// Main Rust entry point.
+            #[no_mangle]
+            unsafe fn cpu_enter() -> ! {
+                // Initialize the logging system.
+                $crate::arch::arm::log::set_logger(KLogger::new(KernelLogMethod {
+                    enabled: true,
+                    framebuffer: None,
+                    uart: Some($crate::arch::arm::init_uart()),
+                }));
 
-/// Main Rust entry point.
-#[no_mangle]
-unsafe fn cpu_enter() -> ! {
-    // Initialize the logging system.
-    log::set_logger(KLogger::new(KernelLogMethod {
-        enabled: true,
-        framebuffer: None,
-        uart: Some(init_uart()),
-    }));
+                // TODO: RAM starts at 0, but we start later to avoid the kernel
+                // TODO: make this is a cleaner way
+                $crate::mem_alloc::initialize(iter::once(0xa000000..0x40000000));
 
-    // TODO: RAM starts at 0, but we start later to avoid the kernel
-    // TODO: make this is a cleaner way
-    crate::mem_alloc::initialize(iter::once(0xa000000..0x40000000));
+                let time = $crate::arch::arm::time::TimeControl::init();
 
-    let time = time::TimeControl::init();
+                let platform = Arc::pin($crate::arch::PlatformSpecific::from(
+                    $crate::arch::arm::PlatformSpecificImpl { time },
+                ));
+                $crate::arch::arm::executor::block_on($entry(platform))
+            }
 
-    let kernel = crate::kernel::Kernel::init(PlatformSpecificImpl { time });
-    executor::block_on(kernel.run())
+            #[naked]
+            fn halt() -> ! {
+                unsafe {
+                    loop {
+                        asm!("wfe", options(nomem, nostack, preserves_flags));
+                    }
+                }
+            }
+        };
+    };
 }
 
 /// Implementation of [`PlatformSpecific`].
-struct PlatformSpecificImpl {
-    time: Arc<time::TimeControl>,
+#[doc(hidden)]
+pub struct PlatformSpecificImpl {
+    #[doc(hidden)]
+    pub time: Arc<time::TimeControl>,
 }
 
-impl PlatformSpecific for PlatformSpecificImpl {
-    type TimerFuture = time::TimerFuture;
-    type IrqFuture = future::Pending<()>;
+impl From<PlatformSpecificImpl> for super::PlatformSpecific {
+    fn from(ps: PlatformSpecificImpl) -> Self {
+        Self(ps)
+    }
+}
 
-    fn num_cpus(self: Pin<&Self>) -> NonZeroU32 {
+impl PlatformSpecificImpl {
+    pub fn num_cpus(self: Pin<&Self>) -> NonZeroU32 {
         NonZeroU32::new(1).unwrap()
     }
 
-    fn monotonic_clock(self: Pin<&Self>) -> u128 {
+    pub fn monotonic_clock(self: Pin<&Self>) -> u128 {
         self.time.monotonic_clock()
     }
 
-    fn timer(self: Pin<&Self>, deadline: u128) -> Self::TimerFuture {
+    pub fn timer(self: Pin<&Self>, deadline: u128) -> TimerFuture {
         self.time.timer(deadline)
     }
 
-    fn next_irq(self: Pin<&Self>) -> Self::IrqFuture {
+    pub fn next_irq(self: Pin<&Self>) -> IrqFuture {
         future::pending()
     }
 
-    fn write_log(&self, message: &str) {
+    pub fn write_log(&self, message: &str) {
         log::write_log(message);
     }
 
-    fn set_logger_method(&self, method: KernelLogMethod) {
+    pub fn set_logger_method(&self, method: KernelLogMethod) {
         unsafe {
             log::set_logger(KLogger::new(method));
         }
     }
 
-    unsafe fn write_port_u8(self: Pin<&Self>, _: u32, _: u8) -> Result<(), PortErr> {
+    pub unsafe fn write_port_u8(self: Pin<&Self>, _: u32, _: u8) -> Result<(), PortErr> {
         Err(PortErr::Unsupported)
     }
 
-    unsafe fn write_port_u16(self: Pin<&Self>, _: u32, _: u16) -> Result<(), PortErr> {
+    pub unsafe fn write_port_u16(self: Pin<&Self>, _: u32, _: u16) -> Result<(), PortErr> {
         Err(PortErr::Unsupported)
     }
 
-    unsafe fn write_port_u32(self: Pin<&Self>, _: u32, _: u32) -> Result<(), PortErr> {
+    pub unsafe fn write_port_u32(self: Pin<&Self>, _: u32, _: u32) -> Result<(), PortErr> {
         Err(PortErr::Unsupported)
     }
 
-    unsafe fn read_port_u8(self: Pin<&Self>, _: u32) -> Result<u8, PortErr> {
+    pub unsafe fn read_port_u8(self: Pin<&Self>, _: u32) -> Result<u8, PortErr> {
         Err(PortErr::Unsupported)
     }
 
-    unsafe fn read_port_u16(self: Pin<&Self>, _: u32) -> Result<u16, PortErr> {
+    pub unsafe fn read_port_u16(self: Pin<&Self>, _: u32) -> Result<u16, PortErr> {
         Err(PortErr::Unsupported)
     }
 
-    unsafe fn read_port_u32(self: Pin<&Self>, _: u32) -> Result<u32, PortErr> {
+    pub unsafe fn read_port_u32(self: Pin<&Self>, _: u32) -> Result<u32, PortErr> {
         Err(PortErr::Unsupported)
     }
 }
 
-// TODO: no_mangle and naked because it's called at initialization; attributes should eventually be removed
-#[no_mangle]
-#[naked]
-fn halt() -> ! {
-    unsafe {
-        loop {
-            llvm_asm!(r#"wfe"#);
-        }
-    }
-}
+pub type TimerFuture = time::TimerFuture;
+pub type IrqFuture = future::Pending<()>;
 
 const GPIO_BASE: usize = 0x3F200000;
 const UART0_BASE: usize = 0x3F201000;
 
-fn init_uart() -> UartInfo {
+#[doc(hidden)]
+pub fn init_uart() -> UartInfo {
     unsafe {
         ((UART0_BASE + 0x30) as *mut u32).write_volatile(0x0);
         ((GPIO_BASE + 0x94) as *mut u32).write_volatile(0x0);
@@ -243,7 +277,7 @@ fn init_uart() -> UartInfo {
 fn delay(count: i32) {
     unsafe {
         for _ in 0..count {
-            llvm_asm!("nop" ::: "volatile");
+            asm!("nop", options(nostack, nomem, preserves_flags));
         }
     }
 }

@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -16,7 +16,7 @@
 use std::{
     fs,
     io::{self, Read, Seek, SeekFrom, Write},
-    path::{Path, PathBuf},
+    path::Path,
     process::Command,
 };
 use tempdir::TempDir;
@@ -153,6 +153,7 @@ set timeout=5
 set default=0
 
 menuentry "redshirt" {
+    insmod all_video
     multiboot2 /boot/kernel
 }
             "#[..],

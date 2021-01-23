@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -113,30 +113,27 @@ pub async fn init(
     local_apics: &'static local::LocalApicsControl,
     pit: &mut pit::PitControl,
 ) -> Arc<Timers> {
-    // TODO: check if TSC is supported somewhere with CPUID.1:EDX.TSC[bit 4] == 1
+    // We don't support systems without the TSC.
+    assert!(is_tsc_supported());
 
     // We use the PIT to figure out approximately how many RDTSC ticks happen per second.
     // TODO: instead of using the PIT, we can use CPUID[EAX=0x15] to find the frequency, but that
     // might not be available and does AMD support it?
     let rdtsc_ticks_per_sec = unsafe {
         // We use fences in order to guarantee that the RDTSC instructions don't get moved around.
-        // TODO: not sure about these Ordering values
-        // TODO: are the fences the same as core::arch::x86_64::_mm_mfence()?
-        let before = core::arch::x86_64::_rdtsc();
-        atomic::fence(atomic::Ordering::Release);
+        let before = tsc_sync::volatile_rdtsc();
         pit.timer(Duration::from_secs(1)).await;
-        atomic::fence(atomic::Ordering::Acquire);
-        let after = core::arch::x86_64::_rdtsc();
+        let after = tsc_sync::volatile_rdtsc();
 
         assert!(after > before);
         NonZeroU64::new(after - before).unwrap()
     };
 
-    let monotonic_clock_zero = NonZeroU64::new(unsafe { core::arch::x86_64::_rdtsc() }).unwrap();
+    let monotonic_clock_zero = NonZeroU64::new(tsc_sync::volatile_rdtsc()).unwrap();
 
     Arc::new(Timers {
         local_apics,
-        interrupt_vector: interrupts::reserve_any_vector(true).unwrap(),
+        interrupt_vector: interrupts::reserve_any_vector(160).unwrap(),
         monotonic_clock_zero,
         rdtsc_ticks_per_sec,
         next_unique_timer_id: atomic::AtomicU64::new(0),
@@ -221,28 +218,27 @@ struct TimerEntry {
 
 impl Timers {
     /// Returns a `Future` that fires when the given amount of time has elapsed.
-    pub fn register_timer(self: &Arc<Self>, duration: Duration) -> TimerFuture {
-        let now = {
-            let local_val = tsc_sync::volatile_rdtsc();
-            self.monotonic_clock_min
-                .fetch_max(local_val, atomic::Ordering::AcqRel)
-                .max(local_val)
-        };
+    pub fn register_timer_after(self: &Arc<Self>, after: Duration) -> TimerFuture {
+        let now = self.monotonic_clock();
+        self.register_timer_at(now + after)
+    }
 
+    /// Returns a `Future` that fires when the monotonic clock reaches the given value.
+    pub fn register_timer_at(self: &Arc<Self>, when: Duration) -> TimerFuture {
         // Find out the TSC value corresponding to the requested `Duration`.
-        let tsc_value = duration
+        let tsc_value = when
             .as_secs()
             .checked_mul(self.rdtsc_ticks_per_sec.get())
             .unwrap()
             .checked_add(
-                u64::from(duration.subsec_nanos())
+                u64::from(when.subsec_nanos())
                     .checked_mul(self.rdtsc_ticks_per_sec.get())
                     .unwrap()
                     .checked_div(1_000_000_000)
                     .unwrap(),
             )
             .unwrap()
-            .checked_add(now)
+            .checked_add(self.monotonic_clock_zero.get())
             .unwrap();
 
         TimerFuture {
@@ -469,7 +465,7 @@ impl futures::task::ArcWake for TimerWaker {
         // Remove from `active_timers` all the timers that have fired.
         for (_, timer) in shared
             .active_timers
-            .drain_filter(|_, timer| timer.apic_timer_firing_tsc_value.get() > now)
+            .drain_filter(|_, timer| timer.apic_timer_firing_tsc_value.get() <= now)
         {
             debug_assert!(timer.apic_timer_firing_tsc_value.get() <= now);
             if timer.timer.target_tsc_value.get() <= now {
@@ -605,5 +601,13 @@ fn configure_apic(
         apic_timer_firing_tsc_value: NonZeroU64::new(tsc_now.checked_add(ticks_to_timer).unwrap())
             .unwrap(),
         timer: entry,
+    }
+}
+
+/// Checks in the CPUID whether the TSC is supported.
+fn is_tsc_supported() -> bool {
+    unsafe {
+        let cpuid = core::arch::x86_64::__cpuid(0x1);
+        cpuid.edx & (1 << 4) != 0
     }
 }

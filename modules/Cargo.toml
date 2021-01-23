@@ -1,18 +1,19 @@
 [workspace]
 members = [
     "compositor",
+    "diagnostics-http-server",
+    "dummy-system-time",
     "e1000",
     "hello-world",
-    "http-server",
     "network-manager",
     "log-to-kernel",
     "p2p-loader",
     "pci-printer",
     "rpi-framebuffer",
     "stub",
-    "third-party/time",
     "third-party/wasm-timer",
     "usb-controller-driver",
+    "vga-vbe",
 ]
 
 [profile.dev]
@@ -31,8 +32,5 @@ codegen-units = 1
 panic = 'abort'
 
 [patch.crates-io]
-# TODO: waiting for the release of https://github.com/paritytech/parity-scale-codec/pull/199
-parity-scale-codec = { git = "https://github.com/paritytech/parity-scale-codec" }
 ring = { git = "https://github.com/nhynes/ring", branch = "wasi" }
-time = { path = "./third-party/time" }
 wasm-timer = { path = "./third-party/wasm-timer" }

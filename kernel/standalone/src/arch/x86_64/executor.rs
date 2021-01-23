@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -41,7 +41,7 @@ impl Executor {
     /// Initializes a new [`Executor`].
     pub fn new(local_apic: &'static LocalApicsControl) -> Self {
         Executor {
-            interrupt_vector: interrupts::reserve_any_vector(true).unwrap(),
+            interrupt_vector: interrupts::reserve_any_vector(0).unwrap(),
             apic: local_apic,
         }
     }
@@ -82,7 +82,13 @@ impl Executor {
 
                 if local_wake
                     .woken_up
-                    .compare_and_swap(true, false, atomic::Ordering::SeqCst)
+                    .compare_exchange(
+                        true,
+                        false,
+                        atomic::Ordering::SeqCst,
+                        atomic::Ordering::SeqCst,
+                    )
+                    .is_ok()
                 {
                     // We're going to poll the `Future` again, so `need_ipi` can be set to `false`.
                     local_wake.need_ipi.store(false, atomic::Ordering::SeqCst);
@@ -126,7 +132,13 @@ impl ArcWake for Waker {
 
         if arc_self
             .need_ipi
-            .compare_and_swap(true, false, atomic::Ordering::SeqCst)
+            .compare_exchange(
+                true,
+                false,
+                atomic::Ordering::SeqCst,
+                atomic::Ordering::SeqCst,
+            )
+            .is_ok()
         {
             if arc_self.processor_to_wake != arc_self.apic.current_apic_id() {
                 arc_self.apic.send_interprocessor_interrupt(

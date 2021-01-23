@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -17,9 +17,8 @@
 //!
 //! See https://en.wikipedia.org/wiki/PCI_configuration_space
 
-use alloc::{borrow::Cow, collections::VecDeque, vec::Vec};
+use alloc::{collections::VecDeque, vec::Vec};
 use core::{convert::TryFrom as _, iter};
-use fnv::FnvBuildHasher;
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use x86_64::structures::port::{PortRead as _, PortWrite as _};
@@ -275,7 +274,7 @@ fn scan_function(bdf: &DeviceBdf) -> Option<ScanResult> {
         (bytes[0], bytes[1], bytes[2], bytes[3])
     };
 
-    let (_bist, header_ty, latency, cache_line) = {
+    let (_bist, header_ty, _latency, _cache_line) = {
         let val = pci_cfg_read_u32(bdf, 0xc);
         let bytes = val.to_be_bytes();
         (bytes[0], bytes[1], bytes[2], bytes[3])
@@ -340,7 +339,9 @@ fn scan_function(bdf: &DeviceBdf) -> Option<ScanResult> {
                         bar_n += 2;
                     }
                 } else {
-                    let base_address = u16::try_from(bar & !0b11).unwrap();
+                    // TODO: this ` & 0xffff` is normally not needed, but it seems like on real
+                    // hardware the value is higher than 0xffff
+                    let base_address = u16::try_from((bar & !0b11) & 0xffff).unwrap();
                     list.push(BaseAddressRegister::Io { base_address });
                     bar_n += 1;
                 }

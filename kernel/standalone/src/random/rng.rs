@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -37,8 +37,6 @@
 //! are available.
 //!
 
-// TODO: I'm not a cryptographer nor a mathematician, but I guess that a ChaCha alone is a bit naive?
-
 use crate::arch::PlatformSpecific;
 
 use alloc::sync::Arc;
@@ -55,7 +53,7 @@ pub struct KernelRng {
 
 impl KernelRng {
     /// Initializes a new [`KernelRng`].
-    pub fn new(platform_specific: Pin<Arc<impl PlatformSpecific>>) -> KernelRng {
+    pub fn new(platform_specific: Pin<Arc<PlatformSpecific>>) -> KernelRng {
         // Initialize the `JitterRng`.
         let mut jitter = {
             let mut rng = JitterRng::new_with_timer(move || {

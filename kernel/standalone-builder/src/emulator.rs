@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -13,12 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use std::{
-    fs,
-    io::{self, Write as _},
-    path::{Path, PathBuf},
-    process::Command,
-};
+use std::{io, path::Path, process::Command};
 use tempdir::TempDir;
 
 /// Configuration for running the kernel in an emulator.

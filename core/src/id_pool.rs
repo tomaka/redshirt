@@ -1,4 +1,4 @@
-// Copyright (C) 2019-2020  Pierre Krieger
+// Copyright (C) 2019-2021  Pierre Krieger
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -13,12 +13,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use core::{convert::TryFrom, fmt, num::NonZeroU64};
+use core::{convert::TryFrom, fmt};
 use crossbeam_queue::SegQueue;
 use rand::distributions::{Distribution as _, Uniform};
 use rand_chacha::ChaCha20Rng;
 use rand_core::SeedableRng as _;
-use rand_hc::Hc128Rng;
 use spinning_top::Spinlock;
 
 // Maths note: after 3 billion iterations, there's a 2% chance of a collision
@@ -34,20 +33,17 @@ pub struct IdPool {
     rngs: SegQueue<ChaCha20Rng>,
     /// Distribution of IDs.
     distribution: Uniform<u64>,
-    /// RNG to seed other RNGs. We use a different algorithm than ChaCha in order to not clone
-    /// the ChaCha state when we derive from it.
-    // TODO: is it actually needed to have a different algorithm, or is this comment bullshit?
-    //       using a different algorithm doesn't hurt, but it'd be better if the comment was correct
-    master_rng: Spinlock<Hc128Rng>,
+    /// PRNG used to seed the other thread-specific PRNGs stored in `rngs`.
+    master_rng: Spinlock<ChaCha20Rng>,
 }
 
 impl IdPool {
     /// Initializes a new pool.
-    pub fn new() -> Self {
+    pub fn with_seed(seed: [u8; 32]) -> Self {
         IdPool {
             rngs: SegQueue::new(),
             distribution: Uniform::from(0..=u64::max_value()),
-            master_rng: Spinlock::new(Hc128Rng::from_seed([0; 32])), // FIXME: proper seed
+            master_rng: Spinlock::new(ChaCha20Rng::from_seed(seed)),
         }
     }
 
@@ -56,7 +52,7 @@ impl IdPool {
     /// The returned value must implement the `TryFrom<u64>` trait. `u64`s are rolled as long as
     /// as calling `TryFrom` returns an error.
     pub fn assign<T: TryFrom<u64>>(&self) -> T {
-        if let Ok(mut rng) = self.rngs.pop() {
+        if let Some(mut rng) = self.rngs.pop() {
             return loop {
                 let raw_id = self.distribution.sample(&mut rng);
                 if let Ok(id) = TryFrom::try_from(raw_id) {
@@ -95,7 +91,7 @@ mod tests {
     #[test]
     fn ids_different() {
         let mut ids = hashbrown::HashSet::<u64, BuildNoHashHasher<u64>>::default();
-        let pool = super::IdPool::new();
+        let pool = super::IdPool::with_seed([0; 32]);
         for _ in 0..5000 {
             assert!(ids.insert(pool.assign()));
         }
