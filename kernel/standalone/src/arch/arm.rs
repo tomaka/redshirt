@@ -19,7 +19,7 @@ use crate::klog::KLogger;
 use alloc::sync::Arc;
 use core::{convert::TryFrom as _, iter, num::NonZeroU32, pin::Pin};
 use futures::prelude::*;
-use redshirt_kernel_log_interface::ffi::{KernelLogMethod, UartInfo};
+use redshirt_kernel_log_interface::ffi::{KernelLogMethod, UartAccess, UartInfo};
 
 #[cfg(target_arch = "aarch64")]
 pub use time_aarch64 as time;
@@ -267,9 +267,10 @@ pub fn init_uart() -> UartInfo {
         ((UART0_BASE + 0x30) as *mut u32).write_volatile((1 << 0) | (1 << 8) | (1 << 9));
 
         UartInfo {
-            wait_low_address: u64::try_from(UART0_BASE + 0x18).unwrap(),
-            wait_low_mask: 1 << 5,
-            write_address: u64::try_from(UART0_BASE + 0x0).unwrap(),
+            wait_address: UartAccess::MemoryMappedU32(u64::try_from(UART0_BASE + 0x18).unwrap()),
+            wait_mask: 1 << 5,
+            wait_compare_equal_if_ready: 0,
+            write_address: UartAccess::MemoryMappedU32(u64::try_from(UART0_BASE + 0x0).unwrap()),
         }
     }
 }

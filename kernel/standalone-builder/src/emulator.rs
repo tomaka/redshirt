@@ -71,6 +71,7 @@ pub fn run_kernel(cfg: Config) -> Result<(), Error> {
 
             let status = Command::new("qemu-system-x86_64")
                 .args(&["-m", "1024"])
+                .args(&["-serial", "stdio"])
                 .arg("-cdrom")
                 .arg(build_dir.path().join("image"))
                 .args(&["-smp", "cpus=4"])

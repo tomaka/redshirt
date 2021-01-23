@@ -31,7 +31,9 @@ use core::{
 };
 use futures::channel::oneshot;
 use hashbrown::HashMap;
-use redshirt_kernel_log_interface::ffi::{FramebufferFormat, FramebufferInfo, KernelLogMethod};
+use redshirt_kernel_log_interface::ffi::{
+    FramebufferFormat, FramebufferInfo, KernelLogMethod, UartAccess, UartInfo,
+};
 use spinning_top::Spinlock;
 use x86_64::structures::port::{PortRead as _, PortWrite as _};
 
@@ -109,7 +111,7 @@ pub unsafe fn entry_point_step3<
         }
     };
 
-    // Now that we have a memory allocator, initialize the logging system .
+    // Now that we have a memory allocator, initialize the logging system.
     let logger = Arc::new(KLogger::new({
         if let Some(fb_info) = multiboot_info.framebuffer_tag() {
             KernelLogMethod {
@@ -143,7 +145,8 @@ pub unsafe fn entry_point_step3<
                         }
                     },
                 }),
-                uart: None,
+                // TODO: COM port should be discovered through the ACPI tables instead of hardcoded
+                uart: init_com(0x3f8).ok(),
             }
         } else {
             DEFAULT_LOG_METHOD.clone()
@@ -452,6 +455,41 @@ fn find_free_memory_ranges<'a>(
         let area_start = usize::try_from(area_start).unwrap();
         let area_end = usize::try_from(area_end).unwrap();
         Some(area_start..area_end)
+    })
+}
+
+/// Initializes a COM port for later usage. Returns a [`UartInfo`] suitable for the klogging
+/// system that will output logs to that COM port.
+///
+/// Code taken from https://wiki.osdev.org/Serial_Ports#Example_Code.
+///
+/// # Safety
+///
+/// The port must point to the base port of a valid COM interface. This function performs I/O
+/// writes which could have averse effects if done on a different ports range.
+///
+unsafe fn init_com(base_port: u16) -> Result<UartInfo, ()> {
+    u8::write_to_port(base_port + 1, 0x00);
+    u8::write_to_port(base_port + 3, 0x80);
+    u8::write_to_port(base_port + 0, 0x03);
+    u8::write_to_port(base_port + 1, 0x00);
+    u8::write_to_port(base_port + 3, 0x03);
+    u8::write_to_port(base_port + 2, 0xC7);
+    u8::write_to_port(base_port + 4, 0x0B);
+    u8::write_to_port(base_port + 4, 0x1E);
+    u8::write_to_port(base_port + 0, 0xAE);
+
+    if u8::read_from_port(base_port + 0) != 0xAE {
+        return Err(());
+    }
+
+    u8::write_to_port(base_port + 4, 0x0F);
+
+    Ok(UartInfo {
+        wait_address: UartAccess::IoPortU8(base_port + 5),
+        wait_mask: 0x20,
+        wait_compare_equal_if_ready: 0x20,
+        write_address: UartAccess::IoPortU8(base_port),
     })
 }
 

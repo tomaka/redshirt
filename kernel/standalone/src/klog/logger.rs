@@ -15,9 +15,11 @@
 
 use crate::klog::video;
 
-use core::{convert::TryFrom as _, fmt};
-use redshirt_kernel_log_interface::ffi::{KernelLogMethod, UartInfo};
+use core::{convert::TryFrom as _, fmt, hint};
+use redshirt_kernel_log_interface::ffi::{KernelLogMethod, UartAccess, UartInfo};
 use spinning_top::{Spinlock, SpinlockGuard};
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+use x86_64::structures::port::{PortRead as _, PortWrite as _};
 
 pub struct KLogger {
     inner: Spinlock<Inner>,
@@ -96,19 +98,43 @@ impl<'a> fmt::Write for Printer<'a> {
 
                 if let Some(uart) = uart {
                     unsafe {
-                        if let (Ok(r_addr), Ok(w_addr)) = (
-                            usize::try_from(uart.wait_low_address),
-                            usize::try_from(uart.write_address),
-                        ) {
-                            for byte in message.as_bytes() {
-                                loop {
-                                    let v = (r_addr as *const u32).read_volatile();
-                                    if (v & uart.wait_low_mask) != 0x0 {
-                                        continue;
+                        for byte in message.as_bytes() {
+                            loop {
+                                let v = match uart.wait_address {
+                                    UartAccess::MemoryMappedU32(r_addr) => {
+                                        if let Ok(r_addr) = usize::try_from(r_addr) {
+                                            (r_addr as *const u32).read_volatile()
+                                        } else {
+                                            0
+                                        }
                                     }
-                                    (w_addr as *mut u32).write_volatile(u32::from(*byte));
+                                    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+                                    UartAccess::IoPortU8(r_port) => {
+                                        u32::from(u8::read_from_port(r_port))
+                                    }
+                                    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+                                    UartAccess::IoPortU8(r_port) => 0,
+                                };
+
+                                if (v & uart.wait_mask) == uart.wait_compare_equal_if_ready {
                                     break;
                                 }
+
+                                hint::spin_loop();
+                            }
+
+                            match uart.write_address {
+                                UartAccess::MemoryMappedU32(w_addr) => {
+                                    if let Ok(w_addr) = usize::try_from(w_addr) {
+                                        (w_addr as *mut u32).write_volatile(u32::from(*byte))
+                                    }
+                                }
+                                #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+                                UartAccess::IoPortU8(r_port) => {
+                                    u8::write_to_port(r_port, *byte);
+                                }
+                                #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+                                UartAccess::IoPortU8(r_port) => {}
                             }
                         }
                     }

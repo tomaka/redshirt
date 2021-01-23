@@ -48,7 +48,7 @@ macro_rules! __gen_boot {
             use alloc::sync::Arc;
             use core::{iter, num::NonZeroU32, pin::Pin};
             use $crate::futures::prelude::*;
-            use $crate::redshirt_kernel_log_interface::ffi::{KernelLogMethod, UartInfo};
+            use $crate::redshirt_kernel_log_interface::ffi::{KernelLogMethod, UartAccess, UartInfo};
 
             /// This is the main entry point of the kernel for RISC-V architectures.
             #[naked]
@@ -145,9 +145,10 @@ macro_rules! __gen_boot {
                     (0x10013008 as *mut u32).write_volatile(uart_reg_tx_ctrl | 1);
 
                     UartInfo {
-                        wait_low_address: 0x10013000,
-                        wait_low_mask: 0x80000000,
-                        write_address: 0x10013000,
+                        wait_address: UartAccess::MemoryMappedU32(0x10013000),
+                        wait_mask: 0x80000000,
+                        wait_compare_equal_if_ready: 0,
+                        write_address: UartAccess::MemoryMappedU32(0x10013000),
                     }
                 }
             }
