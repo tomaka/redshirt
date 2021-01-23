@@ -18,7 +18,6 @@ use crossbeam_queue::SegQueue;
 use rand::distributions::{Distribution as _, Uniform};
 use rand_chacha::ChaCha20Rng;
 use rand_core::SeedableRng as _;
-use rand_hc::Hc128Rng;
 use spinning_top::Spinlock;
 
 // Maths note: after 3 billion iterations, there's a 2% chance of a collision
@@ -34,11 +33,8 @@ pub struct IdPool {
     rngs: SegQueue<ChaCha20Rng>,
     /// Distribution of IDs.
     distribution: Uniform<u64>,
-    /// RNG to seed other RNGs. We use a different algorithm than ChaCha in order to not clone
-    /// the ChaCha state when we derive from it.
-    // TODO: is it actually needed to have a different algorithm, or is this comment bullshit?
-    //       using a different algorithm doesn't hurt, but it'd be better if the comment was correct
-    master_rng: Spinlock<Hc128Rng>,
+    /// PRNG used to seed the other thread-specific PRNGs stored in `rngs`.
+    master_rng: Spinlock<ChaCha20Rng>,
 }
 
 impl IdPool {
@@ -47,7 +43,7 @@ impl IdPool {
         IdPool {
             rngs: SegQueue::new(),
             distribution: Uniform::from(0..=u64::max_value()),
-            master_rng: Spinlock::new(Hc128Rng::from_seed(seed)),
+            master_rng: Spinlock::new(ChaCha20Rng::from_seed(seed)),
         }
     }
 

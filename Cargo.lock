@@ -1949,7 +1949,6 @@ dependencies = [
  "rand 0.7.3",
  "rand_chacha 0.2.2",
  "rand_core 0.5.1",
- "rand_hc 0.2.0",
  "redshirt-core-proc-macros",
  "redshirt-interface-interface",
  "redshirt-kernel-debug-interface",

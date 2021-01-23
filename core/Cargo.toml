@@ -32,7 +32,6 @@ redshirt-time-interface = { path = "../interfaces/time", default-features = fals
 rand = { version = "0.7", default-features = false }
 rand_chacha = { version = "0.2.1", default-features = false }
 rand_core = { version = "0.5.0", default-features = false }
-rand_hc = { version = "0.2.0", default-features = false }
 slab = { git = "https://github.com/baloo/slab", rev = "88b456131de20750e785655d1e62cd0b6e10d44b" }
 smallvec = { version = "1.6.1", default-features = false }
 spinning_top = "0.2.2"
