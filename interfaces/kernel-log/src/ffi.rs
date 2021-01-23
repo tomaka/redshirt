@@ -45,17 +45,29 @@ pub struct KernelLogMethod {
 
 /// Information about how the kernel should print on an UART.
 ///
-/// In order to write, the kernel should repeatidly read 32bits from `wait_low_address` until
-/// its value, when AND-ed with `wait_low_mask`, reads 0. Then it should write 32bits to
-/// `write_address`.
+/// In order to write, the kernel should repeatidly read a value from `wait_address` until
+/// its value, when AND-ed with `wait_mask`, is equal to `wait_compare_equal_if_ready`. Then it
+/// should write a value to `write_address`.
 #[derive(Debug, Clone, Encode, Decode)]
 pub struct UartInfo {
-    /// Location in physical memory where to read th evalue to compare.
-    pub wait_low_address: u64,
-    /// Mask to compare the value read from `wait_low_address`.
-    pub wait_low_mask: u32,
-    /// Location in physical memory where to write the byte when ready.
-    pub write_address: u64,
+    /// Where to read the value to compare.
+    pub wait_address: UartAccess,
+    /// Mask to apply (by AND'ing) to the value read from `wait_address`.
+    pub wait_mask: u32,
+    /// Compares the value (after the mask is applied) with this reference value. If equal, the
+    /// UART is ready.
+    pub wait_compare_equal_if_ready: u32,
+    /// Where to write the output when ready.
+    pub write_address: UartAccess,
+}
+
+/// How to access either the value to compare or where to write the output.
+#[derive(Debug, Clone, Encode, Decode)]
+pub enum UartAccess {
+    /// 32bits at a specific memory location.
+    MemoryMappedU32(u64),
+    /// Single byte (8bits) on I/O port. Typically on x86/amd64 systems.
+    IoPortU8(u16),
 }
 
 /// Information about how the kernel should print on the framebuffer.
