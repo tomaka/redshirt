@@ -112,6 +112,7 @@ use spinning_top::Spinlock;
 pub async fn init(
     local_apics: &'static local::LocalApicsControl,
     pit: &mut pit::PitControl,
+    num_cpus: NonZeroU32,
 ) -> Arc<Timers> {
     // We don't support systems without the TSC.
     assert!(is_tsc_supported());
@@ -139,7 +140,10 @@ pub async fn init(
         next_unique_timer_id: atomic::AtomicU64::new(0),
         monotonic_clock_min: atomic::AtomicU64::new(monotonic_clock_zero.get()),
         shared: Spinlock::new(Shared {
-            active_timers: HashMap::with_capacity_and_hasher(16, Default::default()), // TODO: set to number of CPUs
+            active_timers: HashMap::with_capacity_and_hasher(
+                usize::try_from(num_cpus.get()).unwrap(),
+                Default::default(),
+            ),
             pending_timers: VecDeque::with_capacity(32), // TODO: which capacity?
         }),
     })
