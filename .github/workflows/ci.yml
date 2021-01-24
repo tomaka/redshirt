@@ -86,7 +86,7 @@ jobs:
   build-standalone:
     name: Build and test standalone kernel
     needs: build-modules
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04  # TODO: should be ubuntu-latest when they update it
     env:
       CC: clang-11
     strategy:
@@ -102,19 +102,13 @@ jobs:
     - name: Install required packages
       run: |
         sudo apt-get update
-        sudo apt-get install -y lld libisoburn1 xorriso grub-pc-bin
+        sudo apt-get install -y lld libisoburn1 xorriso grub-pc-bin clang-11
     - name: Install latest nightly
       uses: actions-rs/toolchain@v1
       with:
         toolchain: nightly-2020-12-28
         target: wasm32-wasi
         override: true
-    - name: Install a recent version of clang
-      run: |
-        sudo wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
-        sudo echo "deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-11 main" >> /etc/apt/sources.list
-        sudo apt-get update
-        sudo apt-get install -y clang-11
     - name: Set up QEMU
       uses: docker/setup-qemu-action@v1
       with:
