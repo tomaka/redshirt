@@ -102,7 +102,7 @@ jobs:
     - name: Install required packages
       run: |
         sudo apt-get update
-        sudo apt-get install -y lld libisoburn1 xorriso grub-pc-bin clang-11
+        sudo apt-get install -y lld libisoburn1 xorriso grub-pc-bin mtools clang-11
     - name: Install latest nightly
       uses: actions-rs/toolchain@v1
       with:
