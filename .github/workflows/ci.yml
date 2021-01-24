@@ -105,6 +105,10 @@ jobs:
         sudo apt-get install -y lld libisoburn1 xorriso grub-pc-bin
     - name: Install latest nightly
       uses: actions-rs/toolchain@v1
+      with:
+        toolchain: nightly-2020-12-28
+        target: wasm32-wasi
+        override: true
     - name: Install a recent version of clang
       run: |
         wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
