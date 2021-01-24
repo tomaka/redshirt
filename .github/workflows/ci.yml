@@ -84,7 +84,7 @@ jobs:
       run: cargo bench --workspace --no-run --exclude redshirt-standalone-kernel --exclude redshirt-core-proc-macros --locked --verbose
 
   build-standalone:
-    name: Build standalone kernel
+    name: Build and test standalone kernel
     needs: build-modules
     runs-on: ubuntu-latest
     container:
@@ -111,6 +111,11 @@ jobs:
         echo "deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-11 main" >> /etc/apt/sources.list
         apt-get update
         apt-get install -y clang-11
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v1
+      with:
+        image: tonistiigi/binfmt:latest
+        platforms: all
     - uses: actions/cache@v2
       with:
         path: |
