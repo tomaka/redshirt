@@ -84,11 +84,13 @@ jobs:
       run: cargo bench --workspace --no-run --exclude redshirt-standalone-kernel --exclude redshirt-core-proc-macros --locked --verbose
 
   build-standalone:
-    name: Build and test standalone kernel
+    name: Build standalone kernel
     needs: build-modules
-    runs-on: ubuntu-20.04  # TODO: should be ubuntu-latest when they update it
-    env:
-      CC: clang-11
+    runs-on: ubuntu-latest
+    container:
+      image: rust
+      env:
+        CC: clang-11
     strategy:
       matrix:
         #target: [x86_64-multiboot2, arm-rpi2]  # TODO: not implemented
@@ -101,14 +103,14 @@ jobs:
         name: wasm-modules
     - name: Install required packages
       run: |
-        sudo apt-get update
-        sudo apt-get install -y lld libisoburn1 xorriso grub-pc-bin mtools clang-11 qemu-system-x86
-    - name: Install latest nightly
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: nightly-2020-12-28
-        target: wasm32-wasi
-        override: true
+        apt-get update
+        apt-get install -y lld libisoburn1 xorriso grub-pc-bin
+    - name: Install a recent version of clang
+      run: |
+        wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
+        echo "deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-11 main" >> /etc/apt/sources.list
+        apt-get update
+        apt-get install -y clang-11
     - uses: actions/cache@v2
       with:
         path: |
@@ -127,8 +129,6 @@ jobs:
       run: rustup component add rust-src
     - name: Build kernel
       run: cargo run --manifest-path=./kernel/standalone-builder/Cargo.toml -- build-image --target ${{ matrix.target }} --device-type cdrom --out image
-    - name: Test kernel
-      run: cargo run --manifest-path=./kernel/standalone-builder/Cargo.toml -- emulator-test --target ${{ matrix.target }}
     - name: Upload generated kernel
       uses: actions/upload-artifact@v2.2.2
       with:
