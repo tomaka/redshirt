@@ -101,8 +101,8 @@ jobs:
         name: wasm-modules
     - name: Install required packages
       run: |
-        apt-get update
-        apt-get install -y lld libisoburn1 xorriso grub-pc-bin
+        sudo apt-get update
+        sudo apt-get install -y lld libisoburn1 xorriso grub-pc-bin
     - name: Install latest nightly
       uses: actions-rs/toolchain@v1
     - name: Install a recent version of clang
