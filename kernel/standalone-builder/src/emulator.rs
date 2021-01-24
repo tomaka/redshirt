@@ -78,7 +78,6 @@ pub fn run_kernel(cfg: Config) -> Result<(), Error> {
                 .args(&["-enable-kvm", "-cpu", "host"])
                 .status()
                 .map_err(Error::EmulatorNotFound)?;
-            // TODO: stdout/stderr
 
             if !status.success() {
                 return Err(Error::EmulatorRunFailure);
@@ -103,7 +102,6 @@ pub fn run_kernel(cfg: Config) -> Result<(), Error> {
                 .arg(build_out.out_kernel_path)
                 .status()
                 .map_err(Error::EmulatorNotFound)?;
-            // TODO: stdout/stderr
 
             if !status.success() {
                 return Err(Error::EmulatorRunFailure);
@@ -128,7 +126,6 @@ pub fn run_kernel(cfg: Config) -> Result<(), Error> {
                 .arg(build_out.out_kernel_path)
                 .status()
                 .map_err(Error::EmulatorNotFound)?;
-            // TODO: stdout/stderr
 
             if !status.success() {
                 return Err(Error::EmulatorRunFailure);
@@ -154,7 +151,6 @@ pub fn run_kernel(cfg: Config) -> Result<(), Error> {
                 .arg(build_out.out_kernel_path)
                 .status()
                 .map_err(Error::EmulatorNotFound)?;
-            // TODO: stdout/stderr
 
             if !status.success() {
                 return Err(Error::EmulatorRunFailure);

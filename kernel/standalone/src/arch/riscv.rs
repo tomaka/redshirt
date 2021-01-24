@@ -109,6 +109,9 @@ macro_rules! __gen_boot {
                 // Initialize interrupts.
                 let _interrupts = interrupts::init();
 
+                // TODO:
+                //writeln!(logger.log_printer(), "[boot] boot successful").unwrap();
+
                 // TODO: there's a stack overflow in practice when we call `kernel.run()`; the interrupt
                 // handler fails to show that because it uses the stack
                 panic!("We pre-emptively panic because running the kernel is known to overflow the stack");
