@@ -171,6 +171,16 @@ pub unsafe fn entry_point_step3<
     // the `acpi_tables` variable might allocate over the actual ACPI tables.
     let acpi_tables = acpi::parse_acpi_tables(&multiboot_info);
 
+    // This function is only executed by the main processor of the machine, called the **boot
+    // processor**. The other processors are called the **associated processors** and must be
+    // manually started.
+    let application_processors = acpi_tables
+        .platform_info()
+        .unwrap()
+        .processor_info
+        .unwrap()
+        .application_processors;
+
     // The ACPI tables indicate us information about how to interface with the I/O APICs.
     // We use this information and initialize the I/O APICs.
     let mut io_apics = match &acpi_tables.platform_info().ok().map(|i| i.interrupt_model) {
@@ -201,7 +211,11 @@ pub unsafe fn entry_point_step3<
 
     // Initialize the timers state machine.
     // This allows us to create `Future`s that resolve after a certain amount of time has passed.
-    let timers = executor.block_on(apic::timers::init(local_apics, &mut pit));
+    let timers = executor.block_on(apic::timers::init(
+        local_apics,
+        &mut pit,
+        NonZeroU32::new(u32::try_from(application_processors.len()).unwrap() + 1).unwrap(),
+    ));
 
     // We no longer need the `pit`. Since we overwrite all the IRQs below, and the PIT uses an IRQ,
     // the PIT will stop working. We destroy it to make sure that we're not going to attempt to
@@ -222,19 +236,9 @@ pub unsafe fn entry_point_step3<
         );
     }
 
-    // This function is only executed by the main processor of the machine, called the **boot
-    // processor**. The other processors are called the **associated processors** and must be
-    // manually started.
-
     // This Vec will contain one `oneshort::Sender<Arc<Kernel>>` for each associated processor
     // that has been started. Once the kernel is initialized, we send a reference-counted copy of
     // it to each sender.
-    let application_processors = acpi_tables
-        .platform_info()
-        .unwrap()
-        .processor_info
-        .unwrap()
-        .application_processors;
     let mut barrier_channels = Vec::with_capacity(application_processors.len());
 
     writeln!(
