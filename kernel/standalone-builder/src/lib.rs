@@ -19,3 +19,4 @@ pub mod binary;
 pub mod build;
 pub mod emulator;
 pub mod image;
+pub mod test;

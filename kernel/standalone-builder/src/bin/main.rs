@@ -84,6 +84,27 @@ enum CliOptions {
         #[structopt(long)]
         target: Target,
     },
+
+    /// Builds and test the kernel in an emulator.
+    EmulatorTest {
+        /// Location of the Cargo.toml of the standalone kernel library.
+        ///
+        /// If no value is passed, this the file structure is the one of the upstream repository
+        /// and try to find the path in a sibling directory.
+        ///
+        /// It is intended that in the future this can be substituted with the path to a build
+        /// directory, in which case the standalone kernel library gets fetched from crates.io.
+        #[structopt(long, parse(from_os_str))]
+        kernel_cargo_toml: Option<PathBuf>,
+
+        /// Which target to build for.
+        #[structopt(long)]
+        target: Target,
+
+        /// Which emulator to use.
+        #[structopt(long, default_value = "qemu")]
+        emulator: Emulator,
+    },
 }
 
 #[derive(Debug)]
@@ -150,6 +171,14 @@ impl From<Emulator> for redshirt_standalone_builder::emulator::Emulator {
     }
 }
 
+impl From<Emulator> for redshirt_standalone_builder::test::Emulator {
+    fn from(emulator: Emulator) -> redshirt_standalone_builder::test::Emulator {
+        match emulator {
+            Emulator::Qemu => redshirt_standalone_builder::test::Emulator::Qemu,
+        }
+    }
+}
+
 impl FromStr for Emulator {
     type Err = String; // TODO:
 
@@ -201,6 +230,20 @@ fn main() -> Result<(), Box<dyn error::Error + Send + Sync + 'static>> {
                     target: target.into(),
                 },
             )?;
+        }
+        CliOptions::EmulatorTest {
+            kernel_cargo_toml,
+            emulator,
+            target,
+        } => {
+            redshirt_standalone_builder::test::test_kernel(
+                redshirt_standalone_builder::test::Config {
+                    kernel_cargo_toml: &kernel_cargo_toml.unwrap_or(default_kernel_cargo_toml),
+                    emulator: emulator.into(),
+                    target: target.into(),
+                },
+            )?;
+            println!("Test successful");
         }
     }
 

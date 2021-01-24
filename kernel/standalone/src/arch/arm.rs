@@ -152,6 +152,9 @@ macro_rules! __gen_boot {
 
                 let time = $crate::arch::arm::time::TimeControl::init();
 
+                // TODO:
+                //writeln!(logger.log_printer(), "[boot] boot successful").unwrap();
+
                 let platform = Arc::pin($crate::arch::PlatformSpecific::from(
                     $crate::arch::arm::PlatformSpecificImpl { time },
                 ));
