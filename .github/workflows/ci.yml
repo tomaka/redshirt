@@ -111,7 +111,7 @@ jobs:
         override: true
     - name: Install a recent version of clang
       run: |
-        wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+        sudo wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
         sudo echo "deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-11 main" >> /etc/apt/sources.list
         sudo apt-get update
         sudo apt-get install -y clang-11
