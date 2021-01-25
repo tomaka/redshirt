@@ -9,7 +9,7 @@ publish = false
 [workspace]
 
 [dependencies]
-fatfs = "0.3.4"
+fatfs = "0.3.5"
 fscommon = "0.1.1"
 futures = "0.3.12"
 futures-timer = "3.0.2"
