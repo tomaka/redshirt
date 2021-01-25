@@ -11,7 +11,7 @@ default-run = "redshirt-cli-kernel"
 async-std = { version = "1.6", features = ["attributes"] }
 futures = "0.3.12"
 num_cpus = "1.13.0"
-rand = "0.8.1"
+rand = "0.8.2"
 redshirt-core = { path = "../../core", features = ["nightly"] }
 redshirt-framebuffer-hosted = { path = "../hosted-framebuffer" }
 redshirt-log-hosted = { path = "../hosted-log" }
