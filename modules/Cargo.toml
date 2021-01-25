@@ -12,6 +12,7 @@ members = [
     "rpi-framebuffer",
     "stub",
     "third-party/wasm-timer",
+    "usb-controller-driver",
     "vga-vbe",
 ]
 

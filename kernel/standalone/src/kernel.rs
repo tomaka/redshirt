@@ -81,6 +81,7 @@ impl Kernel {
                     "../../../modules/p2p-loader",
                     "modules-loader"
                 ))
+                .with_startup_process(build_wasm_module!("../../../modules/usb-controller-driver"))
                 .with_startup_process(build_wasm_module!("../../../modules/compositor"))
                 .with_startup_process(build_wasm_module!("../../../modules/pci-printer"))
                 // TODO: actually implement system-time and remove this dummy; https://github.com/tomaka/redshirt/issues/542
