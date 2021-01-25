@@ -133,9 +133,9 @@ dependencies = [
 
 [[package]]
 name = "fatfs"
-version = "0.3.4"
+version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "93079df23039e52059e1f03b4c29fb0c72da2c792aad91bb2236c9fb81d3592e"
+checksum = "e18f80a87439240dac45d927fd8f8081b6f1e34c03e97271189fa8a8c2e96c8f"
 dependencies = [
  "bitflags",
  "byteorder",
