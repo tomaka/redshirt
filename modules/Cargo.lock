@@ -434,7 +434,7 @@ dependencies = [
  "ahash",
  "futures",
  "hashbrown",
- "rand 0.8.2",
+ "rand 0.8.3",
  "redshirt-framebuffer-interface",
  "redshirt-interface-interface",
  "redshirt-syscalls",
@@ -1530,7 +1530,7 @@ dependencies = [
  "hashbrown",
  "log",
  "parity-scale-codec",
- "rand 0.8.2",
+ "rand 0.8.3",
  "redshirt-ethernet-interface",
  "redshirt-interface-interface",
  "redshirt-log-interface",
@@ -1992,9 +1992,9 @@ dependencies = [
 
 [[package]]
 name = "rand"
-version = "0.8.2"
+version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "18519b42a40024d661e1714153e9ad0c3de27cd495760ceb09710920f1098b1e"
+checksum = "0ef9e7e66b4468674bfcb0c81af8b7fa0bb154fa9f28eb840da5c447baeb8d7e"
 dependencies = [
  "libc",
  "rand_chacha 0.3.0",
