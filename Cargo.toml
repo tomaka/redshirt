@@ -2,11 +2,6 @@
 members = [
     "core",
     "core-proc-macros",
-    "kernel/cli",
-    "kernel/hosted-framebuffer",
-    "kernel/hosted-log",
-    "kernel/hosted-random",
-    "kernel/hosted-tcp",
     "kernel/standalone",
     "interfaces/disk",
     "interfaces/ethernet",

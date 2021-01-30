@@ -16,20 +16,7 @@ rustup toolchain install --target=wasm32-wasi nightly
 rustup component add --toolchain=nightly rust-src
 ```
 
-There are two binaries available in this repository:
-
-- The "CLI kernel" is a regular binary that executes Wasi programs and leverages functionalities from the host operating system.
-- The freestanding kernel is a bare-metal kernel.
-
-For the CLI kernel:
-
-```
-# Loads the module whose hash is FWMwRMQCKdWVDdKyx6ogQ8sXuoeDLNzZxniRMyD5S71 and executes it.
-# This should print "hello world".
-cargo +nightly run -- --module-hash FWMwRMQCKdWVDdKyx6ogQ8sXuoeDLNzZxniRMyD5S71
-```
-
-For the freestanding kernel:
+Building the freestanding kernel is then done through the utility called `standalone-builder`:
 
 ```
 cd kernel/standalone-builder
@@ -45,8 +32,7 @@ Short overview of the structure of the repository:
 - `docs` contains a description of what redshirt is and how it works. Start with `docs/introduction.md`.
 - `interfaces` contains crates that provide definitions and helpers for Wasm programs to use
   (examples: `tcp` for TCP/IP, `window` for windowing).
-- `kernel` contains the kernel binaries, plus crates that implement interfaces using the host's
-  environment (e.g.: implements the `tcp` interface using Linux's or Window's TCP/IP).
+- `kernel` contains the code required to run the kernel on bare metal.
 - `modules` contains Wasm programs.
 
 # Contributing

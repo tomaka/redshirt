@@ -42,47 +42,6 @@ jobs:
         name: wasm-modules
         path: modules/target
 
-  build-hosted:
-    name: Build hosted kernel
-    needs: build-modules
-    runs-on: ubuntu-latest
-    container:
-      image: rust
-      env:
-        CC: clang-11
-    steps:
-    - uses: actions/checkout@v2
-    - name: Install Rust
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: nightly-2020-12-28
-        target: wasm32-wasi
-        override: true
-    - name: Install a recent version of clang
-      run: |
-        wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
-        echo "deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-11 main" >> /etc/apt/sources.list
-        apt-get update
-        apt-get install -y clang-11
-    - name: Download WASM modules
-      uses: actions/download-artifact@v2
-      with:
-        name: wasm-modules
-    - uses: actions/cache@v2
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          kernel/standalone-builder/target
-          target
-        key: hosted-kernel-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-    - name: Build
-      run: cargo build --workspace --exclude redshirt-standalone-kernel --exclude redshirt-core-proc-macros --locked --verbose
-    - name: Run tests
-      run: cargo test --workspace --exclude redshirt-standalone-kernel --exclude redshirt-core-proc-macros --locked --verbose
-    - name: Check that benches compile
-      run: cargo bench --workspace --no-run --exclude redshirt-standalone-kernel --exclude redshirt-core-proc-macros --locked --verbose
-
   build-standalone:
     name: Build standalone kernel
     needs: build-modules
@@ -226,7 +185,7 @@ jobs:
   all-ci:
     # This dummy job depends on all the mandatory checks. It succeeds if and only if CI is
     # considered successful.
-    needs: [build-hosted, build-standalone, check-passive-node, fmt, intra-doc-links]
+    needs: [build-standalone, check-passive-node, fmt, intra-doc-links]
     runs-on: ubuntu-latest
     steps:
      - run: echo Success
