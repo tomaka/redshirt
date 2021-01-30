@@ -78,27 +78,27 @@ impl Kernel {
                     platform_specific.clone(),
                 ))
                 .with_startup_process(build_wasm_module!(
-                    "../../../modules/p2p-loader",
-                    "modules-loader"
+                    "../../../programs/p2p-loader",
+                    "programs-loader"
                 ))
-                .with_startup_process(build_wasm_module!("../../../modules/compositor"))
-                .with_startup_process(build_wasm_module!("../../../modules/pci-printer"))
+                .with_startup_process(build_wasm_module!("../../../programs/compositor"))
+                .with_startup_process(build_wasm_module!("../../../programs/pci-printer"))
                 // TODO: actually implement system-time and remove this dummy; https://github.com/tomaka/redshirt/issues/542
-                .with_startup_process(build_wasm_module!("../../../modules/dummy-system-time"))
-                .with_startup_process(build_wasm_module!("../../../modules/log-to-kernel"))
-                .with_startup_process(build_wasm_module!("../../../modules/vga-vbe"))
+                .with_startup_process(build_wasm_module!("../../../programs/dummy-system-time"))
+                .with_startup_process(build_wasm_module!("../../../programs/log-to-kernel"))
+                .with_startup_process(build_wasm_module!("../../../programs/vga-vbe"))
                 .with_startup_process(build_wasm_module!(
-                    "../../../modules/diagnostics-http-server"
+                    "../../../programs/diagnostics-http-server"
                 ))
-                .with_startup_process(build_wasm_module!("../../../modules/hello-world"))
-                .with_startup_process(build_wasm_module!("../../../modules/network-manager"))
-                .with_startup_process(build_wasm_module!("../../../modules/e1000"));
+                .with_startup_process(build_wasm_module!("../../../programs/hello-world"))
+                .with_startup_process(build_wasm_module!("../../../programs/network-manager"))
+                .with_startup_process(build_wasm_module!("../../../programs/e1000"));
 
         // TODO: remove the cfg guards once rpi-framebuffer is capable of auto-detecting whether
         // it should enable itself
         #[cfg(any(target_arch = "arm", target_arch = "aarch64"))]
         let system_builder = system_builder
-            .with_startup_process(build_wasm_module!("../../../modules/rpi-framebuffer"));
+            .with_startup_process(build_wasm_module!("../../../programs/rpi-framebuffer"));
 
         // TODO: temporary; uncomment to test
         /*system_builder = system_builder.with_main_program(

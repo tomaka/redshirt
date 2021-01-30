@@ -4,8 +4,8 @@ on:
   pull_request:
 
 jobs:
-  build-modules:
-    name: Build WASM modules
+  build-programs:
+    name: Build WASM programs
     runs-on: ubuntu-latest
     container:
       image: rust
@@ -32,19 +32,19 @@ jobs:
         path: |
           ~/.cargo/registry
           ~/.cargo/git
-          modules/target
-        key: modules-cargo-${{ hashFiles('./modules/Cargo.lock') }}
-    - name: Build modules
-      run: cargo build --manifest-path ./modules/Cargo.toml --workspace --exclude stub --locked --verbose --release --target=wasm32-wasi
-    - name: Upload WASM modules
+          programs/target
+        key: programs-cargo-${{ hashFiles('./programs/Cargo.lock') }}
+    - name: Build programs
+      run: cargo build --manifest-path ./programs/Cargo.toml --workspace --exclude stub --locked --verbose --release --target=wasm32-wasi
+    - name: Upload WASM programs
       uses: actions/upload-artifact@v2.2.2
       with:
-        name: wasm-modules
-        path: modules/target
+        name: wasm-programs
+        path: programs/target
 
   build-standalone:
     name: Build standalone kernel
-    needs: build-modules
+    needs: build-programs
     runs-on: ubuntu-latest
     container:
       image: rust
@@ -56,10 +56,10 @@ jobs:
         target: [x86_64-multiboot2]
     steps:
     - uses: actions/checkout@v2
-    - name: Download WASM modules
+    - name: Download WASM programs
       uses: actions/download-artifact@v2
       with:
-        name: wasm-modules
+        name: wasm-programs
     - name: Install required packages
       run: |
         apt-get update
@@ -112,10 +112,10 @@ jobs:
         path: |
           ~/.cargo/registry
           ~/.cargo/git
-          modules/target
+          programs/target
         key: passive-node-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
     - name: Check peer-to-peer passive node
-      run: cargo check --manifest-path ./modules/Cargo.toml --package p2p-loader --bin passive-node --locked --verbose --all-features
+      run: cargo check --manifest-path ./programs/Cargo.toml --package p2p-loader --bin passive-node --locked --verbose --all-features
 
   fmt:
     name: Rustfmt
@@ -135,11 +135,11 @@ jobs:
         with:
           command: fmt
           args: --all -- --check
-      - name: Run cargo fmt on modules workspace
+      - name: Run cargo fmt on programs workspace
         uses: actions-rs/cargo@v1
         with:
           command: fmt
-          args: --all --manifest-path=modules/Cargo.toml -- --check
+          args: --all --manifest-path=programs/Cargo.toml -- --check
       - name: Run cargo fmt on standalone tester workspace
         uses: actions-rs/cargo@v1
         with:
@@ -173,14 +173,14 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            modules/target
+            programs/target
             kernel/standalone-builder/target
             target
           key: intra-doc-links-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Check core intra-doc links
         run: RUSTDOCFLAGS="--deny broken_intra_doc_links" cargo doc --verbose --workspace --no-deps --document-private-items
-      - name: Check modules intra-doc links
-        run: RUSTDOCFLAGS="--deny broken_intra_doc_links" cargo doc --verbose --manifest-path modules/Cargo.toml --workspace --no-deps --document-private-items
+      - name: Check programs intra-doc links
+        run: RUSTDOCFLAGS="--deny broken_intra_doc_links" cargo doc --verbose --manifest-path programs/Cargo.toml --workspace --no-deps --document-private-items
 
   all-ci:
     # This dummy job depends on all the mandatory checks. It succeeds if and only if CI is

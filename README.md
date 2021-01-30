@@ -9,7 +9,7 @@ See the `docs/introduction.md` file for an introduction.
 **Important**: At the moment, most of the compilation requires a nightly version of Rust. See also https://github.com/tomaka/redshirt/issues/300.
 Your C compiler must be recent enough to be capable of compiling to WebAssembly. This is for example the case for clang 9. See also https://github.com/tomaka/redshirt/issues/257.
 
-You also need to install the `wasm32-wasi` target, as the Wasm modules are compiled for Wasi, and the `rust-src` component in order to build the standalone kernel.
+You also need to install the `wasm32-wasi` target, as the Wasm programs are compiled for Wasi, and the `rust-src` component in order to build the standalone kernel.
 
 ```
 rustup toolchain install --target=wasm32-wasi nightly
@@ -33,7 +33,7 @@ Short overview of the structure of the repository:
 - `interfaces` contains crates that provide definitions and helpers for Wasm programs to use
   (examples: `tcp` for TCP/IP, `window` for windowing).
 - `kernel` contains the code required to run the kernel on bare metal.
-- `modules` contains Wasm programs.
+- `programs` contains Wasm programs.
 
 # Contributing
 

@@ -4,7 +4,7 @@ FROM rust:1 AS builder
 LABEL maintainer "Pierre Krieger <pierre.krieger1708@gmail.com>"
 
 COPY . /build
-WORKDIR /build/modules/p2p-loader
+WORKDIR /build/programs/p2p-loader
 RUN apt-get update && apt-get install -y musl-tools
 RUN rustup target add x86_64-unknown-linux-musl
 RUN cargo build --target x86_64-unknown-linux-musl --bin passive-node --release --verbose --all-features
@@ -12,7 +12,7 @@ RUN cargo build --target x86_64-unknown-linux-musl --bin passive-node --release 
 
 FROM alpine:latest
 LABEL maintainer "Pierre Krieger <pierre.krieger1708@gmail.com>"
-COPY --from=builder /build/modules/target/x86_64-unknown-linux-musl/release/passive-node /usr/local/bin
+COPY --from=builder /build/programs/target/x86_64-unknown-linux-musl/release/passive-node /usr/local/bin
 
 EXPOSE 30333
 CMD ["/usr/local/bin/passive-node"]

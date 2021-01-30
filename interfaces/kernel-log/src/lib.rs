@@ -20,7 +20,7 @@
 //! - Send logs for the kernel to print.
 //! - Configure how the kernel prints logs.
 //!
-//! It is important for modules such as video drivers to keep the kernel up-to-date with how
+//! It is important for programs such as video drivers to keep the kernel up-to-date with how
 //! logs should be displayed. In the case of a kernel panic, the kernel will use the information
 //! contained in the latest received message in order to show diagnostics to the user.
 
