@@ -14,7 +14,7 @@ jobs:
     - name: Docker log in
       run: docker login -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }} docker.pkg.github.com
     - name: Build Docker image
-      run: docker build -f ./modules/p2p-loader/Dockerfile -t docker.pkg.github.com/${{ github.repository }}/passive-node:$(echo $GITHUB_SHA | head -c7) .
+      run: docker build -f ./programs/p2p-loader/Dockerfile -t docker.pkg.github.com/${{ github.repository }}/passive-node:$(echo $GITHUB_SHA | head -c7) .
     - name: Push Docker image
       run: |
         docker push docker.pkg.github.com/${{ github.repository }}/passive-node:$(echo $GITHUB_SHA | head -c7)

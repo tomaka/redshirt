@@ -13,9 +13,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-//! Loading WASM modules.
+//! Loading WASM programs.
 //!
-//! This interface is a bit special, as it is used by the kernel in order to load WASM modules.
+//! This interface is a bit special, as it is used by the kernel in order to load WASM programs.
 
 #![no_std]
 

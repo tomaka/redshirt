@@ -1,6 +1,6 @@
 # Note: this file exists in order to provide a more convenient development environment in the
-# redshirt repository. It is not mandatory to put a similar file next to modules developed for
-# redshirt. The redshirt modules builder automatically makes sure (in `redshirt-core`) makes sure
+# redshirt repository. It is not mandatory to put a similar file next to programs developed for
+# redshirt. The redshirt programs builder automatically makes sure (in `redshirt-core`) makes sure
 # that the module is built with the appropriate options.
 
 [build]

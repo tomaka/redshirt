@@ -11,7 +11,7 @@ updates:
   schedule:
     interval: daily
 - package-ecosystem: cargo
-  directory: "/modules"
+  directory: "/programs"
   labels: []
   schedule:
     interval: daily
