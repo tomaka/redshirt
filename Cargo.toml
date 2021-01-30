@@ -1,7 +1,7 @@
 [workspace]
 members = [
-    "core",
-    "core-proc-macros",
+    "kernel/core",
+    "kernel/core-proc-macros",
     "kernel/standalone",
     "interfaces/disk",
     "interfaces/ethernet",

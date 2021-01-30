@@ -24,7 +24,7 @@ rand_chacha = { version = "0.2.0", default-features = false }
 rand_core = { version = "0.5.1", default-features = false }
 # TODO: needs https://github.com/rust-random/rngs/pull/5
 rand_jitter = { git = "https://github.com/tomaka/rngs", branch = "new-with-timer-less-cumbersome", default-features = false }
-redshirt-core = { path = "../../core", features = ["nightly"] }
+redshirt-core = { path = "../core", features = ["nightly"] }
 redshirt-hardware-interface = { path = "../../interfaces/hardware", default-features = false }
 redshirt-interface-interface = { path = "../../interfaces/interface", default-features = false }
 redshirt-kernel-log-interface = { path = "../../interfaces/kernel-log", default-features = false }
