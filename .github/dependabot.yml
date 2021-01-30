@@ -6,7 +6,7 @@ updates:
   schedule:
     interval: daily
 - package-ecosystem: cargo
-  directory: "/kernel/standalone-builder"
+  directory: "/kernel-standalone-builder"
   labels: []
   schedule:
     interval: daily

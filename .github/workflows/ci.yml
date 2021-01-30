@@ -75,7 +75,7 @@ jobs:
         path: |
           ~/.cargo/registry
           ~/.cargo/git
-          kernel/standalone-builder/target
+          kernel-standalone-builder/target
           target
         key: standalone-kernel-cargo-${{ hashFiles('**/Cargo.lock') }}
     - name: Install nightly Rust
@@ -87,7 +87,7 @@ jobs:
     - name: Install rust-src
       run: rustup component add rust-src
     - name: Build kernel
-      run: cargo run --manifest-path=./kernel/standalone-builder/Cargo.toml -- build-image --target ${{ matrix.target }} --device-type cdrom --out image
+      run: cargo run --manifest-path=./kernel-standalone-builder/Cargo.toml -- build-image --target ${{ matrix.target }} --device-type cdrom --out image
     - name: Upload generated kernel
       uses: actions/upload-artifact@v2.2.2
       with:
@@ -144,7 +144,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: fmt
-          args: --all --manifest-path=kernel/standalone-builder/Cargo.toml -- --check
+          args: --all --manifest-path=kernel-standalone-builder/Cargo.toml -- --check
 
   intra-doc-links:
     name: Check intra-doc links
@@ -174,7 +174,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             programs/target
-            kernel/standalone-builder/target
+            kernel-standalone-builder/target
             target
           key: intra-doc-links-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Check core intra-doc links

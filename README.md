@@ -19,7 +19,7 @@ rustup component add --toolchain=nightly rust-src
 Building the freestanding kernel is then done through the utility called `standalone-builder`:
 
 ```
-cd kernel/standalone-builder
+cd kernel-standalone-builder
 cargo +nightly run -- emulator-run --emulator qemu --target x86_64-multiboot2
 ```
 
@@ -31,6 +31,7 @@ Short overview of the structure of the repository:
 - `interfaces` contains crates that provide definitions and helpers for Wasm programs to use
   (examples: `tcp` for TCP/IP, `window` for windowing).
 - `kernel` contains the code required to run the kernel.
+- `kernel-standalone-kernel` contains a utility allowing to run and test the standalone kernel.
 - `programs` contains Wasm programs.
 
 # Contributing
