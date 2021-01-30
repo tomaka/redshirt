@@ -196,6 +196,7 @@ fn main() -> Result<(), Box<dyn error::Error + Send + Sync + 'static>> {
     // Default value for `kernel-cargo-toml` if no value is provided.
     let default_kernel_cargo_toml = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
+        .join("kernel")
         .join("standalone")
         .join("Cargo.toml");
 
