@@ -159,7 +159,6 @@ mod id_pool;
 
 pub mod extrinsics;
 pub mod module;
-pub mod native;
 pub mod primitives;
 pub mod scheduler;
 pub mod system;

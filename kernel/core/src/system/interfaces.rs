@@ -55,7 +55,6 @@ enum Interface {
 struct InterfaceRegistration {
     interface: InterfaceHash,
     pid: Pid,
-    is_native: bool,
     /// Messages of type `NextMessage` sent on the interface interface and that must be answered
     /// with the next interface message.
     queries: VecDeque<MessageId>,
@@ -77,7 +76,6 @@ impl Interfaces {
                     let _id = registrations.insert(InterfaceRegistration {
                         interface: InterfaceHash::from_raw_hash(Default::default()),
                         pid: 0xdeadbeef.into(), // TODO: ?!
-                        is_native: true,
                         queries: VecDeque::new(),
                         pending_accept: VecDeque::new(),
                     });
@@ -123,7 +121,6 @@ impl Interfaces {
                         needs_answer,
                         query_message_id,
                         recipient_pid: registration.pid,
-                        recipient_is_native: registration.is_native,
                     })
                 } else if immediate {
                     EmitInterfaceMessage::Reject
@@ -178,7 +175,6 @@ impl Interfaces {
                         needs_answer,
                         query_message_id,
                         recipient_pid: registration.pid,
-                        recipient_is_native: registration.is_native,
                     }))
                 } else {
                     registration.queries.push_back(query_message_id);
@@ -201,7 +197,6 @@ impl Interfaces {
         &self,
         interface_hash: InterfaceHash,
         pid: Pid,
-        is_native: bool, // TODO: replace with generic or something
     ) -> Result<NonZeroU64, redshirt_interface_interface::ffi::InterfaceRegisterError> {
         let mut interfaces = self.inner.lock();
         let interfaces = &mut *interfaces;
@@ -215,7 +210,6 @@ impl Interfaces {
                     Interface::NotRegistered { pending_accept } => {
                         let id = interfaces.registrations.insert(InterfaceRegistration {
                             pid,
-                            is_native,
                             interface,
                             queries: VecDeque::with_capacity(16),  // TODO: be less magic with capacity
                             pending_accept: mem::take(pending_accept),
@@ -228,7 +222,6 @@ impl Interfaces {
             Entry::Vacant(entry) => {
                 let id = interfaces.registrations.insert(InterfaceRegistration {
                     pid,
-                    is_native,
                     interface: entry.key().clone(),
                     queries: VecDeque::with_capacity(16), // TODO: be less magic with capacity
                     pending_accept: VecDeque::with_capacity(16), // TODO: be less magic with capacity
@@ -257,7 +250,6 @@ pub struct MessageDelivery {
     pub needs_answer: bool,
     pub query_message_id: MessageId,
     pub recipient_pid: Pid,
-    pub recipient_is_native: bool,
 }
 
 /// Outcome of [`Interfaces::emit_interface_message`].

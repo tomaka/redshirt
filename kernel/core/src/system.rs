@@ -25,7 +25,6 @@
 
 use crate::extrinsics;
 use crate::module::{Module, ModuleHash};
-use crate::native::{self, NativeProgramMessageIdWrite as _};
 use crate::scheduler::{Core, CoreBuilder, CoreRunOutcome, NewErr};
 use crate::InterfaceHash;
 
@@ -45,7 +44,7 @@ use spinning_top::Spinlock;
 /// inter-process communication, and so on.
 ///
 /// See [the module-level documentation](super) for more information.
-pub struct System<'a, TExtr: extrinsics::Extrinsics> {
+pub struct System<TExtr: extrinsics::Extrinsics> {
     /// Inner system with inter-process communications.
     core: Core<TExtr>,
 
@@ -64,9 +63,8 @@ pub struct System<'a, TExtr: extrinsics::Extrinsics> {
     /// Total number of processes that have ended because of a problem, since initialization.
     num_processes_trap: atomic::Atomic<u64>,
 
-    /// Collection of programs. Each is assigned a `Pid` that is reserved within `core`.
-    /// Can communicate with the WASM programs that are within `core`.
-    native_programs: native::NativeProgramsCollection<'a>,
+    /// Interfaces handled natively.
+    native_interfaces: HashSet<InterfaceHash, fnv::FnvBuildHasher>,
 
     /// Registration ID (i.e. index in [`Interfaces::registrations`]) that handles the `loader`
     /// interface, or `None` is no such program exists yet.
@@ -124,15 +122,15 @@ struct InterfaceRegistration {
 }
 
 /// Prototype for a [`System`].
-pub struct SystemBuilder<'a, TExtr: extrinsics::Extrinsics> {
+pub struct SystemBuilder<TExtr: extrinsics::Extrinsics> {
     /// Builder for the inner core.
     core: CoreBuilder<TExtr>,
 
     /// "Virtual" pid for the process that sends messages towards the loader.
     load_source_virtual_pid: Pid,
 
-    /// Native programs.
-    native_programs: native::NativeProgramsCollection<'a>,
+    /// Interfaces handled natively.
+    native_interfaces: HashSet<InterfaceHash, fnv::FnvBuildHasher>,
 
     /// List of programs to start executing immediately after construction.
     startup_processes: Vec<Module>,
@@ -143,7 +141,7 @@ pub struct SystemBuilder<'a, TExtr: extrinsics::Extrinsics> {
 
 /// Outcome of running the [`System`] once.
 #[derive(Debug)]
-pub enum SystemRunOutcome<'a, 'b, TExtr: extrinsics::Extrinsics> {
+pub enum SystemRunOutcome<'a, TExtr: extrinsics::Extrinsics> {
     /// A program has ended, either successfully or after an error.
     ProgramFinished {
         /// Identifier of the process that has stopped.
@@ -153,18 +151,36 @@ pub enum SystemRunOutcome<'a, 'b, TExtr: extrinsics::Extrinsics> {
         // TODO: change error type
         outcome: Result<(), wasmi::Error>,
     },
+
     /// A program has requested metrics from the kernel. Use the [`KernelDebugMetricsRequest`] to
     /// report them.
-    KernelDebugMetricsRequest(KernelDebugMetricsRequest<'a, 'b, TExtr>),
+    KernelDebugMetricsRequest(KernelDebugMetricsRequest<'a, TExtr>),
+
+    /// A program has emitted a message on a native interface.
+    NativeInterfaceMessage {
+        /// Hash of the interface. Guaranteed to be one of the interfaces that were passed to
+        /// [`SystemBuilder::with_native_interface_handler`].
+        interface: InterfaceHash,
+
+        /// [`Pid`] of the process that has emitted the message.
+        emitter_pid: Pid,
+
+        /// Identifier of the message. Must be passed back in order to answer it. `None` if no
+        /// response is expected.
+        message_id: Option<MessageId>,
+
+        /// Body of the message.
+        message: EncodedMessage,
+    },
 }
 
 #[derive(Debug)]
-enum RunOnceOutcome<'a, 'b, TExtr: extrinsics::Extrinsics> {
-    Report(SystemRunOutcome<'a, 'b, TExtr>),
+enum RunOnceOutcome<'a, TExtr: extrinsics::Extrinsics> {
+    Report(SystemRunOutcome<'a, TExtr>),
     LoopAgain,
 }
 
-impl<'a, TExtr> System<'a, TExtr>
+impl<TExtr> System<TExtr>
 where
     TExtr: extrinsics::Extrinsics,
 {
@@ -180,7 +196,7 @@ where
     /// >           waiting for the native programs to produce events in case there's nothing to
     /// >           do. In other words, this function can be seen more as a generator that whose
     /// >           `Future` becomes `Ready` only when something needs to be notified.
-    pub fn run<'b>(&'b self) -> impl Future<Output = SystemRunOutcome<'a, 'b, TExtr>> + 'b {
+    pub fn run<'a>(&'a self) -> impl Future<Output = SystemRunOutcome<'a, TExtr>> {
         // TODO: We use a `poll_fn` because async/await don't work in no_std yet.
         future::poll_fn(move |cx| {
             loop {
@@ -194,129 +210,19 @@ where
                 if let Poll::Ready(RunOnceOutcome::Report(out)) = run_once_outcome {
                     return Poll::Ready(out);
                 }
-
-                let next_event = self.native_programs.next_event();
-                futures::pin_mut!(next_event);
-                let event = match next_event.poll(cx) {
-                    Poll::Ready(ev) => ev,
-                    Poll::Pending => {
-                        if let Poll::Ready(RunOnceOutcome::LoopAgain) = run_once_outcome {
-                            continue;
-                        }
-                        return Poll::Pending;
-                    }
-                };
-
-                match event {
-                    native::NativeProgramsCollectionEvent::Emit {
-                        interface,
-                        emitter_pid,
-                        message,
-                        message_id_write,
-                    } if interface == redshirt_interface_interface::ffi::INTERFACE => {
-                        match redshirt_interface_interface::ffi::InterfaceMessage::decode(message) {
-                            Ok(redshirt_interface_interface::ffi::InterfaceMessage::Register(
-                                interface_hash,
-                            )) => {
-                                // Set the process as interface handler, if possible.
-                                let result =
-                                    self.set_interface_handler(&interface_hash, emitter_pid, true);
-
-                                let response =
-                                    redshirt_interface_interface::ffi::InterfaceRegisterResponse {
-                                        result: result.clone(),
-                                    };
-                                if let Some(message_id_write) = message_id_write {
-                                    let message_id = self.core.allocate_untracked_message();
-                                    message_id_write.acknowledge(message_id);
-                                    self.native_programs
-                                        .message_response(message_id, Ok(response.encode()));
-                                }
-                            }
-                            Ok(
-                                redshirt_interface_interface::ffi::InterfaceMessage::NextMessage(
-                                    registration_id,
-                                ),
-                            ) => {
-                                if let Some(message_id_write) = message_id_write {
-                                    let query_message_id = self.core.allocate_untracked_message();
-                                    message_id_write.acknowledge(query_message_id);
-
-                                    loop {
-                                        match self.interfaces.emit_message_query(
-                                            registration_id.into(),
-                                            query_message_id,
-                                            emitter_pid,
-                                        ) {
-                                            Ok(Some(delivery)) => {
-                                                debug_assert!(delivery.recipient_is_native);
-                                                if self.deliver(delivery).is_err() {
-                                                    continue;
-                                                }
-                                            }
-                                            Ok(None) => {}
-                                            Err(()) => {
-                                                self.native_programs
-                                                    .message_response(query_message_id, Err(()));
-                                            }
-                                        };
-
-                                        break;
-                                    }
-                                } else {
-                                    panic!(); // TODO: handle properly?
-                                }
-                            }
-                            Ok(redshirt_interface_interface::ffi::InterfaceMessage::Answer(
-                                answered_message_id,
-                                answer_bytes,
-                            )) => {
-                                // TODO: could be a native program answer instead
-                                self.core.answer_message(
-                                    answered_message_id,
-                                    answer_bytes.map(EncodedMessage),
-                                );
-                            }
-                            Err(_) => {
-                                if let Some(message_id_write) = message_id_write {
-                                    let message_id = self.core.allocate_untracked_message();
-                                    message_id_write.acknowledge(message_id);
-                                    self.native_programs.message_response(message_id, Err(()));
-                                }
-                            }
-                        }
-                    }
-                    native::NativeProgramsCollectionEvent::Emit {
-                        interface,
-                        emitter_pid,
-                        message,
-                        message_id_write,
-                    } => {
-                        // TODO:
-                        todo!()
-                        /*// The native programs want to emit a message in the kernel.
-                        if let Some(message_id_write) = message_id_write {
-                            let message_id =
-                                self.core
-                                    .emit_message_answer(emitter_pid, interface, message);
-                            message_id_write.acknowledge(message_id);
-                        } else {
-                            self.core
-                                .emit_message_no_answer(emitter_pid, interface, message);
-                        }*/
-                    }
-                    native::NativeProgramsCollectionEvent::CancelMessage { message_id } => {
-                        // TODO:
-                        todo!()
-                        // The native programs want to cancel a previously-emitted message.
-                        //self.core.cancel_message(message_id);
-                    }
-                }
             }
         })
     }
 
-    async fn run_once<'b>(&'b self) -> RunOnceOutcome<'a, 'b, TExtr> {
+    /// Answers a message previously emitted using [`SystemRunOutcome::NativeInterfaceMessage`].
+    ///
+    /// > **Note**: The validity of the [`MessageId`] is not checked, for performance reasons.
+    /// >           Passing a wrong value can lead to logic errors.
+    pub fn answer_message(&self, message_id: MessageId, response: Result<EncodedMessage, ()>) {
+        self.core.answer_message(message_id, response);
+    }
+
+    async fn run_once<'a>(&'a self) -> RunOnceOutcome<'a, TExtr> {
         match self.core.run().await {
             CoreRunOutcome::ProgramFinished { pid, outcome, .. } => {
                 // TODO: cancel interface registrations ; update loader_registration_id
@@ -356,7 +262,7 @@ where
                         interface_hash,
                     )) => {
                         // Set the process as interface handler, if possible.
-                        let result = self.set_interface_handler(&interface_hash, pid, false);
+                        let result = self.set_interface_handler(&interface_hash, pid);
 
                         let response =
                             redshirt_interface_interface::ffi::InterfaceRegisterResponse {
@@ -379,7 +285,6 @@ where
                                     pid,
                                 ) {
                                     Ok(Some(delivery)) => {
-                                        debug_assert!(!delivery.recipient_is_native);
                                         if self.deliver(delivery).is_err() {
                                             continue;
                                         }
@@ -466,6 +371,23 @@ where
             }
 
             CoreRunOutcome::InterfaceMessage {
+                pid: emitter_pid,
+                needs_answer,
+                message_id,
+                interface,
+                ..
+            } if self.native_interfaces.contains(&interface) => {
+                let (_, message) = self.core.accept_interface_message(message_id).unwrap();
+
+                return RunOnceOutcome::Report(SystemRunOutcome::NativeInterfaceMessage {
+                    interface,
+                    emitter_pid,
+                    message_id: if needs_answer { Some(message_id) } else { None },
+                    message,
+                });
+            }
+
+            CoreRunOutcome::InterfaceMessage {
                 pid,
                 needs_answer,
                 immediate,
@@ -503,11 +425,10 @@ where
         &self,
         interface_hash: &InterfaceHash,
         pid: Pid,
-        is_native: bool,
     ) -> Result<NonZeroU64, redshirt_interface_interface::ffi::InterfaceRegisterError> {
         let result = self
             .interfaces
-            .set_interface_handler(interface_hash.clone(), pid, is_native);
+            .set_interface_handler(interface_hash.clone(), pid);
 
         // Special handling if the registered interface is the loader.
         if *interface_hash == redshirt_loader_interface::ffi::INTERFACE {
@@ -556,17 +477,10 @@ where
         self.pending_answers
             .add(delivery.to_deliver_message_id, delivery.recipient_pid);
 
-        if delivery.recipient_is_native {
-            self.native_programs.message_response(
-                delivery.query_message_id,
-                Ok(EncodedMessage(notification.into_bytes())),
-            );
-        } else {
-            self.core.answer_message(
-                delivery.query_message_id,
-                Ok(EncodedMessage(notification.into_bytes())),
-            );
-        }
+        self.core.answer_message(
+            delivery.query_message_id,
+            Ok(EncodedMessage(notification.into_bytes())),
+        );
 
         Ok(())
     }
@@ -574,12 +488,12 @@ where
 
 /// Object to use to report kernel metrics to a requesting process.
 #[must_use]
-pub struct KernelDebugMetricsRequest<'a, 'b, TExtr: extrinsics::Extrinsics> {
-    system: &'b System<'a, TExtr>,
+pub struct KernelDebugMetricsRequest<'a, TExtr: extrinsics::Extrinsics> {
+    system: &'a System<TExtr>,
     message_id: MessageId,
 }
 
-impl<'a, 'b, TExtr: extrinsics::Extrinsics> KernelDebugMetricsRequest<'a, 'b, TExtr> {
+impl<'a, TExtr: extrinsics::Extrinsics> KernelDebugMetricsRequest<'a, TExtr> {
     /// Indicate the metrics. Must pass a Prometheus-compatible metrics.
     /// See [this document](https://prometheus.io/docs/instrumenting/exposition_formats/#text-format-details)
     /// for more information.
@@ -634,15 +548,13 @@ impl<'a, 'b, TExtr: extrinsics::Extrinsics> KernelDebugMetricsRequest<'a, 'b, TE
     }
 }
 
-impl<'a, 'b, TExtr: extrinsics::Extrinsics> fmt::Debug
-    for KernelDebugMetricsRequest<'a, 'b, TExtr>
-{
+impl<'a, TExtr: extrinsics::Extrinsics> fmt::Debug for KernelDebugMetricsRequest<'a, TExtr> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_tuple("KernelDebugMetricsRequest").finish()
     }
 }
 
-impl<'a, TExtr> SystemBuilder<'a, TExtr>
+impl<TExtr> SystemBuilder<TExtr>
 where
     TExtr: extrinsics::Extrinsics,
 {
@@ -657,19 +569,17 @@ where
         SystemBuilder {
             core,
             startup_processes: Vec::new(),
+            native_interfaces: Default::default(),
             load_source_virtual_pid,
             programs_to_load: SegQueue::new(),
-            native_programs: native::NativeProgramsCollection::new(),
         }
     }
 
-    /// Registers native code that can communicate with the WASM programs.
-    pub fn with_native_program<T>(mut self, program: T) -> Self
-    where
-        T: Send + Sync + 'a,
-        for<'r> &'r T: native::NativeProgramRef<'r>,
-    {
-        self.native_programs.push(self.core.reserve_pid(), program);
+    /// Registers the given interface as an interface handled by a native program.
+    ///
+    /// Duplicates are ignored.
+    pub fn with_native_interface_handler(mut self, hash: InterfaceHash) -> Self {
+        self.native_interfaces.insert(hash);
         self
     }
 
@@ -714,13 +624,15 @@ where
     ///
     /// Returns an error if any of the programs passed through
     /// [`SystemBuilder::with_startup_process`] fails to start.
-    pub fn build(self) -> Result<System<'a, TExtr>, NewErr> {
+    pub fn build(mut self) -> Result<System<TExtr>, NewErr> {
         let core = self.core.build();
 
         let num_processes_started = u64::try_from(self.startup_processes.len()).unwrap();
         for program in self.startup_processes {
             core.execute(&program)?;
         }
+
+        self.native_interfaces.shrink_to_fit();
 
         Ok(System {
             core,
@@ -730,7 +642,7 @@ where
             num_processes_started: atomic::Atomic::new(num_processes_started),
             num_processes_finished: atomic::Atomic::new(0),
             num_processes_trap: atomic::Atomic::new(0),
-            native_programs: self.native_programs,
+            native_interfaces: self.native_interfaces,
             loader_registration_id: atomic::Atomic::new(None),
             loading_programs: Spinlock::new(Default::default()),
             programs_to_load: self.programs_to_load,

@@ -22,7 +22,10 @@
 //! - Share the newly-created [`Kernel`] between CPUs, and call [`Kernel::run`] once for each CPU.
 //!
 
-use crate::arch::PlatformSpecific;
+use crate::{
+    arch::PlatformSpecific, hardware::HardwareHandler, klog::KernelLogNativeProgram,
+    pci::native::PciNativeProgram, random::native::RandomNativeProgram, time::TimeHandler,
+};
 
 use alloc::{format, string::String, sync::Arc, vec::Vec};
 use core::{convert::TryFrom as _, pin::Pin, sync::atomic::Ordering};
@@ -34,7 +37,7 @@ use spinning_top::Spinlock;
 /// Main struct of this crate. Runs everything.
 pub struct Kernel {
     /// Contains the list of all processes, threads, interfaces, messages, and so on.
-    system: System<'static, WasiExtrinsics>,
+    system: System<WasiExtrinsics>,
     /// Has one entry for each CPU. Never resized.
     cpu_busy_counters: Vec<CpuCounter>,
     /// Platform-specific getters. Passed at initialization.
@@ -42,6 +45,11 @@ pub struct Kernel {
     /// List of CPUs for which [`Kernel::run`] hasn't been called yet. Also makes it possible to
     /// make sure that [`Kernel::run`] isn't called twice with the same CPU index.
     not_started_cpus: Spinlock<HashSet<usize, fnv::FnvBuildHasher>>,
+    time: TimeHandler,
+    randomness: RandomNativeProgram,
+    hardware: HardwareHandler,
+    pci: PciNativeProgram,
+    klog: KernelLogNativeProgram,
 }
 
 #[derive(Debug)]
@@ -58,25 +66,18 @@ impl Kernel {
         // TODO: don't do this on platforms that don't have PCI?
         let pci_devices = unsafe { crate::pci::pci::init_cam_pci() };
 
-        let randomness = crate::random::native::RandomNativeProgram::new(platform_specific.clone());
+        let randomness = RandomNativeProgram::new(platform_specific.clone());
 
         let mut rng_seed = [0; 64];
         randomness.fill_bytes(&mut rng_seed);
 
         let system_builder =
             redshirt_core::system::SystemBuilder::new(WasiExtrinsics::default(), rng_seed)
-                .with_native_program(crate::hardware::HardwareHandler::new(
-                    platform_specific.clone(),
-                ))
-                .with_native_program(crate::time::TimeHandler::new(platform_specific.clone()))
-                .with_native_program(randomness)
-                .with_native_program(crate::pci::native::PciNativeProgram::new(
-                    pci_devices,
-                    platform_specific.clone(),
-                ))
-                .with_native_program(crate::klog::KernelLogNativeProgram::new(
-                    platform_specific.clone(),
-                ))
+                .with_native_interface_handler(redshirt_hardware_interface::ffi::INTERFACE)
+                .with_native_interface_handler(redshirt_time_interface::ffi::INTERFACE)
+                .with_native_interface_handler(redshirt_random_interface::ffi::INTERFACE)
+                .with_native_interface_handler(redshirt_pci_interface::ffi::INTERFACE)
+                .with_native_interface_handler(redshirt_kernel_log_interface::ffi::INTERFACE)
                 .with_startup_process(build_wasm_module!(
                     "../../../programs/p2p-loader",
                     "programs-loader"
@@ -119,8 +120,13 @@ impl Kernel {
         Kernel {
             system: system_builder.build().expect("failed to start kernel"),
             cpu_busy_counters,
-            platform_specific,
+            platform_specific: platform_specific.clone(),
             not_started_cpus,
+            time: TimeHandler::new(platform_specific.clone()),
+            randomness,
+            hardware: HardwareHandler::new(platform_specific.clone()),
+            pci: PciNativeProgram::new(pci_devices, platform_specific.clone()),
+            klog: KernelLogNativeProgram::new(platform_specific.clone()),
         }
     }
 
@@ -168,8 +174,27 @@ impl Kernel {
                 outcome
             });
 
-            match fut.await {
-                redshirt_core::system::SystemRunOutcome::ProgramFinished { .. } => {}
+            // TODO: clean up this general function body
+
+            let next_time_response = self.time.next_response();
+            let next_pci_response = self.pci.next_response();
+            futures::pin_mut!(next_time_response, next_pci_response);
+
+            let interface_handlers =
+                future::select(next_time_response, next_pci_response).map(|e| e.factor_first().0);
+
+            let core_event = match future::select(fut, interface_handlers).await {
+                future::Either::Left((event, _)) => event,
+                future::Either::Right(((message_id, response), _)) => {
+                    self.system.answer_message(message_id, Ok(response));
+                    continue;
+                }
+            };
+
+            match core_event {
+                redshirt_core::system::SystemRunOutcome::ProgramFinished { pid, .. } => {
+                    self.hardware.process_destroyed(pid);
+                }
                 redshirt_core::system::SystemRunOutcome::KernelDebugMetricsRequest(report) => {
                     let mut out = String::new();
 
@@ -215,6 +240,94 @@ impl Kernel {
                     out.push_str("\n");
 
                     report.respond(&out);
+                }
+
+                // Time handling.
+                redshirt_core::system::SystemRunOutcome::NativeInterfaceMessage {
+                    interface,
+                    message_id: Some(message_id),
+                    message,
+                    ..
+                } if interface == redshirt_time_interface::ffi::INTERFACE => {
+                    if let Some(response) = self.time.interface_message(message_id, message) {
+                        self.system.answer_message(message_id, response);
+                    }
+                }
+                redshirt_core::system::SystemRunOutcome::NativeInterfaceMessage {
+                    interface,
+                    message_id: None,
+                    ..
+                } if interface == redshirt_time_interface::ffi::INTERFACE => {}
+
+                // Randomness queries handling.
+                redshirt_core::system::SystemRunOutcome::NativeInterfaceMessage {
+                    interface,
+                    message_id: Some(message_id),
+                    message,
+                    ..
+                } if interface == redshirt_random_interface::ffi::INTERFACE => {
+                    let response = self.randomness.interface_message(message);
+                    self.system.answer_message(message_id, response);
+                }
+                redshirt_core::system::SystemRunOutcome::NativeInterfaceMessage {
+                    interface,
+                    message_id: None,
+                    ..
+                } if interface == redshirt_random_interface::ffi::INTERFACE => {}
+
+                // Hardware handling.
+                redshirt_core::system::SystemRunOutcome::NativeInterfaceMessage {
+                    interface,
+                    message_id: Some(message_id),
+                    message,
+                    emitter_pid,
+                    ..
+                } if interface == redshirt_hardware_interface::ffi::INTERFACE => {
+                    if let Some(response) = self.hardware.interface_message(emitter_pid, message) {
+                        self.system.answer_message(message_id, response);
+                    }
+                }
+                redshirt_core::system::SystemRunOutcome::NativeInterfaceMessage {
+                    interface,
+                    message_id: None,
+                    ..
+                } if interface == redshirt_hardware_interface::ffi::INTERFACE => {}
+
+                // PCI handling.
+                redshirt_core::system::SystemRunOutcome::NativeInterfaceMessage {
+                    interface,
+                    message_id: Some(message_id),
+                    message,
+                    emitter_pid,
+                    ..
+                } if interface == redshirt_pci_interface::ffi::INTERFACE => {
+                    if let Some(response) =
+                        self.pci
+                            .interface_message(Some(message_id), emitter_pid, message)
+                    {
+                        self.system.answer_message(message_id, response);
+                    }
+                }
+                redshirt_core::system::SystemRunOutcome::NativeInterfaceMessage {
+                    interface,
+                    message_id: None,
+                    emitter_pid,
+                    message,
+                } if interface == redshirt_pci_interface::ffi::INTERFACE => {
+                    self.pci.interface_message(None, emitter_pid, message);
+                }
+
+                // Kernel logs handling.
+                redshirt_core::system::SystemRunOutcome::NativeInterfaceMessage {
+                    interface,
+                    message,
+                    ..
+                } if interface == redshirt_kernel_log_interface::ffi::INTERFACE => {
+                    self.klog.interface_message(&message);
+                }
+
+                redshirt_core::system::SystemRunOutcome::NativeInterfaceMessage { .. } => {
+                    unreachable!()
                 }
             }
         }
