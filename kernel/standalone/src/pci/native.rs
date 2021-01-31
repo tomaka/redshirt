@@ -18,7 +18,7 @@
 use crate::{arch::PlatformSpecific, pci::pci};
 
 use alloc::{boxed::Box, collections::VecDeque, sync::Arc, vec::Vec};
-use core::{convert::TryFrom as _, pin::Pin};
+use core::{convert::TryFrom as _, pin::Pin, task::Poll};
 use crossbeam_queue::SegQueue;
 use futures::prelude::*;
 use redshirt_core::{Decode as _, Encode as _, EncodedMessage, MessageId, Pid};
@@ -72,24 +72,32 @@ impl PciNativeProgram {
                 return answer;
             }
 
-            let mut next_irq = self.next_irq.lock();
-            let _ = (&mut *next_irq).await;
+            future::poll_fn(move |cx| {
+                let mut next_irq = self.next_irq.lock();
+                match next_irq.poll_unpin(cx) {
+                    Poll::Ready(()) => {}
+                    Poll::Pending => return Poll::Pending,
+                };
 
-            // We grab the next IRQ future now, in order to not miss any IRQ happening
-            // while `locked_devices` is processed below.
-            *self.next_irq.lock() =
-                Box::pin(PlatformSpecific::next_irq(self.platform_specific.as_ref()))
+                // We grab the next IRQ future now, in order to not miss any IRQ happening
+                // while `locked_devices` is processed below.
+                *next_irq = Box::pin(PlatformSpecific::next_irq(self.platform_specific.as_ref()))
                     as Pin<Box<_>>;
+                drop(next_irq);
 
-            // Wake up all the devices.
-            let mut locked_devices = self.locked_devices.lock();
-            for device in locked_devices.iter_mut() {
-                for msg in device.next_interrupt_messages.drain(..) {
-                    let answer =
-                        redshirt_pci_interface::ffi::NextInterruptResponse::Interrupt.encode();
-                    self.pending_answers.push((msg, answer));
+                // Wake up all the devices.
+                let mut locked_devices = self.locked_devices.lock();
+                for device in locked_devices.iter_mut() {
+                    for msg in device.next_interrupt_messages.drain(..) {
+                        let answer =
+                            redshirt_pci_interface::ffi::NextInterruptResponse::Interrupt.encode();
+                        self.pending_answers.push((msg, answer));
+                    }
                 }
-            }
+
+                Poll::Ready(())
+            })
+            .await
         }
     }
 

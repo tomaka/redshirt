@@ -19,7 +19,7 @@ use crate::arch::PlatformSpecific;
 
 use alloc::{boxed::Box, sync::Arc};
 use core::pin::Pin;
-use futures::{prelude::*, stream::FuturesUnordered};
+use futures::{prelude::*, stream::FuturesUnordered, task::Poll};
 use redshirt_core::{Decode as _, Encode as _, EncodedMessage, MessageId};
 use redshirt_time_interface::ffi::TimeMessage;
 use spinning_top::Spinlock;
@@ -67,8 +67,20 @@ impl TimeHandler {
     }
 
     pub async fn next_response(&self) -> (MessageId, EncodedMessage) {
-        let mut timers = self.timers.lock();
-        let message_id = timers.select_next_some().await;
-        (message_id, ().encode())
+        future::poll_fn(move |cx| {
+            let mut timers = self.timers.lock();
+            if timers.is_empty() {
+                return Poll::Pending;
+            }
+
+            let message_id = match timers.poll_next_unpin(cx) {
+                Poll::Ready(Some(id)) => id,
+                Poll::Ready(None) => unreachable!(),
+                Poll::Pending => return Poll::Pending,
+            };
+
+            Poll::Ready((message_id, ().encode()))
+        })
+        .await
     }
 }

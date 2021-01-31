@@ -183,9 +183,11 @@ impl Kernel {
             let interface_handlers =
                 future::select(next_time_response, next_pci_response).map(|e| e.factor_first().0);
 
-            let core_event = match future::select(fut, interface_handlers).await {
-                future::Either::Left((event, _)) => event,
-                future::Either::Right(((message_id, response), _)) => {
+            // Note that `interfaces_handler` is passed first in order to guarantee that it gets
+            // polled at least once before the core is.
+            let core_event = match future::select(interface_handlers, fut).await {
+                future::Either::Right((event, _)) => event,
+                future::Either::Left(((message_id, response), _)) => {
                     self.system.answer_message(message_id, Ok(response));
                     continue;
                 }
