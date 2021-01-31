@@ -290,8 +290,12 @@ impl Kernel {
                 redshirt_core::system::SystemRunOutcome::NativeInterfaceMessage {
                     interface,
                     message_id: None,
+                    emitter_pid,
+                    message,
                     ..
-                } if interface == redshirt_hardware_interface::ffi::INTERFACE => {}
+                } if interface == redshirt_hardware_interface::ffi::INTERFACE => {
+                    self.hardware.interface_message(emitter_pid, message);
+                }
 
                 // PCI handling.
                 redshirt_core::system::SystemRunOutcome::NativeInterfaceMessage {
