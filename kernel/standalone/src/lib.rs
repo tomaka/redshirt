@@ -60,7 +60,6 @@ use core::{pin::Pin, sync::atomic};
 #[macro_use]
 pub mod arch;
 
-mod future_channel;
 mod hardware;
 mod pci;
 mod random;

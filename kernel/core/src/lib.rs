@@ -22,17 +22,11 @@
 //! >           [`System::run`] function repeatedly in order for the programs within the
 //! >           [`System`] to advance.
 //!
-//! There exists two kinds of programs within a [`System`]:
-//!
-//! - *Wasm* programs. They are written in [the Wasm language](https://webassembly.org/), or, more
-//! likely, written in a programming language then compiled to Wasm. In order to start a Wasm
-//! program, build a [`Module`] then pass it either to [`SystemBuilder::with_startup_process`]
-//! if you're building a [`System`], or to [`System::execute`] if the [`System`] is already
-//! constructed.
-//!
-//! - *Native* programs. They are directly written in Rust. In order to start a native program,
-//! you must pass an object that implements the [`NativeProgramRef`](native::NativeProgramRef)
-//! trait to [`SystemBuilder::with_native_program`] when building the [`System`].
+//! Programs within a [`System`] are written in [the Wasm language](https://webassembly.org/),
+//! or, more likely, written in a programming language then compiled to Wasm. In order to start
+//! a Wasm program, build a [`Module`] then pass it either to
+//! [`SystemBuilder::with_startup_process`] if you're building a [`System`], or to
+//! [`System::execute`] if the [`System`] is already constructed.
 //!
 //! Each program within a [`System`] gets attributed a single [`Pid`] that identifies it.
 //!
@@ -159,7 +153,6 @@ mod id_pool;
 
 pub mod extrinsics;
 pub mod module;
-pub mod native;
 pub mod primitives;
 pub mod scheduler;
 pub mod system;
