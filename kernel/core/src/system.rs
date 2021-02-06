@@ -536,7 +536,7 @@ where
     ///
     /// The seed is used in determine how [`Pid`]s and [`MessageId`]s are generated. The same
     /// seed will result in the same sequence of [`Pid`]s and [`MessageId`]s.
-    pub fn new(extrinsics: TExtr, seed: [u8; 64]) -> Self {
+    pub fn new(seed: [u8; 64]) -> Self {
         let mut core = CoreBuilder::with_seed(seed);
         let load_source_virtual_pid = core.reserve_pid();
 
