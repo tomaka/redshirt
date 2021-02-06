@@ -174,12 +174,6 @@ pub enum SystemRunOutcome<'a, TExtr: extrinsics::Extrinsics> {
     },
 }
 
-#[derive(Debug)]
-enum RunOnceOutcome<'a, TExtr: extrinsics::Extrinsics> {
-    Report(SystemRunOutcome<'a, TExtr>),
-    LoopAgain,
-}
-
 impl<TExtr> System<TExtr>
 where
     TExtr: extrinsics::Extrinsics,
