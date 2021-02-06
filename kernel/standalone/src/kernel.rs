@@ -71,29 +71,28 @@ impl Kernel {
         let mut rng_seed = [0; 64];
         randomness.fill_bytes(&mut rng_seed);
 
-        let system_builder =
-            redshirt_core::system::SystemBuilder::new(WasiExtrinsics::default(), rng_seed)
-                .with_native_interface_handler(redshirt_hardware_interface::ffi::INTERFACE)
-                .with_native_interface_handler(redshirt_time_interface::ffi::INTERFACE)
-                .with_native_interface_handler(redshirt_random_interface::ffi::INTERFACE)
-                .with_native_interface_handler(redshirt_pci_interface::ffi::INTERFACE)
-                .with_native_interface_handler(redshirt_kernel_log_interface::ffi::INTERFACE)
-                .with_startup_process(build_wasm_module!(
-                    "../../../programs/p2p-loader",
-                    "programs-loader"
-                ))
-                .with_startup_process(build_wasm_module!("../../../programs/compositor"))
-                .with_startup_process(build_wasm_module!("../../../programs/pci-printer"))
-                // TODO: actually implement system-time and remove this dummy; https://github.com/tomaka/redshirt/issues/542
-                .with_startup_process(build_wasm_module!("../../../programs/dummy-system-time"))
-                .with_startup_process(build_wasm_module!("../../../programs/log-to-kernel"))
-                .with_startup_process(build_wasm_module!("../../../programs/vga-vbe"))
-                .with_startup_process(build_wasm_module!(
-                    "../../../programs/diagnostics-http-server"
-                ))
-                .with_startup_process(build_wasm_module!("../../../programs/hello-world"))
-                .with_startup_process(build_wasm_module!("../../../programs/network-manager"))
-                .with_startup_process(build_wasm_module!("../../../programs/e1000"));
+        let system_builder = redshirt_core::system::SystemBuilder::<WasiExtrinsics>::new(rng_seed)
+            .with_native_interface_handler(redshirt_hardware_interface::ffi::INTERFACE)
+            .with_native_interface_handler(redshirt_time_interface::ffi::INTERFACE)
+            .with_native_interface_handler(redshirt_random_interface::ffi::INTERFACE)
+            .with_native_interface_handler(redshirt_pci_interface::ffi::INTERFACE)
+            .with_native_interface_handler(redshirt_kernel_log_interface::ffi::INTERFACE)
+            .with_startup_process(build_wasm_module!(
+                "../../../programs/p2p-loader",
+                "programs-loader"
+            ))
+            .with_startup_process(build_wasm_module!("../../../programs/compositor"))
+            .with_startup_process(build_wasm_module!("../../../programs/pci-printer"))
+            // TODO: actually implement system-time and remove this dummy; https://github.com/tomaka/redshirt/issues/542
+            .with_startup_process(build_wasm_module!("../../../programs/dummy-system-time"))
+            .with_startup_process(build_wasm_module!("../../../programs/log-to-kernel"))
+            .with_startup_process(build_wasm_module!("../../../programs/vga-vbe"))
+            .with_startup_process(build_wasm_module!(
+                "../../../programs/diagnostics-http-server"
+            ))
+            .with_startup_process(build_wasm_module!("../../../programs/hello-world"))
+            .with_startup_process(build_wasm_module!("../../../programs/network-manager"))
+            .with_startup_process(build_wasm_module!("../../../programs/e1000"));
 
         // TODO: remove the cfg guards once rpi-framebuffer is capable of auto-detecting whether
         // it should enable itself
