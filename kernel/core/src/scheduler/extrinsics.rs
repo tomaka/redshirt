@@ -402,14 +402,20 @@ where
             }
         }
 
-        match self.inner.run().await {
+        // TODO: propagate to upper layers instead
+        let mut outcome = match self.inner.run().await {
+            processes::RunFutureOut::Direct(ev) => ev,
+            processes::RunFutureOut::ReadyToRun(rtr) => rtr.run(),
+        };
+
+        match outcome {
             processes::RunOneOutcome::ProcessFinished {
                 pid,
                 user_data,
                 dead_threads,
                 outcome,
             } => {
-                return Some(RunOneOutcome::ProcessFinished {
+                Some(RunOneOutcome::ProcessFinished {
                     pid,
                     user_data: user_data.external_user_data,
                     dead_threads: dead_threads
@@ -417,8 +423,10 @@ where
                         .map(|(id, state)| (id, state.external_user_data))
                         .collect(), // TODO: meh for allocation
                     outcome,
-                });
+                })
             }
+
+            processes::RunOneOutcome::StartProcessAbort { .. } => None,
 
             processes::RunOneOutcome::ThreadFinished {
                 process,
