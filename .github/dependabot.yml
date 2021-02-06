@@ -3,20 +3,24 @@ updates:
 - package-ecosystem: github-actions
   directory: "/"
   labels: []
+  rebase-strategy: disabled  # Redundant with mergify
   schedule:
     interval: daily
 - package-ecosystem: cargo
   directory: "/kernel-standalone-builder"
   labels: []
+  rebase-strategy: disabled  # Redundant with mergify
   schedule:
     interval: daily
 - package-ecosystem: cargo
   directory: "/programs"
   labels: []
+  rebase-strategy: disabled  # Redundant with mergify
   schedule:
     interval: daily
 - package-ecosystem: cargo
   directory: "/"
   labels: []
+  rebase-strategy: disabled  # Redundant with mergify
   schedule:
     interval: daily
