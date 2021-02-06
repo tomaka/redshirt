@@ -928,6 +928,11 @@ impl<'a, TPud, TTud, TExt: Extrinsics> fmt::Debug for ThreadEmitMessage<'a, TPud
 }
 
 impl<'a, TPud, TTud, TExt: Extrinsics> ThreadWaitNotif<'a, TPud, TTud, TExt> {
+    /// Unlocks the thread and returns the process it belongs to.
+    pub fn into_process(self) -> ProcAccess<'a, TPud, TTud, TExt> {
+        self.process
+    }
+
     /// Returns the list of notifications that the thread is waiting on. In order, and preserving
     /// empty entries.
     pub fn wait_entries<'b>(&'b mut self) -> impl Iterator<Item = WaitEntry> + 'b {

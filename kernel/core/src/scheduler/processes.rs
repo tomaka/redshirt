@@ -894,6 +894,16 @@ where
     }
 }
 
+impl<'a, TExtr, TPud, TTud> Clone for ProcAccess<'a, TExtr, TPud, TTud> {
+    fn clone(&self) -> Self {
+        ProcAccess {
+            collection: self.collection,
+            pid_tid_pool: self.pid_tid_pool,
+            process: self.process.clone(),
+        }
+    }
+}
+
 impl<'a, TExtr, TPud, TTud> Drop for ProcAccess<'a, TExtr, TPud, TTud> {
     fn drop(&mut self) {
         self.collection
