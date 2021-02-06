@@ -1018,7 +1018,7 @@ dependencies = [
  "httparse",
  "httpdate",
  "itoa",
- "pin-project 1.0.4",
+ "pin-project 1.0.5",
  "tokio",
  "tower-service",
  "tracing",
@@ -1027,9 +1027,9 @@ dependencies = [
 
 [[package]]
 name = "iced-x86"
-version = "1.10.0"
+version = "1.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b0be3ac4fec5cdbfd39a653e9145789e7a989359874da3cf2f18611468937767"
+checksum = "644fd8d7e49d1ccae568a8fbb873a7ee7fcb3bc9214a474a5e55c03b6d1fa5ac"
 dependencies = [
  "lazy_static",
  "rustc_version",
@@ -1781,11 +1781,11 @@ dependencies = [
 
 [[package]]
 name = "pin-project"
-version = "1.0.4"
+version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "95b70b68509f17aa2857863b6fa00bf21fc93674c7a8893de2f469f6aa7ca2f2"
+checksum = "96fa8ebb90271c4477f144354485b8068bd8f6b78b428b01ba892ca26caf0b63"
 dependencies = [
- "pin-project-internal 1.0.4",
+ "pin-project-internal 1.0.5",
 ]
 
 [[package]]
@@ -1801,9 +1801,9 @@ dependencies = [
 
 [[package]]
 name = "pin-project-internal"
-version = "1.0.4"
+version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "caa25a6393f22ce819b0f50e0be89287292fda8d425be38ee0ca14c4931d9e71"
+checksum = "758669ae3558c6f74bd2a18b41f7ac0b5a195aea6639d6a9b5e5d1ad5ba24c0b"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2202,7 +2202,7 @@ dependencies = [
  "lazy_static",
  "nohash-hasher",
  "parity-scale-codec",
- "pin-project 1.0.4",
+ "pin-project 1.0.5",
  "slab 0.4.2 (git+https://github.com/tokio-rs/slab?rev=3340fdcf7204584b9ee509beabf3b174a333dfc1)",
  "spinning_top",
 ]
@@ -2213,7 +2213,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "parity-scale-codec",
- "pin-project 1.0.4",
+ "pin-project 1.0.5",
  "redshirt-syscalls",
 ]
 
@@ -2234,7 +2234,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "parity-scale-codec",
- "pin-project 1.0.4",
+ "pin-project 1.0.5",
  "redshirt-syscalls",
 ]
 
@@ -2587,9 +2587,9 @@ checksum = "7c65d530b10ccaeac294f349038a597e435b18fb456aadd0840a623f83b9e941"
 
 [[package]]
 name = "syn"
-version = "1.0.46"
+version = "1.0.60"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ad5de3220ea04da322618ded2c42233d02baca219d6f160a3e9c87cda16c942"
+checksum = "c700597eca8a5a762beb35753ef6b94df201c81cca676604f547495a0d7f0081"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3000,7 +3000,7 @@ name = "wasm-timer"
 version = "0.2.4"
 dependencies = [
  "futures-timer",
- "pin-project 1.0.4",
+ "pin-project 1.0.5",
  "redshirt-time-interface",
 ]
 
