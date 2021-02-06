@@ -1013,7 +1013,7 @@ dependencies = [
  "redshirt-syscalls",
  "redshirt-system-time-interface",
  "redshirt-time-interface",
- "slab 0.4.2 (git+https://github.com/baloo/slab?rev=88b456131de20750e785655d1e62cd0b6e10d44b)",
+ "slab 0.4.2 (git+https://github.com/tokio-rs/slab?rev=3340fdcf7204584b9ee509beabf3b174a333dfc1)",
  "smallvec",
  "spinning_top 0.2.2",
  "tiny-keccak",
@@ -1181,7 +1181,7 @@ dependencies = [
  "nohash-hasher",
  "parity-scale-codec",
  "pin-project",
- "slab 0.4.2 (git+https://github.com/baloo/slab?rev=88b456131de20750e785655d1e62cd0b6e10d44b)",
+ "slab 0.4.2 (git+https://github.com/tokio-rs/slab?rev=3340fdcf7204584b9ee509beabf3b174a333dfc1)",
  "spinning_top 0.2.2",
 ]
 
@@ -1389,7 +1389,7 @@ checksum = "c111b5bd5695e56cffe5129854aa230b39c93a305372fdbb2668ca2394eea9f8"
 [[package]]
 name = "slab"
 version = "0.4.2"
-source = "git+https://github.com/baloo/slab?rev=88b456131de20750e785655d1e62cd0b6e10d44b#88b456131de20750e785655d1e62cd0b6e10d44b"
+source = "git+https://github.com/tokio-rs/slab?rev=3340fdcf7204584b9ee509beabf3b174a333dfc1#3340fdcf7204584b9ee509beabf3b174a333dfc1"
 
 [[package]]
 name = "smallvec"
