@@ -122,6 +122,7 @@ use alloc::{
 use core::{
     fmt,
     future::Future,
+    mem,
     pin::Pin,
     task::{Context, Poll},
 };
@@ -538,7 +539,7 @@ impl<TExtr> ProcessesCollectionBuilder<TExtr> {
     }
 }
 
-/// Outcome of the [`run`](ProcessesCollection::run) function.
+/// Outcome of the [`run`](ReadyToRun::run) function.
 #[derive(Debug)]
 pub enum RunOneOutcome<'a, TExtr, TPud, TTud> {
     /// Either the main thread of a process has finished, or a fatal error was encountered.
@@ -591,6 +592,13 @@ pub enum RunOneOutcome<'a, TExtr, TPud, TTud> {
         /// Parameters of the function call.
         params: Vec<crate::WasmValue>,
     },
+
+    /// Running the thread has resulted in a decision to terminate the process. A
+    /// [`RunOneOutcome::ProcessFinished`] will soon be emitted.
+    StartProcessAbort {
+        /// Pid of the process that is going to finish soon.
+        pid: Pid,
+    },
 }
 
 /// Future that drives the [`ProcessesCollection::run`] method.
@@ -600,7 +608,7 @@ pub struct RunFuture<'a, TExtr, TPud, TTud>(
 );
 
 impl<'a, TExtr, TPud, TTud> Future for RunFuture<'a, TExtr, TPud, TTud> {
-    type Output = RunOneOutcome<'a, TExtr, TPud, TTud>;
+    type Output = RunFutureOut<'a, TExtr, TPud, TTud>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = &mut self.0;
@@ -618,12 +626,12 @@ impl<'a, TExtr, TPud, TTud> Future for RunFuture<'a, TExtr, TPud, TTud> {
 
             // Items are pushed on `death_reports` when a `Process` struct is destroyed.
             if let Some((pid, user_data, dead_threads, outcome)) = this.death_reports.pop() {
-                return Poll::Ready(RunOneOutcome::ProcessFinished {
+                return Poll::Ready(RunFutureOut::Direct(RunOneOutcome::ProcessFinished {
                     pid,
                     user_data,
                     dead_threads,
                     outcome,
-                });
+                }));
             }
 
             // We start by finding a process that is ready to run and lock it by extracting the
@@ -654,137 +662,225 @@ impl<'a, TExtr, TPud, TTud> Future for RunFuture<'a, TExtr, TPud, TTud> {
                 continue;
             }
 
-            // Now run a thread until something happens.
-            // This takes most of the CPU time of this function.
-            let run_outcome = {
-                debug_assert!(!proc_state.vm.is_poisoned());
-                let thread_index = (0..proc_state.vm.num_threads())
-                    .find(|n| proc_state.vm.thread(*n).unwrap().user_data().thread_id == tid)
-                    .unwrap();
-                proc_state
-                    .vm
-                    .thread(thread_index)
-                    .unwrap()
-                    .run(resume_value)
-            };
+            // Important: we forget the `Mutex` and keep the process locked for the lifespan
+            // of the `ReadyToRun`.
+            mem::forget(proc_state);
 
-            match run_outcome {
-                Err(vm::RunErr::BadValueTy { .. }) => panic!(), // TODO:
-                Err(vm::RunErr::Poisoned) => unreachable!(),
-
-                // The entire process has ended or has crashed.
-                Ok(vm::ExecOutcome::ThreadFinished {
-                    thread_index: 0,
-                    return_value,
-                    user_data: main_thread_user_data,
-                }) => {
-                    debug_assert!(proc_state.vm.is_poisoned());
-                    debug_assert!(proc_state.dead.is_none());
-
-                    // TODO: Vec::with_capacity?
-                    let mut dead_threads =
-                        vec![(main_thread_user_data.thread_id, thread_user_data)];
-
-                    // TODO: possible deadlock?
-                    let mut threads = this.interrupted_threads.lock();
-                    // TODO: O(n) complexity
-                    while let Some(tid) = threads
-                        .iter()
-                        .find(|(_, (_, p))| Arc::ptr_eq(&process, p))
-                        .map(|(k, _)| *k)
-                    {
-                        let (user_data, _) = threads.remove(&tid).unwrap();
-                        dead_threads.push((tid, user_data));
-                    }
-
-                    proc_state.dead = Some(ProcessDeadState {
-                        dead_threads,
-                        outcome: Ok(return_value),
-                    });
-                }
-
-                // The thread has ended.
-                Ok(vm::ExecOutcome::ThreadFinished {
-                    return_value,
-                    user_data,
-                    ..
-                }) => {
-                    debug_assert!(Arc::strong_count(&process) >= 2);
-                    drop(proc_state);
-                    return Poll::Ready(RunOneOutcome::ThreadFinished {
-                        thread_id: user_data.thread_id,
-                        process: ProcAccess {
-                            collection: this,
-                            process: Some(process),
-                            pid_tid_pool: &this.pid_tid_pool,
-                        },
-                        user_data: thread_user_data,
-                        value: return_value,
-                    });
-                }
-
-                // Thread wants to call an extrinsic function.
-                Ok(vm::ExecOutcome::Interrupted {
-                    mut thread,
-                    id,
-                    params,
-                }) => {
-                    // TODO: check params against signature with a debug_assert?
-                    let extrinsic = match this.extrinsics.get(id) {
-                        Some(e) => e,
-                        None => unreachable!(),
-                    };
-                    let tid = thread.user_data().thread_id;
-                    drop(proc_state);
-                    return Poll::Ready(RunOneOutcome::Interrupted {
-                        thread: ThreadAccess {
-                            collection: this,
-                            process: Some(process),
-                            tid,
-                            pid_tid_pool: &this.pid_tid_pool,
-                            user_data: Some(thread_user_data),
-                        },
-                        id: extrinsic,
-                        params,
-                    });
-                }
-
-                // An error happened during the execution. We kill the entire process.
-                Ok(vm::ExecOutcome::Errored { error, mut thread }) => {
-                    // TODO: Vec::with_capacity?
-                    let mut dead_threads = vec![(thread.user_data().thread_id, thread_user_data)];
-                    drop(thread);
-
-                    debug_assert!(proc_state.vm.is_poisoned());
-                    debug_assert!(proc_state.dead.is_none());
-
-                    // TODO: possible deadlock?
-                    let mut threads = this.interrupted_threads.lock();
-                    // TODO: O(n) complexity
-                    while let Some(tid) = threads
-                        .iter()
-                        .find(|(_, (_, p))| Arc::ptr_eq(&process, p))
-                        .map(|(k, _)| *k)
-                    {
-                        let (user_data, _) = threads.remove(&tid).unwrap();
-                        dead_threads.push((tid, user_data));
-                    }
-
-                    proc_state.dead = Some(ProcessDeadState {
-                        dead_threads,
-                        outcome: Err(error),
-                    });
-                }
-            }
-
-            // If we reach here, the process has to be terminated.
-            drop(proc_state);
-            this.try_report_process_death(process);
+            break Poll::Ready(RunFutureOut::ReadyToRun(ReadyToRun {
+                collection: this,
+                process: Some(process),
+                tid,
+                thread_user_data: Some(thread_user_data),
+                resume_value,
+            }));
         }
     }
 }
 
 impl<'a, TExtr, TPud, TTud> Unpin for RunFuture<'a, TExtr, TPud, TTud> {}
+
+/// Event returned by [`RunFuture`].
+pub enum RunFutureOut<'a, TExtr, TPud, TTud> {
+    /// Event directly generated.
+    Direct(RunOneOutcome<'a, TExtr, TPud, TTud>),
+    /// Ready to execute a bit of a thread.
+    ReadyToRun(ReadyToRun<'a, TExtr, TPud, TTud>),
+}
+
+/// Ready to resume one of the threads of a process.
+#[must_use]
+pub struct ReadyToRun<'a, TExtr, TPud, TTud> {
+    /// The parent object.
+    collection: &'a ProcessesCollection<TExtr, TPud, TTud>,
+    /// Process to execute.
+    /// Always `Some` except during destruction.
+    /// Since it isn't possible to safely hold an `Arc<Process>` and `SpinlockGuard<...>`
+    /// referencing that `Arc<Process>` in the same struct, the `lock` field is force-locked while
+    /// the `ReadyToRun` is alive.
+    process: Option<Arc<Process<TPud, TTud>>>,
+    /// Id of the thread that we are going to run.
+    tid: ThreadId,
+    /// User data of the thread. Temporarily extracted from the global state. Always `Some`,
+    /// except right before destruction.
+    thread_user_data: Option<TTud>,
+    /// Value to feed to the virtual machine on resume.
+    resume_value: Option<crate::WasmValue>,
+}
+
+impl<'a, TExtr, TPud, TTud> ReadyToRun<'a, TExtr, TPud, TTud> {
+    /// Performs the actual execution.
+    pub fn run(mut self) -> RunOneOutcome<'a, TExtr, TPud, TTud> {
+        // Safety: as documented, the `process.lock` mutex is force-locked for the lifespan of
+        // the `ReadyToRun`.
+        let proc_state: &mut ProcessLock<_> =
+            unsafe { &mut *self.process.as_ref().unwrap().lock.data_ptr() };
+
+        // Now run a thread until something happens.
+        // This takes most of the CPU time of this function.
+        let run_outcome = {
+            debug_assert!(!proc_state.vm.is_poisoned());
+            let thread_index = (0..proc_state.vm.num_threads())
+                .find(|n| proc_state.vm.thread(*n).unwrap().user_data().thread_id == self.tid)
+                .unwrap();
+            proc_state
+                .vm
+                .thread(thread_index)
+                .unwrap()
+                .run(self.resume_value)
+        };
+
+        match run_outcome {
+            Err(vm::RunErr::BadValueTy { .. }) => panic!(), // TODO:
+            Err(vm::RunErr::Poisoned) => unreachable!(),
+
+            // The entire process has ended or has crashed.
+            Ok(vm::ExecOutcome::ThreadFinished {
+                thread_index: 0,
+                return_value,
+                user_data: main_thread_user_data,
+            }) => {
+                debug_assert!(proc_state.vm.is_poisoned());
+                debug_assert!(proc_state.dead.is_none());
+
+                // TODO: Vec::with_capacity?
+                let mut dead_threads = vec![(
+                    main_thread_user_data.thread_id,
+                    self.thread_user_data.take().unwrap(),
+                )];
+
+                // TODO: possible deadlock?
+                let mut threads = self.collection.interrupted_threads.lock();
+                // TODO: O(n) complexity
+                while let Some(tid) = threads
+                    .iter()
+                    .find(|(_, (_, p))| Arc::ptr_eq(self.process.as_ref().unwrap(), p))
+                    .map(|(k, _)| *k)
+                {
+                    let (user_data, _) = threads.remove(&tid).unwrap();
+                    dead_threads.push((tid, user_data));
+                }
+
+                proc_state.dead = Some(ProcessDeadState {
+                    dead_threads,
+                    outcome: Ok(return_value),
+                });
+
+                RunOneOutcome::StartProcessAbort {
+                    pid: self.process.as_ref().unwrap().pid,
+                }
+            }
+
+            // The thread has ended.
+            Ok(vm::ExecOutcome::ThreadFinished {
+                return_value,
+                user_data,
+                ..
+            }) => {
+                debug_assert!(Arc::strong_count(&self.process.as_ref().unwrap()) >= 2);
+                drop(proc_state);
+                RunOneOutcome::ThreadFinished {
+                    thread_id: user_data.thread_id,
+                    process: ProcAccess {
+                        collection: self.collection,
+                        process: Some(self.process.as_ref().unwrap().clone()),
+                        pid_tid_pool: &self.collection.pid_tid_pool,
+                    },
+                    user_data: self.thread_user_data.take().unwrap(),
+                    value: return_value,
+                }
+            }
+
+            // Thread wants to call an extrinsic function.
+            Ok(vm::ExecOutcome::Interrupted {
+                mut thread,
+                id,
+                params,
+            }) => {
+                // TODO: check params against signature with a debug_assert?
+                let extrinsic = match self.collection.extrinsics.get(id) {
+                    Some(e) => e,
+                    None => unreachable!(),
+                };
+                let tid = thread.user_data().thread_id;
+                drop(proc_state);
+                RunOneOutcome::Interrupted {
+                    thread: ThreadAccess {
+                        collection: self.collection,
+                        process: Some(self.process.as_ref().unwrap().clone()),
+                        tid,
+                        pid_tid_pool: &self.collection.pid_tid_pool,
+                        user_data: Some(self.thread_user_data.take().unwrap()),
+                    },
+                    id: extrinsic,
+                    params,
+                }
+            }
+
+            // An error happened during the execution. We kill the entire process.
+            Ok(vm::ExecOutcome::Errored { error, mut thread }) => {
+                // TODO: Vec::with_capacity?
+                let mut dead_threads = vec![(
+                    thread.user_data().thread_id,
+                    self.thread_user_data.take().unwrap(),
+                )];
+                drop(thread);
+
+                debug_assert!(proc_state.vm.is_poisoned());
+                debug_assert!(proc_state.dead.is_none());
+
+                // TODO: possible deadlock?
+                let mut threads = self.collection.interrupted_threads.lock();
+                // TODO: O(n) complexity
+                while let Some(tid) = threads
+                    .iter()
+                    .find(|(_, (_, p))| Arc::ptr_eq(self.process.as_ref().unwrap(), p))
+                    .map(|(k, _)| *k)
+                {
+                    let (user_data, _) = threads.remove(&tid).unwrap();
+                    dead_threads.push((tid, user_data));
+                }
+
+                proc_state.dead = Some(ProcessDeadState {
+                    dead_threads,
+                    outcome: Err(error),
+                });
+
+                RunOneOutcome::StartProcessAbort {
+                    pid: self.process.as_ref().unwrap().pid,
+                }
+            }
+        }
+    }
+}
+
+impl<'a, TExtr, TPud, TTud> Drop for ReadyToRun<'a, TExtr, TPud, TTud> {
+    fn drop(&mut self) {
+        // In the situation where the user didn't call `run`, we push back the thread to the
+        // queue.
+        if let Some(thread_user_data) = self.thread_user_data.take() {
+            let proc_state: &mut ProcessLock<_> =
+                unsafe { &mut *self.process.as_ref().unwrap().lock.data_ptr() };
+
+            proc_state.threads_to_resume.push_back((
+                self.tid,
+                thread_user_data,
+                self.resume_value.take(),
+            ));
+            self.collection
+                .execution_queue
+                .push(self.process.as_ref().unwrap().clone());
+        }
+
+        // As documented, the lock is held for the lifespan of the `ReadyToRun`. This is where
+        // we unlock it.
+        unsafe {
+            self.process.as_ref().unwrap().lock.force_unlock();
+        }
+
+        self.collection
+            .try_report_process_death(self.process.take().unwrap());
+    }
+}
 
 /// Access to a process within the collection.
 pub struct ProcAccess<'a, TExtr, TPud, TTud> {
