@@ -140,7 +140,7 @@ fn many_processes() {
                     } => {
                         thread.resume(Some(crate::WasmValue::I32(1234)));
                     }
-                    RunOneOutcome::StartProcessAbort { .. } => {},
+                    RunOneOutcome::StartProcessAbort { .. } => {}
                     _ => panic!(),
                 };
             }
