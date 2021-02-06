@@ -26,23 +26,27 @@ use spinning_top::{Spinlock, SpinlockGuard};
 /// One instance of this struct exists for each alive process.
 #[derive(Debug)]
 pub struct NotificationsQueue {
+    // TODO: baka Mutex
+    guarded: Spinlock<Guarded>,
+}
+
+#[derive(Debug)]
+struct Guarded {
     /// The actual list.
     ///
     /// The [`DecodedNotificationRef::index_in_list`](redshirt_syscalls::ffi::DecodedNotificationRef::index_in_list)
     /// field is set to a dummy value, and will be filled before actually delivering the
     /// notification.
-    // TODO: baka Mutex
-    notifications_queue:
-        Spinlock<HashMap<MessageId, NotificationBuilder, nohash_hasher::BuildNoHashHasher<u64>>>,
+    queue: HashMap<MessageId, NotificationBuilder, nohash_hasher::BuildNoHashHasher<u64>>,
+
+    /// Total number of notifications that have been pushed in the notifications queue.
+    total_notifications_pushed: u64,
 }
 
 /// An entry in the notifications queue.
 #[must_use]
 pub struct Entry<'a> {
-    queue: SpinlockGuard<
-        'a,
-        HashMap<MessageId, NotificationBuilder, nohash_hasher::BuildNoHashHasher<u64>>,
-    >,
+    guarded: SpinlockGuard<'a, Guarded>,
     message_id: MessageId,
     /// Index within the list that was passed as parameter to [`NotificationsQueue::find`].
     index_in_msg_ids: usize,
@@ -52,8 +56,16 @@ impl NotificationsQueue {
     /// Builds a new empty queue.
     pub fn new() -> NotificationsQueue {
         NotificationsQueue {
-            notifications_queue: Spinlock::new(Default::default()),
+            guarded: Spinlock::new(Guarded {
+                queue: Default::default(), // TODO: capacity?
+                total_notifications_pushed: 0,
+            }),
         }
+    }
+
+    /// Returns the total number of notifications that have been pushed to this queue.
+    pub fn total_notifications_pushed(&self) -> u64 {
+        self.guarded.lock().total_notifications_pushed
     }
 
     /// Pushes a notification at the end of the queue.
@@ -68,9 +80,9 @@ impl NotificationsQueue {
             },
         );
 
-        self.notifications_queue
-            .lock()
-            .insert(message_id, From::from(notif));
+        let mut lock = self.guarded.lock();
+        lock.queue.insert(message_id, From::from(notif));
+        lock.total_notifications_pushed += 1;
     }
 
     /// Finds a notification in the list that matches the given indices.
@@ -79,7 +91,7 @@ impl NotificationsQueue {
     /// `Entry`.
     // TODO: O(n) complexity!
     pub fn find<'a>(&self, indices: impl IntoIterator<Item = &'a WaitEntry>) -> Option<Entry> {
-        let notifications_queue = self.notifications_queue.lock();
+        let notifications_queue = self.guarded.lock();
 
         let (index_in_msg_ids, message_id) = {
             indices
@@ -89,11 +101,11 @@ impl NotificationsQueue {
                     WaitEntry::Answer(id) => Some((n, *id)),
                     WaitEntry::Empty => None,
                 })
-                .find(|(_, id)| notifications_queue.contains_key(id))?
+                .find(|(_, id)| notifications_queue.queue.contains_key(id))?
         };
 
         Some(Entry {
-            queue: notifications_queue,
+            guarded: notifications_queue,
             message_id,
             index_in_msg_ids,
         })
@@ -103,7 +115,7 @@ impl NotificationsQueue {
 impl<'a> Entry<'a> {
     /// Returns the size in bytes of the notification.
     pub fn size(&self) -> usize {
-        self.queue.get(&self.message_id).unwrap().len()
+        self.guarded.queue.get(&self.message_id).unwrap().len()
     }
 
     // TODO: better method name and doc
@@ -113,11 +125,13 @@ impl<'a> Entry<'a> {
 
     // TODO: shouldn't be an `EncodedMessage`, that's wrong
     pub fn extract(mut self) -> EncodedMessage {
-        let mut notification = self.queue.remove(&self.message_id).unwrap();
+        let mut notification = self.guarded.queue.remove(&self.message_id).unwrap();
 
         // Some heuristics in order to reduce memory consumption.
-        if self.queue.capacity() >= 256 && self.queue.len() < self.queue.capacity() / 10 {
-            self.queue.shrink_to_fit();
+        if self.guarded.queue.capacity() >= 256
+            && self.guarded.queue.len() < self.guarded.queue.capacity() / 10
+        {
+            self.guarded.queue.shrink_to_fit();
         }
 
         notification.set_index_in_list(u32::try_from(self.index_in_msg_ids).unwrap());
