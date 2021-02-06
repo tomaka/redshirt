@@ -27,7 +27,6 @@ use crate::{
 use alloc::vec::Vec;
 use core::convert::TryFrom as _;
 use crossbeam_queue::SegQueue;
-use extrinsics::ThreadByIdErr;
 use hashbrown::{hash_map::Entry, HashMap};
 use redshirt_syscalls::{EncodedMessage, MessageId, Pid, ThreadId};
 use spinning_top::Spinlock;
