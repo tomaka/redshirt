@@ -326,9 +326,9 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
         Ok((proc_lock, main_thread_id))
     }
 
-    /// Runs one thread amongst the collection.
+    /// Find a thread that is ready to be run.
     ///
-    /// Which thread is run is implementation-defined and no guarantee is made.
+    /// Which thread is picked is implementation-defined and no guarantee is made.
     pub fn run(&self) -> RunFuture<TExtr, TPud, TTud> {
         RunFuture(self, self.wakers.register())
     }
