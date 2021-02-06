@@ -32,9 +32,8 @@ mod interfaces;
 mod pending_answers;
 
 use alloc::{collections::VecDeque, format, vec::Vec};
-use core::{convert::TryFrom as _, fmt, iter, num::NonZeroU64, sync::atomic::Ordering, task::Poll};
+use core::{convert::TryFrom as _, fmt, iter, num::NonZeroU64, sync::atomic::Ordering};
 use crossbeam_queue::SegQueue;
-use futures::prelude::*;
 use hashbrown::{HashMap, HashSet};
 use nohash_hasher::BuildNoHashHasher;
 use redshirt_syscalls::{Decode, Encode, EncodedMessage, MessageId, Pid};
