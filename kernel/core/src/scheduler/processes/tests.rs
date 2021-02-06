@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use super::{ProcessesCollectionBuilder, RunOneOutcome};
+use super::{ProcessesCollectionBuilder, RunFutureOut, RunOneOutcome};
 use crate::sig;
 
 use futures::prelude::*;
@@ -43,12 +43,20 @@ fn basic() {
     );
     let processes = ProcessesCollectionBuilder::<()>::with_seed([0; 32]).build();
     processes.execute(&module, (), ()).unwrap();
-    match futures::executor::block_on(processes.run()) {
-        RunOneOutcome::ProcessFinished { outcome, .. } => {
-            assert!(matches!(outcome.unwrap(), Some(crate::WasmValue::I32(5))));
-        }
-        _ => panic!(),
-    };
+    loop {
+        let outcome = match futures::executor::block_on(processes.run()) {
+            RunFutureOut::Direct(v) => v,
+            RunFutureOut::ReadyToRun(rtr) => rtr.run(),
+        };
+        match outcome {
+            RunOneOutcome::StartProcessAbort { .. } => {}
+            RunOneOutcome::ProcessFinished { outcome, .. } => {
+                assert!(matches!(outcome.unwrap(), Some(crate::WasmValue::I32(5))));
+                break;
+            }
+            _ => panic!(),
+        };
+    }
 }
 
 #[test]
@@ -63,7 +71,11 @@ fn aborting_works() {
     );
     let processes = ProcessesCollectionBuilder::<()>::with_seed([0; 32]).build();
     processes.execute(&module, (), ()).unwrap().0.abort();
-    match futures::executor::block_on(processes.run()) {
+    let outcome = match futures::executor::block_on(processes.run()) {
+        RunFutureOut::Direct(v) => v,
+        RunFutureOut::ReadyToRun(rtr) => rtr.run(),
+    };
+    match outcome {
         RunOneOutcome::ProcessFinished {
             outcome: Err(_), ..
         } => {}
@@ -110,20 +122,25 @@ fn many_processes() {
 
             let mut local_finished = Vec::with_capacity(num_processes);
             loop {
-                match processes.run().now_or_never() {
-                    Some(RunOneOutcome::ProcessFinished { pid, outcome, .. }) => {
+                let outcome = match processes.run().now_or_never() {
+                    Some(RunFutureOut::Direct(v)) => v,
+                    Some(RunFutureOut::ReadyToRun(rtr)) => rtr.run(),
+                    None => break,
+                };
+                match outcome {
+                    RunOneOutcome::ProcessFinished { pid, outcome, .. } => {
                         assert!(matches!(
                             outcome.unwrap(),
                             Some(crate::WasmValue::I32(1234))
                         ));
                         local_finished.push(pid);
                     }
-                    Some(RunOneOutcome::Interrupted {
+                    RunOneOutcome::Interrupted {
                         thread, id: &98, ..
-                    }) => {
+                    } => {
                         thread.resume(Some(crate::WasmValue::I32(1234)));
                     }
-                    None => break,
+                    RunOneOutcome::StartProcessAbort { .. } => {}
                     _ => panic!(),
                 };
             }
