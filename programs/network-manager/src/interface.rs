@@ -60,7 +60,7 @@ use std::{
 // TODO: Debug
 pub struct NetInterfaceState<TSockUd> {
     /// State of the Ethernet interface.
-    ethernet: smoltcp::iface::EthernetInterface<'static, 'static, 'static, RawDevice>,
+    ethernet: smoltcp::iface::EthernetInterface<'static, RawDevice>,
 
     /// State of the DHCPv4 client, if enabled.
     dhcp_v4_client: Option<Dhcpv4Client>,
@@ -69,7 +69,7 @@ pub struct NetInterfaceState<TSockUd> {
     reported_available_data: bool,
 
     /// Collection of all the active sockets that currently operate on this interface.
-    sockets: smoltcp::socket::SocketSet<'static, 'static, 'static>,
+    sockets: smoltcp::socket::SocketSet<'static>,
 
     /// State of the sockets. Maintained in parallel with [`NetInterfaceState`].
     sockets_state: HashMap<SocketId, SocketState<TSockUd>, FnvBuildHasher>,
