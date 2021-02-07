@@ -25,7 +25,7 @@
 
 use crate::extrinsics;
 use crate::module::{Module, ModuleHash};
-use crate::scheduler::{Core, CoreBuilder, CoreRunOutcome, NewErr};
+use crate::scheduler::{self, Core, CoreBuilder, CoreRunOutcome, NewErr};
 use crate::InterfaceHash;
 
 mod interfaces;
@@ -138,6 +138,33 @@ pub struct SystemBuilder<TExtr: extrinsics::Extrinsics> {
     programs_to_load: SegQueue<ModuleHash>,
 }
 
+/// Event returned by [`System::run`].
+pub enum ExecuteOut<'a, TExtr: extrinsics::Extrinsics> {
+    /// Event directly generated.
+    Direct(SystemRunOutcome<'a, TExtr>),
+    /// Ready to execute a bit of a thread.
+    ReadyToRun(ReadyToRun<'a, TExtr>),
+}
+
+/// Ready to resume one of the threads of a process.
+#[must_use]
+pub struct ReadyToRun<'a, TExtr: extrinsics::Extrinsics> {
+    system: &'a System<TExtr>,
+    inner: scheduler::ReadyToRun<'a, TExtr>,
+}
+
+impl<'a, TExtr: extrinsics::Extrinsics> ReadyToRun<'a, TExtr> {
+    /// Performs the actual execution.
+    ///
+    /// Returns `None` if the execution doesn't lead to any event in particular.
+    pub fn run(self) -> Option<SystemRunOutcome<'a, TExtr>> {
+        let system = self.system;
+        self.inner
+            .run()
+            .and_then(move |out| system.inner_event(out))
+    }
+}
+
 /// Outcome of running the [`System`] once.
 #[derive(Debug)]
 pub enum SystemRunOutcome<'a, TExtr: extrinsics::Extrinsics> {
@@ -190,199 +217,229 @@ where
     /// >           do. In other words, this function can be seen more as a generator that whose
     /// >           `Future` becomes `Ready` only when something needs to be notified.
     // TODO: revisit comment
-    pub async fn run<'a>(&'a self) -> SystemRunOutcome<'a, TExtr> {
+    pub async fn run<'a>(&'a self) -> ExecuteOut<'a, TExtr> {
         loop {
             match self.core.run().await {
-                CoreRunOutcome::ProgramFinished { pid, outcome, .. } => {
-                    // TODO: cancel interface registrations ; update loader_registration_id
-                    // TODO: notify interface registrations of process destruction
-
-                    for _message_id in self.pending_answers.drain_by_answerer(&pid) {
-                        // TODO: notify emitter of cancellation
+                scheduler::ExecuteOut::Direct(event) => {
+                    if let Some(event) = self.inner_event(event) {
+                        return ExecuteOut::Direct(event);
                     }
+                }
+                scheduler::ExecuteOut::ReadyToRun(ready_to_run) => {
+                    return ExecuteOut::ReadyToRun(ReadyToRun {
+                        system: self,
+                        inner: ready_to_run,
+                    })
+                }
+            }
+        }
+    }
 
-                    if outcome.is_ok() {
-                        self.num_processes_finished.fetch_add(1, Ordering::Relaxed);
-                    } else {
-                        self.num_processes_trap.fetch_add(1, Ordering::Relaxed);
-                    }
+    fn inner_event<'a>(
+        &'a self,
+        event: scheduler::CoreRunOutcome,
+    ) -> Option<SystemRunOutcome<'a, TExtr>> {
+        match event {
+            CoreRunOutcome::ProgramFinished { pid, outcome, .. } => {
+                // TODO: cancel interface registrations ; update loader_registration_id
+                // TODO: notify interface registrations of process destruction
 
-                    return SystemRunOutcome::ProgramFinished {
-                        pid,
-                        outcome: outcome.map(|_| ()).map_err(|err| err.into()),
-                    };
+                for _message_id in self.pending_answers.drain_by_answerer(&pid) {
+                    // TODO: notify emitter of cancellation
                 }
 
-                CoreRunOutcome::InterfaceMessage {
+                if outcome.is_ok() {
+                    self.num_processes_finished.fetch_add(1, Ordering::Relaxed);
+                } else {
+                    self.num_processes_trap.fetch_add(1, Ordering::Relaxed);
+                }
+
+                return Some(SystemRunOutcome::ProgramFinished {
                     pid,
-                    needs_answer,
-                    immediate: _,
-                    message_id,
-                    interface,
-                } if interface == redshirt_interface_interface::ffi::INTERFACE => {
-                    // Handling messages on the `interface` interface.
-                    let (_, message) = match self.core.accept_interface_message(message_id) {
-                        Some(v) => v,
-                        None => continue,
-                    };
+                    outcome: outcome.map(|_| ()).map_err(|err| err.into()),
+                });
+            }
 
-                    match redshirt_interface_interface::ffi::InterfaceMessage::decode(message) {
-                        Ok(redshirt_interface_interface::ffi::InterfaceMessage::Register(
-                            interface_hash,
-                        )) => {
-                            // Set the process as interface handler, if possible.
-                            let result = self.set_interface_handler(&interface_hash, pid);
+            CoreRunOutcome::InterfaceMessage {
+                pid,
+                needs_answer,
+                immediate: _,
+                message_id,
+                interface,
+            } if interface == redshirt_interface_interface::ffi::INTERFACE => {
+                // Handling messages on the `interface` interface.
+                let (_, message) = match self.core.accept_interface_message(message_id) {
+                    Some(v) => v,
+                    None => return None,
+                };
 
-                            let response =
-                                redshirt_interface_interface::ffi::InterfaceRegisterResponse {
-                                    result: result.clone(),
-                                };
-                            if needs_answer {
-                                self.core.answer_message(message_id, Ok(response.encode()));
-                            }
+                match redshirt_interface_interface::ffi::InterfaceMessage::decode(message) {
+                    Ok(redshirt_interface_interface::ffi::InterfaceMessage::Register(
+                        interface_hash,
+                    )) => {
+                        // Set the process as interface handler, if possible.
+                        let result = self.set_interface_handler(&interface_hash, pid);
+
+                        let response =
+                            redshirt_interface_interface::ffi::InterfaceRegisterResponse {
+                                result: result.clone(),
+                            };
+                        if needs_answer {
+                            self.core.answer_message(message_id, Ok(response.encode()));
                         }
-                        Ok(redshirt_interface_interface::ffi::InterfaceMessage::NextMessage(
-                            registration_id,
-                        )) => {
-                            // TODO: silently discard a message if !needs_answer?
-                            if needs_answer {
-                                loop {
-                                    // TODO: immediate not taken into account
-                                    match self.interfaces.emit_message_query(
-                                        registration_id.into(),
-                                        message_id,
-                                        pid,
-                                    ) {
-                                        Ok(Some(delivery)) => {
-                                            if self.deliver(delivery).is_err() {
-                                                continue;
-                                            }
-                                        }
-                                        Ok(None) => {}
-                                        Err(()) => {
-                                            self.core.answer_message(message_id, Err(()));
+
+                        None
+                    }
+                    Ok(redshirt_interface_interface::ffi::InterfaceMessage::NextMessage(
+                        registration_id,
+                    )) => {
+                        // TODO: silently discard a message if !needs_answer?
+                        if needs_answer {
+                            loop {
+                                // TODO: immediate not taken into account
+                                match self.interfaces.emit_message_query(
+                                    registration_id.into(),
+                                    message_id,
+                                    pid,
+                                ) {
+                                    Ok(Some(delivery)) => {
+                                        if self.deliver(delivery).is_err() {
+                                            continue;
                                         }
                                     }
-
-                                    break;
+                                    Ok(None) => {}
+                                    Err(()) => {
+                                        self.core.answer_message(message_id, Err(()));
+                                    }
                                 }
-                            } else {
-                                todo!()
-                            }
-                        }
-                        Ok(redshirt_interface_interface::ffi::InterfaceMessage::Answer(
-                            answered_message_id,
-                            answer_bytes,
-                        )) => {
-                            // TODO: handle errors here
-                            // TODO: handle `needs_answer` equal true?
-                            if self
-                                .pending_answers
-                                .remove(&answered_message_id, &pid)
-                                .is_ok()
-                            {
-                                // TODO: must handle emitter is native
-                                self.core.answer_message(
-                                    answered_message_id,
-                                    answer_bytes.map(EncodedMessage),
-                                );
-                            }
 
-                            // TODO: reimplement
-                            /*if self.loading_programs.lock().remove(&message_id) {
-                                let redshirt_loader_interface::ffi::LoadResponse { result } =
-                                    Decode::decode(answer.unwrap()).unwrap();
-                                // TODO: don't unwrap
-                                let module = Module::from_bytes(&result.expect("loader returned error"))
-                                    .expect("module isn't proper wasm");
-                                self.num_processes_started.fetch_add(1, Ordering::Relaxed);
-                                match self.core.execute(&module) {
-                                    Ok(_) => {}
-                                    Err(_) => panic!(),
-                                }
-                            }*/
-                        }
-                        Err(_) => {
-                            if needs_answer {
-                                self.core.answer_message(message_id, Err(()));
+                                break;
                             }
-                        }
-                    }
-                }
-
-                CoreRunOutcome::InterfaceMessage {
-                    pid: _,
-                    needs_answer,
-                    immediate: _,
-                    message_id,
-                    interface,
-                } if interface == redshirt_kernel_debug_interface::INTERFACE => {
-                    // Handling messages on the `kernel_debug` interface.
-                    let (_, message) = match self.core.accept_interface_message(message_id) {
-                        Some(v) => v,
-                        None => continue,
-                    };
-
-                    if needs_answer {
-                        if message.0.is_empty() {
-                            return SystemRunOutcome::KernelDebugMetricsRequest(
-                                KernelDebugMetricsRequest {
-                                    system: self,
-                                    message_id,
-                                },
-                            );
                         } else {
+                            todo!()
+                        }
+
+                        None
+                    }
+                    Ok(redshirt_interface_interface::ffi::InterfaceMessage::Answer(
+                        answered_message_id,
+                        answer_bytes,
+                    )) => {
+                        // TODO: handle errors here
+                        // TODO: handle `needs_answer` equal true?
+                        if self
+                            .pending_answers
+                            .remove(&answered_message_id, &pid)
+                            .is_ok()
+                        {
+                            // TODO: must handle emitter is native
+                            self.core.answer_message(
+                                answered_message_id,
+                                answer_bytes.map(EncodedMessage),
+                            );
+                        }
+
+                        None
+
+                        // TODO: reimplement
+                        /*if self.loading_programs.lock().remove(&message_id) {
+                            let redshirt_loader_interface::ffi::LoadResponse { result } =
+                                Decode::decode(answer.unwrap()).unwrap();
+                            // TODO: don't unwrap
+                            let module = Module::from_bytes(&result.expect("loader returned error"))
+                                .expect("module isn't proper wasm");
+                            self.num_processes_started.fetch_add(1, Ordering::Relaxed);
+                            match self.core.execute(&module) {
+                                Ok(_) => {}
+                                Err(_) => panic!(),
+                            }
+                        }*/
+                    }
+                    Err(_) => {
+                        if needs_answer {
                             self.core.answer_message(message_id, Err(()));
                         }
+                        None
+                    }
+                }
+            }
+
+            CoreRunOutcome::InterfaceMessage {
+                pid: _,
+                needs_answer,
+                immediate: _,
+                message_id,
+                interface,
+            } if interface == redshirt_kernel_debug_interface::INTERFACE => {
+                // Handling messages on the `kernel_debug` interface.
+                let (_, message) = match self.core.accept_interface_message(message_id) {
+                    Some(v) => v,
+                    None => return None,
+                };
+
+                if needs_answer {
+                    if message.0.is_empty() {
+                        return Some(SystemRunOutcome::KernelDebugMetricsRequest(
+                            KernelDebugMetricsRequest {
+                                system: self,
+                                message_id,
+                            },
+                        ));
+                    } else {
+                        self.core.answer_message(message_id, Err(()));
                     }
                 }
 
-                CoreRunOutcome::InterfaceMessage {
-                    pid: emitter_pid,
-                    needs_answer,
-                    message_id,
+                None
+            }
+
+            CoreRunOutcome::InterfaceMessage {
+                pid: emitter_pid,
+                needs_answer,
+                message_id,
+                interface,
+                ..
+            } if self.native_interfaces.contains(&interface) => {
+                let (_, message) = self.core.accept_interface_message(message_id).unwrap();
+
+                return Some(SystemRunOutcome::NativeInterfaceMessage {
                     interface,
-                    ..
-                } if self.native_interfaces.contains(&interface) => {
-                    let (_, message) = self.core.accept_interface_message(message_id).unwrap();
+                    emitter_pid,
+                    message_id: if needs_answer { Some(message_id) } else { None },
+                    message,
+                });
+            }
 
-                    return SystemRunOutcome::NativeInterfaceMessage {
-                        interface,
-                        emitter_pid,
-                        message_id: if needs_answer { Some(message_id) } else { None },
-                        message,
-                    };
-                }
-
-                CoreRunOutcome::InterfaceMessage {
+            CoreRunOutcome::InterfaceMessage {
+                pid,
+                needs_answer,
+                immediate,
+                message_id,
+                interface,
+            } => {
+                match self.interfaces.emit_interface_message(
+                    &interface,
+                    message_id,
                     pid,
                     needs_answer,
                     immediate,
-                    message_id,
-                    interface,
-                } => {
-                    match self.interfaces.emit_interface_message(
-                        &interface,
-                        message_id,
-                        pid,
-                        needs_answer,
-                        immediate,
-                    ) {
-                        interfaces::EmitInterfaceMessage::Deliver(delivery) => {
-                            match self.deliver(delivery) {
-                                Ok(()) => {}
-                                Err(()) => todo!(), // TODO: ouch, that is complex
-                            }
-                        }
-                        interfaces::EmitInterfaceMessage::Reject => {
-                            debug_assert!(immediate);
-                            self.core.reject_immediate_interface_message(message_id);
-                        }
-                        interfaces::EmitInterfaceMessage::Queued => {
-                            debug_assert!(!immediate);
+                ) {
+                    interfaces::EmitInterfaceMessage::Deliver(delivery) => {
+                        match self.deliver(delivery) {
+                            Ok(()) => {}
+                            Err(()) => todo!(), // TODO: ouch, that is complex
                         }
                     }
+                    interfaces::EmitInterfaceMessage::Reject => {
+                        debug_assert!(immediate);
+                        self.core.reject_immediate_interface_message(message_id);
+                    }
+                    interfaces::EmitInterfaceMessage::Queued => {
+                        debug_assert!(!immediate);
+                    }
                 }
+
+                None
             }
         }
     }

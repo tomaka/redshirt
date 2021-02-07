@@ -23,5 +23,5 @@ mod processes;
 mod tests;
 mod vm;
 
-pub use self::ipc::{Core, CoreBuilder, CoreProcess, CoreRunOutcome};
+pub use self::ipc::{Core, CoreBuilder, CoreProcess, CoreRunOutcome, ExecuteOut, ReadyToRun};
 pub use self::vm::NewErr;

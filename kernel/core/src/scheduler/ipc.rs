@@ -109,6 +109,31 @@ pub struct CoreBuilder<TExt: Extrinsics> {
     seed: [u8; 32],
 }
 
+/// Event returned by [`Core::run`].
+pub enum ExecuteOut<'a, TExt: Extrinsics> {
+    /// Event directly generated.
+    Direct(CoreRunOutcome),
+    /// Ready to execute a bit of a thread.
+    ReadyToRun(ReadyToRun<'a, TExt>),
+}
+
+/// Ready to resume one of the threads of a process.
+#[must_use]
+pub struct ReadyToRun<'a, TExt: Extrinsics> {
+    core: &'a Core<TExt>,
+    inner: extrinsics::ReadyToRun<'a, Process, (), TExt>,
+}
+
+impl<'a, TExt: Extrinsics> ReadyToRun<'a, TExt> {
+    /// Performs the actual execution.
+    ///
+    /// Returns `None` if the execution doesn't lead to any event in particular.
+    pub fn run(self) -> Option<CoreRunOutcome> {
+        let core = self.core;
+        self.inner.run().and_then(move |out| core.inner_event(out))
+    }
+}
+
 /// Outcome of calling [`run`](Core::run).
 #[derive(Debug)]
 pub enum CoreRunOutcome {
@@ -168,7 +193,7 @@ pub struct CoreProcess<'a, TExt: Extrinsics> {
 
 impl<TExt: Extrinsics> Core<TExt> {
     /// Run the core once.
-    pub async fn run(&self) -> CoreRunOutcome {
+    pub async fn run<'a>(&'a self) -> ExecuteOut<'a, TExt> {
         loop {
             if let Some(ev) = self.run_inner().await {
                 break ev;
@@ -178,14 +203,28 @@ impl<TExt: Extrinsics> Core<TExt> {
 
     /// Same as [`Core::run`]. Returns `None` if no event should be returned and we should loop
     /// again.
-    async fn run_inner(&self) -> Option<CoreRunOutcome> {
+    async fn run_inner<'a>(&'a self) -> Option<ExecuteOut<'a, TExt>> {
         if let Some(ev) = self.pending_events.pop() {
-            return Some(ev);
+            return Some(ExecuteOut::Direct(ev));
         }
 
         // Note: we use a temporary `run_outcome` variable in order to solve weird borrowing
         // issues. Feel free to try to remove it if you manage.
-        let run_outcome = self.processes.run().await;
+        match self.processes.run().await {
+            extrinsics::ExecuteOut::Direct(event) => {
+                self.inner_event(event).map(ExecuteOut::Direct)
+            }
+            extrinsics::ExecuteOut::ReadyToRun(ready) => Some(ExecuteOut::ReadyToRun(ReadyToRun {
+                core: self,
+                inner: ready,
+            })),
+        }
+    }
+
+    fn inner_event(
+        &self,
+        run_outcome: extrinsics::RunOneOutcome<Process, (), TExt>,
+    ) -> Option<CoreRunOutcome> {
         match run_outcome {
             extrinsics::RunOneOutcome::ProcessFinished { pid, outcome, .. } => {
                 Some(CoreRunOutcome::ProgramFinished { pid, outcome })
