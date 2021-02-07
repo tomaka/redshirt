@@ -99,7 +99,7 @@ fn emit_not_available() {
     let core = CoreBuilder::<NoExtrinsics>::with_seed([0; 64]).build();
     core.execute(&module).unwrap();
 
-    match core.run().now_or_never() {
+    match core.run().now_or_never().unwrap().or_run() {
         Some(CoreRunOutcome::InterfaceMessage { interface, .. }) => {
             assert_eq!(
                 interface,
@@ -113,8 +113,5 @@ fn emit_not_available() {
         _ => panic!(),
     }
 
-    match core.run().now_or_never() {
-        None => {}
-        _ => panic!(),
-    }
+    assert!(core.run().now_or_never().is_none());
 }
