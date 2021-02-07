@@ -117,6 +117,15 @@ pub enum ExecuteOut<'a, TExt: Extrinsics> {
     ReadyToRun(ReadyToRun<'a, TExt>),
 }
 
+impl<'a, TExt: Extrinsics> ExecuteOut<'a, TExt> {
+    pub fn or_run(self) -> Option<CoreRunOutcome> {
+        match self {
+            ExecuteOut::Direct(ev) => Some(ev),
+            ExecuteOut::ReadyToRun(run) => run.run(),
+        }
+    }
+}
+
 /// Ready to resume one of the threads of a process.
 #[must_use]
 pub struct ReadyToRun<'a, TExt: Extrinsics> {

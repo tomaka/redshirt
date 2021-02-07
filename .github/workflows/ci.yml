@@ -42,6 +42,28 @@ jobs:
         name: wasm-programs
         path: programs/target
 
+  test-core:
+    runs-on: ubuntu-latest
+    container:
+      image: rust
+    steps:
+    - uses: actions/checkout@v2
+    - uses: actions/cache@v2.1.4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: core-cargo-${{ hashFiles('**/Cargo.lock') }}
+    - name: Install nightly Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: nightly-2020-12-28
+        target: wasm32-wasi
+        override: true
+    - name: Test redshirt-core
+      run: cargo test --package redshirt-core
+
   build-standalone:
     name: Build standalone kernel
     needs: build-programs
