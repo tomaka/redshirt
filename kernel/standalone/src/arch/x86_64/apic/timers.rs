@@ -331,7 +331,9 @@ impl Future for TimerFuture {
             {
                 if active_timer.timer_id == timer_id {
                     debug_assert_eq!(this.tsc_value, active_timer.target_tsc_value);
-                    active_timer.waker = cx.waker().clone();
+                    if !active_timer.waker.will_wake(cx.waker()) {
+                        active_timer.waker = cx.waker().clone();
+                    }
                     return Poll::Pending;
                 }
             }
