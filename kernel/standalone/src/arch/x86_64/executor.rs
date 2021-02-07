@@ -64,6 +64,9 @@ impl Executor {
         let mut context = Context::from_waker(&waker);
 
         loop {
+            // Poll the future.
+            // Starting from here, the `wake_by_ref` function defined below can be called at
+            // any time.
             if let Poll::Ready(val) = Future::poll(future.as_mut(), &mut context) {
                 return val;
             }
@@ -74,10 +77,22 @@ impl Executor {
                 interrupts::process_wakers();
 
                 debug_assert!(x86_64::instructions::interrupts::are_enabled());
-                x86_64::instructions::interrupts::disable();
+                unsafe {
+                    // Note: `cli` modifies a flag, meaning that `preserves_flags` might seem
+                    // incorrect. However the rules of `preserves_flags` do not include the
+                    // interrupt flag.
+                    asm!("cli", options(nomem, nostack, preserves_flags));
+                }
 
-                // We store `true` in `need_ipi` before checking `woken_up`, otherwise there could
-                // be a state where `need_ipi` is `false` but we've already checked `woken_up`.
+                // Remember that `wake_by_ref` might be called at any time.
+                // We're going to check `woken_up` below. If `woken_up` is false, we're going to
+                // execute an `hlt` instruction. We need to put `true` in `need_ipi`, so that
+                // `wake_by_ref` gets called from a different core and sends an IPI to the
+                // current processor to wake it up.
+                //
+                // However, we need to store `true` in `need_ipi` before checking `woken_up`,
+                // otherwise there could be a state where `need_ipi` is `false` but we've already
+                // checked `woken_up`.
                 local_wake.need_ipi.store(true, atomic::Ordering::SeqCst);
 
                 if local_wake
@@ -92,14 +107,24 @@ impl Executor {
                 {
                     // We're going to poll the `Future` again, so `need_ipi` can be set to `false`.
                     local_wake.need_ipi.store(false, atomic::Ordering::SeqCst);
-                    x86_64::instructions::interrupts::enable();
+                    unsafe {
+                        // Note: `sti` modifies a flag, meaning that `preserves_flags` might seem
+                        // incorrect. However the rules of `preserves_flags` do not include the
+                        // interrupt flag.
+                        asm!("sti", options(nomem, nostack, preserves_flags));
+                    }
                     break;
                 }
 
-                // An `sti` opcode only takes effect after the *next* opcode, which is `hlt` here.
-                // It is not possible for an interrupt to happen between `sti` and `hlt`.
-                x86_64::instructions::interrupts::enable();
-                x86_64::instructions::hlt();
+                // According to the x86 specificiation, an `sti` opcode only takes effect after
+                // the *next* opcode, which is `hlt` here.
+                // It is therefore not possible for an interrupt to happen between `sti` and `hlt`.
+                unsafe {
+                    // Note: `sti` modifies a flag, meaning that `preserves_flags` might seem
+                    // incorrect. However the rules of `preserves_flags` do not include the
+                    // interrupt flag.
+                    asm!("sti; hlt", options(nomem, nostack, preserves_flags));
+                }
             }
         }
     }
