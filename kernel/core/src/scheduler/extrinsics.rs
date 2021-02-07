@@ -243,6 +243,35 @@ enum LocalThreadState<TExtCtxt> {
     Poisoned,
 }
 
+/// Event returned by [`ProcessesCollectionExtrinsics::run`].
+pub enum ExecuteOut<'a, TPud, TTud, TExt: Extrinsics> {
+    /// Event directly generated.
+    Direct(RunOneOutcome<'a, TPud, TTud, TExt>),
+    /// Ready to execute a bit of a thread.
+    ReadyToRun(ReadyToRun<'a, TPud, TTud, TExt>),
+}
+
+/// Ready to resume one of the threads of a process.
+#[must_use]
+pub struct ReadyToRun<'a, TPud, TTud, TExt: Extrinsics> {
+    collection: &'a ProcessesCollectionExtrinsics<TPud, TTud, TExt>,
+    inner: processes::ReadyToRun<
+        'a,
+        Extrinsic<TExt::ExtrinsicId>,
+        LocalProcessUserData<TPud, TExt>,
+        LocalThreadUserData<TTud, TExt::Context>,
+    >,
+}
+
+impl<'a, TPud, TTud, TExt: Extrinsics> ReadyToRun<'a, TPud, TTud, TExt> {
+    /// Performs the actual execution.
+    ///
+    /// Returns `None` if the execution doesn't lead to any event in particular.
+    pub fn run(mut self) -> Option<RunOneOutcome<'a, TPud, TTud, TExt>> {
+        self.collection.inner_event(self.inner.run())
+    }
+}
+
 /// Outcome of the [`run`](ProcessesCollectionExtrinsics::run) function.
 #[derive(Debug)]
 pub enum RunOneOutcome<'a, TPud, TTud, TExt: Extrinsics> {
@@ -341,73 +370,92 @@ where
     /// Runs one thread amongst the collection.
     ///
     /// Which thread is run is implementation-defined and no guarantee is made.
-    pub async fn run<'a>(&'a self) -> RunOneOutcome<'a, TPud, TTud, TExt> {
+    pub async fn run<'a>(&'a self) -> ExecuteOut<'a, TPud, TTud, TExt> {
         loop {
-            if let Some(outcome) = self.run_once().await {
-                return outcome;
-            }
-        }
-    }
+            while let Some(tid) = self.local_run_queue.pop() {
+                // It is possible that the thread no longer exists, for example if the process crashed.
+                let mut thread = match self.inner.interrupted_thread_by_id(tid) {
+                    Some(t) => t,
+                    None => continue,
+                };
 
-    /// Internal. Similar to [`run`](ProcessesCollectionExtrinsics::run). Should be called
-    /// repeatidly as long as it returns `None`.
-    async fn run_once<'a>(&'a self) -> Option<RunOneOutcome<'a, TPud, TTud, TExt>> {
-        while let Some(tid) = self.local_run_queue.pop() {
-            // It is possible that the thread no longer exists, for example if the process crashed.
-            let mut thread = self.inner.interrupted_thread_by_id(tid)?;
-            match mem::replace(
-                &mut thread.user_data_mut().state,
-                LocalThreadState::Poisoned,
-            ) {
-                LocalThreadState::OtherExtrinsicReportWait { context, message } => {
-                    thread.user_data_mut().state =
-                        LocalThreadState::OtherExtrinsicWait { context, message };
-                    let process = ProcAccess {
-                        parent: self,
-                        inner: thread.process(),
-                    };
-                    return Some(RunOneOutcome::ThreadWaitNotification(ThreadWaitNotif {
-                        process,
-                        inner: thread,
-                    }));
-                }
-                LocalThreadState::OtherExtrinsicApplyAction { context, action } => match action {
-                    ExtrinsicsAction::ProgramCrash => unimplemented!(),
-                    ExtrinsicsAction::Resume(value) => {
-                        thread.user_data_mut().state = LocalThreadState::ReadyToRun;
-                        thread.resume(value)
-                    }
-                    ExtrinsicsAction::EmitMessage {
-                        interface,
-                        message,
-                        response_expected,
-                    } => {
-                        thread.user_data_mut().state = LocalThreadState::OtherExtrinsicEmit {
-                            context,
-                            interface,
-                            message,
-                            response_expected,
-                        };
+                match mem::replace(
+                    &mut thread.user_data_mut().state,
+                    LocalThreadState::Poisoned,
+                ) {
+                    LocalThreadState::OtherExtrinsicReportWait { context, message } => {
+                        thread.user_data_mut().state =
+                            LocalThreadState::OtherExtrinsicWait { context, message };
                         let process = ProcAccess {
                             parent: self,
                             inner: thread.process(),
                         };
-                        return Some(RunOneOutcome::ThreadEmitMessage(ThreadEmitMessage {
-                            process,
-                            inner: thread,
-                        }));
+                        return ExecuteOut::Direct(RunOneOutcome::ThreadWaitNotification(
+                            ThreadWaitNotif {
+                                process,
+                                inner: thread,
+                            },
+                        ));
                     }
-                },
-                _ => unreachable!(),
+                    LocalThreadState::OtherExtrinsicApplyAction { context, action } => match action
+                    {
+                        ExtrinsicsAction::ProgramCrash => unimplemented!(),
+                        ExtrinsicsAction::Resume(value) => {
+                            thread.user_data_mut().state = LocalThreadState::ReadyToRun;
+                            thread.resume(value)
+                        }
+                        ExtrinsicsAction::EmitMessage {
+                            interface,
+                            message,
+                            response_expected,
+                        } => {
+                            thread.user_data_mut().state = LocalThreadState::OtherExtrinsicEmit {
+                                context,
+                                interface,
+                                message,
+                                response_expected,
+                            };
+                            let process = ProcAccess {
+                                parent: self,
+                                inner: thread.process(),
+                            };
+                            return ExecuteOut::Direct(RunOneOutcome::ThreadEmitMessage(
+                                ThreadEmitMessage {
+                                    process,
+                                    inner: thread,
+                                },
+                            ));
+                        }
+                    },
+                    _ => unreachable!(),
+                }
+            }
+
+            match self.inner.run().await {
+                processes::RunFutureOut::Direct(ev) => {
+                    if let Some(ev) = self.inner_event(ev) {
+                        return ExecuteOut::Direct(ev);
+                    }
+                }
+                processes::RunFutureOut::ReadyToRun(inner) => {
+                    return ExecuteOut::ReadyToRun(ReadyToRun {
+                        collection: self,
+                        inner,
+                    })
+                }
             }
         }
+    }
 
-        // TODO: propagate to upper layers instead
-        let mut outcome = match self.inner.run().await {
-            processes::RunFutureOut::Direct(ev) => ev,
-            processes::RunFutureOut::ReadyToRun(rtr) => rtr.run(),
-        };
-
+    fn inner_event<'a>(
+        &'a self,
+        mut outcome: processes::RunOneOutcome<
+            'a,
+            Extrinsic<TExt::ExtrinsicId>,
+            LocalProcessUserData<TPud, TExt>,
+            LocalThreadUserData<TTud, TExt::Context>,
+        >,
+    ) -> Option<RunOneOutcome<'a, TPud, TTud, TExt>> {
         match outcome {
             processes::RunOneOutcome::ProcessFinished {
                 pid,

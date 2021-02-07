@@ -192,6 +192,15 @@ impl Kernel {
                 }
             };
 
+            // TODO: do this better to combine with the external handlers reporting
+            let core_event = match core_event {
+                redshirt_core::ExecuteOut::Direct(ev) => ev,
+                redshirt_core::ExecuteOut::ReadyToRun(ready_to_run) => match ready_to_run.run() {
+                    Some(ev) => ev,
+                    None => continue,
+                },
+            };
+
             match core_event {
                 redshirt_core::system::SystemRunOutcome::ProgramFinished { pid, .. } => {
                     self.hardware.process_destroyed(pid);

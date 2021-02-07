@@ -114,7 +114,7 @@
 extern crate alloc;
 
 pub use self::module::Module;
-pub use self::system::{System, SystemBuilder, SystemRunOutcome};
+pub use self::system::{ExecuteOut, System, SystemBuilder, SystemRunOutcome};
 pub use primitives::{ValueType, WasmValue};
 pub use redshirt_syscalls::{
     Decode, Encode, EncodedMessage, EncodedMessageRef, InterfaceHash, InvalidMessageIdErr,
