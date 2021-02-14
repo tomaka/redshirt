@@ -36,8 +36,7 @@ slab = { git = "https://github.com/tokio-rs/slab", default-features = false, rev
 smallvec = { version = "1.6.1", default-features = false }
 spinning_top = "0.2.2"
 wasi = { git = "https://github.com/bytecodealliance/wasi", rev = "45536ac956a6211e3cff047f36cf19d6da82fd95", default-features = false }# TODO: dependabot cannot parse the versioning scheme (`0.10.0+wasi-snapshot-preview1`) of this crate on crates.io
-# TODO: https://github.com/paritytech/wasmi/issues/218
-wasmi = { git = "https://github.com/tomaka/wasmi", branch = "no-std", default-features = false, features = ["core"] }
+wasmi = { version = "0.7.0", default-features = false, features = ["core"] }
 
 [dev-dependencies]
 criterion = "0.3"
