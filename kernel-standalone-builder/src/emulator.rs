@@ -75,7 +75,7 @@ pub fn run_kernel(cfg: Config) -> Result<(), Error> {
                 .arg("-cdrom")
                 .arg(build_dir.path().join("image"))
                 .args(&["-smp", "cpus=4"])
-                .args(&["-enable-kvm", "-cpu", "host"])
+                // TODO: needs to be commented out for CI .args(&["-enable-kvm", "-cpu", "host"])
                 .status()
                 .map_err(Error::EmulatorNotFound)?;
 

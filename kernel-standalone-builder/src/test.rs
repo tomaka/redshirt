@@ -83,8 +83,7 @@ pub fn test_kernel(cfg: Config) -> Result<(), Error> {
                     .args(&["-serial", "stdio"])
                     .arg("-cdrom")
                     .arg(build_dir.path().join("image"))
-                    .args(&["-smp", "cpus=4"])
-                    .args(&["-enable-kvm", "-cpu", "host"]),
+                    .args(&["-smp", "cpus=4"]),
             )?;
         }
 
