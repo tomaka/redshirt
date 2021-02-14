@@ -73,7 +73,7 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y clang-10 lld libisoburn1 xorriso grub-pc-bin mtools
     - run: |
-        sudo apt-get install qemu-utils qemu-system-x86_64
+        sudo apt-get install qemu-utils qemu-system-x86
       if: ${{ matrix.target == 'x86_64-multiboot2'}}
     - uses: actions/cache@v2.1.4
       with:
