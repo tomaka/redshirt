@@ -80,6 +80,7 @@ pub fn test_kernel(cfg: Config) -> Result<(), Error> {
             run_until_line(
                 &mut Command::new("qemu-system-x86_64")
                     .args(&["-m", "1024"])
+                    .arg("-nographic")
                     .args(&["-serial", "stdio"])
                     .arg("-cdrom")
                     .arg(build_dir.path().join("image"))
@@ -101,6 +102,7 @@ pub fn test_kernel(cfg: Config) -> Result<(), Error> {
                 &mut Command::new("qemu-system-arm")
                     .args(&["-M", "raspi2"])
                     .args(&["-m", "1024"])
+                    .arg("-nographic")
                     .args(&["-serial", "stdio"])
                     .arg("-kernel")
                     .arg(build_out.out_kernel_path),
@@ -121,6 +123,7 @@ pub fn test_kernel(cfg: Config) -> Result<(), Error> {
                 &mut Command::new("qemu-system-aarch64")
                     .args(&["-M", "raspi3"])
                     .args(&["-m", "1024"])
+                    .arg("-nographic")
                     .args(&["-serial", "stdio"])
                     .arg("-kernel")
                     .arg(build_out.out_kernel_path),
@@ -142,6 +145,7 @@ pub fn test_kernel(cfg: Config) -> Result<(), Error> {
                     .args(&["-machine", "sifive_e"])
                     .args(&["-cpu", "sifive-e31"])
                     .args(&["-m", "2G"])
+                    .arg("-nographic")
                     .args(&["-serial", "stdio"])
                     .arg("-kernel")
                     .arg(build_out.out_kernel_path),
