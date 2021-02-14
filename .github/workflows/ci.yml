@@ -71,7 +71,7 @@ jobs:
     - name: Install required packages
       run: |
         sudo apt-get update
-        sudo apt-get install -y clang-10 lld libisoburn1 xorriso grub-pc-bin
+        sudo apt-get install -y clang-10 lld libisoburn1 xorriso grub-pc-bin mtools
     - uses: actions/cache@v2.1.4
       with:
         path: |
