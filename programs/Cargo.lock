@@ -2111,7 +2111,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "parity-scale-codec",
- "rand 0.7.3",
+ "rand 0.8.3",
  "redshirt-syscalls",
 ]
 
