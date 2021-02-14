@@ -17,8 +17,8 @@ jobs:
         override: true
     - name: Install dependencies
       run: |
-        apt-get update
-        apt-get install -y cmake clang-10
+        sudo apt-get update
+        sudo apt-get install -y cmake clang-10
     - uses: actions/cache@v2.1.4
       with:
         path: |
@@ -70,8 +70,8 @@ jobs:
         name: wasm-programs
     - name: Install required packages
       run: |
-        apt-get update
-        apt-get install -y clang-10 lld libisoburn1 xorriso grub-pc-bin
+        sudo apt-get update
+        sudo apt-get install -y clang-10 lld libisoburn1 xorriso grub-pc-bin
     - uses: actions/cache@v2.1.4
       with:
         path: |
@@ -160,8 +160,8 @@ jobs:
           override: true
       - name: Install dependencies
         run: |
-          apt-get update
-          apt-get install -y clang-10
+          sudo apt-get update
+          sudo apt-get install -y clang-10
       - uses: actions/cache@v2.1.4
         with:
           path: |
