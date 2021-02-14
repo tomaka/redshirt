@@ -44,14 +44,14 @@
 //! as opposed to the older *CHS* addressing where sectors were referred to a by a head number,
 //! cylinder number, and sectors offset. CHS addressing isn't used in this interface.
 //!
-//! It is not possible partially read or write a sector. The sector has to be read entirely, or
-//! written entirely.
+//! It is not possible to partially read or write a sector. The sector has to be read entirely,
+//! or written entirely.
 //!
 //! # Flushing
 //!
 //! The interface requires each disk write to be confirmed by sending a message on the interface
 //! after it has been performed. This is important in order for the upper layer to be capable of
-//! handling handle problematic situations such as a power outage.
+//! handling problematic situations such as a power outage.
 //!
 //! Consequently, while the disk driver is allowed to maintain a write cache, it must not report
 //! a write success after the data has been put in cache, but after it has been written to disk.
