@@ -29,7 +29,7 @@ redshirt-random-interface = { path = "../../interfaces/random", default-features
 redshirt-syscalls = { path = "../../interfaces/syscalls", default-features = false }
 redshirt-system-time-interface = { path = "../../interfaces/system-time", default-features = false }
 redshirt-time-interface = { path = "../../interfaces/time", default-features = false }
-rand = { version = "0.8.0", default-features = false }
+rand = { version = "0.8.3", default-features = false }
 rand_chacha = { version = "0.3.0", default-features = false }
 rand_core = { version = "0.6.0", default-features = false }
 slab = { git = "https://github.com/tokio-rs/slab", default-features = false, rev = "3340fdcf7204584b9ee509beabf3b174a333dfc1" }
