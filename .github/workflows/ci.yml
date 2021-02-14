@@ -18,7 +18,7 @@ jobs:
         target: wasm32-wasi
         override: true
     - name: Install dependencies
-      run: apt-get install -y cmake clang
+      run: apt-get install -y cmake clang-10
     - uses: actions/cache@v2.1.4
       with:
         path: |
@@ -75,7 +75,7 @@ jobs:
     - name: Install required packages
       run: |
         apt-get update
-        apt-get install -y clang lld libisoburn1 xorriso grub-pc-bin
+        apt-get install -y clang-10 lld libisoburn1 xorriso grub-pc-bin
     - uses: actions/cache@v2.1.4
       with:
         path: |
@@ -167,7 +167,7 @@ jobs:
           target: wasm32-wasi
           override: true
       - name: Install dependencies
-        run: apt-get install -y clang
+        run: apt-get install -y clang-10
       - uses: actions/cache@v2.1.4
         with:
           path: |
