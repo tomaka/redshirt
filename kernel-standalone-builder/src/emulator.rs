@@ -36,6 +36,7 @@ pub struct Config<'a> {
 #[derive(Debug)]
 pub enum Emulator {
     Qemu,
+    QemuI386,
 }
 
 /// Error that can happen during the build.
@@ -44,6 +45,10 @@ pub enum Error {
     /// Error while building the image.
     #[error("Error while building the image: {0}")]
     Build(#[from] crate::image::Error),
+
+    /// Requested emulator isn't compatible with target.
+    #[error("Requested emulator isn't compatible with target")]
+    IncompatibleEmulator,
 
     #[error("Emulator not found: {0}")]
     EmulatorNotFound(io::Error),
@@ -57,10 +62,13 @@ pub enum Error {
 
 /// Runs the kernel in an emulator.
 pub fn run_kernel(cfg: Config) -> Result<(), Error> {
-    let Emulator::Qemu = cfg.emulator;
-
     match cfg.target {
         crate::image::Target::X8664Multiboot2 => {
+            let qemu_command = match cfg.emulator {
+                Emulator::Qemu => "qemu-system-x86_64",
+                Emulator::QemuI386 => "qemu-system-i386",
+            };
+
             let build_dir = TempDir::new("redshirt-kernel-temp-loc")?;
             crate::image::build_image(crate::image::Config {
                 kernel_cargo_toml: cfg.kernel_cargo_toml,
@@ -69,7 +77,7 @@ pub fn run_kernel(cfg: Config) -> Result<(), Error> {
                 target: cfg.target,
             })?;
 
-            let status = Command::new("qemu-system-x86_64")
+            let status = Command::new(qemu_command)
                 .args(&["-m", "1024"])
                 .args(&["-serial", "stdio"])
                 .arg("-cdrom")
@@ -85,6 +93,11 @@ pub fn run_kernel(cfg: Config) -> Result<(), Error> {
         }
 
         crate::image::Target::RaspberryPi2 => {
+            match cfg.emulator {
+                Emulator::Qemu => {}
+                Emulator::QemuI386 => return Err(Error::IncompatibleEmulator),
+            };
+
             let build_out = crate::build::build(crate::build::Config {
                 kernel_cargo_toml: cfg.kernel_cargo_toml,
                 release: cfg.release,
@@ -109,6 +122,11 @@ pub fn run_kernel(cfg: Config) -> Result<(), Error> {
         }
 
         crate::image::Target::RaspberryPi3 => {
+            match cfg.emulator {
+                Emulator::Qemu => {}
+                Emulator::QemuI386 => return Err(Error::IncompatibleEmulator),
+            };
+
             let build_out = crate::build::build(crate::build::Config {
                 kernel_cargo_toml: cfg.kernel_cargo_toml,
                 release: cfg.release,
@@ -133,6 +151,11 @@ pub fn run_kernel(cfg: Config) -> Result<(), Error> {
         }
 
         crate::image::Target::HiFiveRiscV => {
+            match cfg.emulator {
+                Emulator::Qemu => {}
+                Emulator::QemuI386 => return Err(Error::IncompatibleEmulator),
+            };
+
             let build_out = crate::build::build(crate::build::Config {
                 kernel_cargo_toml: cfg.kernel_cargo_toml,
                 release: cfg.release,

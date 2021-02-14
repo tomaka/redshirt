@@ -161,12 +161,14 @@ impl FromStr for Target {
 #[derive(Debug)]
 enum Emulator {
     Qemu,
+    QemuI386,
 }
 
 impl From<Emulator> for redshirt_standalone_builder::emulator::Emulator {
     fn from(emulator: Emulator) -> redshirt_standalone_builder::emulator::Emulator {
         match emulator {
             Emulator::Qemu => redshirt_standalone_builder::emulator::Emulator::Qemu,
+            Emulator::QemuI386 => redshirt_standalone_builder::emulator::Emulator::QemuI386,
         }
     }
 }
@@ -175,6 +177,7 @@ impl From<Emulator> for redshirt_standalone_builder::test::Emulator {
     fn from(emulator: Emulator) -> redshirt_standalone_builder::test::Emulator {
         match emulator {
             Emulator::Qemu => redshirt_standalone_builder::test::Emulator::Qemu,
+            Emulator::QemuI386 => redshirt_standalone_builder::test::Emulator::QemuI386,
         }
     }
 }
@@ -185,6 +188,7 @@ impl FromStr for Emulator {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "qemu" => Ok(Emulator::Qemu),
+            "qemu-i386" => Ok(Emulator::QemuI386),
             _ => Err("unrecognized emulator".to_string()),
         }
     }
