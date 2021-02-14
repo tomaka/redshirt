@@ -31,7 +31,12 @@ use alloc::{format, string::String, sync::Arc, vec::Vec};
 use core::{convert::TryFrom as _, pin::Pin, sync::atomic::Ordering};
 use futures::prelude::*;
 use hashbrown::HashSet;
-use redshirt_core::{build_wasm_module, extrinsics::wasi::WasiExtrinsics, System};
+use redshirt_core::{
+    build_wasm_module,
+    extrinsics::wasi::WasiExtrinsics,
+    system::{KernelDebugMetricsRequest, SystemRunOutcome},
+    System,
+};
 use spinning_top::Spinlock;
 
 /// Main struct of this crate. Runs everything.
@@ -147,44 +152,25 @@ impl Kernel {
         let mut now = self.platform_specific.as_ref().monotonic_clock();
 
         loop {
-            // Wrap around `self.system.run()` and add time reports to the CPU idle/busy counters.
-            // TODO: because of this implementation, the idle counter is only updated when the
-            // CPU has some work to do; in other words, if a CPU is asleep for a long time then its
-            // counters will not be updated
-            let inner = self.system.run();
-            futures::pin_mut!(inner);
-            let fut = future::poll_fn(|cx| {
-                let new_now = self.platform_specific.as_ref().monotonic_clock();
-                let elapsed_idle = new_now.checked_sub(now).unwrap();
-                now = new_now;
-                self.cpu_busy_counters[cpu_index]
-                    .idle_ticks
-                    .fetch_add(elapsed_idle, Ordering::Relaxed);
-
-                let outcome = Future::poll(inner.as_mut(), cx);
-
-                let new_now = self.platform_specific.as_ref().monotonic_clock();
-                let elapsed_budy = new_now.checked_sub(now).unwrap();
-                now = new_now;
-                self.cpu_busy_counters[cpu_index]
-                    .busy_ticks
-                    .fetch_add(elapsed_budy, Ordering::Relaxed);
-
-                outcome
-            });
-
-            // TODO: clean up this general function body
-
+            // Prepare `interface_handlers`, the future that polls the external interface handlers
+            // for new message answers.
             let next_time_response = self.time.next_response();
             let next_pci_response = self.pci.next_response();
             futures::pin_mut!(next_time_response, next_pci_response);
-
-            let interface_handlers =
+            let mut interface_handlers =
                 future::select(next_time_response, next_pci_response).map(|e| e.factor_first().0);
 
-            // Note that `interfaces_handler` is passed first in order to guarantee that it gets
-            // polled at least once before the core is.
-            let core_event = match future::select(interface_handlers, fut).await {
+            // Poll the interface handlers first in order to guarantee that messages are answered
+            // in between two program executions in the core.
+            if let Some((message_id, response)) = (&mut interface_handlers).now_or_never() {
+                self.system.answer_message(message_id, Ok(response));
+                continue;
+            }
+
+            // Ask the core for the next event, or the next process execution to perform.
+            let core_work = self.system.run();
+            futures::pin_mut!(core_work);
+            let core_event = match future::select(interface_handlers, core_work).await {
                 future::Either::Right((event, _)) => event,
                 future::Either::Left(((message_id, response), _)) => {
                     self.system.answer_message(message_id, Ok(response));
@@ -192,158 +178,199 @@ impl Kernel {
                 }
             };
 
-            // TODO: do this better to combine with the external handlers reporting
-            let core_event = match core_event {
-                redshirt_core::ExecuteOut::Direct(ev) => ev,
-                redshirt_core::ExecuteOut::ReadyToRun(ready_to_run) => match ready_to_run.run() {
-                    Some(ev) => ev,
-                    None => continue,
-                },
+            // Grabbing the value of the monotonic clock is a "semi-expensive" operation. It is
+            // grabbed here because it is potentially needed below.
+            let new_now = self.platform_specific.as_ref().monotonic_clock();
+
+            let ready_to_run = match core_event {
+                redshirt_core::ExecuteOut::Direct(ev) => {
+                    self.handle_event(ev, new_now);
+                    continue;
+                }
+                redshirt_core::ExecuteOut::ReadyToRun(ready_to_run) => ready_to_run,
             };
 
-            match core_event {
-                redshirt_core::system::SystemRunOutcome::ProgramFinished { pid, .. } => {
-                    self.hardware.process_destroyed(pid);
-                }
-                redshirt_core::system::SystemRunOutcome::KernelDebugMetricsRequest(report) => {
-                    let mut out = String::new();
+            // The code below has the objective of calling `ready_to_run.run()`. We need to
+            // update the CPU counters in order to report the CPU as busy during the execution.
 
-                    // cpu_idle_seconds_total
-                    out.push_str("# HELP redshirt_cpu_idle_seconds_total Total number of seconds during which each CPU has been idle.\n");
-                    out.push_str("# TYPE redshirt_cpu_idle_seconds_total counter\n");
-                    for (cpu_n, cpu) in self.cpu_busy_counters.iter().enumerate() {
-                        let as_secs =
-                            cpu.idle_ticks.load(Ordering::Relaxed) as f64 / 1_000_000_000.0;
-                        out.push_str(&format!(
-                            "redshirt_cpu_idle_seconds_total{{cpu=\"{}\"}} {}\n",
-                            cpu_n, as_secs
-                        ));
-                    }
-                    out.push_str("\n");
+            // TODO: because of the way it is implemented, the idle counter is only updated when the
+            // CPU has some work to do; in other words, if a CPU is asleep for a long time then its
+            // counters will not be updated
+            let elapsed_idle = new_now.checked_sub(now).unwrap();
+            now = new_now;
+            self.cpu_busy_counters[cpu_index]
+                .idle_ticks
+                .fetch_add(elapsed_idle, Ordering::Relaxed);
 
-                    // cpu_busy_seconds_total
-                    out.push_str("# HELP redshirt_cpu_busy_seconds_total Total number of seconds during which each CPU has been busy.\n");
-                    out.push_str("# TYPE redshirt_cpu_busy_seconds_total counter\n");
-                    for (cpu_n, cpu) in self.cpu_busy_counters.iter().enumerate() {
-                        let as_secs =
-                            cpu.busy_ticks.load(Ordering::Relaxed) as f64 / 1_000_000_000.0;
-                        out.push_str(&format!(
-                            "redshirt_cpu_busy_seconds_total{{cpu=\"{}\"}} {}\n",
-                            cpu_n, as_secs
-                        ));
-                    }
-                    out.push_str("\n");
+            let run_outcome = ready_to_run.run();
 
-                    // monotonic_clock
-                    out.push_str("# HELP redshirt_monotonic_clock Value of the monotonic clock.\n");
-                    out.push_str("# TYPE redshirt_monotonic_clock counter\n");
-                    out.push_str(&format!("redshirt_monotonic_clock {}\n", now));
-                    out.push_str("\n");
+            let new_now = self.platform_specific.as_ref().monotonic_clock();
+            let elapsed_budy = new_now.checked_sub(now).unwrap();
+            now = new_now;
+            self.cpu_busy_counters[cpu_index]
+                .busy_ticks
+                .fetch_add(elapsed_budy, Ordering::Relaxed);
 
-                    // num_cpus
-                    out.push_str("# HELP redshirt_num_cpus Number of CPUs on the machine.\n");
-                    out.push_str("# TYPE redshirt_num_cpus counter\n");
-                    out.push_str(&format!(
-                        "redshirt_num_cpus {}\n",
-                        self.cpu_busy_counters.len()
-                    ));
-                    out.push_str("\n");
-
-                    report.respond(&out);
-                }
-
-                // Time handling.
-                redshirt_core::system::SystemRunOutcome::NativeInterfaceMessage {
-                    interface,
-                    message_id: Some(message_id),
-                    message,
-                    ..
-                } if interface == redshirt_time_interface::ffi::INTERFACE => {
-                    if let Some(response) = self.time.interface_message(message_id, message) {
-                        self.system.answer_message(message_id, response);
-                    }
-                }
-                redshirt_core::system::SystemRunOutcome::NativeInterfaceMessage {
-                    interface,
-                    message_id: None,
-                    ..
-                } if interface == redshirt_time_interface::ffi::INTERFACE => {}
-
-                // Randomness queries handling.
-                redshirt_core::system::SystemRunOutcome::NativeInterfaceMessage {
-                    interface,
-                    message_id: Some(message_id),
-                    message,
-                    ..
-                } if interface == redshirt_random_interface::ffi::INTERFACE => {
-                    let response = self.randomness.interface_message(message);
-                    self.system.answer_message(message_id, response);
-                }
-                redshirt_core::system::SystemRunOutcome::NativeInterfaceMessage {
-                    interface,
-                    message_id: None,
-                    ..
-                } if interface == redshirt_random_interface::ffi::INTERFACE => {}
-
-                // Hardware handling.
-                redshirt_core::system::SystemRunOutcome::NativeInterfaceMessage {
-                    interface,
-                    message_id: Some(message_id),
-                    message,
-                    emitter_pid,
-                    ..
-                } if interface == redshirt_hardware_interface::ffi::INTERFACE => {
-                    if let Some(response) = self.hardware.interface_message(emitter_pid, message) {
-                        self.system.answer_message(message_id, response);
-                    }
-                }
-                redshirt_core::system::SystemRunOutcome::NativeInterfaceMessage {
-                    interface,
-                    message_id: None,
-                    emitter_pid,
-                    message,
-                    ..
-                } if interface == redshirt_hardware_interface::ffi::INTERFACE => {
-                    self.hardware.interface_message(emitter_pid, message);
-                }
-
-                // PCI handling.
-                redshirt_core::system::SystemRunOutcome::NativeInterfaceMessage {
-                    interface,
-                    message_id: Some(message_id),
-                    message,
-                    emitter_pid,
-                    ..
-                } if interface == redshirt_pci_interface::ffi::INTERFACE => {
-                    if let Some(response) =
-                        self.pci
-                            .interface_message(Some(message_id), emitter_pid, message)
-                    {
-                        self.system.answer_message(message_id, response);
-                    }
-                }
-                redshirt_core::system::SystemRunOutcome::NativeInterfaceMessage {
-                    interface,
-                    message_id: None,
-                    emitter_pid,
-                    message,
-                } if interface == redshirt_pci_interface::ffi::INTERFACE => {
-                    self.pci.interface_message(None, emitter_pid, message);
-                }
-
-                // Kernel logs handling.
-                redshirt_core::system::SystemRunOutcome::NativeInterfaceMessage {
-                    interface,
-                    message,
-                    ..
-                } if interface == redshirt_kernel_log_interface::ffi::INTERFACE => {
-                    self.klog.interface_message(&message);
-                }
-
-                redshirt_core::system::SystemRunOutcome::NativeInterfaceMessage { .. } => {
-                    unreachable!()
-                }
+            if let Some(event) = run_outcome {
+                self.handle_event(event, now);
             }
         }
+    }
+
+    fn handle_event(
+        &self,
+        core_event: SystemRunOutcome<WasiExtrinsics>,
+        monotonic_clock_value: u128,
+    ) {
+        match core_event {
+            SystemRunOutcome::ProgramFinished { pid, .. } => {
+                self.hardware.process_destroyed(pid);
+            }
+            SystemRunOutcome::KernelDebugMetricsRequest(report) => {
+                self.report_kernel_metrics(report, monotonic_clock_value);
+            }
+
+            // Time handling.
+            SystemRunOutcome::NativeInterfaceMessage {
+                interface,
+                message_id: Some(message_id),
+                message,
+                ..
+            } if interface == redshirt_time_interface::ffi::INTERFACE => {
+                if let Some(response) = self.time.interface_message(message_id, message) {
+                    self.system.answer_message(message_id, response);
+                }
+            }
+            SystemRunOutcome::NativeInterfaceMessage {
+                interface,
+                message_id: None,
+                ..
+            } if interface == redshirt_time_interface::ffi::INTERFACE => {}
+
+            // Randomness queries handling.
+            SystemRunOutcome::NativeInterfaceMessage {
+                interface,
+                message_id: Some(message_id),
+                message,
+                ..
+            } if interface == redshirt_random_interface::ffi::INTERFACE => {
+                let response = self.randomness.interface_message(message);
+                self.system.answer_message(message_id, response);
+            }
+            SystemRunOutcome::NativeInterfaceMessage {
+                interface,
+                message_id: None,
+                ..
+            } if interface == redshirt_random_interface::ffi::INTERFACE => {}
+
+            // Hardware handling.
+            SystemRunOutcome::NativeInterfaceMessage {
+                interface,
+                message_id: Some(message_id),
+                message,
+                emitter_pid,
+                ..
+            } if interface == redshirt_hardware_interface::ffi::INTERFACE => {
+                if let Some(response) = self.hardware.interface_message(emitter_pid, message) {
+                    self.system.answer_message(message_id, response);
+                }
+            }
+            SystemRunOutcome::NativeInterfaceMessage {
+                interface,
+                message_id: None,
+                emitter_pid,
+                message,
+                ..
+            } if interface == redshirt_hardware_interface::ffi::INTERFACE => {
+                self.hardware.interface_message(emitter_pid, message);
+            }
+
+            // PCI handling.
+            SystemRunOutcome::NativeInterfaceMessage {
+                interface,
+                message_id: Some(message_id),
+                message,
+                emitter_pid,
+                ..
+            } if interface == redshirt_pci_interface::ffi::INTERFACE => {
+                if let Some(response) =
+                    self.pci
+                        .interface_message(Some(message_id), emitter_pid, message)
+                {
+                    self.system.answer_message(message_id, response);
+                }
+            }
+            SystemRunOutcome::NativeInterfaceMessage {
+                interface,
+                message_id: None,
+                emitter_pid,
+                message,
+            } if interface == redshirt_pci_interface::ffi::INTERFACE => {
+                self.pci.interface_message(None, emitter_pid, message);
+            }
+
+            // Kernel logs handling.
+            SystemRunOutcome::NativeInterfaceMessage {
+                interface, message, ..
+            } if interface == redshirt_kernel_log_interface::ffi::INTERFACE => {
+                self.klog.interface_message(&message);
+            }
+
+            SystemRunOutcome::NativeInterfaceMessage { .. } => {
+                unreachable!()
+            }
+        }
+    }
+
+    fn report_kernel_metrics(
+        &self,
+        report: KernelDebugMetricsRequest<WasiExtrinsics>,
+        monotonic_clock_value: u128,
+    ) {
+        let mut out = String::new();
+
+        // cpu_idle_seconds_total
+        out.push_str("# HELP redshirt_cpu_idle_seconds_total Total number of seconds during which each CPU has been idle.\n");
+        out.push_str("# TYPE redshirt_cpu_idle_seconds_total counter\n");
+        for (cpu_n, cpu) in self.cpu_busy_counters.iter().enumerate() {
+            let as_secs = cpu.idle_ticks.load(Ordering::Relaxed) as f64 / 1_000_000_000.0;
+            out.push_str(&format!(
+                "redshirt_cpu_idle_seconds_total{{cpu=\"{}\"}} {}\n",
+                cpu_n, as_secs
+            ));
+        }
+        out.push_str("\n");
+
+        // cpu_busy_seconds_total
+        out.push_str("# HELP redshirt_cpu_busy_seconds_total Total number of seconds during which each CPU has been busy.\n");
+        out.push_str("# TYPE redshirt_cpu_busy_seconds_total counter\n");
+        for (cpu_n, cpu) in self.cpu_busy_counters.iter().enumerate() {
+            let as_secs = cpu.busy_ticks.load(Ordering::Relaxed) as f64 / 1_000_000_000.0;
+            out.push_str(&format!(
+                "redshirt_cpu_busy_seconds_total{{cpu=\"{}\"}} {}\n",
+                cpu_n, as_secs
+            ));
+        }
+        out.push_str("\n");
+
+        // monotonic_clock
+        out.push_str("# HELP redshirt_monotonic_clock Value of the monotonic clock.\n");
+        out.push_str("# TYPE redshirt_monotonic_clock counter\n");
+        out.push_str(&format!(
+            "redshirt_monotonic_clock {}\n",
+            monotonic_clock_value
+        ));
+        out.push_str("\n");
+
+        // num_cpus
+        out.push_str("# HELP redshirt_num_cpus Number of CPUs on the machine.\n");
+        out.push_str("# TYPE redshirt_num_cpus counter\n");
+        out.push_str(&format!(
+            "redshirt_num_cpus {}\n",
+            self.cpu_busy_counters.len()
+        ));
+        out.push_str("\n");
+
+        report.respond(&out);
     }
 }
