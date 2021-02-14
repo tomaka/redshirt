@@ -28,28 +28,23 @@ use crate::{
 };
 
 use alloc::{format, string::String, sync::Arc, vec::Vec};
-use core::{convert::TryFrom as _, pin::Pin, sync::atomic::Ordering};
+use core::{pin::Pin, sync::atomic::Ordering};
 use futures::prelude::*;
-use hashbrown::HashSet;
 use redshirt_core::{
     build_wasm_module,
     extrinsics::wasi::WasiExtrinsics,
     system::{KernelDebugMetricsRequest, SystemRunOutcome},
     System,
 };
-use spinning_top::Spinlock;
 
 /// Main struct of this crate. Runs everything.
 pub struct Kernel {
     /// Contains the list of all processes, threads, interfaces, messages, and so on.
     system: System<WasiExtrinsics>,
     /// Has one entry for each CPU. Never resized.
-    cpu_busy_counters: Vec<CpuCounter>,
+    cpu_counters: Vec<CpuCounter>,
     /// Platform-specific getters. Passed at initialization.
     platform_specific: Pin<Arc<PlatformSpecific>>,
-    /// List of CPUs for which [`Kernel::run`] hasn't been called yet. Also makes it possible to
-    /// make sure that [`Kernel::run`] isn't called twice with the same CPU index.
-    not_started_cpus: Spinlock<HashSet<usize, fnv::FnvBuildHasher>>,
     time: TimeHandler,
     randomness: RandomNativeProgram,
     hardware: HardwareHandler,
@@ -59,6 +54,8 @@ pub struct Kernel {
 
 #[derive(Debug)]
 struct CpuCounter {
+    /// True if the CPU has been started at all.
+    started: atomic::Atomic<bool>,
     /// Total number of nanoseconds spent working since [`Kernel::run`] has been called.
     busy_ticks: atomic::Atomic<u128>,
     /// Total number of nanoseconds spent idle since [`Kernel::run`] has been called.
@@ -110,22 +107,18 @@ impl Kernel {
             ModuleHash::from_base58("FWMwRMQCKdWVDdKyx6ogQ8sXuoeDLNzZxniRMyD5S71").unwrap(),
         );*/
 
-        let cpu_busy_counters = (0..platform_specific.as_ref().num_cpus().get())
+        let cpu_counters = (0..platform_specific.as_ref().num_cpus().get())
             .map(|_| CpuCounter {
+                started: atomic::Atomic::new(false),
                 busy_ticks: atomic::Atomic::new(0),
                 idle_ticks: atomic::Atomic::new(0),
             })
             .collect();
 
-        let not_started_cpus = Spinlock::new(
-            (0..usize::try_from(platform_specific.as_ref().num_cpus().get()).unwrap()).collect(),
-        );
-
         Kernel {
             system: system_builder.build().expect("failed to start kernel"),
-            cpu_busy_counters,
+            cpu_counters,
             platform_specific: platform_specific.clone(),
-            not_started_cpus,
             time: TimeHandler::new(platform_specific.clone()),
             randomness,
             hardware: HardwareHandler::new(platform_specific.clone()),
@@ -138,13 +131,10 @@ impl Kernel {
     pub async fn run(&self, cpu_index: usize) -> ! {
         // Check that the `cpu_index` is correct.
         {
-            let mut not_started_cpus = self.not_started_cpus.lock();
-            let _was_in = not_started_cpus.remove(&cpu_index);
-            assert!(_was_in);
-            if not_started_cpus.is_empty() {
-                // Un-allocate memory.
-                not_started_cpus.shrink_to_fit();
-            }
+            let was_started = self.cpu_counters[cpu_index]
+                .started
+                .swap(true, Ordering::Relaxed);
+            assert!(!was_started);
         }
 
         // In order for the idle/busy counters to report accurate information, we keep here the
@@ -198,7 +188,7 @@ impl Kernel {
             // counters will not be updated
             let elapsed_idle = new_now.checked_sub(now).unwrap();
             now = new_now;
-            self.cpu_busy_counters[cpu_index]
+            self.cpu_counters[cpu_index]
                 .idle_ticks
                 .fetch_add(elapsed_idle, Ordering::Relaxed);
 
@@ -207,7 +197,7 @@ impl Kernel {
             let new_now = self.platform_specific.as_ref().monotonic_clock();
             let elapsed_budy = new_now.checked_sub(now).unwrap();
             now = new_now;
-            self.cpu_busy_counters[cpu_index]
+            self.cpu_counters[cpu_index]
                 .busy_ticks
                 .fetch_add(elapsed_budy, Ordering::Relaxed);
 
@@ -332,7 +322,7 @@ impl Kernel {
         // cpu_idle_seconds_total
         out.push_str("# HELP redshirt_cpu_idle_seconds_total Total number of seconds during which each CPU has been idle.\n");
         out.push_str("# TYPE redshirt_cpu_idle_seconds_total counter\n");
-        for (cpu_n, cpu) in self.cpu_busy_counters.iter().enumerate() {
+        for (cpu_n, cpu) in self.cpu_counters.iter().enumerate() {
             let as_secs = cpu.idle_ticks.load(Ordering::Relaxed) as f64 / 1_000_000_000.0;
             out.push_str(&format!(
                 "redshirt_cpu_idle_seconds_total{{cpu=\"{}\"}} {}\n",
@@ -344,7 +334,7 @@ impl Kernel {
         // cpu_busy_seconds_total
         out.push_str("# HELP redshirt_cpu_busy_seconds_total Total number of seconds during which each CPU has been busy.\n");
         out.push_str("# TYPE redshirt_cpu_busy_seconds_total counter\n");
-        for (cpu_n, cpu) in self.cpu_busy_counters.iter().enumerate() {
+        for (cpu_n, cpu) in self.cpu_counters.iter().enumerate() {
             let as_secs = cpu.busy_ticks.load(Ordering::Relaxed) as f64 / 1_000_000_000.0;
             out.push_str(&format!(
                 "redshirt_cpu_busy_seconds_total{{cpu=\"{}\"}} {}\n",
@@ -362,12 +352,15 @@ impl Kernel {
         ));
         out.push_str("\n");
 
-        // num_cpus
-        out.push_str("# HELP redshirt_num_cpus Number of CPUs on the machine.\n");
-        out.push_str("# TYPE redshirt_num_cpus counter\n");
+        // started_cpus
+        out.push_str("# HELP redshirt_started_cpus Number of CPUs started on the machine.\n");
+        out.push_str("# TYPE redshirt_started_cpus counter\n");
         out.push_str(&format!(
-            "redshirt_num_cpus {}\n",
-            self.cpu_busy_counters.len()
+            "redshirt_started_cpus {}\n",
+            self.cpu_counters
+                .iter()
+                .filter(|c| c.started.load(Ordering::Relaxed))
+                .count()
         ));
         out.push_str("\n");
 
