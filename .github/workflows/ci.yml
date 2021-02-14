@@ -7,8 +7,6 @@ jobs:
   build-programs:
     name: Build WASM programs
     runs-on: ubuntu-latest
-    container:
-      image: rust
     steps:
     - uses: actions/checkout@v2
     - name: Install Rust
@@ -38,8 +36,6 @@ jobs:
 
   test-core:
     runs-on: ubuntu-latest
-    container:
-      image: rust
     steps:
     - uses: actions/checkout@v2
     - uses: actions/cache@v2.1.4
@@ -62,8 +58,6 @@ jobs:
     name: Build standalone kernel
     needs: build-programs
     runs-on: ubuntu-latest
-    container:
-      image: rust
     strategy:
       matrix:
         #target: [x86_64-multiboot2, arm-rpi2]  # TODO: not implemented
@@ -105,8 +99,6 @@ jobs:
   check-passive-node:
     name: Check p2p passive node
     runs-on: ubuntu-latest
-    container:
-      image: rust
     steps:
     - uses: actions/checkout@v2
     - name: Install Rust
@@ -157,8 +149,6 @@ jobs:
   intra-doc-links:
     name: Check intra-doc links
     runs-on: ubuntu-latest
-    container:
-      image: rust
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
