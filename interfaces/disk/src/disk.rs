@@ -18,7 +18,7 @@
 //! This module allows you to register your disk. Reading and writing commands can then be issued
 //! towards this disk.
 //!
-//! Use this if you're writing for example a networking driver or a VPN.
+//! Use this if you're writing for example an ATA/ATAPI or USB driver.
 //!
 //! # Usage
 //!
