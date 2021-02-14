@@ -94,7 +94,7 @@ jobs:
     - name: Build kernel
       run: cargo run --manifest-path=./kernel-standalone-builder/Cargo.toml -- build-image --target ${{ matrix.target }} --device-type cdrom --out image
     - name: Test kernel
-      run: cargo run --manifest-path=./kernel-standalone-builder/Cargo.toml -- emulator-test --target ${{ matrix.target }} --emulator qemu-i386
+      run: cargo run --manifest-path=./kernel-standalone-builder/Cargo.toml -- emulator-test --target ${{ matrix.target }} --emulator qemu
     - name: Upload generated kernel
       uses: actions/upload-artifact@v2.2.2
       with:
