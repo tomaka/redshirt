@@ -201,7 +201,7 @@ fn signal_when_line_detected(read: impl io::Read + Send + 'static) -> oneshot::R
                     // TODO: add a CLI option to control this?
                     let _ = io::stdout().write_all(&[b]);
                     b
-                },
+                }
                 _ => return,
             });
 
