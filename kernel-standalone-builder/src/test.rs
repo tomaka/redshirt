@@ -80,7 +80,7 @@ pub fn test_kernel(cfg: Config) -> Result<(), Error> {
             run_until_line(
                 &mut Command::new("qemu-system-x86_64")
                     .args(&["-m", "1024"])
-                    .args(&["-display", "none"])
+                    .args(&["-nographics"])
                     .args(&["-serial", "stdio"])
                     .args(&["-monitor", "none"])
                     .arg("-cdrom")
