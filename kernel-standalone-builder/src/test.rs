@@ -82,6 +82,7 @@ pub fn test_kernel(cfg: Config) -> Result<(), Error> {
                     .args(&["-m", "1024"])
                     .arg("-nographic")
                     .args(&["-serial", "stdio"])
+                    .args(&["-monitor", "none"])
                     .arg("-cdrom")
                     .arg(build_dir.path().join("image"))
                     .args(&["-smp", "cpus=4"]),
@@ -104,6 +105,7 @@ pub fn test_kernel(cfg: Config) -> Result<(), Error> {
                     .args(&["-m", "1024"])
                     .arg("-nographic")
                     .args(&["-serial", "stdio"])
+                    .args(&["-monitor", "none"])
                     .arg("-kernel")
                     .arg(build_out.out_kernel_path),
             )?;
@@ -125,6 +127,7 @@ pub fn test_kernel(cfg: Config) -> Result<(), Error> {
                     .args(&["-m", "1024"])
                     .arg("-nographic")
                     .args(&["-serial", "stdio"])
+                    .args(&["-monitor", "none"])
                     .arg("-kernel")
                     .arg(build_out.out_kernel_path),
             )?;
@@ -147,6 +150,7 @@ pub fn test_kernel(cfg: Config) -> Result<(), Error> {
                     .args(&["-m", "2G"])
                     .arg("-nographic")
                     .args(&["-serial", "stdio"])
+                    .args(&["-monitor", "none"])
                     .arg("-kernel")
                     .arg(build_out.out_kernel_path),
             )?;
