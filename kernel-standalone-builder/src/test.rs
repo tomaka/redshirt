@@ -16,7 +16,7 @@
 use futures::{channel::oneshot, executor, prelude::*};
 use std::{
     collections::VecDeque,
-    io,
+    io::{self, Write as _},
     path::Path,
     process::{Command, Stdio},
     thread,
@@ -80,7 +80,7 @@ pub fn test_kernel(cfg: Config) -> Result<(), Error> {
             run_until_line(
                 &mut Command::new("qemu-system-x86_64")
                     .args(&["-m", "1024"])
-                    .arg("-nographic")
+                    .args(&["-display", "none"])
                     .args(&["-serial", "stdio"])
                     .args(&["-monitor", "none"])
                     .arg("-cdrom")
@@ -103,7 +103,7 @@ pub fn test_kernel(cfg: Config) -> Result<(), Error> {
                 &mut Command::new("qemu-system-arm")
                     .args(&["-M", "raspi2"])
                     .args(&["-m", "1024"])
-                    .arg("-nographic")
+                    .args(&["-display", "none"])
                     .args(&["-serial", "stdio"])
                     .args(&["-monitor", "none"])
                     .arg("-kernel")
@@ -125,7 +125,7 @@ pub fn test_kernel(cfg: Config) -> Result<(), Error> {
                 &mut Command::new("qemu-system-aarch64")
                     .args(&["-M", "raspi3"])
                     .args(&["-m", "1024"])
-                    .arg("-nographic")
+                    .args(&["-display", "none"])
                     .args(&["-serial", "stdio"])
                     .args(&["-monitor", "none"])
                     .arg("-kernel")
@@ -148,7 +148,7 @@ pub fn test_kernel(cfg: Config) -> Result<(), Error> {
                     .args(&["-machine", "sifive_e"])
                     .args(&["-cpu", "sifive-e31"])
                     .args(&["-m", "2G"])
-                    .arg("-nographic")
+                    .args(&["-display", "none"])
                     .args(&["-serial", "stdio"])
                     .args(&["-monitor", "none"])
                     .arg("-kernel")
@@ -197,7 +197,11 @@ fn signal_when_line_detected(read: impl io::Read + Send + 'static) -> oneshot::R
         loop {
             window.pop_front();
             window.push_back(match bytes.next() {
-                Some(Ok(b)) => b,
+                Some(Ok(b)) => {
+                    // TODO: add a CLI option to control this?
+                    let _ = io::stdout().write_all(&[b]);
+                    b
+                },
                 _ => return,
             });
 
