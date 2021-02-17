@@ -164,6 +164,7 @@ fn run_until_line(command: &mut Command) -> Result<(), Error> {
     let mut child = command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())  // TODO: debugging
         .spawn()
         .map_err(Error::EmulatorNotFound)?;
 
