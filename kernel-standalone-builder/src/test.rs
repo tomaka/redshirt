@@ -163,19 +163,19 @@ pub fn test_kernel(cfg: Config) -> Result<(), Error> {
 fn run_until_line(command: &mut Command) -> Result<(), Error> {
     let mut child = command
         .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())  // TODO: debugging
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
         .spawn()
         .map_err(Error::EmulatorNotFound)?;
-
-    let stdout = child.stdout.take().unwrap();
+    // TODO: debugging
+    //let stdout = child.stdout.take().unwrap();
     let timeout = futures_timer::Delay::new(Duration::from_secs(30));
 
     let result = executor::block_on(async move {
         futures::select! {
-            outcome = signal_when_line_detected(stdout).fuse() => {
+            /*outcome = signal_when_line_detected(stdout).fuse() => {
                 outcome.map_err(|_| Error::EmulatorRunFailure)
-            }
+            }*/
             _ = timeout.fuse() => {
                 Err(Error::Timeout)
             }
