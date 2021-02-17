@@ -149,7 +149,8 @@ fn build_x86_multiboot2_cdrom_iso(
             .join("grub")
             .join("grub.cfg"),
         &br#"
-set timeout=5
+set timeout=0
+set timeout_style=hidden
 set default=0
 
 menuentry "redshirt" {

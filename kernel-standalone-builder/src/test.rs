@@ -16,7 +16,7 @@
 use futures::{channel::oneshot, executor, prelude::*};
 use std::{
     collections::VecDeque,
-    io,
+    io::{self, Write as _},
     path::Path,
     process::{Command, Stdio},
     thread,
@@ -80,11 +80,15 @@ pub fn test_kernel(cfg: Config) -> Result<(), Error> {
             run_until_line(
                 &mut Command::new("qemu-system-x86_64")
                     .args(&["-m", "1024"])
+                    // CPU choice is somewhat arbitrary, but should be the same everywhere
+                    // tests are run.
+                    .args(&["-cpu", "core2duo"])
+                    .args(&["-display", "none"])
                     .args(&["-serial", "stdio"])
+                    .args(&["-monitor", "none"])
                     .arg("-cdrom")
                     .arg(build_dir.path().join("image"))
-                    .args(&["-smp", "cpus=4"])
-                    .args(&["-enable-kvm", "-cpu", "host"]),
+                    .args(&["-smp", "cpus=4"]),
             )?;
         }
 
@@ -102,7 +106,9 @@ pub fn test_kernel(cfg: Config) -> Result<(), Error> {
                 &mut Command::new("qemu-system-arm")
                     .args(&["-M", "raspi2"])
                     .args(&["-m", "1024"])
+                    .args(&["-display", "none"])
                     .args(&["-serial", "stdio"])
+                    .args(&["-monitor", "none"])
                     .arg("-kernel")
                     .arg(build_out.out_kernel_path),
             )?;
@@ -122,7 +128,9 @@ pub fn test_kernel(cfg: Config) -> Result<(), Error> {
                 &mut Command::new("qemu-system-aarch64")
                     .args(&["-M", "raspi3"])
                     .args(&["-m", "1024"])
+                    .args(&["-display", "none"])
                     .args(&["-serial", "stdio"])
+                    .args(&["-monitor", "none"])
                     .arg("-kernel")
                     .arg(build_out.out_kernel_path),
             )?;
@@ -143,7 +151,9 @@ pub fn test_kernel(cfg: Config) -> Result<(), Error> {
                     .args(&["-machine", "sifive_e"])
                     .args(&["-cpu", "sifive-e31"])
                     .args(&["-m", "2G"])
+                    .args(&["-display", "none"])
                     .args(&["-serial", "stdio"])
+                    .args(&["-monitor", "none"])
                     .arg("-kernel")
                     .arg(build_out.out_kernel_path),
             )?;
@@ -190,7 +200,11 @@ fn signal_when_line_detected(read: impl io::Read + Send + 'static) -> oneshot::R
         loop {
             window.pop_front();
             window.push_back(match bytes.next() {
-                Some(Ok(b)) => b,
+                Some(Ok(b)) => {
+                    // TODO: add a CLI option to control this?
+                    let _ = io::stdout().write_all(&[b]);
+                    b
+                }
                 _ => return,
             });
 

@@ -54,10 +54,10 @@ jobs:
     - name: Test redshirt-core
       run: cargo test --package redshirt-core
 
-  build-standalone:
-    name: Build standalone kernel
+  build-test-standalone:
+    name: Build and test standalone kernel
     needs: build-programs
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04  # TODO: for the more recent QEmu version compared to ubuntu-18
     strategy:
       matrix:
         #target: [x86_64-multiboot2, arm-rpi2]  # TODO: not implemented
@@ -72,6 +72,9 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y clang-10 lld libisoburn1 xorriso grub-pc-bin mtools
+    - run: |
+        sudo apt-get install qemu-utils qemu-system-x86
+      if: ${{ matrix.target == 'x86_64-multiboot2'}}
     - uses: actions/cache@v2.1.4
       with:
         path: |
@@ -90,6 +93,8 @@ jobs:
       run: rustup component add rust-src
     - name: Build kernel
       run: cargo run --manifest-path=./kernel-standalone-builder/Cargo.toml -- build-image --target ${{ matrix.target }} --device-type cdrom --out image
+    - name: Test kernel
+      run: cargo run --manifest-path=./kernel-standalone-builder/Cargo.toml -- emulator-test --target ${{ matrix.target }} --emulator qemu
     - name: Upload generated kernel
       uses: actions/upload-artifact@v2.2.2
       with:
@@ -179,7 +184,7 @@ jobs:
   all-ci:
     # This dummy job depends on all the mandatory checks. It succeeds if and only if CI is
     # considered successful.
-    needs: [build-standalone, check-passive-node, fmt, intra-doc-links]
+    needs: [build-test-standalone, check-passive-node, fmt, intra-doc-links]
     runs-on: ubuntu-latest
     steps:
      - run: echo Success
