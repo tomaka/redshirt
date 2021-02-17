@@ -57,7 +57,7 @@ jobs:
   build-test-standalone:
     name: Build and test standalone kernel
     needs: build-programs
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04  # TODO: for the more recent QEmu version compared to ubuntu-18
     strategy:
       matrix:
         #target: [x86_64-multiboot2, arm-rpi2]  # TODO: not implemented

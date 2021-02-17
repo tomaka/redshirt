@@ -80,6 +80,9 @@ pub fn test_kernel(cfg: Config) -> Result<(), Error> {
             run_until_line(
                 &mut Command::new("qemu-system-x86_64")
                     .args(&["-m", "1024"])
+                    // CPU choice is somewhat arbitrary, but should be the same everywhere
+                    // tests are run.
+                    .args(&["-cpu", "core2duo"])
                     .args(&["-display", "none"])
                     .args(&["-serial", "stdio"])
                     .args(&["-monitor", "none"])
