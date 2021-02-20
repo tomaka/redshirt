@@ -16,7 +16,7 @@
 use crate::arch::{PlatformSpecific, PortErr};
 use crate::klog::KLogger;
 
-use core::{iter, num::NonZeroU32, pin::Pin};
+use core::{fmt, iter, num::NonZeroU32, pin::Pin};
 use futures::prelude::*;
 use redshirt_kernel_log_interface::ffi::{KernelLogMethod, UartInfo};
 
@@ -46,7 +46,7 @@ macro_rules! __gen_boot {
             use $crate::klog::KLogger;
 
             use alloc::sync::Arc;
-            use core::{iter, num::NonZeroU32, pin::Pin};
+            use core::{fmt::Write as _, iter, num::NonZeroU32, pin::Pin};
             use $crate::futures::prelude::*;
             use $crate::redshirt_kernel_log_interface::ffi::{KernelLogMethod, UartAccess, UartInfo};
 
@@ -92,11 +92,11 @@ macro_rules! __gen_boot {
             /// Main Rust entry point.
             unsafe fn after_boot() -> ! {
                 // Initialize the logging system.
-                log::set_logger(KLogger::new(KernelLogMethod {
+                log::PANIC_LOGGER.set_method(KernelLogMethod {
                     enabled: true,
                     framebuffer: None,
                     uart: Some(init_uart()),
-                }));
+                });
 
                 // Initialize the memory allocator.
                 // TODO: make this is a cleaner way; this is specific to the hifive
@@ -109,8 +109,7 @@ macro_rules! __gen_boot {
                 // Initialize interrupts.
                 let _interrupts = interrupts::init();
 
-                // TODO:
-                //writeln!(logger.log_printer(), "[boot] boot successful").unwrap();
+                writeln!(log::PANIC_LOGGER.log_printer(), "[boot] boot successful").unwrap();
 
                 // TODO: there's a stack overflow in practice when we call `kernel.run()`; the interrupt
                 // handler fails to show that because it uses the stack
@@ -220,13 +219,11 @@ impl PlatformSpecificImpl {
     }
 
     pub fn write_log(&self, message: &str) {
-        log::write_log(message);
+        fmt::Write::write_str(&mut log::PANIC_LOGGER.log_printer(), message).unwrap();
     }
 
     pub fn set_logger_method(&self, method: KernelLogMethod) {
-        unsafe {
-            log::set_logger(KLogger::new(method));
-        }
+        log::PANIC_LOGGER.set_method(method);
     }
 
     pub unsafe fn write_port_u8(self: Pin<&Self>, _: u32, _: u8) -> Result<(), PortErr> {

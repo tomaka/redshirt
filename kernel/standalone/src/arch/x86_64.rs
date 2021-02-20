@@ -14,7 +14,6 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use crate::arch::PortErr;
-use crate::klog::KLogger;
 
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use core::{
@@ -89,6 +88,8 @@ pub unsafe fn entry_point_step3<
     multiboot_info: usize,
     run: F,
 ) -> ! {
+    panic::PANIC_LOGGER.set_method(DEFAULT_LOG_METHOD);
+
     let multiboot_info = multiboot2::load(multiboot_info);
 
     // Initialization of the memory allocator.
@@ -112,50 +113,50 @@ pub unsafe fn entry_point_step3<
     };
 
     // Now that we have a memory allocator, initialize the logging system.
-    let logger = Arc::new(KLogger::new({
-        if let Some(fb_info) = multiboot_info.framebuffer_tag() {
-            KernelLogMethod {
-                enabled: true,
-                framebuffer: Some(FramebufferInfo {
-                    address: fb_info.address,
-                    width: fb_info.width,
-                    height: fb_info.height,
-                    pitch: u64::from(fb_info.pitch),
-                    bytes_per_character: fb_info.bpp / 8,
-                    format: match fb_info.buffer_type {
-                        multiboot2::FramebufferType::Text => FramebufferFormat::Text,
-                        multiboot2::FramebufferType::Indexed { .. } => FramebufferFormat::Rgb {
-                            // FIXME: that is completely wrong
-                            red_size: 8,
-                            red_position: 0,
-                            green_size: 8,
-                            green_position: 16,
-                            blue_size: 8,
-                            blue_position: 24,
-                        },
-                        multiboot2::FramebufferType::RGB { red, green, blue } => {
-                            FramebufferFormat::Rgb {
-                                red_size: red.size,
-                                red_position: red.position,
-                                green_size: green.size,
-                                green_position: green.position,
-                                blue_size: blue.size,
-                                blue_position: blue.position,
-                            }
-                        }
+    panic::PANIC_LOGGER.set_method(if let Some(fb_info) = multiboot_info.framebuffer_tag() {
+        KernelLogMethod {
+            enabled: true,
+            framebuffer: Some(FramebufferInfo {
+                address: fb_info.address,
+                width: fb_info.width,
+                height: fb_info.height,
+                pitch: u64::from(fb_info.pitch),
+                bytes_per_character: fb_info.bpp / 8,
+                format: match fb_info.buffer_type {
+                    multiboot2::FramebufferType::Text => FramebufferFormat::Text,
+                    multiboot2::FramebufferType::Indexed { .. } => FramebufferFormat::Rgb {
+                        // FIXME: that is completely wrong
+                        red_size: 8,
+                        red_position: 0,
+                        green_size: 8,
+                        green_position: 16,
+                        blue_size: 8,
+                        blue_position: 24,
                     },
-                }),
-                // TODO: COM port should be discovered through the ACPI tables instead of hardcoded
-                uart: init_com(0x3f8).ok(),
-            }
-        } else {
-            DEFAULT_LOG_METHOD.clone()
+                    multiboot2::FramebufferType::RGB { red, green, blue } => {
+                        FramebufferFormat::Rgb {
+                            red_size: red.size,
+                            red_position: red.position,
+                            green_size: green.size,
+                            green_position: green.position,
+                            blue_size: blue.size,
+                            blue_position: blue.position,
+                        }
+                    }
+                },
+            }),
+            // TODO: COM port should be discovered through the ACPI tables instead of hardcoded
+            uart: init_com(0x3f8).ok(),
         }
-    }));
+    } else {
+        DEFAULT_LOG_METHOD.clone()
+    });
 
-    // If a panic happens, we want it to use the logging system we just created.
-    panic::set_logger(logger.clone());
-    writeln!(logger.log_printer(), "[boot] basic initialization ok").unwrap();
+    writeln!(
+        panic::PANIC_LOGGER.log_printer(),
+        "[boot] basic initialization ok"
+    )
+    .unwrap();
 
     // The first thing that gets executed when a x86 or x86_64 machine starts up is the
     // motherboard's firmware. Before giving control to the operating system, this firmware writes
@@ -242,7 +243,7 @@ pub unsafe fn entry_point_step3<
     let mut barrier_channels = Vec::with_capacity(application_processors.len());
 
     writeln!(
-        logger.log_printer(),
+        panic::PANIC_LOGGER.log_printer(),
         "[boot] initializing associated processors"
     )
     .unwrap();
@@ -278,7 +279,7 @@ pub unsafe fn entry_point_step3<
         match ap_boot_result {
             Ok(()) => barrier_channels.push(plat_spec_tx),
             Err(err) => writeln!(
-                logger.log_printer(),
+                panic::PANIC_LOGGER.log_printer(),
                 "[boot] error while initializing AP#{}: {}",
                 ap.processor_uid,
                 err
@@ -339,7 +340,6 @@ pub unsafe fn entry_point_step3<
                     .unwrap(),
             )
             .unwrap(),
-            logger: logger.clone(),
             next_irq_futures,
             next_next_irq_id: From::from(0),
         };
@@ -347,7 +347,7 @@ pub unsafe fn entry_point_step3<
         Arc::pin(super::PlatformSpecific::from(platform_specific))
     };
 
-    writeln!(logger.log_printer(), "[boot] boot successful").unwrap();
+    writeln!(panic::PANIC_LOGGER.log_printer(), "[boot] boot successful").unwrap();
 
     // Send an `Arc<Kernel>` to the other processors so that they can run it too.
     for tx in barrier_channels {
@@ -501,7 +501,6 @@ unsafe fn init_com(base_port: u16) -> Result<UartInfo, ()> {
 pub struct PlatformSpecificImpl {
     timers: Arc<apic::timers::Timers>,
     num_cpus: NonZeroU32,
-    logger: Arc<KLogger>,
 
     next_next_irq_id: atomic::AtomicU64,
     /// List of active futures waiting for the next IRQ.
@@ -555,11 +554,11 @@ impl PlatformSpecificImpl {
     }
 
     pub fn write_log(&self, message: &str) {
-        writeln!(self.logger.log_printer(), "{}", message).unwrap();
+        writeln!(panic::PANIC_LOGGER.log_printer(), "{}", message).unwrap();
     }
 
     pub fn set_logger_method(&self, method: KernelLogMethod) {
-        self.logger.set_method(method)
+        panic::PANIC_LOGGER.set_method(method)
     }
 
     pub unsafe fn write_port_u8(self: Pin<&Self>, port: u32, data: u8) -> Result<(), PortErr> {

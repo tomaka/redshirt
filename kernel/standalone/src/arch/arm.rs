@@ -17,7 +17,7 @@ use crate::arch::{PlatformSpecific, PortErr};
 use crate::klog::KLogger;
 
 use alloc::sync::Arc;
-use core::{convert::TryFrom as _, iter, num::NonZeroU32, pin::Pin};
+use core::{convert::TryFrom as _, fmt, iter, num::NonZeroU32, pin::Pin};
 use futures::prelude::*;
 use redshirt_kernel_log_interface::ffi::{KernelLogMethod, UartAccess, UartInfo};
 
@@ -44,7 +44,7 @@ macro_rules! __gen_boot {
             extern crate alloc;
 
             use alloc::sync::Arc;
-            use core::{convert::TryFrom as _, iter, num::NonZeroU32, pin::Pin};
+            use core::{convert::TryFrom as _, fmt::Write as _, iter, num::NonZeroU32, pin::Pin};
             use $crate::futures::prelude::*;
             use $crate::klog::KLogger;
             use $crate::redshirt_kernel_log_interface::ffi::{KernelLogMethod, UartInfo};
@@ -140,11 +140,11 @@ macro_rules! __gen_boot {
             #[no_mangle]
             unsafe fn cpu_enter() -> ! {
                 // Initialize the logging system.
-                $crate::arch::arm::log::set_logger(KLogger::new(KernelLogMethod {
+                $crate::arch::arm::log::PANIC_LOGGER.set_method(KernelLogMethod {
                     enabled: true,
                     framebuffer: None,
                     uart: Some($crate::arch::arm::init_uart()),
-                }));
+                });
 
                 // TODO: RAM starts at 0, but we start later to avoid the kernel
                 // TODO: make this is a cleaner way
@@ -152,8 +152,11 @@ macro_rules! __gen_boot {
 
                 let time = $crate::arch::arm::time::TimeControl::init();
 
-                // TODO:
-                //writeln!(logger.log_printer(), "[boot] boot successful").unwrap();
+                writeln!(
+                    $crate::arch::arm::log::PANIC_LOGGER.log_printer(),
+                    "[boot] boot successful"
+                )
+                .unwrap();
 
                 let platform = Arc::pin($crate::arch::PlatformSpecific::from(
                     $crate::arch::arm::PlatformSpecificImpl { time },
@@ -204,13 +207,11 @@ impl PlatformSpecificImpl {
     }
 
     pub fn write_log(&self, message: &str) {
-        log::write_log(message);
+        fmt::Write::write_str(&mut log::PANIC_LOGGER.log_printer(), message).unwrap();
     }
 
     pub fn set_logger_method(&self, method: KernelLogMethod) {
-        unsafe {
-            log::set_logger(KLogger::new(method));
-        }
+        log::PANIC_LOGGER.set_method(method);
     }
 
     pub unsafe fn write_port_u8(self: Pin<&Self>, _: u32, _: u8) -> Result<(), PortErr> {
