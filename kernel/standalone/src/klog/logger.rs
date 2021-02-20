@@ -34,21 +34,14 @@ enum Inner {
 }
 
 impl KLogger {
-    pub const unsafe fn new(method: KernelLogMethod) -> KLogger {
-        if method.enabled {
-            KLogger {
-                inner: Spinlock::new(Inner::Enabled {
-                    terminal: match method.framebuffer {
-                        Some(fb) => Some(video::Terminal::new(fb)),
-                        None => None,
-                    },
-                    uart: method.uart,
-                }),
-            }
-        } else {
-            KLogger {
-                inner: Spinlock::new(Inner::Disabled(method)),
-            }
+    /// Initializes a disabled [`KLogger`].
+    pub const fn disabled() -> KLogger {
+        KLogger {
+            inner: Spinlock::new(Inner::Disabled(KernelLogMethod {
+                enabled: false,
+                framebuffer: None,
+                uart: None,
+            })),
         }
     }
 
@@ -76,8 +69,21 @@ impl KLogger {
     }
 
     /// Modifies the way logs should be printed.
-    pub fn set_method(&self, _method: KernelLogMethod) {
-        unimplemented!() // TODO:
+    pub fn set_method(&self, method: KernelLogMethod) {
+        // TODO: this isn't properly implemented ; on new terminal, which should re-print older logs
+        unsafe {
+            if method.enabled {
+                *self.inner.lock() = Inner::Enabled {
+                    terminal: match method.framebuffer {
+                        Some(fb) => Some(video::Terminal::new(fb)),
+                        None => None,
+                    },
+                    uart: method.uart,
+                };
+            } else {
+                *self.inner.lock() = Inner::Disabled(method);
+            }
+        }
     }
 }
 
