@@ -24,7 +24,10 @@ use alloc::{sync::Arc, vec::Vec};
 use core::{convert::TryFrom as _, pin::Pin};
 use hashbrown::HashMap;
 use nohash_hasher::BuildNoHashHasher;
-use redshirt_core::{Decode as _, Encode as _, EncodedMessage, Pid};
+use redshirt_core::{
+    extrinsics::Extrinsics, system::NativeInterfaceMessage, Decode as _, Encode as _,
+    EncodedMessage, Pid,
+};
 use redshirt_hardware_interface::ffi::{HardwareAccessResponse, HardwareMessage, Operation};
 use spinning_top::Spinlock;
 
@@ -50,12 +53,12 @@ impl HardwareHandler {
         self.allocations.lock().remove(&pid);
     }
 
-    pub fn interface_message(
+    pub fn interface_message<TExtr: Extrinsics>(
         &self,
         emitter_pid: Pid,
-        message: EncodedMessage,
+        message: NativeInterfaceMessage<TExtr>,
     ) -> Option<Result<EncodedMessage, ()>> {
-        match HardwareMessage::decode(message) {
+        match HardwareMessage::decode(message.extract()) {
             Ok(HardwareMessage::HardwareAccess(operations)) => {
                 let mut response = Vec::with_capacity(operations.len());
                 for operation in operations {

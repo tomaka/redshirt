@@ -21,7 +21,10 @@ use alloc::{boxed::Box, collections::VecDeque, sync::Arc, vec::Vec};
 use core::{convert::TryFrom as _, pin::Pin, task::Poll};
 use crossbeam_queue::SegQueue;
 use futures::prelude::*;
-use redshirt_core::{Decode as _, Encode as _, EncodedMessage, MessageId, Pid};
+use redshirt_core::{
+    extrinsics::Extrinsics, system::NativeInterfaceMessage, Decode as _, Encode as _,
+    EncodedMessage, MessageId, Pid,
+};
 use redshirt_pci_interface::ffi;
 use spinning_top::Spinlock;
 
@@ -101,15 +104,19 @@ impl PciNativeProgram {
         }
     }
 
-    pub fn interface_message(
+    pub fn interface_message<TExtr: Extrinsics>(
         &self,
         message_id: Option<MessageId>,
         emitter_pid: Pid,
-        message: EncodedMessage,
+        message: NativeInterfaceMessage<TExtr>,
     ) -> Option<Result<EncodedMessage, ()>> {
-        match ffi::PciMessage::decode(message) {
+        // Locking `locked_devices` ahead of time to avoid messages being processed in the
+        // wrong order in case `interface_message` is called multiple times from different
+        // threads.
+        let mut locked_devices = self.locked_devices.lock();
+
+        match ffi::PciMessage::decode(message.extract()) {
             Ok(ffi::PciMessage::LockDevice(bdf)) => {
-                let mut locked_devices = self.locked_devices.lock();
                 if locked_devices.iter().any(|dev| dev.bdf == bdf) {
                     Some(Ok(Result::<(), _>::Err(()).encode()))
                 } else {
@@ -125,7 +132,6 @@ impl PciNativeProgram {
             }
 
             Ok(ffi::PciMessage::UnlockDevice(bdf)) => {
-                let mut locked_devices = self.locked_devices.lock();
                 if let Some(pos) = locked_devices
                     .iter_mut()
                     .position(|dev| dev.owner == emitter_pid && dev.bdf == bdf)
@@ -145,7 +151,6 @@ impl PciNativeProgram {
                 memory_space,
                 bus_master,
             }) => {
-                let locked_devices = self.locked_devices.lock();
                 if locked_devices
                     .iter()
                     .any(|dev| dev.owner == emitter_pid && dev.bdf == location)
@@ -166,7 +171,6 @@ impl PciNativeProgram {
             Ok(ffi::PciMessage::NextInterrupt(bdf)) => {
                 // TODO: actually make these interrupts work
                 if let Some(message_id) = message_id {
-                    let mut locked_devices = self.locked_devices.lock();
                     if let Some(dev) = locked_devices
                         .iter_mut()
                         .find(|dev| dev.owner == emitter_pid && dev.bdf == bdf)

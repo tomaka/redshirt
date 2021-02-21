@@ -20,7 +20,10 @@ use crate::arch::PlatformSpecific;
 use alloc::{boxed::Box, sync::Arc};
 use core::pin::Pin;
 use futures::{prelude::*, stream::FuturesUnordered, task::Poll};
-use redshirt_core::{Decode as _, Encode as _, EncodedMessage, MessageId};
+use redshirt_core::{
+    extrinsics::Extrinsics, system::NativeInterfaceMessage, Decode as _, Encode as _,
+    EncodedMessage, MessageId,
+};
 use redshirt_time_interface::ffi::TimeMessage;
 use spinning_top::Spinlock;
 
@@ -41,12 +44,12 @@ impl TimeHandler {
         }
     }
 
-    pub fn interface_message(
+    pub fn interface_message<TExtr: Extrinsics>(
         &self,
         message_id: MessageId,
-        message: EncodedMessage,
+        message: NativeInterfaceMessage<TExtr>,
     ) -> Option<Result<EncodedMessage, ()>> {
-        match TimeMessage::decode(message) {
+        match TimeMessage::decode(message.extract()) {
             Ok(TimeMessage::GetMonotonic) => {
                 let now = self.platform_specific.as_ref().monotonic_clock();
                 Some(Ok(now.encode()))
