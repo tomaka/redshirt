@@ -151,7 +151,12 @@ async fn async_main() {
     let bytes_per_character =
         (red_mask_size + green_mask_size + blue_mask_size + reserved_mask_size) / 8;
 
-    log::info!("Switching to mode 0x{:x}. Dimensions = {}x{}", chosen_mode_num, width, height);
+    log::info!(
+        "Switching to mode 0x{:x}. Dimensions = {}x{}",
+        chosen_mode_num,
+        width,
+        height
+    );
     vbe.set_current_mode(chosen_mode_num).await.unwrap();
     log::info!("Successfully set VESA mode");
 
