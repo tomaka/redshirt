@@ -19,21 +19,28 @@ use crate::arch::PlatformSpecific;
 
 use alloc::sync::Arc;
 use core::{pin::Pin, str};
-use redshirt_core::EncodedMessage;
+use redshirt_core::{extrinsics::Extrinsics, system::NativeInterfaceMessage};
 
 /// State machine for `kernel_log` interface messages handling.
 pub struct KernelLogNativeProgram {
     /// Platform-specific hooks.
     platform_specific: Pin<Arc<PlatformSpecific>>,
+    /// Lock used to ensure ordering of logs messages.
+    lock: spinning_top::Spinlock<()>,
 }
 
 impl KernelLogNativeProgram {
     /// Initializes the native program.
     pub fn new(platform_specific: Pin<Arc<PlatformSpecific>>) -> Self {
-        KernelLogNativeProgram { platform_specific }
+        KernelLogNativeProgram {
+            platform_specific,
+            lock: spinning_top::Spinlock::new(()),
+        }
     }
 
-    pub fn interface_message(&self, message: &EncodedMessage) {
+    pub fn interface_message<TExtr: Extrinsics>(&self, message: NativeInterfaceMessage<TExtr>) {
+        let _lock = self.lock.lock();
+        let message = message.extract();
         match message.0.get(0) {
             Some(0) => {
                 // Log message.

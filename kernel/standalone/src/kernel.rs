@@ -303,7 +303,7 @@ impl Kernel {
             SystemRunOutcome::NativeInterfaceMessage {
                 interface, message, ..
             } if interface == redshirt_kernel_log_interface::ffi::INTERFACE => {
-                self.klog.interface_message(&message);
+                self.klog.interface_message(message);
             }
 
             SystemRunOutcome::NativeInterfaceMessage { .. } => {

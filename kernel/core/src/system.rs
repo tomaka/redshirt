@@ -195,9 +195,38 @@ pub enum SystemRunOutcome<'a, TExtr: extrinsics::Extrinsics> {
         /// response is expected.
         message_id: Option<MessageId>,
 
-        /// Body of the message.
-        message: EncodedMessage,
+        /// Body of the message. Extractable by calling [`NativeInterfaceMessage::extract`].
+        message: NativeInterfaceMessage<'a, TExtr>,
     },
+}
+
+/// See [`SystemRunOutcome::NativeInterfaceMessage::message`].
+pub struct NativeInterfaceMessage<'a, TExtr: extrinsics::Extrinsics> {
+    system: &'a System<TExtr>,
+    message_id: MessageId,
+}
+
+impl<'a, TExtr: extrinsics::Extrinsics> NativeInterfaceMessage<'a, TExtr> {
+    /// Extracts the message and resumes the execution of the program.
+    ///
+    /// > **Note**: Since the program that has emitted the message can now resume when calling
+    /// >           [`System::run`] from another thread, it is possible for that program to emit
+    /// >           another interface message soon after. In order to avoid race conditions, make
+    /// >           sure to lock some mutex prior to calling this method to ensure that a
+    /// >           follow-up message isn't processed earlier than the one returned here.
+    pub fn extract(self) -> EncodedMessage {
+        self.system
+            .core
+            .accept_interface_message(self.message_id)
+            .unwrap()
+            .1
+    }
+}
+
+impl<'a, TExtr: extrinsics::Extrinsics> fmt::Debug for NativeInterfaceMessage<'a, TExtr> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_tuple("NativeInterfaceMessage").finish()
+    }
 }
 
 impl<TExtr> System<TExtr>
@@ -400,13 +429,14 @@ where
                 interface,
                 ..
             } if self.native_interfaces.contains(&interface) => {
-                let (_, message) = self.core.accept_interface_message(message_id).unwrap();
-
                 return Some(SystemRunOutcome::NativeInterfaceMessage {
                     interface,
                     emitter_pid,
                     message_id: if needs_answer { Some(message_id) } else { None },
-                    message,
+                    message: NativeInterfaceMessage {
+                        system: self,
+                        message_id,
+                    },
                 });
             }
 

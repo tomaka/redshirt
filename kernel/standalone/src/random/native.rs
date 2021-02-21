@@ -21,7 +21,10 @@ use alloc::{sync::Arc, vec};
 use core::pin::Pin;
 use crossbeam_queue::SegQueue;
 use rand_core::RngCore as _;
-use redshirt_core::{Decode as _, Encode as _, EncodedMessage};
+use redshirt_core::{
+    extrinsics::Extrinsics, system::NativeInterfaceMessage, Decode as _, Encode as _,
+    EncodedMessage,
+};
 use redshirt_random_interface::ffi::{GenerateResponse, RandomMessage};
 
 /// State machine for `random` interface messages handling.
@@ -53,8 +56,11 @@ impl RandomNativeProgram {
         self.rngs.push(rng);
     }
 
-    pub fn interface_message(&self, message: EncodedMessage) -> Result<EncodedMessage, ()> {
-        match RandomMessage::decode(message) {
+    pub fn interface_message<TExtr: Extrinsics>(
+        &self,
+        message: NativeInterfaceMessage<TExtr>,
+    ) -> Result<EncodedMessage, ()> {
+        match RandomMessage::decode(message.extract()) {
             Ok(RandomMessage::Generate { len }) => {
                 let mut out = vec![0; usize::from(len)];
                 self.fill_bytes(&mut out);
