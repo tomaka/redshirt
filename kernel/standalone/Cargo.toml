@@ -13,7 +13,7 @@ crossbeam-queue = { version = "0.3.1", default-features = false, features = ["al
 derive_more = "0.99.11"
 either = { version = "1.6.1", default-features = false }
 fnv = { version = "1.0.7", default-features = false }
-futures = { version = "0.3.12", default-features = false, features = ["alloc"] }
+futures = { version = "0.3.13", default-features = false, features = ["alloc"] }
 hashbrown = { version = "0.9.1", default-features = false }
 lazy_static = "1.4"
 libm = "0.2.1"
