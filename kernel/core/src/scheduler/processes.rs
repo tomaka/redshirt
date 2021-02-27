@@ -39,9 +39,10 @@
 //! - Or decide to resume the thread later. You can drop the [`ThreadAccess`] object,
 //! and later retrieve it by calling [`ProcessesCollection::interrupted_thread_by_id`].
 //!
-//! Keep in mind that only one instance of [`ThreadAccess`] for any given thread can
-//! exist simultaneously. Attempting to access the same thread multiple times will result in an
-//! error, and the upper layers should be designed in such a way that this is not necessary.
+//! A [`ThreadAccess`] represents a "locked access" to a thread. Only one instance of
+//! [`ThreadAccess`] for any given thread can exist simultaneously. Attempting to access the same
+//! thread multiple times will result in an error, and the upper layers should be designed in such
+//! a way that this is not necessary.
 //!
 //! # Locking processes
 //!
