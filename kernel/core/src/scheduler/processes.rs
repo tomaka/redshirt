@@ -21,9 +21,10 @@
 //! threads identified by [`ThreadId`]s. You can add new processes by calling
 //! [`ProcessesCollection::execute`].
 //!
-//! Call [`ProcessesCollection::run`] in order to run one of the threads in the collection and
-//! obtain an event describing what has just happened. The function is asynchronous, and if there
-//! is nothing to do then its corresponding `Future` will be pending.
+//! Call [`ProcessesCollection::run`] in order to find a thread in the collection that is ready
+//! to be run, executing it, and obtain an event describing what has just happened. The function
+//! is asynchronous, and if there is nothing to do then its corresponding `Future` will be
+//! pending.
 //!
 //! # Interrupted threads
 //!
@@ -38,9 +39,10 @@
 //! - Or decide to resume the thread later. You can drop the [`ThreadAccess`] object,
 //! and later retrieve it by calling [`ProcessesCollection::interrupted_thread_by_id`].
 //!
-//! Keep in mind that only one instance of [`ThreadAccess`] for any given thread can
-//! exist simultaneously. Attempting to access the same thread multiple times will result in an
-//! error, and the upper layers should be designed in such a way that this is not necessary.
+//! A [`ThreadAccess`] represents a "locked access" to a thread. Only one instance of
+//! [`ThreadAccess`] for any given thread can exist simultaneously. Attempting to access the same
+//! thread multiple times will result in an error, and the upper layers should be designed in such
+//! a way that this is not necessary.
 //!
 //! # Locking processes
 //!

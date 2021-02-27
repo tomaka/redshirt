@@ -253,9 +253,8 @@ impl<TExt: Extrinsics> Core<TExt> {
                 //
                 // The process of checking whether any notification is available, and if not
                 // adding the process to a list, is subject to race conditions. It is possible for
-                // a notification to have arrived in-between the two steps. Additionally, it is
-                // possible for a notification to arrive between adding the thread to the list In order to solve this
-                // problem, we compare the total number of notifications pushed to ths process'
+                // a notification to have arrived in-between the two steps. In order to solve this
+                // problem, we compare the total number of notifications pushed to the process'
                 // queue before and after the operations. If it has changed, try wake up again.
                 let total_notifications_pushed_before = thread
                     .process_user_data()
