@@ -613,7 +613,7 @@ impl<'a, TExtr, TPud, TTud> Future for RunFuture<'a, TExtr, TPud, TTud> {
     type Output = RunFutureOut<'a, TExtr, TPud, TTud>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let this = &mut self.0;
+        let this = &mut *self;
 
         // We track the number of times this `loop` is run and panic if it seems like we're in an
         // infinite loop.
@@ -627,7 +627,7 @@ impl<'a, TExtr, TPud, TTud> Future for RunFuture<'a, TExtr, TPud, TTud> {
             );
 
             // Items are pushed on `death_reports` when a `Process` struct is destroyed.
-            if let Some((pid, user_data, dead_threads, outcome)) = this.death_reports.pop() {
+            if let Some((pid, user_data, dead_threads, outcome)) = this.0.death_reports.pop() {
                 return Poll::Ready(RunFutureOut::Direct(RunOneOutcome::ProcessFinished {
                     pid,
                     user_data,
@@ -638,15 +638,22 @@ impl<'a, TExtr, TPud, TTud> Future for RunFuture<'a, TExtr, TPud, TTud> {
 
             // We start by finding a process that is ready to run and lock it by extracting the
             // state machine.
-            let process = match this.execution_queue.pop() {
+            let process = match this.0.execution_queue.pop() {
                 Some(p) => p,
                 None => {
-                    self.1.set_waker(cx.waker());
-                    return Poll::Pending;
+                    // Register the wake-up for when a new item is pushed to `execution_queue`.
+                    this.1.set_waker(cx.waker());
+
+                    // It is possible for an item to have been pushed to `execution_queue` right
+                    // before we called `set_waker`. Try again to make sure the list is empty.
+                    match this.0.execution_queue.pop() {
+                        Some(p) => p,
+                        None => return Poll::Pending,
+                    }
                 }
             };
 
-            // "Lock" the process's state machine for execution.
+            // "Lock" the process's state machine for examination.
             // TODO: this is ok right now because we only have a single thread per process
             let mut proc_state = process.lock.lock();
 
@@ -654,22 +661,22 @@ impl<'a, TExtr, TPud, TTud> Future for RunFuture<'a, TExtr, TPud, TTud> {
             // thread was ready.
             let (tid, thread_user_data, resume_value) =
                 proc_state.threads_to_resume.pop_front().unwrap();
+            // TODO: a lot of code in this module assumes one thread per process, which this debug_assert checks
+            debug_assert!(proc_state.threads_to_resume.is_empty());
 
             // If the process is marked as dying, insert the thread in the dying state and see if
             // we can finalize the destruction.
             if let Some(proc_dead) = &mut proc_state.dead {
                 proc_dead.dead_threads.push((tid, thread_user_data));
                 drop(proc_state); // Drop the lock.
-                this.try_report_process_death(process);
+                this.0.try_report_process_death(process);
                 continue;
             }
 
-            // Important: we forget the `Mutex` and keep the process locked for the lifespan
-            // of the `ReadyToRun`.
-            mem::forget(proc_state);
+            drop(proc_state);
 
             break Poll::Ready(RunFutureOut::ReadyToRun(ReadyToRun {
-                collection: this,
+                collection: this.0,
                 process: Some(process),
                 tid,
                 thread_user_data: Some(thread_user_data),
@@ -712,10 +719,8 @@ pub struct ReadyToRun<'a, TExtr, TPud, TTud> {
 impl<'a, TExtr, TPud, TTud> ReadyToRun<'a, TExtr, TPud, TTud> {
     /// Performs the actual execution.
     pub fn run(mut self) -> RunOneOutcome<'a, TExtr, TPud, TTud> {
-        // Safety: as documented, the `process.lock` mutex is force-locked for the lifespan of
-        // the `ReadyToRun`.
-        let proc_state: &mut ProcessLock<_> =
-            unsafe { &mut *self.process.as_ref().unwrap().lock.data_ptr() };
+        // Lock the process, this time to execute the virtual machine.
+        let mut proc_state = self.process.as_ref().unwrap().lock.lock();
 
         // Now run a thread until something happens.
         // This takes most of the CPU time of this function.
@@ -860,8 +865,7 @@ impl<'a, TExtr, TPud, TTud> Drop for ReadyToRun<'a, TExtr, TPud, TTud> {
         // In the situation where the user didn't call `run`, we push back the thread to the
         // queue.
         if let Some(thread_user_data) = self.thread_user_data.take() {
-            let proc_state: &mut ProcessLock<_> =
-                unsafe { &mut *self.process.as_ref().unwrap().lock.data_ptr() };
+            let mut proc_state = self.process.as_ref().unwrap().lock.lock();
 
             proc_state.threads_to_resume.push_back((
                 self.tid,
@@ -871,12 +875,7 @@ impl<'a, TExtr, TPud, TTud> Drop for ReadyToRun<'a, TExtr, TPud, TTud> {
             self.collection
                 .execution_queue
                 .push(self.process.as_ref().unwrap().clone());
-        }
-
-        // As documented, the lock is held for the lifespan of the `ReadyToRun`. This is where
-        // we unlock it.
-        unsafe {
-            self.process.as_ref().unwrap().lock.force_unlock();
+            self.collection.wakers.notify_one();
         }
 
         self.collection
