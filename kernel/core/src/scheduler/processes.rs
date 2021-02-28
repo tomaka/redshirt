@@ -653,7 +653,7 @@ impl<'a, TExtr, TPud, TTud> Future for RunFuture<'a, TExtr, TPud, TTud> {
                 }
             };
 
-            // "Lock" the process's state machine for execution.
+            // "Lock" the process's state machine for examination.
             // TODO: this is ok right now because we only have a single thread per process
             let mut proc_state = process.lock.lock();
 
@@ -673,9 +673,7 @@ impl<'a, TExtr, TPud, TTud> Future for RunFuture<'a, TExtr, TPud, TTud> {
                 continue;
             }
 
-            // Important: we forget the `Mutex` and keep the process locked for the lifespan
-            // of the `ReadyToRun`.
-            mem::forget(proc_state);
+            drop(proc_state);
 
             break Poll::Ready(RunFutureOut::ReadyToRun(ReadyToRun {
                 collection: this.0,
@@ -721,10 +719,8 @@ pub struct ReadyToRun<'a, TExtr, TPud, TTud> {
 impl<'a, TExtr, TPud, TTud> ReadyToRun<'a, TExtr, TPud, TTud> {
     /// Performs the actual execution.
     pub fn run(mut self) -> RunOneOutcome<'a, TExtr, TPud, TTud> {
-        // Safety: as documented, the `process.lock` mutex is force-locked for the lifespan of
-        // the `ReadyToRun`.
-        let proc_state: &mut ProcessLock<_> =
-            unsafe { &mut *self.process.as_ref().unwrap().lock.data_ptr() };
+        // Lock the process, this time to execute the virtual machine.
+        let mut proc_state = self.process.as_ref().unwrap().lock.lock();
 
         // Now run a thread until something happens.
         // This takes most of the CPU time of this function.
@@ -869,8 +865,7 @@ impl<'a, TExtr, TPud, TTud> Drop for ReadyToRun<'a, TExtr, TPud, TTud> {
         // In the situation where the user didn't call `run`, we push back the thread to the
         // queue.
         if let Some(thread_user_data) = self.thread_user_data.take() {
-            let proc_state: &mut ProcessLock<_> =
-                unsafe { &mut *self.process.as_ref().unwrap().lock.data_ptr() };
+            let mut proc_state = self.process.as_ref().unwrap().lock.lock();
 
             proc_state.threads_to_resume.push_back((
                 self.tid,
@@ -881,12 +876,6 @@ impl<'a, TExtr, TPud, TTud> Drop for ReadyToRun<'a, TExtr, TPud, TTud> {
                 .execution_queue
                 .push(self.process.as_ref().unwrap().clone());
             self.collection.wakers.notify_one();
-        }
-
-        // As documented, the lock is held for the lifespan of the `ReadyToRun`. This is where
-        // we unlock it.
-        unsafe {
-            self.process.as_ref().unwrap().lock.force_unlock();
         }
 
         self.collection
