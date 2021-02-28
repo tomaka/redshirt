@@ -20,6 +20,7 @@ use spinning_top::Spinlock;
 /// Collection of wakers.
 #[derive(Default)]
 pub struct Wakers {
+    // TODO: could avoid the mutex by knowing in advance the number of registrations
     list: Spinlock<Slab<Option<Waker>>>,
 }
 
