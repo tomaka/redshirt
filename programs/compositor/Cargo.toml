@@ -9,7 +9,7 @@ publish = false
 [dependencies]
 ahash = { version = "0.6.2", default-features = false }
 futures = "0.3.13"
-hashbrown = { version = "0.9.1", default-features = false }
+hashbrown = { version = "0.11.0", default-features = false }
 rand = "0.8.3"
 redshirt-framebuffer-interface = { path = "../../interfaces/framebuffer" }
 redshirt-interface-interface = { path = "../../interfaces/interface" }
