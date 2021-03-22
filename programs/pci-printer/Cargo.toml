@@ -8,7 +8,7 @@ publish = false
 
 [dependencies]
 fnv = { version = "1.0.7", default-features = false }
-hashbrown = { version = "0.9.1", default-features = false }
+hashbrown = { version = "0.11.1", default-features = false }
 lazy_static = "1"
 log = "0.4"
 redshirt-pci-interface = { path = "../../interfaces/pci" }
