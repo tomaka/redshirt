@@ -22,6 +22,6 @@ redshirt-time-interface = { path = "../../interfaces/time" }
 thiserror = "1.0.24"
 
 [dependencies.smoltcp]
-version = "0.7.0"
+version = "0.7.1"
 default-features = false
 features = ["ethernet", "proto-dhcpv4", "proto-ipv4", "proto-ipv6", "socket-udp", "socket-tcp", "std"]
