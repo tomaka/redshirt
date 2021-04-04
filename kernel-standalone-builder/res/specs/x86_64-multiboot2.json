@@ -18,7 +18,14 @@
     "panic-strategy": "abort",
     "relocation-model": "static",
     "singlethread": false,
-    "stack-probes": true,
+    "stack-probes": {
+        "kind": "inline-or-call",
+        "min-llvm-version-for-inline": [
+            11,
+            0,
+            1
+        ]
+    },
     "target-c-int-width": "32",
     "target-endian": "little",
     "target-pointer-width": "64"
