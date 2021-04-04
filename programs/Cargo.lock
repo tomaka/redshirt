@@ -1037,13 +1037,12 @@ dependencies = [
 
 [[package]]
 name = "iced-x86"
-version = "1.10.3"
+version = "1.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "644fd8d7e49d1ccae568a8fbb873a7ee7fcb3bc9214a474a5e55c03b6d1fa5ac"
+checksum = "4261b15a556aa9b83b976b7aa4613f5a3b80351683af14c5d8d7e62c00869d5a"
 dependencies = [
  "lazy_static",
- "rustc_version",
- "static_assertions 0.3.4",
+ "static_assertions",
 ]
 
 [[package]]
@@ -1306,7 +1305,7 @@ dependencies = [
  "rand 0.7.3",
  "sha2 0.8.1",
  "snow",
- "static_assertions 1.1.0",
+ "static_assertions",
  "x25519-dalek",
  "zeroize",
 ]
@@ -1689,7 +1688,7 @@ dependencies = [
  "multihash",
  "percent-encoding",
  "serde",
- "static_assertions 1.1.0",
+ "static_assertions",
  "unsigned-varint 0.4.0",
  "url",
 ]
@@ -2333,7 +2332,7 @@ checksum = "4da5fcb054c46f5a5dff833b129285a93d3f0179531735e6c866e8cc307d2020"
 dependencies = [
  "futures",
  "pin-project 0.4.27",
- "static_assertions 1.1.0",
+ "static_assertions",
 ]
 
 [[package]]
@@ -2521,12 +2520,6 @@ checksum = "7e529d73e80d64b5f2631f9035113347c578a1c9c7774b83a2b880788459ab36"
 dependencies = [
  "lock_api 0.4.2",
 ]
-
-[[package]]
-name = "static_assertions"
-version = "0.3.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f3eb36b47e512f8f1c9e3d10c2c1965bc992bd9cdb024fa581e2194501c83d3"
 
 [[package]]
 name = "static_assertions"
@@ -2755,7 +2748,7 @@ dependencies = [
  "byteorder",
  "crunchy",
  "rustc-hex",
- "static_assertions 1.1.0",
+ "static_assertions",
 ]
 
 [[package]]
@@ -3119,7 +3112,7 @@ dependencies = [
  "nohash-hasher",
  "parking_lot",
  "rand 0.7.3",
- "static_assertions 1.1.0",
+ "static_assertions",
 ]
 
 [[package]]
