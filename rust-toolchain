@@ -1,3 +1,3 @@
 [toolchain]
-channel = "nightly-2020-12-28"
+channel = "nightly-2021-03-30"  # TODO: doesn't have rustfmt :-/ https://rust-lang.github.io/rustup-components-history/
 targets = ["wasm32-wasi"]
