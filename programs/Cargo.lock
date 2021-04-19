@@ -1028,7 +1028,7 @@ dependencies = [
  "httparse",
  "httpdate",
  "itoa",
- "pin-project 1.0.6",
+ "pin-project 1.0.7",
  "tokio",
  "tower-service",
  "tracing",
@@ -1790,11 +1790,11 @@ dependencies = [
 
 [[package]]
 name = "pin-project"
-version = "1.0.6"
+version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc174859768806e91ae575187ada95c91a29e96a98dc5d2cd9a1fed039501ba6"
+checksum = "c7509cc106041c40a4518d2af7a61530e1eed0e6285296a3d8c5472806ccc4a4"
 dependencies = [
- "pin-project-internal 1.0.6",
+ "pin-project-internal 1.0.7",
 ]
 
 [[package]]
@@ -1810,9 +1810,9 @@ dependencies = [
 
 [[package]]
 name = "pin-project-internal"
-version = "1.0.6"
+version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a490329918e856ed1b083f244e3bfe2d8c4f336407e4ea9e1a9f479ff09049e5"
+checksum = "48c950132583b500556b1efd71d45b319029f2b71518d979fcc208e16b42426f"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2211,7 +2211,7 @@ dependencies = [
  "lazy_static",
  "nohash-hasher",
  "parity-scale-codec",
- "pin-project 1.0.6",
+ "pin-project 1.0.7",
  "slab 0.4.2 (git+https://github.com/tokio-rs/slab?rev=3340fdcf7204584b9ee509beabf3b174a333dfc1)",
  "spinning_top",
 ]
@@ -2222,7 +2222,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "parity-scale-codec",
- "pin-project 1.0.6",
+ "pin-project 1.0.7",
  "redshirt-syscalls",
 ]
 
@@ -2243,7 +2243,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "parity-scale-codec",
- "pin-project 1.0.6",
+ "pin-project 1.0.7",
  "redshirt-syscalls",
 ]
 
@@ -2993,7 +2993,7 @@ name = "wasm-timer"
 version = "0.2.4"
 dependencies = [
  "futures-timer",
- "pin-project 1.0.6",
+ "pin-project 1.0.7",
  "redshirt-time-interface",
 ]
 
