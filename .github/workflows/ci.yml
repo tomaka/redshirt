@@ -8,7 +8,7 @@ jobs:
     name: Build WASM programs
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v2.3.4
     - name: Install Rust
       uses: actions-rs/toolchain@v1
       with:
@@ -37,7 +37,7 @@ jobs:
   test-core:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v2.3.4
     - uses: actions/cache@v2.1.4
       with:
         path: |
@@ -63,7 +63,7 @@ jobs:
         #target: [x86_64-multiboot2, arm-rpi2]  # TODO: not implemented
         target: [x86_64-multiboot2]
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v2.3.4
     - name: Download WASM programs
       uses: actions/download-artifact@v2
       with:
@@ -105,7 +105,7 @@ jobs:
     name: Check p2p passive node
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v2.3.4
     - name: Install Rust
       uses: actions-rs/toolchain@v1
       with:
@@ -127,7 +127,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v2
+        uses: actions/checkout@v2.3.4
       - name: Install stable toolchain
         uses: actions-rs/toolchain@v1
         with:
@@ -156,7 +156,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v2
+        uses: actions/checkout@v2.3.4
       - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
