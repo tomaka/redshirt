@@ -136,17 +136,17 @@ jobs:
       - name: Install rustfmt
         run: rustup component add rustfmt
       - name: Run cargo fmt on root workspace
-        uses: actions-rs/cargo@v1
+        uses: actions-rs/cargo@v1.0.3
         with:
           command: fmt
           args: --all -- --check
       - name: Run cargo fmt on programs workspace
-        uses: actions-rs/cargo@v1
+        uses: actions-rs/cargo@v1.0.3
         with:
           command: fmt
           args: --all --manifest-path=programs/Cargo.toml -- --check
       - name: Run cargo fmt on standalone tester workspace
-        uses: actions-rs/cargo@v1
+        uses: actions-rs/cargo@v1.0.3
         with:
           command: fmt
           args: --all --manifest-path=kernel-standalone-builder/Cargo.toml -- --check
