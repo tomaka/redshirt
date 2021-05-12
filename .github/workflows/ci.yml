@@ -10,7 +10,7 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: Install Rust
-      uses: actions-rs/toolchain@v1
+      uses: actions-rs/toolchain@v1.0.7
       with:
         toolchain: nightly-2021-03-30
         target: wasm32-wasi
@@ -46,7 +46,7 @@ jobs:
           target
         key: core-cargo-${{ hashFiles('**/Cargo.lock') }}
     - name: Install nightly Rust
-      uses: actions-rs/toolchain@v1
+      uses: actions-rs/toolchain@v1.0.7
       with:
         toolchain: nightly-2021-03-30
         target: wasm32-wasi
@@ -84,7 +84,7 @@ jobs:
           target
         key: standalone-kernel-cargo-${{ hashFiles('**/Cargo.lock') }}
     - name: Install nightly Rust
-      uses: actions-rs/toolchain@v1
+      uses: actions-rs/toolchain@v1.0.7
       with:
         toolchain: nightly-2021-03-30
         target: wasm32-wasi
@@ -107,7 +107,7 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: Install Rust
-      uses: actions-rs/toolchain@v1
+      uses: actions-rs/toolchain@v1.0.7
       with:
         toolchain: stable
         override: true
@@ -129,7 +129,7 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v2
       - name: Install stable toolchain
-        uses: actions-rs/toolchain@v1
+        uses: actions-rs/toolchain@v1.0.7
         with:
           toolchain: stable
           override: true
@@ -158,7 +158,7 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v2
       - name: Install Rust toolchain
-        uses: actions-rs/toolchain@v1
+        uses: actions-rs/toolchain@v1.0.7
         with:
           toolchain: nightly-2021-03-30
           target: wasm32-wasi
