@@ -197,7 +197,7 @@ lazy_static::lazy_static! {
                 set_entry!($idt[$n], $n);
             }};
             ($entry:expr, $n:expr) => {{
-                extern "x86-interrupt" fn handler(_: &mut idt::InterruptStackFrame) {
+                extern "x86-interrupt" fn handler(_: idt::InterruptStackFrame) {
                     // Because interrupts can happen at any time, it is important the code below
                     // doesn't lock any mutex.
                     if let Some(waker) = WAKERS[$n - 32].take() {
@@ -452,11 +452,11 @@ macro_rules! interrupt_panic {
     };
 }
 
-extern "x86-interrupt" fn int0(frame: &mut idt::InterruptStackFrame) {
+extern "x86-interrupt" fn int0(frame: idt::InterruptStackFrame) {
     interrupt_panic!("Division by zero", frame);
 }
 
-extern "x86-interrupt" fn int1(_frame: &mut idt::InterruptStackFrame) {
+extern "x86-interrupt" fn int1(_frame: idt::InterruptStackFrame) {
     let dr0: u64;
     let dr1: u64;
     let dr2: u64;
@@ -484,31 +484,31 @@ DR7 = 0x{:016x}
     )
 }
 
-extern "x86-interrupt" fn int2(frame: &mut idt::InterruptStackFrame) {
+extern "x86-interrupt" fn int2(frame: idt::InterruptStackFrame) {
     interrupt_panic!("NMI", frame); // TODO: there might be additional trickery here
 }
 
-extern "x86-interrupt" fn int3(frame: &mut idt::InterruptStackFrame) {
+extern "x86-interrupt" fn int3(frame: idt::InterruptStackFrame) {
     interrupt_panic!("Breakpoint", frame);
 }
 
-extern "x86-interrupt" fn int4(frame: &mut idt::InterruptStackFrame) {
+extern "x86-interrupt" fn int4(frame: idt::InterruptStackFrame) {
     interrupt_panic!("Overflow", frame);
 }
 
-extern "x86-interrupt" fn int5(frame: &mut idt::InterruptStackFrame) {
+extern "x86-interrupt" fn int5(frame: idt::InterruptStackFrame) {
     interrupt_panic!("Bounds", frame);
 }
 
-extern "x86-interrupt" fn int6(frame: &mut idt::InterruptStackFrame) {
+extern "x86-interrupt" fn int6(frame: idt::InterruptStackFrame) {
     interrupt_panic!("Invalid opcode", frame);
 }
 
-extern "x86-interrupt" fn int7(frame: &mut idt::InterruptStackFrame) {
+extern "x86-interrupt" fn int7(frame: idt::InterruptStackFrame) {
     interrupt_panic!("Coprocessor not available", frame);
 }
 
-extern "x86-interrupt" fn int8(_frame: &mut idt::InterruptStackFrame, _: u64) -> ! {
+extern "x86-interrupt" fn int8(_frame: idt::InterruptStackFrame, _: u64) -> ! {
     // A double fault happens when an exception happens while an exception was already
     // being handled.
     //
@@ -520,52 +520,52 @@ extern "x86-interrupt" fn int8(_frame: &mut idt::InterruptStackFrame, _: u64) ->
     }
 }
 
-extern "x86-interrupt" fn int9(frame: &mut idt::InterruptStackFrame) {
+extern "x86-interrupt" fn int9(frame: idt::InterruptStackFrame) {
     // Since the 486, this exception is instead a GPF.
     interrupt_panic!("Coprocessor segment overrun", frame);
 }
 
-extern "x86-interrupt" fn int10(frame: &mut idt::InterruptStackFrame, _: u64) {
+extern "x86-interrupt" fn int10(frame: idt::InterruptStackFrame, _: u64) {
     interrupt_panic!("Invalid TSS", frame);
 }
 
-extern "x86-interrupt" fn int11(frame: &mut idt::InterruptStackFrame, _: u64) {
+extern "x86-interrupt" fn int11(frame: idt::InterruptStackFrame, _: u64) {
     interrupt_panic!("Segment not present", frame);
 }
 
-extern "x86-interrupt" fn int12(frame: &mut idt::InterruptStackFrame, _: u64) {
+extern "x86-interrupt" fn int12(frame: idt::InterruptStackFrame, _: u64) {
     interrupt_panic!("Stack segment fault", frame);
 }
 
-extern "x86-interrupt" fn int13(frame: &mut idt::InterruptStackFrame, _: u64) {
+extern "x86-interrupt" fn int13(frame: idt::InterruptStackFrame, _: u64) {
     interrupt_panic!("General protection fault", frame);
 }
 
-extern "x86-interrupt" fn int14(frame: &mut idt::InterruptStackFrame, _: idt::PageFaultErrorCode) {
+extern "x86-interrupt" fn int14(frame: idt::InterruptStackFrame, _: idt::PageFaultErrorCode) {
     interrupt_panic!("Page fault", frame);
 }
 
-extern "x86-interrupt" fn int16(frame: &mut idt::InterruptStackFrame) {
+extern "x86-interrupt" fn int16(frame: idt::InterruptStackFrame) {
     interrupt_panic!("x87 exception", frame);
 }
 
-extern "x86-interrupt" fn int17(frame: &mut idt::InterruptStackFrame, _: u64) {
+extern "x86-interrupt" fn int17(frame: idt::InterruptStackFrame, _: u64) {
     interrupt_panic!("Alignment error", frame);
 }
 
-extern "x86-interrupt" fn int18(frame: &mut idt::InterruptStackFrame) -> ! {
+extern "x86-interrupt" fn int18(frame: idt::InterruptStackFrame) -> ! {
     interrupt_panic!("Machine check", frame);
 }
 
-extern "x86-interrupt" fn int19(frame: &mut idt::InterruptStackFrame) {
+extern "x86-interrupt" fn int19(frame: idt::InterruptStackFrame) {
     interrupt_panic!("SIMD error", frame);
 }
 
-extern "x86-interrupt" fn int20(frame: &mut idt::InterruptStackFrame) {
+extern "x86-interrupt" fn int20(frame: idt::InterruptStackFrame) {
     interrupt_panic!("Virtualization exception", frame);
 }
 
-extern "x86-interrupt" fn int30(frame: &mut idt::InterruptStackFrame, _: u64) {
+extern "x86-interrupt" fn int30(frame: idt::InterruptStackFrame, _: u64) {
     interrupt_panic!("Security exception", frame);
 }
 
