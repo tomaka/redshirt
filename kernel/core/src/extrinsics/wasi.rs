@@ -690,13 +690,16 @@ fn fd_fdstat_get(
     // Which prints `0x1000 0x1000 0x1002 0x1008 0x1010 24`
     mem_access.write_memory(stat_out_buf, &[0; 24])?;
     mem_access.write_memory(stat_out_buf, &[stat.fs_filetype])?;
-    mem_access.write_memory(stat_out_buf.checked_add(2)?, &stat.fs_flags.to_le_bytes())?;
     mem_access.write_memory(
-        stat_out_buf.checked_add(8)?,
+        stat_out_buf.checked_add(2).ok_or(WasiCallErr)?,
+        &stat.fs_flags.to_le_bytes(),
+    )?;
+    mem_access.write_memory(
+        stat_out_buf.checked_add(8).ok_or(WasiCallErr)?,
         &stat.fs_rights_base.to_le_bytes(),
     )?;
     mem_access.write_memory(
-        stat_out_buf.checked_add(16)?,
+        stat_out_buf.checked_add(16).ok_or(WasiCallErr)?,
         &stat.fs_rights_inheriting.to_le_bytes(),
     )?;
 
@@ -831,7 +834,10 @@ fn fd_prestat_get(
     // Which prints `0x1000 0x1000 0x1004 8`
     mem_access.write_memory(prestat_out_buf, &[0; 8])?;
     mem_access.write_memory(prestat_out_buf, &[wasi::PREOPENTYPE_DIR])?;
-    mem_access.write_memory(prestat_out_buf.checked_add(4)?, &pr_name_len.to_le_bytes())?;
+    mem_access.write_memory(
+        prestat_out_buf.checked_add(4).ok_or(WasiCallErr)?,
+        &pr_name_len.to_le_bytes(),
+    )?;
 
     let action = ExtrinsicsAction::Resume(Some(WasmValue::I32(0)));
     Ok((ContextInner::Finished, action))
@@ -902,7 +908,9 @@ fn fd_read(
                             buffer_ptr,
                             &content[file_cursor_pos_usize..file_cursor_pos_usize + to_copy],
                         )?;
-                        *file_cursor_pos = file_cursor_pos.checked_add(u64::try_from(to_copy)?)?;
+                        *file_cursor_pos = file_cursor_pos
+                            .checked_add(u64::try_from(to_copy)?)
+                            .ok_or(WasiCallErr)?;
                         debug_assert!(
                             *file_cursor_pos
                                 <= u64::try_from(content.len()).unwrap_or(u64::max_value())
@@ -1046,7 +1054,9 @@ fn fd_write(
                 let len = ptr_and_len[1];
 
                 buffer.extend(mem_access.read_memory(ptr..ptr + len)?);
-                total_written = total_written.checked_add(usize::try_from(len)?)?;
+                total_written = total_written
+                    .checked_add(usize::try_from(len)?)
+                    .ok_or(WasiCallErr)?;
             }
 
             // Write to the fourth parameter the number of bytes written to the file descriptor.
@@ -1149,31 +1159,31 @@ fn path_filestat_get(
     mem_access.write_memory(filestat_out_buf, &[0; 64])?;
     mem_access.write_memory(filestat_out_buf, &filestat.dev.to_le_bytes())?;
     mem_access.write_memory(
-        filestat_out_buf.checked_add(8)?,
+        filestat_out_buf.checked_add(8).ok_or(WasiCallErr)?,
         &filestat.ino.to_le_bytes(),
     )?;
     mem_access.write_memory(
-        filestat_out_buf.checked_add(16)?,
+        filestat_out_buf.checked_add(16).ok_or(WasiCallErr)?,
         &filestat.filetype.to_le_bytes(),
     )?;
     mem_access.write_memory(
-        filestat_out_buf.checked_add(24)?,
+        filestat_out_buf.checked_add(24).ok_or(WasiCallErr)?,
         &filestat.nlink.to_le_bytes(),
     )?;
     mem_access.write_memory(
-        filestat_out_buf.checked_add(32)?,
+        filestat_out_buf.checked_add(32).ok_or(WasiCallErr)?,
         &filestat.size.to_le_bytes(),
     )?;
     mem_access.write_memory(
-        filestat_out_buf.checked_add(40)?,
+        filestat_out_buf.checked_add(40).ok_or(WasiCallErr)?,
         &filestat.atim.to_le_bytes(),
     )?;
     mem_access.write_memory(
-        filestat_out_buf.checked_add(48)?,
+        filestat_out_buf.checked_add(48).ok_or(WasiCallErr)?,
         &filestat.mtim.to_le_bytes(),
     )?;
     mem_access.write_memory(
-        filestat_out_buf.checked_add(56)?,
+        filestat_out_buf.checked_add(56).ok_or(WasiCallErr)?,
         &filestat.ctim.to_le_bytes(),
     )?;
 
@@ -1346,14 +1356,16 @@ fn args_or_env_get(
 
     for arg in list.iter() {
         mem_access.write_memory(
-            argv.checked_add(argv_pos)?,
-            &(argv_buf.checked_add(argv_buf_pos)?).to_le_bytes(),
+            argv.checked_add(argv_pos).ok_or(WasiCallErr)?,
+            &(argv_buf.checked_add(argv_buf_pos).ok_or(WasiCallErr)?).to_le_bytes(),
         )?;
-        argv_pos = argv_pos.checked_add(4)?;
-        mem_access.write_memory(argv_buf.checked_add(argv_buf_pos)?, &arg)?;
-        argv_buf_pos = argv_buf_pos.checked_add(u32::try_from(arg.len())?)?;
-        mem_access.write_memory(argv_buf.checked_add(argv_buf_pos)?, &[0])?;
-        argv_buf_pos = argv_buf_pos.checked_add(1)?;
+        argv_pos = argv_pos.checked_add(4).ok_or(WasiCallErr)?;
+        mem_access.write_memory(argv_buf.checked_add(argv_buf_pos).ok_or(WasiCallErr)?, &arg)?;
+        argv_buf_pos = argv_buf_pos
+            .checked_add(u32::try_from(arg.len())?)
+            .ok_or(WasiCallErr)?;
+        mem_access.write_memory(argv_buf.checked_add(argv_buf_pos).ok_or(WasiCallErr)?, &[0])?;
+        argv_buf_pos = argv_buf_pos.checked_add(1).ok_or(WasiCallErr)?;
     }
 
     let action = ExtrinsicsAction::Resume(Some(WasmValue::I32(0)));
