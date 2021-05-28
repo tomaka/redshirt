@@ -7,7 +7,7 @@ edition = "2018"
 publish = false
 
 [dependencies]
-derive_more = "0.99.13"
+derive_more = "0.99.14"
 futures = "0.3.15"
 redshirt-ethernet-interface = { path = "../../interfaces/ethernet" }
 redshirt-hardware-interface = { path = "../../interfaces/hardware" }
