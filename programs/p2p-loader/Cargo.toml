@@ -26,7 +26,7 @@ tempdir = "0.3.7"
 walkdir = "2.3.2"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-env_logger = "0.8.3"
+env_logger = "0.9.0"
 libp2p-tcp = { version = "0.20.0", default-features = false, features = ["async-std"] }
 # TODO: use the version below once cargo has fixed the associated bug
 #libp2p = { version = "0.21.1", default-features = false, features = ["tcp"] }
