@@ -1017,9 +1017,9 @@ checksum = "3c1ad908cc71012b7bea4d0c53ba96a8cba9962f048fa68d143376143d863b7a"
 
 [[package]]
 name = "hyper"
-version = "0.14.10"
+version = "0.14.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7728a72c4c7d72665fde02204bcbd93b247721025b222ef78606f14513e0fd03"
+checksum = "0b61cf2d1aebcf6e6352c97b81dc2244ca29194be1b276f5d8ad5c6330fffb11"
 dependencies = [
  "bytes 1.0.0",
  "futures-channel",
@@ -1792,11 +1792,11 @@ dependencies = [
 
 [[package]]
 name = "pin-project"
-version = "1.0.7"
+version = "1.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c7509cc106041c40a4518d2af7a61530e1eed0e6285296a3d8c5472806ccc4a4"
+checksum = "576bc800220cc65dac09e99e97b08b358cfab6e17078de8dc5fee223bd2d0c08"
 dependencies = [
- "pin-project-internal 1.0.7",
+ "pin-project-internal 1.0.8",
 ]
 
 [[package]]
@@ -1812,9 +1812,9 @@ dependencies = [
 
 [[package]]
 name = "pin-project-internal"
-version = "1.0.7"
+version = "1.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "48c950132583b500556b1efd71d45b319029f2b71518d979fcc208e16b42426f"
+checksum = "6e8fe8163d14ce7f0cdac2e040116f22eac817edabff0be91e8aff7e9accf389"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2213,7 +2213,7 @@ dependencies = [
  "lazy_static",
  "nohash-hasher",
  "parity-scale-codec",
- "pin-project 1.0.7",
+ "pin-project 1.0.8",
  "slab 0.4.2 (git+https://github.com/tokio-rs/slab?rev=3340fdcf7204584b9ee509beabf3b174a333dfc1)",
  "spinning_top",
 ]
@@ -2224,7 +2224,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "parity-scale-codec",
- "pin-project 1.0.7",
+ "pin-project 1.0.8",
  "redshirt-syscalls",
 ]
 
@@ -2245,7 +2245,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "parity-scale-codec",
- "pin-project 1.0.7",
+ "pin-project 1.0.8",
  "redshirt-syscalls",
 ]
 
@@ -2995,7 +2995,7 @@ name = "wasm-timer"
 version = "0.2.4"
 dependencies = [
  "futures-timer",
- "pin-project 1.0.7",
+ "pin-project 1.0.8",
  "redshirt-time-interface",
 ]
 
