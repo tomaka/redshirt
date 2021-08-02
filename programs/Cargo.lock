@@ -440,7 +440,7 @@ dependencies = [
  "ahash",
  "futures",
  "hashbrown 0.11.2",
- "rand 0.8.3",
+ "rand 0.8.4",
  "redshirt-framebuffer-interface",
  "redshirt-interface-interface",
  "redshirt-syscalls",
@@ -1559,7 +1559,7 @@ dependencies = [
  "hashbrown 0.11.2",
  "log",
  "parity-scale-codec",
- "rand 0.8.3",
+ "rand 0.8.4",
  "redshirt-ethernet-interface",
  "redshirt-interface-interface",
  "redshirt-log-interface",
@@ -2030,9 +2030,9 @@ dependencies = [
 
 [[package]]
 name = "rand"
-version = "0.8.3"
+version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ef9e7e66b4468674bfcb0c81af8b7fa0bb154fa9f28eb840da5c447baeb8d7e"
+checksum = "2e7573632e6454cf6b99d7aac4ccca54be06da05aca2ef7423d22d27d4d4bcd8"
 dependencies = [
  "libc",
  "rand_chacha 0.3.0",
@@ -2132,7 +2132,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "parity-scale-codec",
- "rand 0.8.3",
+ "rand 0.8.4",
  "redshirt-syscalls",
 ]
 
@@ -2704,18 +2704,18 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "1.0.25"
+version = "1.0.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fa6f76457f59514c7eeb4e59d891395fab0b2fd1d40723ae737d64153392e9c6"
+checksum = "93119e4feac1cbe6c798c34d3a53ea0026b0b1de6a120deef895137c0529bfe2"
 dependencies = [
  "thiserror-impl",
 ]
 
 [[package]]
 name = "thiserror-impl"
-version = "1.0.25"
+version = "1.0.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a36768c0fbf1bb15eca10defa29526bda730a2376c2ab4393ccfa16fb1a318d"
+checksum = "060d69a0afe7796bf42e9e2ff91f5ee691fb15c53d38b4b62a9a53eb23164745"
 dependencies = [
  "proc-macro2",
  "quote",
