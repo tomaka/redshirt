@@ -19,7 +19,7 @@ redshirt-log-interface = { path = "../../interfaces/log" } # TODO: remove
 redshirt-syscalls = { path = "../../interfaces/syscalls" }
 redshirt-tcp-interface = { path = "../../interfaces/tcp" }
 redshirt-time-interface = { path = "../../interfaces/time" }
-thiserror = "1.0.26"
+thiserror = "1.0.28"
 
 [dependencies.smoltcp]
 version = "0.7.5"
