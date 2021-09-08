@@ -102,6 +102,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cff77d8686867eceff3105329d4698d96c2391c176d5d03adc90c7389162b5b8"
 
 [[package]]
+name = "arrayvec"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "be4dc07131ffa69b8072d35f5007352af944213cde02545e2103680baed38fcd"
+
+[[package]]
 name = "asn1_der"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -191,7 +197,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "41262f11d771fd4a61aa3ce019fca363b4b6c282fca9da2a31186d3965a47a5c"
 dependencies = [
  "either",
- "radium",
+ "radium 0.3.0",
+]
+
+[[package]]
+name = "bitvec"
+version = "0.20.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7774144344a4faa177370406a7ff5f1da24303817368584c6206c8303eb07848"
+dependencies = [
+ "funty",
+ "radium 0.6.2",
+ "tap",
+ "wyz",
 ]
 
 [[package]]
@@ -214,7 +232,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8fb2d74254a3a0b5cac33ac9f8ed0e44aa50378d9dbb2e5d83bd21ed1dc2c8a"
 dependencies = [
  "arrayref",
- "arrayvec",
+ "arrayvec 0.5.1",
  "constant_time_eq",
 ]
 
@@ -225,7 +243,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ab9e07352b829279624ceb7c64adb4f585dacdb81d35cafae81139ccd617cf44"
 dependencies = [
  "arrayref",
- "arrayvec",
+ "arrayvec 0.5.1",
  "constant_time_eq",
 ]
 
@@ -236,7 +254,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b64485778c4f16a6a5a9d335e80d449ac6c70cdd6a06d2af18a6f6f775a125b3"
 dependencies = [
  "arrayref",
- "arrayvec",
+ "arrayvec 0.5.1",
  "cc",
  "cfg-if 0.1.10",
  "constant_time_eq",
@@ -319,6 +337,12 @@ name = "byte-slice-cast"
 version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b0a5e3906bcbf133e33c1d4d95afc664ad37fbdb9f6568d8043e7ea8c27d93d3"
+
+[[package]]
+name = "byte-slice-cast"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "65c1bf4a04a88c54f589125563643d773f3254b5c38571395e2b591c693bbc81"
 
 [[package]]
 name = "byte-tools"
@@ -717,6 +741,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3dcaa9ae7725d12cdb85b3ad99a434db70b468c09ded17e012d86b5c1010f7a7"
 
 [[package]]
+name = "funty"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fed34cd105917e91daa4da6b3728c47b068749d6a62c59811f06ed2ac71d9da7"
+
+[[package]]
 name = "futures"
 version = "0.3.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1060,6 +1090,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "impl-trait-for-tuples"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d5dacb10c5b3bb92d46ba347505a9041e676bb20ad220101326bffb0c93031ee"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "indexmap"
 version = "1.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1270,7 +1311,7 @@ version = "0.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "44ed3a4c8111c570ab2bffb30c6353178d7603ce3787e3c5f2493c8d3d16d1f0"
 dependencies = [
- "arrayvec",
+ "arrayvec 0.5.1",
  "bytes 0.5.4",
  "either",
  "fnv",
@@ -1558,7 +1599,7 @@ dependencies = [
  "futures",
  "hashbrown 0.11.2",
  "log",
- "parity-scale-codec",
+ "parity-scale-codec 2.2.0",
  "rand 0.8.4",
  "redshirt-ethernet-interface",
  "redshirt-interface-interface",
@@ -1666,7 +1707,7 @@ dependencies = [
  "log",
  "notify",
  "openssl-sys",
- "parity-scale-codec",
+ "parity-scale-codec 2.2.0",
  "redshirt-interface-interface",
  "redshirt-loader-interface",
  "redshirt-log-interface",
@@ -1698,22 +1739,35 @@ dependencies = [
 
 [[package]]
 name = "parity-scale-codec"
-version = "1.3.6"
+version = "1.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "79602888a81ace83e3d1d4b2873286c1f5f906c84db667594e8db8da3506c383"
+checksum = "a4b26b16c7687c3075982af47719e481815df30bc544f7a6690763a25ca16e9d"
 dependencies = [
- "arrayvec",
- "bitvec",
- "byte-slice-cast",
+ "arrayvec 0.5.1",
+ "bitvec 0.17.4",
+ "byte-slice-cast 0.3.5",
  "parity-scale-codec-derive",
  "serde",
 ]
 
 [[package]]
-name = "parity-scale-codec-derive"
-version = "1.2.2"
+name = "parity-scale-codec"
+version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "198db82bb1c18fc00176004462dd809b2a6d851669550aa17af6dacd21ae0c14"
+checksum = "8975095a2a03bbbdc70a74ab11a4f76a6d0b84680d87c68d722531b0ac28e8a9"
+dependencies = [
+ "arrayvec 0.7.1",
+ "bitvec 0.20.4",
+ "byte-slice-cast 1.0.0",
+ "impl-trait-for-tuples",
+ "serde",
+]
+
+[[package]]
+name = "parity-scale-codec-derive"
+version = "1.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c41512944b1faff334a5f1b9447611bf4ef40638ccb6328173dacefb338e878c"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -1759,7 +1813,7 @@ dependencies = [
  "hashbrown 0.11.2",
  "lazy_static",
  "log",
- "parity-scale-codec",
+ "parity-scale-codec 2.2.0",
  "redshirt-log-interface",
  "redshirt-pci-interface",
  "redshirt-syscalls",
@@ -2003,6 +2057,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "def50a86306165861203e7f84ecffbbdfdea79f0e51039b33de1e952358c47ac"
 
 [[package]]
+name = "radium"
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "643f8f41a8ebc4c5dc4515c82bb8abd397b527fc20fd681b7c011c2aee5d44fb"
+
+[[package]]
 name = "rand"
 version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2131,7 +2191,7 @@ name = "redshirt-ethernet-interface"
 version = "0.1.0"
 dependencies = [
  "futures",
- "parity-scale-codec",
+ "parity-scale-codec 1.3.7",
  "rand 0.8.4",
  "redshirt-syscalls",
 ]
@@ -2141,7 +2201,7 @@ name = "redshirt-framebuffer-interface"
 version = "0.1.0"
 dependencies = [
  "futures",
- "parity-scale-codec",
+ "parity-scale-codec 1.3.7",
  "redshirt-random-interface",
  "redshirt-syscalls",
 ]
@@ -2151,7 +2211,7 @@ name = "redshirt-hardware-interface"
 version = "0.1.0"
 dependencies = [
  "futures",
- "parity-scale-codec",
+ "parity-scale-codec 1.3.7",
  "redshirt-syscalls",
 ]
 
@@ -2160,7 +2220,7 @@ name = "redshirt-interface-interface"
 version = "0.1.0"
 dependencies = [
  "futures",
- "parity-scale-codec",
+ "parity-scale-codec 1.3.7",
  "redshirt-syscalls",
 ]
 
@@ -2175,7 +2235,7 @@ dependencies = [
 name = "redshirt-kernel-log-interface"
 version = "0.1.0"
 dependencies = [
- "parity-scale-codec",
+ "parity-scale-codec 1.3.7",
  "redshirt-syscalls",
 ]
 
@@ -2184,7 +2244,7 @@ name = "redshirt-loader-interface"
 version = "0.1.0"
 dependencies = [
  "futures",
- "parity-scale-codec",
+ "parity-scale-codec 1.3.7",
  "redshirt-syscalls",
 ]
 
@@ -2201,7 +2261,7 @@ name = "redshirt-pci-interface"
 version = "0.1.0"
 dependencies = [
  "futures",
- "parity-scale-codec",
+ "parity-scale-codec 1.3.7",
  "redshirt-syscalls",
 ]
 
@@ -2209,7 +2269,7 @@ dependencies = [
 name = "redshirt-random-interface"
 version = "0.1.0"
 dependencies = [
- "parity-scale-codec",
+ "parity-scale-codec 1.3.7",
  "redshirt-syscalls",
 ]
 
@@ -2222,7 +2282,7 @@ dependencies = [
  "hashbrown 0.9.1",
  "lazy_static",
  "nohash-hasher",
- "parity-scale-codec",
+ "parity-scale-codec 1.3.7",
  "pin-project 1.0.8",
  "slab 0.4.2 (git+https://github.com/tokio-rs/slab?rev=3340fdcf7204584b9ee509beabf3b174a333dfc1)",
  "spinning_top",
@@ -2233,7 +2293,7 @@ name = "redshirt-system-time-interface"
 version = "0.1.0"
 dependencies = [
  "futures",
- "parity-scale-codec",
+ "parity-scale-codec 1.3.7",
  "pin-project 1.0.8",
  "redshirt-syscalls",
 ]
@@ -2244,7 +2304,7 @@ version = "0.1.0"
 dependencies = [
  "derive_more",
  "futures",
- "parity-scale-codec",
+ "parity-scale-codec 1.3.7",
  "redshirt-syscalls",
  "tokio",
 ]
@@ -2254,7 +2314,7 @@ name = "redshirt-time-interface"
 version = "0.1.0"
 dependencies = [
  "futures",
- "parity-scale-codec",
+ "parity-scale-codec 1.3.7",
  "pin-project 1.0.8",
  "redshirt-syscalls",
 ]
@@ -2264,7 +2324,7 @@ name = "redshirt-video-output-interface"
 version = "0.1.0"
 dependencies = [
  "futures",
- "parity-scale-codec",
+ "parity-scale-codec 1.3.7",
  "redshirt-random-interface",
  "redshirt-syscalls",
 ]
@@ -2314,7 +2374,7 @@ dependencies = [
 name = "rpi-framebuffer"
 version = "0.1.0"
 dependencies = [
- "parity-scale-codec",
+ "parity-scale-codec 2.2.0",
  "redshirt-hardware-interface",
  "redshirt-interface-interface",
  "redshirt-log-interface",
@@ -2659,6 +2719,12 @@ dependencies = [
  "syn",
  "unicode-xid",
 ]
+
+[[package]]
+name = "tap"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 
 [[package]]
 name = "tempdir"
@@ -3134,6 +3200,12 @@ dependencies = [
  "winapi 0.2.8",
  "winapi-build",
 ]
+
+[[package]]
+name = "wyz"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "85e60b0d1b5f99db2556934e21937020776a5d31520bf169e851ac44e6420214"
 
 [[package]]
 name = "x25519-dalek"
