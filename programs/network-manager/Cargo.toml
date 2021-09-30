@@ -12,16 +12,16 @@ futures = "0.3"
 hashbrown = { version = "0.11.2", default-features = false }
 log = "0.4"
 parity-scale-codec = "1.3.6"
-rand = "0.8.3"
+rand = "0.8.4"
 redshirt-ethernet-interface = { path = "../../interfaces/ethernet" }
 redshirt-interface-interface = { path = "../../interfaces/interface" }
 redshirt-log-interface = { path = "../../interfaces/log" } # TODO: remove
 redshirt-syscalls = { path = "../../interfaces/syscalls" }
 redshirt-tcp-interface = { path = "../../interfaces/tcp" }
 redshirt-time-interface = { path = "../../interfaces/time" }
-thiserror = "1.0.25"
+thiserror = "1.0.29"
 
 [dependencies.smoltcp]
-version = "0.7.1"
+version = "0.7.5"
 default-features = false
 features = ["ethernet", "proto-dhcpv4", "proto-ipv4", "proto-ipv6", "socket-udp", "socket-tcp", "std"]
