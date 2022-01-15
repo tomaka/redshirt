@@ -36,6 +36,8 @@ macro_rules! __gen_boot {
         memory_zeroing_end: $memory_zeroing_end:path,
     ) => {
         const _: () = {
+            use core::arch::asm;
+
             #[naked]
             #[export_name = "_start"]
             unsafe extern "C" fn entry_point_step1() {
