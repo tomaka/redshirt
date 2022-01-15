@@ -46,7 +46,7 @@ macro_rules! __gen_boot {
             use $crate::klog::KLogger;
 
             use alloc::sync::Arc;
-            use core::{fmt::Write as _, iter, num::NonZeroU32, pin::Pin};
+            use core::{arch::asm, fmt::Write as _, iter, num::NonZeroU32, pin::Pin};
             use $crate::futures::prelude::*;
             use $crate::redshirt_kernel_log_interface::ffi::{KernelLogMethod, UartAccess, UartInfo};
 

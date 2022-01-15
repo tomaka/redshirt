@@ -41,6 +41,7 @@
 use crate::arch::x86_64::apic::local;
 
 use core::{
+    arch::asm,
     convert::TryFrom as _,
     fmt,
     sync::atomic::{AtomicBool, Ordering},
