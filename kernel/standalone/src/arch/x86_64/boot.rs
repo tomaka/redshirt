@@ -36,6 +36,8 @@ macro_rules! __gen_boot {
         memory_zeroing_end: $memory_zeroing_end:path,
     ) => {
         const _: () = {
+            use core::arch::asm;
+
             #[naked]
             #[export_name = "_start"]
             unsafe extern "C" fn entry_point_step1() {
@@ -279,8 +281,4 @@ pub extern "C" fn fmax(a: f64, b: f64) -> f64 {
 #[no_mangle]
 pub extern "C" fn fmaxf(a: f32, b: f32) -> f32 {
     libm::fmaxf(a, b)
-}
-#[no_mangle]
-pub extern "C" fn __truncdfsf2(a: f64) -> f32 {
-    libm::trunc(a) as f32 // TODO: correct?
 }

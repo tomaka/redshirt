@@ -44,7 +44,9 @@ macro_rules! __gen_boot {
             extern crate alloc;
 
             use alloc::sync::Arc;
-            use core::{convert::TryFrom as _, fmt::Write as _, iter, num::NonZeroU32, pin::Pin};
+            use core::{
+                arch::asm, convert::TryFrom as _, fmt::Write as _, iter, num::NonZeroU32, pin::Pin,
+            };
             use $crate::futures::prelude::*;
             use $crate::klog::KLogger;
             use $crate::redshirt_kernel_log_interface::ffi::{KernelLogMethod, UartInfo};
