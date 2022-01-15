@@ -282,7 +282,3 @@ pub extern "C" fn fmax(a: f64, b: f64) -> f64 {
 pub extern "C" fn fmaxf(a: f32, b: f32) -> f32 {
     libm::fmaxf(a, b)
 }
-#[no_mangle]
-pub extern "C" fn __truncdfsf2(a: f64) -> f32 {
-    libm::trunc(a) as f32 // TODO: correct?
-}
