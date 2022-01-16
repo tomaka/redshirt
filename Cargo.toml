@@ -37,5 +37,6 @@ codegen-units = 1
 panic = 'abort'
 
 [patch.crates-io]
+cranelift-codegen = { path = "./kernel/third-party/cranelift-codegen" }
 cranelift-codegen-shared = { path = "./kernel/third-party/cranelift-codegen-shared" }
 regalloc = { path = "./kernel/third-party/regalloc" }

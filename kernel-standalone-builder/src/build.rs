@@ -158,14 +158,51 @@ pub fn build(cfg: Config) -> Result<BuildOutput, Error> {
         cargo_toml_prototype.insert("patch".into(), {
             let mut patches = toml::value::Table::new();
             patches.insert("crates-io".into(), {
-                let crates = toml::value::Table::new();
-                // Uncomment this in order to overwrite dependencies used during the kernel
-                // compilation.
-                /*crates.insert("foo".into(), {
+                let third_party_path = cfg
+                    .kernel_cargo_toml
+                    .parent()
+                    .ok_or(Error::BadKernelCargoTomlPath)?
+                    .parent()
+                    .ok_or(Error::BadKernelCargoTomlPath)?
+                    .join("third-party");
+
+                let mut crates = toml::value::Table::new();
+                crates.insert("cranelift-codegen".into(), {
                     let mut val = toml::value::Table::new();
-                    val.insert("path".into(), "/path/to/foot".into());
+                    val.insert(
+                        "path".into(),
+                        third_party_path
+                            .join("cranelift-codegen")
+                            .display()
+                            .to_string()
+                            .into(),
+                    );
                     val.into()
-                });*/
+                });
+                crates.insert("cranelift-codegen-shared".into(), {
+                    let mut val = toml::value::Table::new();
+                    val.insert(
+                        "path".into(),
+                        third_party_path
+                            .join("cranelift-codegen-shared")
+                            .display()
+                            .to_string()
+                            .into(),
+                    );
+                    val.into()
+                });
+                crates.insert("regalloc".into(), {
+                    let mut val = toml::value::Table::new();
+                    val.insert(
+                        "path".into(),
+                        third_party_path
+                            .join("regalloc")
+                            .display()
+                            .to_string()
+                            .into(),
+                    );
+                    val.into()
+                });
                 crates.into()
             });
             patches.into()
