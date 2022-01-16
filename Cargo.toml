@@ -40,3 +40,4 @@ panic = 'abort'
 cranelift-codegen = { path = "./kernel/third-party/cranelift-codegen" }
 cranelift-codegen-shared = { path = "./kernel/third-party/cranelift-codegen-shared" }
 regalloc = { path = "./kernel/third-party/regalloc" }
+wasmparser = { path = "./kernel/third-party/wasmparser" }

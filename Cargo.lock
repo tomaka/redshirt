@@ -1041,6 +1041,7 @@ dependencies = [
  "tiny-keccak",
  "wasi 0.10.0+wasi-snapshot-preview1",
  "wasmi",
+ "wasmparser",
 ]
 
 [[package]]
@@ -1660,6 +1661,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ea78c597064ba73596099281e2f4cfc019075122a65cdda3205af94f0b264d93"
 dependencies = [
  "parity-wasm",
+]
+
+[[package]]
+name = "wasmparser"
+version = "0.82.0"
+dependencies = [
+ "fnv",
+ "hashbrown",
 ]
 
 [[package]]

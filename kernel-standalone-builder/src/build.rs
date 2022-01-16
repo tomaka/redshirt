@@ -203,6 +203,18 @@ pub fn build(cfg: Config) -> Result<BuildOutput, Error> {
                     );
                     val.into()
                 });
+                crates.insert("wasmparser".into(), {
+                    let mut val = toml::value::Table::new();
+                    val.insert(
+                        "path".into(),
+                        third_party_path
+                            .join("wasmparser")
+                            .display()
+                            .to_string()
+                            .into(),
+                    );
+                    val.into()
+                });
                 crates.into()
             });
             patches.into()
