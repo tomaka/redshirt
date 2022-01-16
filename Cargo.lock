@@ -1038,6 +1038,7 @@ dependencies = [
  "slab 0.4.2 (git+https://github.com/tokio-rs/slab?rev=3340fdcf7204584b9ee509beabf3b174a333dfc1)",
  "smallvec",
  "spinning_top",
+ "target-lexicon",
  "tiny-keccak",
  "wasi 0.10.0+wasi-snapshot-preview1",
  "wasmi",
