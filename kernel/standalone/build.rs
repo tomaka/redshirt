@@ -53,7 +53,10 @@ fn gen_font() -> Vec<u8> {
                 return;
             }
 
-            assert!(value >= 0.0 && value <= 1.0);
+            // Sometimes the value is negative zero or slightly above 1.0 (e.g. 1.000000001)
+            // We clamp it to be certain that the conversion below works as expected.
+            let value = value.clamp(0.0, 1.0);
+
             let value = (value * 255.0) as u8;
             let b_pos = usize::from(ascii_chr) * 8 * 8 + usize::try_from(x + y * 8).unwrap();
             out_data[b_pos] = value;

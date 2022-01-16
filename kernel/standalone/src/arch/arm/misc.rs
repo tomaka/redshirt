@@ -45,7 +45,3 @@ pub extern "C" fn fmaxf(a: f32, b: f32) -> f32 {
 pub extern "C" fn __aeabi_d2f(a: f64) -> f32 {
     libm::trunc(a) as f32 // TODO: correct?
 }
-#[no_mangle]
-pub extern "C" fn __truncdfsf2(a: f64) -> f32 {
-    libm::trunc(a) as f32 // TODO: correct?
-}

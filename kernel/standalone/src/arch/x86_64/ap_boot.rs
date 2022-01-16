@@ -31,7 +31,7 @@ use crate::arch::x86_64::apic::{local::LocalApicsControl, timers::Timers, tsc_sy
 use crate::arch::x86_64::{executor, interrupts};
 
 use alloc::{alloc::Layout, boxed::Box, sync::Arc};
-use core::{convert::TryFrom as _, fmt, ops::Range, ptr, slice, time::Duration};
+use core::{arch::asm, convert::TryFrom as _, fmt, ops::Range, ptr, slice, time::Duration};
 use futures::{channel::oneshot, prelude::*};
 
 /// Allocator required by the [`boot_associated_processor`] function.
