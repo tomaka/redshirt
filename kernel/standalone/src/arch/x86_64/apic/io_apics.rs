@@ -78,7 +78,7 @@ pub unsafe fn init_io_apics(
 /// guaranteed to be authentic.
 ///
 // TODO: meh for this method; depends on external library
-pub unsafe fn init_from_acpi(info: &acpi::platform::Apic) -> IoApicsControl {
+pub unsafe fn init_from_acpi(info: &acpi::platform::interrupt::Apic) -> IoApicsControl {
     init_io_apics(
         info.io_apics
             .iter()

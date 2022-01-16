@@ -185,7 +185,7 @@ pub unsafe fn entry_point_step3<
     // The ACPI tables indicate us information about how to interface with the I/O APICs.
     // We use this information and initialize the I/O APICs.
     let mut io_apics = match &acpi_tables.platform_info().ok().map(|i| i.interrupt_model) {
-        Some(::acpi::platform::InterruptModel::Apic(apic)) => {
+        Some(::acpi::platform::interrupt::InterruptModel::Apic(apic)) => {
             // The PIC is the legacy equivalent of I/O APICs.
             apic::pic::init_and_disable_pic();
             apic::io_apics::init_from_acpi(apic)
@@ -262,7 +262,7 @@ pub unsafe fn entry_point_step3<
             &*executor,
             &*local_apics,
             &timers,
-            apic::ApicId::from_unchecked(ap.local_apic_id),
+            apic::ApicId::from_unchecked(u8::try_from(ap.local_apic_id).unwrap()),
             {
                 let executor = &*executor;
                 let run = run.clone();
