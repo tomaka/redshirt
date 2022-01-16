@@ -12,14 +12,14 @@ jobs:
     - name: Install Rust
       uses: actions-rs/toolchain@v1
       with:
-        toolchain: nightly-2021-05-22
+        toolchain: nightly-2022-01-14
         target: wasm32-wasi
         override: true
     - name: Install dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y cmake clang-10
-    - uses: actions/cache@v2.1.4
+    - uses: actions/cache@v2.1.6
       with:
         path: |
           ~/.cargo/registry
@@ -29,7 +29,7 @@ jobs:
     - name: Build programs
       run: cargo build --manifest-path ./programs/Cargo.toml --workspace --exclude stub --locked --verbose --release --target=wasm32-wasi
     - name: Upload WASM programs
-      uses: actions/upload-artifact@v2.2.3
+      uses: actions/upload-artifact@v2.2.4
       with:
         name: wasm-programs
         path: programs/target
@@ -38,7 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
-    - uses: actions/cache@v2.1.4
+    - uses: actions/cache@v2.1.6
       with:
         path: |
           ~/.cargo/registry
@@ -48,7 +48,7 @@ jobs:
     - name: Install nightly Rust
       uses: actions-rs/toolchain@v1
       with:
-        toolchain: nightly-2021-05-22
+        toolchain: nightly-2022-01-14
         target: wasm32-wasi
         override: true
     - name: Test redshirt-core
@@ -75,7 +75,7 @@ jobs:
     - run: |
         sudo apt-get install qemu-utils qemu-system-x86
       if: ${{ matrix.target == 'x86_64-multiboot2'}}
-    - uses: actions/cache@v2.1.4
+    - uses: actions/cache@v2.1.6
       with:
         path: |
           ~/.cargo/registry
@@ -86,7 +86,7 @@ jobs:
     - name: Install nightly Rust
       uses: actions-rs/toolchain@v1
       with:
-        toolchain: nightly-2021-05-22
+        toolchain: nightly-2022-01-14
         target: wasm32-wasi
         override: true
     - name: Install rust-src
@@ -96,7 +96,7 @@ jobs:
     - name: Test kernel
       run: cargo run --manifest-path=./kernel-standalone-builder/Cargo.toml -- emulator-test --target ${{ matrix.target }} --emulator qemu
     - name: Upload generated kernel
-      uses: actions/upload-artifact@v2.2.3
+      uses: actions/upload-artifact@v2.2.4
       with:
         name: kernel-${{ matrix.target }}
         path: image
@@ -112,7 +112,7 @@ jobs:
         toolchain: stable
         override: true
     - name: Cache cargo registry
-      uses: actions/cache@v2.1.4
+      uses: actions/cache@v2.1.6
       with:
         path: |
           ~/.cargo/registry
@@ -160,14 +160,14 @@ jobs:
       - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2021-05-22
+          toolchain: nightly-2022-01-14
           target: wasm32-wasi
           override: true
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y clang-10
-      - uses: actions/cache@v2.1.4
+      - uses: actions/cache@v2.1.6
         with:
           path: |
             ~/.cargo/registry

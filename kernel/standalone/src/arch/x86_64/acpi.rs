@@ -105,16 +105,16 @@ impl acpi::AcpiHandler for DummyAcpiHandler {
         addr: usize,
         size: usize,
     ) -> acpi::PhysicalMapping<DummyAcpiHandler, T> {
-        acpi::PhysicalMapping {
-            physical_start: addr,
-            virtual_start: NonNull::new(addr as *mut _).unwrap(),
-            region_length: size,
-            mapped_length: size,
-            handler: self.clone(),
-        }
+        acpi::PhysicalMapping::new(
+            addr,
+            NonNull::new(addr as *mut _).unwrap(),
+            size,
+            size,
+            self.clone(),
+        )
     }
 
-    fn unmap_physical_region<T>(&self, _: &acpi::PhysicalMapping<DummyAcpiHandler, T>) {}
+    fn unmap_physical_region<T>(_: &acpi::PhysicalMapping<DummyAcpiHandler, T>) {}
 }
 
 /// Implementation of the `Handler` trait of `aml`.

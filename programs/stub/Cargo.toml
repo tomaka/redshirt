@@ -6,6 +6,6 @@ edition = "2018"
 publish = false
 
 [dependencies]
-futures = { version = "0.3.15", default-features = false }
+futures = { version = "0.3.17", default-features = false }
 redshirt-syscalls = { path = "../../interfaces/syscalls" }
 wee_alloc = "0.4.5"

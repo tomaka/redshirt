@@ -11,22 +11,22 @@ git = ["git2", "notify", "openssl-sys"]
 
 [dependencies]
 base64 = { version = "0.13.0", default-features = false, features = ["alloc"] }
-blake3 = { version = "0.3.7", default-features = false }
+blake3 = { version = "1.1.0", default-features = false }
 bs58 = "0.4.0"
 futures = "0.3"
-git2 = { version = "0.13.19", optional = true }
+git2 = { version = "0.13.23", optional = true }
 libp2p = { version = "0.23.0", default-features = false, features = ["kad", "noise", "yamux"] }
 log = "0.4"
 notify = { version = "4.0.17", optional = true }
 # openssl-sys is not used directly, but we want to pass the "vendored" feature
-openssl-sys = { version = "0.9.63", features = ["vendored"], optional = true }
+openssl-sys = { version = "0.9.68", features = ["vendored"], optional = true }
 parity-scale-codec = "1.3.6"
-structopt = "0.3.21"
+structopt = "0.3.25"
 tempdir = "0.3.7"
 walkdir = "2.3.2"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-env_logger = "0.8.3"
+env_logger = "0.9.0"
 libp2p-tcp = { version = "0.20.0", default-features = false, features = ["async-std"] }
 # TODO: use the version below once cargo has fixed the associated bug
 #libp2p = { version = "0.21.1", default-features = false, features = ["tcp"] }
