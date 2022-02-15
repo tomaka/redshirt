@@ -8,7 +8,7 @@ publish = false
 
 [dependencies]
 derive_more = "0.99.17"
-futures = "0.3.19"
+futures = "0.3.21"
 redshirt-ethernet-interface = { path = "../../interfaces/ethernet" }
 redshirt-hardware-interface = { path = "../../interfaces/hardware" }
 redshirt-pci-interface = { path = "../../interfaces/pci" }
