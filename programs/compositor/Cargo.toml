@@ -10,7 +10,7 @@ publish = false
 ahash = { version = "0.6.2", default-features = false }
 futures = "0.3.21"
 hashbrown = { version = "0.12.0", default-features = false }
-rand = "0.8.4"
+rand = "0.8.5"
 redshirt-framebuffer-interface = { path = "../../interfaces/framebuffer" }
 redshirt-interface-interface = { path = "../../interfaces/interface" }
 redshirt-syscalls = { path = "../../interfaces/syscalls" }
