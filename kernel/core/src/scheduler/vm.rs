@@ -28,6 +28,8 @@ use core::{
 };
 use smallvec::SmallVec;
 
+mod build;
+
 /// WASMI state machine dedicated to a process.
 ///
 /// # Initialization

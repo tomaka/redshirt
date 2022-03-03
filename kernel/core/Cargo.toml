@@ -14,6 +14,7 @@ nightly = ["redshirt-core-proc-macros/nightly"]
 atomic = "0.5.0"
 blake3 = { version = "0.3.7", default-features = false }
 bs58 = { version = "0.4.0", default-features = false, features = ["alloc"] }
+cranelift-codegen = { version = "0.80.0", default-features = false, features = ["core", "all-arch"] }
 crossbeam-queue = { version = "0.3.1", default-features = false, features = ["alloc"] }
 either = { version = "1.6.1", default-features = false }
 fnv = { version = "1.0.7", default-features = false }
@@ -35,8 +36,10 @@ rand_core = { version = "0.6.0", default-features = false }
 slab = { git = "https://github.com/tokio-rs/slab", default-features = false, rev = "3340fdcf7204584b9ee509beabf3b174a333dfc1" }
 smallvec = { version = "1.6.1", default-features = false }
 spinning_top = "0.2.2"
+target-lexicon = { version = "0.12.2", default-features = false }
 wasi = { git = "https://github.com/bytecodealliance/wasi", rev = "45536ac956a6211e3cff047f36cf19d6da82fd95", default-features = false }# TODO: dependabot cannot parse the versioning scheme (`0.10.0+wasi-snapshot-preview1`) of this crate on crates.io
 wasmi = { version = "0.8.0", default-features = false, features = ["core"] }
+wasmparser = { version = "0.82.0" }
 
 [dev-dependencies]
 criterion = "0.3"
