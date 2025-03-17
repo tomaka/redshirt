@@ -75,7 +75,7 @@ pub fn parse_acpi_tables(
     multiboot_info: &multiboot2::BootInformation,
 ) -> acpi::AcpiTables<DummyAcpiHandler> {
     let acpi_tables = load_acpi_tables(multiboot_info);
-    let mut aml = aml::AmlContext::new(Box::new(DummyAmlHandler), false, aml::DebugVerbosity::None);
+    let mut aml = aml::AmlContext::new(Box::new(DummyAmlHandler), aml::DebugVerbosity::None);
 
     if let Some(dsdt) = &acpi_tables.dsdt {
         let stream = unsafe {

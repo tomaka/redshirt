@@ -90,7 +90,10 @@ pub unsafe fn entry_point_step3<
 ) -> ! {
     panic::PANIC_LOGGER.set_method(DEFAULT_LOG_METHOD);
 
-    let multiboot_info = multiboot2::load(multiboot_info);
+    let multiboot_info = multiboot2::BootInformation::load(
+        multiboot_info as *const multiboot2::BootInformationHeader,
+    )
+    .unwrap();
 
     // Initialization of the memory allocator.
     let mut ap_boot_alloc = {
@@ -113,44 +116,50 @@ pub unsafe fn entry_point_step3<
     };
 
     // Now that we have a memory allocator, initialize the logging system.
-    panic::PANIC_LOGGER.set_method(if let Some(fb_info) = multiboot_info.framebuffer_tag() {
-        KernelLogMethod {
-            enabled: true,
-            framebuffer: Some(FramebufferInfo {
-                address: fb_info.address,
-                width: fb_info.width,
-                height: fb_info.height,
-                pitch: u64::from(fb_info.pitch),
-                bytes_per_character: fb_info.bpp / 8,
-                format: match fb_info.buffer_type {
-                    multiboot2::FramebufferType::Text => FramebufferFormat::Text,
-                    multiboot2::FramebufferType::Indexed { .. } => FramebufferFormat::Rgb {
-                        // FIXME: that is completely wrong
-                        red_size: 8,
-                        red_position: 0,
-                        green_size: 8,
-                        green_position: 16,
-                        blue_size: 8,
-                        blue_position: 24,
-                    },
-                    multiboot2::FramebufferType::RGB { red, green, blue } => {
-                        FramebufferFormat::Rgb {
-                            red_size: red.size,
-                            red_position: red.position,
-                            green_size: green.size,
-                            green_position: green.position,
-                            blue_size: blue.size,
-                            blue_position: blue.position,
-                        }
-                    }
-                },
-            }),
-            // TODO: COM port should be discovered through the ACPI tables instead of hardcoded
-            uart: init_com(0x3f8).ok(),
-        }
-    } else {
-        DEFAULT_LOG_METHOD.clone()
-    });
+    panic::PANIC_LOGGER.set_method(
+        if let Some(Ok(fb_info)) = multiboot_info.framebuffer_tag() {
+            if let Ok(ty) = fb_info.buffer_type() {
+                KernelLogMethod {
+                    enabled: true,
+                    framebuffer: Some(FramebufferInfo {
+                        address: fb_info.address(),
+                        width: fb_info.width(),
+                        height: fb_info.height(),
+                        pitch: u64::from(fb_info.pitch()),
+                        bytes_per_character: fb_info.bpp() / 8,
+                        format: match ty {
+                            multiboot2::FramebufferType::Text => FramebufferFormat::Text,
+                            multiboot2::FramebufferType::Indexed { .. } => FramebufferFormat::Rgb {
+                                // FIXME: that is completely wrong
+                                red_size: 8,
+                                red_position: 0,
+                                green_size: 8,
+                                green_position: 16,
+                                blue_size: 8,
+                                blue_position: 24,
+                            },
+                            multiboot2::FramebufferType::RGB { red, green, blue } => {
+                                FramebufferFormat::Rgb {
+                                    red_size: red.size,
+                                    red_position: red.position,
+                                    green_size: green.size,
+                                    green_position: green.position,
+                                    blue_size: blue.size,
+                                    blue_position: blue.position,
+                                }
+                            }
+                        },
+                    }),
+                    // TODO: COM port should be discovered through the ACPI tables instead of hardcoded
+                    uart: init_com(0x3f8).ok(),
+                }
+            } else {
+                DEFAULT_LOG_METHOD.clone()
+            }
+        } else {
+            DEFAULT_LOG_METHOD.clone()
+        },
+    );
 
     writeln!(
         panic::PANIC_LOGGER.log_printer(),
@@ -374,7 +383,7 @@ fn find_free_memory_ranges<'a>(
     let mem_map = multiboot_info.memory_map_tag().unwrap();
     let elf_sections = multiboot_info.elf_sections_tag().unwrap();
 
-    mem_map.memory_areas().filter_map(move |area| {
+    mem_map.memory_areas().iter().filter_map(move |area| {
         // Some parts of the memory have to be avoided, such as the kernel, non-RAM memory,
         // RAM that might contain important information, and so on.
         let to_avoid = {
