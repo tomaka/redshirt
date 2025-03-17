@@ -260,7 +260,7 @@ dependencies = [
  "memchr",
  "pin-project-lite",
  "pin-utils",
- "slab 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "slab",
 ]
 
 [[package]]
@@ -694,7 +694,7 @@ dependencies = [
  "nohash-hasher",
  "parity-scale-codec",
  "pin-project",
- "slab 0.4.2 (git+https://github.com/tokio-rs/slab?rev=3340fdcf7204584b9ee509beabf3b174a333dfc1)",
+ "slab",
  "spinning_top",
 ]
 
@@ -796,14 +796,12 @@ checksum = "36df6ac6412072f67cf767ebbde4133a5b2e88e76dc6187fa7104cd16f783399"
 
 [[package]]
 name = "slab"
-version = "0.4.2"
+version = "0.4.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c111b5bd5695e56cffe5129854aa230b39c93a305372fdbb2668ca2394eea9f8"
-
-[[package]]
-name = "slab"
-version = "0.4.2"
-source = "git+https://github.com/tokio-rs/slab?rev=3340fdcf7204584b9ee509beabf3b174a333dfc1#3340fdcf7204584b9ee509beabf3b174a333dfc1"
+checksum = "8f92a496fb766b417c996b9c5e57daf2f7ad3b0bebe1ccfca4856390e3d3bb67"
+dependencies = [
+ "autocfg",
+]
 
 [[package]]
 name = "smallvec"
