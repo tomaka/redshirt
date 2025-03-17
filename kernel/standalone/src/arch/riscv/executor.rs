@@ -16,6 +16,7 @@
 //! Futures executor that works on bare metal.
 
 use alloc::sync::Arc;
+use core::arch::asm;
 use core::future::Future;
 use core::sync::atomic;
 use core::task::{Context, Poll};

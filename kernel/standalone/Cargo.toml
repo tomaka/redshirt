@@ -8,9 +8,9 @@ publish = false
 
 [dependencies]
 atomic = { version = "0.5.0", default-features = false }
-blake3 = { version = "0.3.7", default-features = false }
+blake3 = { version = "1.6.1", default-features = false }
 crossbeam-queue = { version = "0.3.1", default-features = false, features = ["alloc"] }
-derive_more = "0.99.11"
+derive_more = { version = "2.0.0", default-features = false, features = ["full"] }
 either = { version = "1.6.1", default-features = false }
 fnv = { version = "1.0.7", default-features = false }
 futures = { version = "0.3.13", default-features = false, features = ["alloc"] }
@@ -34,15 +34,15 @@ redshirt-syscalls = { path = "../../interfaces/syscalls", default-features = fal
 redshirt-time-interface = { path = "../../interfaces/time", default-features = false }
 rlibc = "1.0.0"
 smallvec = { version = "1.6.1", default-features = false }
-spinning_top = { version = "0.2.2", features = ["nightly"] }    # TODO: `nightly` feature needed for const initialization
+spinning_top = "0.3.0"
 
 [build-dependencies]
 rusttype = "0.9.2"
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 acpi = "4.1.0"
-aml = "0.10.0"
+aml = "0.16.4"
 crossbeam-utils = { version = "0.8.3", default-features = false }
-multiboot2 = "0.10.1"
+multiboot2 = "0.23.1"
 rdrand = { version = "0.7.0", default-features = false }
-x86_64 = "0.14.7"
+x86_64 = "0.15.2"

@@ -19,8 +19,8 @@
 //! This code exists with the intent of being compiled in release mode so that one can inspect
 //! the WASM output.
 
-#![feature(alloc_error_handler, start)]
 #![no_std]
+#![no_main]
 
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
@@ -31,18 +31,12 @@ fn panic(_: &core::panic::PanicInfo) -> ! {
     unsafe { core::hint::unreachable_unchecked() }
 }
 
-#[cfg(not(any(test, doc, doctest)))]
-#[alloc_error_handler]
-fn alloc_error_handler(_: core::alloc::Layout) -> ! {
-    panic!()
-}
-
 extern crate alloc;
 use alloc::vec;
 use futures::prelude::*;
 
-#[start]
-fn main(_: isize, _: *const *const u8) -> isize {
+#[no_mangle]
+fn _start(_: isize, _: *const *const u8) -> isize {
     redshirt_syscalls::block_on(async_main());
     0
 }

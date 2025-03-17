@@ -17,7 +17,7 @@ use crate::klog::video;
 
 use core::{convert::TryFrom as _, fmt, hint};
 use redshirt_kernel_log_interface::ffi::{KernelLogMethod, UartAccess, UartInfo};
-use spinning_top::{Spinlock, SpinlockGuard};
+use spinning_top::{guard::SpinlockGuard, Spinlock};
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use x86_64::structures::port::{PortRead as _, PortWrite as _};
 

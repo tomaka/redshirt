@@ -36,12 +36,12 @@ macro_rules! __gen_boot {
         memory_zeroing_end: $memory_zeroing_end:path,
     ) => {
         const _: () = {
-            use core::arch::asm;
+            use core::arch::naked_asm;
 
             #[naked]
             #[export_name = "_start"]
             unsafe extern "C" fn entry_point_step1() {
-                asm!(r#"
+                naked_asm!(r#"
                 .code32
                     // Disabling interruptions as long as we are not ready to accept them.
                     // This is normally already done by the bootloader, but it costs nothing to
@@ -201,7 +201,7 @@ macro_rules! __gen_boot {
                     pml4 = sym $crate::arch::x86_64::boot::PML4,
                     pdpt = sym $crate::arch::x86_64::boot::PDPT,
                     pds = sym $crate::arch::x86_64::boot::PDS,
-                    options(noreturn, att_syntax)); // TODO: convert to Intel syntax
+                    options(att_syntax)); // TODO: convert to Intel syntax
             }
 
             /// Called by `entry_point_step1` after basic initialization has been performed.

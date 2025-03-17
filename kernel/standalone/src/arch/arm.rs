@@ -17,7 +17,7 @@ use crate::arch::{PlatformSpecific, PortErr};
 use crate::klog::KLogger;
 
 use alloc::sync::Arc;
-use core::{convert::TryFrom as _, fmt, iter, num::NonZeroU32, pin::Pin};
+use core::{arch::asm, convert::TryFrom as _, fmt, iter, num::NonZeroU32, pin::Pin};
 use futures::prelude::*;
 use redshirt_kernel_log_interface::ffi::{KernelLogMethod, UartAccess, UartInfo};
 

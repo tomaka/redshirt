@@ -19,7 +19,7 @@ use crate::{EncodedMessage, MessageId};
 use core::convert::TryFrom as _;
 use hashbrown::HashMap;
 use redshirt_syscalls::ffi::NotificationBuilder;
-use spinning_top::{Spinlock, SpinlockGuard};
+use spinning_top::{guard::SpinlockGuard, Spinlock};
 
 /// Queue of notifications waiting to be delivered.
 ///

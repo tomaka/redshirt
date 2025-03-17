@@ -183,7 +183,6 @@ pub fn build(cfg: Config) -> Result<BuildOutput, Error> {
         #![no_main]
 
         // TODO: these features are necessary because of the fact that we use a macro
-        #![feature(asm_sym, asm_const)] // TODO: https://github.com/rust-lang/rust/issues/72016
         #![feature(naked_functions)] // TODO: https://github.com/rust-lang/rust/issues/32408
 
         redshirt_standalone_kernel::__gen_boot! {{

@@ -4,7 +4,7 @@
 # that the module is built with the appropriate options.
 
 [build]
-target = "wasm32-wasi"
+target = "wasm32-wasip1"
 
-[target.'wasm32-wasi']
+[target.'wasm32-wasip1']
 rustflags = ["-C", "link-arg=--export-table", "-C", "link-arg=--import-memory"]

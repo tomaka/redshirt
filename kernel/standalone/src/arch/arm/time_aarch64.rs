@@ -20,6 +20,7 @@
 
 use alloc::sync::Arc;
 use core::{
+    arch::asm,
     future::Future,
     pin::Pin,
     task::{Context, Poll},

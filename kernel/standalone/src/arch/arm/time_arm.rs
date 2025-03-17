@@ -32,6 +32,7 @@
 //       however, it is impossible to observe time rolling back even across CPUs
 use alloc::{sync::Arc, vec::Vec};
 use core::{
+    arch::asm,
     convert::TryFrom as _,
     num::NonZeroUsize,
     pin::Pin,

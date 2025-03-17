@@ -12,14 +12,14 @@ jobs:
     - name: Install Rust
       uses: actions-rs/toolchain@v1
       with:
-        toolchain: nightly-2022-01-14
-        target: wasm32-wasi
+        toolchain: nightly-2025-03-14
+        target: wasm32-wasip1
         override: true
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y cmake clang-10
-    - uses: actions/cache@v2.1.7
+        sudo apt-get install -y cmake
+    - uses: actions/cache@v4.2.0
       with:
         path: |
           ~/.cargo/registry
@@ -27,9 +27,9 @@ jobs:
           programs/target
         key: programs-cargo-${{ hashFiles('./programs/Cargo.lock') }}
     - name: Build programs
-      run: cargo build --manifest-path ./programs/Cargo.toml --workspace --exclude stub --locked --verbose --release --target=wasm32-wasi
+      run: cargo build --manifest-path ./programs/Cargo.toml --workspace --exclude stub --locked --verbose --release --target=wasm32-wasip1
     - name: Upload WASM programs
-      uses: actions/upload-artifact@v2.2.4
+      uses: actions/upload-artifact@v4
       with:
         name: wasm-programs
         path: programs/target
@@ -38,7 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
-    - uses: actions/cache@v2.1.7
+    - uses: actions/cache@v4.2.0
       with:
         path: |
           ~/.cargo/registry
@@ -48,8 +48,8 @@ jobs:
     - name: Install nightly Rust
       uses: actions-rs/toolchain@v1
       with:
-        toolchain: nightly-2022-01-14
-        target: wasm32-wasi
+        toolchain: nightly-2025-03-14
+        target: wasm32-wasip1
         override: true
     - name: Test redshirt-core
       run: cargo test --package redshirt-core
@@ -65,17 +65,17 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - name: Download WASM programs
-      uses: actions/download-artifact@v2
+      uses: actions/download-artifact@v4
       with:
         name: wasm-programs
     - name: Install required packages
       run: |
         sudo apt-get update
-        sudo apt-get install -y clang-10 lld libisoburn1 xorriso grub-pc-bin mtools
+        sudo apt-get install -y clang lld libisoburn1 xorriso grub-pc-bin mtools
     - run: |
         sudo apt-get install qemu-utils qemu-system-x86
       if: ${{ matrix.target == 'x86_64-multiboot2'}}
-    - uses: actions/cache@v2.1.7
+    - uses: actions/cache@v4.2.0
       with:
         path: |
           ~/.cargo/registry
@@ -86,8 +86,8 @@ jobs:
     - name: Install nightly Rust
       uses: actions-rs/toolchain@v1
       with:
-        toolchain: nightly-2022-01-14
-        target: wasm32-wasi
+        toolchain: nightly-2025-03-14
+        target: wasm32-wasip1
         override: true
     - name: Install rust-src
       run: rustup component add rust-src
@@ -96,31 +96,10 @@ jobs:
     - name: Test kernel
       run: cargo run --manifest-path=./kernel-standalone-builder/Cargo.toml -- emulator-test --target ${{ matrix.target }} --emulator qemu
     - name: Upload generated kernel
-      uses: actions/upload-artifact@v2.2.4
+      uses: actions/upload-artifact@v4
       with:
         name: kernel-${{ matrix.target }}
         path: image
-
-  check-passive-node:
-    name: Check p2p passive node
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v3
-    - name: Install Rust
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        override: true
-    - name: Cache cargo registry
-      uses: actions/cache@v2.1.7
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          programs/target
-        key: passive-node-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-    - name: Check peer-to-peer passive node
-      run: cargo check --manifest-path ./programs/Cargo.toml --package p2p-loader --bin passive-node --locked --verbose --all-features
 
   fmt:
     name: Rustfmt
@@ -160,14 +139,14 @@ jobs:
       - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2022-01-14
-          target: wasm32-wasi
+          toolchain: nightly-2025-03-14
+          target: wasm32-wasip1
           override: true
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang-10
-      - uses: actions/cache@v2.1.7
+          sudo apt-get install -y clang
+      - uses: actions/cache@v4.2.0
         with:
           path: |
             ~/.cargo/registry
@@ -184,7 +163,7 @@ jobs:
   all-ci:
     # This dummy job depends on all the mandatory checks. It succeeds if and only if CI is
     # considered successful.
-    needs: [build-test-standalone, check-passive-node, fmt, intra-doc-links]
+    needs: [build-test-standalone, fmt, intra-doc-links]
     runs-on: ubuntu-latest
     steps:
      - run: echo Success

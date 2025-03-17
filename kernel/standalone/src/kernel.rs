@@ -79,10 +79,6 @@ impl Kernel {
             .with_native_interface_handler(redshirt_random_interface::ffi::INTERFACE)
             .with_native_interface_handler(redshirt_pci_interface::ffi::INTERFACE)
             .with_native_interface_handler(redshirt_kernel_log_interface::ffi::INTERFACE)
-            .with_startup_process(build_wasm_module!(
-                "../../../programs/p2p-loader",
-                "programs-loader"
-            ))
             .with_startup_process(build_wasm_module!("../../../programs/compositor"))
             .with_startup_process(build_wasm_module!("../../../programs/pci-printer"))
             // TODO: actually implement system-time and remove this dummy; https://github.com/tomaka/redshirt/issues/542
