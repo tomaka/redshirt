@@ -53,7 +53,7 @@
 // value and the source value, and updates its own value accordingly.
 
 use alloc::sync::Arc;
-use core::{fmt, sync::atomic};
+use core::{fmt, hint, sync::atomic};
 use crossbeam_utils::CachePadded;
 use spinning_top::Spinlock;
 use x86_64::registers::model_specific::Msr;
@@ -109,7 +109,7 @@ impl TscSyncSrc {
             .fetch_add(1, atomic::Ordering::SeqCst);
         // TODO: add some guarantee that we don't spin forever? do something in the Drop impl?
         while self.shared.start_barrier.load(atomic::Ordering::SeqCst) != 2 {
-            atomic::spin_loop_hint();
+            hint::spin_loop();
         }
 
         for _ in 0..100000 {
@@ -142,7 +142,7 @@ impl TscSyncDst {
             .fetch_add(1, atomic::Ordering::SeqCst);
         // TODO: add some guarantee that we don't spin forever? do something in the Drop impl?
         while self.shared.start_barrier.load(atomic::Ordering::SeqCst) != 2 {
-            atomic::spin_loop_hint();
+            hint::spin_loop();
         }
 
         // Maximum value for `local - remote`.

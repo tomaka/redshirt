@@ -17,8 +17,7 @@
 
 use crate::klog::KLogger;
 
-use core::fmt::{self, Write as _};
-use redshirt_kernel_log_interface::ffi::KernelLogMethod;
+use core::fmt::Write as _;
 
 pub static PANIC_LOGGER: KLogger = KLogger::disabled();
 
