@@ -1,30 +1,26 @@
 {
-    "archive-format": "gnu",
     "arch": "x86_64",
     "code-model": "kernel",
     "cpu": "x86-64",
+    "crt-objects-fallback": "false",
     "data-layout": "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128",
     "disable-redzone": true,
     "eliminate-frame-pointer": true,
     "executables": true,
     "features": "+mmx,+sse,+sse2,-sse3,-ssse3,-sse4.1,-sse4.2,-avx,-avx2,-soft-float",
-    "linker": "ld",
-    "linker-flavor": "ld",
+    "linker": "rust-lld",
+    "linker-flavor": "gnu-lld",
     "lld-flavor": "link",
-    "llvm-target": "x86_64-unknown-none",
+    "llvm-target": "x86_64-unknown-none-elf",
     "max-atomic-width": 64,
-    "no-compiler-rt": true,
     "os": "none",
     "panic-strategy": "abort",
+    "plt-by-default": false,
+    "position-independent-executables": true,
     "relocation-model": "static",
     "singlethread": false,
     "stack-probes": {
-        "kind": "inline-or-call",
-        "min-llvm-version-for-inline": [
-            11,
-            0,
-            1
-        ]
+        "kind": "inline"
     },
     "target-c-int-width": "32",
     "target-endian": "little",
