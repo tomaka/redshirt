@@ -17,7 +17,10 @@
 
 use crate::klog::KLogger;
 
-use core::fmt::{self, Write as _};
+use core::{
+    arch::asm,
+    fmt::{self, Write as _},
+};
 use redshirt_kernel_log_interface::ffi::KernelLogMethod;
 use spinning_top::Spinlock;
 

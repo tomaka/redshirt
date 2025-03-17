@@ -16,9 +16,12 @@
 //! Futures executor that works on bare metal.
 
 use alloc::sync::Arc;
-use core::future::Future;
-use core::sync::atomic;
-use core::task::{Context, Poll};
+use core::{
+    arch::asm,
+    future::Future,
+    sync::atomic,
+    task::{Context, Poll},
+};
 use futures::task::{waker, ArcWake};
 
 /// Waits for the `Future` to resolve to a value.

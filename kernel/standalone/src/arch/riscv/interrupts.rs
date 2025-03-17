@@ -15,6 +15,8 @@
 
 //! Interrupts handling for RISC-V.
 
+use core::arch::asm;
+
 /// Initializes interrupts handling.
 pub unsafe fn init() -> Interrupts {
     let value = trap_handler as unsafe extern "C" fn() as usize;
