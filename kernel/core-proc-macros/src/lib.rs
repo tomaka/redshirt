@@ -174,7 +174,7 @@ pub fn build_wasm_module(tokens: proc_macro::TokenStream) -> proc_macro::TokenSt
         };
         let base = metadata
             .target_directory
-            .join("wasm32-wasi")
+            .join("wasm32-wasip1")
             .join("release");
         let wasm = base.join(format!("{}.wasm", bin_target));
         let deps = base.join(format!("{}.d", bin_target));
@@ -187,7 +187,7 @@ pub fn build_wasm_module(tokens: proc_macro::TokenStream) -> proc_macro::TokenSt
         .args(&["--color", "always"]) // TODO: enable conditionnally?
         .args(&["--bin", &bin_target])
         .arg("--release")
-        .args(&["--target", "wasm32-wasi"])
+        .args(&["--target", "wasm32-wasip1"])
         .arg("--")
         .args(&["-C", "link-arg=--export-table"])
         .args(&["-C", "link-arg=--import-memory"])
