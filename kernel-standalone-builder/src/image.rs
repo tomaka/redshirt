@@ -136,33 +136,20 @@ fn build_x86_multiboot2_cdrom_iso(
 ) -> Result<(), io::Error> {
     let build_dir = TempDir::new("redshirt-kernel-iso-build")?;
 
-    fs::create_dir_all(build_dir.path().join("iso").join("boot").join("grub"))?;
-    fs::copy(
-        kernel_path,
-        build_dir.path().join("iso").join("boot").join("kernel"),
-    )?;
+    fs::create_dir_all(build_dir.path().join("iso"))?;
+    fs::copy(kernel_path, build_dir.path().join("iso").join("kernel"))?;
     fs::write(
-        build_dir
-            .path()
-            .join("iso")
-            .join("boot")
-            .join("grub")
-            .join("grub.cfg"),
-        &br#"
-set timeout=0
-set timeout_style=hidden
-set default=0
-
-menuentry "redshirt" {
-    insmod all_video
-    multiboot2 /boot/kernel
-}
-            "#[..],
+        build_dir.path().join("iso").join("simpleboot.cfg"),
+        r#"
+verbose 3
+"#,
     )?;
 
     let output = simpleboot::run_simpleboot([
         "-k".as_ref(),
-        "boot/kernel".as_ref(),
+        "kernel".as_ref(),
+        "-e".as_ref(),
+        "-c".as_ref(),
         build_dir.path().join("iso").as_os_str(),
         output_file.as_ref().as_os_str(),
     ]);
