@@ -1,0 +1,6 @@
+if PAYLOAD_SIMPLEBOOT
+
+config PAYLOAD_FILE
+	default "payloads/external/simpleboot/src/loader_cb.elf"
+
+endif

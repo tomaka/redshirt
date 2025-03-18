@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use crate::simpleboot;
 use std::{
     fs,
     io::{self, Read, Seek, SeekFrom, Write},
@@ -160,29 +161,10 @@ menuentry "redshirt" {
             "#[..],
     )?;
 
-    let output = Command::new("grub-mkrescue")
-        .arg("-o")
-        .arg(output_file.as_ref())
-        .arg(build_dir.path().join("iso"))
-        .output();
-
-    let output = if let Ok(output) = output {
-        Ok(output)
-    } else {
-        Command::new("grub2-mkrescue")
-            .arg("-o")
-            .arg(output_file.as_ref())
-            .arg(build_dir.path().join("iso"))
-            .output()
-    }?;
-
-    if !output.status.success() {
-        // Note: if `grub2-mkrescue` successfully starts (which is checked above), we assume that
-        // any further error is due to a bug in the parameters that we passed to it. It is
-        // therefore fine to panic.
-        let _ = io::stdout().write_all(&output.stdout);
-        let _ = io::stderr().write_all(&output.stderr);
-        panic!("Error while executing `grub2-mkrescue`");
+    let output =
+        simpleboot::run_simpleboot([build_dir.path().join("iso").as_ref(), output_file.as_ref()]);
+    if output.is_err() {
+        panic!("Error while executing `simpleboot`");
     }
 
     build_dir.close()?;

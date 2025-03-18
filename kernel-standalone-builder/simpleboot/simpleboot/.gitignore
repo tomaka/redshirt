@@ -1,0 +1,9 @@
+*.o
+*.img
+*.bin
+*.rom
+*.efi
+*.elf
+example/boot
+example/mnt
+src/simpleboot

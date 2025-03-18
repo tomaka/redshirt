@@ -5,6 +5,7 @@ license = "GPL-3.0-or-later"
 authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
 edition = "2018"
 publish = false
+build = "build.rs"
 
 [workspace]
 
@@ -22,6 +23,9 @@ thiserror = "1.0"
 toml = "0.5.8"
 walkdir = "2.3.2"
 
+[build-dependencies]
+cc = "1.2.16"
+
 [profile.dev]
 opt-level = 1
 
@@ -30,4 +34,3 @@ opt-level = 3
 
 [profile.test.package."*"]
 opt-level = 3
-

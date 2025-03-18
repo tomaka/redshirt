@@ -1,0 +1,27 @@
+# Maintainer: bzt <https://gitlab.com/bztsrc/simpleboot/issues>
+# Contributor: Ramadan Ali (alicavus) <rot13: ezqa@ezqa.ny>
+pkgname=simpleboot
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="Dependency-free, all-in-one boot loader and bootable disk image creator."
+arch=("x86_64" "aarch64")
+url="https://gitlab.com/bztsrc/simpleboot"
+license=("MIT")
+makedepends=("clang")
+source=("${url}/-/archive/main/${pkgname}-main.tar.gz")
+b2sums=("SKIP")
+
+pkgver() {
+	cd "${pkgname}-main/src"
+	printf "%s" `grep -m 1 sbver simpleboot.c | cut -d '"' -f 2`
+}
+
+build() {
+	cd "${pkgname}-main/src"
+	make clean all
+}
+
+package() {
+	cd "${pkgname}-main/src"
+	DESTDIR=$pkgdir/ make install
+}

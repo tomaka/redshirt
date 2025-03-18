@@ -1,0 +1,5 @@
+target remote localhost:1234
+set architecture i386:x86-64
+set style enabled off
+display/4i $pc
+c

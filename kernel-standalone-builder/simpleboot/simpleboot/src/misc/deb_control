@@ -1,0 +1,12 @@
+Package: simpleboot
+Version: VERSION
+Architecture: ARCH
+Essential: no
+Section: tools
+Priority: optional
+Maintainer: bzt
+Homepage: https://codeberg.org/bzt/simpleboot
+Installed-Size: SIZE
+Description: Dependency-free, all-in-one boot loader and bootable disk image creator.
+  It creates a bootable disk image that can boot Linux kernels or any other
+  Multiboot2 compliant kernels in various formats.
