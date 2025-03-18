@@ -13,10 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use std::{
-    ffi::{OsStr, OsString},
-    iter,
-};
+use std::{ffi::CString, iter};
 
 extern "C" {
     fn simpleboot_wrapper(
@@ -25,13 +22,13 @@ extern "C" {
     ) -> std::os::raw::c_int;
 }
 
-pub fn run_simpleboot<'a>(args: impl IntoIterator<Item = &'a OsStr>) -> Result<(), ()> {
-    let args = iter::once(OsString::from("simpleboot"))
-        .chain(args.into_iter().map(|s| s.into()))
+pub fn run_simpleboot<'a>(args: impl IntoIterator<Item = &'a str>) -> Result<(), ()> {
+    let args = iter::once(CString::new("simpleboot").unwrap())
+        .chain(args.into_iter().map(|s| CString::new(s).unwrap()))
         .collect::<Vec<_>>();
     let args_ptrs = args
         .iter()
-        .map(|a| a.as_encoded_bytes().as_ptr())
+        .map(|a| a.as_c_str().as_ptr())
         .collect::<Vec<_>>();
 
     let out = unsafe {
