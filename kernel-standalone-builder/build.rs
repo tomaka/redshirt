@@ -14,6 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 fn main() {
+    println!("cargo::rerun-if-changed=simpleboot");
     cc::Build::new()
         .file("simpleboot/wrapper.c")
         .compile("simpleboot");
