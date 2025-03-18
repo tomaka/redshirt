@@ -1332,7 +1332,7 @@ void usage(char *cmd)
 /**
  * Main function
  */
-int main(int argc, char **argv)
+int not_main(int argc, char **argv)
 {
     time_t t;
     int64_t siz;

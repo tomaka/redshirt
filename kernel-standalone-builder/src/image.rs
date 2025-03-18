@@ -18,7 +18,6 @@ use std::{
     fs,
     io::{self, Read, Seek, SeekFrom, Write},
     path::Path,
-    process::Command,
 };
 use tempdir::TempDir;
 
@@ -161,8 +160,12 @@ menuentry "redshirt" {
             "#[..],
     )?;
 
-    let output =
-        simpleboot::run_simpleboot([build_dir.path().join("iso").as_ref(), output_file.as_ref()]);
+    let output = simpleboot::run_simpleboot([
+        "-k".as_ref(),
+        "boot/kernel".as_ref(),
+        build_dir.path().join("iso").as_os_str(),
+        output_file.as_ref().as_os_str(),
+    ]);
     if output.is_err() {
         panic!("Error while executing `simpleboot`");
     }
