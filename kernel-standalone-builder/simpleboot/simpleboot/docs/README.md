@@ -10,13 +10,14 @@ Configuration
 -------------
 
 ```
- simpleboot [-v|-vv] [-k <name>] [-i <name>] [-m] [-s <mb>] [-b <mb>] [-u <guid>] [-p <t> <u> <i>]
+ simpleboot [-v|-vv] [-k <name>] [-i <name>] [-m|-g] [-s <mb>] [-b <mb>] [-u <guid>] [-p <t> <u> <i>]
    [-r|-e] [-c] <indir> <outfile|device>
 
   -v, -vv         increase verbosity / validation
   -k <name>       set the default kernel filename (defaults to 'kernel')
   -i <name>       set the default initrd filename (by default none)
   -m              set multicore to enabled (by default disabled)
+  -g              set 32-bit GRUB compatibility mode (by default disabled)
   -s <mb>         set the disk image size in Megabytes (defaults to 35M)
   -b <mb>         set the boot partition size in Megabytes (defaults to 33M)
   -u <guid>       set the boot partition's unique identifier (defaults to random)
@@ -39,6 +40,10 @@ hexeditor just to change the screen resolution for example.
 The `-k (name)` and `-i (name)` arguments change the default kernel filename and default initrd filename, respectively. Note that
 specifying these do absolutely nothing with any files, they just set the default names in the loader. Likewise `-m` turns multicore
 (Symmetric MultiProcessing) on by default. These are just defaults, all of these can be overridden from the config file during boot.
+
+Normally 32-bit kernels started in protected mode (just like with GRUB), and 64-bit kernels in long mode (GRUB does not support
+these). With `-g` you can enforce a 32-bit GRUB compatible protected mode entry point even on 64-bit kernels. Mutually exclusive
+with the `-m` flag (GRUB does not support SMP at all).
 
 The tool also has some optional command line flags: `-s (mb)` sets the overall size of the generated disk image in Megabytes, while
 `-b (mb)` sets the size of the boot partition in Megabytes. Obviously the former must be bigger than the latter. If not specified,

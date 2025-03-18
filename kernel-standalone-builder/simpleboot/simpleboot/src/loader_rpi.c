@@ -1360,7 +1360,7 @@ void fw_loadconfig(void)
         }
     }
     if(!kernel) kernel = (char*)defkernel;
-    if(!bkp && definitrd[63]) smp = 1;
+    if(!bkp && (volatile char)definitrd[63] == 1) smp = 1;
 }
 
 /**
@@ -1514,7 +1514,7 @@ ldinitrd:       if(fw_open(a)) {
         }
     }
     /* if no modules were loaded, but we have a default initrd name, try to add that */
-    if(!n && !f) { f = 1; if(definitrd[0]) { a = (char*)definitrd; for(e = a; *e; e++){} goto ldinitrd; } }
+    if(!n && !f) { f = 1; if((volatile char)definitrd[0]) { a = (char*)definitrd; for(e = a; *e; e++){} goto ldinitrd; } }
     if(!n && f == 1) { f = 2; a = bkp ? "rpi/initrd.bak" : "rpi/initrd"; e = a + (bkp ? 16 : 12); goto ldinitrd; }
 }
 

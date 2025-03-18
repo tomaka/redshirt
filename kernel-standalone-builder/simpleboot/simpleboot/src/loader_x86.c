@@ -1834,7 +1834,7 @@ void fw_loadconfig(void)
         }
     }
 err:if(!kernel) kernel = (char*)defkernel;
-    if(!bkp && definitrd[63]) smp = 1;
+    if(!bkp && (volatile char)definitrd[63] == 1) smp = 1;
 }
 
 /**
@@ -2001,7 +2001,7 @@ ldinitrd:       if(fw_open(a)) {
         }
     }
     /* if no modules were loaded, but we have a default initrd name, try to add that */
-    if(!n && !f) { f = 1; if(definitrd[0]) { a = (char*)definitrd; for(e = a; *e; e++){} goto ldinitrd; } }
+    if(!n && !f) { f = 1; if((volatile char)definitrd[0]) { a = (char*)definitrd; for(e = a; *e; e++){} goto ldinitrd; } }
     if(!n && f == 1) { f = 2; a = bkp ? "ibmpc/initrd.bak" : "ibmpc/initrd"; e = a + (bkp ? 16 : 12); goto ldinitrd; }
 }
 
@@ -2196,6 +2196,8 @@ err:    fw_close();
         return 0;
     }
     fw_close();
+    /* force GRUB compatible prot mode entry point even with 64 bit kernels (volatile is needed because of a Clang optimizer bug) */
+    if(kernel_mode == MODE_MB64 && (volatile char)definitrd[63] == 2) kernel_mode = MODE_MB32;
     if(kernel_mode != MODE_MB64) smp = 0;
     return 1;
 }
@@ -2623,7 +2625,8 @@ again:
     }
     switch(kernel_mode) {
         case MODE_VBR:
-            printf("Transfering real mode control to 0:7C00 (LBA %d size %d sector(s))\r\n", vbr_lba, vbr_size);
+            if(verbose > 1)
+                printf("Transfering real mode control to 0:7C00 (LBA %d size %d sector(s))\r\n", vbr_lba, vbr_size);
             *((uint16_t*)0x502) = vbr_size > 127 ? 127 : vbr_size; *((uint32_t*)0x504) = 0x7C00; *((uint64_t*)0x508) = vbr_lba;
             bios_fallback();
         break;

@@ -1309,12 +1309,13 @@ void usage(char *cmd)
     if(!tmp) tmp = cmd; else tmp++;
 
     printf("Simpleboot installer v%s, Copyright (c) 2023 bzt, MIT license\r\nhttps://codeberg.org/bzt/simpleboot\r\n\r\n", sbver);
-    printf("%s [-v|-vv] [-k <name>] [-i <name>] [-m] [-s <mb>] [-b <mb>]\r\n", tmp);
+    printf("%s [-v|-vv] [-k <name>] [-i <name>] [-m|-g] [-s <mb>] [-b <mb>]\r\n", tmp);
     printf("   [-u <guid>] [-p <t> <u> <i>] [-r|-e] [-c] <indir> <outfile|device>\r\n\r\n");
     printf("  -v, -vv         increase verbosity / validation\r\n");
     printf("  -k <name>       set the default kernel filename (defaults to 'kernel')\r\n");
     printf("  -i <name>       set the default initrd filename (by default none)\r\n");
     printf("  -m              set multicore to enabled (by default disabled)\r\n");
+    printf("  -g              set 32-bit GRUB compatibility mode (by default disabled)\r\n");
     printf("  -s <mb>         set the disk image size in Megabytes (defaults to 35M)\r\n");
     printf("  -b <mb>         set the boot partition size in Megabytes (defaults to 33M)\r\n");
     printf("  -u <guid>       set the boot partition unique identifier (defaults to random)\r\n");
@@ -1332,12 +1333,12 @@ void usage(char *cmd)
 /**
  * Main function
  */
-int not_main(int argc, char **argv)
+int simpleboot_main(int argc, char **argv)
 {
     time_t t;
     int64_t siz;
     uint32_t clu, loader_lba = 0;
-    int i, j, arch = 0, docalc = 1, eltorito = 0, rom = 0, create = 0, smpwarn = 0, defsmp = 0;
+    int i, j, arch = 0, docalc = 1, eltorito = 0, rom = 0, create = 0, smpwarn = 0, defsmp = 0, fgrub = 0;
     char *defkernel = NULL, *definitrd = NULL;
     guid_t espGuid = EFI_PART_TYPE_EFI_SYSTEM_PART_GUID;
     uint8_t *ptr = loader_x86_efi + ((mz_hdr*)loader_x86_efi)->peaddr, *ph, *exe = NULL;
@@ -1375,6 +1376,7 @@ int not_main(int argc, char **argv)
                         switch(argv[i][j]) {
                             case 'v': verbose++; break;
                             case 'm': defsmp++; break;
+                            case 'g': fgrub++; break;
                             case 'r': rom = 1; break;
                             case 'e': eltorito = 1; break;
                             case 'c': create = 1; break;
@@ -1395,6 +1397,7 @@ int not_main(int argc, char **argv)
             if(defkernel && *defkernel) strncpy((char*)loader_rpi_bin + i, defkernel, 63);
             if(definitrd && *definitrd) strncpy((char*)loader_rpi_bin + i + 64, definitrd, 62);
             if(defsmp) loader_rpi_bin[i + 127] = 1;
+            if(fgrub) loader_rpi_bin[i + 127] = 2;
             sectop = *((uint32_t*)(loader_rpi_bin + i + 128 + 4));
             if(verbose > 2) printf("loader_rpi _bss_start %08x _bss_end %08x\r\n", *((uint32_t*)(loader_rpi_bin + i + 128)),
                 sectop);
@@ -1411,6 +1414,7 @@ int not_main(int argc, char **argv)
             if(defkernel && *defkernel) strncpy(kernel, defkernel, 63);
             if(definitrd && *definitrd) strncpy(kernel + 64, definitrd, 62);
             if(defsmp) kernel[127] = 1;
+            if(fgrub) kernel[127] = 2;
         }
         o = sec->vaddr + 0x8000 - ((pe_hdr*)ptr)->code_base + sec->vsiz;
         if(o > sectop) sectop = o;
@@ -1751,6 +1755,7 @@ noesp:  if(verbose) printf("BPB bps %u spc %u spf16 %u spf32 %u BPB copy LBA %u\
                 if(read_size) num_mod++;
             }
             printf("\r\nSMP multicore:     %s\r\n", smpwarn ? "disabled (only supported with MB64)" : (smp ? "yes" : "no"));
+            printf("Force 32-bit mode: %s\r\n", fgrub ? "yes" : "no");
             printf("Number of modules: %u file%s\r\n", num_mod, num_mod > 1 ? "s" : "");
             printf("Framebuffer:       %u x %u pixels, %u bits per pixel\r\n", fb_w, fb_h, fb_bpp);
             printf("Emergency backup: %s%s%s%s%s", bkpkrnl | bkplogo | bkpfb || num_bkp > 0 ? "" : " (not configured)",

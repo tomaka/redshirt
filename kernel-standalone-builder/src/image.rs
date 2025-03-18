@@ -148,8 +148,9 @@ verbose 3
     let output = simpleboot::run_simpleboot([
         "-k".as_ref(),
         "kernel".as_ref(),
-        "-e".as_ref(),
-        "-c".as_ref(),
+        "-e".as_ref(), // CDROM mode.
+        "-c".as_ref(), // Always create the image, never modify an existing one.
+        "-g".as_ref(), // Multiboot2 doesn't normally support 64bits kernels without EFI loading. This flag provides compatibility.
         build_dir.path().join("iso").as_os_str(),
         output_file.as_ref().as_os_str(),
     ]);

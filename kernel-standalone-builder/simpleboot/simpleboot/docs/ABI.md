@@ -86,9 +86,9 @@ finished with the MBI tags), so there's simply nowhere to return to. "Der Mohr h
 
 ### ELF32 / PE32
 
-If your kernel is a 32-bit binary, then it will run in protected mode, without any paging and with flat segmentation (meaning
-segments will have the base of 0 and limit of 0xFFFFFFFF). These 32-bit kernels are loaded with a 100% GRUB-compatible Multiboot2
-protocol.
+If your kernel is a 32-bit binary (or 64-bit but `-g` force GRUB compatiblity mode flag was used), then the kernel will run in
+protected mode, without any paging and with flat segmentation (meaning segments will have the base of 0 and limit of 0xFFFFFFFF).
+These 32-bit kernels are loaded with a 100% GRUB-compatible Multiboot2 protocol.
 
 Note that 32-bit is *just for kernel* backward compatibility, you'll still have to have a 64-bit machine (EFI32 and legacy
 computers without long mode not supported).
@@ -99,7 +99,7 @@ Otherwise if your kernel is a 64-bit binary, then it will run in long mode, with
 the same as physical addresses). No 64-bit trampoline code needed and kernel could be higher-half mapped, so this is *not*
 GRUB-compatible (which mandates 32-bit protected mode entry point). On ARM only 64-bit mode supported.
 
-These 64-bit kernels might be booted on all CPU cores at once too using the `multicore` directive (SMP).
+These 64-bit kernels might be booted on all CPU cores at once too using the `multicore` directive (or the `-m` flag, SMP).
 
 ### Linux kernels
 
