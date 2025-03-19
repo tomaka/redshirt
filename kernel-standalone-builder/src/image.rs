@@ -153,6 +153,7 @@ verbose 3
         "kernel",
         "-e", // CDROM mode.
         "-c", // Always create the image, never modify an existing one.
+        "-g", // Multiboot2 doesn't normally support 64bits kernels without EFI loading. This flag provides compatibility.
         build_dir.path().join("iso").to_str().unwrap(),
         output_file.as_ref().to_str().unwrap(),
     ]);
