@@ -118,7 +118,6 @@ pub fn build(cfg: Config) -> Result<BuildOutput, Error> {
             package.insert("name".into(), "kernel".into());
             package.insert("version".into(), "1.0.0".into());
             package.insert("edition".into(), "2018".into());
-            package.insert("resolver".into(), "3".into());
             package.into()
         });
         cargo_toml_prototype.insert("dependencies".into(), {
@@ -155,7 +154,11 @@ pub fn build(cfg: Config) -> Result<BuildOutput, Error> {
             });
             profiles.into()
         });
-        cargo_toml_prototype.insert("workspace".into(), toml::value::Table::new().into());
+        cargo_toml_prototype.insert("workspace".into(), {
+            let mut workspace = toml::value::Table::new();
+            workspace.insert("resolver".into(), "3".into());
+            workspace.into()
+        });
         cargo_toml_prototype.insert("patch".into(), {
             let mut patches = toml::value::Table::new();
             patches.insert("crates-io".into(), {
