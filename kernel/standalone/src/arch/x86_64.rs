@@ -72,22 +72,26 @@ const DEFAULT_LOG_METHOD: KernelLogMethod = KernelLogMethod {
 /// When this function is called, a stack has been set up and as much memory space as possible has
 /// been identity-mapped (i.e. the virtual memory is equal to the physical memory).
 ///
-/// Since the kernel was loaded by a multiboot2 bootloader, the first parameter is the memory
-/// address of the multiboot header.
+/// Since the kernel was loaded from UEFI, the first two parameters are the UEFI entry point
+/// parameters.
 ///
 /// # Safety
 ///
-/// `multiboot_info` must be a valid memory address that contains valid information.
+/// `uefi_handle` and `uefi_system_table` must  must be valid.
 ///
 #[doc(hidden)]
 // TODO: use `Future<Output = !>` once stable
-pub unsafe fn entry_point_step3<
+pub unsafe fn entry_point_step2<
     F: Fn(Pin<Arc<super::PlatformSpecific>>) -> C + Clone + Send + 'static,
     C: Future,
 >(
-    multiboot_info: usize,
+    uefi_handle: *mut core::ffi::c_void,
+    uefi_system_table: *const core::ffi::c_void,
     run: F,
 ) -> ! {
+    uefi::boot::set_image_handle(uefi::data_types::Handle::from_ptr(uefi_handle).unwrap());
+    uefi::table::set_system_table(uefi_system_table.cast());
+
     panic::PANIC_LOGGER.set_method(DEFAULT_LOG_METHOD);
 
     let multiboot_info = multiboot2::BootInformation::load(
