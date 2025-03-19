@@ -749,7 +749,7 @@ mod tests {
         );
 
         match ProcessStateMachine::new(&module, (), |_, _, _| unreachable!()) {
-            Err(NewErr::StartNotFound) => {}
+            Err(NewErr::BadStartFunction) => {}
             _ => panic!(),
         }
     }
