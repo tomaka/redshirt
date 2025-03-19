@@ -381,7 +381,7 @@ fn find_free_memory_ranges<'a>(
     multiboot_info: &'a multiboot2::BootInformation,
 ) -> impl Iterator<Item = Range<usize>> + 'a {
     let mem_map = multiboot_info.memory_map_tag().unwrap();
-    let elf_sections = multiboot_info.elf_sections_tag().unwrap();
+    let elf_sections = multiboot_info.elf_sections_tag();
 
     mem_map.memory_areas().iter().filter_map(move |area| {
         // Some parts of the memory have to be avoided, such as the kernel, non-RAM memory,
@@ -396,7 +396,8 @@ fn find_free_memory_ranges<'a>(
 
             // We don't want to write over the kernel that has been loaded in memory.
             let elf = elf_sections
-                .sections()
+                .into_iter()
+                .flat_map(|tag| tag.sections())
                 .map(|s| s.start_address()..s.end_address());
 
             // We don't want to use the memory-mapped ROM or video memory.

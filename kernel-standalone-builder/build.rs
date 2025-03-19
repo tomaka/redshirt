@@ -13,12 +13,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-//! Collection of commands that can build a kernel.
-
-pub mod binary;
-pub mod build;
-pub mod emulator;
-pub mod image;
-pub mod test;
-
-mod simpleboot;
+fn main() {
+    println!("cargo::rerun-if-changed=simpleboot");
+    cc::Build::new()
+        .file("simpleboot/wrapper.c")
+        .compile("simpleboot");
+}

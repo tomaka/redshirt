@@ -38,6 +38,7 @@ macro_rules! __gen_boot {
         const _: () = {
             use core::arch::naked_asm;
 
+            // TODO: this should be used only for 32bits kernels? ; technically, 64bits multiboot2 isn't supported
             #[naked]
             #[export_name = "_start"]
             unsafe extern "C" fn entry_point_step1() {

@@ -13,11 +13,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use crate::simpleboot;
 use std::{
     fs,
     io::{self, Read, Seek, SeekFrom, Write},
     path::Path,
-    process::Command,
 };
 use tempdir::TempDir;
 
@@ -136,53 +136,26 @@ fn build_x86_multiboot2_cdrom_iso(
 ) -> Result<(), io::Error> {
     let build_dir = TempDir::new("redshirt-kernel-iso-build")?;
 
-    fs::create_dir_all(build_dir.path().join("iso").join("boot").join("grub"))?;
-    fs::copy(
-        kernel_path,
-        build_dir.path().join("iso").join("boot").join("kernel"),
-    )?;
+    fs::create_dir_all(build_dir.path().join("iso"))?;
+    fs::copy(kernel_path, build_dir.path().join("iso").join("kernel"))?;
     fs::write(
-        build_dir
-            .path()
-            .join("iso")
-            .join("boot")
-            .join("grub")
-            .join("grub.cfg"),
-        &br#"
-set timeout=0
-set timeout_style=hidden
-set default=0
-
-menuentry "redshirt" {
-    insmod all_video
-    multiboot2 /boot/kernel
-}
-            "#[..],
+        build_dir.path().join("iso").join("simpleboot.cfg"),
+        r#"
+verbose 3
+"#,
     )?;
 
-    let output = Command::new("grub-mkrescue")
-        .arg("-o")
-        .arg(output_file.as_ref())
-        .arg(build_dir.path().join("iso"))
-        .output();
-
-    let output = if let Ok(output) = output {
-        Ok(output)
-    } else {
-        Command::new("grub2-mkrescue")
-            .arg("-o")
-            .arg(output_file.as_ref())
-            .arg(build_dir.path().join("iso"))
-            .output()
-    }?;
-
-    if !output.status.success() {
-        // Note: if `grub2-mkrescue` successfully starts (which is checked above), we assume that
-        // any further error is due to a bug in the parameters that we passed to it. It is
-        // therefore fine to panic.
-        let _ = io::stdout().write_all(&output.stdout);
-        let _ = io::stderr().write_all(&output.stderr);
-        panic!("Error while executing `grub2-mkrescue`");
+    let output = simpleboot::run_simpleboot([
+        "-k",
+        "kernel",
+        "-e", // CDROM mode.
+        "-c", // Always create the image, never modify an existing one.
+        "-g", // Multiboot2 doesn't normally support 64bits kernels without EFI loading. This flag provides compatibility.
+        build_dir.path().join("iso").to_str().unwrap(),
+        output_file.as_ref().to_str().unwrap(),
+    ]);
+    if output.is_err() {
+        panic!("Error while executing `simpleboot`");
     }
 
     build_dir.close()?;
