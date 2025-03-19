@@ -119,16 +119,6 @@ pub use redshirt_syscalls::{
     MessageId, Pid, ThreadId,
 };
 
-/// Compiles a WASM module and includes it similar to `include_bytes!`.
-///
-/// Must be passed the path to a directory containing a `Cargo.toml`.
-/// Can be passed an optional second argument containing the binary name to compile. Mandatory if
-/// the package contains multiple binaries.
-#[cfg(feature = "nightly")]
-#[cfg_attr(docsrs, doc(cfg(feature = "nightly")))]
-// TODO: enable unconditonally after https://github.com/rust-lang/rust/issues/43781
-pub use redshirt_core_proc_macros::build_wasm_module;
-
 #[doc(hidden)]
 pub use redshirt_core_proc_macros::wat_to_bin;
 

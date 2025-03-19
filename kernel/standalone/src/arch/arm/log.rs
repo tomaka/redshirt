@@ -26,7 +26,7 @@ use spinning_top::Spinlock;
 
 pub static PANIC_LOGGER: KLogger = KLogger::disabled();
 
-#[cfg(not(any(test, doc, doctest)))]
+/*#[cfg(not(any(test, doc, doctest)))]
 #[panic_handler]
 fn panic(panic_info: &core::panic::PanicInfo) -> ! {
     // TODO: somehow freeze all CPUs?
@@ -42,4 +42,4 @@ fn panic(panic_info: &core::panic::PanicInfo) -> ! {
             asm!("wfe", options(nomem, nostack, preserves_flags));
         }
     }
-}
+}*/
