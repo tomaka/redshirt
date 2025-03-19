@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use std::{io, path::Path, process::Command};
+use std::{fs, io, path::Path, process::Command};
 use tempdir::TempDir;
 
 /// Configuration for running the kernel in an emulator.
@@ -62,20 +62,60 @@ pub fn run_kernel(cfg: Config) -> Result<(), Error> {
     match cfg.target {
         crate::image::Target::X8664Multiboot2 => {
             let build_dir = TempDir::new("redshirt-kernel-temp-loc")?;
-            crate::image::build_image(crate::image::Config {
+            fs::create_dir_all(build_dir.path().join("image").join("efi").join("boot"))
+                .map_err(Error::Io)?;
+
+            let build_out = crate::build::build(crate::build::Config {
                 kernel_cargo_toml: cfg.kernel_cargo_toml,
-                output_file: &build_dir.path().join("image"),
                 release: cfg.release,
-                target: cfg.target,
-            })?;
+                target_name: "x86_64-unknown-uefi",
+                expected_target_suffix: Some("efi"),
+                target_specs: None,
+                link_script: None,
+            })
+            .map_err(crate::image::Error::Build)?;
+
+            fs::write(
+                build_dir.path().join("OVMF_CODE.fd"),
+                &include_bytes!("../res/x86_64-uefi-firmware/OVMF_CODE.fd")[..],
+            )
+            .map_err(Error::Io)?;
+            fs::write(
+                build_dir.path().join("OVMF_VARS.fd"),
+                &include_bytes!("../res/x86_64-uefi-firmware/OVMF_VARS.fd")[..],
+            )
+            .map_err(Error::Io)?;
+            fs::copy(
+                build_out.out_kernel_path,
+                build_dir
+                    .path()
+                    .join("image")
+                    .join("efi")
+                    .join("boot")
+                    .join("bootx64.efi"),
+            )
+            .map_err(Error::Io)?;
 
             let status = Command::new("qemu-system-x86_64")
                 .args(&["-m", "1024"])
                 .args(&["-serial", "stdio"])
-                .arg("-cdrom")
-                .arg(build_dir.path().join("image"))
                 .args(&["-smp", "cpus=4"])
                 // TODO: decide whether to enable this ; can cause compatibility issues but runs way faster .args(&["-enable-kvm", "-cpu", "host"])
+                .arg("-drive")
+                .arg(format!(
+                    "if=pflash,format=raw,readonly=on,file={}",
+                    build_dir.path().join("OVMF_CODE.fd").display(),
+                ))
+                .arg("-drive")
+                .arg(format!(
+                    "if=pflash,format=raw,readonly=on,file={}",
+                    build_dir.path().join("OVMF_VARS.fd").display(),
+                ))
+                .arg("-drive")
+                .arg(format!(
+                    "format=raw,file=fat:rw:{}",
+                    build_dir.path().join("image").display()
+                ))
                 .status()
                 .map_err(Error::EmulatorNotFound)?;
 
