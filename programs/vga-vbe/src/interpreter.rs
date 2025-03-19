@@ -1959,7 +1959,7 @@ impl Interpreter {
         let index_scale = u16::try_from(instruction.memory_index_scale()).unwrap();
 
         let base_and_index = base.wrapping_add(index.wrapping_mul(index_scale));
-        let disp = u16::try_from(instruction.memory_displacement() & 0xffff).unwrap();
+        let disp = u16::try_from(instruction.memory_displacement32() & 0xffff).unwrap();
         base_and_index.wrapping_add(disp)
     }
 

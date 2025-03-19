@@ -31,7 +31,6 @@ use alloc::{format, string::String, sync::Arc, vec::Vec};
 use core::{pin::Pin, sync::atomic::Ordering};
 use futures::prelude::*;
 use redshirt_core::{
-    build_wasm_module,
     extrinsics::wasi::WasiExtrinsics,
     system::{KernelDebugMetricsRequest, SystemRunOutcome},
     System,
@@ -79,24 +78,36 @@ impl Kernel {
             .with_native_interface_handler(redshirt_random_interface::ffi::INTERFACE)
             .with_native_interface_handler(redshirt_pci_interface::ffi::INTERFACE)
             .with_native_interface_handler(redshirt_kernel_log_interface::ffi::INTERFACE)
-            .with_startup_process(build_wasm_module!("../../../programs/compositor"))
-            .with_startup_process(build_wasm_module!("../../../programs/pci-printer"))
-            // TODO: actually implement system-time and remove this dummy; https://github.com/tomaka/redshirt/issues/542
-            .with_startup_process(build_wasm_module!("../../../programs/dummy-system-time"))
-            .with_startup_process(build_wasm_module!("../../../programs/log-to-kernel"))
-            .with_startup_process(build_wasm_module!("../../../programs/vga-vbe"))
-            .with_startup_process(build_wasm_module!(
-                "../../../programs/diagnostics-http-server"
-            ))
-            .with_startup_process(build_wasm_module!("../../../programs/hello-world"))
-            .with_startup_process(build_wasm_module!("../../../programs/network-manager"))
-            .with_startup_process(build_wasm_module!("../../../programs/e1000"));
+            .with_startup_process(From::from(include_bytes!(env!(
+                "CARGO_BIN_FILE_COMPOSITOR"
+            ))))
+            .with_startup_process(From::from(include_bytes!(env!(
+                "CARGO_BIN_FILE_PCI_PRINTER"
+            ))))
+            .with_startup_process(From::from(include_bytes!(env!(
+                "CARGO_BIN_FILE_DUMMY_SYSTEM_TIME"
+            ))))
+            .with_startup_process(From::from(include_bytes!(env!(
+                "CARGO_BIN_FILE_LOG_TO_KERNEL"
+            ))))
+            .with_startup_process(From::from(include_bytes!(env!("CARGO_BIN_FILE_VGA_VBE"))))
+            .with_startup_process(From::from(include_bytes!(env!(
+                "CARGO_BIN_FILE_DIAGNOSTICS_HTTP_SERVER"
+            ))))
+            .with_startup_process(From::from(include_bytes!(env!(
+                "CARGO_BIN_FILE_HELLO_WORLD"
+            ))))
+            .with_startup_process(From::from(include_bytes!(env!(
+                "CARGO_BIN_FILE_NETWORK_MANAGER"
+            ))))
+            .with_startup_process(From::from(include_bytes!(env!("CARGO_BIN_FILE_E1000"))));
 
         // TODO: remove the cfg guards once rpi-framebuffer is capable of auto-detecting whether
         // it should enable itself
         #[cfg(any(target_arch = "arm", target_arch = "aarch64"))]
-        let system_builder = system_builder
-            .with_startup_process(build_wasm_module!("../../../programs/rpi-framebuffer"));
+        let system_builder = system_builder.with_startup_process(From::from(include_bytes!(env!(
+            "CARGO_BIN_FILE_RPI_FRAMEBUFFER"
+        ))));
 
         // TODO: temporary; uncomment to test
         /*system_builder = system_builder.with_main_program(
