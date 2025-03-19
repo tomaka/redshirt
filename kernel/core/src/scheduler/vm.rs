@@ -347,7 +347,7 @@ impl<T> ProcessStateMachine<T> {
                 error: err.to_string(),
             })?
             // TODO: implement the special start function
-            .ensure_no_start(&mut store)
+            .start(&mut store)
             .map_err(|_| todo!())?;
 
         let memory = imported_memories
@@ -641,6 +641,9 @@ impl<'a, T> Thread<'a, T> {
                 let return_value = thread
                     .dummy_output_value
                     .map(|r| WasmValue::try_from(r).unwrap());
+                if self.index == 0 {
+                    self.vm.is_poisoned = true;
+                }
                 Ok(ExecOutcome::ThreadFinished {
                     return_value,
                     thread_index: self.index,
@@ -658,12 +661,15 @@ impl<'a, T> Thread<'a, T> {
                     params,
                 })
             }
-            Err(err) => Ok(ExecOutcome::Errored {
-                thread: self,
-                error: Trap {
-                    error: err.to_string(),
-                },
-            }),
+            Err(err) => {
+                self.vm.is_poisoned = true;
+                Ok(ExecOutcome::Errored {
+                    thread: self,
+                    error: Trap {
+                        error: err.to_string(),
+                    },
+                })
+            }
         }
     }
 
