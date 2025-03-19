@@ -220,7 +220,13 @@ pub fn build(cfg: Config) -> Result<BuildOutput, Error> {
     // Actually build the kernel.
     let build_status = Command::new("cargo")
         .arg("build")
-        .args(&["-Z", "build-std=core,alloc"]) // TODO: nightly only; cc https://github.com/tomaka/redshirt/issues/300
+        .args(
+            cfg.target_specs
+                .is_some()
+                .then_some(["-Z", "build-std=core,alloc"])
+                .into_iter()
+                .flatten(),
+        ) // TODO: nightly only; cc https://github.com/tomaka/redshirt/issues/300
         .env("RUST_TARGET_PATH", &target_dir_with_target)
         .envs(cfg.link_script.is_some().then_some((
             format!(
