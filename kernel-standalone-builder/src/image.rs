@@ -68,8 +68,8 @@ pub fn build_image(config: Config) -> Result<(), Error> {
                 kernel_cargo_toml: config.kernel_cargo_toml,
                 release: config.release,
                 target_name: "x86_64-multiboot2",
-                target_specs: include_str!("../res/specs/x86_64-multiboot2.json"),
-                link_script: include_str!("../res/specs/x86_64-multiboot2.ld"),
+                target_specs: Some(include_str!("../res/specs/x86_64-multiboot2.json")),
+                link_script: Some(include_str!("../res/specs/x86_64-multiboot2.ld")),
             })?;
 
             build_x86_multiboot2_cdrom_iso(build_out.out_kernel_path, config.output_file)?;
@@ -81,16 +81,16 @@ pub fn build_image(config: Config) -> Result<(), Error> {
                 kernel_cargo_toml: config.kernel_cargo_toml,
                 release: config.release,
                 target_name: "arm-freestanding",
-                target_specs: include_str!("../res/specs/arm-freestanding.json"),
-                link_script: include_str!("../res/specs/arm-freestanding.ld"),
+                target_specs: Some(include_str!("../res/specs/arm-freestanding.json")),
+                link_script: Some(include_str!("../res/specs/arm-freestanding.ld")),
             })?;
 
             let v8_build_out = crate::build::build(crate::build::Config {
                 kernel_cargo_toml: config.kernel_cargo_toml,
                 release: config.release,
                 target_name: "aarch64-freestanding",
-                target_specs: include_str!("../res/specs/aarch64-freestanding.json"),
-                link_script: include_str!("../res/specs/aarch64-freestanding.ld"),
+                target_specs: Some(include_str!("../res/specs/aarch64-freestanding.json")),
+                link_script: Some(include_str!("../res/specs/aarch64-freestanding.ld")),
             })?;
 
             let build_dir = TempDir::new("redshirt-sd-card-build")?;
