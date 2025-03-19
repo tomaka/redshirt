@@ -113,7 +113,6 @@
 
 extern crate alloc;
 
-pub use self::module::Module;
 pub use self::system::{ExecuteOut, System, SystemBuilder, SystemRunOutcome};
 pub use primitives::{ValueType, WasmValue};
 pub use redshirt_syscalls::{
@@ -142,10 +141,10 @@ macro_rules! from_wat {
     // TODO: also build the hash at compile-time? https://github.com/tomaka/redshirt/issues/218
     // TODO: we need this hack with a special `local` tag because of macro paths resolution issues
     (local, $wat:expr) => {{
-        $crate::Module::from_bytes(redshirt_core_proc_macros::wat_to_bin!($wat)).unwrap()
+        redshirt_core_proc_macros::wat_to_bin!($wat)
     }};
     ($wat:expr) => {{
-        $crate::Module::from_bytes($crate::wat_to_bin!($wat)).unwrap()
+        $crate::wat_to_bin!($wat)
     }};
 }
 

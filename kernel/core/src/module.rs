@@ -15,48 +15,13 @@
 
 use core::fmt;
 
-/// Represents a successfully-parsed binary.
-///
-/// This is the equivalent of an [ELF](https://en.wikipedia.org/wiki/Executable_and_Linkable_Format)
-/// or a [PE](https://en.wikipedia.org/wiki/Portable_Executable).
-pub struct Module {
-    inner: wasmi::Module,
-    hash: ModuleHash,
-}
-
 /// Hash of a module.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct ModuleHash([u8; 32]);
 
-/// Error that can happen when calling [`ModuleHash::from_bytes`].
-#[derive(Debug)]
-pub struct FromBytesError {}
-
 /// Error that can happen when calling [`ModuleHash::from_base58`].
 #[derive(Debug)]
 pub struct FromBase58Error {}
-
-impl Module {
-    /// Parses a module from WASM bytes.
-    pub fn from_bytes(buffer: impl AsRef<[u8]>) -> Result<Self, FromBytesError> {
-        let inner = wasmi::Module::from_buffer(buffer.as_ref()).map_err(|_| FromBytesError {})?;
-        let hash = ModuleHash::from_bytes(buffer);
-
-        Ok(Module { inner, hash })
-    }
-
-    /// Returns a reference to the internal module.
-    pub(crate) fn as_ref(&self) -> &wasmi::Module {
-        &self.inner
-    }
-
-    /// Returns the hash of that module.
-    ///
-    /// This gives the same result as calling `ModuleHash::from_bytes` on the original input.
-    pub fn hash(&self) -> &ModuleHash {
-        &self.hash
-    }
-}
 
 impl From<[u8; 32]> for ModuleHash {
     fn from(hash: [u8; 32]) -> ModuleHash {
@@ -67,12 +32,6 @@ impl From<[u8; 32]> for ModuleHash {
 impl From<ModuleHash> for [u8; 32] {
     fn from(hash: ModuleHash) -> [u8; 32] {
         hash.0
-    }
-}
-
-impl fmt::Debug for Module {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Module({})", bs58::encode(&self.hash.0).into_string())
     }
 }
 
@@ -106,12 +65,6 @@ impl fmt::Debug for ModuleHash {
 impl fmt::Display for FromBase58Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "FromBase58Error")
-    }
-}
-
-impl fmt::Display for FromBytesError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "FromBytesError")
     }
 }
 

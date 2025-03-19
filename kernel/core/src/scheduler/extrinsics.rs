@@ -35,7 +35,6 @@
 use crate::extrinsics::{
     Extrinsics, ExtrinsicsAction, ExtrinsicsMemoryAccess, ExtrinsicsMemoryAccessErr,
 };
-use crate::module::Module;
 use crate::scheduler::{processes, vm};
 use crate::sig;
 use crate::{InterfaceHash, MessageId};
@@ -48,6 +47,7 @@ use redshirt_syscalls::{EncodedMessage, Pid, ThreadId};
 mod calls;
 
 pub use calls::WaitEntry;
+pub use processes::Trap; // TODO: redefine locally?
 
 /// Wrapper around [`ProcessesCollection`](processes::ProcessesCollection), but that interprets
 /// the extrinsic calls and keeps track of the state in which pending threads are in.
@@ -291,7 +291,7 @@ pub enum RunOneOutcome<'a, TPud, TTud, TExt: Extrinsics> {
         dead_threads: Vec<(ThreadId, TTud)>,
 
         /// Value returned by the main thread that has finished, or error that happened.
-        outcome: Result<Option<crate::WasmValue>, wasmi::Trap>,
+        outcome: Result<Option<crate::WasmValue>, Trap>,
     },
 
     /// A thread in a process has finished.
@@ -343,7 +343,7 @@ where
     /// is paused at the start of the "_start" function of the module.
     pub fn execute(
         &self,
-        module: &Module,
+        module: &[u8],
         proc_user_data: TPud,
         main_thread_user_data: TTud,
     ) -> Result<(ProcAccess<TPud, TTud, TExt>, ThreadId), vm::NewErr> {
@@ -740,7 +740,7 @@ where
         fn_index: u32,
         params: Vec<crate::WasmValue>,
         user_data: TTud,
-    ) -> Result<ThreadId, vm::StartErr> {
+    ) -> Result<ThreadId, vm::ThreadStartErr> {
         self.inner.start_thread(
             fn_index,
             params,
@@ -1181,12 +1181,12 @@ impl<'a, 'b, TExtr, TPud, TTud> ExtrinsicsMemoryAccess
     fn read_memory(&self, range: Range<u32>) -> Result<Vec<u8>, ExtrinsicsMemoryAccessErr> {
         self.0
             .read_memory(range.start, range.end.checked_sub(range.start).unwrap())
-            .map_err(|()| ExtrinsicsMemoryAccessErr::OutOfRange)
+            .map_err(|processes::OutOfBoundsError| ExtrinsicsMemoryAccessErr::OutOfRange)
     }
 
     fn write_memory(&mut self, offset: u32, data: &[u8]) -> Result<(), ExtrinsicsMemoryAccessErr> {
         self.0
             .write_memory(offset, data)
-            .map_err(|()| ExtrinsicsMemoryAccessErr::OutOfRange)
+            .map_err(|processes::OutOfBoundsError| ExtrinsicsMemoryAccessErr::OutOfRange)
     }
 }
