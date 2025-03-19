@@ -24,9 +24,8 @@
 //!
 //! Programs within a [`System`] are written in [the Wasm language](https://webassembly.org/),
 //! or, more likely, written in a programming language then compiled to Wasm. In order to start
-//! a Wasm program, build a [`Module`] then pass it either to
-//! [`SystemBuilder::with_startup_process`] if you're building a [`System`], or to
-//! [`System::execute`] if the [`System`] is already constructed.
+//! a Wasm program, pass the binary either to [`SystemBuilder::with_startup_process`] if you're
+//! building a [`System`], or to [`System::execute`] if the [`System`] is already constructed.
 //!
 //! Each program within a [`System`] gets attributed a single [`Pid`] that identifies it.
 //!
