@@ -118,6 +118,7 @@ pub fn build(cfg: Config) -> Result<BuildOutput, Error> {
             package.insert("name".into(), "kernel".into());
             package.insert("version".into(), "1.0.0".into());
             package.insert("edition".into(), "2018".into());
+            package.insert("resolver".into(), "3".into());
             package.into()
         });
         cargo_toml_prototype.insert("dependencies".into(), {
