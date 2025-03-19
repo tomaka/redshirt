@@ -32,6 +32,9 @@ pub struct Config<'a> {
     /// Name of the target to pass as `--target`.
     pub target_name: &'a str,
 
+    /// Suffix of the final binary.
+    pub expected_target_suffix: Option<&'a str>,
+
     /// JSON target specifications.
     pub target_specs: Option<&'a str>,
 
@@ -87,7 +90,13 @@ pub fn build(cfg: Config) -> Result<BuildOutput, Error> {
             .join("target")
             .join(cfg.target_name)
             .join(if cfg.release { "release" } else { "debug" })
-            .join("kernel");
+            .join(
+                if let Some(expected_target_suffix) = cfg.expected_target_suffix {
+                    format!("kernel.{expected_target_suffix}")
+                } else {
+                    "kernel".to_owned()
+                },
+            );
 
         (output_file, target_dir_with_target)
     };
