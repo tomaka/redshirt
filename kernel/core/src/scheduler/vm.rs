@@ -13,12 +13,13 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::{module::Module, primitives::Signature, ValueType, WasmValue};
+use crate::{primitives::Signature, ValueType, WasmValue};
 
 use alloc::{
     borrow::{Cow, ToOwned as _},
     boxed::Box,
     format,
+    string::{String, ToString as _},
     vec::Vec,
 };
 use core::{
@@ -26,14 +27,14 @@ use core::{
     convert::{TryFrom as _, TryInto},
     fmt,
 };
+use itertools::Itertools as _;
 use smallvec::SmallVec;
 
 /// WASMI state machine dedicated to a process.
 ///
 /// # Initialization
 ///
-/// Initializing a state machine is done by passing a [`Module`](crate::module::Module) object,
-/// which holds a successfully-parsed WASM binary.
+/// Initializing a state machine is done by passing a module, in other words a WASM binary.
 ///
 /// The module might contain a list of functions to import and that the initialization process
 /// must resolve. When such an import is encountered, the closure passed to the
@@ -76,23 +77,21 @@ use smallvec::SmallVec;
 /// thread simultaneously. This might change in the future.
 ///
 pub struct ProcessStateMachine<T> {
-    /// Original module, with resolved imports.
-    module: wasmi::ModuleRef,
+    /// Wasmi store.
+    store: wasmi::Store<()>,
+
+    /// An instance of the module.
+    instance: wasmi::Instance,
 
     /// Memory of the module instantiation.
     ///
-    /// Right now we only support one unique `Memory` object per process. This is it.
-    /// Contains `None` if the process doesn't export any memory object, which means it doesn't use
-    /// any memory.
-    memory: Option<wasmi::MemoryRef>,
-
-    /// Table of the indirect function calls.
+    /// Contains `None` if there's no memory.
     ///
-    /// In WASM, function pointers are in reality indices in a table called
-    /// `__indirect_function_table`. This is this table, if it exists.
-    indirect_table: Option<wasmi::TableRef>,
+    /// Right now we only support one unique `Memory` object per process.
+    memory: Option<wasmi::Memory>,
 
     /// List of threads that this process is running.
+    // TODO: use a Slab instead
     threads: SmallVec<[ThreadState<T>; 4]>,
 
     /// If true, the state machine is in a poisoned state and cannot run any code anymore.
@@ -101,19 +100,25 @@ pub struct ProcessStateMachine<T> {
 
 /// State of a single thread within the VM.
 struct ThreadState<T> {
-    /// Execution context of this thread. This notably holds the program counter, state of the
-    /// stack, and so on.
-    ///
-    /// This field is an `Option` because we need to be able to temporarily extract it. It must
-    /// always be `Some`.
-    execution: Option<wasmi::FuncInvocation<'static>>,
+    /// State of the thread execution.
+    /// Always `Some`, but wrapped within an `Option` to be temporarily extracted.
+    execution: Option<ThreadExecution>,
 
-    /// If false, then one must call `execution.start_execution()` instead of `resume_execution()`.
-    /// This is a particularity of the WASM interpreter that we don't want to expose in our API.
-    interrupted: bool,
+    /// Where the return value of the execution will be stored.
+    /// While this could be regenerated every time `run` is called, it is instead kept in the
+    /// `Interpreter` struct for convenience.
+    dummy_output_value: Option<wasmi::Val>,
 
     /// Opaque user data associated with the thread.
     user_data: T,
+}
+
+enum ThreadExecution {
+    /// Thread has been created but hasn't been started yet.
+    NotStarted(wasmi::Func, Vec<wasmi::Val>),
+
+    /// Thread has been started.
+    Started(wasmi::ResumableInvocation),
 }
 
 /// Access to a thread within the virtual machine.
@@ -179,38 +184,62 @@ pub enum ExecOutcome<'a, T> {
         thread: Thread<'a, T>,
 
         /// Error that happened.
-        // TODO: error type should change here
-        error: wasmi::Trap,
+        error: Trap,
     },
+}
+
+/// Opaque error that happened during execution, such as an `unreachable` instruction.
+#[derive(Debug, Clone)]
+pub struct Trap {
+    pub error: String,
 }
 
 /// Error that can happen when initializing a VM.
 #[derive(Debug)]
 pub enum NewErr {
-    /// Error in the interpreter.
-    Interpreter(wasmi::Error),
-    /// The "start" symbol doesn't exist.
-    StartNotFound,
-    /// The "start" symbol must be a function.
-    StartIsntAFunction,
-    /// If a "memory" symbol is provided, it must be a memory.
-    MemoryIsntMemory,
+    /// Wasm bytecode is invalid.
+    InvalidWasm(String),
+    /// Failed to resolve a function imported by the module.
+    UnresolvedFunctionImport {
+        /// Name of the function that was unresolved.
+        function: String,
+        /// Name of module associated with the unresolved function.
+        module_name: String,
+    },
+    /// The "_start" symbol doesn't exist, or isn't a function, or doesn't have the expected
+    /// signature.
+    BadStartFunction,
     /// A memory object has both been imported and exported.
     MultipleMemoriesNotSupported,
-    /// If a "__indirect_function_table" symbol is provided, it must be a table.
-    IndirectTableIsntTable,
+    /// Failed to allocate memory for the virtual machine.
+    CouldntAllocateMemory,
+    /// The Wasm module requires importing a global or a table, which isn't supported.
+    ImportTypeNotSupported,
+    /// Error while instantiating the WebAssembly module.
+    Instantiation {
+        /// Opaque error message.
+        error: String,
+    },
 }
 
 /// Error that can happen when starting a new thread.
 #[derive(Debug)]
-pub enum StartErr {
+pub enum ThreadStartErr {
     /// The state machine is poisoned and cannot run anymore.
     Poisoned,
     /// Couldn't find the requested function.
     FunctionNotFound,
     /// The requested function has been found in the list of exports, but it is not a function.
     NotAFunction,
+    /// The signature of the function uses types that aren't supported.
+    SignatureNotSupported,
+    /// The types of the provided parameters don't match the signature.
+    InvalidParameters,
 }
+
+/// Error while reading memory.
+#[derive(Debug)]
+pub struct OutOfBoundsError;
 
 /// Error that can happen when resuming the execution of a function.
 #[derive(Debug)]
@@ -237,134 +266,100 @@ impl<T> ProcessStateMachine<T> {
     /// A single main thread (whose user data is passed by parameter) is automatically created and
     /// is paused at the start of the "_start" function of the module.
     pub fn new(
-        module: &Module,
+        module: &[u8],
         main_thread_user_data: T,
         mut symbols: impl FnMut(&str, &str, &Signature) -> Result<usize, ()>,
     ) -> Result<Self, NewErr> {
-        struct ImportResolve<'a> {
-            func: RefCell<&'a mut dyn FnMut(&str, &str, &Signature) -> Result<usize, ()>>,
-            memory: RefCell<&'a mut Option<wasmi::MemoryRef>>,
-        }
+        let engine = {
+            let config = wasmi::Config::default();
+            // TODO: add config here?
+            wasmi::Engine::new(&config)
+        };
 
-        impl<'a> wasmi::ImportResolver for ImportResolve<'a> {
-            fn resolve_func(
-                &self,
-                module_name: &str,
-                field_name: &str,
-                signature: &wasmi::Signature,
-            ) -> Result<wasmi::FuncRef, wasmi::Error> {
-                let closure = &mut **self.func.borrow_mut();
-                let index = match closure(module_name, field_name, &From::from(signature)) {
-                    Ok(i) => i,
-                    Err(_) => {
-                        return Err(wasmi::Error::Instantiation(format!(
-                            "Couldn't resolve `{}`:`{}`",
-                            module_name, field_name
-                        )))
-                    }
-                };
+        let module = wasmi::Module::new(&engine, module.as_ref())
+            .map_err(|err| NewErr::InvalidWasm(err.to_string()))?;
 
-                Ok(wasmi::FuncInstance::alloc_host(signature.clone(), index))
-            }
+        let mut store = wasmi::Store::new(&engine, ());
 
-            fn resolve_global(
-                &self,
-                _module_name: &str,
-                _field_name: &str,
-                _global_type: &wasmi::GlobalDescriptor,
-            ) -> Result<wasmi::GlobalRef, wasmi::Error> {
-                Err(wasmi::Error::Instantiation(
-                    "Importing globals is not supported yet".to_owned(),
-                ))
-            }
+        let mut linker = wasmi::Linker::<()>::new(&engine);
+        let mut imported_memories = Vec::with_capacity(1);
 
-            fn resolve_memory(
-                &self,
-                _module_name: &str,
-                _field_name: &str,
-                memory_type: &wasmi::MemoryDescriptor,
-            ) -> Result<wasmi::MemoryRef, wasmi::Error> {
-                let mut mem = self.memory.borrow_mut();
-                if mem.is_some() {
-                    return Err(wasmi::Error::Instantiation(
-                        "Only one memory object is supported yet".to_owned(),
-                    ));
+        for import in module.imports() {
+            match import.ty() {
+                wasmi::ExternType::Func(func_type) => {
+                    // Note that if `Signature::try_from` fails, a `UnresolvedFunctionImport` is
+                    // also returned. This is because it is not possible for the function to
+                    // resolve anyway if its signature can't be represented.
+                    let function_index =
+                        match Signature::try_from(func_type)
+                            .ok()
+                            .and_then(|conv_signature| {
+                                symbols(import.module(), import.name(), &conv_signature).ok()
+                            }) {
+                            Some(i) => i,
+                            None => {
+                                return Err(NewErr::UnresolvedFunctionImport {
+                                    module_name: import.module().to_owned(),
+                                    function: import.name().to_owned(),
+                                });
+                            }
+                        };
+
+                    // `func_new` returns an error in case of duplicate definition. Since we
+                    // enumerate over the imports, this can't happen.
+                    linker
+                        .func_new(
+                            import.module(),
+                            import.name(),
+                            func_type.clone(),
+                            move |_caller, parameters, _ret| {
+                                Err(wasmi::Error::host(InterruptedTrap {
+                                    function_index,
+                                    parameters: parameters
+                                        .iter()
+                                        .map(|v| WasmValue::try_from(v).unwrap())
+                                        .collect(),
+                                }))
+                            },
+                        )
+                        .unwrap();
                 }
+                wasmi::ExternType::Memory(memory_type) => {
+                    let memory = wasmi::Memory::new(&mut store, *memory_type)
+                        .map_err(|_| NewErr::CouldntAllocateMemory)?;
+                    imported_memories.push(memory);
 
-                let new_mem = wasmi::MemoryInstance::alloc(
-                    wasmi::memory_units::Pages(usize::try_from(memory_type.initial()).unwrap()),
-                    memory_type
-                        .maximum()
-                        .map(|p| wasmi::memory_units::Pages(usize::try_from(p).unwrap())),
-                )
-                .unwrap();
-                **mem = Some(new_mem.clone());
-                Ok(new_mem)
-            }
-
-            fn resolve_table(
-                &self,
-                _module_name: &str,
-                _field_name: &str,
-                _table_type: &wasmi::TableDescriptor,
-            ) -> Result<wasmi::TableRef, wasmi::Error> {
-                Err(wasmi::Error::Instantiation(
-                    "Importing tables is not supported yet".to_owned(),
-                ))
+                    // `define` returns an error in case of duplicate definition. Since we
+                    // enumerate over the imports, this can't happen.
+                    linker
+                        .define(import.module(), import.name(), memory)
+                        .unwrap();
+                }
+                wasmi::ExternType::Global(_) | wasmi::ExternType::Table(_) => {
+                    return Err(NewErr::ImportTypeNotSupported);
+                }
             }
         }
 
-        let (not_started, imported_memory) = {
-            let mut imported_memory = None;
-            let resolve = ImportResolve {
-                func: RefCell::new(&mut symbols),
-                memory: RefCell::new(&mut imported_memory),
-            };
-            let not_started = wasmi::ModuleInstance::new(module.as_ref(), &resolve)
-                .map_err(NewErr::Interpreter)?;
-            (not_started, imported_memory)
-        };
+        let instance = linker
+            .instantiate(&mut store, &module)
+            .map_err(|err| NewErr::Instantiation {
+                error: err.to_string(),
+            })?
+            // TODO: implement the special start function
+            .start(&mut store)
+            .map_err(|_| todo!())?;
 
-        // TODO: WASM has a special "start" instruction that can be used to designate a function
-        // that must be executed before the module is considered initialized. It is unclear whether
-        // this is intended to be a function that for example initializes global variables, or if
-        // this is an equivalent of "_start". In practice, Rust never seems to generate such as
-        // "start" instruction, so for now we ignore it. The code below panics if there is such
-        // a "start" item, so we will fortunately not blindly run into troubles.
-        let module = not_started.assert_no_start();
-
-        let memory = if let Some(imported_mem) = imported_memory {
-            if module
-                .export_by_name("memory")
-                .map_or(false, |m| m.as_memory().is_some())
-            {
-                return Err(NewErr::MultipleMemoriesNotSupported);
-            }
-            Some(imported_mem)
-        } else if let Some(mem) = module.export_by_name("memory") {
-            if let Some(mem) = mem.as_memory() {
-                Some(mem.clone())
-            } else {
-                return Err(NewErr::MemoryIsntMemory);
-            }
-        } else {
-            None
-        };
-
-        let indirect_table = if let Some(tbl) = module.export_by_name("__indirect_function_table") {
-            if let Some(tbl) = tbl.as_table() {
-                Some(tbl.clone())
-            } else {
-                return Err(NewErr::IndirectTableIsntTable);
-            }
-        } else {
-            None
-        };
+        let memory = imported_memories
+            .into_iter()
+            .chain(instance.exports(&store).filter_map(|exp| exp.into_memory()))
+            .at_most_one()
+            .map_err(|_| NewErr::MultipleMemoriesNotSupported)?;
 
         let mut state_machine = ProcessStateMachine {
-            module,
+            store,
+            instance,
             memory,
-            indirect_table,
             is_poisoned: false,
             threads: SmallVec::new(),
         };
@@ -372,9 +367,14 @@ impl<T> ProcessStateMachine<T> {
         // Try to start executing `_start`.
         match state_machine.start_thread_by_name("_start", &[][..], main_thread_user_data) {
             Ok(_) => {}
-            Err((StartErr::FunctionNotFound, _)) => return Err(NewErr::StartNotFound),
-            Err((StartErr::Poisoned, _)) => unreachable!(),
-            Err((StartErr::NotAFunction, _)) => return Err(NewErr::StartIsntAFunction),
+            Err((
+                ThreadStartErr::FunctionNotFound
+                | ThreadStartErr::NotAFunction
+                | ThreadStartErr::InvalidParameters
+                | ThreadStartErr::SignatureNotSupported,
+                _,
+            )) => return Err(NewErr::BadStartFunction),
+            Err((ThreadStartErr::Poisoned, _)) => unreachable!(),
         };
 
         Ok(state_machine)
@@ -398,40 +398,13 @@ impl<T> ProcessStateMachine<T> {
         function_id: u32,
         params: impl IntoIterator<Item = WasmValue>,
         user_data: T,
-    ) -> Result<Thread<T>, StartErr> {
+    ) -> Result<Thread<T>, ThreadStartErr> {
         if self.is_poisoned {
-            return Err(StartErr::Poisoned);
+            return Err(ThreadStartErr::Poisoned);
         }
 
-        // Find the function within the process.
-        let function = self
-            .indirect_table
-            .as_ref()
-            .and_then(|t| t.get(function_id).ok())
-            .and_then(|f| f)
-            .ok_or(StartErr::FunctionNotFound)?;
-
-        let params = params
-            .into_iter()
-            .map(wasmi::RuntimeValue::from)
-            .collect::<Vec<_>>();
-
-        let execution = match wasmi::FuncInstance::invoke_resumable(&function, params) {
-            Ok(e) => e,
-            Err(err) => unreachable!("{:?}", err),
-        };
-
-        self.threads.push(ThreadState {
-            execution: Some(execution),
-            interrupted: false,
-            user_data,
-        });
-
-        let thread_id = self.threads.len() - 1;
-        Ok(Thread {
-            vm: self,
-            index: thread_id,
-        })
+        // TODO: re-implement
+        return Err(ThreadStartErr::FunctionNotFound);
     }
 
     /// Same as [`start_thread_by_id`](ProcessStateMachine::start_thread_by_id), but executes a
@@ -439,28 +412,65 @@ impl<T> ProcessStateMachine<T> {
     fn start_thread_by_name(
         &mut self,
         symbol_name: &str,
-        params: impl Into<Cow<'static, [wasmi::RuntimeValue]>>,
+        params: &[WasmValue],
         user_data: T,
-    ) -> Result<Thread<T>, (StartErr, T)> {
+    ) -> Result<Thread<T>, (ThreadStartErr, T)> {
         if self.is_poisoned {
-            return Err((StartErr::Poisoned, user_data));
+            return Err((ThreadStartErr::Poisoned, user_data));
         }
 
-        match self.module.export_by_name(symbol_name) {
-            Some(wasmi::ExternVal::Func(f)) => {
-                let execution = match wasmi::FuncInstance::invoke_resumable(&f, params) {
-                    Ok(e) => e,
-                    Err(err) => unreachable!("{:?}", err),
+        let func_to_call = match self.instance.get_export(&self.store, symbol_name) {
+            Some(wasmi::Extern::Func(function)) => {
+                // Try to convert the signature of the function to call, in order to make sure
+                // that the type of parameters and return value are supported.
+                let Ok(signature) = Signature::try_from(function.ty(&self.store)) else {
+                    return Err((ThreadStartErr::SignatureNotSupported, user_data));
                 };
-                self.threads.push(ThreadState {
-                    execution: Some(execution),
-                    interrupted: false,
-                    user_data,
-                });
+
+                // Check whether the types of the parameters are correct.
+                // This is necessary to do manually because for API purposes the call immediately
+                //starts, while in the internal implementation it doesn't actually.
+                if params.len() != signature.parameters().len() {
+                    return Err((ThreadStartErr::InvalidParameters, user_data));
+                }
+                for (obtained, expected) in params.iter().zip(signature.parameters()) {
+                    if obtained.ty() != *expected {
+                        return Err((ThreadStartErr::InvalidParameters, user_data));
+                    }
+                }
+
+                function
             }
-            None => return Err((StartErr::FunctionNotFound, user_data)),
-            _ => return Err((StartErr::NotAFunction, user_data)),
-        }
+            Some(_) => return Err((ThreadStartErr::NotAFunction, user_data)),
+            None => return Err((ThreadStartErr::FunctionNotFound, user_data)),
+        };
+
+        let dummy_output_value = {
+            let func_to_call_ty = func_to_call.ty(&self.store);
+            let list = func_to_call_ty.results();
+            // We don't support more than one return value. This is enforced by verifying the
+            // function signature above.
+            debug_assert!(list.len() <= 1);
+            list.first().map(|item| match *item {
+                wasmi::core::ValType::I32 => wasmi::Val::I32(0),
+                wasmi::core::ValType::I64 => wasmi::Val::I64(0),
+                wasmi::core::ValType::F32 => wasmi::Val::F32(0.0f32.into()),
+                wasmi::core::ValType::F64 => wasmi::Val::F64(0.0.into()),
+                _ => unreachable!(),
+            })
+        };
+
+        self.threads.push(ThreadState {
+            execution: Some(ThreadExecution::NotStarted(
+                func_to_call,
+                params
+                    .iter()
+                    .map(|v| wasmi::Val::from(*v))
+                    .collect::<Vec<_>>(),
+            )),
+            dummy_output_value,
+            user_data,
+        });
 
         let thread_id = self.threads.len() - 1;
         Ok(Thread {
@@ -499,26 +509,39 @@ impl<T> ProcessStateMachine<T> {
     /// Copies the given memory range into a `Vec<u8>`.
     ///
     /// Returns an error if the range is invalid or out of range.
-    pub fn read_memory(&self, offset: u32, size: u32) -> Result<Vec<u8>, ()> {
+    // TODO: make more zero-cost?
+    pub fn read_memory(&self, offset: u32, size: u32) -> Result<Vec<u8>, OutOfBoundsError> {
         let mem = match self.memory.as_ref() {
             Some(m) => m,
-            None => unreachable!(),
+            None => return Err(OutOfBoundsError),
         };
 
-        mem.get(offset, size.try_into().map_err(|_| ())?)
-            .map_err(|_| ())
+        let offset = usize::try_from(offset).map_err(|_| OutOfBoundsError)?;
+        let size = usize::try_from(size).map_err(|_| OutOfBoundsError)?;
+
+        let data = mem.data(&self.store);
+        if offset + size > data.len() {
+            return Err(OutOfBoundsError);
+        }
+
+        Ok(data[offset..][..size].to_vec())
     }
 
     /// Write the data at the given memory location.
     ///
     /// Returns an error if the range is invalid or out of range.
-    pub fn write_memory(&mut self, offset: u32, value: &[u8]) -> Result<(), ()> {
+    pub fn write_memory(&mut self, offset: u32, value: &[u8]) -> Result<(), OutOfBoundsError> {
         let mem = match self.memory.as_ref() {
             Some(m) => m,
-            None => unreachable!(),
+            None => return Err(OutOfBoundsError),
         };
 
-        mem.set(offset, value).map_err(|_| ())
+        mem.write(
+            &mut self.store,
+            usize::try_from(offset).map_err(|_| OutOfBoundsError)?,
+            value,
+        )
+        .map_err(|_| OutOfBoundsError)
     }
 }
 
@@ -558,99 +581,93 @@ impl<'a, T> Thread<'a, T> {
     /// If, however, you call this function after a previous call to [`run`](Thread::run) that was
     /// interrupted by an external function call, then you must pass back the outcome of that call.
     pub fn run(mut self, value: Option<WasmValue>) -> Result<ExecOutcome<'a, T>, RunErr> {
-        struct DummyExternals;
-        impl wasmi::Externals for DummyExternals {
-            fn invoke_index(
-                &mut self,
-                index: usize,
-                args: wasmi::RuntimeArgs,
-            ) -> Result<Option<wasmi::RuntimeValue>, wasmi::Trap> {
-                Err(wasmi::TrapKind::Host(Box::new(Interrupt {
-                    index,
-                    args: args.as_ref().to_vec(),
-                }))
-                .into())
-            }
-        }
-
-        #[derive(Debug)]
-        struct Interrupt {
-            index: usize,
-            args: Vec<wasmi::RuntimeValue>,
-        }
-        impl fmt::Display for Interrupt {
-            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                write!(f, "Interrupt")
-            }
-        }
-        impl wasmi::HostError for Interrupt {}
-
         if self.vm.is_poisoned {
             return Err(RunErr::Poisoned);
         }
 
         let thread_state = &mut self.vm.threads[self.index];
 
-        let mut execution = match thread_state.execution.take() {
-            Some(e) => e,
-            None => unreachable!(),
-        };
-        let result = if thread_state.interrupted {
-            let expected_ty = execution.resumable_value_type().map(ValueType::from);
-            let obtained_ty = value.as_ref().map(|v| v.ty());
-            if expected_ty != obtained_ty {
-                return Err(RunErr::BadValueTy {
-                    expected: expected_ty,
-                    obtained: obtained_ty,
-                });
+        let outputs_storage_ptr =
+            if let Some(output_storage) = thread_state.dummy_output_value.as_mut() {
+                &mut core::array::from_mut(output_storage)[..]
+            } else {
+                &mut []
+            };
+
+        let result = match thread_state.execution.take() {
+            Some(ThreadExecution::NotStarted(func, params)) => {
+                if let Some(value) = value.as_ref() {
+                    return Err(RunErr::BadValueTy {
+                        expected: None,
+                        obtained: Some(value.ty()),
+                    });
+                }
+
+                func.call_resumable(&mut self.vm.store, &params, outputs_storage_ptr)
             }
-            execution.resume_execution(value.map(From::from), &mut DummyExternals)
-        } else {
-            if value.is_some() {
-                return Err(RunErr::BadValueTy {
-                    expected: None,
-                    obtained: value.as_ref().map(|v| v.ty()),
-                });
+            Some(ThreadExecution::Started(func)) => {
+                let expected = {
+                    let func_type = func.host_func().ty(&self.vm.store);
+                    // We don't support functions with more than one result type. This should have
+                    // been checked at initialization.
+                    debug_assert!(func_type.results().len() <= 1);
+                    func_type
+                        .results()
+                        .iter()
+                        .next()
+                        .map(|r| ValueType::try_from(*r).unwrap())
+                };
+                let obtained = value.as_ref().map(|v| v.ty());
+                if expected != obtained {
+                    return Err(RunErr::BadValueTy { expected, obtained });
+                }
+
+                let value = value.map(wasmi::Val::from);
+                let inputs = match value.as_ref() {
+                    Some(v) => &core::array::from_ref(v)[..],
+                    None => &[],
+                };
+
+                func.resume(&mut self.vm.store, inputs, outputs_storage_ptr)
             }
-            thread_state.interrupted = true;
-            execution.start_execution(&mut DummyExternals)
+            None => return Err(RunErr::Poisoned),
         };
 
         match result {
-            Ok(return_value) => {
-                let user_data = self.vm.threads.remove(self.index).user_data;
-                // If this is the "main" function, the state machine is now poisoned.
+            Ok(wasmi::ResumableCall::Finished) => {
+                // Because we have checked the signature of the function, we know that this
+                // conversion can never fail.
+                let thread = self.vm.threads.remove(self.index);
+                let return_value = thread
+                    .dummy_output_value
+                    .map(|r| WasmValue::try_from(r).unwrap());
                 if self.index == 0 {
                     self.vm.is_poisoned = true;
                 }
                 Ok(ExecOutcome::ThreadFinished {
+                    return_value,
                     thread_index: self.index,
-                    return_value: return_value.map(From::from),
-                    user_data,
+                    user_data: thread.user_data,
                 })
             }
-            Err(wasmi::ResumableError::AlreadyStarted) => unreachable!(),
-            Err(wasmi::ResumableError::NotResumable) => unreachable!(),
-            Err(wasmi::ResumableError::Trap(ref trap)) if trap.kind().is_host() => {
-                let interrupt: &Interrupt = match trap.kind() {
-                    wasmi::TrapKind::Host(err) => match err.downcast_ref() {
-                        Some(e) => e,
-                        None => unreachable!(),
-                    },
-                    _ => unreachable!(),
-                };
-                thread_state.execution = Some(execution);
+            Ok(wasmi::ResumableCall::Resumable(next)) => {
+                let trap = next.host_error().downcast_ref::<InterruptedTrap>().unwrap();
+                let function_index = trap.function_index;
+                let params = trap.parameters.clone();
+                thread_state.execution = Some(ThreadExecution::Started(next));
                 Ok(ExecOutcome::Interrupted {
                     thread: self,
-                    id: interrupt.index,
-                    params: interrupt.args.iter().map(|v| From::from(*v)).collect(),
+                    id: function_index,
+                    params,
                 })
             }
-            Err(wasmi::ResumableError::Trap(trap)) => {
+            Err(err) => {
                 self.vm.is_poisoned = true;
                 Ok(ExecOutcome::Errored {
                     thread: self,
-                    error: trap,
+                    error: Trap {
+                        error: err.to_string(),
+                    },
                 })
             }
         }
@@ -684,48 +701,21 @@ where
     }
 }
 
-impl fmt::Display for NewErr {
+/// This dummy struct is meant to be converted to a `wasmi::core::Trap` and then back, similar to
+/// `std::any::Any`.
+#[derive(Debug, Clone)]
+struct InterruptedTrap {
+    function_index: usize,
+    parameters: Vec<WasmValue>,
+}
+
+impl fmt::Display for InterruptedTrap {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            NewErr::Interpreter(err) => write!(f, "Error in the interpreter: {}", err),
-            NewErr::StartNotFound => write!(f, "The \"start\" symbol doesn't exist"),
-            NewErr::StartIsntAFunction => write!(f, "The \"start\" symbol must be a function"),
-            NewErr::MemoryIsntMemory => {
-                write!(f, "If a \"memory\" symbol is provided, it must be a memory")
-            }
-            NewErr::MultipleMemoriesNotSupported => {
-                write!(f, "A memory object has both been imported and exported")
-            }
-            NewErr::IndirectTableIsntTable => write!(
-                f,
-                "If a \"__indirect_function_table\" symbol is provided, it must be a table"
-            ),
-        }
+        write!(f, "Interrupted")
     }
 }
 
-impl fmt::Display for StartErr {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            StartErr::Poisoned => write!(f, "State machine is in a poisoned state"),
-            StartErr::FunctionNotFound => write!(f, "Function to start was not found"),
-            StartErr::NotAFunction => write!(f, "Symbol to start is not a function"),
-        }
-    }
-}
-
-impl fmt::Display for RunErr {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            RunErr::Poisoned => write!(f, "State machine is poisoned"),
-            RunErr::BadValueTy { expected, obtained } => write!(
-                f,
-                "Expected value of type {:?} but got {:?} instead",
-                expected, obtained
-            ),
-        }
-    }
-}
+impl wasmi::core::HostError for InterruptedTrap {}
 
 #[cfg(test)]
 mod tests {
@@ -759,7 +749,7 @@ mod tests {
         );
 
         match ProcessStateMachine::new(&module, (), |_, _, _| unreachable!()) {
-            Err(NewErr::StartNotFound) => {}
+            Err(NewErr::BadStartFunction) => {}
             _ => panic!(),
         }
     }

@@ -24,14 +24,14 @@
 //!
 
 use crate::extrinsics;
-use crate::module::{Module, ModuleHash};
+use crate::module::ModuleHash;
 use crate::scheduler::{self, Core, CoreBuilder, CoreRunOutcome, NewErr};
 use crate::InterfaceHash;
 
 mod interfaces;
 mod pending_answers;
 
-use alloc::{collections::VecDeque, format, vec::Vec};
+use alloc::{borrow::Cow, collections::VecDeque, format, string::String, vec::Vec};
 use core::{convert::TryFrom as _, fmt, iter, num::NonZeroU64, sync::atomic::Ordering};
 use crossbeam_queue::SegQueue;
 use hashbrown::{HashMap, HashSet};
@@ -132,7 +132,7 @@ pub struct SystemBuilder<TExtr: extrinsics::Extrinsics> {
     native_interfaces: HashSet<InterfaceHash, fnv::FnvBuildHasher>,
 
     /// List of programs to start executing immediately after construction.
-    startup_processes: Vec<Module>,
+    startup_processes: Vec<Cow<'static, [u8]>>,
 
     /// Same field as [`System::programs_to_load`].
     programs_to_load: SegQueue<ModuleHash>,
@@ -175,7 +175,7 @@ pub enum SystemRunOutcome<'a, TExtr: extrinsics::Extrinsics> {
         /// Either `Ok(())` if the main thread has ended, or the error that happened in the
         /// process.
         // TODO: change error type
-        outcome: Result<(), wasmi::Error>,
+        outcome: Result<(), String>,
     },
 
     /// A program has requested metrics from the kernel. Use the [`KernelDebugMetricsRequest`] to
@@ -234,7 +234,7 @@ where
     TExtr: extrinsics::Extrinsics,
 {
     /// Start executing a program.
-    pub fn execute(&self, program: &Module) -> Result<Pid, NewErr> {
+    pub fn execute(&self, program: &[u8]) -> Result<Pid, NewErr> {
         self.num_processes_started.fetch_add(1, Ordering::Relaxed);
         Ok(self.core.execute(program)?.0.pid())
     }
@@ -285,7 +285,7 @@ where
 
                 return Some(SystemRunOutcome::ProgramFinished {
                     pid,
-                    outcome: outcome.map(|_| ()).map_err(|err| err.into()),
+                    outcome: outcome.map(|_| ()).map_err(|err| err.error),
                 });
             }
 
@@ -652,7 +652,7 @@ where
     ///
     /// By default, the list is empty. Should at least contain a process that handles the `loader`
     /// interface.
-    pub fn with_startup_process(mut self, process: impl Into<Module>) -> Self {
+    pub fn with_startup_process(mut self, process: Cow<'static, [u8]>) -> Self {
         let process = process.into();
         self.startup_processes.push(process);
         self

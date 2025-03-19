@@ -69,47 +69,47 @@ impl Signature {
     }
 }
 
-impl<'a> From<&'a Signature> for wasmi::Signature {
-    fn from(sig: &'a Signature) -> wasmi::Signature {
-        wasmi::Signature::new(
+impl<'a> From<&'a Signature> for wasmi::FuncType {
+    fn from(sig: &'a Signature) -> wasmi::FuncType {
+        wasmi::FuncType::new(
             sig.params
                 .iter()
                 .cloned()
-                .map(wasmi::ValueType::from)
+                .map(wasmi::core::ValType::from)
                 .collect::<Vec<_>>(),
-            sig.ret_ty.map(wasmi::ValueType::from),
+            sig.ret_ty.map(wasmi::core::ValType::from),
         )
     }
 }
 
-impl From<Signature> for wasmi::Signature {
-    fn from(sig: Signature) -> wasmi::Signature {
-        wasmi::Signature::from(&sig)
+impl From<Signature> for wasmi::FuncType {
+    fn from(sig: Signature) -> wasmi::FuncType {
+        wasmi::FuncType::from(&sig)
     }
 }
 
-impl<'a> From<&'a wasmi::Signature> for Signature {
-    fn from(sig: &'a wasmi::Signature) -> Signature {
+impl<'a> From<&'a wasmi::FuncType> for Signature {
+    fn from(sig: &'a wasmi::FuncType) -> Signature {
         Signature::new(
             sig.params().iter().cloned().map(ValueType::from),
-            sig.return_type().map(ValueType::from),
+            sig.results().get(0).copied().map(ValueType::from), // TODO: don't ignore if multiple return types
         )
     }
 }
 
-impl From<wasmi::Signature> for Signature {
-    fn from(sig: wasmi::Signature) -> Signature {
+impl From<wasmi::FuncType> for Signature {
+    fn from(sig: wasmi::FuncType) -> Signature {
         Signature::from(&sig)
     }
 }
 
-impl From<ValueType> for wasmi::ValueType {
-    fn from(ty: ValueType) -> wasmi::ValueType {
+impl From<ValueType> for wasmi::core::ValType {
+    fn from(ty: ValueType) -> wasmi::core::ValType {
         match ty {
-            ValueType::I32 => wasmi::ValueType::I32,
-            ValueType::I64 => wasmi::ValueType::I64,
-            ValueType::F32 => wasmi::ValueType::F32,
-            ValueType::F64 => wasmi::ValueType::F64,
+            ValueType::I32 => wasmi::core::ValType::I32,
+            ValueType::I64 => wasmi::core::ValType::I64,
+            ValueType::F32 => wasmi::core::ValType::F32,
+            ValueType::F64 => wasmi::core::ValType::F64,
         }
     }
 }
@@ -178,33 +178,40 @@ impl WasmValue {
     }
 }
 
-impl From<wasmi::RuntimeValue> for WasmValue {
-    fn from(val: wasmi::RuntimeValue) -> Self {
+impl From<wasmi::Val> for WasmValue {
+    fn from(val: wasmi::Val) -> Self {
+        WasmValue::from(&val)
+    }
+}
+
+impl<'a> From<&'a wasmi::Val> for WasmValue {
+    fn from(val: &'a wasmi::Val) -> Self {
         match val {
-            wasmi::RuntimeValue::I32(v) => WasmValue::I32(v),
-            wasmi::RuntimeValue::I64(v) => WasmValue::I64(v),
+            wasmi::Val::I32(v) => WasmValue::I32(*v),
+            wasmi::Val::I64(v) => WasmValue::I64(*v),
             _ => unimplemented!(),
         }
     }
 }
 
-impl From<WasmValue> for wasmi::RuntimeValue {
+impl From<WasmValue> for wasmi::Val {
     fn from(val: WasmValue) -> Self {
         match val {
-            WasmValue::I32(v) => wasmi::RuntimeValue::I32(v),
-            WasmValue::I64(v) => wasmi::RuntimeValue::I64(v),
+            WasmValue::I32(v) => wasmi::Val::I32(v),
+            WasmValue::I64(v) => wasmi::Val::I64(v),
             _ => unimplemented!(),
         }
     }
 }
 
-impl From<wasmi::ValueType> for ValueType {
-    fn from(val: wasmi::ValueType) -> Self {
+impl From<wasmi::core::ValType> for ValueType {
+    fn from(val: wasmi::core::ValType) -> Self {
         match val {
-            wasmi::ValueType::I32 => ValueType::I32,
-            wasmi::ValueType::I64 => ValueType::I64,
-            wasmi::ValueType::F32 => ValueType::F32,
-            wasmi::ValueType::F64 => ValueType::F64,
+            wasmi::core::ValType::I32 => ValueType::I32,
+            wasmi::core::ValType::I64 => ValueType::I64,
+            wasmi::core::ValType::F32 => ValueType::F32,
+            wasmi::core::ValType::F64 => ValueType::F64,
+            _ => unimplemented!(),
         }
     }
 }

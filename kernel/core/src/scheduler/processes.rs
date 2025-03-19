@@ -111,12 +111,13 @@
 // process. The last step is to report that death to the user through a
 // `RunOneOutcome::ProcessFinished`, which happens as soon as `run` is called.
 
-use crate::{id_pool::IdPool, module::Module, primitives::Signature, scheduler::vm, Pid, ThreadId};
+use crate::{id_pool::IdPool, primitives::Signature, scheduler::vm, Pid, ThreadId};
 
 use alloc::{
     borrow::Cow,
     boxed::Box,
     collections::VecDeque,
+    string::String,
     sync::{Arc, Weak},
     vec,
     vec::Vec,
@@ -201,7 +202,7 @@ pub struct ProcessesCollection<TExtr, TPud, TTud> {
         Pid,
         TPud,
         Vec<(ThreadId, TTud)>,
-        Result<Option<crate::WasmValue>, wasmi::Trap>,
+        Result<Option<crate::WasmValue>, Trap>,
     )>,
 }
 
@@ -241,7 +242,7 @@ struct ProcessDeadState<TTud> {
     dead_threads: Vec<(ThreadId, TTud)>,
 
     /// Why the process ended. Never modified once set.
-    outcome: Result<Option<crate::WasmValue>, wasmi::Trap>,
+    outcome: Result<Option<crate::WasmValue>, Trap>,
 }
 
 /// Additional data associated to a thread. Stored within the [`vm::ProcessStateMachine`].
@@ -262,7 +263,7 @@ impl<TExtr, TPud, TTud> ProcessesCollection<TExtr, TPud, TTud> {
     /// is paused at the start of the "_start" function of the module.
     pub fn execute(
         &self,
-        module: &Module,
+        module: &[u8],
         proc_user_data: TPud,
         main_thread_user_data: TTud,
     ) -> Result<(ProcAccess<TExtr, TPud, TTud>, ThreadId), vm::NewErr> {
@@ -560,7 +561,7 @@ pub enum RunOneOutcome<'a, TExtr, TPud, TTud> {
         dead_threads: Vec<(ThreadId, TTud)>,
 
         /// Value returned by the main thread that has finished, or error that happened.
-        outcome: Result<Option<crate::WasmValue>, wasmi::Trap>,
+        outcome: Result<Option<crate::WasmValue>, Trap>,
     },
 
     /// A thread in a process has finished.
@@ -601,6 +602,12 @@ pub enum RunOneOutcome<'a, TExtr, TPud, TTud> {
         /// Pid of the process that is going to finish soon.
         pid: Pid,
     },
+}
+
+/// Opaque error that happened during execution, such as an `unreachable` instruction.
+#[derive(Debug, Clone)]
+pub struct Trap {
+    pub error: String,
 }
 
 /// Future that drives the [`ProcessesCollection::run`] method.
@@ -849,7 +856,7 @@ impl<'a, TExtr, TPud, TTud> ReadyToRun<'a, TExtr, TPud, TTud> {
 
                 proc_state.dead = Some(ProcessDeadState {
                     dead_threads,
-                    outcome: Err(error),
+                    outcome: Err(Trap { error: error.error }),
                 });
 
                 RunOneOutcome::StartProcessAbort {
@@ -915,7 +922,7 @@ impl<'a, TExtr, TPud, TTud> ProcAccess<'a, TExtr, TPud, TTud> {
         fn_index: u32,
         params: Vec<crate::WasmValue>,
         user_data: TTud,
-    ) -> Result<ThreadId, vm::StartErr> {
+    ) -> Result<ThreadId, vm::ThreadStartErr> {
         let thread_id = self.pid_tid_pool.assign(); // TODO: check for duplicates
         let thread_data = Thread { thread_id };
 
@@ -962,19 +969,12 @@ impl<'a, TExtr, TPud, TTud> ProcAccess<'a, TExtr, TPud, TTud> {
             dead_threads.push((tid, user_data));
         }
 
-        // TODO: replace with better error once we no longer expose wasmi::Trap in the API
-        #[derive(Debug)]
-        struct HostErr;
-        impl wasmi::HostError for HostErr {}
-        impl fmt::Display for HostErr {
-            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                write!(f, "Aborted")
-            }
-        }
-
         process_state.dead = Some(ProcessDeadState {
             dead_threads,
-            outcome: Err(From::from(wasmi::TrapKind::Host(Box::new(HostErr)))),
+            outcome: Err(Trap {
+                // TODO: use an enum for Trap instead?
+                error: String::from("Aborted"),
+            }),
         });
     }
 }
@@ -1024,6 +1024,10 @@ pub struct ThreadAccess<'a, TExtr, TPud, TTud> {
     user_data: Option<TTud>,
 }
 
+/// Error while reading memory.
+#[derive(Debug)]
+pub struct OutOfBoundsError;
+
 impl<'a, TExtr, TPud, TTud> ThreadAccess<'a, TExtr, TPud, TTud> {
     /// Returns the id of the thread. Allows later retrieval by calling
     /// [`thread_by_id`](ProcessesCollection::interrupted_thread_by_id).
@@ -1054,12 +1058,14 @@ impl<'a, TExtr, TPud, TTud> ThreadAccess<'a, TExtr, TPud, TTud> {
     ///
     /// > **Important**: See also the remarks on [`ThreadAccess::write_memory`].
     ///
-    pub fn read_memory(&self, offset: u32, size: u32) -> Result<Vec<u8>, ()> {
+    pub fn read_memory(&self, offset: u32, size: u32) -> Result<Vec<u8>, OutOfBoundsError> {
         // TODO: if another thread of this process is running, this will block until it has
         // finished executing ; it isn't really possible right now to do otherwise, as the WASM
         // memory model isn't properly defined
         let lock = self.process.as_ref().unwrap().lock.lock();
-        lock.vm.read_memory(offset, size)
+        lock.vm
+            .read_memory(offset, size)
+            .map_err(|vm::OutOfBoundsError| OutOfBoundsError)
     }
 
     /// Write the data at the given memory location.
@@ -1084,12 +1090,14 @@ impl<'a, TExtr, TPud, TTud> ThreadAccess<'a, TExtr, TPud, TTud> {
     /// different threads without any synchronization primitive (which resuming the thread
     /// provides) will lead to a race condition.
     ///
-    pub fn write_memory(&mut self, offset: u32, value: &[u8]) -> Result<(), ()> {
+    pub fn write_memory(&mut self, offset: u32, value: &[u8]) -> Result<(), OutOfBoundsError> {
         // TODO: if another thread of this process is running, this will block until it has
         // finished executing ; it isn't really possible right now to do otherwise, as the WASM
         // memory model isn't properly defined
         let mut lock = self.process.as_ref().unwrap().lock.lock();
-        lock.vm.write_memory(offset, value)
+        lock.vm
+            .write_memory(offset, value)
+            .map_err(|vm::OutOfBoundsError| OutOfBoundsError)
     }
 
     /// Returns the user data that is associated to the thread.

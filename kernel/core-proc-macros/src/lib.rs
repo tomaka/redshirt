@@ -230,9 +230,10 @@ pub fn build_wasm_module(tokens: proc_macro::TokenStream) -> proc_macro::TokenSt
     // TODO: handle if the user renames `redshirt_core` to something else?
     let rust_out = format!(
         "{{
+            extern crate alloc;
             const MODULE_BYTES: &'static [u8] = include_bytes!(\"{}\");
             {}
-            redshirt_core::module::Module::from_bytes(&MODULE_BYTES[..]).unwrap()
+            alloc::borrow::Cow::Borrowed(&MODULE_BYTES[..])
         }}",
         wasm_output
             .display()

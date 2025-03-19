@@ -16,7 +16,6 @@
 use crate::{
     extrinsics::Extrinsics,
     id_pool::IdPool,
-    module::Module,
     scheduler::{
         extrinsics::{self, ThreadAccessAccess as _},
         vm,
@@ -155,8 +154,8 @@ pub enum CoreRunOutcome {
         /// How the program ended. If `Ok`, it has gracefully terminated. If `Err`, something
         /// bad happened.
         // TODO: force Ok to i32?
-        // TODO: don't expose wasmi in error
-        outcome: Result<Option<crate::WasmValue>, wasmi::Trap>,
+        // TODO: redefine error instead?
+        outcome: Result<Option<crate::WasmValue>, extrinsics::Trap>,
     },
 
     /// A process wants to emit a message on an interface.
@@ -405,8 +404,8 @@ impl<TExt: Extrinsics> Core<TExt> {
 
     /// Start executing the module passed as parameter.
     ///
-    /// Each import of the [`Module`](crate::module::Module) is resolved.
-    pub fn execute(&self, module: &Module) -> Result<(CoreProcess<TExt>, ThreadId), vm::NewErr> {
+    /// Each import of the module is resolved.
+    pub fn execute(&self, module: &[u8]) -> Result<(CoreProcess<TExt>, ThreadId), vm::NewErr> {
         let proc_metadata = Process {
             notifications_queue: notifications_queue::NotificationsQueue::new(),
             wait_notifications_threads: waiting_threads::WaitingThreads::new(),
@@ -449,7 +448,7 @@ impl<'a, TExt: Extrinsics> CoreProcess<'a, TExt> {
         self,
         fn_index: u32,
         params: Vec<crate::WasmValue>,
-    ) -> Result<(), vm::StartErr> {
+    ) -> Result<(), vm::ThreadStartErr> {
         self.process.start_thread(fn_index, params, ())?;
         Ok(())
     }

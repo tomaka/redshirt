@@ -24,9 +24,8 @@
 //!
 //! Programs within a [`System`] are written in [the Wasm language](https://webassembly.org/),
 //! or, more likely, written in a programming language then compiled to Wasm. In order to start
-//! a Wasm program, build a [`Module`] then pass it either to
-//! [`SystemBuilder::with_startup_process`] if you're building a [`System`], or to
-//! [`System::execute`] if the [`System`] is already constructed.
+//! a Wasm program, pass the binary either to [`SystemBuilder::with_startup_process`] if you're
+//! building a [`System`], or to [`System::execute`] if the [`System`] is already constructed.
 //!
 //! Each program within a [`System`] gets attributed a single [`Pid`] that identifies it.
 //!
@@ -113,7 +112,6 @@
 
 extern crate alloc;
 
-pub use self::module::Module;
 pub use self::system::{ExecuteOut, System, SystemBuilder, SystemRunOutcome};
 pub use primitives::{ValueType, WasmValue};
 pub use redshirt_syscalls::{
@@ -134,7 +132,7 @@ pub use redshirt_core_proc_macros::build_wasm_module;
 #[doc(hidden)]
 pub use redshirt_core_proc_macros::wat_to_bin;
 
-/// Builds a [`Module`](module::Module) from a WASM text representation.
+/// Builds a WASM binary from a WASM text representation.
 ///
 /// The WASM text representation is parsed and transformed at compile time.
 #[macro_export]
@@ -142,10 +140,10 @@ macro_rules! from_wat {
     // TODO: also build the hash at compile-time? https://github.com/tomaka/redshirt/issues/218
     // TODO: we need this hack with a special `local` tag because of macro paths resolution issues
     (local, $wat:expr) => {{
-        $crate::Module::from_bytes(redshirt_core_proc_macros::wat_to_bin!($wat)).unwrap()
+        redshirt_core_proc_macros::wat_to_bin!($wat)
     }};
     ($wat:expr) => {{
-        $crate::Module::from_bytes($crate::wat_to_bin!($wat)).unwrap()
+        $crate::wat_to_bin!($wat)
     }};
 }
 
