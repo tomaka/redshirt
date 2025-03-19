@@ -132,7 +132,7 @@ pub use redshirt_core_proc_macros::build_wasm_module;
 #[doc(hidden)]
 pub use redshirt_core_proc_macros::wat_to_bin;
 
-/// Builds a [`Module`](module::Module) from a WASM text representation.
+/// Builds a WASM binary from a WASM text representation.
 ///
 /// The WASM text representation is parsed and transformed at compile time.
 #[macro_export]
