@@ -89,6 +89,7 @@ pub fn run_kernel(cfg: Config) -> Result<(), Error> {
                 kernel_cargo_toml: cfg.kernel_cargo_toml,
                 release: cfg.release,
                 target_name: "arm-freestanding",
+                expected_target_suffix: None,
                 target_specs: Some(include_str!("../res/specs/arm-freestanding.json")),
                 link_script: Some(include_str!("../res/specs/arm-freestanding.ld")),
             })
@@ -113,6 +114,7 @@ pub fn run_kernel(cfg: Config) -> Result<(), Error> {
                 kernel_cargo_toml: cfg.kernel_cargo_toml,
                 release: cfg.release,
                 target_name: "aarch64-freestanding",
+                expected_target_suffix: None,
                 target_specs: Some(include_str!("../res/specs/aarch64-freestanding.json")),
                 link_script: Some(include_str!("../res/specs/aarch64-freestanding.ld")),
             })
@@ -137,6 +139,7 @@ pub fn run_kernel(cfg: Config) -> Result<(), Error> {
                 kernel_cargo_toml: cfg.kernel_cargo_toml,
                 release: cfg.release,
                 target_name: "riscv-hifive",
+                expected_target_suffix: None,
                 target_specs: Some(include_str!("../res/specs/riscv-hifive.json")),
                 link_script: Some(include_str!("../res/specs/riscv-hifive.ld")),
             })

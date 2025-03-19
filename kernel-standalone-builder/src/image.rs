@@ -68,6 +68,7 @@ pub fn build_image(config: Config) -> Result<(), Error> {
                 kernel_cargo_toml: config.kernel_cargo_toml,
                 release: config.release,
                 target_name: "x86_64-multiboot2",
+                expected_target_suffix: None,
                 target_specs: Some(include_str!("../res/specs/x86_64-multiboot2.json")),
                 link_script: Some(include_str!("../res/specs/x86_64-multiboot2.ld")),
             })?;
@@ -81,6 +82,7 @@ pub fn build_image(config: Config) -> Result<(), Error> {
                 kernel_cargo_toml: config.kernel_cargo_toml,
                 release: config.release,
                 target_name: "arm-freestanding",
+                expected_target_suffix: None,
                 target_specs: Some(include_str!("../res/specs/arm-freestanding.json")),
                 link_script: Some(include_str!("../res/specs/arm-freestanding.ld")),
             })?;
@@ -89,6 +91,7 @@ pub fn build_image(config: Config) -> Result<(), Error> {
                 kernel_cargo_toml: config.kernel_cargo_toml,
                 release: config.release,
                 target_name: "aarch64-freestanding",
+                expected_target_suffix: None,
                 target_specs: Some(include_str!("../res/specs/aarch64-freestanding.json")),
                 link_script: Some(include_str!("../res/specs/aarch64-freestanding.ld")),
             })?;
@@ -150,7 +153,6 @@ verbose 3
         "kernel",
         "-e", // CDROM mode.
         "-c", // Always create the image, never modify an existing one.
-        "-g", // Multiboot2 doesn't normally support 64bits kernels without EFI loading. This flag provides compatibility.
         build_dir.path().join("iso").to_str().unwrap(),
         output_file.as_ref().to_str().unwrap(),
     ]);
