@@ -33,10 +33,10 @@ pub struct Config<'a> {
     pub target_name: &'a str,
 
     /// JSON target specifications.
-    pub target_specs: &'a str,
+    pub target_specs: Option<&'a str>,
 
     /// Link script to pass to the linker.
-    pub link_script: &'a str,
+    pub link_script: Option<&'a str>,
 }
 
 /// Successful build.
@@ -96,19 +96,23 @@ pub fn build(cfg: Config) -> Result<BuildOutput, Error> {
     // If `cargo_clean_needed` is set to true, the build will later be done from scratch.
     let mut cargo_clean_needed = false;
     fs::create_dir_all(&target_dir_with_target)?;
-    if write_if_changed(
-        (&target_dir_with_target).join(format!("{}.json", cfg.target_name)),
-        cfg.target_specs.as_bytes(),
-    )? {
-        cargo_clean_needed = true;
+    if let Some(target_specs) = &cfg.target_specs {
+        if write_if_changed(
+            (&target_dir_with_target).join(format!("{}.json", cfg.target_name)),
+            target_specs.as_bytes(),
+        )? {
+            cargo_clean_needed = true;
+        }
     }
-    if write_if_changed(
-        (&target_dir_with_target).join("link.ld"),
-        cfg.link_script.as_bytes(),
-    )? {
-        // Note: this is overly conservative. Only the linking step needs to be done again, but
-        // there isn't any easy way to retrigger only the linking.
-        cargo_clean_needed = true;
+    if let Some(link_script) = &cfg.link_script {
+        if write_if_changed(
+            (&target_dir_with_target).join("link.ld"),
+            link_script.as_bytes(),
+        )? {
+            // Note: this is overly conservative. Only the linking step needs to be done again, but
+            // there isn't any easy way to retrigger only the linking.
+            cargo_clean_needed = true;
+        }
     }
     {
         let mut cargo_toml_prototype = toml::value::Table::new();
@@ -218,8 +222,8 @@ pub fn build(cfg: Config) -> Result<BuildOutput, Error> {
         .arg("build")
         .args(&["-Z", "build-std=core,alloc"]) // TODO: nightly only; cc https://github.com/tomaka/redshirt/issues/300
         .env("RUST_TARGET_PATH", &target_dir_with_target)
-        .env(
-            &format!(
+        .envs(cfg.link_script.is_some().then_some((
+            format!(
                 "CARGO_TARGET_{}_RUSTFLAGS",
                 cfg.target_name.replace("-", "_").to_uppercase()
             ),
@@ -227,7 +231,7 @@ pub fn build(cfg: Config) -> Result<BuildOutput, Error> {
                 "-Clink-arg=--script -Clink-arg={}",
                 target_dir_with_target.join("link.ld").display()
             ),
-        )
+        )))
         .arg("--target")
         .arg(cfg.target_name)
         .arg("--manifest-path")

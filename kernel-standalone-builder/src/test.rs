@@ -97,8 +97,8 @@ pub fn test_kernel(cfg: Config) -> Result<(), Error> {
                 kernel_cargo_toml: cfg.kernel_cargo_toml,
                 release: false,
                 target_name: "arm-freestanding",
-                target_specs: include_str!("../res/specs/arm-freestanding.json"),
-                link_script: include_str!("../res/specs/arm-freestanding.ld"),
+                target_specs: Some(include_str!("../res/specs/arm-freestanding.json")),
+                link_script: Some(include_str!("../res/specs/arm-freestanding.ld")),
             })
             .map_err(crate::image::Error::Build)?;
 
@@ -119,8 +119,8 @@ pub fn test_kernel(cfg: Config) -> Result<(), Error> {
                 kernel_cargo_toml: cfg.kernel_cargo_toml,
                 release: false,
                 target_name: "aarch64-freestanding",
-                target_specs: include_str!("../res/specs/aarch64-freestanding.json"),
-                link_script: include_str!("../res/specs/aarch64-freestanding.ld"),
+                target_specs: Some(include_str!("../res/specs/aarch64-freestanding.json")),
+                link_script: Some(include_str!("../res/specs/aarch64-freestanding.ld")),
             })
             .map_err(crate::image::Error::Build)?;
 
@@ -141,8 +141,8 @@ pub fn test_kernel(cfg: Config) -> Result<(), Error> {
                 kernel_cargo_toml: cfg.kernel_cargo_toml,
                 release: false,
                 target_name: "riscv-hifive",
-                target_specs: include_str!("../res/specs/riscv-hifive.json"),
-                link_script: include_str!("../res/specs/riscv-hifive.ld"),
+                target_specs: Some(include_str!("../res/specs/riscv-hifive.json")),
+                link_script: Some(include_str!("../res/specs/riscv-hifive.ld")),
             })
             .map_err(crate::image::Error::Build)?;
 
