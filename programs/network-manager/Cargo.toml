@@ -13,12 +13,12 @@ hashbrown = { version = "0.12.0", default-features = false }
 log = "0.4"
 parity-scale-codec = "1.3.6"
 rand = "0.8.5"
-redshirt-ethernet-interface = { path = "../../interfaces/ethernet" }
-redshirt-interface-interface = { path = "../../interfaces/interface" }
-redshirt-log-interface = { path = "../../interfaces/log" } # TODO: remove
-redshirt-syscalls = { path = "../../interfaces/syscalls" }
-redshirt-tcp-interface = { path = "../../interfaces/tcp" }
-redshirt-time-interface = { path = "../../interfaces/time" }
+redshirt-ethernet-interface = { path = "../../interface-wrappers/ethernet" }
+redshirt-interface-interface = { path = "../../interface-wrappers/interface" }
+redshirt-log-interface = { path = "../../interface-wrappers/log" } # TODO: remove
+redshirt-syscalls = { path = "../../interface-wrappers/syscalls" }
+redshirt-tcp-interface = { path = "../../interface-wrappers/tcp" }
+redshirt-time-interface = { path = "../../interface-wrappers/time" }
 thiserror = "1.0.30"
 
 [dependencies.smoltcp]

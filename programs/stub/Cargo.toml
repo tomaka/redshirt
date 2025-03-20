@@ -7,5 +7,5 @@ publish = false
 
 [dependencies]
 futures = { version = "0.3.21", default-features = false }
-redshirt-syscalls = { path = "../../interfaces/syscalls" }
+redshirt-syscalls = { path = "../../interface-wrappers/syscalls" }
 wee_alloc = "0.4.5"

@@ -28,7 +28,7 @@ cargo +nightly run -- emulator-run --emulator qemu --target x86_64-multiboot2
 Short overview of the structure of the repository:
 
 - `docs` contains a description of what redshirt is and how it works. Start with `docs/introduction.md`.
-- `interfaces` contains crates that provide definitions and helpers for Wasm programs to use
+- `interface-wrappers` contains crates that provide definitions and helpers for Wasm programs to use
   (examples: `tcp` for TCP/IP, `window` for windowing).
 - `kernel` contains the code required to run the kernel.
 - `kernel-standalone-kernel` contains a utility allowing to run and test the standalone kernel.

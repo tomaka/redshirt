@@ -24,14 +24,14 @@ rand_chacha = { version = "0.2.0", default-features = false }
 rand_core = { version = "0.5.1", default-features = false }
 rand_jitter = { version = "0.3.0", default-features = false }
 redshirt-core = { path = "../core", features = ["nightly"] }
-redshirt-hardware-interface = { path = "../../interfaces/hardware", default-features = false }
-redshirt-interface-interface = { path = "../../interfaces/interface", default-features = false }
-redshirt-kernel-log-interface = { path = "../../interfaces/kernel-log", default-features = false }
-redshirt-log-interface = { path = "../../interfaces/log", default-features = false }
-redshirt-pci-interface = { path = "../../interfaces/pci", default-features = false }
-redshirt-random-interface = { path = "../../interfaces/random", default-features = false }
-redshirt-syscalls = { path = "../../interfaces/syscalls", default-features = false }
-redshirt-time-interface = { path = "../../interfaces/time", default-features = false }
+redshirt-hardware-interface = { path = "../../interface-wrappers/hardware", default-features = false }
+redshirt-interface-interface = { path = "../../interface-wrappers/interface", default-features = false }
+redshirt-kernel-log-interface = { path = "../../interface-wrappers/kernel-log", default-features = false }
+redshirt-log-interface = { path = "../../interface-wrappers/log", default-features = false }
+redshirt-pci-interface = { path = "../../interface-wrappers/pci", default-features = false }
+redshirt-random-interface = { path = "../../interface-wrappers/random", default-features = false }
+redshirt-syscalls = { path = "../../interface-wrappers/syscalls", default-features = false }
+redshirt-time-interface = { path = "../../interface-wrappers/time", default-features = false }
 rlibc = "1.0.0"
 smallvec = { version = "1.6.1", default-features = false }
 spinning_top = "0.3.0"

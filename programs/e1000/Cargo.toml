@@ -9,9 +9,9 @@ publish = false
 [dependencies]
 derive_more = "0.99.17"
 futures = "0.3.21"
-redshirt-ethernet-interface = { path = "../../interfaces/ethernet" }
-redshirt-hardware-interface = { path = "../../interfaces/hardware" }
-redshirt-pci-interface = { path = "../../interfaces/pci" }
-redshirt-syscalls = { path = "../../interfaces/syscalls" }
-redshirt-time-interface = { path = "../../interfaces/time" }
+redshirt-ethernet-interface = { path = "../../interface-wrappers/ethernet" }
+redshirt-hardware-interface = { path = "../../interface-wrappers/hardware" }
+redshirt-pci-interface = { path = "../../interface-wrappers/pci" }
+redshirt-syscalls = { path = "../../interface-wrappers/syscalls" }
+redshirt-time-interface = { path = "../../interface-wrappers/time" }
 smallvec = "1.8.0"
