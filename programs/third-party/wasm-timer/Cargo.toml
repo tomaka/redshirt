@@ -11,4 +11,4 @@ pin-project = "1.0.10"
 futures-timer = "3.0"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-redshirt-time-interface = { path = "../../../interfaces/time" }
+redshirt-time-interface = { path = "../../../interface-wrappers/time" }

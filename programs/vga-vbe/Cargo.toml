@@ -13,13 +13,13 @@ hashbrown = { version = "0.12.0", default-features = false }
 iced-x86 = { version = "1.14.0", default-features = false, features = ["decoder", "instr_info", "op_code_info", "std"] }
 lazy_static = "1"
 log = "0.4"
-redshirt-hardware-interface = { path = "../../interfaces/hardware" }
-redshirt-interface-interface = { path = "../../interfaces/interface" }
-redshirt-kernel-log-interface = { path = "../../interfaces/kernel-log" }
-redshirt-log-interface = { path = "../../interfaces/log" }
-redshirt-pci-interface = { path = "../../interfaces/pci" }
-redshirt-syscalls = { path = "../../interfaces/syscalls" }
-redshirt-video-output-interface = { path = "../../interfaces/video-output" }
+redshirt-hardware-interface = { path = "../../interface-wrappers/hardware" }
+redshirt-interface-interface = { path = "../../interface-wrappers/interface" }
+redshirt-kernel-log-interface = { path = "../../interface-wrappers/kernel-log" }
+redshirt-log-interface = { path = "../../interface-wrappers/log" }
+redshirt-pci-interface = { path = "../../interface-wrappers/pci" }
+redshirt-syscalls = { path = "../../interface-wrappers/syscalls" }
+redshirt-video-output-interface = { path = "../../interface-wrappers/video-output" }
 
 [dev-dependencies]
 futures = "0.3.21"

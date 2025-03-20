@@ -30,7 +30,7 @@ pub mod ffi;
 /// Registers the current program as the provider for the given interface hash.
 ///
 /// > **Note**: Interface hashes can be found in the various `ffi` modules of the crates in the
-/// >           `interfaces` directory, although that is subject to change.
+/// >           `interface-wrappers` directory, although that is subject to change.
 ///
 /// Returns an error if there was already a program registered for that interface.
 pub async fn register_interface(

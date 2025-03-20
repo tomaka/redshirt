@@ -7,6 +7,6 @@ edition = "2018"
 publish = false
 
 [dependencies]
-redshirt-interface-interface = { path = "../../interfaces/interface" }
-redshirt-syscalls = { path = "../../interfaces/syscalls" }
-redshirt-system-time-interface = { path = "../../interfaces/system-time" }
+redshirt-interface-interface = { path = "../../interface-wrappers/interface" }
+redshirt-syscalls = { path = "../../interface-wrappers/syscalls" }
+redshirt-system-time-interface = { path = "../../interface-wrappers/system-time" }

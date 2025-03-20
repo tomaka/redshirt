@@ -24,14 +24,14 @@ hashbrown = { version = "0.9.1", default-features = false }
 itertools = { version = "0.14.0", default-features = false }
 nohash-hasher = { version = "0.2.0", default-features = false }
 redshirt-core-proc-macros = { path = "../core-proc-macros" }
-redshirt-interface-interface = { path = "../../interfaces/interface", default-features = false }
-redshirt-kernel-debug-interface = { path = "../../interfaces/kernel-debug", default-features = false }
-redshirt-loader-interface = { path = "../../interfaces/loader", default-features = false }
-redshirt-log-interface = { path = "../../interfaces/log", default-features = false }
-redshirt-random-interface = { path = "../../interfaces/random", default-features = false }
-redshirt-syscalls = { path = "../../interfaces/syscalls", default-features = false }
-redshirt-system-time-interface = { path = "../../interfaces/system-time", default-features = false }
-redshirt-time-interface = { path = "../../interfaces/time", default-features = false }
+redshirt-interface-interface = { path = "../../interface-wrappers/interface", default-features = false }
+redshirt-kernel-debug-interface = { path = "../../interface-wrappers/kernel-debug", default-features = false }
+redshirt-loader-interface = { path = "../../interface-wrappers/loader", default-features = false }
+redshirt-log-interface = { path = "../../interface-wrappers/log", default-features = false }
+redshirt-random-interface = { path = "../../interface-wrappers/random", default-features = false }
+redshirt-syscalls = { path = "../../interface-wrappers/syscalls", default-features = false }
+redshirt-system-time-interface = { path = "../../interface-wrappers/system-time", default-features = false }
+redshirt-time-interface = { path = "../../interface-wrappers/time", default-features = false }
 rand = { version = "0.8.3", default-features = false }
 rand_chacha = { version = "0.3.0", default-features = false }
 rand_core = { version = "0.6.0", default-features = false }
