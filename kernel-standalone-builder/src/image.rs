@@ -67,10 +67,10 @@ pub fn build_image(config: Config) -> Result<(), Error> {
             let build_out = crate::build::build(crate::build::Config {
                 kernel_cargo_toml: config.kernel_cargo_toml,
                 release: config.release,
-                target_name: "x86_64-multiboot2",
-                expected_target_suffix: None,
-                target_specs: Some(include_str!("../res/specs/x86_64-multiboot2.json")),
-                link_script: Some(include_str!("../res/specs/x86_64-multiboot2.ld")),
+                target_name: "x86_64-unknown-uefi",
+                expected_target_suffix: Some("efi"),
+                target_specs: None,
+                link_script: None,
             })?;
 
             build_x86_multiboot2_cdrom_iso(build_out.out_kernel_path, config.output_file)?;
@@ -153,7 +153,6 @@ verbose 3
         "kernel",
         "-e", // CDROM mode.
         "-c", // Always create the image, never modify an existing one.
-        "-g", // Multiboot2 doesn't normally support 64bits kernels without EFI loading. This flag provides compatibility.
         build_dir.path().join("iso").to_str().unwrap(),
         output_file.as_ref().to_str().unwrap(),
     ]);
