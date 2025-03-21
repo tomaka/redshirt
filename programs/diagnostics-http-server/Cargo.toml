@@ -7,7 +7,7 @@ publish = false
 
 [dependencies]
 futures = "0.3.21"
-hyper = { version = "0.14.17", default-features = false, features = ["server", "http1"] }
+hyper = { version = "1.1.0", default-features = false, features = ["server", "http1"] }
 log = "0.4.14"
 redshirt-kernel-debug-interface = { path = "../../interface-wrappers/kernel-debug" }
 redshirt-log-interface = { path = "../../interface-wrappers/log" }
