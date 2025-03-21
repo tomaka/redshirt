@@ -1068,7 +1068,7 @@ dependencies = [
  "cargo_metadata",
  "proc-macro2",
  "serde_json",
- "syn 1.0.109",
+ "syn 2.0.100",
  "wat",
 ]
 
