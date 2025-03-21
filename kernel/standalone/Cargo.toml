@@ -44,5 +44,5 @@ acpi = "4.1.0"
 aml = "0.16.4"
 crossbeam-utils = { version = "0.8.3", default-features = false }
 multiboot2 = "0.23.1"
-rdrand = { version = "0.7.0", default-features = false }
+rdrand = { version = "0.8.3", default-features = false }
 x86_64 = "0.15.2"
